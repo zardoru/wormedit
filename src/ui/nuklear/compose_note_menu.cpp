@@ -38,27 +38,27 @@ bool raise(const WormUiComposeView& view, wormedit::ui::workspace_action_t& acti
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
-    action.compose_note_context_id = menu.note;
-    action.compose_semantic_layer_id = layer;
+    action.compose_note_context_id.value = menu.note;
+    action.compose_semantic_layer_id.value = layer;
     return true;
 }
 
 std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
-    for (std::size_t index = view.note_endpoint_count; index-- > 0;) {
+    for (std::size_t index = view.note_endpoints.size(); index-- > 0;) {
         const auto& note = view.note_endpoints[index];
-        if (note.proposal_ghost || note.paint_preview || !note.note_id) continue;
+        if (note.proposal_ghost || note.paint_preview || !note.note_id.value) continue;
         const auto& rect = note.bounds;
         if (x >= rect.left && x <= rect.right &&
-            std::abs(y - (rect.top + rect.bottom) * 0.5) <= 8) return note.note_id;
+            std::abs(y - (rect.top + rect.bottom) * 0.5) <= 8) return note.note_id.value;
     }
-    for (std::size_t index = view.hold_body_count; index-- > 0;) {
+    for (std::size_t index = view.hold_bodies.size(); index-- > 0;) {
         const auto& hold = view.hold_bodies[index];
         const auto& rect = hold.bounds;
-        if (!hold.proposal_ghost && hold.note_id && x >= rect.left && x <= rect.right &&
-            y >= rect.top && y <= rect.bottom) return hold.note_id;
+        if (!hold.proposal_ghost && hold.note_id.value && x >= rect.left && x <= rect.right &&
+            y >= rect.top && y <= rect.bottom) return hold.note_id.value;
     }
     return 0;
 }
@@ -277,7 +277,7 @@ void render(nk_context* context, const WormUiComposeView& view, wormedit::ui::wo
         if (chrome::context_menu_button(context, "Replace sound with current source",
                 can_replace ? nullptr : "Choose a sound source first") &&
             raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
-            action.compose_resource_id = source.pointer_capture.draw_source_id;
+            action.compose_resource_id.value = source.pointer_capture.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
         nk_layout_row_dynamic(context, row_height, 1);
@@ -302,10 +302,10 @@ void open_from_keyboard(const WormUiComposeView& view, wormedit::ui::workspace_a
         !chrome::context_menu_take_open_request(chrome::KeyboardContextTarget::compose)) return;
     menu.note = view.keyboard_context_note_id ? view.keyboard_context_note_id
         : view.selected_note_count ? view.selected_note_label_note_id : 0;
-    for (const auto& note : std::span(view.note_endpoints, view.note_endpoint_count))
-        if (!menu.note && note.selected && !note.proposal_ghost) menu.note = note.note_id;
-    for (const auto& hold : std::span(view.hold_bodies, view.hold_body_count))
-        if (!menu.note && hold.selected && !hold.proposal_ghost) menu.note = hold.note_id;
+    for (const auto& note : std::span(view.note_endpoints))
+        if (!menu.note && note.selected && !note.proposal_ghost) menu.note = note.note_id.value;
+    for (const auto& hold : std::span(view.hold_bodies))
+        if (!menu.note && hold.selected && !hold.proposal_ghost) menu.note = hold.note_id.value;
     if (!menu.note) return;
     menu.bgm = menu.submenu = false;
     menu.channel = 0;

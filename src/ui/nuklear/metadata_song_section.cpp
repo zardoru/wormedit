@@ -42,17 +42,12 @@ static void set_metadata_song_action(wormedit::ui::workspace_action_t* action,
         state.search_tags.size() > wormedit::default_metadata_edit_limits.maximum_search_tags) {
         return;
     }
-    state.search_tag_pointers.clear();
-    state.search_tag_pointers.reserve(state.search_tags.size());
-    for (const auto& tag : state.search_tags) {
-        state.search_tag_pointers.push_back(tag.data());
-    }
     action->metadata_edit = WORM_UI_METADATA_EDIT_SONG;
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_title = state.title.data();
     action->metadata_artist = state.artist.data();
-    action->metadata_search_tags = state.search_tag_pointers.data();
-    action->metadata_search_tag_count = state.search_tag_pointers.size();
+    for (const auto& tag : state.search_tags)
+        action->metadata_search_tags.emplace_back(tag.data());
 }
 
 void reset_song_draft(const wormedit::ui::metadata_view_t& metadata) {
@@ -142,7 +137,6 @@ auto render_metadata_tag_row(nk_context* context, std::size_t index, bool editab
     if (!remove || !editable) return false;
     worm_ui_nuklear_cancel_metadata_tag_drag();
     state.search_tags.erase(state.search_tags.begin() + static_cast<std::ptrdiff_t>(index));
-    state.search_tag_pointers.clear();
     return true;
 }
 

@@ -34,7 +34,7 @@ struct LayersPanel {
 auto raise(const LayersPanel& panel, WormUiComposeActionKind kind, std::uint64_t id = 0) -> bool {
     if (!wormedit::ui::raise_compose_action(*panel.action, *panel.view, kind))
         return false;
-    panel.action->compose_semantic_layer_id = id;
+    panel.action->compose_semantic_layer_id.value = id;
     return true;
 }
 
@@ -147,7 +147,7 @@ auto layer_entry_reason(const LayersPanel& panel, const WormUiComposeSemanticLay
 auto raise_captured(const LayersPanel& panel, WormUiComposeActionKind kind) -> bool {
     if (!layer_capture_current(panel) ||
         !raise(panel, kind, panel.state->layer_editor.layers_menu.stamp.object_id)) return false;
-    panel.action->compose_input_chart_id = panel.state->layer_editor.layers_menu.stamp.chart_id;
+    panel.action->compose_input_chart_id.value = panel.state->layer_editor.layers_menu.stamp.chart_id;
     panel.action->compose_input_document_revision = panel.state->layer_editor.layers_menu.stamp.revision;
     return true;
 }
@@ -241,8 +241,7 @@ void render_layer_name_editor(const LayersPanel& panel, const WormUiComposeSeman
     if (!allowed || !valid) nk_widget_disable_end(context);
     const auto cancel = nk_button_label(context, "Cancel");
     if (apply && allowed && valid && raise_captured(panel, WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER)) {
-        std::memcpy(panel.action->compose_semantic_layer_name, state.layer_editor.semantic_layer_name.data(),
-                    sizeof(panel.action->compose_semantic_layer_name));
+        panel.action->compose_semantic_layer_name = state.layer_editor.semantic_layer_name.data();
         close_layer_editors(state);
     } else if (cancel) close_layer_editors(state);
 }

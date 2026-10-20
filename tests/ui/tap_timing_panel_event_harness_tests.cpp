@@ -94,8 +94,8 @@ TEST_CASE("Tap tempo Escape closes without leaking a workspace command", "[tap-t
     escape.key.down = true; escape.key.key = SDLK_ESCAPE; escape.key.scancode = SDL_SCANCODE_ESCAPE;
     const auto action = harness.frame({&escape, 1});
     expect_tap(action.get().tap_timing.close);
-    expect_tap(action.get().shortcut_event_count == 0);
-    expect_tap(action.get().compose_input_count == 0);
+    expect_tap(action.get().shortcut_events.size() == 0);
+    expect_tap(action.get().compose_inputs.size() == 0);
 }
 
 TEST_CASE("Options owns Escape while the Tap tempo tool is visible", "[tap-timing][event-harness]") {

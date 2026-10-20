@@ -62,8 +62,8 @@ struct fixture_t {
     auto press(SDL_Keycode code, SDL_Scancode scan) -> workspace_action_snapshot_t {
         const auto down=key(code,scan,true); auto result=harness.frame({&down,1});
         const auto up=key(code,scan,false); const auto released=harness.frame({&up,1});
-        release_shortcuts=released.get().shortcut_event_count;
-        release_compose_inputs=released.get().compose_input_count;
+        release_shortcuts=released.get().shortcut_events.size();
+        release_compose_inputs=released.get().compose_inputs.size();
         return result;
     }
     void focus_list() {
@@ -79,16 +79,16 @@ TEST_CASE("Sounds keyboard selection and audition use resource identity and capt
     fixture_t fixture;
     fixture.focus_list();
     auto result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
-    expect(result.get().audio_resource_id==102);
+    expect(result.get().audio_resource_id.value==102);
     expect(worm_ui_nuklear_audio_state().selected_resource_id==102);
     result=fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id==102);
+    expect(result.get().compose_resource_id.value==102);
     expect(fixture.release_shortcuts==0);
     expect(fixture.release_compose_inputs==0);
     expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
     result=fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN);
-    expect(result.get().audio_resource_id==103);
+    expect(result.get().audio_resource_id.value==103);
     expect(fixture.press(SDLK_SPACE,SDL_SCANCODE_SPACE).get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -125,7 +125,7 @@ TEST_CASE("Sounds properties are staged, revertible and stamped before Apply",
     const auto apply=fixture.harness.drawn_text_center("Apply"); expect(apply);
     const auto result=fixture.click(apply->first,apply->second);
     expect(result.get().sound_properties_apply);
-    expect(result.get().sound_properties_resource_id==101);
+    expect(result.get().sound_properties_resource_id.value==101);
     expect(result.get().sound_properties_document_revision==fixture.harness.view().document_revision);
     expect(std::string_view{result.get().sound_properties_name}=="New kick");
     ++fixture.harness.view().audio_slices.document_revision;
@@ -157,7 +157,7 @@ TEST_CASE("Sounds tag chips emit one stamped add or remove without applying name
         const auto action = fixture.click(button->first, button->second);
         expect(action.get().sound_properties_tags ==
               std::optional{std::vector<std::string>{"Kick"}});
-        expect(action.get().sound_properties_resource_id == 101);
+        expect(action.get().sound_properties_resource_id.value == 101);
     }
 }
 
@@ -199,7 +199,7 @@ TEST_CASE("Sounds list yields to text and modal ownership and clears stale pendi
     fixture_t fixture;
     fixture.focus_list();
     fixture.harness.view().options.visible=true;
-    expect(fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN).get().audio_resource_id==0);
+    expect(fixture.press(SDLK_DOWN,SDL_SCANCODE_DOWN).get().audio_resource_id.value==0);
     expect(!worm_ui_nuklear_audio_state().sound_list_focused);
     fixture.harness.view().options.visible=false;
     (void)fixture.harness.frame();
@@ -207,7 +207,7 @@ TEST_CASE("Sounds list yields to text and modal ownership and clears stale pendi
     auto& state=worm_ui_nuklear_audio_state();
     expect(worm_ui_nuklear_audio_list_key_command(1,false));
     ++fixture.harness.view().audio_slices.document_revision;
-    expect(fixture.harness.frame().get().audio_resource_id==0);
+    expect(fixture.harness.frame().get().audio_resource_id.value==0);
     expect(state.list_move_pending==0);
     expect(!state.sound_list_focused);
 }
@@ -221,10 +221,10 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     (void)fixture.harness.frame({&motion,1});
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
-    expect(result.get().audio_resource_id==102);
+    expect(result.get().audio_resource_id.value==102);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
-    expect(result.get().compose_resource_id==102);
-    expect(result.get().compose_input_project_id==fixture.harness.view().project_id.value);
+    expect(result.get().compose_resource_id.value==102);
+    expect(result.get().compose_input_project_id.value==fixture.harness.view().project_id.value);
     expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
 }
 
@@ -255,7 +255,7 @@ TEST_CASE("Sounds double click cannot audition through Options",
     auto down=pointer(snare->first,snare->second,true); down.button.clicks=2;
     const auto result=fixture.harness.frame({&down,1});
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
-    expect(result.get().audio_resource_id==0);
+    expect(result.get().audio_resource_id.value==0);
 }
 
 TEST_CASE("Sounds waveform instructions remain visible at narrow workspace size",

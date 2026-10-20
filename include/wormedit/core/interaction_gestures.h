@@ -176,7 +176,7 @@ struct pending_note_duration_gesture_t {
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
 
-enum class note_move_conflict_t { none, occupied, out_of_lane, out_of_chart, other };
+
 
 struct note_move_preview_t {
     object_id_t note;

@@ -58,9 +58,9 @@ struct lane_keys_fixture_t {
         event.key.down = true;
         const auto snapshot = harness.frame(std::span{&event, 1});
         const auto& action = snapshot.get();
-        check_lane_keys(action.compose_input_count == 0);
-        check_lane_keys(action.compose_viewport_input_count == 0);
-        runtime.capture({action.shortcut_events, action.shortcut_event_count});
+        check_lane_keys(action.compose_inputs.size() == 0);
+        check_lane_keys(action.compose_viewport_inputs.size() == 0);
+        runtime.capture(action.shortcut_events);
         (void)runtime.dispatch(action.lane_keys, program);
         event.type = SDL_EVENT_KEY_UP;
         event.key.down = false;

@@ -432,11 +432,11 @@ struct metadata_text_fixture_t {
     }
     void start_preview() {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id = 1;
+        action.compose_input_chart_id.value = 1;
         action.compose_input_document_revision = history.document.revision;
-        action.compose_resource_asset_id = 8;
+        action.compose_resource_asset_id.value = 8;
         action.metadata_inspect_import = true;
-        std::strcpy(action.compose_import_path, "/tmp/arena-copy-preview-source.wav");
+        action.compose_import_path = "/tmp/arena-copy-preview-source.wav";
         const auto status = runtime.start_copy_preview(action, history, workspace, base);
         INFO(status);
         REQUIRE(runtime.copy_preview_key());
@@ -1573,10 +1573,10 @@ TEST_CASE("Workspace projects timing and note presentation with catalog identiti
 }
 
 TEST_CASE("BMS action identities reject unoffered and invalid encodings", "[sys][catalog-wiring]") {
-    check_frame_storage(is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8)));
-    check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::unknown)));
-    check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::ascii)));
-    check_frame_storage(!is_bms_encoding_offered(std::numeric_limits<std::uint32_t>::max()));
+    check_frame_storage(is_bms_encoding_offered(wormedit::text_encoding_t::utf8));
+    check_frame_storage(!is_bms_encoding_offered(wormedit::text_encoding_t::unknown));
+    check_frame_storage(!is_bms_encoding_offered(wormedit::text_encoding_t::ascii));
+    check_frame_storage(!is_bms_encoding_offered(static_cast<wormedit::text_encoding_t>(-1)));
 }
 
 TEST_CASE("notification views refill retained storage without warm allocations",

@@ -31,9 +31,9 @@ auto activate_row(const WormUiBookmarkChooserView& view, const WormUiBookmarkCho
         return false;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
-    action.compose_bookmark_id = row.bookmark_id;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_bookmark_id.value = row.bookmark_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
     worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;

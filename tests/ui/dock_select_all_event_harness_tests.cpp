@@ -73,7 +73,7 @@ TEST_CASE("Ctrl+A over the Sounds list selects its rows and not chart notes",
           state.sounds_dock.sound_list_y + state.sounds_dock.sound_list_height * 0.5f);
     const auto action = press_ctrl_a(harness).get();
     check_select_all(state.keysound_catalog.keysound_selection.selected == std::vector<std::uint64_t>{5, 9});
-    check_select_all(action.shortcut_event_count == 0);
+    check_select_all(action.shortcut_events.size() == 0);
 }
 
 TEST_CASE("Ctrl+A over the BGA list selects its rows and an empty list selects nothing",
@@ -92,7 +92,7 @@ TEST_CASE("Ctrl+A over the BGA list selects its rows and an empty list selects n
     state.bga_catalog.bga_shown = {3, 4};
     auto action = press_ctrl_a(harness).get();
     check_select_all(state.bga_catalog.bga_selection.selected == std::vector<std::uint64_t>{3, 4});
-    check_select_all(action.shortcut_event_count == 0);
+    check_select_all(action.shortcut_events.size() == 0);
 
     worm_ui_keysound_clear(state.bga_catalog.bga_selection);
     // The frame above reset the recorded bounds, so arm an empty list again.
@@ -100,7 +100,7 @@ TEST_CASE("Ctrl+A over the BGA list selects its rows and an empty list selects n
     state.bga_catalog.bga_shown.clear();
     action = press_ctrl_a(harness).get();
     check_select_all(state.bga_catalog.bga_selection.selected.empty());
-    check_select_all(action.shortcut_event_count == 0);
+    check_select_all(action.shortcut_events.size() == 0);
 }
 
 TEST_CASE("Ctrl+A over the canvas still reaches the select-all shortcut",
@@ -113,6 +113,6 @@ TEST_CASE("Ctrl+A over the canvas still reaches the select-all shortcut",
     require_select_all(viewport.has_value());
     hover(harness, viewport->x + 20.0f, viewport->y + 20.0f);
     const auto action = press_ctrl_a(harness).get();
-    check_select_all(action.shortcut_event_count == 1);
+    check_select_all(action.shortcut_events.size() == 1);
     check_select_all(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selection.selected.empty());
 }

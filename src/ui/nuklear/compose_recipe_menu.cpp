@@ -23,8 +23,8 @@ void queue_command(const WormUiComposeView& view, wormedit::ui::workspace_action
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu_recipe, 0, false,
                          wormedit::timing_lane_kind_t::scroll, view.chart_id, view.document_revision);
-    if (action.compose_input_count != 0)
-        action.compose_inputs[action.compose_input_count - 1].span_edge = command;
+    if (action.compose_inputs.size() != 0)
+        action.compose_inputs[action.compose_inputs.size() - 1].span_edge = command;
 }
 
 void menu_entry(nk_context* context, const char* title, const char* disabled_reason,
@@ -34,9 +34,9 @@ void menu_entry(nk_context* context, const char* title, const char* disabled_rea
         queue_command(view, action, command);
 }
 
-auto find_area(const WormUiComposeView& view, std::uint64_t id) -> const WormUiComposeRecipeAreaView* {
-    for (size_t index = 0; index < view.recipe_area_count; ++index)
-        if (view.recipe_areas[index].recipe_id == id) return &view.recipe_areas[index];
+auto find_area(const WormUiComposeView& view, std::uint64_t id) -> const wormedit::ui::compose_recipe_area_view_t* {
+    for (size_t index = 0; index < view.recipe_areas.size(); ++index)
+        if (view.recipe_areas[index].recipe_id.value == id) return &view.recipe_areas[index];
     return nullptr;
 }
 
@@ -63,11 +63,11 @@ void render_menu(nk_context* context, const WormUiComposeView& view, wormedit::u
 
 // The recipe area under a screen point, using the same lane geometry the canvas draws with.
 auto area_at(const WormUiComposeView& view, struct nk_rect viewport, float x, float y)
-    -> const WormUiComposeRecipeAreaView* {
+    -> const wormedit::ui::compose_recipe_area_view_t* {
     const auto x_scale = viewport.w / static_cast<float>(view.viewport_width_pixels);
     const auto y_scale = viewport.h / static_cast<float>(view.viewport_height_pixels);
-    const WormUiComposeRecipeAreaView* hit = nullptr;
-    for (size_t index = 0; index < view.recipe_area_count; ++index) {
+    const wormedit::ui::compose_recipe_area_view_t* hit = nullptr;
+    for (size_t index = 0; index < view.recipe_areas.size(); ++index) {
         const auto& area = view.recipe_areas[index];
         const auto extent = compose_timing_lane_inner_extent(
             view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
@@ -108,8 +108,8 @@ void process_compose_recipe_menu(nk_context* context, const WormUiComposeView& v
         if (const auto* area = area_at(view, viewport, mouse.pos.x, mouse.pos.y)) {
             chrome::context_menu_open(menu, mouse.pos,
                                       {view.project_id, view.chart_id, view.document_revision,
-                                       area->recipe_id});
-            menu_recipe = area->recipe_id;
+                                       area->recipe_id.value});
+            menu_recipe = area->recipe_id.value;
         }
     }
     render_menu(context, view, action);

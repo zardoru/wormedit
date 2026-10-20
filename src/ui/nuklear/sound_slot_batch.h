@@ -29,7 +29,6 @@ struct worm_ui_sound_slot_batch_t {
     std::uint16_t first_slot{};
     std::vector<worm_ui_sound_slot_batch_item_t> items;
     std::string reason;
-    std::vector<wormedit::ui::sound_import_item_t> action_items;
 };
 
 void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,

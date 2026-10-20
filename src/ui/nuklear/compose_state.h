@@ -50,7 +50,7 @@ struct worm_ui_nuklear_pinch_gesture_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
     std::array<worm_ui_nuklear_pinch_update_t,
-        WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY> pending{};
+        wormedit::ui::compose_viewport_input_admission_limit> pending{};
     std::size_t count{};
 };
 void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
@@ -88,8 +88,8 @@ auto worm_ui_nuklear_overview_capture_matches(
     const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
     double left, double width, bool available, bool window_focused) -> bool;
 
-inline auto worm_ui_nuklear_beat_fit_line(const WormUiComposeGridLineView& line) noexcept -> bool {
-    return line.chart_row != 0 && line.kind >= 1 && line.kind <= 3;
+inline auto worm_ui_nuklear_beat_fit_line(const wormedit::ui::compose_grid_line_view_t& line) noexcept -> bool {
+    return line.chart_row != 0 && line.kind >= wormedit::editor_grid_line_kind_t::beat && line.kind <= wormedit::editor_grid_line_kind_t::measure;
 }
 
 // Page keys and Tab chords share one canvas-owned cadence and discard repeat debt.
@@ -212,15 +212,15 @@ enum class worm_ui_nuklear_compose_color_view_t { normal, snap, layer };
 
 // Transient arrows retain their snap artwork without a semantic layer ring.
 auto compose_note_is_transient(const WormUiComposeView& view,
-                               const WormUiComposeNoteView& note) -> bool;
+                               const wormedit::ui::compose_note_view_t& note) -> bool;
 auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t color_view,
-    const WormUiComposeView& view, const WormUiComposeNoteView& note) -> bool;
+    const WormUiComposeView& view, const wormedit::ui::compose_note_view_t& note) -> bool;
 
 // Pure base fills; kind, hover and preview overrides are applied by the canvas.
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
-                            const WormUiComposeNoteView& note) -> nk_color;
+                            const wormedit::ui::compose_note_view_t& note) -> nk_color;
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
-                            const WormUiComposeHoldView& hold) -> nk_color;
+                            const wormedit::ui::compose_hold_view_t& hold) -> nk_color;
 
 struct worm_ui_nuklear_compose_state_t {
     wormedit::ui::preview_audio_dialog_t preview_audio;
@@ -260,7 +260,7 @@ struct worm_ui_nuklear_compose_state_t {
             worm_ui_nuklear_compose_color_view_t::normal};
         std::array<worm_ui_nuklear_compose_key_event_t, 64> key_events{};
         std::size_t key_event_count{};
-        std::array<worm_ui_nuklear_compose_wheel_event_t, WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY>
+        std::array<worm_ui_nuklear_compose_wheel_event_t, wormedit::ui::compose_viewport_input_admission_limit>
             wheel_events{};
         std::size_t wheel_event_count{};
         bool middle_click_pending{};
@@ -692,9 +692,6 @@ struct worm_ui_nuklear_compose_state_t {
         std::vector<std::uint64_t> keysound_all_ids;
         std::vector<worm_ui_keysound_mask_t> keysound_masks;
         // Frontend-owned staging that actions point at until their immediate dispatch.
-        std::vector<std::uint64_t> keysound_staged_ids;
-        std::vector<std::string> keysound_staged_paths;
-        std::vector<const char*> keysound_staged_path_pointers;
     } keysound_catalog;
 
     struct bga_interaction_t {
@@ -718,7 +715,6 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_keysound_selection_t measure_selection;
         std::array<char, 32> measures_meter_numerator{'4'};
         std::array<char, 32> measures_meter_denominator{'4'};
-        std::vector<std::uint64_t> measures_staged_ids;
     } measures_dock;
 
     struct bga_catalog_t {
@@ -737,9 +733,6 @@ struct worm_ui_nuklear_compose_state_t {
         bool armed_from_bga_dock{};
         bool bga_reveal_primary{};
         std::vector<std::uint64_t> bga_advance_ids;
-        std::vector<std::uint64_t> bga_staged_ids;
-        std::vector<std::string> bga_staged_paths;
-        std::vector<const char*> bga_staged_path_pointers;
         bool bga_list_valid{};
         float bga_list_x{}, bga_list_y{}, bga_list_width{}, bga_list_height{};
         // The BGA rows shown last frame, kept so Ctrl+A over the list can select them.

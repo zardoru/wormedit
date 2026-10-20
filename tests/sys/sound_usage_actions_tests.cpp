@@ -47,20 +47,20 @@ auto usage_action(const document_history_t& history, bool source_row = false)
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
     if (found == usage.rows.end())
         return action;
-    action.sound_usage_song_id = usage.song.value;
+    action.sound_usage_song_id.value = usage.song.value;
     action.sound_usage_document_revision = usage.revision;
-    action.sound_usage_resource_id = usage.resource.value;
-    action.sound_usage_asset_id = usage.asset.value;
-    action.sound_usage_chart_id = found->chart.value;
-    action.sound_usage_kind = static_cast<int>(found->kind);
-    action.sound_usage_scope = static_cast<int>(found->scope);
-    action.sound_usage_object_id = found->object.value;
-    action.sound_usage_channel_id = found->channel.value;
-    action.sound_usage_clip_id = found->clip.value;
-    action.sound_usage_referenced_resource_id = found->referenced_resource.value;
-    action.sound_usage_referenced_asset_id = found->referenced_asset.value;
+    action.sound_usage_resource_id.value = usage.resource.value;
+    action.sound_usage_asset_id.value = usage.asset.value;
+    action.sound_usage_chart_id.value = found->chart.value;
+    action.sound_usage_kind = found->kind;
+    action.sound_usage_scope = found->scope;
+    action.sound_usage_object_id.value = found->object.value;
+    action.sound_usage_channel_id.value = found->channel.value;
+    action.sound_usage_clip_id.value = found->clip.value;
+    action.sound_usage_referenced_resource_id.value = found->referenced_resource.value;
+    action.sound_usage_referenced_asset_id.value = found->referenced_asset.value;
     action.sound_usage_position_valid = found->position.has_value();
-    action.sound_usage_measure_id = found->position ? found->position->measure.value : 0;
+    action.sound_usage_measure_id.value = found->position ? found->position->measure.value : 0;
     action.sound_usage_row = found->position ? found->position->row : 0;
     return action;
 }
@@ -220,7 +220,7 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
                                   *interaction, original_workspace, original_interaction);
     };
     SECTION("stale song") {
-        reject([](auto& a) { a.sound_usage_song_id = 9; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { a.sound_usage_song_id = song_id_t{9}; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale revision") {
         reject([](auto& a) { ++a.sound_usage_document_revision; }, [](auto&) {}, [](auto&) {});
@@ -229,14 +229,14 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
         reject([](auto&) {}, [](auto& r) { r.selected_resource_id = resource_id_t{99}; }, [](auto&) {});
     }
     SECTION("stale asset") {
-        reject([](auto& a) { ++a.sound_usage_asset_id; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.sound_usage_asset_id.value; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("deleted row") {
         reject([](auto&) {}, [](auto&) {},
                [](auto& h) { h.document.charts.front().measures.front().notes.clear(); });
     }
     SECTION("mismatched full row") {
-        reject([](auto& a) { ++a.sound_usage_object_id; }, [](auto&) {}, [](auto&) {});
+        reject([](auto& a) { ++a.sound_usage_object_id.value; }, [](auto&) {}, [](auto&) {});
     }
 }
 

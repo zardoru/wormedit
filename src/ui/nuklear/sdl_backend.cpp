@@ -34,6 +34,7 @@
 #include <wormedit/core/keyed_cache.h>
 #include "ui/frontend.h"
 #include "ui/nuklear/image_quad.h"
+#include "ui/nuklear/compose_canvas.h"
 #include <limits>
 #include <cmath>
 #include <utility>
@@ -200,6 +201,7 @@ struct ComposeFieldMarker {
     std::size_t first_index{}, index_count{};
 };
 struct ComposeFieldFrame {
+    std::unique_ptr<wormedit::ui::nuklear::compose_canvas_cache_t> canvas;
     wormedit::ui::field::renderer_t geometry;
     std::array<ComposeFieldMarker, 32> markers{};
     std::size_t marker_count{}, next_index{};
@@ -1418,6 +1420,9 @@ void set_compose_overview_readback_for_testing(nk_context* context,
     SDL_Surface* (*readback)(SDL_Renderer*, const SDL_Rect*)) {
     auto* cache = static_cast<nk_sdl*>(context->userdata.ptr)->overview;
     if (cache) cache->readback = readback ? readback : SDL_RenderReadPixels;
+}
+auto compose_canvas_cache(nk_context* context) -> std::unique_ptr<compose_canvas_cache_t>& {
+    return static_cast<nk_sdl*>(context->userdata.ptr)->field->canvas;
 }
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
     return static_cast<nk_sdl*>(context->userdata.ptr)->field->geometry;

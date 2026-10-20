@@ -66,7 +66,7 @@ struct timing_view_t {
     size_t anchor_count{};
     size_t speed_total_count{};
     std::vector<timing_speed_view_t> speeds{};
-    std::vector<WormUiTimingMarkerView> markers{};
+    std::vector<wormedit::ui::compose_timing_marker_view_t> markers{};
     std::vector<timing_grid_line_view_t> grid_lines{};
     bool stage_active{};
     bool stage_valid{};

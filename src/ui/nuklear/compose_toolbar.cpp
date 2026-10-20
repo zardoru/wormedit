@@ -29,9 +29,9 @@ static auto compose_inspector_icon(bool visible) -> Glyph {
 static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
                                          const WormUiComposeView* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
-        action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY ||
+        action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit ||
         view->bgm_maximum_horizontal_scroll_pixels <= 0.0) return;
-    action->compose_viewport_inputs[action->compose_viewport_input_count++] = {
+    action->compose_viewport_inputs.emplace_back() = {
         .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
         .zoom_modifier = false,
         .delta_x = delta_pixels,
@@ -70,9 +70,9 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
         .selected = view->bgm_bar_reserved,
         .enabled = view->bgm_bar_available}.render(context);
     if (!clicked ||
-        action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY)
+        action->compose_inputs.size() >= wormedit::ui::compose_input_admission_limit)
         return;
-    auto& input = action->compose_inputs[action->compose_input_count++];
+    auto& input = action->compose_inputs.emplace_back();
     input = {};
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
     input.overview_primary = view->bgm_bar_reserved;
@@ -325,7 +325,7 @@ static auto request_bgm_column_count(const ComposeToolbarContext& toolbar, uint3
     if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
     action->compose_bgm_column_count = count;
-    action->compose_input_chart_id = toolbar.view->chart_id;
+    action->compose_input_chart_id.value = toolbar.view->chart_id;
     action->compose_input_document_revision = toolbar.view->document_revision;
     bgm_column_count_draft(*toolbar.view).commit_pending = true;
     return true;
@@ -370,7 +370,7 @@ static void request_toolbar_offset_nudge(wormedit::ui::workspace_action_t* actio
                                          const WormUiComposeView* view, std::int64_t frames) {
     if (action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
     action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
-    action->audio_offset_drag_chart_id = view->chart_id;
+    action->audio_offset_drag_chart_id = wormedit::chart_id_t{view->chart_id};
     action->audio_offset_drag_document_revision = view->document_revision;
     action->audio_offset_drag_sample_rate = view->waveform_overview_sample_rate;
     action->audio_offset_drag_delta_frames = frames;
@@ -465,7 +465,7 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
     const bool locked = toolbar.view->audio_offset_locked;
     if (nk_button_label(context, "")) {
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
-        toolbar.action->compose_input_chart_id = toolbar.view->chart_id;
+        toolbar.action->compose_input_chart_id.value = toolbar.view->chart_id;
         toolbar.action->compose_input_document_revision = toolbar.view->document_revision;
     }
     auto* canvas = nk_window_get_canvas(context);
@@ -541,8 +541,8 @@ void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_fiel
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
     action.compose_hitsound = {.field = field, .value = value};
-    action.compose_input_project_id = toolbar.view->project_id;
-    action.compose_input_chart_id = toolbar.view->chart_id;
+    action.compose_input_project_id.value = toolbar.view->project_id;
+    action.compose_input_chart_id.value = toolbar.view->chart_id;
     action.compose_input_document_revision = toolbar.view->document_revision;
 }
 
@@ -653,9 +653,9 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
         if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label.data(),
                 toolbar.view->note_paint_mode_active &&
                     toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
-            toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
-            toolbar.action->compose_inputs[toolbar.action->compose_input_count++] = {
-                .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = kind};
+            toolbar.action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+            toolbar.action->compose_inputs.emplace_back() = {
+                .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = static_cast<wormedit::note_kind_t>(kind)};
             // Picking a note kind selects the paint tool, mirroring Select above.
             if (!toolbar.view->note_paint_mode_active &&
                 toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -720,8 +720,7 @@ static void render_click_audition_toggle(const ComposeToolbarContext& toolbar) {
     if (wormedit::ui::chrome::IconButton{Glyph::audio_lines, "Play sound on click",
             toolbar.view->audition_on_click}.render(toolbar.context) &&
         toolbar.action->menu_command_id[0] == '\0')
-        std::snprintf(toolbar.action->menu_command_id, sizeof(toolbar.action->menu_command_id),
-                      "%s", "audio.toggle_click_audition");
+        toolbar.action->menu_command_id = "audio.toggle_click_audition";
 }
 
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {

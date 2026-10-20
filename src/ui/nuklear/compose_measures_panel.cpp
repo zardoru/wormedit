@@ -83,13 +83,9 @@ void meter_controls(nk_context* context, const WormUiComposeView& view, wormedit
     const auto apply = nk_button_label(context, "Apply");
     if (none) nk_widget_disable_end(context);
     if (!apply || none || !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
-    state.measures_dock.measures_staged_ids = state.measures_dock.measure_selection.selected;
-    action.compose_measure_ids = state.measures_dock.measures_staged_ids.data();
-    action.compose_measure_id_count = state.measures_dock.measures_staged_ids.size();
-    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "%s",
-                  state.measures_dock.measures_meter_numerator.data());
-    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "%s",
-                  state.measures_dock.measures_meter_denominator.data());
+    action.compose_measure_ids = state.measures_dock.measure_selection.selected;
+    action.timing_meter_numerator_text = state.measures_dock.measures_meter_numerator.data();
+    action.timing_meter_denominator_text = state.measures_dock.measures_meter_denominator.data();
 }
 } // namespace
 

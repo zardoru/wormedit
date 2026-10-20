@@ -109,14 +109,13 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
             actions.push_back(&frame.get());
     require_event(actions.size() == 1);
     check_event(!worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open);
-    check_event(actions.front()->compose_sound_group_assignment_count == 1);
-    require_event(actions.front()->compose_sound_group_assignments != nullptr);
-    check_event(actions.front()->compose_sound_group_assignments[0].sound_count == 2);
-    std::vector<std::uint64_t> assigned_ids(
-        actions.front()->compose_sound_group_assignments[0].sound_ids,
-        actions.front()->compose_sound_group_assignments[0].sound_ids + 2);
+    check_event(actions.front()->compose_sound_group_assignments.size() == 1);
+
+    require_event(actions.front()->compose_sound_group_assignments.size() != 0);
+    check_event(actions.front()->compose_sound_group_assignments[0].sound_ids.size() == 2);
+    auto assigned_ids = actions.front()->compose_sound_group_assignments[0].sound_ids;
     std::ranges::sort(assigned_ids);
-    check_event(assigned_ids == std::vector<std::uint64_t>{7, 41});
+    check_event(assigned_ids == std::vector<wormedit::resource_id_t>{{7}, {41}});
     check_event(actions.front()->compose_sound_group_keep_ids_together);
     const auto emitted = std::ranges::count_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
@@ -150,7 +149,7 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     check_event(std::ranges::none_of(ignored, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS ||
                frame.get().compose_action == WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS ||
-               frame.get().compose_input_count != 0;
+               frame.get().compose_inputs.size() != 0;
     }));
 }
 

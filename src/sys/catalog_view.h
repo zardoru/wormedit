@@ -80,9 +80,9 @@ inline auto build_bms_encoding_catalog_view() -> std::vector<wormedit::ui::kind_
 inline const auto bms_encoding_catalog_view = build_bms_encoding_catalog_view();
 inline const auto bms_encoding_view = std::span{bms_encoding_catalog_view};
 
-inline auto is_bms_encoding_offered(std::uint32_t id) -> bool {
+inline auto is_bms_encoding_offered(text_encoding_t id) -> bool {
     for (const auto& encoding : bms_encoding_catalog_view)
-        if (static_cast<std::uint32_t>(encoding.id) == id) return true;
+        if (encoding.id == id) return true;
     return false;
 }
 

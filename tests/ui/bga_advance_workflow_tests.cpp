@@ -27,9 +27,9 @@ void require_bga_auto_advance(const worm_ui_nuklear_compose_state_t& state) {
 }
 void check_resource_place(const wormedit::ui::compose_input_action_t* input) {
     REQUIRE(input != nullptr);
-    CHECK(input->resource_id == 1400);
+    CHECK(input->resource_id.value == 1400);
     CHECK(input->paint_intent == 1);
-    CHECK(input->resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA);
+    CHECK(input->resource_role == wormedit::resource_role_t::bga);
 }
 void check_no_advance_before_dispatch(const worm_ui_nuklear_compose_state_t& state) {
     CHECK(state.resource_picker.armed_resource_id == 1400);
@@ -56,7 +56,7 @@ void check_bga_request(const WormUiBgaDockRequest& request) {
 auto find_resource_place(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames)
-        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
+        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
             const auto& input = frame.get().compose_inputs[index];
             if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) return &input;
         }

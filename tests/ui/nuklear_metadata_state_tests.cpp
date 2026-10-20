@@ -30,7 +30,6 @@ TEST_CASE("Nuklear metadata state resets every retained editing buffer",
     state.song_buffers_valid = true;
     state.title[0] = 'x';
     state.search_tags.push_back({});
-    state.search_tag_pointers.push_back(state.search_tags.front().data());
     state.selected_format_field = 3;
     state.format_target_valid = true;
     state.format_name.assign(8, 'n');
@@ -46,7 +45,6 @@ TEST_CASE("Nuklear metadata state resets every retained editing buffer",
     CHECK_FALSE(state.song_buffers_valid);
     CHECK(state.title[0] == '\0');
     CHECK(state.search_tags.empty());
-    CHECK(state.search_tag_pointers.empty());
     CHECK(state.selected_format_field == std::numeric_limits<std::size_t>::max());
     CHECK_FALSE(state.format_target_valid);
     CHECK(state.format_name.empty());
@@ -194,7 +192,7 @@ TEST_CASE("Metadata rational action text keeps signed and unsigned wire integers
     }
 }
 
-TEST_CASE("Metadata rational action text borrows state arrays after its pointer pair leaves scope",
+TEST_CASE("Metadata rational action text owns its values after staging storage changes",
           "[unit][frontend][metadata]") {
     worm_ui_nuklear_reset_metadata_state();
     auto& state = worm_ui_nuklear_metadata_state();
@@ -204,17 +202,17 @@ TEST_CASE("Metadata rational action text borrows state arrays after its pointer 
         action.metadata_audio_offset_numerator_text = wire.numerator;
         action.metadata_audio_offset_denominator_text = wire.denominator;
     }
-    // The stack pointer pair is gone; other metadata edits do not replace its storage.
+    // The action owns copies after the temporary pointer pair leaves scope.
     state.chart_name[0] = 'x';
-    CHECK(action.metadata_audio_offset_numerator_text == state.action_numerator_text.data());
-    CHECK(action.metadata_audio_offset_denominator_text == state.action_denominator_text.data());
-    CHECK(std::string_view{action.metadata_audio_offset_numerator_text} == "-125");
-    CHECK(std::string_view{action.metadata_audio_offset_denominator_text} == "1000");
+    CHECK(std::string_view{*action.metadata_audio_offset_numerator_text} == "-125");
+    CHECK(std::string_view{*action.metadata_audio_offset_denominator_text} == "1000");
 
     // A later action reuses the arrays and terminates even a shorter replacement.
     const auto next = state.rational_action_text(0, 1);
     CHECK(std::string_view{next.numerator} == "0");
     CHECK(std::string_view{next.denominator} == "1");
+    CHECK(action.metadata_audio_offset_numerator_text == "-125");
+    CHECK(action.metadata_audio_offset_denominator_text == "1000");
     worm_ui_nuklear_reset_metadata_state();
 }
 

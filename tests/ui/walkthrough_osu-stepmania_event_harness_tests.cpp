@@ -108,7 +108,7 @@ struct charting_t {
     }
     auto shortcut(const workspace_action_snapshot_t& snapshot) -> command_dispatch_outcome_t {
         const auto& action = snapshot.get();
-        expect(action.shortcut_event_count == 1);
+        expect(action.shortcut_events.size() == 1);
         const auto& input = action.shortcut_events[0];
         return dispatch_shortcut(registry,
             {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
@@ -268,7 +268,7 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     });
     expect(found != linked.end());
-    expect(found->get().compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC);
+    expect(found->get().compose_resource_role == wormedit::resource_role_t::music);
     expect(std::string_view{found->get().compose_import_path} == "/music/song.ogg");
 }
 
@@ -277,7 +277,7 @@ TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds throug
     charting_t flow;
     expect(flow.harness.ready());
     const auto tap = flow.send(key(SDLK_1, SDL_SCANCODE_1));
-    expect(tap.get().compose_input_count == 1);
+    expect(tap.get().compose_inputs.size() == 1);
     expect(tap.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
     (void)flow.send(key(SDLK_1, SDL_SCANCODE_1, false));
     (void)flow.send(key(SDLK_2, SDL_SCANCODE_2));
@@ -459,7 +459,7 @@ TEST_CASE("Osu StepMania walkthrough Save copies linked song audio and repeat Sa
     charting_t flow;
     const auto save_key = key(SDLK_S, SDL_SCANCODE_S);
     const auto action = flow.harness.frame({&save_key, 1}, SDL_KMOD_CTRL);
-    expect(action.get().shortcut_event_count == 1);
+    expect(action.get().shortcut_events.size() == 1);
     expect(action.get().shortcut_events[0].hid_usage == SDL_SCANCODE_S);
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t runtime{scheduler};

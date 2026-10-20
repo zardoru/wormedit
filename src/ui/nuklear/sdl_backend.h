@@ -27,6 +27,7 @@
 #include <SDL3/SDL.h>
 #include <cstddef>
 #include <optional>
+#include <memory>
 
 /* nuklear - public domain */
 
@@ -95,6 +96,8 @@ NK_API struct nk_allocator nk_sdl_allocator(void);
 
 struct WormUiComposeView;
 namespace wormedit::ui::nuklear {
+struct compose_canvas_cache_t;
+auto compose_canvas_cache(nk_context*) -> std::unique_ptr<compose_canvas_cache_t>&;
 struct overview_work_t {
     std::uint64_t rebuilds{}, uploads{}, uploaded_bytes{}, reused_frames{}, readbacks{}, failures{};
     std::uint64_t cold_readback_ns{};

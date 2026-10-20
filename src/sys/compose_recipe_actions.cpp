@@ -4,10 +4,10 @@ namespace wormedit::sys::compose_action_detail {
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
     const auto* chart =
         context.environment.document.history.document.find_chart(context.state.chart);
-    if (!chart || chart->id.value != context.action.compose_input_chart_id)
+    if (!chart || chart->id.value != context.action.compose_input_chart_id.value)
         return std::nullopt;
     const auto recipe = std::ranges::find(
-        chart->sv_recipes, recipe_id_t{context.action.compose_recipe_id}, &sv_recipe_t::id);
+        chart->sv_recipes, context.action.compose_recipe_id, &sv_recipe_t::id);
     if (recipe == chart->sv_recipes.end())
         return std::nullopt;
     return recipe_form_target_t{&*chart, &*recipe};

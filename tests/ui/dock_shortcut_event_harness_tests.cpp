@@ -34,7 +34,7 @@ auto press_and_dispatch(nuklear_event_harness_t& harness, SDL_Keycode code,
     event.key.scancode = scan;
     event.key.down = true;
     const auto frame = harness.frame(std::span{&event, 1}, modifiers);
-    require_dock(frame.get().shortcut_event_count == 1);
+    require_dock(frame.get().shortcut_events.size() == 1);
     const auto& input = frame.get().shortcut_events[0];
     const auto registry = registry_for_docks();
     return dispatch_shortcut(registry,
@@ -85,8 +85,8 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     const auto action = harness.frame({&enter, 1});
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     check_dock(std::string_view(action.get().compose_semantic_layer_name) == "Chorus");
-    check_dock(action.get().compose_input_project_id == 1);
-    check_dock(action.get().compose_input_chart_id == 1);
+    check_dock(action.get().compose_input_project_id.value == 1);
+    check_dock(action.get().compose_input_chart_id.value == 1);
     check_dock(action.get().compose_input_document_revision == 1);
     check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
     check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
@@ -247,7 +247,7 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
     const auto escape = dialog_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     const auto action = harness.frame({&escape, 1});
     check_dock(action.get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
-    check_dock(action.get().shortcut_event_count == 0);
+    check_dock(action.get().shortcut_events.size() == 0);
     check_dock(!state.layer_editor.layer_creation_context);
 }
 
@@ -274,7 +274,7 @@ TEST_CASE("Export dialog fits a small viewport and submits the saved target poli
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
     check_dock(action.get().compose_output_group_index == 7);
     check_dock(action.get().compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
-    check_dock(action.get().compose_input_project_id == 1);
+    check_dock(action.get().compose_input_project_id.value == 1);
     check_dock(!state.dialogs.export_dialog_open);
 }
 

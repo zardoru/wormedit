@@ -21,8 +21,8 @@ void retire_sound_layer_window(wormedit::ui::workspace_action_t& action) {
     if (!sound_layers) return;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action.compose_action = WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU;
-        action.compose_input_project_id = menu.stamp.project_id;
-        action.compose_input_chart_id = menu.stamp.chart_id;
+        action.compose_input_project_id.value = menu.stamp.project_id;
+        action.compose_input_chart_id.value = menu.stamp.chart_id;
         action.compose_input_document_revision = menu.stamp.revision;
     }
     sound_layers = false;
@@ -38,8 +38,8 @@ void menu_entry(nk_context* context, const char* title, const char* disabled_rea
                 WormUiComposeActionKind kind, wormedit::ui::workspace_action_t& action) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason)) {
         action.compose_action = kind;
-        action.compose_input_project_id = menu.stamp.project_id;
-        action.compose_input_chart_id = menu.stamp.chart_id;
+        action.compose_input_project_id.value = menu.stamp.project_id;
+        action.compose_input_chart_id.value = menu.stamp.chart_id;
         action.compose_input_document_revision = menu.stamp.revision;
         consumed = true;
     }
@@ -53,8 +53,8 @@ void raise_sound_layer_action(const WormUiComposeView& view, wormedit::ui::works
                              WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
 }
 
@@ -84,7 +84,7 @@ void render_sound_layer_row(nk_context* context, const WormUiComposeView& view,
     if (!chrome::context_menu_item(menu, context, layer.name,
                                    layer.locked ? "Layer is locked" : nullptr)) return;
     raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
-    action.compose_semantic_layer_id = layer.layer_id;
+    action.compose_semantic_layer_id.value = layer.layer_id;
     consumed = true;
 }
 

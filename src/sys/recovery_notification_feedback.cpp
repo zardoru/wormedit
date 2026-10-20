@@ -63,11 +63,15 @@ auto recovery_action_request(
             },
         };
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS: {
-        const auto end = std::find(std::begin(action.recovery_save_as_destination),
-                                   std::end(action.recovery_save_as_destination), '\0');
-        const std::string destination(action.recovery_save_as_destination, end);
+        const auto& destination = action.recovery_save_as_destination;
         if (destination.empty()) {
             error = "Choose a new project path before using Save as.";
+            return native_project_recovery_target_action_t{
+                .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
+        }
+        if (destination.size() > maximum_recovery_destination_bytes ||
+            destination.find('\0') != std::string::npos) {
+            error = "The recovery destination is too long or contains a null byte.";
             return native_project_recovery_target_action_t{
                 .target = target, .kind = wormedit::native_project_recovery_target_kind_t::inspect};
         }

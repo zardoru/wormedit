@@ -1136,7 +1136,8 @@ constexpr std::array step_types{
     stepmania_step_type_descriptor_t{"para-single", 5, false},
 };
 constexpr std::array mania_outputs{
-    new_project_output_group_descriptor_t{"osu!mania", format_family_t::osu_mania, "exports/osu"},
+    new_project_output_group_descriptor_t{"osu!mania", format_family_t::osu_mania, "exports/osu",
+                                          std::nullopt},
 };
 constexpr std::array mania_step_outputs{
     mania_outputs[0],
@@ -1145,10 +1146,11 @@ constexpr std::array mania_step_outputs{
                                           stepmania_export_policy_t{}},
 };
 constexpr std::array bms_outputs{
-    new_project_output_group_descriptor_t{"BMS", format_family_t::bms, "exports/bms"},
+    new_project_output_group_descriptor_t{"BMS", format_family_t::bms, "exports/bms", std::nullopt},
 };
 constexpr std::array bmson_outputs{
-    new_project_output_group_descriptor_t{"BMSON", format_family_t::bmson, "exports/bmson"},
+    new_project_output_group_descriptor_t{"BMSON", format_family_t::bmson, "exports/bmson",
+                                          std::nullopt},
 };
 constexpr std::array step_outputs{mania_step_outputs[1]};
 

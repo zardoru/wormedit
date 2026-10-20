@@ -17,13 +17,13 @@ dispatch_compose_area_action(const wormedit::ui::workspace_action_t& action, doc
     if (!action.compose_area_clear_requested && !route)
         return std::nullopt;
     if (compose_area_pause_conversion(kind) &&
-        history.document.id.value != action.compose_input_project_id) {
+        history.document.id != action.compose_input_project_id) {
         auto message = stale_action_message("Area conversion");
         notifications.post_feedback(notification_severity_t::warning, notification_source_t::edit,
                                     message);
         return message;
     }
-    if (state.chart.value != action.compose_input_chart_id ||
+    if (state.chart != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision) {
         auto message = stale_action_message("Area action");
         notifications.post_feedback(notification_severity_t::warning, notification_source_t::edit,

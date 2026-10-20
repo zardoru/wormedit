@@ -81,7 +81,7 @@ struct shortcut_capture_t {
 };
 
 // The first usable press in the batch: repeats, tap-timing presses, modifier-only events and
-// unknown usages are skipped. An empty batch captures nothing.
+// unknown usages are skipped. An empty batch captures nothing; an oversized batch cancels.
 [[nodiscard]] auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events)
     -> shortcut_capture_t;
 

@@ -111,7 +111,7 @@ struct import_bga_action_t {
         -> std::optional<compose_action_outcome_t> {
         const auto& action = context.action;
 
-        if (action.compose_import_path_count > WORM_UI_SOUND_DROP_CAPACITY)
+        if (action.compose_import_paths.size() > WORM_UI_SOUND_DROP_CAPACITY)
             return compose_action_outcome_t::blocked("Image import batch is too large.",
                                                      notification_source_t::import_);
         return std::nullopt;
@@ -120,8 +120,8 @@ struct import_bga_action_t {
         const auto& action = context.action;
         auto& history = context.document.history;
         std::vector<std::string> paths;
-        for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
-            if (action.compose_import_paths && action.compose_import_paths[index])
+        for (std::size_t index = 0; index < action.compose_import_paths.size(); ++index)
+            if (!action.compose_import_paths[index].empty())
                 paths.emplace_back(action.compose_import_paths[index]);
         auto outcome =
             import_bga_feedback(history, context.chart, paths);

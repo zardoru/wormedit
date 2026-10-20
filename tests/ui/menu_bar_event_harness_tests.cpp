@@ -78,7 +78,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         if (!action.menu_command_id[0]) continue;
         check_menu(std::string_view{action.menu_command_id} == command);
         check_menu(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
-        check_menu(action.compose_input_count == 0);
+        check_menu(action.compose_inputs.size() == 0);
         check_menu(action.project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         check_menu(action.clipboard == WORM_UI_CLIPBOARD_NONE);
         check_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
@@ -199,7 +199,7 @@ TEST_CASE("About shows the build and releases modal input on Escape",
     escape.key.scancode = SDL_SCANCODE_ESCAPE;
     escape.key.down = true;
     const auto closed = harness.frame(std::span{&escape, 1});
-    check_menu(closed.get().compose_input_count == 0);
+    check_menu(closed.get().compose_inputs.size() == 0);
     escape.type = SDL_EVENT_KEY_UP;
     escape.key.down = false;
     (void)harness.frame(std::span{&escape, 1});
@@ -256,8 +256,8 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     key.key.scancode = SDL_SCANCODE_1;
     key.key.down = true;
     const auto blocked = harness.frame(std::span{&key, 1});
-    check_menu(blocked.get().compose_input_count == 0);
-    check_menu(blocked.get().shortcut_event_count == 0);
+    check_menu(blocked.get().compose_inputs.size() == 0);
+    check_menu(blocked.get().shortcut_events.size() == 0);
     key.type = SDL_EVENT_KEY_UP;
     key.key.down = false;
     (void)harness.frame(std::span{&key, 1});
@@ -265,7 +265,7 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     key.key.down = true;
     key.key.key = SDLK_ESCAPE;
     key.key.scancode = SDL_SCANCODE_ESCAPE;
-    check_menu(harness.frame(std::span{&key, 1}).get().compose_input_count == 0);
+    check_menu(harness.frame(std::span{&key, 1}).get().compose_inputs.size() == 0);
     key.type = SDL_EVENT_KEY_UP;
     key.key.down = false;
     (void)harness.frame(std::span{&key, 1});
@@ -276,7 +276,7 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     key.key.key = SDLK_1;
     key.key.scancode = SDL_SCANCODE_1;
     const auto resumed = harness.frame(std::span{&key, 1});
-    check_menu(resumed.get().compose_input_count == 1);
+    check_menu(resumed.get().compose_inputs.size() == 1);
     check_menu(resumed.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
 }
 
@@ -362,7 +362,7 @@ TEST_CASE("Menu selection and its release cannot switch the covered Compose work
     for (const auto& frame : click_menu(harness, "New project")) {
         invocations += std::string_view{frame.get().menu_command_id} == "document.new_project";
         check_menu(frame.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
-        check_menu(frame.get().compose_input_count == 0);
+        check_menu(frame.get().compose_inputs.size() == 0);
     }
     check_menu(invocations == 1);
     (void)harness.frame();
@@ -392,7 +392,7 @@ TEST_CASE("Recent menu and startup entries dispatch guarded normal file opens",
         });
         require_menu(opened != frames.end());
         check_menu(std::string_view{opened->get().project_path} == "/tmp/music/chart.bms");
-        check_menu(opened->get().compose_input_count == 0);
+        check_menu(opened->get().compose_inputs.size() == 0);
         check_menu(opened->get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         (void)harness.frame();
         check_menu(!harness.drawn_text_center("chart.bms").has_value());

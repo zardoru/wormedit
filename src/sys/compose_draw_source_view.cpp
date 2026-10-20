@@ -6,7 +6,6 @@
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 #include "sys/frame_timing.h"
-#include "sys/frontend_geometry.h"
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
@@ -159,9 +158,9 @@ auto compose_sound_missing(const compose_scene_cache_t& cache,
 void populate_note_stem_sources(frontend_workspace_view_t& flattened,
                                 const compose_scene_cache_t& cache,
                                 const wormedit::song_document_t& document) {
-    for (auto& note : flattened.compose.note) {
-        note.sound_is_stem = compose_sound_is_stem(cache, note.sound_resource_id);
-        note.sound_missing = compose_sound_missing(cache, document, note.sound_resource_id);
+    for (auto& note : flattened.view.compose.note_endpoints) {
+        note.sound_is_stem = compose_sound_is_stem(cache, note.sound_resource_id.value);
+        note.sound_missing = compose_sound_missing(cache, document, note.sound_resource_id.value);
     }
     for (auto& event : flattened.compose.bgm.event)
         event.armable_stem = event.has_sound && compose_sound_is_stem(cache, event.sound_id) &&

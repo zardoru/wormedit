@@ -100,7 +100,7 @@ TEST_CASE("minimap capture freezes its displayed window and navigation mapping",
 
     const std::array move{pointer_motion(x + 30.0f, y)};
     const auto seek = harness.frame(move);
-    require_minimap_event(seek.get().compose_input_count == 1);
+    require_minimap_event(seek.get().compose_inputs.size() == 1);
     check_minimap_event(seek.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
     check_minimap_event(seek.get().compose_inputs[0].audio_fraction > 0.2);
     check_minimap_event(seek.get().compose_inputs[0].audio_fraction < 0.6);

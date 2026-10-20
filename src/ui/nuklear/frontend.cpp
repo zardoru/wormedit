@@ -147,7 +147,7 @@ static void clear_inactive_stem_resize_cursor(const wormedit::ui::workspace_view
 }
 static int g_headless_width;
 static int g_headless_height;
-static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
+static char g_recovery_save_as_destination[wormedit::maximum_recovery_destination_bytes + 1];
 static auto& g_audio = worm_ui_nuklear_audio_state();
 
 static std::array<worm_ui_nuklear_pointer_click_t, 16> g_double_clicks{};
@@ -168,7 +168,7 @@ static bool g_compose_escape_has_selection{};
 static void render_notification_frame(const wormedit::ui::notification_view_t& view,
     wormedit::ui::workspace_action_t& action, int width, int height, bool project_modal);
 
-static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortcut_events{};
+static std::array<WormUiShortcutEvent, wormedit::ui::shortcut_event_admission_limit> g_shortcut_events{};
 static size_t g_shortcut_event_count{};
 static bool g_tap_timing_visible{};
 static bool g_tap_key_captured{};
@@ -291,8 +291,8 @@ static void SDLCALL project_file_dialog_callback(void* userdata,
         error = sdl_error && sdl_error[0] ? sdl_error : "File picker failed.";
     } else if (files[0]) {
         std::size_t length{};
-        while (length < WORM_UI_PROJECT_PATH_CAPACITY && files[0][length]) ++length;
-        if (length == WORM_UI_PROJECT_PATH_CAPACITY) {
+        while (length <= wormedit::maximum_project_path_bytes && files[0][length]) ++length;
+        if (length > wormedit::maximum_project_path_bytes) {
             error = "Selected project path is too long.";
             severity = WORM_UI_NOTIFICATION_WARNING;
             source = WORM_UI_NOTIFICATION_PRODUCER_INPUT;
@@ -353,9 +353,8 @@ static void consume_project_file_dialog(wormedit::ui::workspace_action_t& action
     if (g_project_dialog_error.empty() && !g_project_dialog.path.empty() &&
         action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action.kind = g_project_dialog.kind;
-        std::memcpy(action.project_path, g_project_dialog.path.data(),
-                    g_project_dialog.path.size());
-        action.project_path[g_project_dialog.path.size()] = '\0';
+        action.project_path = g_project_dialog.path;
+
     }
     g_project_dialog.path.clear();
     g_project_dialog.kind = WORM_UI_WORKSPACE_ACTION_NONE;
@@ -513,9 +512,9 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     if (!action) {
         return;
     }
-    action->shortcut_event_count = (g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input()
-                                       ? 0 : g_shortcut_event_count;
-    for (size_t index = 0; index < g_shortcut_event_count; ++index) {
+    action->shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input()
+                                       ? 0 : g_shortcut_event_count);
+    for (size_t index = 0; index < action->shortcut_events.size(); ++index) {
         action->shortcut_events[index] = g_shortcut_events[index];
     }
     action->shortcut_overflowed = g_shortcut_events_overflowed;
@@ -533,7 +532,7 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     compose_state.layer_editor.layers_menu_input_consumed = false;
     action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
-    action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
+    action->shortcut_focused_lane_id.value = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -598,8 +597,7 @@ static void set_recovery_action(wormedit::ui::workspace_action_t* action,
     action->recovery_row_index = candidate->row_index;
     action->recovery_candidate_index = candidate->candidate_index;
     if (kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
-        memcpy(action->recovery_save_as_destination, g_recovery_save_as_destination,
-               sizeof(action->recovery_save_as_destination));
+        action->recovery_save_as_destination = g_recovery_save_as_destination;
     }
 }
 
@@ -1132,7 +1130,7 @@ static void consume_layer_creation_request(const wormedit::ui::workspace_view_t&
         !view.compose.visible || !view.compose.scene_available || external_project_modal_active(view) ||
         view.compose.input_occluded || request->project != view.compose.project_id ||
         request->chart != view.compose.chart_id || request->revision != view.compose.document_revision ||
-        action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.compose_input_count != 0 ||
+        action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.compose_inputs.size() != 0 ||
         (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE &&
          action.compose_action != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
     worm_ui_nuklear_open_layer_creation(view.compose, compose);
@@ -1635,7 +1633,7 @@ static void apply_close_result(const wormedit::ui::close_confirmation_view_t& vi
     }
     if (decision == WORM_UI_CLOSE_NONE) return;
     action.close_decision = decision;
-    action.close_project_id = view.project_id.value;
+    action.close_project_id = view.project_id;
     action.close_revision = view.revision;
 }
 
@@ -1735,11 +1733,11 @@ static void apply_workspace_menu_action(MenuAction chosen,
     if (found == g_workspace_menu.end() || !found->enabled) return;
     if (found->recent_path) {
         action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-        std::snprintf(action.project_path, sizeof(action.project_path), "%s", found->recent_path);
+        action.project_path = found->recent_path;
         return;
     }
     if (found->command_id) {
-        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", found->command_id);
+        action.menu_command_id = found->command_id;
         return;
     }
     switch (chosen) {
@@ -1791,7 +1789,7 @@ static void service_native_menu(const wormedit::ui::workspace_view_t& view, worm
     const auto chosen = wormedit::sys::take_macos_menu_action();
     const auto found = std::ranges::find(g_workspace_menu, chosen, &wormedit::ui::workspace_menu_item_t::action);
     if (found == g_workspace_menu.end() || !found->enabled || action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
-    if (found->command_id) std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", found->command_id);
+    if (found->command_id) action.menu_command_id = found->command_id;
     else apply_workspace_menu_action(chosen, action);
 
 #endif
@@ -1969,8 +1967,8 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
     const char* label = view.minimap_click_moves_paused_playhead
         ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
     if (nk_button_label(g_context, label) &&
-        action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
-        auto& input = action->compose_inputs[action->compose_input_count++];
+        action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
+        auto& input = action->compose_inputs.emplace_back();
         input = {};
         input.kind = WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR;
         input.overview_primary = !view.minimap_click_moves_paused_playhead;
@@ -2040,7 +2038,7 @@ static void render_transport_rate(const wormedit::ui::workspace_view_t& view, wo
     if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
         action->transport_rate_index = static_cast<uint8_t>(target);
-        action->transport_rate_id = static_cast<std::uint32_t>(rates.entries[target].id);
+        action->transport_rate_id = rates.entries[target].id;
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
     const auto* keep_pitch_hint = view.transport_keep_pitch_available
@@ -2628,7 +2626,7 @@ static void render_recent_project_list(const wormedit::ui::workspace_view_t& vie
         if (blocked) nk_widget_disable_end(g_context);
         if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            std::snprintf(action.project_path, sizeof(action.project_path), "%s", entry.path.data());
+            action.project_path = entry.path;
         }
         if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
             wormedit::ui::nuklear::tooltip::text(g_context, entry.path.data());
@@ -2691,12 +2689,11 @@ static void cancel_new_project_wizard(wormedit::ui::workspace_action_t& action) 
 static void confirm_new_project_wizard(wormedit::ui::workspace_action_t& action) {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
     const auto& audio_path = g_new_project_wizard.audio_path;
-    if (g_new_project_wizard.audio && audio_path.size() >= sizeof(action.project_path)) return;
+    if (g_new_project_wizard.audio && audio_path.size() > wormedit::maximum_project_path_bytes) return;
     action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
-    std::snprintf(action.new_project_layout_id, sizeof(action.new_project_layout_id), "%s",
-                  g_new_project_wizard.layout_id);
+    action.new_project_layout_id = g_new_project_wizard.layout_id;
     if (g_new_project_wizard.audio)
-        std::memcpy(action.project_path, audio_path.c_str(), audio_path.size() + 1);
+        action.project_path = audio_path.c_str();
     g_new_project_wizard.open = false;
 }
 
@@ -2988,7 +2985,7 @@ static void render_new_project_wizard(const wormedit::ui::workspace_view_t& view
     auto& dialog = g_project_modal_dialog;
     const bool audio_path_too_long =
         g_new_project_wizard.audio &&
-        g_new_project_wizard.audio_path.size() >= sizeof(action.project_path);
+        g_new_project_wizard.audio_path.size() > wormedit::maximum_project_path_bytes;
     if (chrome::dialog_begin(
             dialog, g_context, "Create project",
             g_new_project_wizard.audio ? "Import audio as a new project?" : "Create a new project",
@@ -3055,10 +3052,10 @@ static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& vie
             cancel_bms_encoding_dialog(action);
         if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary) &&
             action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
-            count > 0 && path.size() < sizeof(action.project_path)) {
+            count > 0 && path.size() <= wormedit::maximum_project_path_bytes) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.bms_encoding_id = static_cast<std::uint32_t>(view.bms_encodings.entries[g_bms_encoding_choice].id);
-            std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+            action.bms_encoding_id = view.bms_encodings.entries[g_bms_encoding_choice].id;
+            action.project_path = path.c_str();
         }
     }
     if (chrome::dialog_end(dialog, g_context) == chrome::DialogResult::cancel)
@@ -3545,7 +3542,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     if (compose_tab_active) consume_compose_text_hotkeys(action);
     else g_compose_text_hotkey_count = 0;
     expose_shortcut_input(&action, compose_lane_focused,
-                          compose_lane_focused ? view->compose.cursor->lane_id : 0);
+                          compose_lane_focused ? view->compose.cursor->lane_id.value : 0);
     g_audio.offset_escape_pending = false;
     return action;
 }
@@ -3670,13 +3667,14 @@ static auto& configured_field_lanes() {
 }
 
 bool worm_ui_frontend_configure_field_scheme(const char* requested, const char* fallback,
-    const WormUiComposeLaneView* lanes, size_t count) {
+    const wormedit::ui::compose_lane_view_t* lanes, size_t count) {
     auto& configured = configured_field_lanes();
     configured.clear();
     if (lanes) {
         configured.reserve(count);
         for (const auto& lane : std::span(lanes, count))
-            configured.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
+            configured.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+                static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.lane_id.value});
     }
     return wormedit::ui::theme::select_field_scheme_for_layout(requested ? requested : "",
         fallback ? fallback : "", configured);

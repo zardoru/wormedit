@@ -50,8 +50,8 @@ inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action
     return !action.compose_menu_command ||
         (action.shortcut_window_focused && !action.shortcut_ime_composition_active &&
          workspace.active_tab == workspace_tab_t::compose &&
-         action.compose_input_project_id == history.document.id.value &&
-         workspace.selected_chart && action.compose_input_chart_id == workspace.selected_chart->value &&
+         action.compose_input_project_id == history.document.id &&
+         workspace.selected_chart && action.compose_input_chart_id == *workspace.selected_chart &&
          action.compose_input_document_revision == history.document.revision);
 }
 

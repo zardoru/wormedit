@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <utility>
+#include <span>
 #include <vector>
 
 namespace wormedit::sys {
@@ -43,17 +44,41 @@ struct speed_spans_view_t {
                                    std::size_t limit) -> speed_spans_view_t;
 };
 
+namespace speed_graph_detail {
+
+inline auto value_at(std::span<const std::pair<double, double>> curve, double row) -> double {
+    double value = 1.0;
+    for (std::size_t index = 0; index < curve.size(); ++index) {
+        if (curve[index].first > row) {
+            if (index == 0) return value;
+            const auto& before = curve[index - 1];
+            const auto& after = curve[index];
+            return after.first > before.first
+                ? before.second + (after.second - before.second) *
+                      (row - before.first) / (after.first - before.first)
+                : before.second;
+        }
+        value = curve[index].second;
+    }
+    return value;
+}
+
+} // namespace speed_graph_detail
+
 // The speed multiplier as a continuous curve over the viewport's source rows [first_row,
 // last_row]: 1.0 before the first event, then each span interpolates linearly from the value in
 // force at its begin to its target, which then stays latched. Zero-length spans jump. The point
 // format and normalization match build_sv_graph (x in [0, 1], y from `row_to_y`).
 template <typename RowToY>
-[[nodiscard]] auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double last_row,
-                                     RowToY&& row_to_y) -> sv_graph_t {
-    sv_graph_t graph;
-    if (!(last_row > first_row)) return graph;
+auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double last_row,
+                                     RowToY&& row_to_y, sv_graph_t& graph) -> void {
+    graph.points.clear();
+    graph.minimum = graph.maximum = 1.0;
+    graph.one_x = -1.0;
+    if (!(last_row > first_row)) return;
     // The curve as (row, value) vertices; vertical jumps repeat a row.
-    std::vector<std::pair<double, double>> curve;
+    auto& curve = graph.curve;
+    curve.clear();
     // A span cut short by a replacement ends at the value the replacement starts from, which is
     // partway to the target; a span that ran its course ends at its target.
     for (std::size_t index = 0; index < spans.spans.size(); ++index) {
@@ -63,28 +88,14 @@ template <typename RowToY>
         curve.emplace_back(span.end_row,
                            cut_short ? spans.spans[index + 1].initial_multiplier : span.multiplier);
     }
-    const auto value_at = [&](double row) {
-        double value = 1.0;
-        for (std::size_t index = 0; index < curve.size(); ++index) {
-            if (curve[index].first > row) {
-                if (index == 0) return value;
-                const auto& before = curve[index - 1];
-                const auto& after = curve[index];
-                return after.first > before.first
-                    ? before.second + (after.second - before.second) *
-                          (row - before.first) / (after.first - before.first)
-                    : before.second;
-            }
-            value = curve[index].second;
-        }
-        return value;
-    };
-    std::vector<std::pair<double, double>> window{{first_row, value_at(first_row)}};
-    // Vertices on the last row belong to the window too: value_at(last_row) already includes the
-    // jump there, so leaving them out would draw that jump as a slanted ramp.
+    auto& window = graph.window;
+    window.clear();
+    window.emplace_back(first_row, speed_graph_detail::value_at(curve, first_row));
+    // Vertices on the last row belong to the window too: the value at that row already includes
+    // the jump there, so leaving them out would draw that jump as a slanted ramp.
     for (const auto& vertex : curve)
         if (vertex.first > first_row && vertex.first <= last_row) window.push_back(vertex);
-    if (window.back().first < last_row) window.emplace_back(last_row, value_at(last_row));
+    if (window.back().first < last_row) window.emplace_back(last_row, speed_graph_detail::value_at(curve, last_row));
     graph.minimum = graph.maximum = window.front().second;
     for (const auto& [row, value] : window) {
         graph.minimum = std::min(graph.minimum, value);
@@ -94,6 +105,13 @@ template <typename RowToY>
     const auto normalize = [&](double value) { return range > 0.0 ? (value - graph.minimum) / range : 0.5; };
     if (1.0 >= graph.minimum && 1.0 <= graph.maximum) graph.one_x = normalize(1.0);
     for (const auto& [row, value] : window) graph.points.push_back({normalize(value), row_to_y(row)});
+}
+
+template <typename RowToY>
+auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double last_row,
+                         RowToY&& row_to_y) -> sv_graph_t {
+    sv_graph_t graph;
+    build_speed_graph(spans, first_row, last_row, std::forward<RowToY>(row_to_y), graph);
     return graph;
 }
 

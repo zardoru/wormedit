@@ -36,7 +36,7 @@ struct ComposeAreaCapture {
     }
     void restore(wormedit::ui::workspace_action_t& action) const {
         action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
-        action.compose_input_chart_id = chart;
+        action.compose_input_chart_id = wormedit::chart_id_t{chart};
         action.compose_input_document_revision = revision;
         action.compose_area_begin_row = begin;
         action.compose_area_end_row = end;

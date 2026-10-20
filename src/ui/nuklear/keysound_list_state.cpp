@@ -208,22 +208,6 @@ auto worm_ui_keysound_group_review_confirm(worm_ui_keysound_group_review_t& revi
     return assignments;
 }
 
-void worm_ui_keysound_group_review_stage_payload(
-    worm_ui_keysound_group_review_t& review,
-    std::span<const worm_ui_keysound_group_assignment_t> assignments,
-    bool keep_ids_together) {
-    review.staged_assignments.assign(assignments.begin(), assignments.end());
-    review.staged_payload.clear();
-    review.staged_payload.reserve(review.staged_assignments.size());
-    for (const auto& assignment : review.staged_assignments)
-        review.staged_payload.push_back({.group_id = assignment.existing_group_id,
-            .name = nullptr, .sound_ids = assignment.sound_ids.data(),
-            .sound_count = assignment.sound_ids.size()});
-    for (std::size_t index = 0; index < review.staged_payload.size(); ++index)
-        review.staged_payload[index].name = review.staged_assignments[index].name.c_str();
-    review.keep_ids_together = keep_ids_together;
-}
-
 void worm_ui_keysound_group_review_cancel(worm_ui_keysound_group_review_t& review) {
     review = {};
 }

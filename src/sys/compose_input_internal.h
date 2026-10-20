@@ -112,7 +112,7 @@ auto dispatch_bmson_razor_input(const wormedit::ui::compose_input_action_t& inpu
         return "The BMSON chart field is no longer available.";
     }
     auto& stroke = application_state.project.compose_gesture.bmson_razor_stroke;
-    const object_id_t reference{input.object_id};
+    const object_id_t reference{input.object_id.value};
     if (input.razor_stroke_start) {
         stroke.reset();
     } else if (!stroke || stroke->stamp.chart != state.chart || stroke->payload.reference != reference) {
@@ -377,7 +377,7 @@ auto update_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bm
     auto& [environment, action, state, gesture_active] = context;
     auto& history = environment.document.history;
     if (!state.gesture<wormedit::pending_note_move_gesture_t>() ||
-        state.gesture<wormedit::pending_note_move_gesture_t>()->reference_note != object_id_t{input.object_id})
+        state.gesture<wormedit::pending_note_move_gesture_t>()->reference_note != input.object_id)
         return compose_input_family_result_t::from("BGM event drag expired before release.");
     const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
@@ -396,7 +396,7 @@ auto update_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bm
             "Selected-object move fell outside chart geometry.");
     }
     const auto target = position.value_or(state.gesture<wormedit::pending_note_move_gesture_t>()->preview_position);
-    const auto lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt;
+    const auto lane = input.lane_id.value ? std::optional{object_id_t{input.lane_id.value}} : std::nullopt;
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
     const auto result = dispatch_editor_action(
         history, state,
@@ -524,7 +524,7 @@ auto dispatch_bmson_compose_input(const wormedit::ui::workspace_action_t& ui_act
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
         const auto& draft = application_state.project.compose_gesture.bmson_marker_draft;
-        if (!draft || input.object_id == 0 || input.object_id > draft->payload.markers.size())
+        if (!draft || input.object_id.value == 0 || input.object_id.value > draft->payload.markers.size())
             return compose_input_family_result_t::from(
                 "The BMSON region audition request expired.");
         if (!draft->stamp.is_current(history.document, state.chart,
@@ -536,7 +536,7 @@ auto dispatch_bmson_compose_input(const wormedit::ui::workspace_action_t& ui_act
         result.outcome.audition = bmson_draft_audition_request_t{
             .chart = draft->stamp.chart, .revision = draft->stamp.document.revision,
             .reference = draft->payload.reference, .markers = draft->payload.markers,
-            .marker_index = static_cast<std::size_t>(input.object_id - 1)};
+            .marker_index = static_cast<std::size_t>(input.object_id.value - 1)};
         return result;
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE:
@@ -591,21 +591,21 @@ struct compose_input_context_t {
         return stamp.is_current(environment.document.history.document, state.chart) &&
                environment.document.workspace.active_tab == wormedit::workspace_tab_t::compose &&
                environment.document.workspace.selected_chart &&
-               environment.document.workspace.selected_chart->value ==
+               *environment.document.workspace.selected_chart ==
                    ui_action.compose_input_chart_id;
     }
 
     auto is_input_current() const -> bool {
         return is_input_current({.document = {environment.document.history.document.id,
                                               ui_action.compose_input_document_revision},
-                                 .chart = wormedit::chart_id_t{ui_action.compose_input_chart_id}});
+                                 .chart = ui_action.compose_input_chart_id});
     }
 
     auto is_timing_input_current(const wormedit::ui::compose_input_action_t& input) const -> bool {
         const wormedit::chart_stamp_t stamp{
             .document = {.project = environment.document.history.document.id,
                          .revision = input.timing_document_revision},
-            .chart = wormedit::chart_id_t{input.timing_chart_id}};
+            .chart = input.timing_chart_id};
         return stamp.is_current(environment.document.history.document, state.chart);
     }
 
@@ -1068,7 +1068,7 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
             history, state,
             update_note_move_gesture_action_t{.reference_position = *position,
                 .reference_lane = target ? target->lane : lane_id_t{}, .to_bgm = input.note_move_to_bgm,
-                .preferred_bgm_lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
+                .preferred_bgm_lane = input.lane_id.value ? std::optional{object_id_t{input.lane_id.value}} : std::nullopt});
         accepted = "Selected-note move preview updated.";
     } else {
         result = dispatch_editor_action(
@@ -1078,7 +1078,7 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
                 .reference_lane = target ? target->lane : lane_id_t{},
                 .to_bgm = input.note_move_to_bgm,
                 .preferred_bgm_lane =
-                    input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt,
+                    input.lane_id.value ? std::optional{object_id_t{input.lane_id.value}} : std::nullopt,
                 .operation = wormedit::proposal_operation_t::apply});
         accepted =
             result.document_changed ? "Selected notes moved." : "Selected-note move released.";
@@ -1102,7 +1102,7 @@ auto dispatch_bar_line_move_gesture(const wormedit::ui::compose_input_action_t& 
             "The selected chart field is no longer available.");
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN) {
-        const auto reference = measure_id_t{input.object_id};
+        const auto reference = measure_id_t{input.object_id.value};
         if (!reference || std::ranges::find(state.selected_objects,
                 editor_selection_object_t{editor_selection_object_kind_t::bar_line,
                                           object_id_t{reference.value}}) == state.selected_objects.end())

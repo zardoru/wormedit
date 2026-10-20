@@ -1240,7 +1240,27 @@ void frontend_workspace_view_t::reset() {
         view.playback_rates.entries, view.bms_encodings.entries, view.sound_kinds.entries,
         view.compose.timing_lanes.entries,
         view.compose.timing_lane_captions.entries, view.compose.note_palette.entries,
-        view.compose.measure_lane.selected_bar_lines);
+        view.compose.measure_lane.selected_bar_lines,
+        view.compose.lane_layout_segments,
+        view.compose.quantize_ghosts,
+        view.compose.paste_ghosts,
+        view.compose.bands,
+        view.compose.lanes,
+        view.compose.grid_lines,
+        view.compose.proposed_grid_lines,
+        view.compose.timing_preview_rects,
+        view.compose.timing_preview_markers,
+        view.compose.timing_markers,
+        view.compose.dead_spans,
+        view.compose.kiai_spans,
+        view.compose.speed_spans,
+        view.compose.recipe_areas,
+        view.compose.recipe_graph_points,
+        view.compose.sv_graph_points,
+        view.compose.speed_graph_points,
+        view.compose.differences,
+        view.compose.hold_bodies,
+        view.compose.note_endpoints);
     view.setup.reset();
     view.options.reset();
     view.chart_import.reset();
@@ -1256,6 +1276,27 @@ void frontend_workspace_view_t::reset() {
     view.compare.charts.clear();
     view.compare.diagnostics.clear();
     view.compose.measure_lane.selected_bar_lines.clear();
+    view.compose.lane_layout_segments.clear();
+    view.compose.quantize_ghosts.clear();
+    view.compose.paste_ghosts.clear();
+    view.compose.bands.clear();
+    view.compose.lanes.clear();
+    view.compose.grid_lines.clear();
+    view.compose.proposed_grid_lines.clear();
+    view.compose.timing_preview_rects.clear();
+    view.compose.timing_preview_markers.clear();
+    view.compose.timing_markers.clear();
+    view.compose.dead_spans.clear();
+    view.compose.kiai_spans.clear();
+    view.compose.speed_spans.clear();
+    view.compose.recipe_areas.clear();
+    view.compose.recipe_graph_points.clear();
+    view.compose.sv_graph_points.clear();
+    view.compose.speed_graph_points.clear();
+    view.compose.differences.clear();
+    view.compose.hold_bodies.clear();
+    view.compose.note_endpoints.clear();
+
 }
 
 void frontend_workspace_view_t::rebind_view_pointers() {

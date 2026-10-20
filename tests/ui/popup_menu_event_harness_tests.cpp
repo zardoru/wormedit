@@ -82,11 +82,10 @@ void require_popup(bool condition, const std::source_location location =
     REQUIRE(condition);
 }
 
-void seed_note_menu(nuklear_event_harness_t& harness, WormUiComposeHoldView& hold,
+void seed_note_menu(nuklear_event_harness_t& harness, wormedit::ui::compose_hold_view_t& hold,
                     std::array<WormUiComposeSemanticLayerView, 2>& layers) {
     auto& view = harness.view().compose;
-    view.hold_bodies = &hold;
-    view.hold_body_count = 1;
+    view.hold_bodies = {hold};
     view.note_menu_layers = layers.data();
     view.note_menu_layer_count = layers.size();
     view.note_menu_layer_total_count = layers.size();
@@ -98,7 +97,7 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
           "[frontend-state][event-harness][popup-lifecycle]") {
     nuklear_event_harness_t harness{1280, 900};
     require_popup(harness.ready());
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
@@ -116,8 +115,8 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     const auto escape_event = escape();
     const auto escaped = harness.frame(std::span{&escape_event, 1});
     check_popup(!compose_note_menu_open());
-    check_popup(escaped.get().compose_input_count == 0);
-    check_popup(escaped.get().compose_viewport_input_count == 0);
+    check_popup(escaped.get().compose_inputs.size() == 0);
+    check_popup(escaped.get().compose_viewport_inputs.size() == 0);
     const auto escape_release = escape_event;
     auto key_up = escape_release;
     key_up.type = SDL_EVENT_KEY_UP;
@@ -136,8 +135,8 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
         check_popup(action == WORM_UI_COMPOSE_ACTION_NONE ||
                     action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
         close_actions += action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU ? 1U : 0U;
-        check_popup(frame.get().compose_input_count == 0);
-        check_popup(frame.get().compose_viewport_input_count == 0);
+        check_popup(frame.get().compose_inputs.size() == 0);
+        check_popup(frame.get().compose_viewport_inputs.size() == 0);
     }
     check_popup(close_actions == 1);
     (void)harness.frame();
@@ -146,8 +145,8 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     const auto coalesced = coalesced_click(harness, 1100, 820);
     check_popup(!compose_note_menu_open());
     check_popup(coalesced.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
-    check_popup(coalesced.get().compose_input_count == 0);
-    check_popup(coalesced.get().compose_viewport_input_count == 0);
+    check_popup(coalesced.get().compose_inputs.size() == 0);
+    check_popup(coalesced.get().compose_viewport_inputs.size() == 0);
 }
 
 TEST_CASE("Global menus dismiss on Escape and right outside click and switch by title",
@@ -198,8 +197,8 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     for (const auto& frame : dismissed) {
         check_popup(frame.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
         check_popup(frame.get().clipboard == WORM_UI_CLIPBOARD_NONE);
-        check_popup(frame.get().compose_input_count == 0);
-        check_popup(frame.get().compose_viewport_input_count == 0);
+        check_popup(frame.get().compose_inputs.size() == 0);
+        check_popup(frame.get().compose_viewport_inputs.size() == 0);
     }
 }
 
@@ -224,12 +223,12 @@ auto press_context_key(nuklear_event_harness_t& harness, SDL_Keycode key, SDL_Sc
     (void)harness.frame(std::span{&up, 1}, modifiers);
     return action;
 }
-void prepare_keyboard_note(nuklear_event_harness_t& harness, WormUiComposeHoldView& hold,
+void prepare_keyboard_note(nuklear_event_harness_t& harness, wormedit::ui::compose_hold_view_t& hold,
                            std::array<WormUiComposeSemanticLayerView, 2>& layers) {
     hold.selected = true;
     seed_note_menu(harness, hold, layers);
     harness.view().compose.selected_note_count = 1;
-    harness.view().compose.keyboard_context_note_id = hold.note_id;
+    harness.view().compose.keyboard_context_note_id = hold.note_id.value;
     worm_ui_nuklear_compose_state().input_queue.keyboard_focus = true;
     (void)harness.frame();
 }
@@ -238,18 +237,17 @@ void prepare_keyboard_note(nuklear_event_harness_t& harness, WormUiComposeHoldVi
 TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     harness.view().compose.selected_note_count = 2;
-    harness.view().compose.hold_bodies = nullptr;
-    harness.view().compose.hold_body_count = 0;
+    harness.view().compose.hold_bodies.clear();
     const auto opened = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(opened.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
-    check_popup(opened.get().compose_note_context_id == 42);
-    check_popup(opened.get().shortcut_event_count == 0 && opened.get().compose_input_count == 0);
+    check_popup(opened.get().compose_note_context_id.value == 42);
+    check_popup(opened.get().shortcut_events.size() == 0 && opened.get().compose_inputs.size() == 0);
     check_popup(compose_note_menu_open());
     const auto closed = press_context_key(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     check_popup(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
@@ -262,7 +260,7 @@ TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
 TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing key capture",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
@@ -277,21 +275,21 @@ TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing ke
     const auto space = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE);
     const auto assigned = harness.frame(std::span{&space, 1});
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().compose_semantic_layer_id == 7);
-    check_popup(assigned.get().shortcut_event_count == 0 && assigned.get().compose_input_count == 0);
+    check_popup(assigned.get().compose_semantic_layer_id.value == 7);
+    check_popup(assigned.get().shortcut_events.size() == 0 && assigned.get().compose_inputs.size() == 0);
     const auto repeat = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, true, SDL_KMOD_NONE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
     check_popup(repeated.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_popup(repeated.get().shortcut_event_count == 0 && repeated.get().compose_input_count == 0);
+    check_popup(repeated.get().shortcut_events.size() == 0 && repeated.get().compose_inputs.size() == 0);
     const auto release = context_key_event(SDLK_SPACE, SDL_SCANCODE_SPACE, false);
     const auto released = harness.frame(std::span{&release, 1});
-    check_popup(released.get().shortcut_event_count == 0 && released.get().compose_input_count == 0);
+    check_popup(released.get().shortcut_events.size() == 0 && released.get().compose_inputs.size() == 0);
 }
 
 TEST_CASE("Context invocation rejects IME modals lost focus and stale revisions",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
@@ -322,7 +320,7 @@ TEST_CASE("Context invocation rejects IME modals lost focus and stale revisions"
 TEST_CASE("Opening project modals retires context menus and keeps closing keys captured",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
@@ -338,7 +336,7 @@ TEST_CASE("Opening project modals retires context menus and keeps closing keys c
     check_popup(!compose_note_menu_open());
     const auto up = context_key_event(SDLK_DOWN, SDL_SCANCODE_DOWN, false);
     const auto released = harness.frame(std::span{&up, 1});
-    check_popup(released.get().shortcut_event_count == 0 && released.get().compose_input_count == 0);
+    check_popup(released.get().shortcut_events.size() == 0 && released.get().compose_inputs.size() == 0);
     const auto reopening = press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(!compose_note_menu_open());
     check_popup(reopening.get().compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
@@ -347,7 +345,7 @@ TEST_CASE("Opening project modals retires context menus and keeps closing keys c
 TEST_CASE("Context menu row focus clears across project tab and focus changes",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 7, .name = "Lead", .visible = true},
         {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
@@ -412,7 +410,7 @@ TEST_CASE("Project chart keyboard menu opens the focused row and respects Option
 TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last row",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeHoldView hold{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
     std::array<WormUiComposeSemanticLayerView, 2> layers{{
         {.layer_id = 1, .name = "First layer", .visible = true},
         {.layer_id = 2, .name = "Second layer", .visible = true}}};
@@ -435,5 +433,5 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     (void)harness.frame();
     const auto assigned = press_context_key(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);
-    check_popup(assigned.get().compose_semantic_layer_id == 199);
+    check_popup(assigned.get().compose_semantic_layer_id.value == 199);
 }

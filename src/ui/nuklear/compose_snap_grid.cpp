@@ -12,8 +12,8 @@ void emit_snap(nk_context* context, const WormUiComposeView& view,
                wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_snap_denominator = denominator;
     context_menu_close(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, context);

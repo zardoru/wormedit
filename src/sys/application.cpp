@@ -482,9 +482,9 @@ void consume_shortcut_capture(shortcut_editor_runtime_t& editor, wormedit::ui::w
     wormedit::command_registry_t& registry, const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::notification_sink_t& notifications) {
     if (!editor.capture) return;
-    const auto captured = wormedit::sys::capture_shortcut_batch({action.shortcut_events, action.shortcut_event_count});
+    const auto captured = wormedit::sys::capture_shortcut_batch(action.shortcut_events);
     if (!captured.cancel && !captured.chord) return;
-    action.shortcut_event_count = 0;
+    action.shortcut_events.resize(0);
     const auto id = *editor.capture;
     editor.capture.reset();
     if (captured.cancel) {
@@ -543,17 +543,17 @@ auto active_field_skin_layout(const wormedit::song_document_t& document,
 
 auto configure_field_skin(const wormedit::lane_layout_t* layout,
     wormedit::sys::options_runtime_t& options, const wormedit::display_preferences_t& saved,
-    application_command_state_t& state) -> std::vector<WormUiComposeLaneView> {
+    application_command_state_t& state) -> std::vector<wormedit::ui::compose_lane_view_t> {
     const auto key = layout ? wormedit::field_skin_layout_key(*layout) : std::string{};
     wormedit::sys::set_options_field_layout(options, key, layout ? layout->display_name : "");
     const auto& display = options.visible ? options.draft.display : saved;
-    std::vector<WormUiComposeLaneView> lanes;
+    std::vector<wormedit::ui::compose_lane_view_t> lanes;
     if (layout) {
         lanes.reserve(layout->lanes.size());
         for (const auto& lane : layout->lanes)
-            lanes.push_back({.lane_id = lane.id.value, .display_order = lane.display_order,
-                .role = static_cast<std::uint8_t>(lane.role), .stage = static_cast<std::uint8_t>(lane.stage),
-                .glyph = static_cast<std::uint8_t>(lane.glyph), .key_color = static_cast<std::uint8_t>(lane.key_color)});
+            lanes.push_back({.lane_id = lane.id, .display_order = lane.display_order,
+                .role = lane.role, .stage = lane.stage,
+                .glyph = lane.glyph, .key_color = lane.key_color});
     }
     const auto requested = wormedit::resolve_field_scheme(display, key);
     // Preferences own their strings through the immediate frontend call.
@@ -955,8 +955,8 @@ auto application_command_focus(const wormedit::ui::workspace_action_t& action,
                          workspace_tab_t::audio_slices, workspace_tab_t::compare_validate},
     };
     if (!action.shortcut_notification_history_focused &&
-        action.shortcut_compose_lane_focused && action.shortcut_focused_lane_id != 0) {
-        focus.focused_lane = lane_id_t{action.shortcut_focused_lane_id};
+        action.shortcut_compose_lane_focused && action.shortcut_focused_lane_id.value != 0) {
+        focus.focused_lane = action.shortcut_focused_lane_id;
     }
     return focus;
 }
@@ -996,12 +996,12 @@ void consume_menu_shortcut(wormedit::ui::workspace_action_t& action,
 #endif
     }
     std::size_t retained = 0;
-    for (std::size_t i = 0; i < action.shortcut_event_count; ++i) {
+    for (std::size_t i = 0; i < action.shortcut_events.size(); ++i) {
         const auto& event = action.shortcut_events[i];
         if (event.hid_usage == static_cast<std::uint16_t>(chord.key) && event.modifiers == modifiers) continue;
         action.shortcut_events[retained++] = event;
     }
-    action.shortcut_event_count = retained;
+    action.shortcut_events.resize(retained);
 }
 
 void build_command_menu_view(const wormedit::command_registry_t& registry,
@@ -1094,7 +1094,7 @@ auto dispatch_comparison_selection(const wormedit::ui::workspace_action_t& actio
                                    const wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::notification_sink_t& notifications) -> std::string {
-    const auto selected = wormedit::chart_id_t{action.compare_chart_id};
+    const auto selected = action.compare_chart_id;
     const auto first = workspace.selected_chart.value_or(selected);
     auto second = selected;
     if (first == second) {
@@ -1115,10 +1115,10 @@ auto dispatch_sound_resource_selection(const wormedit::ui::workspace_action_t& a
     const wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     wormedit::notification_sink_t& notifications)
     -> std::string {
-    auto asset = wormedit::asset_id_t{action.audio_asset_id};
-    if (action.audio_resource_id != 0) {
+    auto asset = action.audio_asset_id;
+    if (action.audio_resource_id.value != 0) {
         const auto resource = std::ranges::find(history.document.resources,
-            wormedit::resource_id_t{action.audio_resource_id}, &wormedit::resource_entry_t::id);
+            action.audio_resource_id, &wormedit::resource_entry_t::id);
         if (resource == history.document.resources.end() ||
             (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET && resource->asset != asset))
             return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
@@ -1151,7 +1151,7 @@ auto dispatch_workspace_selection_action(const wormedit::ui::workspace_action_t&
         const auto applied = wormedit::apply_workspace_action(
             workspace, history.document,
             wormedit::workspace_select_asset_action_t{
-                .asset = wormedit::asset_id_t{action.visual_asset_id},
+                .asset = action.visual_asset_id,
                 .slot = wormedit::workspace_asset_slot_t::visual});
         return post_workspace_selection_feedback(notifications, applied,
             "Image asset selected.", "Image asset selection rejected.");
@@ -1200,10 +1200,10 @@ void cancel_stale_compose_interaction(
 
 void refresh_sound_selection_context(const wormedit::ui::workspace_action_t& action,
     application_command_state_t& sound_context) {
-    sound_context.project.sound_selection.sound_selection_chart = wormedit::chart_id_t{action.compose_input_chart_id};
+    sound_context.project.sound_selection.sound_selection_chart = action.compose_input_chart_id;
     sound_context.project.sound_selection.sound_selection_revision = action.compose_input_document_revision;
-    sound_context.project.sound_selection.sound_selection_hover = action.compose_sound_hover_object_id
-        ? std::optional{wormedit::object_id_t{action.compose_sound_hover_object_id}} : std::nullopt;
+    sound_context.project.sound_selection.sound_selection_hover = action.compose_sound_hover_object_id.value
+        ? std::optional{action.compose_sound_hover_object_id} : std::nullopt;
     WormUiKeysoundDockRequest sound_dock{};
     worm_ui_frontend_keysound_dock_request(&sound_dock);
     sound_context.project.sound_selection.sound_selection_dock.clear();
@@ -1212,7 +1212,7 @@ void refresh_sound_selection_context(const wormedit::ui::workspace_action_t& act
 }
 
 auto has_fresh_shortcut_key(const wormedit::ui::workspace_action_t& action) -> bool {
-    const auto count = std::min(action.shortcut_event_count, std::size(action.shortcut_events));
+    const auto count = std::min(action.shortcut_events.size(), std::size(action.shortcut_events));
     for (std::size_t index = 0; index < count; ++index)
         if (!action.shortcut_events[index].repeat) return true;
     return false;
@@ -1294,8 +1294,8 @@ struct pending_close_t {
     std::uint64_t revision{};
     bool save_requested{};
     std::string project_path;
-    std::array<char, sizeof(wormedit::ui::workspace_action_t::new_project_layout_id)> layout_id{};
-    std::uint32_t encoding_id{};
+    std::string layout_id;
+    wormedit::text_encoding_t encoding_id{};
     bool awaiting_encoding{};
     // Shown in the confirmation only when a save started from it failed.
     std::string save_failure;
@@ -1406,8 +1406,8 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     std::string feedback;
     WormUiKeysoundDockRequest dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
-    const auto chart = wormedit::chart_id_t{action.compose_input_chart_id};
-    if (!dock.slots_mode || action.sound_import_project_id != history.document.id.value ||
+    const auto chart = action.compose_input_chart_id;
+    if (!dock.slots_mode || action.sound_import_project_id != history.document.id ||
         !workspace.selected_chart || chart != *workspace.selected_chart ||
         workspace.active_tab != wormedit::workspace_tab_t::compose ||
         action.compose_input_document_revision != history.document.revision) {
@@ -1418,8 +1418,8 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     }
     if (request) {
         std::vector<std::string> paths;
-        for (std::size_t i = 0; action.compose_import_paths && i < action.compose_import_path_count; ++i)
-            paths.emplace_back(action.compose_import_paths[i] ? action.compose_import_paths[i] : "");
+        for (std::size_t i = 0; !action.compose_import_paths.empty() && i < action.compose_import_paths.size(); ++i)
+            paths.emplace_back(action.compose_import_paths[i]);
         feedback = wormedit::sys::finish_compose_action(notifications,
             wormedit::sys::stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths)).message;
         return true;
@@ -1447,8 +1447,8 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     const auto confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     if (!request && !confirm) return false;
     std::string feedback;
-    const auto chart = wormedit::chart_id_t{action.compose_input_chart_id};
-    if ((action.sound_import_project_id && action.sound_import_project_id != history.document.id.value) ||
+    const auto chart = action.compose_input_chart_id;
+    if ((action.sound_import_project_id.value && action.sound_import_project_id != history.document.id) ||
         !workspace.selected_chart || chart != *workspace.selected_chart ||
         action.compose_input_document_revision != history.document.revision) {
         feedback = "The import target changed. Cancel and choose the files again.";
@@ -1458,9 +1458,9 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
     }
     if (request) {
         std::vector<std::string> paths;
-        for (std::size_t index = 0; action.compose_import_paths &&
-                                   index < action.compose_import_path_count; ++index)
-            if (action.compose_import_paths[index]) paths.emplace_back(action.compose_import_paths[index]);
+        for (std::size_t index = 0; !action.compose_import_paths.empty() &&
+                                   index < action.compose_import_paths.size(); ++index)
+            if (!action.compose_import_paths[index].empty()) paths.emplace_back(action.compose_import_paths[index]);
         feedback = wormedit::sys::finish_compose_action(notifications,
             wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import_kind)).message;
         return true;
@@ -1532,11 +1532,11 @@ auto dispatch_compare_diagnostic_jump(
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> std::string {
-    const auto chart_id = wormedit::chart_id_t{action.compare_diagnostic_chart};
+    const auto chart_id = action.compare_diagnostic_chart;
     const auto chart = history.document.find_chart(chart_id);
     if (chart == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target is no longer available.");
-    const auto measure = chart->find_measure(wormedit::measure_id_t{action.compare_diagnostic_measure});
+    const auto measure = chart->find_measure(action.compare_diagnostic_measure);
     if (measure == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target is no longer available.");
     const auto capacity = wormedit::measure_capacity_t::from(chart->divisions_per_standard_measure,
@@ -1584,8 +1584,8 @@ auto dispatch_audio_sound_audition(const wormedit::ui::workspace_action_t& actio
     wormedit::notification_sink_t& notifications) -> bool {
     if (workspace.active_tab != wormedit::workspace_tab_t::audio_slices ||
         action.compose_action != WORM_UI_COMPOSE_ACTION_AUDITION_SOUND) return false;
-    if (!workspace.selected_chart || action.compose_input_project_id != history.document.id.value ||
-        action.compose_input_chart_id != workspace.selected_chart->value ||
+    if (!workspace.selected_chart || action.compose_input_project_id.value != history.document.id.value ||
+        action.compose_input_chart_id.value != workspace.selected_chart->value ||
         action.compose_input_document_revision != history.document.revision) {
         notifications.post(wormedit::notification_severity_t::warning,
             wormedit::notification_source_t::input, "Sound audition ignored because its target changed.");
@@ -2528,7 +2528,7 @@ struct application_t::implementation_t {
         if (pending_path.empty())
             return;
         const auto path = std::exchange(pending_path, {});
-        if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
+        if (path.size() > wormedit::maximum_project_path_bytes) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::import_,
                                   "The dropped chart or project path is too long.");
@@ -2536,7 +2536,7 @@ struct application_t::implementation_t {
         }
         wormedit::ui::workspace_action_t action{};
         action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-        std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+        action.project_path = path.c_str();
         (void)dispatch_close_confirmation(pending, action, confirm);
     }
 
@@ -2571,7 +2571,7 @@ struct application_t::implementation_t {
         if (pending.target == close_target_t::none || pending.awaiting_encoding)
             return false;
         if (action.close_decision != WORM_UI_CLOSE_NONE) {
-            if (action.close_project_id != pending.project.value ||
+            if (action.close_project_id != pending.project ||
                 action.close_revision != pending.revision)
                 return true;
             if (action.close_decision == WORM_UI_CLOSE_CANCEL) {
@@ -2718,7 +2718,7 @@ struct application_t::implementation_t {
         using namespace wormedit;
         preserves_editor_gesture = true;
         if (action.shortcut_overflowed ||
-            action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
+            action.shortcut_events.size() > wormedit::ui::shortcut_event_admission_limit) {
             platform.notification_sink.post(
                 notification_severity_t::warning, notification_source_t::input,
                 "Shortcut input exceeded its per-frame capacity and was discarded.");
@@ -2726,7 +2726,7 @@ struct application_t::implementation_t {
             return true;
         }
         bool handled{};
-        for (std::size_t index = 0; index < action.shortcut_event_count; ++index) {
+        for (std::size_t index = 0; index < action.shortcut_events.size(); ++index) {
             refresh_application_command_states(command_registry, session.history, session.workspace,
                                                views.compose_interaction_state, commands);
             const auto& input = action.shortcut_events[index];
@@ -2979,17 +2979,16 @@ struct application_t::implementation_t {
     }
 
     void open_project_session(const wormedit::ui::workspace_action_t& action) {
-        const auto kind = static_cast<wormedit::text_encoding_t>(action.bms_encoding_id);
-        if (action.bms_encoding_id != 0 &&
+        if (action.bms_encoding_id != wormedit::text_encoding_t::unknown &&
             !wormedit::sys::is_bms_encoding_offered(action.bms_encoding_id)) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::import_,
                                   "Choose a supported BMS text encoding.");
             return;
         }
-        const auto encoding = action.bms_encoding_id == 0
+        const auto encoding = action.bms_encoding_id == wormedit::text_encoding_t::unknown
                                   ? std::optional<wormedit::text_encoding_t>{}
-                                  : std::optional{kind};
+                                  : std::optional{action.bms_encoding_id};
         const auto started = jobs.project_open_runtime.start(action.project_path, encoding,
                                                               project_open_identity());
         if (!started)
@@ -3354,10 +3353,10 @@ struct application_t::implementation_t {
         }
         dispatch_bgm_mix_frame_action(action, shortcut_handled);
         if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-            (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
+            (action.compose_inputs.size() != 0 || action.compose_viewport_inputs.size() != 0 ||
              action.compose_has_pointer_hover ||
              (session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-              action.compose_input_chart_id != 0)) &&
+              action.compose_input_chart_id.value != 0)) &&
             views.compose_interaction_state) {
             auto audition_scope = commands.project.auditions.input_scope(audition_inputs());
             (void)dispatch_compose_input_action(action, compose_inputs(),
@@ -3391,11 +3390,9 @@ struct application_t::implementation_t {
 
     void finish_confirmed_project_replacement(pending_close_t& pending) {
         wormedit::ui::workspace_action_t action{};
-        std::copy(pending.layout_id.begin(), pending.layout_id.end(),
-                  std::begin(action.new_project_layout_id));
+        action.new_project_layout_id = pending.layout_id;
         action.bms_encoding_id = pending.encoding_id;
-        std::snprintf(action.project_path, sizeof(action.project_path), "%s",
-                      pending.project_path.c_str());
+        action.project_path = pending.project_path.c_str();
         if (pending.target == close_target_t::new_project)
             create_new_project_session(action);
         else
@@ -3462,7 +3459,7 @@ struct application_t::implementation_t {
     bool dispatch_timing_workspace_action(const wormedit::ui::workspace_action_t& action,
                                           application_command_state_t& application_state) {
         if (action.timing_stage_action != wormedit::ui::timing_stage_action_t::none) {
-            const auto chart = session.history.document.find_chart(wormedit::chart_id_t{action.timing_chart_id});
+            const auto chart = session.history.document.find_chart(action.timing_chart_id);
             const auto denominator =
                 chart == nullptr
                     ? views.timing_grid.active_denominator
@@ -3535,8 +3532,7 @@ struct application_t::implementation_t {
                    .revision = session.history.document.revision};
         if (replacement) {
             pending.project_path = replacement->project_path;
-            std::copy(std::begin(replacement->new_project_layout_id),
-                      std::end(replacement->new_project_layout_id), pending.layout_id.begin());
+            pending.layout_id = replacement->new_project_layout_id;
             pending.encoding_id = replacement->bms_encoding_id;
         }
         if (!confirm || !session.project_identity.session_loaded ||
@@ -3608,19 +3604,16 @@ struct application_t::implementation_t {
     }
 
     void create_new_project_session(const wormedit::ui::workspace_action_t& action) {
-        const auto id_end = std::find(std::begin(action.new_project_layout_id),
-                                      std::end(action.new_project_layout_id), '\0');
-        const std::string_view layout_id{action.new_project_layout_id,
-            static_cast<std::size_t>(id_end - std::begin(action.new_project_layout_id))};
+        const std::string_view layout_id{action.new_project_layout_id};
         const auto* layout = wormedit::find_new_project_layout(layout_id);
-        if (id_end == std::end(action.new_project_layout_id) || !layout) {
+        if (!layout) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::document,
                                   "Choose a supported chart layout.");
             return;
         }
         if (action.project_path[0] != '\0') {
-            create_audio_project_session(action.project_path, layout->id);
+            create_audio_project_session(action.project_path.c_str(), layout->id);
             return;
         }
         auto document =
@@ -3644,14 +3637,14 @@ struct application_t::implementation_t {
     }
 
     void dispatch_menu_command(wormedit::ui::workspace_action_t& action) {
-        const auto* command_id =
+        const auto& command_id =
             action.command_menu_invoked ? action.command_menu_command_id : action.menu_command_id;
         if (!command_id[0])
             return;
         if (action.command_menu_invoked &&
             (!action.shortcut_window_focused || action.shortcut_ime_composition_active ||
-             action.compose_input_project_id != session.history.document.id.value ||
-             action.compose_input_chart_id !=
+             action.compose_input_project_id.value != session.history.document.id.value ||
+             action.compose_input_chart_id.value !=
                  (session.workspace.selected_chart ? session.workspace.selected_chart->value : 0) ||
              action.compose_input_document_revision != session.history.document.revision ||
              static_cast<int>(action.tab) != static_cast<int>(session.workspace.active_tab)))
@@ -4141,15 +4134,14 @@ struct application_t::implementation_t {
         if (action.lane_keys.kind == ui::lane_keys_action_kind_t::open) (void)open_lane_keys();
         preferences.lane_keys.refresh(session.history.document);
         if (!preferences.lane_keys.view().visible) return;
-        preferences.lane_keys.capture({action.shortcut_events,
-            std::min(action.shortcut_event_count, std::size(action.shortcut_events))});
-        action.shortcut_event_count = 0;
-        action.compose_input_count = 0;
-        action.compose_viewport_input_count = 0;
+        preferences.lane_keys.capture(action.shortcut_events);
+        action.shortcut_events.resize(0);
+        action.compose_inputs.resize(0);
+        action.compose_viewport_inputs.resize(0);
         action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
         action.clipboard = WORM_UI_CLIPBOARD_NONE;
-        action.menu_command_id[0] = '\0';
-        action.command_menu_command_id[0] = '\0';
+        action.menu_command_id.clear();
+        action.command_menu_command_id.clear();
         if (!preferences.lane_keys.dispatch(action.lane_keys, preferences.program_preferences)) return;
         commands.preferences.lane_keys = preferences.program_preferences.preferences.lane_keys;
         const auto& error = preferences.lane_keys.status();
@@ -4434,7 +4426,7 @@ struct application_t::implementation_t {
     struct composed_frame_inputs_t {
         const workspace_view_t& model;
         notification_time_t notification_now;
-        std::span<const WormUiComposeLaneView> field_skin_lanes;
+        std::span<const wormedit::ui::compose_lane_view_t> field_skin_lanes;
         double viewport_delta_seconds{};
     };
 
@@ -4541,7 +4533,7 @@ struct application_t::implementation_t {
 #endif
     }
 
-    auto configure_frame_field_skin() -> std::vector<WormUiComposeLaneView> {
+    auto configure_frame_field_skin() -> std::vector<wormedit::ui::compose_lane_view_t> {
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);
         return configure_field_skin(active_field_skin_layout(session.history.document,
                                                              session.workspace,

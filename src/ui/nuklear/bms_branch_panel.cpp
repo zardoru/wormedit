@@ -60,7 +60,7 @@ void set_choice_action(wormedit::ui::workspace_action_t* action, std::uint64_t b
         return;
     }
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE;
-    action->compose_branch_id = branch;
+    action->compose_branch_id.value = branch;
     action->compose_branch_value = value;
 }
 
@@ -69,7 +69,7 @@ void set_clear_action(wormedit::ui::workspace_action_t* action, std::uint64_t br
         return;
     }
     action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE;
-    action->compose_branch_id = branch;
+    action->compose_branch_id.value = branch;
     action->compose_branch_value = 0;
 }
 
@@ -205,12 +205,11 @@ void set_statement_action(wormedit::ui::workspace_action_t* action, const WormUi
                           WormUiComposeActionKind kind, bool include_text) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = kind;
-    action->compose_input_chart_id = view.chart_id;
+    action->compose_input_chart_id.value = view.chart_id;
     action->compose_input_document_revision = view.document_revision;
-    action->compose_branch_statement_id = state.selected_statement_id;
+    action->compose_branch_statement_id.value = state.selected_statement_id;
     if (include_text) {
         action->compose_branch_statement_text = state.text.data();
-        action->compose_branch_statement_text_bytes = std::strlen(state.text.data());
     }
 }
 
@@ -426,10 +425,10 @@ void set_block_action(wormedit::ui::workspace_action_t* action, const WormUiComp
                       std::int64_t value) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = kind;
-    action->compose_input_chart_id = view.chart_id;
+    action->compose_input_chart_id.value = view.chart_id;
     action->compose_input_document_revision = view.document_revision;
-    action->compose_branch_id = node;
-    action->compose_branch_statement_id = statement;
+    action->compose_branch_id.value = node;
+    action->compose_branch_statement_id.value = statement;
     action->compose_branch_value = value;
 }
 

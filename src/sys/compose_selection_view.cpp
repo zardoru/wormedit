@@ -205,9 +205,7 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_source_resolution = view.quantize_display_resolution = 0;
     view.quantize_resolution_scale = 1;
     view.quantize_geometry_valid = view.quantize_preview_drawable = false;
-    cache.quantize.quantize_ghost_views.clear();
-    view.quantize_ghosts = nullptr;
-    view.quantize_ghost_count = 0;
+    view.quantize_ghosts.clear();
     view.quantize_ghosts_drawable = false;
     cache.quantize.quantize_preview_row_views.clear();
     populate_quantize_presets(cache, document, view);
@@ -301,7 +299,7 @@ auto quantize_layout_at(const wormedit::editor_field_scene_index_t& index, std::
 
 auto quantize_endpoint_bounds(const quantize_lane_geometry_t& lane, double y, double height,
                               wormedit::editor_field_scroll_direction_t direction)
-    -> WormUiComposeRect {
+    -> wormedit::ui::compose_rect_t {
     const auto rectangular =
         lane.glyph == wormedit::lane_glyph_t::bar || lane.glyph == wormedit::lane_glyph_t::square;
     const auto top = rectangular && direction == wormedit::editor_field_scroll_direction_t::down
@@ -315,7 +313,7 @@ auto quantize_endpoint_bounds(const quantize_lane_geometry_t& lane, double y, do
     return {lane.left, top, lane.right, bottom};
 }
 
-auto quantize_endpoint_anchor(const WormUiComposeRect& bounds, wormedit::lane_glyph_t glyph,
+auto quantize_endpoint_anchor(const wormedit::ui::compose_rect_t& bounds, wormedit::lane_glyph_t glyph,
                               wormedit::editor_field_scroll_direction_t direction)
     -> std::pair<double, double> {
     const auto center_x = (bounds.left + bounds.right) / 2.0;
@@ -353,14 +351,14 @@ auto build_quantize_endpoint_view(const quantize_projection_scope_t& scope,
                                       : wormedit::editor_field_scroll_direction_t::up;
     auto bounds = quantize_endpoint_bounds(*lane, y, request.note_head_height_pixels, direction);
     const auto [anchor_x, anchor_y] = quantize_endpoint_anchor(bounds, lane->glyph, direction);
-    return quantize_endpoint_projection_t{bounds, static_cast<std::uint32_t>(lane->glyph), anchor_x,
+    return quantize_endpoint_projection_t{bounds, lane->glyph, anchor_x,
                                           anchor_y};
 }
 
 auto make_quantize_ghost_geometry(const quantize_projection_scope_t& scope,
                                   const WormUiComposeQuantizeReportRowView& report,
                                   const wormedit::editor_field_scene_note_source_t& note)
-    -> std::optional<WormUiComposeQuantizeGhostView> {
+    -> std::optional<wormedit::ui::compose_quantize_ghost_view_t> {
     const auto& scale = scope.scale;
 
     const auto before_head =
@@ -369,9 +367,9 @@ auto make_quantize_ghost_geometry(const quantize_projection_scope_t& scope,
         build_quantize_endpoint_view(scope, note.lane, report.start_after_absolute_row, true);
     if (!before_head || !after_head)
         return std::nullopt;
-    WormUiComposeQuantizeGhostView ghost{};
-    ghost.object_id = report.object_id;
-    ghost.lane_id = report.lane_id;
+    wormedit::ui::compose_quantize_ghost_view_t ghost{};
+    ghost.object_id.value = report.object_id;
+    ghost.lane_id.value = report.lane_id;
     ghost.before_head = before_head->bounds;
     ghost.after_head = after_head->bounds;
     ghost.before_head_glyph = before_head->glyph;
@@ -389,7 +387,7 @@ auto make_quantize_ghost_geometry(const quantize_projection_scope_t& scope,
 }
 
 auto add_quantize_tail_geometry(const quantize_projection_scope_t& scope,
-                                WormUiComposeQuantizeGhostView& ghost,
+                                wormedit::ui::compose_quantize_ghost_view_t& ghost,
                                 const WormUiComposeQuantizeReportRowView& report) -> bool {
     const auto& scale = scope.scale;
 
@@ -420,7 +418,7 @@ auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
                         const wormedit::chart_document_t& chart,
                         const wormedit::editor_field_scene_request_t& request, std::uint64_t scale,
                         double pixels_per_row, double scroll, double height, bool downscroll)
-    -> std::optional<WormUiComposeQuantizeGhostView> {
+    -> std::optional<wormedit::ui::compose_quantize_ghost_view_t> {
     const auto lane =
         std::ranges::find(chart.bgm_source_lanes, wormedit::object_id_t{report.lane_id},
                           &wormedit::bgm_source_lane_t::id);
@@ -445,9 +443,9 @@ auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
         const auto y = compose_project_y(coordinate, pixels_per_row, scroll, height, downscroll);
         return quantize_endpoint_bounds(bounds, y, request.note_head_height_pixels, direction);
     };
-    WormUiComposeQuantizeGhostView ghost{};
-    ghost.object_id = report.object_id;
-    ghost.lane_id = report.lane_id;
+    wormedit::ui::compose_quantize_ghost_view_t ghost{};
+    ghost.object_id.value = report.object_id;
+    ghost.lane_id.value = report.lane_id;
     ghost.before_head = endpoint(report.start_before_absolute_row, false);
     ghost.after_head = endpoint(report.start_after_absolute_row, true);
     ghost.before_head_anchor_x = ghost.after_head_anchor_x = (left + right) / 2;
@@ -472,7 +470,7 @@ auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
     return ghost;
 }
 
-void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
+void append_bgm_quantize_ghost(compose_scene_cache_t& cache, WormUiComposeView& view,
                                const WormUiComposeQuantizeReportRowView& report,
                                const wormedit::chart_document_t& chart,
                                const wormedit::editor_field_scene_request_t& request,
@@ -486,7 +484,7 @@ void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
     const auto ghost = bgm_quantize_ghost(report, chart, request, scale, pixels_per_row, scroll,
                                           height, downscroll);
     if (ghost)
-        cache.quantize.quantize_ghost_views.push_back(*ghost);
+        view.quantize_ghosts.push_back(*ghost);
 }
 
 void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
@@ -497,9 +495,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                       const wormedit::editor_interaction_view_model_t& interaction,
                                       WormUiComposeView& view, double pixels_per_row,
                                       bool downscroll) {
-    cache.quantize.quantize_ghost_views.clear();
-    view.quantize_ghosts = nullptr;
-    view.quantize_ghost_count = 0;
+    view.quantize_ghosts.clear();
     view.quantize_ghosts_drawable = false;
     if (!view.quantize_preview_enabled || !cache.scene.index.value() || !view.scene_available ||
         cache.quantize.quantize_preview_row_views.empty())
@@ -521,13 +517,13 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                             interaction.viewport_scroll_pixels,
                                             view.viewport_height_pixels,
                                             downscroll};
-    cache.quantize.quantize_ghost_views.reserve(std::min<std::size_t>(
+    view.quantize_ghosts.reserve(std::min<std::size_t>(
         quantize_report_row_capacity, cache.quantize.quantize_preview_row_views.size()));
     for (const auto& report : cache.quantize.quantize_preview_row_views) {
         if (!report.selected || report.object_id == 0)
             continue;
         if (report.bgm) {
-            append_bgm_quantize_ghost(cache, report, chart, request, preview.resolution_scale,
+            append_bgm_quantize_ghost(cache, view, report, chart, request, preview.resolution_scale,
                                       pixels_per_row, interaction.viewport_scroll_pixels,
                                       view.viewport_height_pixels, downscroll);
             continue;
@@ -541,10 +537,8 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
         auto ghost = make_quantize_ghost_geometry(scope, report, note);
         if (!ghost || !add_quantize_tail_geometry(scope, *ghost, report))
             continue;
-        cache.quantize.quantize_ghost_views.push_back(*ghost);
+        view.quantize_ghosts.push_back(*ghost);
     }
-    view.quantize_ghosts = cache.quantize.quantize_ghost_views.data();
-    view.quantize_ghost_count = cache.quantize.quantize_ghost_views.size();
-    view.quantize_ghosts_drawable = preview.drawable && !cache.quantize.quantize_ghost_views.empty();
+    view.quantize_ghosts_drawable = preview.drawable && !view.quantize_ghosts.empty();
 }
 } // namespace wormedit::sys::compose_projection_detail

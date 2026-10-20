@@ -31,10 +31,10 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         if (move_clicked && can_move) {
-            action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR;
         } else if (delete_clicked && can_move) {
-            action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
         }
     }
@@ -49,10 +49,10 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     if (!can_assign_to_bgm) nk_widget_disable_end(context);
     if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         if (assign_key_clicked && can_move) {
-            action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
         } else if (assign_bgm_clicked && can_assign_to_bgm) {
-            action->compose_bmson_bgm_event_id = view.selected_bmson_note_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_note_event_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
         }
     }
@@ -72,7 +72,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if ((insert_continue || insert_restart) && can_move &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
+        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
         action->compose_action = insert_restart
             ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
@@ -87,7 +87,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if ((stage_continue || stage_restart) && can_move &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
+        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
         action->compose_action = stage_restart
             ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
@@ -169,8 +169,8 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
         (!restart_clicked && !continue_clicked)) return;
     action->compose_action = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
                                             : WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE;
-    action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
-    action->compose_input_chart_id = view.chart_id;
+    action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+    action->compose_input_chart_id.value = view.chart_id;
     action->compose_input_document_revision = view.document_revision;
 }
 

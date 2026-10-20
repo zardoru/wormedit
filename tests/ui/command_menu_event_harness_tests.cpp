@@ -60,7 +60,7 @@ TEST_CASE("Command menu searches all labels case-insensitively and dispatches en
     const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);
     expect_menu(result.get().command_menu_invoked);
     expect_menu(std::string_view{result.get().command_menu_command_id} == "second");
-    expect_menu(result.get().compose_input_project_id == 1);
+    expect_menu(result.get().compose_input_project_id.value == 1);
     expect_menu(result.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -75,7 +75,7 @@ TEST_CASE("Command menu skips disabled rows and Escape never invokes or leaks it
     fixture.open();
     const auto escape = fixture.press(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
     expect_menu(!escape.get().command_menu_invoked);
-    expect_menu(escape.get().compose_input_count == 0);
+    expect_menu(escape.get().compose_inputs.size() == 0);
     expect_menu(fixture.harness.drawn_text().find("Command menu") == std::string::npos);
 }
 
@@ -143,9 +143,9 @@ TEST_CASE("Command menu blocks IME activation and consumes held Enter after clos
     enter.key.repeat = true;
     const auto held = fixture.harness.frame({&enter, 1});
     expect_menu(!held.get().command_menu_invoked);
-    expect_menu(held.get().compose_input_count == 0);
+    expect_menu(held.get().compose_inputs.size() == 0);
     const auto up = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
-    expect_menu(fixture.harness.frame({&up, 1}).get().compose_input_count == 0);
+    expect_menu(fixture.harness.frame({&up, 1}).get().compose_inputs.size() == 0);
 }
 
 TEST_CASE("Command palette keeps title and keycaps together above search", "[frontend-state][event-harness][command-menu]") {

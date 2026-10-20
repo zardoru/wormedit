@@ -13,9 +13,6 @@
 
 namespace {
 
-static_assert(static_cast<unsigned>(wormedit::sound_kind_t::stem) == WORM_UI_SOUND_IMPORT_STEM);
-static_assert(static_cast<unsigned>(wormedit::sound_kind_t::keysound) == WORM_UI_SOUND_IMPORT_KEYSOUND);
-static_assert(static_cast<unsigned>(wormedit::sound_kind_t::sample) == WORM_UI_SOUND_IMPORT_SAMPLE);
 
 constexpr float row_height = 26.0F;
 
@@ -31,8 +28,8 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item,
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, label, nk_vec2(130, 120))) return;
     nk_layout_row_dynamic(context, 24, 1);
     // Keep the import dialog's Keysound, Stem, Sample order; unspecified is not offered.
-    constexpr worm_ui_sound_import_kind_t order[]{WORM_UI_SOUND_IMPORT_KEYSOUND,
-        WORM_UI_SOUND_IMPORT_STEM, WORM_UI_SOUND_IMPORT_SAMPLE};
+    constexpr wormedit::sound_kind_t order[]{wormedit::sound_kind_t::keysound,
+        wormedit::sound_kind_t::stem, wormedit::sound_kind_t::sample};
     for (const auto kind : order)
         if (nk_combo_item_label(context, catalog.label(static_cast<wormedit::sound_kind_t>(kind), "Sound"), NK_TEXT_LEFT))
             item.kind = kind;
@@ -66,9 +63,9 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
             context, NK_EDIT_FIELD, name.data(), static_cast<int>(name.size()), nk_filter_default);
         if (std::string_view{name.data()} != previous_name)
             item.name = name.data();
-        if (state.fixed_kind)
-            nk_label(context, catalog.label(static_cast<wormedit::sound_kind_t>(state.fixed_kind == WORM_UI_SOUND_IMPORT_STEM
-                    ? WORM_UI_SOUND_IMPORT_STEM : WORM_UI_SOUND_IMPORT_KEYSOUND), "Sound"),
+        if (state.fixed_kind != wormedit::ui::sound_import_kind_t::generic)
+            nk_label(context, catalog.label(static_cast<wormedit::sound_kind_t>(state.fixed_kind == wormedit::ui::sound_import_kind_t::stem
+                    ? wormedit::sound_kind_t::stem : wormedit::sound_kind_t::keysound), "Sound"),
                       NK_TEXT_LEFT);
         else render_kind_choice(context, item, catalog);
         if (nk_button_label(context, "×"))
@@ -359,12 +356,18 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const WormUiC
                          bool& release_pending) {
     const auto assignments = reviewed_assignments(state);
     if (!assignments.empty()) {
-        worm_ui_keysound_group_review_stage_payload(state, assignments, state.keep_ids_together);
         action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
-        action.compose_input_chart_id = view.chart_id;
+        action.compose_input_chart_id.value = view.chart_id;
         action.compose_input_document_revision = view.document_revision;
-        action.compose_sound_group_assignments = state.staged_payload.data();
-        action.compose_sound_group_assignment_count = state.staged_payload.size();
+        for (const auto& assignment : assignments) {
+            auto payload = wormedit::ui::sound_group_assignment_t{
+                .group_id = wormedit::sound_group_id_t{assignment.existing_group_id},
+                .name = assignment.name};
+            for (const auto id : assignment.sound_ids)
+                payload.sound_ids.push_back(wormedit::resource_id_t{id});
+            action.compose_sound_group_assignments.push_back(std::move(payload));
+        }
+
         action.compose_sound_group_keep_ids_together = state.keep_ids_together;
         state.open = false;
         release_pending = true;

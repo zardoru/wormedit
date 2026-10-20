@@ -86,8 +86,8 @@ TEST_CASE("Area menu adds selected sounds to an explicit unlocked layer",
     check_sound_menu(compose_area_menu_open());
     const auto selected = fixture.click_label("Percussion");
     check_sound_menu(selected.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
-    check_sound_menu(selected.get().compose_semantic_layer_id == 7);
-    check_sound_menu(selected.get().compose_input_chart_id == fixture.harness.view().compose.chart_id);
+    check_sound_menu(selected.get().compose_semantic_layer_id.value == 7);
+    check_sound_menu(selected.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id);
     check_sound_menu(selected.get().compose_input_document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
 }
@@ -108,7 +108,7 @@ TEST_CASE("Area sound layer picker releases its window request when dismissed",
     fixture.expand();
     const auto dismissed = sound_menu_click(fixture.harness, 100, 650);
     check_sound_menu(dismissed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
-    check_sound_menu(dismissed.get().compose_input_chart_id == fixture.harness.view().compose.chart_id);
+    check_sound_menu(dismissed.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id);
     check_sound_menu(dismissed.get().compose_input_document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
 }

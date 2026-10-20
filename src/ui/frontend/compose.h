@@ -3,120 +3,175 @@
 #include "metadata_audio.h"
 #include "hitsounds.h"
 #include "preview_audio.h"
+#include <cmath>
+#include <optional>
+#include <string_view>
+#include <vector>
 
-typedef struct WormUiComposeRect {
-    double left;
-    double top;
-    double right;
-    double bottom;
-} WormUiComposeRect;
+namespace wormedit::ui {
+struct compose_rect_t {
+    double left{};
+    double top{};
+    double right{};
+    double bottom{};
+    template<class Rect>
+    [[nodiscard]] static auto from(const Rect& rect) -> compose_rect_t {
+        return {.left = rect.left, .top = rect.top, .right = rect.right, .bottom = rect.bottom};
+    }
+    [[nodiscard]] auto is_valid() const -> bool {
+        constexpr double coordinate_limit = 10000000.0;
+        return std::isfinite(left) && std::isfinite(top) && std::isfinite(right) &&
+            std::isfinite(bottom) && right >= left && bottom >= top &&
+            std::abs(left) <= coordinate_limit && std::abs(top) <= coordinate_limit &&
+            std::abs(right) <= coordinate_limit && std::abs(bottom) <= coordinate_limit;
+    }
+    auto operator==(const compose_rect_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposePasteGhostView {
-    WormUiComposeRect bounds;
-    uint8_t kind; /* 0 note endpoint, 1 hold body, 2 BGM event, 3 timing object */
-    uint8_t glyph; /* note glyph; for kind 3 the wormedit::timing_lane_kind_t. Kind 3 bounds carry only top/bottom */
-} WormUiComposePasteGhostView;
+namespace wormedit::ui {
+enum class compose_paste_ghost_kind_t { note_endpoint, hold_body, bgm_event, timing_object };
+enum class compose_timing_preview_kind_t { note_endpoint, bgm_event, hold_body };
 
-typedef struct WormUiComposeBandView {
-    WormUiComposeRect bounds;
-    bool split_stage;
-} WormUiComposeBandView;
+struct compose_paste_ghost_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    compose_paste_ghost_kind_t kind{};
+    wormedit::lane_glyph_t glyph{};
+    wormedit::timing_lane_kind_t timing_lane{}; // Timing ghost bounds carry only top/bottom.
+    auto operator==(const compose_paste_ghost_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeLaneView {
-    WormUiComposeRect bounds;
-    uint64_t lane_id;
-    uint32_t display_order;
-    uint8_t role;
-    uint8_t stage;
-    uint8_t glyph;
-    uint8_t key_color; // wormedit::lane_key_color_t; 0 = generic.
-} WormUiComposeLaneView;
+namespace wormedit::ui {
+struct compose_band_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    bool split_stage{};
+    auto operator==(const compose_band_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeGridLineView {
-    double y_pixels;
-    uint8_t kind;
-    uint8_t emphasis;
-    uint32_t measure_number;
-    uint64_t chart_row;
-    uint8_t snap_class; // Exact standard-measure subdivision; 0 = other.
+namespace wormedit::ui {
+struct compose_lane_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::lane_id_t lane_id{};
+    uint32_t display_order{};
+    wormedit::lane_role_t role{};
+    wormedit::stage_group_t stage{};
+    wormedit::lane_glyph_t glyph{};
+    wormedit::lane_key_color_t key_color{};
+    auto operator==(const compose_lane_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
+struct compose_grid_line_view_t {
+    double y_pixels{};
+    wormedit::editor_grid_line_kind_t kind{};
+    wormedit::editor_grid_emphasis_t emphasis{};
+    uint32_t measure_number{};
+    uint64_t chart_row{};
+    uint8_t snap_class{}; // Exact standard-measure subdivision; 0 = other.
     // The measure a real (not virtual) measure line starts; none for every other line.
-    wormedit::measure_id_t measure_id;
-} WormUiComposeGridLineView;
+    wormedit::measure_id_t measure_id{};
+    auto operator==(const compose_grid_line_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeLaneLayoutSegmentView {
-    uint64_t segment_id;
-    uint32_t measure_number;
-    uint64_t row;
-    double y_pixels;
-    const char* profile_name;
-} WormUiComposeLaneLayoutSegmentView;
+namespace wormedit::ui {
+struct compose_lane_layout_segment_view_t {
+    wormedit::object_id_t segment_id{};
+    uint32_t measure_number{};
+    uint64_t row{};
+    double y_pixels{};
+    std::string_view profile_name{};
+    auto operator==(const compose_lane_layout_segment_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeTimingPreviewRectView {
-    WormUiComposeRect bounds;
-    uint8_t kind; // 0 note endpoint, 1 BGM event, 2 hold body
-} WormUiComposeTimingPreviewRectView;
+namespace wormedit::ui {
+struct compose_timing_preview_rect_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    compose_timing_preview_kind_t kind{};
+    auto operator==(const compose_timing_preview_rect_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* A Stop, Delay or Warp as a dead span: time the audio spends where notes cannot sit. Bounds are
    viewport pixels in drawn orientation. */
-typedef struct WormUiComposeDeadSpanView {
-    WormUiComposeRect bounds;
-    uint8_t kind; /* 0 stop, 1 delay, 2 warp */
-    uint64_t object_id;
-    const char* label;
-} WormUiComposeDeadSpanView;
+namespace wormedit::ui {
+struct compose_dead_span_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::timing_lane_kind_t kind{wormedit::timing_lane_kind_t::stop};
+    wormedit::object_id_t object_id{};
+    std::string_view label{};
+    auto operator==(const compose_dead_span_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* One merged Kiai area. Only top/bottom of bounds are meaningful: the area is drawn inside the
    Kiai timing lane. Head is the opening edge in chart order, tail the closing edge. */
-typedef struct WormUiComposeKiaiSpanView {
-    WormUiComposeRect bounds;
-    uint64_t head_object_id;
-    uint64_t tail_object_id; /* 0 when the area runs to the end of the chart */
-    uint64_t begin_row;
-    uint64_t end_row;
-    bool open_ended;
-    bool head_visible;
-    bool tail_visible;
-    bool selected;
-} WormUiComposeKiaiSpanView;
+namespace wormedit::ui {
+struct compose_kiai_span_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::object_id_t head_object_id{};
+    wormedit::object_id_t tail_object_id{};
+    uint64_t begin_row{};
+    uint64_t end_row{};
+    bool open_ended{};
+    bool head_visible{};
+    bool tail_visible{};
+    bool selected{};
+    auto operator==(const compose_kiai_span_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* One vertex of the SV graph. x is normalized to the visible value range in [0, 1] and drawn
    inside the SV timing lane; y is a viewport pixel row. */
-typedef struct WormUiComposeSvGraphPointView {
-    double x_fraction;
-    double y_pixels;
-} WormUiComposeSvGraphPointView;
+namespace wormedit::ui {
+struct compose_sv_graph_point_view_t {
+    double x_fraction{};
+    double y_pixels{};
+    auto operator==(const compose_sv_graph_point_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* One stored SV recipe, shown as an area in its timing lane (SV for sv/scrolls output, SPD for
    speeds). Only top/bottom of bounds are meaningful. The recipe's own relative value is drawn as a
    continuous line normalized to the visible range: graph_count vertices starting at graph_first
    in the view's recipe_graph_points. */
-typedef struct WormUiComposeRecipeAreaView {
-    WormUiComposeRect bounds;
-    uint64_t recipe_id;
-    const char* label;
-    uint8_t lane; /* wormedit::timing_lane_kind_t */
-    uint8_t curve;
-    bool enabled;
-    bool selected;
-    bool evaluable;
-    bool begin_visible;
-    bool end_visible;
+namespace wormedit::ui {
+struct compose_recipe_area_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::recipe_id_t recipe_id{};
+    std::string_view label{};
+    wormedit::timing_lane_kind_t lane{};
+    wormedit::sv_recipe_curve_t curve{};
+    bool enabled{};
+    bool selected{};
+    bool evaluable{};
+    bool begin_visible{};
+    bool end_visible{};
     /* The graph shows the unapplied form candidate instead of the stored recipe. */
-    bool previewing;
-    size_t graph_first;
-    size_t graph_count;
-} WormUiComposeRecipeAreaView;
+    bool previewing{};
+    size_t graph_first{};
+    size_t graph_count{};
+    auto operator==(const compose_recipe_area_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* The transition extent of one StepMania SPEEDS event, drawn in the SPD lane (top/bottom of bounds
    only). transition_length is in beats, or seconds when transition_is_seconds. */
-typedef struct WormUiComposeSpeedSpanView {
-    WormUiComposeRect bounds;
-    uint64_t object_id;
-    double multiplier;
-    double transition_length;
-    bool transition_is_seconds;
-    bool clipped;
-} WormUiComposeSpeedSpanView;
+namespace wormedit::ui {
+struct compose_speed_span_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::object_id_t object_id{};
+    double multiplier{};
+    double transition_length{};
+    bool transition_is_seconds{};
+    bool clipped{};
+    auto operator==(const compose_speed_span_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiTimingRecipeOutput {
     WORM_UI_TIMING_RECIPE_OUTPUT_SV = 0,
@@ -181,67 +236,79 @@ typedef struct WormUiComposeRecipeFormView {
     WormUiTimingRecipeForm form;
 } WormUiComposeRecipeFormView;
 
-typedef struct WormUiComposeDifferenceView {
-    WormUiComposeRect bounds;
-} WormUiComposeDifferenceView;
+namespace wormedit::ui {
+struct compose_difference_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    auto operator==(const compose_difference_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeHoldView {
-    WormUiComposeRect bounds;
-    uint64_t note_id;
-    uint64_t lane_id;
-    uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
-    uint8_t key_color; // lane key color of the owning lane; 0 = generic.
-    uint8_t snap_class; // subdivision of the owning note head.
-    bool selected;
-    bool proposal_origin;
-    bool proposal_ghost;
-    bool semantic_color_visible;
-    uint8_t semantic_red;
-    uint8_t semantic_green;
-    uint8_t semantic_blue;
-    uint8_t semantic_alpha;
-    uint8_t move_conflict; // 0 = valid; core note_move_conflict_t otherwise.
-    bool move_conflict_occupant;
-} WormUiComposeHoldView;
+namespace wormedit::ui {
+struct compose_hold_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::object_id_t note_id{};
+    wormedit::lane_id_t lane_id{};
+    uint32_t display_lane_number{}; // 1-based chart layout order; 0 when unavailable.
+    wormedit::lane_key_color_t key_color{};
+    uint8_t snap_class{}; // subdivision of the owning note head.
+    bool selected{};
+    bool proposal_origin{};
+    bool proposal_ghost{};
+    bool semantic_color_visible{};
+    uint8_t semantic_red{};
+    uint8_t semantic_green{};
+    uint8_t semantic_blue{};
+    uint8_t semantic_alpha{};
+    wormedit::note_move_conflict_t move_conflict{};
+    bool move_conflict_occupant{};
+    auto operator==(const compose_hold_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeNoteView {
-    WormUiComposeRect bounds;
-    uint64_t note_id;
-    uint64_t lane_id;
-    uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
-    uint8_t key_color; // lane key color of the owning lane; 0 = generic.
-    bool sound_is_stem;
-    bool sound_missing;
-    uint8_t glyph;
-    const char* sound_label;
-    const char* sound_detail;
-    uint64_t sound_resource_id;
-    const wormedit::ui::hitsound_note_view_t* hitsound;
-    uint8_t snap_class; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
-    uint8_t kind;
-    bool tail;
-    bool selected;
-    bool proposal_origin;
-    bool proposal_ghost;
-    bool semantic_color_visible;
-    uint8_t semantic_red;
-    uint8_t semantic_green;
-    uint8_t semantic_blue;
-    uint8_t semantic_alpha;
-    bool paint_preview;
-    bool paint_erase_preview;
-    bool paint_invalid_preview;
-    uint8_t move_conflict; // 0 = valid; core note_move_conflict_t otherwise.
-    bool move_conflict_occupant;
-} WormUiComposeNoteView;
+namespace wormedit::ui {
+struct compose_note_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::object_id_t note_id{};
+    wormedit::lane_id_t lane_id{};
+    uint32_t display_lane_number{}; // 1-based chart layout order; 0 when unavailable.
+    wormedit::lane_key_color_t key_color{};
+    bool sound_is_stem{};
+    bool sound_missing{};
+    wormedit::lane_glyph_t glyph{};
+    std::string_view sound_label{};
+    std::string_view sound_detail{};
+    wormedit::resource_id_t sound_resource_id{};
+    const wormedit::ui::hitsound_note_view_t* hitsound{};
+    uint8_t snap_class{}; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
+    wormedit::note_kind_t kind{};
+    bool tail{};
+    bool selected{};
+    bool proposal_origin{};
+    bool proposal_ghost{};
+    bool semantic_color_visible{};
+    uint8_t semantic_red{};
+    uint8_t semantic_green{};
+    uint8_t semantic_blue{};
+    uint8_t semantic_alpha{};
+    bool paint_preview{};
+    bool paint_erase_preview{};
+    bool paint_invalid_preview{};
+    wormedit::note_move_conflict_t move_conflict{};
+    bool move_conflict_occupant{};
+    auto operator==(const compose_note_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeCursorView {
-    WormUiComposeRect bounds;
-    uint64_t lane_id;
-} WormUiComposeCursorView;
+namespace wormedit::ui {
+struct compose_cursor_view_t {
+    wormedit::ui::compose_rect_t bounds{};
+    wormedit::lane_id_t lane_id{};
+    auto operator==(const compose_cursor_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef struct WormUiComposeBgmLaneView {
-    WormUiComposeRect bounds;
+    wormedit::ui::compose_rect_t bounds;
     uint64_t source_lane_id;
     size_t source_order;
     bool stem;
@@ -256,7 +323,7 @@ typedef struct WormUiComposeBgmLaneView {
 } WormUiComposeBgmLaneView;
 
 typedef struct WormUiComposeBgmEventView {
-    WormUiComposeRect bounds;
+    wormedit::ui::compose_rect_t bounds;
     uint64_t event_id;
     uint64_t source_lane_id;
     uint64_t sound_id;
@@ -280,7 +347,7 @@ typedef struct WormUiComposeBgmEventView {
 } WormUiComposeBgmEventView;
 
 typedef struct WormUiComposeBgmDraftView {
-    WormUiComposeRect bounds;
+    wormedit::ui::compose_rect_t bounds;
     bool restart;
     bool playable;
 } WormUiComposeBgmDraftView;
@@ -311,7 +378,7 @@ typedef struct WormUiComposeBgmBarBookmarkView {
 } WormUiComposeBgmBarBookmarkView;
 
 typedef struct WormUiComposeBgmMovePreviewView {
-    WormUiComposeRect bounds;
+    wormedit::ui::compose_rect_t bounds;
     bool valid;
 } WormUiComposeBgmMovePreviewView;
 
@@ -490,20 +557,23 @@ typedef struct WormUiComposeBranchChoiceView {
     bool can_clear;
 } WormUiComposeBranchChoiceView;
 
-typedef struct WormUiTimingMarkerView {
-    uint64_t object_id;
-    uint64_t source_order;
-    uint64_t storage_order;
-    double marker_y_pixels;
-    double marker_left_fraction;
-    double marker_right_fraction;
-    uint64_t chart_row;
-    wormedit::timing_lane_kind_t lane;
-    const char* short_label;
-    const char* detail;
-    bool fixed_initial;
-    bool selected;
-} WormUiTimingMarkerView;
+namespace wormedit::ui {
+struct compose_timing_marker_view_t {
+    wormedit::object_id_t object_id{};
+    uint64_t source_order{};
+    uint64_t storage_order{};
+    double marker_y_pixels{};
+    double marker_left_fraction{};
+    double marker_right_fraction{};
+    uint64_t chart_row{};
+    wormedit::timing_lane_kind_t lane{};
+    std::string_view short_label{};
+    std::string_view detail{};
+    bool fixed_initial{};
+    bool selected{};
+    auto operator==(const compose_timing_marker_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiComposeResourceRole {
     WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE = 1 << 0,
@@ -693,7 +763,7 @@ typedef struct WormUiComposeBgaEventView {
     const char* bmp_id;
     bool missing;
     bool selected;
-    WormUiComposeRect bounds;
+    wormedit::ui::compose_rect_t bounds;
 } WormUiComposeBgaEventView;
 
 typedef struct WormUiComposeSoundSlotRowView {
@@ -770,29 +840,32 @@ typedef struct WormUiComposeQuantizeReportRowView {
     bool bgm;
 } WormUiComposeQuantizeReportRowView;
 
-typedef struct WormUiComposeQuantizeGhostView {
-    uint64_t object_id;
-    uint64_t lane_id;
-    uint32_t before_head_glyph;
-    uint32_t after_head_glyph;
-    uint32_t before_tail_glyph;
-    uint32_t after_tail_glyph;
-    WormUiComposeRect before_head;
-    WormUiComposeRect after_head;
-    WormUiComposeRect before_tail;
-    WormUiComposeRect after_tail;
-    double before_head_anchor_x, before_head_anchor_y;
-    double after_head_anchor_x, after_head_anchor_y;
-    double before_tail_anchor_x, before_tail_anchor_y;
-    double after_tail_anchor_x, after_tail_anchor_y;
-    bool has_tail;
-    bool moved_head;
-    bool moved_tail;
-    bool head_halfway;
-    bool tail_halfway;
-    bool stationary_tail_annotation;
-    bool collision;
-} WormUiComposeQuantizeGhostView;
+namespace wormedit::ui {
+struct compose_quantize_ghost_view_t {
+    wormedit::object_id_t object_id{};
+    wormedit::lane_id_t lane_id{};
+    wormedit::lane_glyph_t before_head_glyph{};
+    wormedit::lane_glyph_t after_head_glyph{};
+    wormedit::lane_glyph_t before_tail_glyph{};
+    wormedit::lane_glyph_t after_tail_glyph{};
+    wormedit::ui::compose_rect_t before_head{};
+    wormedit::ui::compose_rect_t after_head{};
+    wormedit::ui::compose_rect_t before_tail{};
+    wormedit::ui::compose_rect_t after_tail{};
+    double before_head_anchor_x{}, before_head_anchor_y{};
+    double after_head_anchor_x{}, after_head_anchor_y{};
+    double before_tail_anchor_x{}, before_tail_anchor_y{};
+    double after_tail_anchor_x{}, after_tail_anchor_y{};
+    bool has_tail{};
+    bool moved_head{};
+    bool moved_tail{};
+    bool head_halfway{};
+    bool tail_halfway{};
+    bool stationary_tail_annotation{};
+    bool collision{};
+    auto operator==(const compose_quantize_ghost_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
@@ -848,8 +921,7 @@ typedef struct WormUiComposeView {
                                   [WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES];
     char lane_layout_profile_ids[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
                                 [WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES];
-    const WormUiComposeLaneLayoutSegmentView* lane_layout_segments;
-    size_t lane_layout_segment_count;
+    std::vector<wormedit::ui::compose_lane_layout_segment_view_t> lane_layout_segments;
     bool downscroll;
     bool bms_measure_labels;
     // The active chart came from BMSON, so the Sounds dock offers its BMSON tab.
@@ -906,8 +978,7 @@ typedef struct WormUiComposeView {
     bool quantize_geometry_valid;
     bool quantize_preview_drawable;
     bool quantize_ghosts_drawable;
-    const WormUiComposeQuantizeGhostView* quantize_ghosts;
-    size_t quantize_ghost_count;
+    std::vector<wormedit::ui::compose_quantize_ghost_view_t> quantize_ghosts;
     char quantize_preview_message[96];
     // Report from the most recently applied request, retained across frames.
     const WormUiComposeQuantizeReportRowView* quantize_applied_rows;
@@ -1010,10 +1081,10 @@ typedef struct WormUiComposeView {
     bool bga_lane_visible;
     const WormUiComposeBgaEventView* bga_events;
     size_t bga_event_count;
-    WormUiComposeRect bga_lane_bounds;
+    wormedit::ui::compose_rect_t bga_lane_bounds;
     uint8_t bga_revealed_lane_mask;
     size_t bga_lane_count;
-    WormUiComposeRect bga_lane_rects[4];
+    wormedit::ui::compose_rect_t bga_lane_rects[4];
     uint8_t bga_lane_kinds[4];
     bool bga_move_preview_valid;
     uint64_t bga_move_preview_event_id;
@@ -1029,7 +1100,7 @@ typedef struct WormUiComposeView {
     size_t bga_advance_count;
     const char* bga_search;
     bool paint_ghost_visible;
-    WormUiComposeNoteView paint_ghost;
+    wormedit::ui::compose_note_view_t paint_ghost;
     bool hover_note_visible;
     uint64_t hover_note_id;
     const char* hover_tooltip;
@@ -1047,42 +1118,27 @@ typedef struct WormUiComposeView {
     bool clipboard_paste_available;
     bool paste_active;
     bool paste_valid;
-    const WormUiComposePasteGhostView* paste_ghosts;
-    size_t paste_ghost_count;
+    std::vector<wormedit::ui::compose_paste_ghost_view_t> paste_ghosts;
     const char* paste_diagnostic;
-    const WormUiComposeBandView* bands;
-    size_t band_count;
-    const WormUiComposeLaneView* lanes;
-    size_t lane_count;
-    const WormUiComposeGridLineView* grid_lines;
-    size_t grid_line_count;
-    const WormUiComposeGridLineView* proposed_grid_lines;
-    size_t proposed_grid_line_count;
-    const WormUiComposeTimingPreviewRectView* timing_preview_rects;
-    size_t timing_preview_rect_count;
-    const WormUiTimingMarkerView* timing_preview_markers;
-    size_t timing_preview_marker_count;
-    const WormUiTimingMarkerView* timing_markers;
-    size_t timing_marker_count;
-    const WormUiComposeDeadSpanView* dead_spans;
-    size_t dead_span_count;
-    const WormUiComposeKiaiSpanView* kiai_spans;
-    size_t kiai_span_count;
-    const WormUiComposeSpeedSpanView* speed_spans;
-    size_t speed_span_count;
+    std::vector<wormedit::ui::compose_band_view_t> bands;
+    std::vector<wormedit::ui::compose_lane_view_t> lanes;
+    std::vector<wormedit::ui::compose_grid_line_view_t> grid_lines;
+    std::vector<wormedit::ui::compose_grid_line_view_t> proposed_grid_lines;
+    std::vector<wormedit::ui::compose_timing_preview_rect_view_t> timing_preview_rects;
+    std::vector<wormedit::ui::compose_timing_marker_view_t> timing_preview_markers;
+    std::vector<wormedit::ui::compose_timing_marker_view_t> timing_markers;
+    std::vector<wormedit::ui::compose_dead_span_view_t> dead_spans;
+    std::vector<wormedit::ui::compose_kiai_span_view_t> kiai_spans;
+    std::vector<wormedit::ui::compose_speed_span_view_t> speed_spans;
     WormUiComposeRecipeFormView recipe_form;
-    const WormUiComposeRecipeAreaView* recipe_areas;
-    size_t recipe_area_count;
-    const WormUiComposeSvGraphPointView* recipe_graph_points;
-    size_t recipe_graph_point_count;
-    const WormUiComposeSvGraphPointView* sv_graph_points;
-    size_t sv_graph_point_count;
+    std::vector<wormedit::ui::compose_recipe_area_view_t> recipe_areas;
+    std::vector<wormedit::ui::compose_sv_graph_point_view_t> recipe_graph_points;
+    std::vector<wormedit::ui::compose_sv_graph_point_view_t> sv_graph_points;
     double sv_graph_minimum;
     double sv_graph_maximum;
     double sv_graph_one_fraction; /* negative when 1.0x is outside the visible range */
     /* Interpolated speed curve; same format as the SV graph, drawn in the speed lane. */
-    const WormUiComposeSvGraphPointView* speed_graph_points;
-    size_t speed_graph_point_count;
+    std::vector<wormedit::ui::compose_sv_graph_point_view_t> speed_graph_points;
     double speed_graph_one_fraction;
     uint8_t timing_lane_visibility_mask;
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
@@ -1150,12 +1206,9 @@ typedef struct WormUiComposeView {
     uint64_t export_confirmation_revision;
     const char* export_confirmation_message;
     const char* export_confirmation_detail;
-    const WormUiComposeDifferenceView* differences;
-    size_t difference_count;
-    const WormUiComposeHoldView* hold_bodies;
-    size_t hold_body_count;
-    const WormUiComposeNoteView* note_endpoints;
-    size_t note_endpoint_count;
+    std::vector<wormedit::ui::compose_difference_view_t> differences;
+    std::vector<wormedit::ui::compose_hold_view_t> hold_bodies;
+    std::vector<wormedit::ui::compose_note_view_t> note_endpoints;
     const WormUiComposeBgmLaneView* bgm_lanes;
     size_t bgm_lane_count;
     bool bgm_mix_available;
@@ -1229,12 +1282,12 @@ typedef struct WormUiComposeView {
     const WormUiComposeBgmDraftView* bmson_marker_drafts;
     size_t bmson_marker_draft_count;
     const WormUiComposeBgmMovePreviewView* bmson_marker_move_preview;
-    const WormUiComposeCursorView* cursor;
+    std::optional<wormedit::ui::compose_cursor_view_t> cursor;
     bool area_selection_preview_visible;
-    WormUiComposeRect area_selection_preview_bounds;
+    wormedit::ui::compose_rect_t area_selection_preview_bounds;
     WormUiComposeSelectionMode area_selection_preview_mode;
     bool space_range_preview_visible;
-    WormUiComposeRect space_range_preview_bounds;
+    wormedit::ui::compose_rect_t space_range_preview_bounds;
     WormUiComposeSelectionMode space_range_preview_mode;
     double space_range_anchor_y_pixels;
     double space_range_tail_y_pixels;

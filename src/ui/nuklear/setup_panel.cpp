@@ -883,8 +883,8 @@ void export_project_group(const wormedit::ui::setup_view_t& view, wormedit::ui::
                           WormUiExistingFilesChoice existing_files) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
-    action.compose_input_project_id = view.song_id.value;
-    action.compose_input_chart_id = view.selected_chart_id.value;
+    action.compose_input_project_id.value = view.song_id.value;
+    action.compose_input_chart_id.value = view.selected_chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_output_group_index = index;
     action.compose_existing_files = existing_files;
@@ -893,8 +893,8 @@ void export_all_project_groups(const wormedit::ui::setup_view_t& view, wormedit:
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS;
-    action.compose_input_project_id = view.song_id.value;
-    action.compose_input_chart_id = view.selected_chart_id.value;
+    action.compose_input_project_id.value = view.song_id.value;
+    action.compose_input_chart_id.value = view.selected_chart_id.value;
     action.compose_input_document_revision = view.document_revision;
 }
 auto output_group_editable(const wormedit::ui::setup_view_t&,

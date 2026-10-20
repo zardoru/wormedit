@@ -280,12 +280,12 @@ static void set_metadata_format_action(wormedit::ui::workspace_action_t* action,
     }
     action->metadata_edit = kind;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = state.format_target_chart_scoped ? metadata->chart_id.value : 0;
+    action->metadata_chart_id = state.format_target_chart_scoped ? metadata->chart_id : wormedit::chart_id_t{};
     action->metadata_format_chart_scoped = state.format_target_chart_scoped;
-    action->metadata_format_family = state.format_target_family;
+    action->metadata_format_family = static_cast<wormedit::format_family_t>(state.format_target_family);
     action->metadata_format_index = state.format_target_index;
-    action->metadata_format_name = needs_text ? state.format_name.data() : nullptr;
-    action->metadata_format_value = needs_text ? state.format_value.data() : nullptr;
+    action->metadata_format_name = needs_text ? std::optional<std::string>{state.format_name.data()} : std::nullopt;
+    action->metadata_format_value = needs_text ? std::optional<std::string>{state.format_value.data()} : std::nullopt;
 }
 
 static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t family,
@@ -298,9 +298,9 @@ static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t f
         : exists ? WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD
                  : WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD;
     action->metadata_document_revision = metadata.document_revision;
-    action->metadata_chart_id = chart_scoped ? metadata.chart_id.value : 0;
+    action->metadata_chart_id = chart_scoped ? metadata.chart_id : wormedit::chart_id_t{};
     action->metadata_format_chart_scoped = chart_scoped;
-    action->metadata_format_family = family;
+    action->metadata_format_family = static_cast<wormedit::format_family_t>(family);
     action->metadata_format_index = exists ? field_index : insert_index;
     action->metadata_format_name = name;
     action->metadata_format_value = value;

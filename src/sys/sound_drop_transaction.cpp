@@ -44,7 +44,7 @@ void sound_drop_transaction_t::append_path(const char* path) {
     const auto& retained = paths_.back();
     if (reason_.empty()) {
         if (retained.empty()) reason_ = "A dropped resource path is empty.";
-        else if (retained.size() >= WORM_UI_PROJECT_PATH_CAPACITY)
+        else if (retained.size() > maximum_project_path_bytes)
             reason_ = "A dropped resource path exceeds the supported path length.";
         else if (!std::filesystem::path{retained}.is_absolute())
             reason_ = "Dropped resource paths must be absolute.";

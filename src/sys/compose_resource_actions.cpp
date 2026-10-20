@@ -5,18 +5,17 @@ namespace wormedit::sys::compose_action_detail {
 auto import_resource_role(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_role_t> {
     using namespace wormedit;
-    switch (action.compose_resource_role) {
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE:
-        return resource_role_t::sample;
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_BGM:
-        return resource_role_t::bgm;
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_BGA:
-        return resource_role_t::bga;
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC:
-        return resource_role_t::music;
-    default:
+    if (!action.compose_resource_role) return std::nullopt;
+    switch (*action.compose_resource_role) {
+    case resource_role_t::sample:
+    case resource_role_t::bgm:
+    case resource_role_t::bga:
+    case resource_role_t::music:
+        return action.compose_resource_role;
+    case resource_role_t::preview:
         return std::nullopt;
     }
+    return std::nullopt;
 }
 
 auto inspect_imported_resource(const std::filesystem::path& path, wormedit::resource_role_t role)
@@ -208,7 +207,7 @@ auto copy_compose_resource_action_t::validate(compose_action_context_t& context)
         blocked->source = notification_source_t::import_;
         return std::move(*blocked);
     }
-    const asset_id_t id{action.compose_resource_asset_id};
+    const asset_id_t id{action.compose_resource_asset_id.value};
     const auto* audio = history.document.find_audio_asset(id);
     const auto visual = std::ranges::find(history.document.visual_assets, id, &visual_asset_t::id);
     if (!id || (audio == nullptr && visual == history.document.visual_assets.end()))
@@ -388,23 +387,26 @@ compose_action_outcome_t start_output_export(compose_action_context_t& context,
 auto compose_placement_kind(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_placement_kind_t> {
     using namespace wormedit;
-    switch (action.compose_resource_role) {
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE:
+    if (!action.compose_resource_role) return std::nullopt;
+    switch (*action.compose_resource_role) {
+    case resource_role_t::sample:
         return resource_placement_kind_t::sample_note;
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_BGM:
+    case resource_role_t::bgm:
         return resource_placement_kind_t::bgm_event;
-    case WORM_UI_COMPOSE_RESOURCE_ROLE_BGA:
+    case resource_role_t::bga:
         return resource_placement_kind_t::bga_background;
-    default:
+    case resource_role_t::music:
+    case resource_role_t::preview:
         return std::nullopt;
     }
+    return std::nullopt;
 }
 
 auto apply_compose_resource_placement(compose_action_context_t& context,
                                       wormedit::resource_placement_kind_t kind)
     -> wormedit::document_command_result_t {
     using namespace wormedit;
-    const auto resource = resource_id_t{context.action.compose_resource_id};
+    const auto resource = context.action.compose_resource_id;
     if (context.state.virtual_bms_cursor_row)
         return apply_virtual_bms_resource_placement(
             context.environment.document.history,
@@ -444,8 +446,8 @@ finish_compose_resource_placement(compose_action_context_t& context,
                                                                      : resource_role_t::bga;
     const auto next =
         next_eligible_placement_resource(context.environment.document.history.document,
-                                         resource_id_t{context.action.compose_resource_id}, role);
-    worm_ui_frontend_resource_placed(context.action.compose_resource_id,
+                                         context.action.compose_resource_id, role);
+    worm_ui_frontend_resource_placed(context.action.compose_resource_id.value,
                                      next.value_or(resource_id_t{}).value);
 
     auto outcome = compose_action_outcome_t::from("Resource placed at the edit cursor.",
@@ -498,7 +500,7 @@ static_assert(compose_action<select_compose_resource_uses_action_t, compose_acti
 auto select_compose_resource_uses_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    resource = resource_id_t{context.action.compose_resource_id};
+    resource = context.action.compose_resource_id;
     if (!resource || std::ranges::find(context.environment.document.history.document.resources,
                                        resource, &resource_entry_t::id) ==
                          context.environment.document.history.document.resources.end())
@@ -553,7 +555,7 @@ auto assign_compose_resource_action_t::perform(compose_action_context_t& context
     auto applied =
         apply_resource_assignment(context.environment.document.history,
                                   {.chart = context.state.chart,
-                                   .resource = resource_id_t{context.action.compose_resource_id},
+                                   .resource = context.action.compose_resource_id,
                                    .objects = context.state.selected_objects});
     if (!applied.diagnostics.empty())
         return compose_action_outcome_t::from(
@@ -601,7 +603,7 @@ auto create_compose_resource_action_t::perform(compose_action_context_t& context
     constexpr std::string_view rebind_failure = "Resource created, but workspace rebinding failed.";
     auto applied = apply_resource_creation(
         context.environment.document.history,
-        {.asset = asset_id_t{context.action.compose_resource_asset_id},
+        {.asset = context.action.compose_resource_asset_id,
          .role = role,
          .allocate_bms_identifier =
              chart != nullptr && chart->source_family == format_family_t::bms});
@@ -641,7 +643,7 @@ auto relink_compose_sound_action_t::validate(compose_action_context_t& context)
                                                  notification_source_t::edit);
     const auto& document = context.environment.document.history.document;
     const auto resource = std::ranges::find(
-        document.resources, resource_id_t{action.compose_resource_id}, &resource_entry_t::id);
+        document.resources, action.compose_resource_id, &resource_entry_t::id);
     asset =
         resource == document.resources.end() ? nullptr : document.find_audio_asset(resource->asset);
     if (!asset)

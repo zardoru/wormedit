@@ -37,8 +37,8 @@ struct resize_fixture_t {
         {.measure_id = 78, .number = 2, .length_numerator = 1, .length_denominator = 1,
          .has_meter = true, .meter_numerator = 4, .meter_denominator = 4}}};
     std::array<std::uint64_t, 2> ids{77, 78};
-    std::array<WormUiComposeGridLineView, 2> lines{{{.y_pixels = 100, .kind = 3, .measure_number = 1},
-                                                    {.y_pixels = 500, .kind = 3, .measure_number = 2}}};
+    std::array<wormedit::ui::compose_grid_line_view_t, 2> lines{{{.y_pixels = 100, .kind = wormedit::editor_grid_line_kind_t::measure, .measure_number = 1},
+                                                    {.y_pixels = 500, .kind = wormedit::editor_grid_line_kind_t::measure, .measure_number = 2}}};
     float x{};
     float y_line{};
     float pixels_per_view_pixel{};
@@ -48,7 +48,7 @@ struct resize_fixture_t {
         auto& v = harness.view().compose;
         v.scene_available = true;
         v.measure_rows = rows.data(); v.measure_row_ids = ids.data(); v.measure_row_count = rows.size();
-        v.grid_lines = lines.data(); v.grid_line_count = lines.size();
+        v.grid_lines.assign(lines.data(), lines.data() + lines.size());
         v.pixels_per_standard_measure = 400.0;
         v.area_snap_denominator = 8; v.edit_snap_enabled = true;
         (void)harness.frame();
@@ -76,7 +76,7 @@ TEST_CASE("Alt+drag of a bar line sets the measure meter on release",
     const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
     const auto action = f.harness.frame(release, SDL_KMOD_LALT);
     require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER);
-    check_resize(action.get().compose_measure_id_count == 1);
+    check_resize(action.get().compose_measure_ids.size() == 1);
     check_resize(action.get().compose_measure_ids[0] == 77);
     check_resize(std::string(action.get().timing_meter_numerator_text) == "7");
     check_resize(std::string(action.get().timing_meter_denominator_text) == "8");
@@ -152,7 +152,7 @@ TEST_CASE("Measure resize equality does not wrap 64 bit cross products",
     fixture.rows[0].length_numerator = numerator;
     fixture.rows[0].length_denominator = denominator;
     fixture.rows[0].has_meter = false;
-    fixture.lines[0].y_pixels = 375;
+    fixture.harness.view().compose.grid_lines[0].y_pixels = 375;
     fixture.harness.view().compose.area_rows_per_measure = denominator;
     fixture.harness.view().compose.pixels_per_standard_measure = 100;
     const std::array press{resize_motion(fixture.x, fixture.y_line),
@@ -174,7 +174,7 @@ TEST_CASE("A bar line drag starts when it is the only bar line on screen",
     resize_fixture_t f;
     f.lines[0] = f.lines[1];
     auto& view = f.harness.view().compose;
-    view.grid_line_count = 1;
+    view.grid_lines = {f.lines[0]};
     const auto both = static_cast<SDL_Keymod>(SDL_KMOD_LALT | SDL_KMOD_LSHIFT);
     const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
     (void)f.harness.frame(press, both);

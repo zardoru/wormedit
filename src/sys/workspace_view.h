@@ -1,5 +1,9 @@
 #pragma once
+#include "sys/compose_source_key.h"
 #include "sys/bookmark_chooser_view.h"
+#include "sys/compose_dead_spans.h"
+#include "sys/compose_sv_graph.h"
+#include "sys/compose_recipe_areas.h"
 #include "sys/metadata_projection_cache.h"
 #include "sys/compose_resource_presenter.h"
 
@@ -117,31 +121,16 @@ struct frontend_workspace_view_t {
             frame_span<WormUiComposeAudioBookmarkView> bookmark;
             frame_span<WormUiComposeAudioSectionView> section;
         } audio_marker;
-        frame_span<WormUiComposeBandView> band;
-        frame_span<WormUiComposeLaneView> lane;
         struct {
-            frame_span<WormUiComposeGridLineView> line;
-            frame_span<wormedit::exact_chart_row_t> row;
-            std::vector<WormUiComposeGridLineView> proposed;
+            std::vector<wormedit::exact_chart_row_t> row;
         } grid;
-        std::vector<WormUiComposeTimingPreviewRectView> timing_preview_rect;
-        std::vector<WormUiTimingMarkerView> timing_preview_marker;
-        std::vector<WormUiTimingMarkerView> timing_marker;
-        std::vector<WormUiComposeDeadSpanView> dead_span;
-        std::vector<WormUiComposeKiaiSpanView> kiai_span;
-        std::vector<WormUiComposeRecipeAreaView> recipe_area;
-        std::vector<WormUiComposeSpeedSpanView> speed_span;
         std::vector<std::string> recipe_form_text;
-        std::vector<WormUiComposeSvGraphPointView> recipe_graph_point;
         std::vector<std::string> recipe_area_labels;
-        std::vector<WormUiComposeSvGraphPointView> sv_graph_point;
-        std::vector<WormUiComposeSvGraphPointView> speed_graph_point;
         std::vector<std::string> dead_span_labels;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
-        frame_span<WormUiComposeDifferenceView> difference;
-        frame_span<WormUiComposeHoldView> hold;
-        frame_span<WormUiComposeNoteView> note;
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
+        std::optional<std::pair<compose_scene_source_key_t, std::uint64_t>> sound_labels_source;
+        std::vector<std::uint64_t> visible_sound_ids;
         struct {
             frame_span<WormUiComposeBgmLaneView> lane;
             frame_span<WormUiComposeBgmEventView> event;
@@ -158,7 +147,6 @@ struct frontend_workspace_view_t {
         } waveform;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;
-        std::optional<WormUiComposeCursorView> cursor;
         struct {
             frame_span<WormUiComposeSemanticLayerView> view;
             frame_span<WormUiComposeSemanticLayerView> note_menu;
@@ -189,6 +177,12 @@ struct frontend_workspace_view_t {
         std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
             lane_key{};
         std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
+        struct {
+            std::vector<dead_span_band_t> dead_bands;
+            sv_graph_t sv_graph;
+            sv_graph_t speed_graph;
+            recipe_graph_t recipe_graph;
+        } timing_geometry;
     } compose;
     std::uint64_t query_session_generation{};
     keyed_cache_t<std::tuple<document_stamp_t, chart_id_t, std::uint64_t>,

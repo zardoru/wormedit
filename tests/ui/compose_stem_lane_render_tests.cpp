@@ -99,10 +99,10 @@ void check_hitsound_note_contrast(bool light) {
     const wormedit::osu_hitsample_t sample{.whistle = true, .finish = true, .clap = true,
         .normal_set = wormedit::osu_sample_set_t::soft, .addition_set = wormedit::osu_sample_set_t::drum};
     const auto hitsound = wormedit::ui::hitsound_note_view_t::from(sample, {}, "");
-    WormUiComposeNoteView note{};
+    wormedit::ui::compose_note_view_t note{};
     note.bounds = {10, 40, 110, 62};
-    note.note_id = 1;
-    note.lane_id = 1;
+    note.note_id.value = 1;
+    note.lane_id.value = 1;
     note.hitsound = &hitsound;
     note.semantic_color_visible = true;
     note.semantic_red = note.semantic_green = note.semantic_blue = light ? 240 : 20;
@@ -110,8 +110,7 @@ void check_hitsound_note_contrast(bool light) {
     WormUiComposeView view{};
     view.scene_available = true;
     view.viewport_width_pixels = view.viewport_height_pixels = 128;
-    view.note_endpoints = &note;
-    view.note_endpoint_count = 1;
+    view.note_endpoints = {note};
     auto& color_view = worm_ui_nuklear_compose_state().input_queue.color_view;
     const auto previous = color_view;
     color_view = worm_ui_nuklear_compose_color_view_t::layer;

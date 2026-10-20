@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 namespace wormedit::sys {
 
@@ -36,6 +37,10 @@ struct sv_graph_point_t {
 
 struct sv_graph_t {
     std::vector<sv_graph_point_t> points;
+    // Retained workspace for the step and continuous-curve projections.
+    std::vector<std::pair<std::uint64_t, double>> held;
+    std::vector<std::pair<double, double>> curve;
+    std::vector<std::pair<double, double>> window;
     // Value range the x axis covers, and where the 1.0x reference sits (negative when outside).
     double minimum{1.0};
     double maximum{1.0};

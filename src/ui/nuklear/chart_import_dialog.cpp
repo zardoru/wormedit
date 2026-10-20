@@ -12,7 +12,7 @@ namespace {
 namespace chrome = wormedit::ui::chrome;
 
 struct path_field_t {
-    std::array<char, WORM_UI_PROJECT_PATH_CAPACITY> text{};
+    std::array<char, wormedit::maximum_project_path_bytes + 1> text{};
     std::string seen;  // The view path the field was last reset from.
 };
 
@@ -50,7 +50,7 @@ auto render_path_row(nk_context* context, wormedit::ui::workspace_action_t& acti
     if (chrome::Button{"Read", chrome::ButtonKind::secondary, "Read the chart file at this path",
                        field.text[0] != '\0'}.render(context)) {
         emit(action, WORM_UI_CHART_IMPORT_LOAD);
-        std::snprintf(action.project_path, sizeof(action.project_path), "%s", field.text.data());
+        action.project_path = field.text.data();
     }
     return browse;
 }

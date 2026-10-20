@@ -45,27 +45,27 @@ auto staged_timing(wormedit::timing_lane_kind_t lane) -> wormedit::ui::timing_vi
 
 void check_primary(const wormedit::ui::workspace_action_t& action, const char* numerator,
                    const char* denominator) {
-    CHECK(std::strcmp(action.timing_primary_numerator_text, numerator) == 0);
-    CHECK(std::strcmp(action.timing_primary_denominator_text, denominator) == 0);
+    CHECK(action.timing_primary_numerator_text == numerator);
+    CHECK(action.timing_primary_denominator_text == denominator);
 }
 
 void check_secondary(const wormedit::ui::workspace_action_t& action, const char* numerator,
                      const char* denominator) {
-    CHECK(std::strcmp(action.timing_secondary_numerator_text, numerator) == 0);
-    CHECK(std::strcmp(action.timing_secondary_denominator_text, denominator) == 0);
+    CHECK(action.timing_secondary_numerator_text == numerator);
+    CHECK(action.timing_secondary_denominator_text == denominator);
 }
 
 void check_inline_rejected(const wormedit::ui::timing_view_t& view, const char* text,
                            wormedit::ui::workspace_action_t& action, const char* unchanged_numerator) {
     CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, text, action));
-    CHECK(std::strcmp(action.timing_primary_numerator_text, unchanged_numerator) == 0);
+    CHECK(action.timing_primary_numerator_text == unchanged_numerator);
 }
 
 void check_inline_binding(const wormedit::ui::workspace_action_t& action) {
     CHECK(action.timing_stage_action == wormedit::ui::timing_stage_action_t::confirm);
-    CHECK(action.timing_chart_id == 7);
+    CHECK(action.timing_chart_id.value == 7);
     CHECK(action.timing_document_revision == 11);
-    CHECK(action.timing_object_id == 29);
+    CHECK(action.timing_object_id.value == 29);
     CHECK(action.timing_lane == wormedit::timing_lane_kind_t::bpm);
 }
 
@@ -361,7 +361,7 @@ TEST_CASE("Inline timing BPM decimal emits exact editor text and stage binding",
     REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "123.456", action));
     check_inline_binding(action);
     CHECK(action.timing_bpm_decimal_edited);
-    CHECK(std::strcmp(action.timing_bpm_decimal_text, "123.456") == 0);
+    CHECK(action.timing_bpm_decimal_text == "123.456");
     check_primary(action, "15432", "125");
 }
 
@@ -439,9 +439,9 @@ TEST_CASE("Inline timing warp uses integer secondary fields",
     wormedit::ui::workspace_action_t action{};
     REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "42", action));
     check_secondary(action, "42", "1");
-    CHECK(std::strcmp(action.timing_primary_numerator_text, "25") == 0);
+    CHECK(action.timing_primary_numerator_text == "25");
     CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "1.5", action));
-    CHECK(std::strcmp(action.timing_secondary_numerator_text, "42") == 0);
+    CHECK(action.timing_secondary_numerator_text == "42");
 }
 
 TEST_CASE("Inline timing anchor edits preserve lock state", "[unit][frontend][compose]") {
@@ -453,7 +453,7 @@ TEST_CASE("Inline timing anchor edits preserve lock state", "[unit][frontend][co
     REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "18446744073709551615", action));
     check_primary(action, "18446744073709551615", "1");
     CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "-1", action));
-    CHECK(std::strcmp(action.timing_primary_numerator_text, "18446744073709551615") == 0);
+    CHECK(action.timing_primary_numerator_text == "18446744073709551615");
 }
 
 namespace {
@@ -655,7 +655,7 @@ TEST_CASE("Area edge capture restores exact original virtual range and source bi
     CHECK(action.compose_area_begin_row == 144);
     CHECK(action.compose_area_end_row == 10000);
     CHECK(action.compose_area_virtual);
-    CHECK(action.compose_input_chart_id == 7);
+    CHECK(action.compose_input_chart_id.value == 7);
     CHECK(action.compose_input_document_revision == 11);
     CHECK(view.selected_note_count == 3);
     CHECK(view.selected_object_count == 5);
@@ -910,7 +910,7 @@ TEST_CASE("inline audio offset focuses exact text and emits one signed edit", "[
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
     expect_inline(action.compose_audio_offset_numerator == -1);
     expect_inline(action.compose_audio_offset_denominator == 8);
-    expect_inline(action.compose_input_chart_id == 7 && action.compose_input_document_revision == 11);
+    expect_inline(action.compose_input_chart_id.value == 7 && action.compose_input_document_revision == 11);
     action = {};
     worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
     expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
@@ -1150,10 +1150,10 @@ TEST_CASE("Compose color views choose tile and arrow base fills", "[compose][col
     const auto view = GENERATE(View::normal, View::snap, View::layer);
     const auto membership = GENERATE(0, 1, 2); // unassigned, visible, hidden
     const auto glyph = GENERATE(0, 2);
-    WormUiComposeNoteView note{};
-    note.key_color = 3;
+    wormedit::ui::compose_note_view_t note{};
+    note.key_color = wormedit::lane_key_color_t::scratch;
     note.snap_class = 16;
-    note.glyph = static_cast<std::uint8_t>(glyph);
+    note.glyph = static_cast<wormedit::lane_glyph_t>(glyph);
     note.semantic_color_visible = membership == 1;
     note.semantic_red = 31;
     note.semantic_green = 87;
@@ -1178,8 +1178,8 @@ TEST_CASE("Compose color views choose tile and arrow base fills", "[compose][col
 
 TEST_CASE("Compose hold fills use head snap and neutral hidden membership", "[compose][color-view]") {
     using View = worm_ui_nuklear_compose_color_view_t;
-    WormUiComposeHoldView hold{};
-    hold.key_color = 3;
+    wormedit::ui::compose_hold_view_t hold{};
+    hold.key_color = wormedit::lane_key_color_t::scratch;
     hold.snap_class = 8;
     hold.semantic_color_visible = true;
     hold.semantic_red = 31;
@@ -1247,7 +1247,7 @@ TEST_CASE("Compose selection outline is green in the theme", "[compose][key-colo
 TEST_CASE("Compose color views default to Normal and unknown snaps use other grey", "[compose][color-view]") {
     using View = worm_ui_nuklear_compose_color_view_t;
     CHECK(worm_ui_nuklear_compose_state_t{}.input_queue.color_view == View::normal);
-    WormUiComposeNoteView note{};
+    wormedit::ui::compose_note_view_t note{};
     note.snap_class = 255;
     const auto actual = compose_note_base_fill(View::snap, note);
     const auto other = wormedit::ui::arrow_snap_color(0);
@@ -1262,9 +1262,9 @@ TEST_CASE("Compose transient arrows omit semantic outlines in every color view",
     const auto assigned = GENERATE(false, true);
     const auto transient = GENERATE(0, 1, 2, 3, 4, 5, 6);
     WormUiComposeView view{};
-    WormUiComposeNoteView note{};
-    note.note_id = 7;
-    note.glyph = 2;
+    wormedit::ui::compose_note_view_t note{};
+    note.note_id.value = 7;
+    note.glyph = wormedit::lane_glyph_t::arrow_left;
     note.semantic_color_visible = assigned;
     note.proposal_ghost = transient == 1;
     note.proposal_origin = transient == 2;
@@ -1431,12 +1431,12 @@ TEST_CASE("Stem lane resize capture cancels on stale chart occlusion or focus lo
 TEST_CASE("Invisible notes retain palette RGB with reduced opacity in every color view", "[compose][color-view][invisible]") {
     using View = worm_ui_nuklear_compose_color_view_t;
     const auto view = GENERATE(View::normal, View::snap, View::layer);
-    WormUiComposeNoteView note{};
+    wormedit::ui::compose_note_view_t note{};
     note.semantic_color_visible = true;
     note.semantic_red = 190; note.semantic_green = 140; note.semantic_blue = 80; note.semantic_alpha = 200;
     note.snap_class = 16;
     const auto visible = compose_note_base_fill(view,note);
-    note.kind = 3;
+    note.kind = wormedit::note_kind_t::invisible;
     const auto invisible = compose_note_base_fill(view,note);
     expect_inline(visible.r == invisible.r && visible.g == invisible.g && visible.b == invisible.b);
     expect_inline(invisible.a == static_cast<unsigned>(visible.a)*3/5);

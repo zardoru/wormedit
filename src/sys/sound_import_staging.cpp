@@ -7,7 +7,7 @@ namespace wormedit::sys {
 namespace {
 
 auto stage_automatic_sound_import(const song_document_t& document, chart_id_t chart,
-                                  std::span<const std::string> paths, std::uint8_t fixed_kind = 0)
+                                  std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind = wormedit::ui::sound_import_kind_t::generic)
     -> compose_action_outcome_t {
     const auto* target = document.find_chart(chart);
     if (!target) return compose_action_outcome_t::blocked(
@@ -24,11 +24,11 @@ auto stage_automatic_sound_import(const song_document_t& document, chart_id_t ch
     for (std::size_t index = 0; index < prepared.entries.size(); ++index) {
         const auto& entry = prepared.entries[index];
         items.push_back({source_paths[index].c_str(), entry.asset.name.c_str(),
-                         static_cast<std::uint8_t>(entry.kind), fixed_kind != 0});
+                         entry.kind, fixed_kind != wormedit::ui::sound_import_kind_t::generic});
     }
     std::vector<wormedit::ui::sound_import_group_t> groups;
     for (const auto& group : document.sound_groups)
-        groups.push_back({group.name.c_str(), group.id.value, nullptr, 0});
+        groups.push_back({group.name.c_str(), group.id, {}});
     const bool has_bgm = !target->sound_channels.empty() ||
         std::ranges::any_of(target->measures, [](const measure_chunk_t& measure) {
             return !measure.bgm_events.empty();
@@ -69,7 +69,7 @@ auto stage_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     std::vector<wormedit::ui::sound_slot_import_item_t> items;
     items.reserve(prepared.items.size());
     for (const auto& item : prepared.items)
-        items.push_back({item.path.c_str(), item.name.c_str(), item.occupied_resource_id,
+        items.push_back({item.path.c_str(), item.name.c_str(), resource_id_t{item.occupied_resource_id},
                          item.occupied_name.c_str(), item.ambiguous});
     const auto staged = worm_ui_frontend_stage_sound_slot_batch(document.id.value,
         chart.value, document.revision, first_slot, items.data(), items.size(),
@@ -81,7 +81,7 @@ auto stage_sound_slot_batch(const song_document_t& document, chart_id_t chart,
 }
 
 auto stage_sound_import(const song_document_t& document, const workspace_controller_t& workspace,
-                        std::span<const std::string> paths, std::uint8_t fixed_kind)
+                        std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind)
     -> compose_action_outcome_t {
     if (!workspace.selected_chart) return compose_action_outcome_t::blocked(
         "Select a difficulty before adding sounds.", notification_source_t::import_);

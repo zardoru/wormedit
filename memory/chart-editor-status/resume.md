@@ -2,6 +2,34 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-695** (2026-10-20): all 18 Compose geometry primitive types are C++ views;
+20 owned lists retain capacity, and the cursor is optional. Timing/graph producers refill retained
+buffers; main and Compare surfaces own separate canvas scratch. Storage cutoffs are removed while
+scene, renderer and recipe work budgets remain. Populated warmed geometry refills allocate zero
+bytes, and a same-ID/revision project reopen refreshes retained sound labels. Identical Compose
+captures are pixel-identical; timing focus and populated two-pane Compare were inspected in
+isolated Xvfb. GATE passes **4,370/4,370**, build, whitespace and complexity across **149 changed
+translation units** (`/tmp/wormedit-gate.m1y9nR`); the separate event harness passes **591/591**.
+The user-requested Clang preset repair explicitly initializes three absent StepMania policies;
+the preset build and **4,370 Clang tests** pass. Ratchets: **46 C structs / 30 capacities /
+86 count fields / 0 codecs**; the obsolete speed-graph complexity allowance is removed.
+
+**Next: T-696, Compose BGM, waveform and stem views.** Compose cards T-696–T-698 run sequentially.
+See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-696-convert-the-compose-bgm-waveform-and-stem-views)
+for ownership and verification requirements.
+
+Completed **T-694** (2026-10-20): action payloads own their text and lists, carry core IDs
+and enums, and no longer borrow frontend staging. Compose/viewport/shortcut admission remains
+16/16/64, including cancellation and shared shortcut-capture rejection. Missing metadata payloads
+and path/import/recovery bounds are preserved. GATE passes **4,367/4,367**, build, whitespace and
+complexity across **132 changed translation units** (`/tmp/wormedit-gate.5J66eB`); the separate
+event harness passes **591/591**. Owned-copy, warmed sound-list allocation and overflow regressions
+pass. Isolated Xvfb verifies Compose, timing focus, Audio Slices, project creation, navigation and
+Metadata Apply/Undo with clean-state restoration. Ratchets: **64 C structs / 45 capacities /
+107 count fields / 0 codecs**; no complexity allowance increased. The Clang preset still stops
+at three pre-existing missing `stepmania` initializers in unchanged `src/core/lane_profiles.cpp`
+(`/tmp/t694-clang-build.log`). The nested recipe form remains in T-698's explicit ownership.
+
 Completed **T-691–T-693** (2026-10-20) in parallel: project/options/notifications,
 metadata/audio, and timing/player-preview surfaces use retained C++ views with owned lists and
 core IDs/enums. The final timing codec is gone. Populated warmed allocation regressions pass;
@@ -16,13 +44,6 @@ identical warmed preview fixture; unrelated core preview-scene allocations remai
 frame-time improvement is claimed. Ratchets: **64 C structs / 50 capacities / 121 count fields /
 0 codecs**; no complexity allowance increased.
 
-**Next: T-694's remaining payload ownership, strong IDs and type-owned parsing.** Its eight
-declarations/consumers have C++ names, but this is explicitly a partial checkpoint, not a completed
-conversion. A small Sonnet audit covered its retained admission/input bounds. T-695 is also
-unblocked; Compose cards T-695–T-698 must run sequentially. See the
-[conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-691-convert-the-project-and-optionsnotifications-surfaces)
-for ownership extensions, bounds, allocation measurements and verification evidence.
-
 Completed **T-690** (2026-10-20): catalog, workspace and runtime views are C++ types;
 main/Compare roots persist and refill in place, converted lists retain capacity, and legacy UI
 storage cutoffs are removed while real retention/render budgets remain. Recovery scrolls all
@@ -32,7 +53,7 @@ translation units (`/tmp/wormedit-gate.gOnv6y`); isolated startup, Project, Comp
 and two-pane Compare checks pass. Ratchets: **117 C structs / 73 capacities / 174 count fields**;
 the single timing codec remains. See [the card](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-690-convert-the-catalog-workspace-and-runtime-surfaces)
 for ownership extensions, bounds and build/visual evidence. T-691–T-693 are now complete;
-T-694 remains partial as recorded above.
+T-694 is also complete as recorded above.
 
 Completed selection-safety follow-up (2026-10-20): pressing outside a retained area no longer
 clears it; note clicks commit selection on release, and Escape cancels pending mouse capture or

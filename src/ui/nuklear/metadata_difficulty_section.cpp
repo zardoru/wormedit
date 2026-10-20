@@ -56,7 +56,7 @@ static void set_metadata_chart_action(wormedit::ui::workspace_action_t* action,
         return;
     action->metadata_edit = WORM_UI_METADATA_EDIT_CHART;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = metadata->chart_id.value;
+    action->metadata_chart_id = metadata->chart_id;
     action->metadata_chart_name = state.chart_name.data();
     action->metadata_chart_author = state.chart_author.data();
     action->metadata_has_chart_rating = !unset_rating && rating->has_rating;
@@ -88,7 +88,7 @@ static void set_metadata_redivision_action(wormedit::ui::workspace_action_t* act
         return;
     action->metadata_edit = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = metadata->chart_id.value;
+    action->metadata_chart_id = metadata->chart_id;
     action->metadata_redivision_resolution = *resolution;
 }
 
@@ -200,16 +200,17 @@ static void render_channel_map_lane_row(nk_context* context, const wormedit::ui:
 static void set_channel_map_preview_action(wormedit::ui::workspace_action_t* action,
                                            const wormedit::ui::metadata_view_t& metadata) {
     if (action->metadata_edit != WORM_UI_METADATA_EDIT_NONE) return;
-    state.channel_map_text_pointers.clear();
-    for (const auto& lane : state.channel_map_texts)
-        for (const auto& text : lane) state.channel_map_text_pointers.push_back(text.data());
     action->metadata_edit = WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP;
     action->metadata_document_revision = metadata.document_revision;
-    action->metadata_chart_id = metadata.chart_id.value;
-    action->metadata_channel_map_layout_segment_id = metadata.channel_map_layout_segment_id.value;
-    action->metadata_channel_map_lane_count = state.channel_map_lane_ids.size();
-    action->metadata_channel_map_lane_ids = state.channel_map_lane_ids.data();
-    action->metadata_channel_map_texts = state.channel_map_text_pointers.data();
+    action->metadata_chart_id = metadata.chart_id;
+    action->metadata_channel_map_layout_segment_id = metadata.channel_map_layout_segment_id;
+    for (std::size_t index = 0; index < state.channel_map_lane_ids.size(); ++index) {
+        const auto& text = state.channel_map_texts[index];
+        action->metadata_channel_map_lanes.push_back({
+            .lane = wormedit::lane_id_t{state.channel_map_lane_ids[index]},
+            .visible = text[0].data(), .invisible = text[1].data(),
+            .long_note = text[2].data(), .mine = text[3].data()});
+    }
 }
 
 static void set_lane_profile_action(wormedit::ui::workspace_action_t* action, const wormedit::ui::metadata_view_t& metadata,
@@ -217,7 +218,7 @@ static void set_lane_profile_action(wormedit::ui::workspace_action_t* action, co
     if (!action || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE) return;
     action->metadata_edit = kind;
     action->metadata_document_revision = metadata.document_revision;
-    action->metadata_chart_id = metadata.chart_id.value;
+    action->metadata_chart_id = metadata.chart_id;
     action->metadata_lane_profile_index = index;
 }
 
@@ -318,7 +319,7 @@ static void render_channel_map_section(const MetadataPanel& panel) {
     if (apply && panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
         panel.action->metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
         panel.action->metadata_document_revision = metadata.document_revision;
-        panel.action->metadata_chart_id = metadata.chart_id.value;
+        panel.action->metadata_chart_id = metadata.chart_id;
     }
 }
 
@@ -349,11 +350,10 @@ static void set_batch_chart_action(const MetadataPanel& panel, bool rating_edit)
         return;
     const auto rating = metadata_chart_rating_value(&metadata);
     if (rating_edit && !rating) return;
-    state.batch_action_chart_ids = state.batch_selected_charts;
     action->metadata_edit = WORM_UI_METADATA_EDIT_BATCH_CHART;
     action->metadata_document_revision = metadata.document_revision;
-    action->metadata_batch_chart_ids = state.batch_action_chart_ids.data();
-    action->metadata_batch_chart_count = state.batch_action_chart_ids.size();
+    for (const auto id : state.batch_selected_charts)
+        action->metadata_batch_chart_ids.push_back(wormedit::chart_id_t{id});
     action->metadata_batch_edit_author = !rating_edit;
     action->metadata_batch_edit_rating = rating_edit;
     action->metadata_chart_author = state.chart_author.data();

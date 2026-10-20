@@ -96,9 +96,9 @@ TEST_CASE("Tag grips stage insertion reorder until Apply and Revert restores sou
     expect_tag(std::string_view{state.search_tags[2].data()} == "alpha");
     const auto applied = fixture.click("Apply");
     expect_tag(applied.get().metadata_edit == WORM_UI_METADATA_EDIT_SONG);
-    expect_tag(applied.get().metadata_search_tag_count == 3);
-    expect_tag(std::string_view{applied.get().metadata_search_tags[0]} == "beta");
-    expect_tag(std::string_view{applied.get().metadata_search_tags[2]} == "alpha");
+    expect_tag(applied.get().metadata_search_tags.size() == 3);
+    expect_tag(std::string_view{*applied.get().metadata_search_tags[0]} == "beta");
+    expect_tag(std::string_view{*applied.get().metadata_search_tags[2]} == "alpha");
     (void)fixture.click("Revert");
     expect_tag(std::string_view{state.search_tags[0].data()} == "alpha");
 }

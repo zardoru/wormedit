@@ -262,10 +262,10 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 
 ## T-694 Convert the action payloads
 
-- **Status:** partial (declaration checkpoint; owned payloads and strong IDs remain)
+- **Status:** done
 - **Outcome:** `actions.h` contains no C structs; action payloads are C++ types the frontend fills and sys reads with `T::from`, with no fixed-size arrays.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for `src/ui/frontend/actions.h`, plus the sys dispatchers that read each payload (step 1).
+- **Files owned:** the shared list for `src/ui/frontend/actions.h`, plus the sys dispatchers that read each payload (step 1), `cmake/complexity_baseline.txt` (reviewed test-limit decrease), and the exact coordinated inventory below.
 - **Steps:** 1. Inventory every payload with its writers in `src/ui/nuklear` and readers in `src/sys`. 2. Convert one action family per checkpoint. 3. Payload IDs use strong ID types.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
@@ -278,7 +278,7 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
   renames give the declarations and consumers consistent C++ names in `wormedit::ui` while
   T-691/T-693 convert nested payloads. Timing target and viewport input are plain value records.
   A small Sonnet read-only audit checked the retained input/admission bounds.
-- **Remaining:** convert the other payload families' pointer/count lists and text buffers to
+- **Remaining at that checkpoint (implemented below):** convert the other payload families' pointer/count lists and text buffers to
   owned storage, parse payloads on their types, and carry strong IDs through their producers
   and dispatchers. Preserve Compose/viewport admission 16 and shortcut admission 64 including
   overflow cancellation. Preserve path/import/recovery input bounds and missing metadata
@@ -286,22 +286,195 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
   remaining capacities/count fields stay ratcheted.
 
 
+### T-694 ownership and payload checkpoint (2026-10-20)
+
+- **Done so far:** action-owned strings and vectors replace borrowed payloads, count pairs and
+  direct fixed buffers. Metadata retains optional missing-text semantics and owns channel-map
+  rows; sound import/group payloads own nested members. Obsolete metadata, sound and measure
+  pointer staging and the harness's deep-copy adapters are retired. Actual identities carry
+  core strong IDs; measure-list values remain chart positions, including virtual tail measures,
+  and are documented as positions rather than being mislabeled as stable measure IDs.
+- **Bounds:** Compose and viewport ingestion remain 16 each; shortcut ingestion remains 64,
+  with the existing overflow cancellation. These are named admission constants, independent of
+  vector storage. Project paths retain 4096 bytes and recovery destinations 511 bytes; their
+  bounds moved to vocabulary, and recovery rejects embedded nulls and overlength owned strings.
+  Domain import, tag, channel-map, batch and quantization-name validation remains in place.
+- **Supporting ownership approved by the coordinator:** move resource-role and quantization
+  vocabulary declarations from `document.h` to `vocabulary.h` without changing values; share
+  import intent in a neutral header; remove obsolete UI/harness staging; carry typed values
+  through the existing dispatch and request owners. No command route or edit semantics change.
+  The nested `WormUiTimingRecipeForm` is declared in `compose.h` and explicitly remains owned
+  by T-698; this card removes arrays declared by `actions.h`, not that later card's form.
+- **Verification:** GATE passes build, **4,367/4,367** tests, whitespace and complexity across
+  **132 changed translation units** (`/tmp/wormedit-gate.5J66eB`). The separate event harness
+  passes **591/591**. Owned-copy regressions cover metadata, sound, branch text and measure
+  positions; the warmed sound-list setter reports zero additional allocations and requested
+  bytes. Oversized Compose/viewport batches cancel active input without changing history;
+  shortcut ingestion and shared capture reject overflow before binding. No complexity allowance
+  increased; the metadata reset test limit drops **52→48** after its retired staging assertion
+  is removed. Existing domain factories and validators remain the text parsing owners.
+- **Real-window checks:** isolated Xvfb captures cover the populated Compose fixture, timing
+  focus, empty Audio Slices, fresh-project creation and Project/Metadata/Compose navigation
+  (`/tmp/t694-{compose,timing,audio,project,metadata,created-compose}.png`). Applying a song
+  title and Undo restore both text and clean state (`/tmp/t694-metadata-{applied,undone}.png`).
+  The smoke helper's default wizard coordinates predate T-728; fixture arguments and explicit
+  current wizard coordinates were used, without changing the helper in this card.
+- **Clang limitation:** `cmake --build --preset linux-clang --parallel 2` still stops at the
+  same three missing `stepmania` initializers in unchanged `src/core/lane_profiles.cpp`
+  (1139, 1148, 1151; identical in HEAD). Log: `/tmp/t694-clang-build.log`.
+- **Ratchets:** **64 C structs / 45 capacities / 107 count fields / 0 codecs**. The two
+  remaining action count fields describe BGM column configuration and the semantic-layer
+  window, rather than pointer/count lists. No frame-time improvement is claimed.
+
+Verification output tails:
+
+```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4367
+gate: passed
+100% tests passed out of 591
+100% tests passed out of 5
+4: -- Ceremony ratchet 'frontend_c_struct': 64
+4: -- Ceremony ratchet 'frontend_fixed_capacity': 45
+4: -- Ceremony ratchet 'frontend_pointer_count_field': 107
+4: -- Ceremony ratchet 'frontend_ui_codec': 0
+```
+
+The exact coordinated producer, consumer, vocabulary and regression inventory is:
+
+- **Vocabulary and frontend contract:** `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/ui/frontend/actions.h`, `src/ui/frontend/common.h`, `src/ui/frontend/sound_import.h`.
+- **Application producers and dispatch:** `src/sys/application.cpp`, `src/sys/application_command_dispatch.h`, `src/sys/application_frame_services.cpp`, `src/sys/application_timing_stage.cpp`, `src/sys/application_timing_stage.h`, `src/sys/audio_offset_actions.h`, `src/sys/catalog_view.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_area_actions.cpp`, `src/sys/compose_bga_actions.cpp`, `src/sys/compose_bgm_bar.cpp`, `src/sys/compose_bookmark_actions.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_input_internal.h`, `src/sys/compose_measure_actions.cpp`, `src/sys/compose_quantize_request.h`, `src/sys/compose_recipe_actions.cpp`, `src/sys/compose_resource_actions.cpp`, `src/sys/compose_resource_input.cpp`, `src/sys/compose_sound_actions.cpp`, `src/sys/compose_sound_actions.h`, `src/sys/compose_timing_input.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_waveform_fit_input.cpp`, `src/sys/metadata_actions.cpp`, `src/sys/metadata_asset_runtime.cpp`, `src/sys/preferences_runtime.cpp`, `src/sys/recovery_notification_feedback.cpp`, `src/sys/shortcut_rows.cpp`, `src/sys/shortcut_rows.h`, `src/sys/sound_drop_transaction.cpp`, `src/sys/sound_import_staging.cpp`, `src/sys/sound_import_staging.h`, `src/sys/sound_usage_actions.cpp`, `src/sys/transport_player_actions.cpp`.
+- **Frontend consumers and staging:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/bms_branch_panel.cpp`, `src/ui/nuklear/bmson_lane_mode_ui.cpp`, `src/ui/nuklear/chart_import_dialog.cpp`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/nuklear/compose_action_stamp.h`, `src/ui/nuklear/compose_area_menu.cpp`, `src/ui/nuklear/compose_area_menu.h`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_bmson_tab.cpp`, `src/ui/nuklear/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/compose_measure_resize_input.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compose_menu_command.h`, `src/ui/nuklear/compose_note_label_inline.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_recipe_form.cpp`, `src/ui/nuklear/compose_recipe_menu.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_snap_grid.cpp`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_timing_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/keysound_list_state.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/ui/nuklear/metadata_audio_section.cpp`, `src/ui/nuklear/metadata_difficulty_section.cpp`, `src/ui/nuklear/metadata_format_fields.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/ui/nuklear/metadata_song_section.cpp`, `src/ui/nuklear/metadata_state.cpp`, `src/ui/nuklear/metadata_state.h`, `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/ui/nuklear/sound_import_runtime.cpp`, `src/ui/nuklear/sound_import_runtime.h`, `src/ui/nuklear/sound_import_state.cpp`, `src/ui/nuklear/sound_import_state.h`, `src/ui/nuklear/sound_slot_batch.cpp`, `src/ui/nuklear/sound_slot_batch.h`, `src/ui/nuklear/timing_settings_panel.cpp`, `src/ui/nuklear/timing_stage_editor.cpp`.
+- **Regression consumers:** `tests/sys/application_commands_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/compose_area_dispatch_fixture.h`, `tests/sys/compose_beat_fit_tests.cpp`, `tests/sys/compose_bgm_bar_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/compose_quantize_preview_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/global_drop_notification_tests.cpp`, `tests/sys/manual_sound_group_command_tests.cpp`, `tests/sys/metadata_notification_tests.cpp`, `tests/sys/minimap_center_tests.cpp`, `tests/sys/recovery_notification_tests.cpp`, `tests/sys/resource_notification_tests.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/sys/sound_properties_actions_tests.cpp`, `tests/sys/sound_usage_actions_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/bmson_lane_mode_event_harness_tests.cpp`, `tests/ui/bookmark_chooser_event_harness_tests.cpp`, `tests/ui/bookmark_rename_event_harness_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/compose_measure_resize_tests.cpp`, `tests/ui/dock_select_all_event_harness_tests.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/hidden_notification_history_event_harness_tests.cpp`, `tests/ui/hitsound_palette_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/lane_keys_event_harness_tests.cpp`, `tests/ui/live_resource_table_event_harness_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `tests/ui/markers_event_harness_tests.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/ui/minimap_center_event_harness_tests.cpp`, `tests/ui/note_label_inline_event_harness_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_event_harness.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/nuklear_metadata_state_tests.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, `tests/ui/preview_audio_export_event_harness_tests.cpp`, `tests/ui/selected_sound_layers_menu_tests.cpp`, `tests/ui/snap_grid_event_harness_tests.cpp`, `tests/ui/sound_import_state_tests.cpp`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/sound_slot_batch_event_harness_tests.cpp`, `tests/ui/sound_source_copy_event_harness_tests.cpp`, `tests/ui/sound_usage_event_harness_tests.cpp`, `tests/ui/tag_grips_event_harness_tests.cpp`, `tests/ui/tap_timing_panel_event_harness_tests.cpp`, `tests/ui/timing_settings_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`.
+
 ## T-695 Convert the Compose field geometry views
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
 - **Value:** The hottest per-frame path, so this is where the steady-state allocation test matters most.
 - **Outcome:** the field geometry structs in `compose.h` are C++ views with owned lists refilled in place: rect, paste ghost, band, lane, grid line, lane layout segment, timing preview rect, dead/Kiai/speed spans, SV graph point, recipe area, difference, hold, note, cursor, timing marker, quantize ghost.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for those structs in `src/ui/frontend/compose.h`, plus `src/sys/compose_view.cpp`, `src/sys/compose_view_internal.h`, `src/ui/nuklear/compose_canvas.cpp` and the field renderer (`src/ui/field/field_renderer.*`).
+- **Files owned:** the shared list for those structs in `src/ui/frontend/compose.h`, plus `src/sys/compose_view.cpp`, `src/sys/compose_view_internal.h`, `src/ui/nuklear/compose_canvas.cpp` and the field renderer (`src/ui/field/field_renderer.*`); coordinator-approved supporting files are enumerated in the T-695 inventory and conversion checkpoints below.
 - **Steps:** 1. Inventory as in T-690. 2. Convert one primitive family per checkpoint. 3. Record frame-time and `frame_timing` heap summaries for the smoke chart before and after.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
 - **Invariants:** the shared list. The GPU field renderer's input stays a contiguous span.
 - **Out of scope:** BGM, sound and bookmark views (T-696–T-698); `WormUiComposeView` itself (T-698).
 
+### T-695 inventory and ownership extensions (2026-10-20)
+
+- The stale-plan check found all 18 primitive structs still C structs, with geometry lists
+  borrowed from arena spans, cache vectors or paste/quantize staging. Scene projection lives in
+  `compose_scene_view.cpp`, scalar reuse and layout segments in `compose_view.cpp`, timing
+  geometry in `compose_marker_view.cpp`/`compose_waveform_overlays.cpp`, and quantize ghosts in
+  `compose_selection_view.cpp`. Consumers include canvas drawing, note/timing/viewport input,
+  menu hit tests and frontend validation, with sys geometry/lifetime and UI harness fixtures.
+- Coordinator-approved supporting ownership: `src/sys/workspace_view.h/.cpp` for retained root
+  lists and exact grid rows; `src/sys/compose_scene_view.cpp`, `compose_selection_view.cpp`,
+  `compose_marker_view.cpp`, `compose_waveform_overlays.cpp`, `compose_draw_source_view.cpp`,
+  `compose_view.h`, `frontend_geometry.h` and `application.cpp` for their primitive signatures,
+  storage and consumption. Retained graph output buffers also require
+  `src/sys/compose_dead_spans.h/.cpp`, `compose_sv_graph.h/.inl`,
+  `compose_recipe_areas.h/.inl` and `compose_speed_spans.h`.
+- Frontend supporting ownership includes `src/ui/compose_timing_geometry.h`, the primitive
+  references in `src/ui/frontend/actions.h`, `timing_preview.h` and `options_notifications.h`,
+  and `src/ui/nuklear/compose_canvas.h`, `compose_panel.cpp`, `compose_timing_input.cpp`,
+  `compose_recipe_menu.cpp`, `compose_state.h/.cpp`, `frontend.cpp`, `compose_input_panel.cpp`,
+  `compose_viewport_input.cpp`, `compose_measure_resize_input.cpp`, `compose_note_menu.cpp` and
+  `compose_object_input.cpp`. `sdl_backend.h/.cpp` owns per-surface retained tile extraction
+  scratch so main and Compare surfaces have explicit, separate lifetimes.
+- Regression ownership includes `tests/sys/frame_timing_tests.cpp`, `timing_lane_ui_tests.cpp`
+  and the UI fixtures constructing these primitives. Core vocabulary extraction owns
+  `include/wormedit/core/vocabulary.h`, `document.h` and `interaction_gestures.h`: existing
+  stage, recipe-curve and move-conflict enum values move without changing their meaning.
+- Baseline: populated `tests/fixtures/native/compose-smoke.wormedit`, isolated Xvfb at
+  1280×720, identical 12-second pointer-motion script `/tmp/t695-profile-steps.sh`.
+  Last warmed 240-frame block: **18.574987 ms average / 24.849622 ms p99**, projection
+  **48 allocations / 3,646 requested bytes per frame**, scene **11 / 1,071**.
+  Full phase/heap summary: `/tmp/t695-before-timing.txt`; image `/tmp/t695-before.png`.
+  Wall times include software-renderer/VSync scheduling while the independent Clang build
+  was active; no frame-time improvement will be inferred from this single sample.
+
+### T-695 conversion checkpoints (2026-10-20)
+
+- Primitive checkpoint: all 18 types use C++ names, default initialization and value equality;
+  editable IDs and modeled enums use core vocabulary. Paste ghosts distinguish note glyphs from
+  timing lanes. Rectangle construction and validity are members; the free rectangle converter
+  and `src/sys/frontend_geometry.h` are removed. Its unused include also leaves
+  `src/sys/player_preview_presenter.cpp` (supporting signature cleanup only).
+- Storage checkpoint: 20 lists now belong to the persistent Compose view, with an optional cursor.
+  Root reset preserves their capacity; source producers clear/refill them directly. Exact grid
+  rows retain a paired vector, and graph builders reuse retained work/output buffers. Timing
+  labels retain their strings; note labels and hitsound metadata bind to source identity and
+  revision. Retained sound labels additionally include the existing project-session generation,
+  with a same-ID/revision reopen regression. `src/sys/compose_source_key.h` owns that existing
+  shared source key.
+- Rendering checkpoint: main and Compare surfaces own separate retained canvas scratch through
+  the SDL backend. Tile drawing copies only drawing scalars, refills the selected primitive pass,
+  and consumes contiguous ranges. Actual scratch/vector/hash capacities are charged against
+  retention budgets, including the shared hitsound payload once per source.
+- The 15 retired macros include the real scene work budget, now
+  `compose_scene_primitive_work_limit` (**32,768**) in `compose_view.cpp`;
+  `compose_scene_grid_work_limit` remains **16,384**. The static source stays within **16 MiB**;
+  the renderer keeps its existing **4 MiB** geometry scratch reservation. Recipe sampling
+  limits and unconverted BGM/bookmark/sound bounds are unchanged. Artificial output cutoffs for
+  geometry, timing spans/graphs/markers and layout segments are gone; oversized layout lists
+  now show every segment. The regression explicitly covers **2,049** segments.
+- Additional UI ownership from compilation/review: `src/ui/nuklear/theme.h` and `arrow_glyph.h`
+  supply typed overloads for existing drawing helpers; `options_window.cpp` only consumes the
+  typed marker ID. The exact UI fixture set is `tests/ui/nuklear_event_harness_tests.cpp`,
+  `compose_beat_fit_tests.cpp`, `compose_measure_resize_tests.cpp`,
+  `gesture_lifecycle_event_harness_tests.cpp`, `bga_lane_event_harness_tests.cpp`,
+  `popup_menu_event_harness_tests.cpp`, `notification_hit_region_event_harness_tests.cpp`,
+  `compose_stem_lane_render_tests.cpp`, `walkthrough_bms_event_harness_tests.cpp`,
+  `theme_tests.cpp` and `nuklear_compose_state_tests.cpp`.
+- User-requested Clang repair additionally owns `src/core/lane_profiles.cpp`: its three
+  non-StepMania output descriptors explicitly initialize their absent policy with `std::nullopt`.
+  Existing defaults and output choices are preserved.
+
+### T-695 measurements and visual receipt (2026-10-20)
+
+Identical populated smoke chart, window, pointer-motion script and last warmed 240-frame block:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Frame wall average / p99 (ms) | 18.574987 / 24.849622 | 17.678153 / 21.533841 |
+| Frame CPU average / p99 (ms) | 3.895152 / 5.423063 | 3.937724 / 5.453363 |
+| Workspace projection allocations / requested bytes per frame | 48 / 3,646 | 47 / 3,518 |
+| Compose scene allocations / requested bytes per frame | 11 / 1,071 | 10 / 879 |
+
+The full frame still contains unrelated allocations. The populated direct geometry-producer
+regression measures **zero count and byte delta** on its second refill, covering notes, holds,
+custom hitsounds, long sound labels, grid/layout rows, markers, spans and graphs. CPU/wall samples
+include software rendering, VSync and concurrent verification; no general timing improvement is
+claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
+`/tmp/t695-after-timing.txt`.
+
+- Isolated Xvfb Compose captures `/tmp/t695-before.png` and `/tmp/t695-after.png` are
+  **pixel-identical** (ImageMagick AE **0**), and both were inspected. Timing focus was inspected
+  in `/tmp/t695-timing-focus.png`. A disposable project copy was duplicated through the real UI;
+  `/tmp/t695-compare.png` shows both populated Compare fields with separate cache owners.
+- Geometry/grid tests pass **14 cases / 4,407 assertions**; timing geometry passes **5 cases /
+  26,930 assertions**. The dedicated populated refill test passes **14 assertions**, including
+  reopened-project labels (`/tmp/t695-owned-allocation-final.log`).
+- Both changed timing producer clang-tidy runs pass. Production/header complexity checks pass;
+  the new timing test was simplified after its initial macro-expanded score exceeded 25.
+  The old speed-graph score-29 allowance is removed from `cmake/complexity_baseline.txt` after
+  reviewing the cohesive extraction; no allowance is increased. The shared arena assertion
+  remains for unconverted bookmark/section views, while geometry has its own owned-storage check.
+- Full `linux-clang` build and its final incremental build pass with no first-party diagnostics;
+  all **4,370 Clang tests pass**, including the final session-key fix
+  (`/tmp/t695-clang-ctest-session-final.log`). Existing output-catalog
+  tests also pass **12 cases / 1,982 assertions**, checking the absent non-StepMania policies.
+- Final GATE passes build, **4,370/4,370 tests**, whitespace and complexity across **149 changed
+  translation units** (`/tmp/wormedit-gate.m1y9nR`). The separate event-harness run passes
+  **591/591** (`/tmp/t695-events.log`).
+
 ## T-696 Convert the Compose BGM, waveform and stem views
 
-- **Status:** blocked-on T-695
+- **Status:** ready
 - **Outcome:** the BGM lane, event, draft, bar mark/bookmark, move preview, waveform row/overview row, stem waveform and stem cut views are C++ views.
 - **Read first:** the shared list.
 - **Files owned:** the shared list for those structs, plus `src/sys/compose_bgm_bar.cpp`, `src/sys/bmson_waveform_view.cpp` and `src/sys/waveform_view.cpp`.

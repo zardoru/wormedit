@@ -8,11 +8,11 @@ inline auto validate_timing_stage_binding(const wormedit::ui::workspace_action_t
     const wormedit::timing_lane_pseudonote_outcome_t& stage) -> std::optional<std::string> {
     const auto* report = stage.report();
     if (!report || workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
-        report->existing_event.value_or(object_id_t{}) != object_id_t{action.timing_object_id})
+        report->existing_event.value_or(object_id_t{}) != action.timing_object_id)
         return "Timing event staging expired because its chart or revision changed.";
     const chart_stamp_t action_stamp{
         .document = {.project = history.document.id, .revision = action.timing_document_revision},
-        .chart = chart_id_t{action.timing_chart_id}};
+        .chart = action.timing_chart_id};
     if (!stage.captured_stamp().is_current(action_stamp.chart, action_stamp.document.revision) ||
         !action_stamp.is_current(history.document, *workspace.selected_chart))
         return stale_action_message("Timing event staging");

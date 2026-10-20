@@ -28,12 +28,12 @@ struct properties_fixture_t {
         workspace.active_tab = workspace_tab_t::audio_slices;
         workspace.selected_chart = chart_id_t{2};
         action.sound_properties_apply = true;
-        action.sound_properties_project_id = 1;
-        action.sound_properties_chart_id = 2;
-        action.sound_properties_resource_id = 4;
+        action.sound_properties_project_id = song_id_t{1};
+        action.sound_properties_chart_id = chart_id_t{2};
+        action.sound_properties_resource_id = resource_id_t{4};
         action.sound_properties_document_revision = history.document.revision;
-        action.sound_properties_kind = static_cast<std::uint8_t>(sound_kind_t::sample);
-        std::strcpy(action.sound_properties_name, " New voice ");
+        action.sound_properties_kind = sound_kind_t::sample;
+        action.sound_properties_name = " New voice ";
     }
     void dispatch() { REQUIRE(sys::dispatch_sound_properties_action(action, history, workspace)); }
 };
@@ -58,14 +58,14 @@ TEST_CASE("Sounds property Apply preserves tags and asset bindings in one undo s
 TEST_CASE("Sounds property drafts reject stale target and malformed names atomically",
           "[sys][sound-properties]") {
     properties_fixture_t fixture;
-    SECTION("project") { fixture.action.sound_properties_project_id = 8; }
-    SECTION("chart") { fixture.action.sound_properties_chart_id = 8; }
+    SECTION("project") { fixture.action.sound_properties_project_id = song_id_t{8}; }
+    SECTION("chart") { fixture.action.sound_properties_chart_id = chart_id_t{8}; }
     SECTION("revision") { ++fixture.action.sound_properties_document_revision; }
     SECTION("tab") { fixture.workspace.active_tab = workspace_tab_t::compose; }
-    SECTION("resource") { fixture.action.sound_properties_resource_id = 8; }
-    SECTION("unterminated") { std::memset(fixture.action.sound_properties_name, 'x', 257); }
-    SECTION("empty") { std::strcpy(fixture.action.sound_properties_name, "  "); }
-    SECTION("invalid kind") { fixture.action.sound_properties_kind = 255; }
+    SECTION("resource") { fixture.action.sound_properties_resource_id = resource_id_t{8}; }
+    SECTION("overlong") { fixture.action.sound_properties_name.assign(257, 'x'); }
+    SECTION("empty") { fixture.action.sound_properties_name = "  "; }
+    SECTION("invalid kind") { fixture.action.sound_properties_kind = static_cast<sound_kind_t>(255); }
     SECTION("overlong tag") { fixture.action.sound_properties_tags = {std::string(65, 'x')}; }
     SECTION("too many tags") {
         fixture.action.sound_properties_tags = std::vector<std::string>{};
@@ -113,8 +113,8 @@ TEST_CASE("Sounds tag edits add remove and deduplicate through the metadata comm
 TEST_CASE("Sounds duplicate-only tag additions leave history unchanged",
           "[sys][sound-properties][sound-tags]") {
     properties_fixture_t fixture;
-    std::strcpy(fixture.action.sound_properties_name, "Voice");
-    fixture.action.sound_properties_kind = static_cast<std::uint8_t>(sound_kind_t::keysound);
+    fixture.action.sound_properties_name = "Voice";
+    fixture.action.sound_properties_kind = sound_kind_t::keysound;
     fixture.action.sound_properties_tags = {"Vocal", "Keep", " vocal "};
     const auto revision = fixture.history.document.revision;
     fixture.dispatch();

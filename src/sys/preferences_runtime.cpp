@@ -49,7 +49,7 @@ auto normalized_recent_path(const std::filesystem::path& path) -> std::string {
     if (error) return {};
     auto normalized = std::filesystem::weakly_canonical(absolute, error);
     const auto text = (error ? absolute.lexically_normal() : normalized).string();
-    if (text.size() >= sizeof(wormedit::ui::workspace_action_t{}.project_path) || text.find('\0') != std::string::npos) return {};
+    if (text.size() > maximum_project_path_bytes || text.find('\0') != std::string::npos) return {};
     return text;
 }
 void prepend_recent(program_preferences_runtime_t& runtime, std::string path) {

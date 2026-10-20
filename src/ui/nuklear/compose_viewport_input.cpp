@@ -154,11 +154,11 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
             if (append_beat_fit_snap_wheel(input, wheel)) continue;
             if (append_alt_wheel_step(input, wheel)) continue;
             const auto zoom_modifier = compose_wheel_zooms(wheel.modifiers);
-            if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY)
+            if (input.action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit)
                 break;
             const auto visual_y = (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels /
                                   input.viewport.h;
-            input.action->compose_viewport_inputs[input.action->compose_viewport_input_count++] = {
+            input.action->compose_viewport_inputs.emplace_back() = {
                 .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
                                            : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
                 .zoom_modifier = zoom_modifier,
@@ -192,13 +192,13 @@ static void append_compose_pinch_inputs(const ComposeViewportInputContext& input
             state.pinch.pinch = {};
             return;
         }
-        if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY) {
+        if (input.action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit) {
             state.pinch.pinch = {};
             return;
         }
         const auto visual_y = (update.mouse_y - input.viewport.y) * view.viewport_height_pixels /
                               input.viewport.h;
-        input.action->compose_viewport_inputs[input.action->compose_viewport_input_count++] = {
+        input.action->compose_viewport_inputs.emplace_back() = {
             .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
             .cursor_x_pixels = (update.mouse_x - input.viewport.x) * view.viewport_width_pixels /
                                input.viewport.w,
@@ -266,7 +266,7 @@ static std::uint64_t nearest_beat_fit_row(const ComposeBeatFitInput& input) {
     const auto& view = *input.view;
     std::uint64_t nearest_row = 0;
     auto nearest_distance = 6.0 * view.viewport_height_pixels / input.viewport.h;
-    for (std::size_t index = 0; index < view.grid_line_count; ++index) {
+    for (std::size_t index = 0; index < view.grid_lines.size(); ++index) {
         const auto& line = view.grid_lines[index];
         if (!worm_ui_nuklear_beat_fit_line(line)) {
             continue;
@@ -303,7 +303,7 @@ static bool start_compose_fit_drag(const ComposeBeatFitInput& input, bool offset
 
 static void cancel_unmatched_view_beat_fit(const ComposeBeatFitInput& input) {
     const auto cancel_pending = std::ranges::any_of(
-        input.action->compose_inputs, input.action->compose_inputs + input.action->compose_input_count,
+        input.action->compose_inputs.begin(), input.action->compose_inputs.end(),
         [](const auto& event) { return event.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL; });
     if (!cancel_pending) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
@@ -480,10 +480,10 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
     if ((event == worm_ui_nuklear_overview_event_t::scroll &&
          !nk_input_is_mouse_moved(&input.context->input)) ||
         event == worm_ui_nuklear_overview_event_t::none ||
-        input.action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
+        input.action->compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
     append_compose_input(input.action, event == worm_ui_nuklear_overview_event_t::click
         ? WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK : WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
-    auto& emitted = input.action->compose_inputs[input.action->compose_input_count - 1];
+    auto& emitted = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
     const auto captured_window = worm_ui_nuklear_overview_window_for_capture(
         state.waveform_drag.waveform_overview_capture, state.waveform_drag.waveform_overview_capture.window_capture &&
             (state.waveform_drag.waveform_overview_drag_active ||

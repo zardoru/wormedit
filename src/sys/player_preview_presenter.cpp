@@ -1,5 +1,4 @@
 #include "sys/player_preview_presenter.h"
-#include "sys/frontend_geometry.h"
 
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/command.h>

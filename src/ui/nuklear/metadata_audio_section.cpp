@@ -41,7 +41,7 @@ static void set_metadata_audio_offset_action(wormedit::ui::workspace_action_t* a
     }
     action->metadata_edit = WORM_UI_METADATA_EDIT_AUDIO_OFFSET;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = metadata->chart_id.value;
+    action->metadata_chart_id = metadata->chart_id;
     const auto value = *metadata_audio_offset_value();
     const auto wire = state.rational_action_text(value.numerator, value.denominator);
     action->metadata_audio_offset_numerator_text = wire.numerator;
@@ -198,9 +198,9 @@ static auto set_metadata_music_import_action(wormedit::ui::workspace_action_t* a
         action->metadata_import_copy_project || action->metadata_import_copy_export ||
         metadata->import_copy_pending)
         return false;
-    std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s", path);
-    action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC;
-    action->compose_input_chart_id = metadata->chart_id.value;
+    action->compose_import_path = path;
+    action->compose_resource_role = wormedit::resource_role_t::music;
+    action->compose_input_chart_id.value = metadata->chart_id.value;
     action->compose_input_document_revision = metadata->document_revision;
     action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
     return true;
@@ -221,9 +221,9 @@ static void metadata_copy_inspection_button(struct nk_context* context,
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action->metadata_inspect_copy = true;
         action->metadata_inspect_export = export_copy;
-        action->compose_resource_asset_id = metadata->selected_music_asset_id.value;
+        action->compose_resource_asset_id.value = metadata->selected_music_asset_id.value;
         action->compose_output_group_index = group_index;
-        action->compose_input_chart_id = metadata->chart_id.value;
+        action->compose_input_chart_id.value = metadata->chart_id.value;
         action->compose_input_document_revision = metadata->document_revision;
     }
     if (metadata->copy_preview_text.c_str() && !metadata->copy_preview_import &&
@@ -275,14 +275,13 @@ static void request_external_copy_inspection(const MetadataPanel& panel,
     if (disabled) nk_widget_disable_end(panel.context);
     if (!inspect || disabled || action->metadata_inspect_copy ||
         action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
-                  source_path);
+    action->compose_import_path = source_path;
     action->metadata_inspect_copy = true;
     action->metadata_inspect_import = true;
     action->metadata_inspect_export = export_copy;
-    action->compose_resource_asset_id = metadata.next_import_asset_id.value;
+    action->compose_resource_asset_id.value = metadata.next_import_asset_id.value;
     action->compose_output_group_index = group_index;
-    action->compose_input_chart_id = metadata.chart_id.value;
+    action->compose_input_chart_id.value = metadata.chart_id.value;
     action->compose_input_document_revision = metadata.document_revision;
 }
 
@@ -321,11 +320,10 @@ static void request_external_copy(const MetadataPanel& panel, const char* source
     if (!copy || !can_copy || action->metadata_import_copy_project ||
         action->metadata_import_copy_export || action->metadata_inspect_copy ||
         action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
-                  source_path);
-    action->compose_input_chart_id = metadata.chart_id.value;
+    action->compose_import_path = source_path;
+    action->compose_input_chart_id.value = metadata.chart_id.value;
     action->compose_input_document_revision = metadata.document_revision;
-    action->compose_resource_asset_id = metadata.next_import_asset_id.value;
+    action->compose_resource_asset_id.value = metadata.next_import_asset_id.value;
     if (export_copy) {
         action->compose_output_group_index = group_index;
         action->metadata_import_copy_export = true;
@@ -508,8 +506,8 @@ static void render_dropped_selected_music_copy(
     if (!clicked || panel.action->metadata_inspect_copy ||
         panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE || !metadata.has_chart) return;
     auto* action = panel.action;
-    action->compose_resource_asset_id = metadata.selected_music_asset_id.value;
-    action->compose_input_chart_id = metadata.chart_id.value;
+    action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
+    action->compose_input_chart_id.value = metadata.chart_id.value;
     action->compose_input_document_revision = metadata.document_revision;
     if (destination == WORM_UI_METADATA_DROP_PROJECT)
         action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
@@ -716,8 +714,8 @@ static auto render_project_copy_info(const MetadataPanel& panel) -> std::optiona
     if (nk_button_label(context, "Copy music into project assets") &&
         !panel.action->metadata_inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        panel.action->compose_resource_asset_id = metadata.selected_music_asset_id.value;
-        panel.action->compose_input_chart_id = metadata.chart_id.value;
+        panel.action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
+        panel.action->compose_input_chart_id.value = metadata.chart_id.value;
         panel.action->compose_input_document_revision = metadata.document_revision;
         panel.action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
     }
@@ -748,9 +746,9 @@ static void render_export_copy_info(const MetadataPanel& panel,
     if (nk_button_label(context, "Copy music into selected export folder") &&
         !panel.action->metadata_inspect_copy &&
         panel.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        panel.action->compose_resource_asset_id = metadata.selected_music_asset_id.value;
+        panel.action->compose_resource_asset_id.value = metadata.selected_music_asset_id.value;
         panel.action->compose_output_group_index = selected.document_index;
-        panel.action->compose_input_chart_id = metadata.chart_id.value;
+        panel.action->compose_input_chart_id.value = metadata.chart_id.value;
         panel.action->compose_input_document_revision = metadata.document_revision;
         panel.action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
     }

@@ -18,7 +18,7 @@ inline constexpr std::array<double, wormedit::timing_lane_kind_count> compose_ti
     64, 64, 64, 48, 48, 48, 24, 24};
 
 // Pointer targets and slice-point tiles use the head; area selection keeps the full tail.
-inline auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> WormUiComposeRect {
+inline auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> wormedit::ui::compose_rect_t {
     auto bounds = event.bounds;
     if (event.has_tail) {
         bounds.top = event.head_top_pixels;
@@ -77,8 +77,8 @@ inline auto compose_timing_inner_extent(const WormUiComposeView& view, wormedit:
 }
 
 inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
-                                         const WormUiTimingMarkerView& marker)
-    -> WormUiComposeRect {
+                                         const wormedit::ui::compose_timing_marker_view_t& marker)
+    -> wormedit::ui::compose_rect_t {
     const auto extent = compose_timing_inner_extent(view, marker.lane);
     if (!extent) return {};
     const auto width = extent->second - extent->first;
@@ -92,18 +92,18 @@ inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
 // The measure lane is the measure rail made editable: each selectable bar line (every real measure
 // line but the chart's first) has a handle across the rail. Drawing, picking and area selection all
 // use this rectangle; a hidden lane has none.
-inline auto compose_bar_line_bounds(const WormUiComposeView& view, const WormUiComposeGridLineView& line)
-    -> std::optional<WormUiComposeRect> {
+inline auto compose_bar_line_bounds(const WormUiComposeView& view, const wormedit::ui::compose_grid_line_view_t& line)
+    -> std::optional<wormedit::ui::compose_rect_t> {
     if (!view.measure_lane.visible || !line.measure_id || line.measure_number < 2 ||
         !std::isfinite(line.y_pixels))
         return std::nullopt;
-    return WormUiComposeRect{0.0, line.y_pixels - 4.0, compose_measure_rail_width, line.y_pixels + 4.0};
+    return wormedit::ui::compose_rect_t{0.0, line.y_pixels - 4.0, compose_measure_rail_width, line.y_pixels + 4.0};
 }
 
 // The bar line whose handle holds the point, if any.
 inline auto compose_bar_line_at(const WormUiComposeView& view, double x, double y)
-    -> const WormUiComposeGridLineView* {
-    for (std::size_t index = 0; index < view.grid_line_count; ++index) {
+    -> const wormedit::ui::compose_grid_line_view_t* {
+    for (std::size_t index = 0; index < view.grid_lines.size(); ++index) {
         const auto bounds = compose_bar_line_bounds(view, view.grid_lines[index]);
         if (bounds && x >= bounds->left && x < bounds->right && y >= bounds->top && y <= bounds->bottom)
             return &view.grid_lines[index];

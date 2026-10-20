@@ -187,9 +187,9 @@ static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, 
 
 static void set_bga_pointer_kind(wormedit::ui::workspace_action_t* action, std::uint8_t role,
                                  const WormUiComposeView& view, double x, double y) {
-    if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->compose_input_count == 0) return;
-    auto& output = action->compose_inputs[action->compose_input_count - 1];
-    output.bga_lane_kind = compose_bga_lane_kind_at(view, x, y).value_or(255);
+    if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->compose_inputs.size() == 0) return;
+    auto& output = action->compose_inputs[action->compose_inputs.size() - 1];
+    output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(compose_bga_lane_kind_at(view, x, y).value_or(255));
     output.bga_lane_kind_valid = true;
 }
 
@@ -360,9 +360,9 @@ static auto field_lane_under_pointer(const ComposePointerEventContext& input) ->
     const auto& view = *input.view;
     if (!input.pointer_inside || input.pointer_x < input.note_field_left || input.pointer_x >= input.note_field_right)
         return 0;
-    for (size_t index = 0; index < view.lane_count; ++index) {
+    for (size_t index = 0; index < view.lanes.size(); ++index) {
         const auto& lane = view.lanes[index];
-        if (input.pointer_x >= lane.bounds.left && input.pointer_x < lane.bounds.right) return lane.lane_id;
+        if (input.pointer_x >= lane.bounds.left && input.pointer_x < lane.bounds.right) return lane.lane_id.value;
     }
     return 0;
 }
@@ -493,7 +493,7 @@ void append_layer_brush_begin(const ComposePointerEventContext& input) {
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);
     if (!state.input_queue.action_overflowed)
-        input.action->compose_inputs[input.action->compose_input_count - 1].paint_intent =
+        input.action->compose_inputs[input.action->compose_inputs.size() - 1].paint_intent =
             (input.pointer_modifiers & SDL_KMOD_ALT) != 0 ? 2 : 1;
 }
 
@@ -559,10 +559,10 @@ static void emit_draw_stroke(const ComposePointerEventContext& input,
     WormUiComposeInputKind kind, double x, double y, bool erase = false) {
     auto* action = input.action;
     append_compose_input(action, kind, x, y);
-    if (!action->compose_input_count || state.input_queue.action_overflowed) return;
-    auto& output = action->compose_inputs[action->compose_input_count - 1];
+    if (!action->compose_inputs.size() || state.input_queue.action_overflowed) return;
+    auto& output = action->compose_inputs[action->compose_inputs.size() - 1];
     output.paint_intent = erase ? 2 : 1;
-    output.resource_id = erase ? 0 : state.pointer_capture.draw_source_id;
+    output.resource_id.value = erase ? 0 : state.pointer_capture.draw_source_id;
     if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
         const auto* pressed = erase
             ? bgm_draw_lane_at(*input.view, state.pointer_capture.draw_right_anchor_x, state.pointer_capture.draw_right_anchor_y)
@@ -570,14 +570,14 @@ static void emit_draw_stroke(const ComposePointerEventContext& input,
         state.pointer_capture.draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
     }
     if (state.pointer_capture.draw_stroke_bga) {
-        output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
-        output.bga_lane_kind = compose_bga_lane_kind_at(*input.view, x, y).value_or(255);
+        output.resource_role = wormedit::resource_role_t::bga;
+        output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(compose_bga_lane_kind_at(*input.view, x, y).value_or(255));
         output.bga_lane_kind_valid = true;
     } else if (state.pointer_capture.draw_stroke_bgm_lane != 0) {
-        output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
-        output.lane_id = state.pointer_capture.draw_stroke_bgm_lane;
+        output.resource_role = wormedit::resource_role_t::bgm;
+        output.lane_id.value = state.pointer_capture.draw_stroke_bgm_lane;
     } else if (!erase && state.pointer_capture.draw_source_kind != 1) {
-        output.resource_id = 0;
+        output.resource_id.value = 0;
     }
     if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) state.pointer_capture.draw_stroke_bgm_lane = 0;
 }
@@ -693,10 +693,10 @@ static void finish_bmson_point_capture(const ComposePointerEventContext& input) 
                           WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE;
     append_compose_input(input.action, kind, capture.dock ? input.pointer_x : capture.x,
         capture.dock ? input.pointer_y : capture.y, capture.lane);
-    if (input.action->compose_input_count) {
-        auto& output = input.action->compose_inputs[input.action->compose_input_count - 1];
-        output.resource_id = capture.resource;
-        output.resource_role = capture.dock ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
+    if (input.action->compose_inputs.size()) {
+        auto& output = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+        output.resource_id.value = capture.resource;
+        output.resource_role = capture.dock ? std::optional{wormedit::resource_role_t::bgm} : std::nullopt;
     }
 }
 
@@ -827,10 +827,10 @@ static auto bgm_lane_under_pointer(const ComposePointerEventContext& input) -> u
 
 static void append_note_move_input(const ComposePointerEventContext& input,
                                     WormUiComposeInputKind kind) {
-    const auto count = input.action->compose_input_count;
+    const auto count = input.action->compose_inputs.size();
     append_compose_input(input.action, kind, input.pointer_x, input.pointer_y,
                          bgm_lane_under_pointer(input));
-    if (input.action->compose_input_count > count)
+    if (input.action->compose_inputs.size() > count)
         input.action->compose_inputs[count].note_move_to_bgm = note_move_over_bgm_pane(input);
 }
 

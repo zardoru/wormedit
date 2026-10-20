@@ -43,12 +43,11 @@ void stage_note_label_inline(wormedit::ui::workspace_action_t& action, const Wor
                              const inline_label_editor_t& editor) {
     action.compose_action = editor.label[0] == '\0' ? WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL
                                                     : WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = editor.chart_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = editor.chart_id;
     action.compose_input_document_revision = editor.document_revision;
-    std::memcpy(action.compose_note_label, editor.label,
-                std::min(sizeof(action.compose_note_label), sizeof(editor.label)));
-    action.compose_note_label[sizeof(action.compose_note_label) - 1] = '\0';
+    action.compose_note_label = editor.label;
+
 }
 
 auto begin_compose_bookmark_rename_anchored(inline_label_editor_t& editor,
@@ -88,11 +87,10 @@ auto begin_compose_section_label_inline(inline_label_editor_t& editor,
 void stage_section_label_inline(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                                 const inline_label_editor_t& editor) {
     action.compose_action = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL;
-    action.compose_section_id = editor.bookmark_id;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = editor.chart_id;
+    action.compose_section_id.value = editor.bookmark_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = editor.chart_id;
     action.compose_input_document_revision = editor.document_revision;
-    std::memcpy(action.compose_marker_label, editor.label,
-                std::min(sizeof(action.compose_marker_label), sizeof(editor.label)));
-    action.compose_marker_label[sizeof(action.compose_marker_label) - 1] = '\0';
+    action.compose_marker_label = editor.label;
+
 }

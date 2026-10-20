@@ -89,13 +89,13 @@ void render_export_group_choices(const ResourcePanel& panel) {
 }
 
 void stamp_action(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
 }
 
 auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {
-    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_input_count == 0 &&
+    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_inputs.size() == 0 &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
          action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
 }
@@ -244,8 +244,7 @@ void render_layer_creation(const ResourcePanel& panel) {
                                  valid && action_available(*panel.action))) {
             stamp_action(view, *panel.action);
             panel.action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-            std::snprintf(panel.action->compose_semantic_layer_name,
-                sizeof(panel.action->compose_semantic_layer_name), "%s", state.layer_editor.layer_creation_name.data());
+            panel.action->compose_semantic_layer_name = state.layer_editor.layer_creation_name.data();
             state.layer_editor.layer_creation_context.reset();
         }
     }

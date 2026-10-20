@@ -92,11 +92,11 @@ auto dead_spans_view_t::from(const chart_document_t& chart, const measure_index_
     return result;
 }
 
-auto build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
+void build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
                              double scroll_pixels, double viewport_height, bool downscroll,
-                             double pause_band_pixels) -> std::vector<dead_span_band_t> {
-    std::vector<dead_span_band_t> bands;
-    if (!(pixels_per_row > 0.0)) return bands;
+                             double pause_band_pixels, std::vector<dead_span_band_t>& bands) {
+    bands.clear();
+    if (!(pixels_per_row > 0.0)) return;
     const auto source_y = [&](std::uint64_t row) {
         return static_cast<double>(row) * pixels_per_row - scroll_pixels;
     };
@@ -113,6 +113,15 @@ auto build_dead_span_bands_view(const dead_spans_view_t& projection, double pixe
         const auto bottom = downscroll ? viewport_height - begin : end;
         bands.push_back({span.kind, span.object, top, bottom, span.seconds});
     }
+    return;
+}
+
+auto build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
+                                 double scroll_pixels, double viewport_height, bool downscroll,
+                                 double pause_band_pixels) -> std::vector<dead_span_band_t> {
+    std::vector<dead_span_band_t> bands;
+    build_dead_span_bands_view(projection, pixels_per_row, scroll_pixels, viewport_height,
+                               downscroll, pause_band_pixels, bands);
     return bands;
 }
 

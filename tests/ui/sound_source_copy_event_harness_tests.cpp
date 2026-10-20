@@ -50,8 +50,8 @@ void set_audio_fixture(nuklear_event_harness_t& harness,
 
 void check_copy_action(const wormedit::ui::workspace_action_t& action) {
     CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT);
-    CHECK(action.compose_resource_asset_id == 42);
-    CHECK(action.compose_input_chart_id == 7);
+    CHECK(action.compose_resource_asset_id.value == 42);
+    CHECK(action.compose_input_chart_id.value == 7);
     CHECK(action.compose_input_document_revision == 91);
 }
 

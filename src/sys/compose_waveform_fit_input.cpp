@@ -120,7 +120,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN) {
         if (context.environment.commands.audio_offset_edits_locked() ||
             cache.timing.offset_fit_drag || !cache.timing.marker_timing_index ||
-            !context.environment.document.workspace.transport.audio_asset || input.object_id == 0) {
+            !context.environment.document.workspace.transport.audio_asset || input.object_id.value == 0) {
             return compose_input_family_result_t::from(
                 "Offset fitting requires an unlocked waveform and idle chart gesture.");
         }
@@ -138,7 +138,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
             .target_y_pixels = input.y_pixels};
         cache.timing.beat_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_BEGIN;
-        action.audio_offset_drag_chart_id = context.state.chart.value;
+        action.audio_offset_drag_chart_id = context.state.chart;
         action.audio_offset_drag_document_revision =
             context.environment.document.history.document.revision;
         action.audio_offset_drag_sample_rate = cache.timing.offset_fit_drag->beat.payload.sample_rate;
@@ -191,7 +191,7 @@ auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_
     action.audio_offset_drag_action = input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
                                           ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
                                           : WORM_UI_AUDIO_OFFSET_DRAG_UPDATE;
-    action.audio_offset_drag_chart_id = drag.beat.stamp.chart.value;
+    action.audio_offset_drag_chart_id = drag.beat.stamp.chart;
     action.audio_offset_drag_document_revision = drag.beat.stamp.document.revision;
     action.audio_offset_drag_sample_rate = drag.beat.payload.sample_rate;
     action.audio_offset_drag_delta_frames = delta;
@@ -232,12 +232,12 @@ auto begin_compose_beat_fit(
     if (application_state.project.timing_recipe.timing_locked || scene_cache.timing.beat_fit_drag ||
         state.is_pending() || !scene_cache.scene.index.value() ||
         !scene_cache.timing.marker_timing_index || scene_cache.waveform.waveform_overview_sample_rate == 0 ||
-        scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
+        scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id.value == 0) {
         return compose_input_family_result_t::from(
             "Beat fitting requires an unlocked waveform and idle chart gesture.");
     }
     const auto& measures = scene_cache.scene.index.value()->measures;
-    const auto beat_row = input.object_id;
+    const auto beat_row = input.object_id.value;
     const auto measure = std::ranges::upper_bound(measures.entries, beat_row, {},
                                                   &measure_index_entry_t::absolute_begin_row);
     if (measure == measures.entries.begin()) {

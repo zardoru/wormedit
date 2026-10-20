@@ -143,7 +143,6 @@ static void initialize_metadata_buffers(const wormedit::ui::metadata_view_t* met
             state.search_tags.push_back(tag);
         }
     }
-    state.search_tag_pointers.clear();
     state.new_search_tag.fill('\0');
     state.selected_format_field = std::numeric_limits<size_t>::max();
     state.format_target_valid = 0;

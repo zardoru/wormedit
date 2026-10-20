@@ -112,22 +112,22 @@ struct compose_notification_fixture_t {
 
     auto batch(std::span<const wormedit::ui::compose_input_action_t> inputs) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id = state.chart.value;
+        action.compose_input_chart_id.value = state.chart.value;
         action.compose_input_document_revision = history.document.revision;
         action.compose_input_viewport_width_pixels = 800;
-        action.compose_input_count = inputs.size();
-        std::ranges::copy(inputs, action.compose_inputs);
+        action.compose_inputs.assign(inputs.begin(), inputs.end());
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
 
     auto input(WormUiComposeInputKind kind) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id = state.chart.value;
+        action.compose_input_chart_id.value = state.chart.value;
         action.compose_input_document_revision = history.document.revision;
         action.compose_input_viewport_width_pixels = 800;
+        action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
         action.compose_inputs[0] = {.kind = kind};
-        action.compose_input_count = 1;
+        action.compose_inputs.resize(1);
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
@@ -155,14 +155,14 @@ TEST_CASE("Lane draw chords admit their own note commits within one frame", "[un
     std::vector<wormedit::ui::compose_input_action_t> inputs;
     SECTION("grouped press and release") {
         for (std::uint64_t lane = 1; lane <= 3; ++lane)
-            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = lane});
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {lane}});
         for (std::uint64_t lane = 3; lane != 0; --lane)
-            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = lane});
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {lane}});
     }
     SECTION("interleaved taps") {
         for (std::uint64_t lane = 1; lane <= 3; ++lane) {
-            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = lane});
-            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = lane});
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {lane}});
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {lane}});
         }
     }
     (void)fixture.batch(inputs);
@@ -174,17 +174,17 @@ TEST_CASE("Held lane chords commit all releases and retain hitsound defaults", "
     compose_notification_fixture_t fixture;
     fixture.prepare_lane_chord();
     const std::array presses{
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 2},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 3}};
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {2}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {3}}};
     (void)fixture.batch(presses);
     REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
         move_edit_cursor_action_t{interaction_direction_t::forward}));
     const auto end = fixture.state.cursor;
     const std::array releases{
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 3},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 2}};
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {3}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {1}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {2}}};
     (void)fixture.batch(releases);
     check_lane_chord(fixture);
     CHECK_FALSE(fixture.state.is_pending());
@@ -198,9 +198,9 @@ TEST_CASE("Lane chord continuation still rejects an external revision during fee
     fixture.feedback_probe = &fixture;
     fixture.advance_revision_on_feedback = true;
     const std::array inputs{
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1},
-        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 2}};
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {1}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {2}}};
     (void)fixture.batch(inputs);
     CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 1);
     CHECK_FALSE(fixture.state.is_pending());
@@ -219,7 +219,7 @@ void expect_entry(const notification_entry_t& entry, notification_severity_t sev
 auto dispatch_stale(compose_notification_fixture_t& fixture, std::uint64_t revision)
     -> std::string {
     wormedit::ui::workspace_action_t stale{};
-    stale.compose_input_chart_id = fixture.state.chart.value;
+    stale.compose_input_chart_id.value = fixture.state.chart.value;
     stale.compose_input_document_revision = revision - 1;
     stale.compose_input_viewport_width_pixels = 800;
     return dispatch_compose_input_action(stale, fixture.history, fixture.workspace,
@@ -334,7 +334,7 @@ TEST_CASE("Compose accepted history no-op is informational and does not mutate",
 TEST_CASE("Idle Compose input emits no notification", "[unit][sys][compose-notification]") {
     compose_notification_fixture_t fixture;
     wormedit::ui::workspace_action_t idle{};
-    idle.compose_input_chart_id = fixture.state.chart.value;
+    idle.compose_input_chart_id.value = fixture.state.chart.value;
     idle.compose_input_document_revision = fixture.history.document.revision;
     idle.compose_input_viewport_width_pixels = 800;
     (void)dispatch_compose_input_action(idle, fixture.history, fixture.workspace, fixture.state,
@@ -358,10 +358,10 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
                                               notification_source_t::input);
     };
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_chart_id.value = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = 800;
-    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs.resize(1);
     action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
         .delta_y = 1, .cursor_x_pixels = 1, .cursor_y_pixels = 1};
     auto dispatch = [&] { return dispatch_compose_input_action(action, fixture.history,
@@ -395,10 +395,10 @@ TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][co
     const auto revision = fixture.history.document.revision;
     const auto undo_size = fixture.history.undo.size();
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_chart_id.value = fixture.state.chart.value;
     action.compose_input_document_revision = revision;
     action.compose_input_viewport_width_pixels = 800;
-    action.compose_input_count = 2;
+    action.compose_inputs.resize(2);
     action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_PASTE_CANCEL;
     action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
     CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
@@ -428,13 +428,13 @@ TEST_CASE("Unchanged BGM move keeps the original stop boundary", "[unit][sys][co
     REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
         begin_note_move_gesture_action_t{object_id_t{45}}));
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_chart_id.value = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = 800;
-    action.compose_input_count = 2;
+    action.compose_inputs.resize(2);
     action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
-    action.compose_inputs[0].object_id = 45;
-    action.compose_inputs[0].lane_id = 4;
+    action.compose_inputs[0].object_id.value = 45;
+    action.compose_inputs[0].lane_id.value = 4;
     action.compose_inputs[0].y_pixels = 60;
     action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
     CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
@@ -463,14 +463,14 @@ void setup_mixed_bgm_input(compose_notification_fixture_t& fixture) {
 auto mixed_bgm_input(compose_notification_fixture_t& fixture, WormUiComposeInputKind kind, double y, std::uint64_t lane = 4)
     -> std::string {
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_chart_id.value = fixture.state.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = 800;
-    action.compose_input_count = 1;
+    action.compose_inputs.resize(1);
     action.compose_inputs[0].kind = kind;
     action.compose_inputs[0].y_pixels = y;
-    action.compose_inputs[0].lane_id = lane;
-    action.compose_inputs[0].object_id = 45;
+    action.compose_inputs[0].lane_id.value = lane;
+    action.compose_inputs[0].object_id.value = 45;
     return dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0, &fixture.sink);
 }
@@ -637,10 +637,10 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
     }
     auto run(std::initializer_list<wormedit::ui::compose_input_action_t> inputs) -> std::string {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id = state.chart.value;
+        action.compose_input_chart_id.value = state.chart.value;
         action.compose_input_document_revision = history.document.revision;
         action.compose_input_viewport_width_pixels = 800;
-        for (const auto& input : inputs) action.compose_inputs[action.compose_input_count++] = input;
+        for (const auto& input : inputs) action.compose_inputs.emplace_back() = input;
         return dispatch_compose_input_action(action, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
@@ -693,8 +693,8 @@ TEST_CASE("a lane key at a cursor inside a Warp places nothing",
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 780};
-    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
-                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1}});
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}},
+                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {1}}});
     fixture.check_document_unchanged();
 }
 
@@ -742,8 +742,8 @@ TEST_CASE("a lane key at a cursor just before the Warp places a note",
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 600};
-    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
-                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1}});
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}},
+                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {1}}});
     CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
 }
 

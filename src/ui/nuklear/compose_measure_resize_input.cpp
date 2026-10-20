@@ -34,7 +34,7 @@ auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optio
     const auto band = hit_band_screen_pixels * view.viewport_height_pixels / input.viewport.h;
     std::optional<line_hit_t> best;
     double best_distance = band;
-    for (const auto& line : std::span(view.grid_lines, view.grid_line_count)) {
+    for (const auto& line : std::span(view.grid_lines)) {
         if (line.measure_number < 2 || line.measure_number - 2 >= view.measure_row_count) continue;
         const auto distance = std::abs(line.y_pixels - input.pointer_started_y);
         if (distance > best_distance) continue;
@@ -124,20 +124,16 @@ void commit(const ComposeBeatFitInput& input) {
     const auto resized = wormedit::reduce_fraction(wormedit::rational_t{
         state.measure_resize.measure_resize_numerator, state.measure_resize.measure_resize_denominator});
     if (original == resized) return;
-    state.measures_dock.measures_staged_ids.assign(1, state.measure_resize.measure_resize_measure_id);
     auto& action = *input.action;
     action.compose_action = state.measure_resize.measure_resize_move_line ? WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE
                                                            : WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
     action.compose_second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
     action.compose_second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
-    action.compose_measure_ids = state.measures_dock.measures_staged_ids.data();
-    action.compose_measure_id_count = state.measures_dock.measures_staged_ids.size();
-    std::snprintf(action.timing_meter_numerator_text, sizeof(action.timing_meter_numerator_text), "%u",
-                  state.measure_resize.measure_resize_numerator);
-    std::snprintf(action.timing_meter_denominator_text, sizeof(action.timing_meter_denominator_text), "%u",
-                  state.measure_resize.measure_resize_denominator);
+    action.compose_measure_ids = {state.measure_resize.measure_resize_measure_id};
+    action.timing_meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
+    action.timing_meter_denominator_text = std::to_string(state.measure_resize.measure_resize_denominator);
 }
 
 void update_active(const ComposeBeatFitInput& input) {

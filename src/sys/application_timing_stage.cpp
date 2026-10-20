@@ -135,7 +135,7 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     using namespace wormedit;
     timing_lane_pseudonote_outcome_t rejected{};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
-        action.timing_chart_id == 0 || workspace.selected_chart->value != action.timing_chart_id ||
+        action.timing_chart_id.value == 0 || workspace.selected_chart->value != action.timing_chart_id.value ||
         history.document.revision != action.timing_document_revision) {
         return rejected;
     }
@@ -143,8 +143,8 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     if (!requested_kind) {
         return rejected;
     }
-    if (action.timing_object_id != 0) {
-        auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{requested_kind->kind, object_id_t{action.timing_object_id}}, timing_locked);
+    if (action.timing_object_id.value != 0) {
+        auto preview = timing_lane_pseudonote_preview_t::propose(history, action.timing_chart_id, wormedit::timing_lane_event_ref_t{requested_kind->kind, action.timing_object_id}, timing_locked);
         if (preview.report()->lifecycle.status() == proposal_status_t::active &&
             action.timing_has_target_y) {
             const auto chart =
@@ -166,7 +166,7 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     if (!action.timing_has_target_y) {
         return rejected;
     }
-    const auto found = history.document.find_chart(chart_id_t{action.timing_chart_id});
+    const auto found = history.document.find_chart(action.timing_chart_id);
     if (found == nullptr) {
         return rejected;
     }
@@ -184,16 +184,16 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     if (!initial) {
         return rejected;
     }
-    return timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_pseudonote_state_t{.kind = kind, .position = *position, .value = std::move(*initial), .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, timing_locked);
+    return timing_lane_pseudonote_preview_t::propose(history, action.timing_chart_id, wormedit::timing_lane_pseudonote_state_t{.kind = kind, .position = *position, .value = std::move(*initial), .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, timing_locked);
 }
 
-auto parse_timing_unsigned(const char* text) -> std::optional<std::uint64_t> {
-    if (!text || text[0] == '\0') {
+auto parse_timing_unsigned(std::string_view text) -> std::optional<std::uint64_t> {
+    if (text.empty()) {
         return std::nullopt;
     }
-    const auto* end = text + std::strlen(text);
+    const auto* end = text.data() + text.size();
     std::uint64_t value{};
-    const auto parsed = std::from_chars(text, end, value);
+    const auto parsed = std::from_chars(text.data(), end, value);
     return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
 }
 
@@ -380,10 +380,10 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
     const TimingStageInput input{
         preview,
         action,
-        parse_integer<std::int64_t>(action.timing_primary_numerator_text),
+        parse_integer<std::int64_t>(action.timing_primary_numerator_text.c_str()),
         parse_timing_unsigned(action.timing_primary_numerator_text),
         parse_timing_unsigned(action.timing_primary_denominator_text),
-        parse_integer<std::int64_t>(action.timing_secondary_numerator_text),
+        parse_integer<std::int64_t>(action.timing_secondary_numerator_text.c_str()),
         parse_timing_unsigned(action.timing_secondary_denominator_text),
     };
     switch (preview.kind) {

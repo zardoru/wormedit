@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/frontend/sound_import.h"
 #include "sys/compose_action_outcome.h"
 
 #include "sys/compose_view.h"
@@ -41,7 +42,7 @@ struct prepared_sound_slot_batch_t {
 // Zero keeps the generic keysound default and enables review kind choices.
 [[nodiscard]] auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
                                            std::span<const std::string> paths,
-                                           std::uint8_t fixed_kind = 0)
+                                           wormedit::ui::sound_import_kind_t fixed_kind = wormedit::ui::sound_import_kind_t::generic)
     -> prepared_keysound_import_t;
 
 // Prepares a complete direct-slot preview in natural filename order. Every

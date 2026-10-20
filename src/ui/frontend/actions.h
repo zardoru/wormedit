@@ -1,43 +1,50 @@
 #pragma once
 #include "workspace.h"
+#include "sound_import.h"
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace wormedit::ui {
+struct metadata_channel_map_lane_t {
+    lane_id_t lane;
+    std::optional<std::string> visible;
+    std::optional<std::string> invisible;
+    std::optional<std::string> long_note;
+    std::optional<std::string> mine;
+
+    auto operator==(const metadata_channel_map_lane_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
 struct sound_import_item_t {
-    const char* path;
-    const char* name;
-    uint8_t kind;
-    bool kind_fixed;
+    std::string path;
+    std::string name;
+    sound_kind_t kind{sound_kind_t::unspecified};
+    bool kind_fixed{};
+    auto operator==(const sound_import_item_t&) const -> bool = default;
 };
-} // namespace wormedit::ui
-
-namespace wormedit::ui {
 struct sound_slot_import_item_t {
-    const char* path;
-    const char* name;
-    uint64_t occupied_resource_id;
-    const char* occupied_name;
-    bool ambiguous;
+    std::string path;
+    std::string name;
+    resource_id_t occupied_resource_id{};
+    std::string occupied_name;
+    bool ambiguous{};
+    auto operator==(const sound_slot_import_item_t&) const -> bool = default;
 };
-} // namespace wormedit::ui
-
-namespace wormedit::ui {
 struct sound_group_assignment_t {
-    uint64_t group_id;
-    const char* name;
-    const uint64_t* sound_ids;
-    size_t sound_count;
+    sound_group_id_t group_id{};
+    std::string name;
+    std::vector<resource_id_t> sound_ids;
+    auto operator==(const sound_group_assignment_t&) const -> bool = default;
 };
-} // namespace wormedit::ui
-
-namespace wormedit::ui {
 struct sound_import_group_t {
-    const char* name;
-    uint64_t existing_group_id;
-    const size_t* member_indices;
-    size_t member_count;
+    std::string name;
+    sound_group_id_t existing_group_id{};
+    std::vector<std::size_t> member_indices;
+    auto operator==(const sound_import_group_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
@@ -352,14 +359,14 @@ typedef enum WormUiComposeNavigationAction {
 namespace wormedit::ui {
 struct compose_input_action_t {
     WormUiComposeInputKind kind;
-    uint32_t note_kind;
-    uint64_t lane_id;
-    uint64_t object_id;
-    uint64_t timing_chart_id;
+    note_kind_t note_kind;
+    wormedit::lane_id_t lane_id;
+    wormedit::object_id_t object_id;
+    wormedit::chart_id_t timing_chart_id;
     uint64_t timing_document_revision;
     wormedit::timing_lane_kind_t timing_lane;
     uint64_t timing_anchor_chart_row;
-    uint8_t resource_role;
+    std::optional<resource_role_t> resource_role;
     bool successive;
     bool razor_stroke_start;
     bool note_move_to_bgm;
@@ -381,11 +388,12 @@ struct compose_input_action_t {
     uint8_t span_edge;
     double span_anchor_y_pixels;
     /* NOTE_PAINT_BEGIN: sample resource written into every note of the stroke; 0 paints silent notes. */
-    uint64_t resource_id;
-    uint8_t bga_lane_kind;
+    wormedit::resource_id_t resource_id;
+    visual_event_kind_t bga_lane_kind;
     bool bga_lane_kind_valid;
     uint8_t paint_intent; /* NOTE_PAINT: 0 legacy toggle, 1 draw, 2 erase;
                             SEMANTIC_LAYER_PAINT_BEGIN: 1 add, 2 remove. */
+    auto operator==(const compose_input_action_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
@@ -414,6 +422,7 @@ struct compose_viewport_input_t {
     double cursor_x_pixels;
     double cursor_y_pixels;
     double zoom_factor;
+    auto operator==(const compose_viewport_input_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
@@ -455,20 +464,22 @@ struct timing_target_t {
     double document_begin_fraction;
     double document_end_fraction;
     bool downscroll;
+    auto operator==(const timing_target_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct workspace_action_t {
     wormedit::ui::file_jobs_action_t file_jobs;
-    char menu_command_id[96];
+    std::string menu_command_id;
     bool compose_menu_command;
     WormUiClipboardAction clipboard;
     wormedit::ui::notification_action_t notifications;
     wormedit::ui::options_action_t options;
     wormedit::ui::lane_keys_action_t lane_keys;
     WormUiCloseDecision close_decision;
-    uint64_t close_project_id, close_revision;
+    song_id_t close_project_id;
+    uint64_t close_revision;
     wormedit::ui::project_chart_action_t project_chart;
     wormedit::ui::project_output_group_action_t project_output_group;
     wormedit::ui::chart_import_action_t chart_import;
@@ -476,11 +487,11 @@ struct workspace_action_t {
     wormedit::ui::timing_settings_action_t timing_settings;
     WormUiWorkspaceActionKind kind;
     struct wormedit::ui::external_player_action_t external_player;
-    char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
-    // Stable text_encoding_t id; zero requests automatic detection.
-    uint32_t bms_encoding_id;
+    std::string project_path;
+    // Unknown requests automatic detection.
+    text_encoding_t bms_encoding_id;
     // Stable core layout identity.
-    char new_project_layout_id[96];
+    std::string new_project_layout_id;
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
@@ -495,77 +506,72 @@ struct workspace_action_t {
     uint64_t hover_source_total_frames;
     uint32_t hover_source_sample_rate;
     uint8_t transport_rate_index;
-    uint32_t transport_rate_id;
+    wormedit::audio::playback_rate_id_t transport_rate_id;
     bool transport_keep_pitch;
-    uint64_t audio_asset_id;
-    uint64_t audio_resource_id;
-    uint64_t sound_usage_song_id;
+    wormedit::asset_id_t audio_asset_id;
+    wormedit::resource_id_t audio_resource_id;
+    wormedit::song_id_t sound_usage_song_id;
     uint64_t sound_usage_document_revision;
-    uint64_t sound_usage_resource_id;
-    uint64_t sound_usage_asset_id;
-    uint64_t sound_usage_chart_id;
-    uint64_t sound_usage_measure_id;
+    wormedit::resource_id_t sound_usage_resource_id;
+    wormedit::asset_id_t sound_usage_asset_id;
+    wormedit::chart_id_t sound_usage_chart_id;
+    wormedit::measure_id_t sound_usage_measure_id;
     uint64_t sound_usage_row;
-    uint64_t sound_usage_object_id;
-    uint64_t sound_usage_channel_id;
-    uint64_t sound_usage_clip_id;
-    uint64_t sound_usage_referenced_resource_id;
-    uint64_t sound_usage_referenced_asset_id;
-    int sound_usage_kind;
-    int sound_usage_scope;
+    wormedit::object_id_t sound_usage_object_id;
+    wormedit::object_id_t sound_usage_channel_id;
+    wormedit::clip_id_t sound_usage_clip_id;
+    wormedit::resource_id_t sound_usage_referenced_resource_id;
+    wormedit::asset_id_t sound_usage_referenced_asset_id;
+    sound_usage_kind_t sound_usage_kind;
+    sound_usage_scope_t sound_usage_scope;
     bool sound_usage_position_valid;
-    uint64_t visual_asset_id;
+    wormedit::asset_id_t visual_asset_id;
     wormedit::player_preview_skin_t player_preview_skin;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
-    uint64_t audio_offset_drag_chart_id;
+    chart_id_t audio_offset_drag_chart_id;
     uint64_t audio_offset_drag_document_revision;
     uint32_t audio_offset_drag_sample_rate;
     int64_t audio_offset_drag_delta_frames;
     size_t recovery_row_index;
-    uint64_t compare_chart_id;
+    chart_id_t compare_chart_id;
     uint64_t compare_diagnostic_row;
-    uint64_t compare_diagnostic_measure;
-    uint64_t compare_diagnostic_chart;
+    wormedit::measure_id_t compare_diagnostic_measure;
+    chart_id_t compare_diagnostic_chart;
     double compare_scroll_delta;
     size_t recovery_candidate_index;
-    char recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
-    // Metadata pointers refer to frontend-owned staging buffers and are valid
-    // only until the next compose call; the app dispatches them immediately.
+    std::string recovery_save_as_destination;
+    // Metadata payloads own their text and lists across frontend calls.
     WormUiMetadataEditKind metadata_edit;
     uint64_t metadata_document_revision;
-    uint64_t metadata_chart_id;
+    chart_id_t metadata_chart_id;
     bool metadata_has_chart_rating;
-    const char* metadata_chart_rating_numerator_text;
-    const char* metadata_chart_rating_denominator_text;
-    const char* metadata_audio_offset_numerator_text;
-    const char* metadata_audio_offset_denominator_text;
-    const char* metadata_title;
-    const char* metadata_artist;
-    const char* metadata_chart_name;
-    const char* metadata_chart_author;
-    const char* const* metadata_search_tags;
-    size_t metadata_search_tag_count;
+    std::optional<std::string> metadata_chart_rating_numerator_text;
+    std::optional<std::string> metadata_chart_rating_denominator_text;
+    std::optional<std::string> metadata_audio_offset_numerator_text;
+    std::optional<std::string> metadata_audio_offset_denominator_text;
+    std::optional<std::string> metadata_title;
+    std::optional<std::string> metadata_artist;
+    std::optional<std::string> metadata_chart_name;
+    std::optional<std::string> metadata_chart_author;
+    std::vector<std::optional<std::string>> metadata_search_tags;
     bool metadata_inspect_copy;
     bool metadata_inspect_export;
     bool metadata_inspect_import;
     bool metadata_import_copy_project;
     bool metadata_import_copy_export;
     bool metadata_format_chart_scoped;
-    uint8_t metadata_format_family;
+    format_family_t metadata_format_family;
     size_t metadata_format_index;
-    const char* metadata_format_name;
-    const char* metadata_format_value;
+    std::optional<std::string> metadata_format_name;
+    std::optional<std::string> metadata_format_value;
     size_t metadata_output_group_index;
-    const char* metadata_output_path;
+    std::optional<std::string> metadata_output_path;
     // REDIVIDE_CHART: target divisions per standard measure (exact, 0 when unset).
     uint64_t metadata_redivision_resolution;
-    // Channel-map preview: lane ids and 4 texts per lane (visible, invisible, long_note, mine).
-    uint64_t metadata_channel_map_layout_segment_id;
-    size_t metadata_channel_map_lane_count;
-    const uint64_t* metadata_channel_map_lane_ids;
-    const char* const* metadata_channel_map_texts;
-    const uint64_t* metadata_batch_chart_ids;
-    size_t metadata_batch_chart_count;
+    // Channel-map preview owns one record per lane; empty channel text means unset.
+    object_id_t metadata_channel_map_layout_segment_id;
+    std::vector<metadata_channel_map_lane_t> metadata_channel_map_lanes;
+    std::vector<chart_id_t> metadata_batch_chart_ids;
     bool metadata_batch_edit_author;
     bool metadata_batch_edit_rating;
     size_t metadata_lane_profile_index;
@@ -578,24 +584,24 @@ struct workspace_action_t {
     uint64_t compose_measure_number;
     uint32_t compose_bgm_column_count;
     uint32_t compose_lane_profile_index;
-    char compose_lane_layout_profile_id[WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES];
+    std::string compose_lane_layout_profile_id;
     int64_t compose_audio_offset_numerator;
     uint64_t compose_audio_offset_denominator;
-    uint64_t compose_input_chart_id;
-    uint64_t compose_input_project_id;
+    wormedit::chart_id_t compose_input_chart_id;
+    wormedit::song_id_t compose_input_project_id;
     uint64_t compose_input_document_revision;
     size_t compose_quantize_preset_index;
     bool compose_quantize_preset_selected;
     uint64_t compose_snap_denominator;
     uint64_t compose_quantize_divisions;
-    uint8_t compose_quantize_space;
-    uint8_t compose_quantize_tie;
-    uint8_t compose_quantize_holds;
-    char compose_quantize_preset_name[WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES + 1];
+    quantization_space_t compose_quantize_space;
+    quantization_tie_t compose_quantize_tie;
+    quantization_hold_t compose_quantize_holds;
+    std::string compose_quantize_preset_name;
     double compose_input_viewport_width_pixels;
     // Uncovered editor right edge in the same source coordinates as the viewport.
     double compose_input_editor_right_pixels;
-    uint64_t compose_sound_hover_object_id;
+    wormedit::object_id_t compose_sound_hover_object_id;
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;
     double compose_pointer_hover_y_pixels;
@@ -606,86 +612,74 @@ struct workspace_action_t {
     double compose_viewport_middle_click_x_pixels;
     double compose_viewport_middle_click_y_pixels;
     bool compose_note_label_focus_consumed;
-    char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
-    uint64_t compose_bookmark_id;
-    uint64_t compose_section_id;
-    char compose_marker_label[WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1];
-    char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
-    char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
-    uint64_t compose_semantic_layer_id;
-    uint64_t compose_note_context_id;
+    std::string compose_note_label;
+    wormedit::object_id_t compose_bookmark_id;
+    wormedit::object_id_t compose_section_id;
+    std::string compose_marker_label;
+    std::string compose_marker_audio_begin;
+    std::string compose_marker_audio_end;
+    wormedit::layer_id_t compose_semantic_layer_id;
+    wormedit::object_id_t compose_note_context_id;
     size_t compose_semantic_layer_first_row;
     size_t compose_semantic_layer_row_count;
-    uint64_t compose_resource_id;
+    wormedit::resource_id_t compose_resource_id;
     uint32_t compose_fallback_candidate;
-    uint64_t compose_bmson_bgm_event_id;
-    uint64_t compose_resource_asset_id;
-    /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
-    const uint64_t* compose_sound_resource_ids;
-    size_t compose_sound_resource_count;
-    const wormedit::ui::sound_group_assignment_t* compose_sound_group_assignments;
-    size_t compose_sound_group_assignment_count;
+    wormedit::object_id_t compose_bmson_bgm_event_id;
+    wormedit::asset_id_t compose_resource_asset_id;
+    std::vector<wormedit::resource_id_t> compose_sound_resource_ids;
+    std::vector<wormedit::ui::sound_group_assignment_t> compose_sound_group_assignments;
     bool compose_sound_group_keep_ids_together;
     bool compose_sound_overwrite_note_layers;
     /* Renumber WAV or BMP identifiers for the selected resources, or all in the namespace. */
     bool compose_renumber_all;
     bool compose_renumber_bga;
-    const char* const* compose_import_paths;
-    size_t compose_import_path_count;
-    /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
-    const uint64_t* compose_measure_ids;
-    size_t compose_measure_id_count;
+    std::vector<std::string> compose_import_paths;
+    // Chart positions, including virtual tail measures; these are not stable measure IDs.
+    std::vector<uint64_t> compose_measure_ids;
     uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
     bool sound_properties_apply;
-    uint64_t sound_properties_project_id;
-    uint64_t sound_properties_chart_id;
-    uint64_t sound_properties_resource_id;
+    wormedit::song_id_t sound_properties_project_id{};
+    wormedit::chart_id_t sound_properties_chart_id{};
+    wormedit::resource_id_t sound_properties_resource_id{};
     uint64_t sound_properties_document_revision;
-    char sound_properties_name[257];
-    uint8_t sound_properties_kind;
+    std::string sound_properties_name;
+    wormedit::sound_kind_t sound_properties_kind{wormedit::sound_kind_t::unspecified};
     // A tag-only edit; name and authored kind remain unchanged when present.
     std::optional<std::vector<std::string>> sound_properties_tags;
     std::optional<wormedit::hitsound_change_t> compose_hitsound;
     std::optional<wormedit::ui::preview_audio_export_action_t> preview_audio_export;
     bool sound_import_pick_requested;
-    /* 0 generic import, 1 Stems section, 2 Keysounds section. */
-    uint8_t sound_import_kind;
-    uint64_t sound_import_project_id;
-    const wormedit::ui::sound_import_item_t* sound_import_items;
-    size_t sound_import_item_count;
-    const wormedit::ui::sound_import_group_t* sound_import_groups;
-    size_t sound_import_group_count;
+    wormedit::ui::sound_import_kind_t sound_import_kind{};
+    wormedit::song_id_t sound_import_project_id{};
+    std::vector<wormedit::ui::sound_import_item_t> sound_import_items;
+    std::vector<wormedit::ui::sound_import_group_t> sound_import_groups;
     uint16_t compose_sound_slot;
-    uint64_t compose_bmson_channel_id;
+    wormedit::object_id_t compose_bmson_channel_id;
     bool compose_sound_slot_confirmed;
     size_t compose_output_group_index;
     WormUiExistingFilesChoice compose_existing_files;
-    uint8_t compose_resource_role;
-    char compose_import_path[WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1];
-    uint8_t compose_timing_lane;
-    uint64_t compose_branch_id;
+    std::optional<resource_role_t> compose_resource_role;
+    std::string compose_import_path;
+    timing_lane_kind_t compose_timing_lane;
+    wormedit::branch_id_t compose_branch_id;
     int64_t compose_branch_value;
-    uint64_t compose_branch_statement_id;
-    /* Frontend-owned staging text; valid through immediate workspace-action dispatch. */
-    const char* compose_branch_statement_text;
-    size_t compose_branch_statement_text_bytes;
-    char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
+    wormedit::branch_id_t compose_branch_statement_id;
+    std::string compose_branch_statement_text;
+    std::string compose_semantic_layer_name;
     uint8_t compose_semantic_layer_red;
     uint8_t compose_semantic_layer_green;
     uint8_t compose_semantic_layer_blue;
     uint8_t compose_semantic_layer_alpha;
-    wormedit::ui::compose_input_action_t compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
-    size_t compose_input_count;
-    wormedit::ui::compose_viewport_input_t compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
-    size_t compose_viewport_input_count;
+    std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
+    std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
     WormUiTimingRecipeForm compose_recipe_form;
-    uint64_t compose_recipe_id;
-    char timing_meter_numerator_text[32];
-    char timing_meter_denominator_text[32];
+    wormedit::recipe_id_t compose_recipe_id;
+    std::string timing_meter_numerator_text;
+    std::string timing_meter_denominator_text;
     wormedit::ui::timing_stage_action_t timing_stage_action;
-    uint64_t timing_chart_id;
+    wormedit::chart_id_t timing_chart_id;
     uint64_t timing_document_revision;
-    uint64_t timing_object_id;
+    wormedit::object_id_t timing_object_id;
     wormedit::timing_lane_kind_t timing_lane;
     bool timing_has_target_y;
     wormedit::ui::timing_target_t timing_target;
@@ -694,15 +688,14 @@ struct workspace_action_t {
     bool timing_transition_is_seconds;
     bool timing_toggle_primary;
     wormedit::pause_unit_t timing_pause_unit;
-    char timing_bpm_decimal_text[64];
+    std::string timing_bpm_decimal_text;
     bool timing_bpm_decimal_edited;
     int timing_bpm_step;
-    char timing_primary_numerator_text[64];
-    char timing_primary_denominator_text[64];
-    char timing_secondary_numerator_text[64];
-    char timing_secondary_denominator_text[64];
-    WormUiShortcutEvent shortcut_events[WORM_UI_SHORTCUT_EVENT_CAPACITY];
-    size_t shortcut_event_count;
+    std::string timing_primary_numerator_text;
+    std::string timing_primary_denominator_text;
+    std::string timing_secondary_numerator_text;
+    std::string timing_secondary_denominator_text;
+    std::vector<WormUiShortcutEvent> shortcut_events;
     bool shortcut_overflowed;
     bool shortcut_window_focused;
     bool shortcut_notification_history_focused;
@@ -711,9 +704,14 @@ struct workspace_action_t {
     uint8_t compose_input_ownership;
     bool shortcut_ime_composition_active;
     bool shortcut_compose_lane_focused;
-    uint64_t shortcut_focused_lane_id;
+    wormedit::lane_id_t shortcut_focused_lane_id;
     bool command_menu_invoked;
-    char command_menu_command_id[129];
+    std::string command_menu_command_id;
+
+    void set_sound_resources(std::span<const std::uint64_t> ids) {
+        compose_sound_resource_ids.clear();
+        for (const auto id : ids) compose_sound_resource_ids.push_back(resource_id_t{id});
+    }
 };
 } // namespace wormedit::ui
 
@@ -724,7 +722,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 bool worm_ui_frontend_select_field_scheme(const char* id);
 // Resolve a layout override, the default, then Wormedit against semantic compatibility.
 bool worm_ui_frontend_configure_field_scheme(const char* requested, const char* fallback,
-    const WormUiComposeLaneView* lanes, size_t count);
+    const wormedit::ui::compose_lane_view_t* lanes, size_t count);
 // Core stage none/left/right; -1 uses chart layout, 0 left, 1 right.
 int worm_ui_frontend_field_scratch_side(uint8_t stage);
 void worm_ui_frontend_set_snap_colored_grid(bool enabled);

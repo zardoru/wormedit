@@ -113,12 +113,12 @@ void stage_rename(wormedit::ui::workspace_action_t& action, const WormUiComposeV
         return;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
-    action.compose_bookmark_id = editor.bookmark_id;
-    action.compose_input_project_id = view.project_id;
-    action.compose_input_chart_id = editor.chart_id;
+    action.compose_bookmark_id.value = editor.bookmark_id;
+    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_chart_id.value = editor.chart_id;
     action.compose_input_document_revision = editor.document_revision;
-    std::memcpy(action.compose_marker_label, editor.label, sizeof(action.compose_marker_label));
-    action.compose_marker_label[sizeof(action.compose_marker_label) - 1] = '\0';
+    action.compose_marker_label = editor.label;
+
 }
 
 } // namespace

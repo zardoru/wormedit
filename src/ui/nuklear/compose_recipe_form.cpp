@@ -160,9 +160,9 @@ void synchronize_buffers(const WormUiComposeView& view) {
 void queue(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_chart_id.value = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
-    action.compose_recipe_id = view.recipe_form.recipe_id;
+    action.compose_recipe_id.value = view.recipe_form.recipe_id;
     action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
 }
 

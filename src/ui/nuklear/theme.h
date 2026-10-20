@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
+#include <wormedit/core/vocabulary.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -98,6 +99,10 @@ struct key_color_t {
 };
 auto compose_key_color(std::uint8_t key_color, std::uint64_t lane_id = 0)
     -> key_color_t;
+inline auto compose_key_color(wormedit::lane_key_color_t color, wormedit::lane_id_t lane = {})
+    -> key_color_t {
+    return compose_key_color(static_cast<std::uint8_t>(color), lane.value);
+}
 struct field_lane_t {
     std::uint32_t display_order{};
     std::uint8_t stage{}, key_color{}, role{};
@@ -133,6 +138,12 @@ auto snap_colored_grid() -> bool;
 struct grid_line_style_t { nk_color color; float thickness; };
 auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
     -> grid_line_style_t;
+inline auto compose_grid_line_style(wormedit::editor_grid_line_kind_t kind,
+                                    wormedit::editor_grid_emphasis_t emphasis,
+                                    std::uint8_t snap_class) -> grid_line_style_t {
+    return compose_grid_line_style(static_cast<std::uint8_t>(kind),
+                                   static_cast<std::uint8_t>(emphasis), snap_class);
+}
 auto field_uses_positions() -> bool;
 
 } // namespace wormedit::ui::theme

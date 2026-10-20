@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 namespace wormedit::sys {
 
@@ -56,6 +57,7 @@ struct recipe_graph_point_t {
 
 struct recipe_graph_t {
     std::vector<recipe_graph_point_t> points;
+    std::vector<std::pair<std::uint64_t, double>> kept;
     double minimum{1.0};
     double maximum{1.0};
 };

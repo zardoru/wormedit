@@ -1,6 +1,5 @@
 #include <wormedit/core/rational.h>
 #include "sys/compose_waveform_overlays.h"
-#include "sys/frontend_geometry.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/core/bpm_editor.h>
@@ -73,11 +72,11 @@ struct proposed_grid_context_t {
     std::pair<std::uint64_t, std::uint64_t> rows;
 
     auto view() const -> WormUiComposeView& { return flattened.view.compose; }
-    auto preview_rects() -> std::vector<WormUiComposeTimingPreviewRectView>& {
-        return flattened.compose.timing_preview_rect;
+    auto preview_rects() -> std::vector<wormedit::ui::compose_timing_preview_rect_view_t>& {
+        return view().timing_preview_rects;
     }
-    auto preview_markers() -> std::vector<WormUiTimingMarkerView>& {
-        return flattened.compose.timing_preview_marker;
+    auto preview_markers() -> std::vector<wormedit::ui::compose_timing_marker_view_t>& {
+        return view().timing_preview_markers;
     }
     auto proposed_y(std::uint64_t row) const -> std::optional<double> {
         const auto projected = wormedit::proposed_timing_y_on_fixed_waveform(
@@ -115,7 +114,7 @@ struct proposed_grid_context_t {
 };
 
 void append_proposed_grid_lines(proposed_grid_context_t& projection) {
-    auto& output = projection.flattened.compose.grid.proposed;
+    auto& output = projection.view().proposed_grid_lines;
     output.reserve(projection.source_scene.grid_lines.size());
     for (const auto& line : projection.source_scene.grid_lines) {
         const auto projected = wormedit::proposed_timing_y_on_fixed_waveform(
@@ -136,24 +135,18 @@ void append_proposed_grid_lines(proposed_grid_context_t& projection) {
                 measure_number = static_cast<std::uint32_t>(found - measures.begin() + 1);
         }
         output.push_back({.y_pixels = y,
-                          .kind = static_cast<std::uint8_t>(line.kind),
-                          .emphasis = static_cast<std::uint8_t>(line.emphasis),
+                          .kind = line.kind,
+                          .emphasis = line.emphasis,
                           .measure_number = measure_number,
                           .chart_row = line.chart_row.fractional_rows.numerator == 0
                                            ? line.chart_row.whole_rows
                                            : 0});
     }
-    projection.view().proposed_grid_lines = output.data();
-    projection.view().proposed_grid_line_count = output.size();
 }
 
-void append_preview_rect(proposed_grid_context_t& projection, WormUiComposeRect bounds,
-                         std::uint64_t row, std::uint8_t kind) {
+void append_preview_rect(proposed_grid_context_t& projection, wormedit::ui::compose_rect_t bounds,
+                         std::uint64_t row, wormedit::ui::compose_timing_preview_kind_t kind) {
     auto& rects = projection.preview_rects();
-    if (rects.size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
-        projection.view().truncated = true;
-        return;
-    }
     const auto y = projection.proposed_y(row);
     if (!y) return;
     const auto shift = *y - projection.old_y(row);
@@ -174,23 +167,21 @@ void append_note_and_bgm_preview_rects(proposed_grid_context_t& projection) {
         if (source == projection.cache.scene.index.value()->note_indices_by_id.end() || note.proposal_ghost)
             continue;
         const auto& indexed = projection.cache.scene.index.value()->notes[source->second];
-        append_preview_rect(projection, to_frontend_rect(note.bounds),
-                            note.tail ? indexed.end_row : indexed.begin_row, 0);
+        append_preview_rect(projection, wormedit::ui::compose_rect_t::from(note.bounds),
+                            note.tail ? indexed.end_row : indexed.begin_row,
+                            wormedit::ui::compose_timing_preview_kind_t::note_endpoint);
     }
     for (const auto& event : projection.source_scene.bgm_events) {
         const auto row = projection.cache.scene.bgm_rows_by_id.find(event.event.value);
         if (row != projection.cache.scene.bgm_rows_by_id.end())
-            append_preview_rect(projection, to_frontend_rect(event.bounds), row->second, 1);
+            append_preview_rect(projection, wormedit::ui::compose_rect_t::from(event.bounds), row->second,
+                                wormedit::ui::compose_timing_preview_kind_t::bgm_event);
     }
 }
 
 void append_hold_preview_rect(proposed_grid_context_t& projection,
                               const wormedit::editor_field_hold_body_geometry_t& hold) {
     auto& rects = projection.preview_rects();
-    if (rects.size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
-        projection.view().truncated = true;
-        return;
-    }
     const auto top = projection.projected_geometry_y(hold.bounds.top);
     const auto bottom = projection.projected_geometry_y(hold.bounds.bottom);
     const auto old_top_source =
@@ -211,23 +202,17 @@ void append_hold_preview_rect(proposed_grid_context_t& projection,
         (std::abs(*top - old_top) < 0.5 && std::abs(*bottom - old_bottom) < 0.5) ||
         std::max(*top, *bottom) < 0.0 ||
         std::min(*top, *bottom) > projection.view().viewport_height_pixels) return;
-    auto bounds = to_frontend_rect(hold.bounds);
+    auto bounds = wormedit::ui::compose_rect_t::from(hold.bounds);
     bounds.top = std::min(*top, *bottom);
     bounds.bottom = std::max(*top, *bottom);
     if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0) return;
-    rects.push_back({.bounds = bounds, .kind = 2});
+    rects.push_back({.bounds = bounds, .kind = wormedit::ui::compose_timing_preview_kind_t::hold_body});
 }
 
 void append_hold_preview_rects(proposed_grid_context_t& projection) {
     for (const auto& hold : projection.source_scene.hold_bodies) {
-        if (projection.preview_rects().size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
-            projection.view().truncated = true;
-            break;
-        }
         append_hold_preview_rect(projection, hold);
     }
-    projection.view().timing_preview_rects = projection.preview_rects().data();
-    projection.view().timing_preview_rect_count = projection.preview_rects().size();
 }
 
 void append_proposed_marker(proposed_grid_context_t& projection,
@@ -235,16 +220,12 @@ void append_proposed_marker(proposed_grid_context_t& projection,
                             std::size_t source_order, std::size_t storage_order,
                             wormedit::timing_lane_kind_t lane) {
     auto& markers = projection.preview_markers();
-    if (markers.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
-        projection.view().truncated = true;
-        return;
-    }
     const auto row = (projection.cache.scene.index.value()->measures).row_of(position);
     if (!row || *row < projection.rows.first || *row > projection.rows.second) return;
     const auto y = projection.proposed_y(*row);
     if (!y || std::abs(*y - projection.old_y(*row)) < 0.5 || *y < 0.0 ||
         *y > projection.view().viewport_height_pixels) return;
-    markers.push_back({.object_id = id,
+    markers.push_back({.object_id = {id},
                        .source_order = static_cast<std::uint64_t>(source_order),
                        .storage_order = static_cast<std::uint64_t>(storage_order),
                        .marker_y_pixels = *y,
@@ -306,8 +287,6 @@ void layout_proposed_marker_overlaps(proposed_grid_context_t& projection) {
         }
         first = after;
     }
-    projection.view().timing_preview_markers = markers.data();
-    projection.view().timing_preview_marker_count = markers.size();
 }
 
 void append_proposed_markers(proposed_grid_context_t& projection) {
@@ -371,9 +350,9 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
                                    const wormedit::timing_index_t& proposed,
                                    const wormedit::editor_interaction_state_t& interaction) {
     auto& view = flattened.view.compose;
-    flattened.compose.grid.proposed.clear();
-    flattened.compose.timing_preview_rect.clear();
-    flattened.compose.timing_preview_marker.clear();
+    view.proposed_grid_lines.clear();
+    view.timing_preview_rects.clear();
+    view.timing_preview_markers.clear();
     if (!cache.scene.index.value() || !cache.frame.interaction_view) return;
     const auto downscroll = compose_field_downscroll(chart);
     const auto rows = proposed_visible_source_rows(

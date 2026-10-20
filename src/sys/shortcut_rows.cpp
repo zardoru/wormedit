@@ -222,6 +222,8 @@ auto command_shortcut_text_t::first_text(std::size_t command_index) const noexce
 }
 
 auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events) -> shortcut_capture_t {
+    if (events.size() > ui::shortcut_event_admission_limit)
+        return {.cancel = true, .chord = std::nullopt};
     for (const auto& event : events) {
         if (event.repeat || event.tap_timing_space || key_name(event.hid_usage).empty()) continue;
         if (event.hid_usage == static_cast<std::uint16_t>(shortcut_key_t::escape) && event.modifiers == 0)

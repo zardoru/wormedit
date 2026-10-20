@@ -61,12 +61,11 @@ struct resource_notification_fixture_t {
     }
     auto inspect_action() const -> wormedit::ui::workspace_action_t {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_chart_id = 1;
+        action.compose_input_chart_id.value = 1;
         action.compose_input_document_revision = history.document.revision;
-        action.compose_resource_asset_id = 1;
+        action.compose_resource_asset_id.value = 1;
         action.metadata_inspect_import = true;
-        std::snprintf(action.compose_import_path, sizeof(action.compose_import_path), "%s",
-                      source.c_str());
+        action.compose_import_path = source.c_str();
         return action;
     }
     auto wait_for_import() -> std::optional<std::string> {

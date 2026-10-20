@@ -10,14 +10,14 @@ auto select_compose_timing_marker(const wormedit::ui::compose_input_action_t& in
     using namespace wormedit;
     const auto identity = wormedit::find_catalog_entry(wormedit::timing_lanes, input.timing_lane);
     const auto mode = context.selection_mode(input.selection_mode);
-    if (!identity || !mode || input.object_id == 0)
+    if (!identity || !mode || input.object_id.value == 0)
         return "Timing marker selection is stale or invalid.";
     if (!context.is_timing_input_current(input))
         return stale_action_message("Timing marker selection");
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
         select_editor_objects_action_t{
-            .objects = {{identity->selection_kind, object_id_t{input.object_id}}}, .mode = *mode});
+            .objects = {{identity->selection_kind, input.object_id}}, .mode = *mode});
     accepted = "Timing marker selected.";
     return std::nullopt;
 }
@@ -51,7 +51,7 @@ auto move_compose_timing_selection(const wormedit::ui::compose_input_action_t& i
     if (!context.is_timing_input_current(input))
         return stale_action_message("Timing marker move");
     const auto clicked =
-        editor_selection_object_t{identity->selection_kind, object_id_t{input.object_id}};
+        editor_selection_object_t{identity->selection_kind, input.object_id};
     if (std::ranges::find(context.state.selected_objects, clicked) ==
         context.state.selected_objects.end())
         return "Select the timing marker before dragging it.";
@@ -130,7 +130,7 @@ auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, c
     if (input.span_edge != WORM_UI_SPAN_HANDLE_CREATE) {
         spans = kiai_spans_of(*chart, *index);
         const auto found =
-            std::ranges::find(spans, object_id_t{input.object_id}, &kiai_span_t::head);
+            std::ranges::find(spans, input.object_id, &kiai_span_t::head);
         if (found == spans.end())
             return "The Kiai area no longer exists.";
         span = &*found;
@@ -187,7 +187,7 @@ auto edit_compose_speed_span(const wormedit::ui::compose_input_action_t& input,
     const auto& measures = context.environment.document.history.indices(chart->id)->measures;
     const auto* index = measures ? &*measures : nullptr;
     const auto speed =
-        std::ranges::find(chart->speeds, object_id_t{input.object_id}, &speed_event_t::id);
+        std::ranges::find(chart->speeds, input.object_id, &speed_event_t::id);
     if (!index || speed == chart->speeds.end())
         return "The Speed event no longer exists.";
     const auto row = timing_pointer_row(context, *chart, *view, *index, input.y_pixels);
@@ -257,7 +257,7 @@ auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input
     if (!chart || !view) return "SV recipe edit is stale or invalid.";
     if (!context.is_timing_input_current(input))
         return stale_action_message("SV recipe edit");
-    if (!find_input_recipe(*chart, input.object_id))
+    if (!find_input_recipe(*chart, input.object_id.value))
         return "The SV recipe no longer exists.";
     const auto press = context.position_at_compose_y_unrestricted(
         *chart, *view,
@@ -271,7 +271,7 @@ auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input
         : input.span_edge == WORM_UI_SPAN_HANDLE_END ? sv_recipe_range_handle_t::end
                                                      : sv_recipe_range_handle_t::whole_span;
     auto drag = sv_recipe_range_drag_t::propose(
-        context.environment.document.history, chart->id, recipe_id_t{input.object_id}, handle, *press,
+        context.environment.document.history, chart->id, recipe_id_t{input.object_id.value}, handle, *press,
         edit_snap_denominator(*chart, context.state),
         context.environment.commands.project.timing_recipe.timing_locked);
     if (!drag.value) {

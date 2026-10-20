@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <deque>
 #include <string>
 
 namespace {
@@ -146,90 +145,7 @@ auto nuklear_event_harness_t::drawn_text_center(std::string_view sought) const
 
 struct workspace_action_snapshot_t::storage_t {
     wormedit::ui::workspace_action_t action;
-    std::deque<std::string> strings;
-    std::vector<const char*> tags;
-    std::vector<std::uint64_t> sound_resources;
-    std::vector<const char*> import_paths;
-    std::vector<wormedit::ui::sound_import_item_t> import_items;
-    std::vector<wormedit::ui::sound_import_group_t> import_groups;
-    std::deque<std::vector<std::size_t>> import_members;
-    std::vector<wormedit::ui::sound_group_assignment_t> group_assignments;
-    std::deque<std::vector<std::uint64_t>> group_members;
-
-    auto own(const char* text) -> const char* {
-        if (!text) return nullptr;
-        strings.emplace_back(text);
-        return strings.back().c_str();
-    }
-
-    void own_sound_import(const wormedit::ui::workspace_action_t& source) {
-        for (std::size_t index = 0; source.compose_import_paths &&
-                                   index < source.compose_import_path_count; ++index)
-            import_paths.push_back(own(source.compose_import_paths[index]));
-        action.compose_import_paths = source.compose_import_paths ? import_paths.data() : nullptr;
-        for (std::size_t index = 0; source.sound_import_items &&
-                                   index < source.sound_import_item_count; ++index) {
-            auto item = source.sound_import_items[index];
-            item.path = own(item.path);
-            item.name = own(item.name);
-            import_items.push_back(item);
-        }
-        action.sound_import_items = source.sound_import_items ? import_items.data() : nullptr;
-        for (std::size_t index = 0; source.sound_import_groups &&
-                                   index < source.sound_import_group_count; ++index) {
-            auto group = source.sound_import_groups[index];
-            group.name = own(group.name);
-            if (group.member_indices) {
-                import_members.emplace_back(group.member_indices,
-                                             group.member_indices + group.member_count);
-                group.member_indices = import_members.back().data();
-            }
-            import_groups.push_back(group);
-        }
-        action.sound_import_groups = source.sound_import_groups ? import_groups.data() : nullptr;
-    }
-
-    void own_sound_groups(const wormedit::ui::workspace_action_t& source) {
-        for (std::size_t index = 0; source.compose_sound_group_assignments &&
-                index < source.compose_sound_group_assignment_count; ++index) {
-            auto assignment = source.compose_sound_group_assignments[index];
-            assignment.name = own(assignment.name);
-            if (assignment.sound_ids) {
-                group_members.emplace_back(assignment.sound_ids,
-                                            assignment.sound_ids + assignment.sound_count);
-                assignment.sound_ids = group_members.back().data();
-            }
-            group_assignments.push_back(assignment);
-        }
-        action.compose_sound_group_assignments = source.compose_sound_group_assignments
-            ? group_assignments.data() : nullptr;
-    }
-
-    explicit storage_t(const wormedit::ui::workspace_action_t& source) : action{source} {
-        own_sound_import(source);
-        own_sound_groups(source);
-        if (source.compose_sound_resource_ids) {
-            sound_resources.assign(source.compose_sound_resource_ids,
-                source.compose_sound_resource_ids + source.compose_sound_resource_count);
-            action.compose_sound_resource_ids = sound_resources.data();
-        }
-        action.metadata_chart_rating_numerator_text = own(source.metadata_chart_rating_numerator_text);
-        action.metadata_chart_rating_denominator_text = own(source.metadata_chart_rating_denominator_text);
-        action.metadata_audio_offset_numerator_text = own(source.metadata_audio_offset_numerator_text);
-        action.metadata_audio_offset_denominator_text = own(source.metadata_audio_offset_denominator_text);
-        action.metadata_title = own(source.metadata_title);
-        action.metadata_artist = own(source.metadata_artist);
-        action.metadata_chart_name = own(source.metadata_chart_name);
-        action.metadata_chart_author = own(source.metadata_chart_author);
-        action.metadata_format_name = own(source.metadata_format_name);
-        action.metadata_format_value = own(source.metadata_format_value);
-        action.metadata_output_path = own(source.metadata_output_path);
-        if (source.metadata_search_tags) {
-            for (std::size_t i = 0; i < source.metadata_search_tag_count; ++i)
-                tags.push_back(own(source.metadata_search_tags[i]));
-            action.metadata_search_tags = tags.data();
-        }
-    }
+    explicit storage_t(const wormedit::ui::workspace_action_t& source) : action{source} {}
 };
 
 workspace_action_snapshot_t::workspace_action_snapshot_t(const wormedit::ui::workspace_action_t& action)

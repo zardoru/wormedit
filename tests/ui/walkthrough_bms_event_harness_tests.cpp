@@ -151,7 +151,7 @@ auto import_review(walkthrough_t& flow) -> resource_id_t {
     const auto prepared = prepare_keysound_import(flow.history.document, chart, paths);
     require_step(prepared.entries.size() == 1);
     const wormedit::ui::sound_import_item_t item{
-        .path = path.c_str(), .name = "keysound-c4.ogg", .kind = 2, .kind_fixed = false};
+        .path = path.c_str(), .name = "keysound-c4.ogg", .kind = sound_kind_t::keysound, .kind_fixed = false};
     require_step(worm_ui_frontend_stage_sound_import(1, chart.value, flow.history.document.revision,
                                                 &item, 1, nullptr, 0, false, ""));
     (void)flow.harness.frame();
@@ -301,7 +301,7 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     check_bms_metadata(flow);
     check_step(flow.harness.view().compose.bms_measure_labels);
     const auto& initial_view = flow.harness.view().compose;
-    check_step(std::ranges::any_of(std::span{initial_view.grid_lines, initial_view.grid_line_count},
+    check_step(std::ranges::any_of(std::span{initial_view.grid_lines},
         [](const auto& line) { return line.measure_number == 1 && line.chart_row == 0; }));
     const auto canvas = build_virtual_canvas(flow.history.document.charts.front());
     require_step(std::holds_alternative<virtual_canvas_t>(canvas));
@@ -325,7 +325,7 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     const auto motion = test::mouse_motion(400, 400);
     (void)flow.harness.frame(std::span{&motion, 1});
     const auto press = flow.press(SDLK_2, SDL_SCANCODE_2);
-    require_step(press.get().compose_input_count == 1);
+    require_step(press.get().compose_inputs.size() == 1);
     const auto started = flow.dispatch(press);
     INFO(started);
     const auto released = flow.dispatch(flow.press(SDLK_2, SDL_SCANCODE_2, false));
@@ -545,12 +545,10 @@ void confirm_sound_review(walkthrough_t& flow, bool slots) {
 
 auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id_t {
     const auto path = slot_import_paths().front();
-    const std::array paths{path.c_str()};
     const wormedit::ui::workspace_action_t action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
-        .compose_input_chart_id = flow.workspace.value->selected_chart->value,
+        .compose_input_chart_id = {flow.workspace.value->selected_chart->value},
         .compose_input_document_revision = flow.history.document.revision,
-        .compose_import_paths = paths.data(), .compose_import_path_count = paths.size(),
-        .compose_sound_slot = slot};
+        .compose_import_paths = {path}, .compose_sound_slot = slot};
     apply_sound_action(flow, action);
     const auto rows = sound_slots_view_t::from(flow.history.document,
         {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1});

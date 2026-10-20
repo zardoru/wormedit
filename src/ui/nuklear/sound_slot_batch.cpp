@@ -34,13 +34,6 @@ auto replacements_ready(const worm_ui_sound_slot_batch_t& state) -> bool {
     });
 }
 
-void refresh_action_items(worm_ui_sound_slot_batch_t& state) {
-    state.action_items.clear();
-    state.action_items.reserve(state.items.size());
-    for (const auto& item : state.items)
-        state.action_items.push_back({.path = item.path.c_str(), .name = item.name.c_str(), .kind = 2});
-}
-
 void draw_batch_header(nk_context* context, chrome::Dialog& dialog,
                        const worm_ui_sound_slot_batch_t& state) {
     char label[128];
@@ -100,7 +93,6 @@ auto stale_target(const worm_ui_sound_slot_batch_t& state, const WormUiComposeVi
     return !view.sound_slots_mode || view.project_id != state.project_id ||
            view.chart_id != state.chart_id || view.document_revision != state.revision;
 }
-
 } // namespace
 
 void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,
@@ -125,13 +117,8 @@ void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,
     state.items.reserve(item_count);
     for (std::size_t index = 0; index < item_count; ++index) {
         const auto& item = items[index];
-        if (!item.path || !item.name || !item.occupied_name) {
-            state.reason = "The staged WAV slot list contains an invalid item.";
-            state.items.clear();
-            return;
-        }
         state.items.push_back({.path = item.path, .name = item.name,
-            .occupied_resource_id = item.occupied_resource_id,
+            .occupied_resource_id = item.occupied_resource_id.value,
             .occupied_name = item.occupied_name, .ambiguous = item.ambiguous});
     }
 }
@@ -141,7 +128,6 @@ void worm_ui_sound_slot_batch_cancel(worm_ui_sound_slot_batch_t& state) {
     state.replacement_confirmed = false;
     state.commit_pending = false;
     state.items.clear();
-    state.action_items.clear();
 }
 
 void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool applied,
@@ -192,13 +178,14 @@ void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
             worm_ui_sound_slot_batch_cancel(state);
         if (chrome::dialog_button(dialog, context, "Assign files", chrome::DialogButtonRole::primary,
                                   can_confirm)) {
-            refresh_action_items(state);
             action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
-            action.compose_input_chart_id = state.chart_id;
+            action.compose_input_chart_id.value = state.chart_id;
             action.compose_input_document_revision = state.revision;
-            action.sound_import_project_id = state.project_id;
-            action.sound_import_items = state.action_items.data();
-            action.sound_import_item_count = state.action_items.size();
+            action.sound_import_project_id = wormedit::song_id_t{state.project_id};
+            for (const auto& item : state.items)
+                action.sound_import_items.push_back({.path = item.path, .name = item.name,
+                    .kind = wormedit::sound_kind_t::keysound});
+
             action.compose_sound_slot = state.first_slot;
             action.compose_sound_slot_confirmed = has_occupants(state);
             state.commit_pending = true;

@@ -41,10 +41,10 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
     nk_layout_row_end(context);
     if (clicked && can_edit_initial_bpm) {
         action->timing_stage_action = wormedit::ui::timing_stage_action_t::begin;
-        action->timing_chart_id = timing_view->chart_id.value;
+        action->timing_chart_id.value = timing_view->chart_id.value;
         action->timing_document_revision = timing_view->document_revision;
         action->timing_lane = wormedit::timing_lane_kind_t::bpm;
-        action->timing_object_id = timing_view->initial_bpm_event_id.value;
+        action->timing_object_id.value = timing_view->initial_bpm_event_id.value;
         action->timing_has_target_y = !timing_view->initial_bpm_event_id;
         action->timing_target = wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false};
     }
@@ -81,7 +81,7 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
         action->compose_action = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
         action->compose_lane_profile_index = static_cast<uint32_t>(
             selected - (selecting_initial ? 1 : 0));
-        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
     }
     nk_tree_pop(context);
@@ -140,12 +140,10 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     if (disabled) nk_widget_disable_end(context);
     if (clicked && !disabled) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
-        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
         action->compose_measure_number = view->lane_layout_edit_measure_number;
-        std::snprintf(action->compose_lane_layout_profile_id,
-                      sizeof(action->compose_lane_layout_profile_id), "%s",
-                      view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)]);
+        action->compose_lane_layout_profile_id = view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)];
     }
     nk_tree_pop(context);
 }
@@ -203,10 +201,9 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
         if (!nk_button_label(context, title) ||
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
-        memcpy(action->compose_note_label, state.note_label.label_search.data(),
-               state.note_label.label_search.size());
+        action->compose_note_label = state.note_label.label_search.data();
         action->compose_action = kind;
-        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
     };
     submit("Select", WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL);
@@ -252,12 +249,10 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     }
     if (!apply || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
-    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id;
     action->compose_input_document_revision = view->document_revision;
-    std::snprintf(action->timing_meter_numerator_text, sizeof(action->timing_meter_numerator_text), "%s",
-                  state.recipe_editor.meter_numerator.data());
-    std::snprintf(action->timing_meter_denominator_text, sizeof(action->timing_meter_denominator_text), "%s",
-                  state.recipe_editor.meter_denominator.data());
+    action->timing_meter_numerator_text = state.recipe_editor.meter_numerator.data();
+    action->timing_meter_denominator_text = state.recipe_editor.meter_denominator.data();
 }
 
 // The confirmation belongs to one measure at one document revision; a move or edit closes it.
@@ -313,7 +308,7 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     confirmation.open = false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
-    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id;
     action->compose_input_document_revision = view->document_revision;
 }
 
@@ -332,7 +327,7 @@ void render_measure_removal_control(const ComposeInspectorContext& inspector) {
         return;
     }
     emit_compose_menu_command(*action, *view, "measures.remove_empty");
-    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id;
     action->compose_input_document_revision = view->document_revision;
 }
 
@@ -371,7 +366,7 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
         action->compose_action = kind;
-        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
     };
     entry("Mirror lanes", WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR);
@@ -451,12 +446,12 @@ void set_quantize_action(const ComposeInspectorContext& inspector, WormUiCompose
     if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action->compose_action = kind;
-    action->compose_input_chart_id = inspector.view->chart_id;
+    action->compose_input_chart_id.value = inspector.view->chart_id;
     action->compose_input_document_revision = inspector.view->document_revision;
     action->compose_quantize_divisions = divisions;
-    action->compose_quantize_space = space;
-    action->compose_quantize_tie = tie;
-    action->compose_quantize_holds = holds;
+    action->compose_quantize_space = static_cast<wormedit::quantization_space_t>(space);
+    action->compose_quantize_tie = static_cast<wormedit::quantization_tie_t>(tie);
+    action->compose_quantize_holds = static_cast<wormedit::quantization_hold_t>(holds);
     action->compose_quantize_preset_selected = preset_selected;
     action->compose_quantize_preset_index = preset_index;
 }
@@ -686,8 +681,7 @@ void render_quantize_name_popup(const ComposeInspectorContext& i) {
                                             : WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
                             v.quantize_divisions, v.quantize_space, v.quantize_tie,
                             v.quantize_holds, quantize_rename, quantize_menu_preset);
-        std::memcpy(i.action->compose_quantize_preset_name, quantize_preset_name.data(),
-                    quantize_preset_name.size());
+        i.action->compose_quantize_preset_name = quantize_preset_name.data();
     }
 }
 void render_quantize_preset_actions(const ComposeInspectorContext& i) {

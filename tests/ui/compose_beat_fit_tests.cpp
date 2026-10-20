@@ -25,7 +25,7 @@ auto fit_button(float x, float y, bool down) -> SDL_Event {
 }
 auto find_fit_input(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind)
     -> const wormedit::ui::compose_input_action_t* {
-    for (std::size_t i = 0; i < action.compose_input_count; ++i)
+    for (std::size_t i = 0; i < action.compose_inputs.size(); ++i)
         if (action.compose_inputs[i].kind == kind) return &action.compose_inputs[i];
     return nullptr;
 }
@@ -37,11 +37,11 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     verify_fit_event(h.ready());
     auto& v = h.view().compose;
     WormUiComposeWaveformRowView wave{};
-    WormUiComposeGridLineView beat{};
-    beat.chart_row = 4; beat.kind = 1;
+    wormedit::ui::compose_grid_line_view_t beat{};
+    beat.chart_row = 4; beat.kind = wormedit::editor_grid_line_kind_t::beat;
     beat.y_pixels = 120;
     v.waveform_rows = &wave; v.waveform_row_count = 1;
-    v.grid_lines = &beat; v.grid_line_count = 1;
+    v.grid_lines = {beat};
     v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
     (void)h.frame();
     wormedit::ui::testing_rect_view_t rect{};
@@ -58,8 +58,8 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     v.beat_fit_target_y_pixels = 120;
     const auto plain = h.frame({}, SDL_KMOD_CTRL);
     const auto* pi = find_fit_input(plain.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);
-    INFO("active=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_ctrl_held << " events=" << plain.get().compose_input_count);
-    for (std::size_t i = 0; i < plain.get().compose_input_count; ++i) INFO("kind=" << plain.get().compose_inputs[i].kind);
+    INFO("active=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_drag_active << " ctrl=" << worm_ui_nuklear_compose_state().waveform_drag.beat_fit_ctrl_held << " events=" << plain.get().compose_inputs.size());
+    for (std::size_t i = 0; i < plain.get().compose_inputs.size(); ++i) INFO("kind=" << plain.get().compose_inputs[i].kind);
     verify_fit_event(pi); verify_fit_event(pi->beat_fit_ctrl_held); verify_fit_event(!(pi->beat_fit_onset_snap_held));
     const auto onset = h.frame({}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
     const auto* oi = find_fit_input(onset.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE);
@@ -92,10 +92,10 @@ TEST_CASE("Group beat rail handles start fitting with the same guards as other b
     verify_fit_event(h.ready());
     auto& v = h.view().compose;
     WormUiComposeWaveformRowView wave{};
-    WormUiComposeGridLineView beat{};
-    beat.chart_row = 480; beat.kind = kind; beat.y_pixels = 120;
+    wormedit::ui::compose_grid_line_view_t beat{};
+    beat.chart_row = 480; beat.kind = static_cast<wormedit::editor_grid_line_kind_t>(kind); beat.y_pixels = 120;
     v.waveform_rows = &wave; v.waveform_row_count = 1;
-    v.grid_lines = &beat; v.grid_line_count = 1;
+    v.grid_lines = {beat};
     v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
     v.waveform_timing_locked = locked;
     (void)h.frame();
@@ -107,7 +107,7 @@ TEST_CASE("Group beat rail handles start fitting with the same guards as other b
     const auto begun = h.frame(press);
     const auto* fit = find_fit_input(begun.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN);
     verify_fit_event((fit != nullptr) == (kind != 0 && !locked));
-    if (fit) verify_fit_event(fit->object_id == 480);
+    if (fit) verify_fit_event(fit->object_id.value == 480);
     beat.chart_row = 0;
     verify_fit_event(!worm_ui_nuklear_beat_fit_line(beat));
 }
@@ -115,23 +115,23 @@ TEST_CASE("Group beat rail handles start fitting with the same guards as other b
 namespace {
 struct timing_drag_fixture_t {
     nuklear_event_harness_t h{1600, 900};
-    WormUiComposeKiaiSpanView kiai{};
-    WormUiComposeSpeedSpanView speed{};
-    WormUiComposeRecipeAreaView recipe{};
+    wormedit::ui::compose_kiai_span_view_t kiai{};
+    wormedit::ui::compose_speed_span_view_t speed{};
+    wormedit::ui::compose_recipe_area_view_t recipe{};
     timing_drag_fixture_t() {
         auto& v = h.view().compose;
         v.viewport_width_pixels = 900; v.viewport_height_pixels = 600;
         v.playable_field_left_pixels = 500; v.playable_field_right_pixels = 850;
         v.timing_lane_visibility_mask = 255;
-        kiai.bounds = {0, 200, 0, 400}; kiai.head_object_id = 10;
+        kiai.bounds = {0, 200, 0, 400}; kiai.head_object_id.value = 10;
         kiai.head_visible = kiai.tail_visible = true; kiai.end_row = 960;
-        speed.bounds = {0, 200, 0, 400}; speed.object_id = 20;
-        recipe.bounds = {0, 200, 0, 400}; recipe.recipe_id = 30;
-        recipe.lane = static_cast<std::uint8_t>(wormedit::timing_lane_kind_t::scroll); recipe.label = "Test";
+        speed.bounds = {0, 200, 0, 400}; speed.object_id.value = 20;
+        recipe.bounds = {0, 200, 0, 400}; recipe.recipe_id.value = 30;
+        recipe.lane = wormedit::timing_lane_kind_t::scroll; recipe.label = "Test";
         recipe.begin_visible = recipe.end_visible = true;
-        v.kiai_spans = &kiai; v.kiai_span_count = 1;
-        v.speed_spans = &speed; v.speed_span_count = 1;
-        v.recipe_areas = &recipe; v.recipe_area_count = 1;
+        v.kiai_spans = {kiai};
+        v.speed_spans = {speed};
+        v.recipe_areas = {recipe};
         auto& s = worm_ui_nuklear_compose_state();
         s.dock_layout.inspector_visible = s.dock_layout.layers_panel_visible = s.dock_layout.sounds_panel_visible = false;
         (void)h.frame();
@@ -210,7 +210,7 @@ TEST_CASE("Span release uses the captured stamp and a screen pixel threshold",
     const auto* edit = find_fit_input(end.get(), kind);
     verify_fit_event((edit != nullptr) == (distance >= 4));
     if (edit) {
-        verify_fit_event(edit->timing_chart_id == 1 && edit->timing_document_revision == 1);
+        verify_fit_event(edit->timing_chart_id.value == 1 && edit->timing_document_revision == 1);
         verify_fit_event(edit->span_edge == WORM_UI_SPAN_HANDLE_END);
     }
     const auto& s = worm_ui_nuklear_compose_state();
@@ -231,7 +231,7 @@ TEST_CASE("Staged timing uses the shared lock and threshold while retaining Appl
     verify_fit_event(small.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
     const auto move = f.h.frame(std::array{fit_motion(p.first, p.second + 20)});
     verify_fit_event(move.get().timing_stage_action == wormedit::ui::timing_stage_action_t::move);
-    verify_fit_event(move.get().timing_chart_id == 1 && move.get().timing_document_revision == 1);
+    verify_fit_event(move.get().timing_chart_id.value == 1 && move.get().timing_document_revision == 1);
     const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 20, false)});
     verify_fit_event(end.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
     verify_fit_event(!worm_ui_nuklear_compose_state().timing_drag.timing_stage_capture.active);
@@ -245,10 +245,10 @@ TEST_CASE("Beat and offset fit share zero movement and source change cancellatio
     nuklear_event_harness_t h{1280, 900};
     auto& v = h.view().compose;
     WormUiComposeWaveformRowView wave{};
-    WormUiComposeGridLineView beat{};
-    beat.chart_row = 480; beat.kind = 1; beat.y_pixels = 120;
+    wormedit::ui::compose_grid_line_view_t beat{};
+    beat.chart_row = 480; beat.kind = wormedit::editor_grid_line_kind_t::beat; beat.y_pixels = 120;
     v.waveform_rows = &wave; v.waveform_row_count = 1;
-    v.grid_lines = &beat; v.grid_line_count = 1;
+    v.grid_lines = {beat};
     v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
     (void)h.frame();
     wormedit::ui::testing_rect_view_t rect{};
@@ -339,7 +339,7 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
     const auto end = h.frame(std::array{fit_motion(x + distance, y), fit_button(x + distance, y, false)});
     verify_fit_event(end.get().audio_offset_drag_action == (distance >= 4
         ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL));
-    verify_fit_event(end.get().audio_offset_drag_chart_id == 1 &&
+    verify_fit_event(end.get().audio_offset_drag_chart_id.value == 1 &&
                      end.get().audio_offset_drag_document_revision == 1);
     verify_fit_event(!s.waveform_drag.waveform_beat_zero_drag_active && !s.timing_drag.beat_zero_capture.active);
 }
@@ -349,7 +349,7 @@ TEST_CASE("Empty timing lanes preserve their distinct creation and selection ver
     const auto lane = GENERATE(wormedit::timing_lane_kind_t::kiai, wormedit::timing_lane_kind_t::speed,
                                wormedit::timing_lane_kind_t::scroll);
     timing_drag_fixture_t f;
-    f.recipe.selected = true;
+    f.h.view().compose.recipe_areas.front().selected = true;
     const auto p = f.press(lane, 500);
     const auto& s = worm_ui_nuklear_compose_state();
     verify_fit_event(s.timing_drag.kiai_drag_active == (lane == wormedit::timing_lane_kind_t::kiai));

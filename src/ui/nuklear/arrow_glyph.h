@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/field/color.h"
+#include <wormedit/core/vocabulary.h>
 
 #include <array>
 #include <cstdint>
@@ -20,6 +21,14 @@ inline constexpr std::uint8_t last_arrow_glyph = 10;
 // Uses the frontend/core glyph values, including diagonal arrows and Pump center.
 auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
     -> std::array<arrow_point_t, 7>;
+
+[[nodiscard]] constexpr auto is_arrow_glyph(wormedit::lane_glyph_t glyph) -> bool {
+    return is_arrow_glyph(static_cast<std::uint8_t>(glyph));
+}
+inline auto arrow_polygon(wormedit::lane_glyph_t glyph, float x, float y, float size)
+    -> std::array<arrow_point_t, 7> {
+    return arrow_polygon(static_cast<std::uint8_t>(glyph), x, y, size);
+}
 
 // First matching subdivision of a standard measure; 0 denotes "other".
 auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)

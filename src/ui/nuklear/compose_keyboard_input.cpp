@@ -279,8 +279,8 @@ static void process_compose_lane_key(const auto& key_event, const WormUiComposeV
         if (binding.scancode != key_event.scancode || binding.lane_id == 0) continue;
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0.0, 0.0,
                              binding.lane_id, (key_event.modifiers & SDL_KMOD_SHIFT) != 0);
-        if (!state.input_queue.action_overflowed && action->compose_input_count > 0)
-            action->compose_inputs[action->compose_input_count - 1].resource_id =
+        if (!state.input_queue.action_overflowed && action->compose_inputs.size() > 0)
+            action->compose_inputs[action->compose_inputs.size() - 1].resource_id.value =
                 view->selected_note_count != 0
                     ? 0 : worm_ui_nuklear_armed_dock_sound(state, *view);
         if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0 && !state.input_queue.action_overflowed &&

@@ -136,7 +136,8 @@ void layout_field_scheme_picker(nk_context* context, const wormedit::ui::options
     }
     std::vector<wormedit::ui::theme::field_lane_t> lanes;
     for (const auto& lane : std::span{view.current_field_layout_lanes})
-        lanes.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
+        lanes.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+                static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.lane_id.value});
     std::vector<const char*> labels{"Use default"};
     std::vector<const char*> ids{""};
     int selected = 0;

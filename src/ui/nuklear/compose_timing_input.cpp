@@ -60,9 +60,9 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
     } else if (continuation.moved && nk_input_is_mouse_moved(&input.context->input) &&
                action.timing_stage_action == wormedit::ui::timing_stage_action_t::none) {
         action.timing_stage_action = wormedit::ui::timing_stage_action_t::move;
-        action.timing_chart_id = state.timing_drag.timing_stage_capture.chart;
+        action.timing_chart_id.value = state.timing_drag.timing_stage_capture.chart;
         action.timing_document_revision = state.timing_drag.timing_stage_capture.revision;
-        action.timing_object_id = timing.stage_existing_object_id.value;
+        action.timing_object_id.value = timing.stage_existing_object_id.value;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
         action.timing_target = compose_timing_target(view, input.pointer_y);
@@ -151,18 +151,18 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
     state.timing_drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_CREATE;
     state.timing_drag.kiai_drag_head_id = 0;
     std::uint64_t body_head = 0;
-    for (std::size_t index = 0; index < view.kiai_span_count; ++index) {
+    for (std::size_t index = 0; index < view.kiai_spans.size(); ++index) {
         const auto& span = view.kiai_spans[index];
         const auto head_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
         const auto tail_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
         if (span.head_visible && std::abs(y - head_y) <= tolerance) {
             state.timing_drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BEGIN;
-            state.timing_drag.kiai_drag_head_id = span.head_object_id;
+            state.timing_drag.kiai_drag_head_id = span.head_object_id.value;
         } else if (span.tail_visible && std::abs(y - tail_y) <= tolerance) {
             state.timing_drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
-            state.timing_drag.kiai_drag_head_id = span.head_object_id;
+            state.timing_drag.kiai_drag_head_id = span.head_object_id.value;
         } else if (y > span.bounds.top && y < span.bounds.bottom) {
-            body_head = span.head_object_id;
+            body_head = span.head_object_id.value;
         }
         if (state.timing_drag.kiai_drag_head_id != 0) break;
     }
@@ -190,8 +190,8 @@ static void commit_kiai_drag(const ComposePointerEventContext& input) {
                          false,
                          state.timing_drag.kiai_drag_speed ? wormedit::timing_lane_kind_t::speed : wormedit::timing_lane_kind_t::kiai,
                          state.timing_drag.span_capture.chart, state.timing_drag.span_capture.revision);
-    if (input.action->compose_input_count == 0) return;
-    auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
+    if (input.action->compose_inputs.size() == 0) return;
+    auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
     queued.span_edge = state.timing_drag.kiai_drag_edge;
     queued.span_anchor_y_pixels = state.timing_drag.kiai_drag_anchor_y;
 }
@@ -224,7 +224,7 @@ static auto recipe_gesture_blocked(const ComposePointerEventContext& input) -> b
     return kiai_gesture_blocked(input) || state.timing_drag.kiai_drag_active;
 }
 
-static auto recipe_area_extent(const WormUiComposeView& view, const WormUiComposeRecipeAreaView& area) {
+static auto recipe_area_extent(const WormUiComposeView& view, const wormedit::ui::compose_recipe_area_view_t& area) {
     return compose_timing_lane_inner_extent(view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
 }
 
@@ -245,16 +245,16 @@ struct recipe_press_t {
 static auto recipe_press_at(const WormUiComposeView& view, double x, double y, double tolerance)
     -> std::optional<recipe_press_t> {
     std::optional<recipe_press_t> body;
-    for (std::size_t index = view.recipe_area_count; index-- > 0;) {
+    for (std::size_t index = view.recipe_areas.size(); index-- > 0;) {
         const auto& area = view.recipe_areas[index];
         const auto extent = recipe_area_extent(view, area);
         if (!extent || x < extent->first || x >= extent->second) continue;
         const auto begin_y = view.downscroll ? area.bounds.bottom : area.bounds.top;
         const auto end_y = view.downscroll ? area.bounds.top : area.bounds.bottom;
-        if (area.begin_visible && std::abs(y - begin_y) <= tolerance) return recipe_press_t{area.recipe_id, 0};
-        if (area.end_visible && std::abs(y - end_y) <= tolerance) return recipe_press_t{area.recipe_id, 1};
+        if (area.begin_visible && std::abs(y - begin_y) <= tolerance) return recipe_press_t{area.recipe_id.value, 0};
+        if (area.end_visible && std::abs(y - end_y) <= tolerance) return recipe_press_t{area.recipe_id.value, 1};
         if (!body && y > area.bounds.top && y < area.bounds.bottom)
-            body = recipe_press_t{area.recipe_id, 2};
+            body = recipe_press_t{area.recipe_id.value, 2};
     }
     return body;
 }
@@ -271,7 +271,7 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
         compose_timing_marker_at(view, x, y) != nullptr) return;
     const auto tolerance = span_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
     if (recipe_press_at(view, x, y, tolerance)) return;
-    for (std::size_t index = 0; index < view.speed_span_count; ++index) {
+    for (std::size_t index = 0; index < view.speed_spans.size(); ++index) {
         const auto& span = view.speed_spans[index];
         const auto begin_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
         const auto end_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
@@ -282,7 +282,7 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
         state.timing_drag.kiai_drag_edge = on_end ? WORM_UI_SPAN_HANDLE_END
             : on_body && std::abs(y - begin_y) > tolerance ? WORM_UI_SPAN_HANDLE_BODY
                                                             : WORM_UI_SPAN_HANDLE_BEGIN;
-        state.timing_drag.kiai_drag_head_id = span.object_id;
+        state.timing_drag.kiai_drag_head_id = span.object_id.value;
         state.timing_drag.kiai_drag_speed = true;
         state.timing_drag.kiai_drag_active = begin_span_capture(input, state.timing_drag.span_capture);
         state.timing_drag.kiai_drag_moved = false;
@@ -305,11 +305,11 @@ static void begin_speed_stretch(const ComposePointerEventContext& input) {
         return;
     const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
                                                   input.pointer_started_y);
-    if (!marker || marker->lane != wormedit::timing_lane_kind_t::speed || marker->object_id == 0 ||
+    if (!marker || marker->lane != wormedit::timing_lane_kind_t::speed || marker->object_id.value == 0 ||
         marker->fixed_initial)
         return;
     state.timing_drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
-    state.timing_drag.kiai_drag_head_id = marker->object_id;
+    state.timing_drag.kiai_drag_head_id = marker->object_id.value;
     state.timing_drag.kiai_drag_speed = true;
     state.timing_drag.kiai_drag_active = begin_span_capture(input, state.timing_drag.span_capture);
     state.timing_drag.kiai_drag_moved = false;
@@ -327,7 +327,7 @@ static void begin_recipe_drag(const ComposePointerEventContext& input) {
     const auto press = recipe_press_at(view, x, y, tolerance);
     if (!press) {
         const bool any_selected = std::ranges::any_of(
-            std::span(view.recipe_areas, view.recipe_area_count),
+            std::span(view.recipe_areas),
             [](const auto& area) { return area.selected; });
         if (any_selected)
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_RECIPE_SELECT, x, y);
@@ -351,8 +351,8 @@ static void commit_recipe_drag(const ComposePointerEventContext& input) {
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.timing_drag.recipe_drag_id, 0, false,
                          wormedit::timing_lane_kind_t::scroll, state.timing_drag.recipe_capture.chart,
                          state.timing_drag.recipe_capture.revision);
-    if (input.action->compose_input_count == 0) return;
-    auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
+    if (input.action->compose_inputs.size() == 0) return;
+    auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
     queued.span_edge = state.timing_drag.recipe_drag_edge;
     queued.span_anchor_y_pixels = state.timing_drag.recipe_drag_anchor_y;
 }

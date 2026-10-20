@@ -47,7 +47,6 @@ struct worm_ui_nuklear_metadata_state_t {
     // the view when the document revision or layout segment changes.
     static constexpr std::size_t channel_map_text_bytes = 64;
     std::vector<std::array<std::array<char, channel_map_text_bytes + 1>, 4>> channel_map_texts;
-    std::vector<const char*> channel_map_text_pointers;
     std::vector<std::uint64_t> channel_map_lane_ids;
     std::uint64_t channel_map_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t channel_map_buffer_segment{};
@@ -59,9 +58,7 @@ struct worm_ui_nuklear_metadata_state_t {
     bool lane_profile_valid{};
     // Metadata multi-select of difficulties; reset with the rest of the state.
     std::vector<std::uint64_t> batch_selected_charts;
-    std::vector<std::uint64_t> batch_action_chart_ids;
     std::vector<std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1>> search_tags;
-    std::vector<const char*> search_tag_pointers;
     std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1> new_search_tag{};
     std::size_t selected_format_field{std::numeric_limits<std::size_t>::max()};
     bool format_target_valid{};

@@ -91,9 +91,9 @@ static void set_timing_action(wormedit::ui::workspace_action_t* action, const wo
         return;
     }
     action->timing_stage_action = kind;
-    action->timing_chart_id = view->chart_id.value;
+    action->timing_chart_id.value = view->chart_id.value;
     action->timing_document_revision = view->document_revision;
-    action->timing_object_id = view->stage_existing_object_id.value;
+    action->timing_object_id.value = view->stage_existing_object_id.value;
     action->timing_lane = view->stage_lane;
     action->timing_value = primary;
     action->timing_secondary_value = secondary;
@@ -117,20 +117,12 @@ static void copy_timing_form_to_action(wormedit::ui::workspace_action_t* action)
     if (!action) {
         return;
     }
-    copy_timing_text(action->timing_bpm_decimal_text, sizeof(action->timing_bpm_decimal_text),
-                     state.bpm_decimal.data());
+    action->timing_bpm_decimal_text = state.bpm_decimal.data();
     action->timing_bpm_decimal_edited = state.bpm_decimal_edited;
-    copy_timing_text(action->timing_primary_numerator_text,
-                     sizeof(action->timing_primary_numerator_text), state.primary_numerator.data());
-    copy_timing_text(action->timing_primary_denominator_text,
-                     sizeof(action->timing_primary_denominator_text),
-                     state.primary_denominator.data());
-    copy_timing_text(action->timing_secondary_numerator_text,
-                     sizeof(action->timing_secondary_numerator_text),
-                     state.secondary_numerator.data());
-    copy_timing_text(action->timing_secondary_denominator_text,
-                     sizeof(action->timing_secondary_denominator_text),
-                     state.secondary_denominator.data());
+    action->timing_primary_numerator_text = state.primary_numerator.data();
+    action->timing_primary_denominator_text = state.primary_denominator.data();
+    action->timing_secondary_numerator_text = state.secondary_numerator.data();
+    action->timing_secondary_denominator_text = state.secondary_denominator.data();
 }
 
 

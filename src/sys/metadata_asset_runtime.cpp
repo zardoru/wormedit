@@ -432,7 +432,7 @@ auto metadata_asset_t::start_copy_preview(
     if (workspace.active_tab != workspace_tab_t::metadata ||
         !chart_stamp_t{.document = {.project = history.document.id,
                                    .revision = action.compose_input_document_revision},
-                       .chart = chart_id_t{action.compose_input_chart_id}}
+                       .chart = action.compose_input_chart_id}
              .is_current(history.document, *workspace.selected_chart))
         return finish(stale_action_message("Metadata copy inspection"), notification_severity_t::warning);
     if (asset_base.empty())
@@ -442,7 +442,7 @@ auto metadata_asset_t::start_copy_preview(
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
     const bool import_copy = action.metadata_inspect_import;
-    const asset_id_t asset{action.compose_resource_asset_id};
+    const asset_id_t asset{action.compose_resource_asset_id.value};
     std::filesystem::path source_path;
     if (auto error = resolve_copy_preview_source(action, history, asset, import_copy,
                                                  source_path))
@@ -506,7 +506,7 @@ auto metadata_asset_t::start_import_copy(
     if (workspace.active_tab != workspace_tab_t::metadata ||
         !chart_stamp_t{.document = {.project = history.document.id,
                                    .revision = action.compose_input_document_revision},
-                       .chart = chart_id_t{action.compose_input_chart_id}}
+                       .chart = action.compose_input_chart_id}
              .is_current(history.document, *workspace.selected_chart))
         return finish(stale_action_message("Metadata import-copy"), notification_severity_t::warning);
     if (asset_base.empty())
@@ -520,7 +520,7 @@ auto metadata_asset_t::start_import_copy(
         return finish("Wait for the current resource copy, import, or export to finish.",
                       notification_severity_t::info);
     const auto reserved = next_resource_asset_id(history.document);
-    if (!reserved || reserved->value != action.compose_resource_asset_id)
+    if (!reserved || reserved->value != action.compose_resource_asset_id.value)
         return finish("The reserved asset ID changed before import-copy started.",
                       notification_severity_t::warning);
     const std::filesystem::path source_path{action.compose_import_path};

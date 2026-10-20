@@ -80,7 +80,7 @@ TEST_CASE("Semantic palettes alias classes and follow each object class", "[them
     check_color(compose_key_color(6, 13).note, compose_key_color(1, 12).note);
     check_color(compose_key_color(3, 11).lane, nk_rgb(64, 65, 66));
     check_color(compose_key_color(2, 14).note, compose_key_color(2).note);
-    const WormUiComposeNoteView hold{.lane_id = 12, .key_color = 1, .kind = 1};
+    const wormedit::ui::compose_note_view_t hold{.lane_id = {12}, .key_color = wormedit::lane_key_color_t::white, .kind = wormedit::note_kind_t::hold};
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), nk_rgba(9, 8, 7, 6));
     expect_theme(!field_uses_positions());
     expect_theme(field_scheme_supports_layout("classes", lanes));
@@ -191,9 +191,9 @@ void check_bmse_profile(const wormedit::lane_input_profile_t& profile) {
                               : lane.key_color == 2 ? nk_rgb(0, 0, 255)
                                                     : nk_rgb(128, 128, 128);
         check_color(color.note, expected);
-        const WormUiComposeNoteView note{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        const wormedit::ui::compose_note_view_t note{.lane_id = {lane.lane_id}, .key_color = static_cast<wormedit::lane_key_color_t>(lane.key_color)};
         check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, note), expected);
-        const WormUiComposeHoldView hold{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        const wormedit::ui::compose_hold_view_t hold{.lane_id = {lane.lane_id}, .key_color = static_cast<wormedit::lane_key_color_t>(lane.key_color)};
         check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), expected);
     }
 }
@@ -338,9 +338,9 @@ void check_imported_stages(const wormedit::lane_input_profile_t& profile,
             // Check alpha as well: source hidden-note opacity must not dim normal notes.
             check_color(color.note, key);
         }
-        const WormUiComposeNoteView note{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        const wormedit::ui::compose_note_view_t note{.lane_id = {lane.lane_id}, .key_color = static_cast<wormedit::lane_key_color_t>(lane.key_color)};
         check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, note), color.note);
-        const WormUiComposeHoldView hold{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        const wormedit::ui::compose_hold_view_t hold{.lane_id = {lane.lane_id}, .key_color = static_cast<wormedit::lane_key_color_t>(lane.key_color)};
         check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), color.hold_body);
     }
     expect_theme(scratches[0] == 1 && scratches[1] == 1);
@@ -380,13 +380,13 @@ TEST_CASE("Imported hidden-note opacity never dims normal white notes or holds",
                            "ibmsc-forme", "ibmsc-iidx", "ibmsc-pomu"}) {
         INFO(id);
         REQUIRE(select_field_scheme(id));
-        for (const auto key : {std::uint8_t{1}, std::uint8_t{6}}) {
-            const WormUiComposeNoteView visible{.key_color = key};
+        for (const auto key : {wormedit::lane_key_color_t::white, wormedit::lane_key_color_t::pms_white}) {
+            const wormedit::ui::compose_note_view_t visible{.key_color = key};
             auto hidden = visible;
-            hidden.kind = 3;
+            hidden.kind = wormedit::note_kind_t::invisible;
             auto long_note = visible;
-            long_note.kind = 1;
-            const WormUiComposeHoldView hold{.key_color = key};
+            long_note.kind = wormedit::note_kind_t::hold;
+            const wormedit::ui::compose_hold_view_t hold{.key_color = key};
             const auto normal = worm_ui_nuklear_compose_color_view_t::normal;
             expect_theme(compose_note_base_fill(normal, visible).a == 255);
             expect_theme(compose_note_base_fill(normal, long_note).a == 255);
@@ -493,12 +493,12 @@ TEST_CASE("Dynamic-layout events sharing an authored ID retain their own semanti
     bind_field_layout(current);
     check_color(compose_key_color(1, 77).note, nk_rgb(170, 170, 170));
     check_color(compose_key_color(2, 77).note, nk_rgb(98, 137, 255));
-    const WormUiComposeNoteView white{.lane_id = 77, .key_color = 1};
-    const WormUiComposeNoteView blue{.lane_id = 77, .key_color = 2};
+    const wormedit::ui::compose_note_view_t white{.lane_id = {77}, .key_color = wormedit::lane_key_color_t::white};
+    const wormedit::ui::compose_note_view_t blue{.lane_id = {77}, .key_color = wormedit::lane_key_color_t::black};
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, white), compose_key_color(1).note);
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, blue), compose_key_color(2).note);
-    const WormUiComposeHoldView white_hold{.lane_id = 77, .key_color = 1};
-    const WormUiComposeHoldView blue_hold{.lane_id = 77, .key_color = 2};
+    const wormedit::ui::compose_hold_view_t white_hold{.lane_id = {77}, .key_color = wormedit::lane_key_color_t::white};
+    const wormedit::ui::compose_hold_view_t blue_hold{.lane_id = {77}, .key_color = wormedit::lane_key_color_t::black};
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, white_hold), compose_key_color(1).hold_body);
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, blue_hold), compose_key_color(2).hold_body);
 }

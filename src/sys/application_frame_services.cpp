@@ -29,7 +29,7 @@ auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
     if (!offer_audio_project_drop || event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
         (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window))) return false;
     const std::string_view dropped{event.drop.data};
-    if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
+    if (dropped.size() > maximum_project_path_bytes ||
         !std::filesystem::path{dropped}.is_absolute()) {
         notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop an absolute local MP3 or Ogg file within the path limit.");
         return true;
@@ -49,7 +49,7 @@ auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
     const std::filesystem::path dropped{event.drop.data};
     if (!is_supported_project_file_extension(dropped)) return false;
     if (!dropped.is_absolute() ||
-        std::string_view{event.drop.data}.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
+        std::string_view{event.drop.data}.size() > maximum_project_path_bytes) {
         notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop an absolute local chart or project file within the path limit.");
         return true;
     }

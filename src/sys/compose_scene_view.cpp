@@ -3,37 +3,34 @@
 #include <wormedit/formats/osu_mania.h>
 namespace wormedit::sys::compose_projection_detail {
 namespace {
-using note_hitsounds_view_t = std::unordered_map<std::uint64_t, const wormedit::ui::hitsound_note_view_t*>;
+using note_hitsounds_view_t = compose_scene_cache_t::scene_state_t::note_hitsounds_t;
 
 auto find_note_hitsound(const note_hitsounds_view_t& hitsounds, std::uint64_t id)
     -> const wormedit::ui::hitsound_note_view_t* {
     const auto found = hitsounds.find(id);
-    return found == hitsounds.end() ? nullptr : found->second;
+    return found == hitsounds.end() ? nullptr : &found->second;
 }
 
-auto build_note_hitsounds_view(const compose_scene_projection_context_t& projection) -> note_hitsounds_view_t {
+auto build_chart_note_hitsounds(const wormedit::chart_document_t& chart) -> note_hitsounds_view_t {
     note_hitsounds_view_t result;
-    const auto& chart = projection.inputs.scope.chart_scope.chart;
     const auto context = wormedit::osu_sample_context_index_t::from(chart);
-    auto* arena = projection.inputs.frame.flattened.arena();
-    std::unordered_set<std::uint64_t> visible;
-    for (const auto& endpoint : projection.scene.note_endpoints) visible.insert(endpoint.note.value);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!note.osu_hitsample || !visible.contains(note.id.value)) continue;
+            if (!note.osu_hitsample) continue;
             const auto& sample = *note.osu_hitsample;
-            const char* filename = sample.filename.empty() ? "" : arena ? arena_string(*arena, sample.filename) : nullptr;
-            auto views = arena ? arena_array<wormedit::ui::hitsound_note_view_t>(*arena, 1) :
-                frame_span<wormedit::ui::hitsound_note_view_t>{};
-            if (!filename || !views.push_back(wormedit::ui::hitsound_note_view_t::from(sample,
-                context ? context->at(note.position) : wormedit::osu_sample_context_t{}, filename))) {
-                projection.inputs.frame.view().truncated = true;
-                continue;
-            }
-            result.emplace(note.id.value, views.data());
+            result.emplace(note.id.value, wormedit::ui::hitsound_note_view_t::from(sample,
+                context ? context->at(note.position) : wormedit::osu_sample_context_t{}, sample.filename));
         }
     }
     return result;
+}
+
+auto build_note_hitsounds_view(const compose_scene_projection_context_t& projection)
+    -> const note_hitsounds_view_t& {
+    const auto& chart = projection.inputs.scope.chart_scope.chart;
+    return projection.inputs.frame.cache.scene.note_hitsounds.get_or_build(
+        compose_scene_source_key_t::from(projection.history().document, chart),
+        std::bind_front(build_chart_note_hitsounds, std::cref(chart)));
 }
 } // namespace
 
@@ -41,54 +38,43 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
     auto& flattened = projection.inputs.frame.flattened;
     const auto& history = projection.history();
     const auto& bgm_events = projection.scene.bgm_events;
-    std::unordered_set<std::uint64_t> visible_sound_ids;
-    visible_sound_ids.reserve(projection.scene.note_endpoints.size() + bgm_events.size());
-    const auto note_count = std::min(projection.scene.note_endpoints.size(),
-                                     static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
-    for (std::size_t index = 0; index < note_count; ++index) {
-        if (const auto sound = projection.scene.note_endpoints[index].sound)
-            visible_sound_ids.insert(sound->value);
+    const auto source = std::pair{compose_scene_source_key_t::from(
+        history.document, projection.inputs.scope.chart_scope.chart), flattened.query_session_generation};
+    if (flattened.compose.sound_labels_source != source) {
+        flattened.compose.sound_labels.clear();
+        flattened.compose.sound_labels_source = source;
     }
+    auto& visible_sound_ids = flattened.compose.visible_sound_ids;
+    visible_sound_ids.clear();
+    for (const auto& endpoint : projection.scene.note_endpoints)
+        if (endpoint.sound) visible_sound_ids.push_back(endpoint.sound->value);
     const auto bgm_event_count =
         std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    for (std::size_t index = 0; index < bgm_event_count; ++index) {
-        if (bgm_events[index].sound)
-            visible_sound_ids.insert(bgm_events[index].sound->value);
-    }
-    flattened.compose.sound_labels.reserve(visible_sound_ids.size());
+    for (std::size_t index = 0; index < bgm_event_count; ++index)
+        if (bgm_events[index].sound) visible_sound_ids.push_back(bgm_events[index].sound->value);
+    std::ranges::sort(visible_sound_ids);
     for (const auto& resource : history.document.resources) {
-        if (!visible_sound_ids.contains(resource.id.value))
-            continue;
+        if (!std::ranges::binary_search(visible_sound_ids, resource.id.value) ||
+            flattened.compose.sound_labels.contains(resource.id.value)) continue;
         flattened.compose.sound_labels.emplace(resource.id.value,
                                                compose_resource_sound_label(resource));
     }
 }
 
 auto prepare_compose_grid_rows(frontend_workspace_view_t& flattened, std::size_t count) -> bool {
-    auto& grid = flattened.compose.grid;
-    grid.line = {};
-    grid.row = {};
-    if (count == 0)
-        return true;
-    auto* arena = flattened.arena();
-    if (!arena)
-        return false;
-    auto lines = arena_array<WormUiComposeGridLineView>(*arena, count);
-    auto rows = arena_array<wormedit::exact_chart_row_t>(*arena, count);
-    if (lines.capacity() != count || rows.capacity() != count)
-        return false;
-    grid.line = lines;
-    grid.row = rows;
+    flattened.view.compose.grid_lines.clear();
+    flattened.compose.grid.row.clear();
+    flattened.view.compose.grid_lines.reserve(count);
+    flattened.compose.grid.row.reserve(count);
     return true;
 }
 
 auto append_compose_grid_row(frontend_workspace_view_t& flattened,
-                             const WormUiComposeGridLineView& line,
+                             const wormedit::ui::compose_grid_line_view_t& line,
                              const wormedit::exact_chart_row_t& row) -> bool {
-    auto& grid = flattened.compose.grid;
-    if (grid.line.size() == grid.line.capacity() || grid.row.size() == grid.row.capacity())
-        return false;
-    return grid.line.push_back(line) && grid.row.push_back(row);
+    flattened.view.compose.grid_lines.push_back(line);
+    flattened.compose.grid.row.push_back(row);
+    return true;
 }
 
 auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::uint64_t row,
@@ -116,16 +102,12 @@ void build_compose_grid_lines_view(const compose_scene_projection_context_t& pro
     const auto& scene = projection.scene;
     auto& view = projection.inputs.frame.view();
     const auto& lines = scene.grid_lines;
+    flattened.view.compose.grid_lines.clear();
+    flattened.compose.grid.row.clear();
     if (lines.empty())
         return;
     const auto line_count =
-        std::min(lines.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_GRID_CAPACITY));
-    std::unordered_map<std::uint64_t, std::uint32_t> measure_numbers;
-    measure_numbers.reserve(projection.index.measures.entries.size());
-    for (std::size_t measure = 0; measure < projection.index.measures.entries.size(); ++measure) {
-        measure_numbers.emplace(projection.index.measures.entries[measure].absolute_begin_row,
-                                static_cast<std::uint32_t>(measure + 1));
-    }
+        lines.size();
     std::optional<wormedit::virtual_canvas_t> virtual_canvas;
     if (view.bms_measure_labels) {
         auto canvas = wormedit::build_virtual_canvas(chart);
@@ -139,8 +121,13 @@ void build_compose_grid_lines_view(const compose_scene_projection_context_t& pro
     }
     for (std::size_t index = 0; index < line_count; ++index) {
         const auto& line = lines[index];
-        const auto measure = measure_numbers.find(line.chart_row.whole_rows);
-        std::uint32_t measure_number = measure != measure_numbers.end() ? measure->second : 0;
+        const auto& measures = projection.index.measures.entries;
+        const auto measure = std::ranges::lower_bound(
+            measures, line.chart_row.whole_rows, {},
+            &wormedit::measure_index_entry_t::absolute_begin_row);
+        std::uint32_t measure_number = measure != measures.end() &&
+            measure->absolute_begin_row == line.chart_row.whole_rows
+                ? static_cast<std::uint32_t>(measure - measures.begin() + 1) : 0;
         if (line.kind == wormedit::editor_grid_line_kind_t::measure && measure_number == 0 &&
             virtual_canvas) {
             const auto virtual_measure =
@@ -152,8 +139,8 @@ void build_compose_grid_lines_view(const compose_scene_projection_context_t& pro
         if (!append_compose_grid_row(
                 flattened,
                 {.y_pixels = line.y_pixels,
-                 .kind = static_cast<std::uint8_t>(line.kind),
-                 .emphasis = static_cast<std::uint8_t>(line.emphasis),
+                 .kind = line.kind,
+                 .emphasis = line.emphasis,
                  .measure_number =
                      line.kind == wormedit::editor_grid_line_kind_t::measure ? measure_number : 0,
                  .chart_row =
@@ -179,30 +166,30 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
     auto& view = projection.inputs.frame.view();
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
-        std::min(differences.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_DIFFERENCE_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.difference, difference_count)) {
+        differences.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.differences, difference_count)) {
         view.truncated = true;
         return;
     }
     for (std::size_t index = 0; index < difference_count; ++index) {
-        append_compose_geometry_row(flattened.compose.difference,
-                                    {.bounds = to_frontend_rect(differences[index].bounds)},
+        append_compose_geometry_row(flattened.view.compose.differences,
+                                    {.bounds = wormedit::ui::compose_rect_t::from(differences[index].bounds)},
                                     view.truncated);
     }
     const auto& holds = scene.hold_bodies;
     const auto hold_count =
-        std::min(holds.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_HOLD_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.hold, hold_count)) {
+        holds.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.hold_bodies, hold_count)) {
         view.truncated = true;
         return;
     }
     for (std::size_t index = 0; index < hold_count; ++index) {
         const auto& hold = holds[index];
         append_compose_geometry_row(
-            flattened.compose.hold,
-            {.bounds = to_frontend_rect(hold.bounds),
-             .note_id = hold.note.value,
-             .lane_id = hold.lane.value,
+            flattened.view.compose.hold_bodies,
+            {.bounds = wormedit::ui::compose_rect_t::from(hold.bounds),
+             .note_id = hold.note,
+             .lane_id = hold.lane,
              .display_lane_number = compose_note_display_lane_number(scene, hold),
              .key_color = compose_note_key_color(scene, hold),
              .snap_class = compose_endpoint_snap_class(projection, hold),
@@ -218,15 +205,15 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
              .semantic_alpha =
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0),
-             .move_conflict = static_cast<std::uint8_t>(hold.move_conflict),
+             .move_conflict = hold.move_conflict,
              .move_conflict_occupant = hold.move_conflict_occupant},
             view.truncated);
     }
     const auto& endpoints = scene.note_endpoints;
-    const auto hitsounds = build_note_hitsounds_view(projection);
+    const auto& hitsounds = build_note_hitsounds_view(projection);
     const auto endpoint_count =
-        std::min(endpoints.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.note, endpoint_count)) {
+        endpoints.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.note_endpoints, endpoint_count)) {
         view.truncated = true;
         return;
     }
@@ -234,19 +221,19 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
         const auto& endpoint = endpoints[index];
         const auto sound = compose_note_sound_text(endpoint.sound, flattened.compose.sound_labels);
         append_compose_geometry_row(
-            flattened.compose.note,
-            {.bounds = to_frontend_rect(endpoint.bounds),
-             .note_id = endpoint.note.value,
-             .lane_id = endpoint.lane.value,
+            flattened.view.compose.note_endpoints,
+            {.bounds = wormedit::ui::compose_rect_t::from(endpoint.bounds),
+             .note_id = endpoint.note,
+             .lane_id = endpoint.lane,
              .display_lane_number = compose_note_display_lane_number(scene, endpoint),
              .key_color = compose_note_key_color(scene, endpoint),
-             .glyph = static_cast<std::uint8_t>(endpoint.glyph),
+             .glyph = endpoint.glyph,
              .sound_label = sound.label,
              .sound_detail = sound.detail,
-             .sound_resource_id = endpoint.sound ? endpoint.sound->value : 0,
+             .sound_resource_id = endpoint.sound.value_or(wormedit::resource_id_t{}),
              .hitsound = find_note_hitsound(hitsounds, endpoint.note.value),
              .snap_class = compose_endpoint_snap_class(projection, endpoint),
-             .kind = static_cast<std::uint8_t>(endpoint.kind),
+             .kind = endpoint.kind,
              .tail = endpoint.tail,
              .selected = endpoint.selected,
              .proposal_origin = endpoint.proposal_origin,
@@ -263,7 +250,7 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
              .paint_preview = endpoint.paint_preview,
              .paint_erase_preview = endpoint.paint_erase_preview,
              .paint_invalid_preview = endpoint.paint_invalid_preview,
-             .move_conflict = static_cast<std::uint8_t>(endpoint.move_conflict),
+             .move_conflict = endpoint.move_conflict,
              .move_conflict_occupant = endpoint.move_conflict_occupant},
             view.truncated);
     }
@@ -279,15 +266,15 @@ void build_compose_layout_and_notes_view(const compose_scene_projection_context_
     const auto playable_field_width = projection.playable_field_width;
     const auto& bands = scene.layout_bands;
     const auto band_count =
-        std::min(bands.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BAND_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.band, band_count)) {
+        bands.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.bands, band_count)) {
         view.truncated = true;
         return;
     }
     for (std::size_t index = 0; index < band_count; ++index) {
         const auto& band = bands[index];
         append_compose_geometry_row(
-            flattened.compose.band,
+            flattened.view.compose.bands,
             {.bounds = {field_left_pixels, band.top_pixels,
                         field_left_pixels + playable_field_width, band.bottom_pixels},
              .split_stage = band.split_stage},
@@ -295,21 +282,21 @@ void build_compose_layout_and_notes_view(const compose_scene_projection_context_
     }
     const auto& lanes = scene.lanes;
     const auto lane_count =
-        std::min(lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_LANE_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.lane, lane_count)) {
+        lanes.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.lanes, lane_count)) {
         view.truncated = true;
         return;
     }
     for (std::size_t index = 0; index < lane_count; ++index) {
         const auto& lane = lanes[index];
-        append_compose_geometry_row(flattened.compose.lane,
-                                    {.bounds = to_frontend_rect(lane.bounds),
-                                     .lane_id = lane.lane.value,
+        append_compose_geometry_row(flattened.view.compose.lanes,
+                                    {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds),
+                                     .lane_id = lane.lane,
                                      .display_order = lane.display_order,
-                                     .role = static_cast<std::uint8_t>(lane.role),
-                                     .stage = static_cast<std::uint8_t>(lane.stage),
-                                     .glyph = static_cast<std::uint8_t>(lane.glyph),
-                                     .key_color = static_cast<std::uint8_t>(lane.key_color)},
+                                     .role = lane.role,
+                                     .stage = lane.stage,
+                                     .glyph = lane.glyph,
+                                     .key_color = lane.key_color},
                                     view.truncated);
     }
     build_compose_grid_lines_view(projection);
@@ -334,7 +321,7 @@ void build_compose_bgm_events_view(
                                        : flattened.compose.sound_labels.end();
         append_compose_geometry_row(
             flattened.compose.bgm.event,
-            {.bounds = to_frontend_rect(event.bounds),
+            {.bounds = wormedit::ui::compose_rect_t::from(event.bounds),
              .event_id = event.event.value,
              .source_lane_id = event.source_lane.value,
              .sound_id = event.sound ? event.sound->value : 0,
@@ -360,8 +347,8 @@ void build_compose_bgm_events_view(
                  static_cast<std::uint8_t>(event.semantic_color ? event.semantic_color->blue : 0),
              .semantic_alpha =
                  static_cast<std::uint8_t>(event.semantic_color ? event.semantic_color->alpha : 0),
-             .head_top_pixels = static_cast<float>(to_frontend_rect(event.head_bounds).top),
-             .head_bottom_pixels = static_cast<float>(to_frontend_rect(event.head_bounds).bottom)},
+             .head_top_pixels = static_cast<float>(wormedit::ui::compose_rect_t::from(event.head_bounds).top),
+             .head_bottom_pixels = static_cast<float>(wormedit::ui::compose_rect_t::from(event.head_bounds).bottom)},
             view.truncated);
     }
     view.truncated = view.truncated || event_count != events.size();
@@ -420,7 +407,7 @@ void build_compose_bgm_view(const compose_scene_projection_context_t& projection
                                               lane.source_lane, &wormedit::bgm_source_lane_t::id);
         append_compose_geometry_row(
             flattened.compose.bgm.lane,
-            {.bounds = to_frontend_rect(lane.bounds),
+            {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds),
              .source_lane_id = lane.source_lane.value,
              .source_order = lane.source_order,
              .stem = source != projection.inputs.scope.chart_scope.chart.bgm_source_lanes.end() &&
@@ -538,9 +525,9 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
     }
     view.bga_lane_bounds =
         scene.bga_lane
-            ? WormUiComposeRect{scene.bga_lane->bounds.left, scene.bga_lane->bounds.top,
+            ? wormedit::ui::compose_rect_t{scene.bga_lane->bounds.left, scene.bga_lane->bounds.top,
                                 scene.bga_lane->bounds.right, scene.bga_lane->bounds.bottom}
-            : WormUiComposeRect{};
+            : wormedit::ui::compose_rect_t{};
     for (std::size_t index = 0; index < count; ++index) {
         const auto& event = scene.bga_events[index];
         const auto& document = projection.history().document;
@@ -605,12 +592,13 @@ void build_compose_marker_draft_view(const compose_scene_projection_context_t& p
 
 void build_compose_marker_previews_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
+    flattened.view.compose.cursor.reset();
     const auto& scene = projection.scene;
     build_compose_marker_draft_view(projection);
     if (scene.cursor) {
-        flattened.compose.cursor = WormUiComposeCursorView{
-            .bounds = to_frontend_rect(scene.cursor->bounds),
-            .lane_id = scene.cursor->lane.value,
+        flattened.view.compose.cursor = wormedit::ui::compose_cursor_view_t{
+            .bounds = wormedit::ui::compose_rect_t::from(scene.cursor->bounds),
+            .lane_id = scene.cursor->lane,
         };
     }
 }
@@ -618,18 +606,6 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
 void publish_compose_scene(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     auto& view = projection.inputs.frame.view();
-    view.bands = flattened.compose.band.data();
-    view.band_count = flattened.compose.band.size();
-    view.lanes = flattened.compose.lane.data();
-    view.lane_count = flattened.compose.lane.size();
-    view.grid_lines = flattened.compose.grid.line.data();
-    view.grid_line_count = flattened.compose.grid.line.size();
-    view.differences = flattened.compose.difference.data();
-    view.difference_count = flattened.compose.difference.size();
-    view.hold_bodies = flattened.compose.hold.data();
-    view.hold_body_count = flattened.compose.hold.size();
-    view.note_endpoints = flattened.compose.note.data();
-    view.note_endpoint_count = flattened.compose.note.size();
     view.bgm_lanes = flattened.compose.bgm.lane.data();
     view.bgm_lane_count = flattened.compose.bgm.lane.size();
     view.bgm_events = flattened.compose.bgm.event.data();
@@ -640,7 +616,6 @@ void publish_compose_scene(const compose_scene_projection_context_t& projection)
     view.bmson_marker_draft_count = flattened.compose.bgm.draft.size();
     view.bmson_marker_move_preview =
         flattened.compose.bgm.move ? &*flattened.compose.bgm.move : nullptr;
-    view.cursor = flattened.compose.cursor ? &*flattened.compose.cursor : nullptr;
 }
 
 bool initialize_compose_view_state(
@@ -738,27 +713,17 @@ bool initialize_compose_view_state(
     view.beat_fit_drag_active = false;
     view.offset_fit_drag_active = false;
     view.offset_fit_target_y_pixels = -1.0;
-    view.proposed_grid_lines = nullptr;
-    view.proposed_grid_line_count = 0;
-    view.timing_preview_rects = nullptr;
-    view.timing_preview_rect_count = 0;
-    view.timing_preview_markers = nullptr;
-    view.timing_preview_marker_count = 0;
-    view.dead_spans = nullptr;
-    view.dead_span_count = 0;
-    view.kiai_spans = nullptr;
-    view.kiai_span_count = 0;
-    view.recipe_areas = nullptr;
-    view.recipe_area_count = 0;
-    view.speed_spans = nullptr;
-    view.speed_span_count = 0;
-    view.recipe_graph_points = nullptr;
-    view.recipe_graph_point_count = 0;
-    view.sv_graph_points = nullptr;
-    view.sv_graph_point_count = 0;
+    view.proposed_grid_lines.clear();
+    view.timing_preview_rects.clear();
+    view.timing_preview_markers.clear();
+    view.dead_spans.clear();
+    view.kiai_spans.clear();
+    view.recipe_areas.clear();
+    view.speed_spans.clear();
+    view.recipe_graph_points.clear();
+    view.sv_graph_points.clear();
     view.sv_graph_one_fraction = -1.0;
-    view.speed_graph_points = nullptr;
-    view.speed_graph_point_count = 0;
+    view.speed_graph_points.clear();
     view.speed_graph_one_fraction = -1.0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
@@ -813,8 +778,7 @@ bool initialize_compose_view_state(
     view.hover_note_visible = false;
     view.hover_note_id = 0;
     view.hover_tooltip = nullptr;
-    view.timing_markers = nullptr;
-    view.timing_marker_count = 0;
+    view.timing_markers.clear();
     view.viewport_autoscroll_active = cache.frame.viewport_autoscroll_active;
     view.viewport_autoscroll_anchor_x_pixels = cache.frame.viewport_autoscroll_anchor_x_pixels;
     view.viewport_autoscroll_anchor_y_pixels = cache.frame.viewport_autoscroll_anchor_y_pixels;

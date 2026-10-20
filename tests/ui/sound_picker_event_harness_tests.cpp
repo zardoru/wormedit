@@ -33,14 +33,14 @@ auto press(nuklear_event_harness_t& harness, SDL_Keycode code, SDL_Scancode scan
     return harness.frame(std::span{&event, 1});
 }
 void check_source(const wormedit::ui::workspace_action_t& action, std::uint64_t id) {
-    require_picker(action.compose_input_count == 1);
+    require_picker(action.compose_inputs.size() == 1);
     check_picker(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
-    check_picker(action.compose_inputs[0].resource_id == id);
-    check_picker(action.compose_inputs[0].resource_role == 1);
-    check_picker(action.compose_input_project_id == 1);
-    check_picker(action.compose_input_chart_id == 1);
+    check_picker(action.compose_inputs[0].resource_id.value == id);
+    check_picker(action.compose_inputs[0].resource_role == wormedit::resource_role_t::sample);
+    check_picker(action.compose_input_project_id.value == 1);
+    check_picker(action.compose_input_chart_id.value == 1);
     check_picker(action.compose_input_document_revision == 1);
-    check_picker(action.shortcut_event_count == 0);
+    check_picker(action.shortcut_events.size() == 0);
 }
 void type(nuklear_event_harness_t& harness, const char* text) {
     SDL_Event event{};
@@ -57,7 +57,7 @@ TEST_CASE("Go to sound keyboard selection arms through Draw source without short
     prepare(harness);
     require_picker(harness.drawn_text().find("Go to sound") != std::string::npos);
     const auto moved = press(harness, SDLK_DOWN, SDL_SCANCODE_DOWN);
-    check_picker(moved.get().shortcut_event_count == 0);
+    check_picker(moved.get().shortcut_events.size() == 0);
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_source(selected.get(), 42);
     const auto& state = worm_ui_nuklear_compose_state();
@@ -67,13 +67,13 @@ TEST_CASE("Go to sound keyboard selection arms through Draw source without short
     check_picker(!(state.sound_picker_ui.sound_picker.open));
     check_picker(state.sound_picker_ui.sound_picker.release_pending);
     const auto held = press(harness, SDLK_SPACE, SDL_SCANCODE_SPACE);
-    check_picker(held.get().shortcut_event_count == 0);
+    check_picker(held.get().shortcut_events.size() == 0);
     const std::array releases{key(SDLK_DOWN, SDL_SCANCODE_DOWN, false),
         key(SDLK_RETURN, SDL_SCANCODE_RETURN, false), key(SDLK_SPACE, SDL_SCANCODE_SPACE, false)};
     static_cast<void>(harness.frame(releases));
     static_cast<void>(harness.frame());
     const auto resumed = press(harness, SDLK_SPACE, SDL_SCANCODE_SPACE);
-    check_picker(resumed.get().shortcut_event_count == 1);
+    check_picker(resumed.get().shortcut_events.size() == 1);
 }
 
 TEST_CASE("Go to sound typing requests full-catalog search and rejects stale query results",
@@ -87,7 +87,7 @@ TEST_CASE("Go to sound typing requests full-catalog search and rejects stale que
     check_picker(std::string{request.sound_picker_query} == "snr");
     check_picker(harness.drawn_text().find("Searching") != std::string::npos);
     auto stale = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
-    check_picker(stale.get().compose_input_count == 0);
+    check_picker(stale.get().compose_inputs.size() == 0);
     auto release = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
     static_cast<void>(harness.frame(std::span{&release, 1}));
     auto& result = harness.view().compose.sound_picker;
@@ -130,10 +130,10 @@ TEST_CASE("Go to sound Escape and context loss leave the armed source unchanged"
         check_picker(state.pointer_capture.draw_source_id == 90);
         check_picker(state.resource_picker.armed_resource_id == 90);
         if (cause == 3) {
-            require_picker(action.get().compose_input_count == 1);
+            require_picker(action.get().compose_inputs.size() == 1);
             check_picker(action.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        } else check_picker(action.get().compose_input_count == 0);
-        check_picker(action.get().shortcut_event_count == 0);
+        } else check_picker(action.get().compose_inputs.size() == 0);
+        check_picker(action.get().shortcut_events.size() == 0);
     }
 }
 
@@ -144,7 +144,7 @@ TEST_CASE("Go to sound missing results cannot arm and an empty search explains i
     auto& view = harness.view().compose.sound_picker;
     view.rows[0].missing = true;
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
-    check_picker(selected.get().compose_input_count == 0);
+    check_picker(selected.get().compose_inputs.size() == 0);
     check_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     view.row_count = view.total_count = 0;
     static_cast<void>(harness.frame());
@@ -171,7 +171,7 @@ TEST_CASE("Go to sound mouse activation and outside click consume pointer input"
         const std::array events{motion, button};
         const auto action = harness.frame(events);
         if (!outside) check_source(action.get(), 42);
-        else check_picker(action.get().compose_input_count == 0);
+        else check_picker(action.get().compose_inputs.size() == 0);
         check_picker(!(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open));
     }
 }
@@ -207,7 +207,7 @@ TEST_CASE("Go to sound IME confirmation cannot arm an old result", "[frontend-st
     editing.edit.text = "ki";
     static_cast<void>(harness.frame(std::span{&editing, 1}));
     const auto composing = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
-    check_picker(composing.get().compose_input_count == 0);
+    check_picker(composing.get().compose_inputs.size() == 0);
     check_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     auto release = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
     static_cast<void>(harness.frame(std::span{&release, 1}));

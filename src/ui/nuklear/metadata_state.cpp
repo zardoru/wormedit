@@ -287,6 +287,5 @@ auto worm_ui_nuklear_finish_metadata_tag_drag() -> bool {
     auto begin = value.search_tags.begin();
     if (target < source) std::rotate(begin + target, begin + source, begin + source + 1);
     else std::rotate(begin + source, begin + source + 1, begin + target + 1);
-    value.search_tag_pointers.clear();
     return true;
 }

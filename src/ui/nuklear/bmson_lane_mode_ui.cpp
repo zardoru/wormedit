@@ -15,10 +15,10 @@ void emit(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t c
           uint64_t revision, uint64_t channel, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id = project;
-    action.compose_input_chart_id = chart;
+    action.compose_input_project_id.value = project;
+    action.compose_input_chart_id.value = chart;
     action.compose_input_document_revision = revision;
-    action.compose_bmson_channel_id = channel;
+    action.compose_bmson_channel_id.value = channel;
 }
 }
 
@@ -37,7 +37,7 @@ void request_bmson_lane_mode(wormedit::ui::workspace_action_t& action, uint64_t 
     }
     emit(action, project, chart, revision, channel, stem ? WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM
                                                        : WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL);
-    action.compose_resource_id = resource;
+    action.compose_resource_id.value = resource;
 }
 
 void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::workspace_action_t& action,

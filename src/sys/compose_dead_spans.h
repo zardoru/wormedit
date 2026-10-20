@@ -71,6 +71,12 @@ struct dead_span_band_t {
                                            double pause_band_pixels)
     -> std::vector<dead_span_band_t>;
 
+// Refill a retained projection buffer without discarding its capacity.
+void build_dead_span_bands_view(const dead_spans_view_t& projection,
+                                double pixels_per_row, double scroll_pixels,
+                                double viewport_height, bool downscroll,
+                                double pause_band_pixels, std::vector<dead_span_band_t>& bands);
+
 // True when a pointer at `y_pixels` (screen space) is inside any band.
 [[nodiscard]] auto pointer_in_dead_span(const std::vector<dead_span_band_t>& bands, double y_pixels)
     -> bool;

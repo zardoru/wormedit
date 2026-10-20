@@ -134,6 +134,19 @@ TEST_CASE("capture of an empty batch captures nothing", "[sys][shortcut-rows]") 
     CHECK_FALSE(captured.cancel);
 }
 
+TEST_CASE("capture admits the shortcut limit and cancels the complete oversized batch",
+          "[sys][shortcut-rows][input-admission]") {
+    std::vector<WormUiShortcutEvent> events(ui::shortcut_event_admission_limit,
+        event(letter_s_usage, control_modifier()));
+    const auto admitted = capture_shortcut_batch(events);
+    REQUIRE(admitted.chord.has_value());
+    CHECK_FALSE(admitted.cancel);
+    events.push_back(event(letter_k_usage, 0));
+    const auto overflowed = capture_shortcut_batch(events);
+    CHECK(overflowed.cancel);
+    CHECK_FALSE(overflowed.chord.has_value());
+}
+
 TEST_CASE("Escape without modifiers cancels a capture, and modified Escape is a chord", "[sys][shortcut-rows]") {
     const std::array<WormUiShortcutEvent, 1> plain{event(static_cast<std::uint16_t>(shortcut_key_t::escape), 0)};
     const auto canceled = capture_shortcut_batch(plain);

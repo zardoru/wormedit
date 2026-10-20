@@ -72,11 +72,7 @@ struct position_span_t {
 };
 
 
-enum class stage_group_t {
-    none,
-    left,
-    right,
-};
+
 
 
 struct midi_destination_t {
@@ -357,17 +353,7 @@ enum class sv_recipe_output_t {
     speeds,
 };
 
-enum class sv_recipe_curve_t {
-    constant,
-    linear,
-    exponential,
-    bump,
-    // Reserved for Lua expression curves (see docs/osbx-draft-spec.md): the recipe's relative value
-    // is a Lua function of the normalized position t in [0, 1], kept in expression_source. The
-    // source is stored and round-tripped, but nothing evaluates it yet: sampling and export report
-    // an unsupported-feature diagnostic instead of guessing.
-    lua_expression,
-};
+
 
 enum class sv_recipe_sampling_mode_t {
     fixed,
@@ -496,13 +482,6 @@ struct visual_asset_t {
     std::optional<std::uint32_t> height;
 };
 
-enum class resource_role_t {
-    sample,
-    bgm,
-    bga,
-    music,
-    preview,
-};
 
 struct target_resource_identity_t {
     format_family_t family{format_family_t::native_project};
@@ -927,25 +906,9 @@ struct song_metadata_t {
     [[nodiscard]] auto format_group_for(format_family_t family) -> format_metadata_t&;
 };
 
-enum class quantization_space_t {
-    standard_measure,
-    authored_measure,
-};
-
-enum class quantization_tie_t {
-    earlier,
-    later,
-    reject,
-};
-
 enum class quantization_collision_t {
     reject,
     allow,
-};
-
-enum class quantization_hold_t {
-    start_only,
-    both_endpoints,
 };
 
 struct quantization_preset_t {

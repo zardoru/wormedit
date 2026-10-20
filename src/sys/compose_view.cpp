@@ -8,7 +8,6 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/frame_timing.h"
-#include "sys/frontend_geometry.h"
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
@@ -55,9 +54,13 @@
 namespace wormedit::sys {
 using namespace compose_projection_detail;
 
+// Core scene construction and retained-source work budget, independent of UI storage.
+inline constexpr std::size_t compose_scene_primitive_work_limit{32768};
+
 
 void compose_scene_cache_t::invalidate_scene_cache() {
     scene.index.invalidate_value();
+    scene.note_hitsounds.invalidate_value();
     scene.scene_window.scene.reset();
     discard_compose_static_source(*this);
     scene.cached_measure_index.reset();
@@ -116,18 +119,18 @@ void compose_scene_cache_t::build_scene_index(const wormedit::song_document_t& d
     }
     if (index) {
         this->timing.kiai_spans = wormedit::sys::kiai_spans_view_t::from(
-            chart, index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
+            chart, index->measures, chart.kiai.size());
         this->timing.sv_steps = wormedit::sys::sv_steps_view_t::from(
-            chart, index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
+            chart, index->measures, chart.scrolls.size());
         this->timing.recipe_areas = wormedit::sys::recipe_areas_view_t::from(
-            chart, index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
+            chart, index->measures, chart.sv_recipes.size());
     }
     auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
     if (timing.value) {
         this->timing.dead_spans = wormedit::sys::dead_spans_view_t::from(
-            chart, index->measures, *timing.value, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+            chart, index->measures, *timing.value, chart.pauses.size() + chart.warps.size());
         this->timing.speed_spans = wormedit::sys::speed_spans_view_t::from(
-            chart, *timing.value, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
+            chart, *timing.value, chart.speeds.size());
         this->timing.marker_timing_index = std::move(*timing.value);
     }
 }
@@ -653,15 +656,11 @@ void populate_lane_layout_segments(frontend_workspace_view_t& flattened,
                                    const wormedit::measure_index_t& measures,
                                    const wormedit::editor_interaction_view_model_t& interaction,
                                    bool downscroll, WormUiComposeView& view) {
-    const auto count = std::min<std::size_t>(chart.lane_layouts.size(),
-                                             WORM_UI_COMPOSE_LAYOUT_SEGMENT_CAPACITY);
-    auto* arena = flattened.arena();
-    auto storage = arena ? arena_array<WormUiComposeLaneLayoutSegmentView>(*arena, count)
-                         : frame_span<WormUiComposeLaneLayoutSegmentView>{};
-    if (count != 0 && storage.capacity() != count) {
-        view.truncated = true;
-        return;
-    }
+    auto& storage = view.lane_layout_segments;
+    storage.clear();
+    storage.reserve(chart.lane_layouts.size());
+    const auto count = chart.lane_layouts.size();
+    (void)flattened;
     const auto pixels_per_row = compose_pixels_per_row(chart, interaction);
     for (std::size_t index = 0; index < count; ++index) {
         const auto& segment = chart.lane_layouts[index];
@@ -675,19 +674,13 @@ void populate_lane_layout_segments(frontend_workspace_view_t& flattened,
         const auto projected_y = compose_project_y(*row, pixels_per_row,
                                                    interaction.viewport_scroll_pixels,
                                                    view.viewport_height_pixels, downscroll);
-        if (!storage.push_back({.segment_id = segment.id.value,
+        storage.push_back({.segment_id = {segment.id.value},
                                 .measure_number = static_cast<std::uint32_t>(std::min<std::size_t>(
                                     measure_number, std::numeric_limits<std::uint32_t>::max())),
                                 .row = segment.position.row,
                                 .y_pixels = projected_y,
-                                .profile_name = segment.layout.display_name.c_str()})) {
-            view.truncated = true;
-            return;
-        }
+                                .profile_name = segment.layout.display_name});
     }
-    view.lane_layout_segments = storage.data();
-    view.lane_layout_segment_count = storage.size();
-    if (chart.lane_layouts.size() > count) view.truncated = true;
 }
 
 auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t {
@@ -1521,7 +1514,14 @@ auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> s
     // The independently owned arena's committed chunks include all span storage.
     // Count those chunks once, separately from the remaining heap containers.
     std::size_t bytes = sizeof(storage) + storage.owned_arena_committed_bytes() +
-        compose_vector_bytes(data.timing_marker) + compose_vector_bytes(data.timing_marker_labels);
+        compose_vector_bytes(storage.view.compose.timing_markers) + compose_vector_bytes(data.timing_marker_labels);
+    bytes += compose_vector_bytes(storage.view.compose.bands) +
+        compose_vector_bytes(storage.view.compose.lanes) +
+        compose_vector_bytes(storage.view.compose.grid_lines) +
+        compose_vector_bytes(storage.view.compose.note_endpoints) +
+        compose_vector_bytes(storage.view.compose.hold_bodies) +
+        compose_vector_bytes(storage.view.compose.differences);
+    bytes += compose_vector_bytes(data.grid.row) + compose_vector_bytes(data.visible_sound_ids);
     for (const auto& label : data.timing_marker_labels)
         bytes += label.first.capacity() + label.second.capacity() + 2;
     // Include hash buckets, nodes, and owned labels conservatively.
@@ -1542,7 +1542,7 @@ void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeVi
     view.static_scene_world_origin_pixels = origin;
     // Source-window clipped objects cannot define complete tiles at its edges.
     double guard=96;
-    for (std::size_t index=0; index<source.lane_count; ++index)
+    for (std::size_t index=0; index<source.lanes.size(); ++index)
         guard=std::max(guard,(source.lanes[index].bounds.right-source.lanes[index].bounds.left)*.5+20);
     const bool chart_begin=cache.scene.scene_window.view.viewport_scroll_pixels==0;
     view.static_scene_covered_begin_pixels = origin + (chart_begin && !view.downscroll ? 0 : guard);
@@ -1552,11 +1552,11 @@ void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeVi
         cache.scene.static_source.value().projection.value().accounted_bytes;
 }
 void clear_static_source_selection(frontend_workspace_view_t& storage) {
-    for (auto& note:storage.compose.note) note.selected=false;
-    for (auto& hold:storage.compose.hold) hold.selected=false;
+    for (auto& note:storage.view.compose.note_endpoints) note.selected=false;
+    for (auto& hold:storage.view.compose.hold_bodies) hold.selected=false;
     for (auto& event:storage.compose.bgm.event) event.selected=false;
     for (auto& event:storage.compose.bga_event) event.selected=false;
-    for (auto& marker:storage.compose.timing_marker) marker.selected=false;
+    for (auto& marker:storage.view.compose.timing_markers) marker.selected=false;
 }
 auto compose_static_labels_fit(const wormedit::document_history_t& history) -> bool {
     std::size_t bytes{};
@@ -1633,11 +1633,12 @@ auto build_compose_static_source(const compose_scene_projection_context_t& proje
                                     projection.inputs.scope.pixels_per_row, canvas_rows, nullptr);
     clear_static_source_selection(*storage);
     publish_compose_scene(expanded);
-    const auto count = retained.band_count + retained.lane_count + retained.grid_line_count +
-        retained.hold_body_count + retained.note_endpoint_count + retained.bgm_lane_count +
-        retained.bgm_event_count + retained.bga_event_count + retained.timing_marker_count;
-    const auto bytes = compose_static_storage_bytes(*storage);
-    if (retained.truncated || count > WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY ||
+    const auto count = retained.bands.size() + retained.lanes.size() + retained.grid_lines.size() +
+        retained.hold_bodies.size() + retained.note_endpoints.size() + retained.bgm_lane_count +
+        retained.bgm_event_count + retained.bga_event_count + retained.timing_markers.size();
+    const auto bytes = compose_static_storage_bytes(*storage) +
+        cache.scene.note_hitsound_accounted_bytes();
+    if (retained.truncated || count > compose_scene_primitive_work_limit ||
         bytes > 16 * 1024 * 1024) {
         return false;
     }
@@ -1684,18 +1685,19 @@ void refresh_compose_static_scene_style(compose_scene_cache_t& cache,WormUiCompo
 void build_scalar_projection_indices(const frontend_workspace_view_t& storage,
                                      compose_scene_cache_t::scene_state_t::static_projection_data_t& data) {
     const auto& source = storage.compose;
+    const auto& geometry = storage.view.compose;
     const auto bounds = [](const auto& record) {
         return std::pair{record.bounds.top, record.bounds.bottom};
     };
-    rebuild_scalar_intervals(data.indices[0], source.note, bounds);
-    rebuild_scalar_intervals(data.indices[1], source.hold, bounds);
+    rebuild_scalar_intervals(data.indices[0], geometry.note_endpoints, bounds);
+    rebuild_scalar_intervals(data.indices[1], geometry.hold_bodies, bounds);
     rebuild_scalar_intervals(data.indices[2], source.bgm.event, bounds);
     rebuild_scalar_intervals(data.indices[4], source.bga_event, bounds);
     rebuild_scalar_intervals(
         data.indices[3], source.grid.row,
         [](const auto& row) { return std::pair{double(row.whole_rows), double(row.whole_rows)}; });
     data.scratch.resize(std::max(
-        {source.note.size(), source.hold.size(), source.bgm.event.size(),
+        {geometry.note_endpoints.size(), geometry.hold_bodies.size(), source.bgm.event.size(),
          source.bga_event.size(), source.grid.row.size()}));
     data.accounted_bytes =
         data.scratch.capacity() * sizeof(std::size_t);
@@ -1736,7 +1738,7 @@ auto extract_scalar_grid(compose_scene_cache_t& cache,
         if (source.row[index].whole_rows < scene.visible_begin_row ||
             source.row[index].whole_rows >= scene.visible_end_row)
             continue;
-        auto line = source.line[index];
+        auto line = cache.scene.static_source.value().storage->view.compose.grid_lines[index];
         line.y_pixels += shift;
         if (!append_compose_grid_row(flattened, line, source.row[index])) return false;
     }
@@ -1748,6 +1750,7 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool {
     const auto& source = cache.scene.static_source.value().storage->compose;
+    const auto& geometry = cache.scene.static_source.value().storage->view.compose;
     const auto& scene = *metadata.projection.scene;
     const auto& retained = *cache.scene.scene_window.scene;
     const auto note = [&](auto& record, std::size_t index) {
@@ -1773,9 +1776,9 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
         record.selected = compose_bga_event_selected(interaction, record.event_id);
         return record.bounds.bottom >= 0 && record.bounds.top <= height;
     };
-    return extract_scalar_rectangles(cache, flattened, 0, source.note, flattened.compose.note, 0, height,
+    return extract_scalar_rectangles(cache, flattened, 0, geometry.note_endpoints, flattened.view.compose.note_endpoints, 0, height,
                                      shift, note) &&
-           extract_scalar_rectangles(cache, flattened, 1, source.hold, flattened.compose.hold,
+           extract_scalar_rectangles(cache, flattened, 1, geometry.hold_bodies, flattened.view.compose.hold_bodies,
                                      metadata.hold_clip_top, metadata.hold_clip_bottom, shift,
                                      hold) &&
            extract_scalar_rectangles(cache, flattened, 2, source.bgm.event, flattened.compose.bgm.event, 0,
@@ -1788,28 +1791,26 @@ auto scalar_projection_fits_budget(const compose_scene_projection_context_t& pro
                                    const wormedit::editor_field_scene_request_t& request) -> bool {
     const auto& scene = projection.scene;
     const auto& scalar = projection.inputs.frame.flattened.compose;
+    const auto& geometry = projection.inputs.frame.view();
     const auto count = scene.layout_bands.size() + scene.lanes.size() + scene.bgm_lanes.size() +
-                       std::size_t(scene.cursor.has_value()) + scalar.note.size() +
-                       scalar.hold.size() + scalar.bgm.event.size() + scalar.bga_event.size() +
-                       scalar.grid.line.size();
+                       std::size_t(scene.cursor.has_value()) + geometry.note_endpoints.size() +
+                       geometry.hold_bodies.size() + scalar.bgm.event.size() + scalar.bga_event.size() +
+                       geometry.grid_lines.size();
     return count <= request.maximum_scene_primitives &&
-           scalar.note.size() <= WORM_UI_COMPOSE_NOTE_CAPACITY &&
-           scalar.hold.size() <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
            scalar.bgm.event.size() <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
-           scalar.bga_event.size() <= WORM_UI_COMPOSE_BGA_EVENT_CAPACITY &&
-           scalar.grid.line.size() <= WORM_UI_COMPOSE_GRID_CAPACITY;
+           scalar.bga_event.size() <= WORM_UI_COMPOSE_BGA_EVENT_CAPACITY;
 }
 void discard_scalar_projection(frontend_workspace_view_t& flattened) {
-    flattened.compose.band.clear();
-    flattened.compose.lane.clear();
-    flattened.compose.note.clear();
-    flattened.compose.hold.clear();
+    flattened.view.compose.bands.clear();
+    flattened.view.compose.lanes.clear();
+    flattened.view.compose.note_endpoints.clear();
+    flattened.view.compose.hold_bodies.clear();
     flattened.compose.bgm.lane.clear();
     flattened.compose.bgm.event.clear();
     flattened.compose.bga_event.clear();
-    flattened.compose.grid.line.clear();
+    flattened.view.compose.grid_lines.clear();
     flattened.compose.grid.row.clear();
-    flattened.compose.cursor.reset();
+    flattened.view.compose.cursor.reset();
 }
 auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComposeView& view)
     -> bool {
@@ -1818,9 +1819,10 @@ auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComp
         cache.scene.static_source.key()->layout != compose_static_layout_key_t::from(view))
         return false;
     const auto& source = cache.scene.static_source.value().storage->compose;
+    const auto& geometry = cache.scene.static_source.value().storage->view.compose;
     const auto& retained = *cache.scene.scene_window.scene;
-    return source.note.size() == retained.note_endpoints.size() &&
-           source.hold.size() == retained.hold_bodies.size() &&
+    return geometry.note_endpoints.size() == retained.note_endpoints.size() &&
+           geometry.hold_bodies.size() == retained.hold_bodies.size() &&
            source.bgm.event.size() == retained.bgm_events.size() &&
            source.bga_event.size() == retained.bga_events.size() &&
            source.grid.row.size() == retained.grid_lines.size();
@@ -2049,8 +2051,8 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
                                    : std::nullopt,
         .required_semantic_layers = application_state.project.semantic_layer.required_semantic_layer_filters,
         .excluded_semantic_layers = application_state.project.semantic_layer.excluded_semantic_layer_filters,
-        .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
-        .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY,
+        .maximum_grid_lines = compose_scene_grid_work_limit,
+        .maximum_scene_primitives = compose_scene_primitive_work_limit,
         // One physical 512-row tile at scale >= .5, plus conservative glyph halo.
         .retained_window_minimum_margin_pixels =
             1024.0 + std::max(96.0, playable_field_width * .5 + 20.0)};
@@ -2107,7 +2109,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
 }
 
 void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
-    wormedit::editor_selection_object_t object, WormUiComposeRect bounds,
+    wormedit::editor_selection_object_t object, wormedit::ui::compose_rect_t bounds,
     const WormUiComposeView& view, bool downscroll) {
     const auto first = compose_source_y(bounds.top, view.viewport_height_pixels, downscroll);
     const auto last = compose_source_y(bounds.bottom, view.viewport_height_pixels, downscroll);
@@ -2118,13 +2120,13 @@ void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snap
 
 void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                 const WormUiComposeView& view, bool downscroll) {
-    for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
+    for (std::size_t i = 0; i < view.timing_markers.size(); ++i) {
         const auto& marker = view.timing_markers[i];
         const auto* lane = wormedit::find_catalog_entry(wormedit::timing_lanes, marker.lane);
-        if (!lane || marker.object_id == 0) continue;
+        if (!lane || marker.object_id.value == 0) continue;
         const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, marker);
         if (bounds.right <= bounds.left) continue;
-        append_area_object_geometry(snapshot, {lane->selection_kind, wormedit::object_id_t{marker.object_id}},
+        append_area_object_geometry(snapshot, {lane->selection_kind, wormedit::object_id_t{marker.object_id.value}},
                                      bounds, view, downscroll);
     }
 }
@@ -2154,7 +2156,7 @@ void append_area_visual_geometry(wormedit::editor_area_geometry_snapshot_t& snap
 // Bar lines are area-selectable only through the measure lane's handles.
 void append_area_bar_line_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                    const WormUiComposeView& view, bool downscroll) {
-    for (const auto& line : std::span(view.grid_lines, view.grid_line_count)) {
+    for (const auto& line : std::span(view.grid_lines)) {
         const auto bounds = wormedit::ui::compose_bar_line_bounds(view, line);
         if (!bounds) continue;
         append_area_object_geometry(snapshot,
@@ -2237,7 +2239,7 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
         const auto top = std::min(*begin_y, *end_y);
         const auto bottom = std::max(*begin_y, *end_y);
         if (bottom < 0.0 || top > height) continue;
-        session.ghosts.push_back({{0.0, top, 0.0, bottom}, 3, static_cast<std::uint8_t>(*lane)});
+        input.frame.view().paste_ghosts.push_back({.bounds = {0.0, top, 0.0, bottom}, .kind = wormedit::ui::compose_paste_ghost_kind_t::timing_object, .timing_lane = *lane});
     }
 }
 
@@ -2265,7 +2267,7 @@ void append_paste_bgm_lanes(
             break;
         }
         append_compose_geometry_row(rows,
-            {.bounds = to_frontend_rect(lane.bounds), .source_lane_id = lane.source_lane.value,
+            {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds), .source_lane_id = lane.source_lane.value,
              .source_order = lane.source_order,
              .width_pixels = lane.unclipped_right_pixels - lane.unclipped_left_pixels,
              .resize_edge_pixels = lane.unclipped_right_pixels}, view.truncated);
@@ -2291,24 +2293,22 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
     view.paste_diagnostic = session.anchor_available
         ? (preview.diagnostic ? preview.diagnostic->message.c_str() : "")
         : session.anchor_error.c_str();
-    session.ghosts.clear();
+    input.frame.view().paste_ghosts.clear();
     if (!session.index) return;
     const auto composed = wormedit::editor_field_scene_view_result_t::from(
         session.geometry, *session.index, input.scope.interaction_view,
         input.frame.cache.frame.preview_scene_request);
     if (!composed.value) return;
     if (preview.report) append_paste_bgm_lanes(input, *composed.value, *preview.report);
-    const auto append = [&session](const auto& object, std::uint8_t kind, std::uint8_t glyph = 0) {
+    const auto append = [&input](const auto& object, wormedit::ui::compose_paste_ghost_kind_t kind, wormedit::lane_glyph_t glyph = wormedit::lane_glyph_t::bar) {
         const auto& b = object.bounds;
-        session.ghosts.push_back({{b.left, b.top, b.right, b.bottom}, kind, glyph});
+        input.frame.view().paste_ghosts.push_back({{b.left, b.top, b.right, b.bottom}, kind, glyph});
     };
-    for (const auto& hold : composed.value->hold_bodies) append(hold, 1);
+    for (const auto& hold : composed.value->hold_bodies) append(hold, wormedit::ui::compose_paste_ghost_kind_t::hold_body);
     for (const auto& note : composed.value->note_endpoints)
-        append(note, 0, static_cast<std::uint8_t>(note.glyph));
-    for (const auto& event : composed.value->bgm_events) append(event, 2);
+        append(note, wormedit::ui::compose_paste_ghost_kind_t::note_endpoint, note.glyph);
+    for (const auto& event : composed.value->bgm_events) append(event, wormedit::ui::compose_paste_ghost_kind_t::bgm_event);
     append_paste_timing_ghosts(input, session);
-    view.paste_ghosts = session.ghosts.data();
-    view.paste_ghost_count = session.ghosts.size();
 }
 
 auto compose_paint_head_occupied(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
@@ -2364,14 +2364,15 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
                               input.scope.chart_scope.chart.divisions_per_standard_measure -
                           input.scope.interaction_view.viewport_scroll_pixels;
     const auto ghost_y = input.scope.downscroll ? view.viewport_height_pixels - source_y : source_y;
-    const auto lanes = std::span(view.lanes, view.lane_count);
+    const auto lanes = std::span(view.lanes);
     const auto lane = std::ranges::find_if(lanes, [&](const auto& value) {
-        return value.lane_id == target->lane.value && ghost_y >= value.bounds.top &&
+        return value.lane_id == target->lane && ghost_y >= value.bounds.top &&
                ghost_y <= value.bounds.bottom;
     });
     if (lane == lanes.end()) return;
     const auto occupied = compose_paint_head_occupied(input, *target, *row);
-    const auto rectangular = lane->glyph <= 1;
+    const auto rectangular = lane->glyph == wormedit::lane_glyph_t::bar ||
+                             lane->glyph == wormedit::lane_glyph_t::square;
     const auto height = cache.frame.preview_scene_request.note_head_height_pixels;
     const auto top =
         rectangular ? (input.scope.downscroll ? ghost_y - height : ghost_y) : ghost_y - height / 2;
@@ -2383,7 +2384,7 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
         .glyph = lane->glyph,
         .snap_class = wormedit::ui::note_snap_class(
             target->position.row, input.scope.chart_scope.chart.divisions_per_standard_measure),
-        .kind = static_cast<std::uint8_t>(view.armed_note_kind),
+        .kind = static_cast<wormedit::note_kind_t>(view.armed_note_kind),
         .paint_erase_preview = occupied,
         .paint_invalid_preview = !is_note_kind_allowed(input.scope.chart_scope.chart,
                                                     input.frame.retained_state->armed_note_kind)};
@@ -2487,8 +2488,7 @@ void populate_bgm_only_compose_projection(
     view.clipboard_paste_available = false;
     view.paste_active = false;
     view.paste_valid = false;
-    view.paste_ghosts = nullptr;
-    view.paste_ghost_count = 0;
+    view.paste_ghosts.clear();
     view.allowed_note_kind_mask = 0;
     view.note_paint_mode_active = false;
     view.semantic_layer_paint_mode_active = false;
@@ -2662,7 +2662,7 @@ auto toggle_compose_audio_offset_lock(const wormedit::ui::workspace_action_t& ac
         return "Audio offset lock ignored because the chart or document revision changed.";
     if (!wormedit::chart_stamp_t{
             .document = {.project = history.document.id, .revision = action.compose_input_document_revision},
-            .chart = wormedit::chart_id_t{action.compose_input_chart_id}}
+            .chart = action.compose_input_chart_id}
              .is_current(history.document, *workspace.selected_chart))
         return wormedit::stale_action_message("Audio offset lock");
     application.project.timing_recipe.audio_offset_locked = !application.project.timing_recipe.audio_offset_locked;

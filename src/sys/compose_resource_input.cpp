@@ -7,29 +7,29 @@ auto resource_pointer_spec(const wormedit::ui::compose_input_action_t& input, co
         return "Finish or cancel the active Compose gesture before editing a resource.";
     if (!context.chart() ||
         !compose_view_for_state(context.environment.document.history, context.state) ||
-        input.object_id == 0)
+        input.object_id.value == 0)
         return "The selected chart or armed resource is no longer available.";
-    const auto kind = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+    const auto kind = input.resource_role == wormedit::resource_role_t::sample
                           ? resource_placement_kind_t::sample_note
-                      : input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                      : input.resource_role == wormedit::resource_role_t::bgm
                           ? resource_placement_kind_t::bgm_event
-                      : input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                      : input.resource_role == wormedit::resource_role_t::bga
                           ? resource_placement_kind_t::bga_background
                           : static_cast<resource_placement_kind_t>(255);
     if (kind == static_cast<resource_placement_kind_t>(255))
         return "Resource pointer placement used an unknown role.";
     if (kind == resource_placement_kind_t::bga_background &&
-        (!editor_bga_lane_index(static_cast<visual_event_kind_t>(input.bga_lane_kind)) ||
-         input.bga_lane_kind == static_cast<std::uint8_t>(visual_event_kind_t::video)))
+        (!editor_bga_lane_index(input.bga_lane_kind) ||
+         input.bga_lane_kind == visual_event_kind_t::video))
         return "Unsupported BGA destination lane.";
     const auto required = kind == resource_placement_kind_t::sample_note ? resource_role_t::sample
                           : kind == resource_placement_kind_t::bgm_event ? resource_role_t::bgm
                                                                          : resource_role_t::bga;
     document_command_result_t validation{};
     if (!validate_resource_role(context.environment.document.history.document,
-                                resource_id_t{input.object_id}, required, validation))
+                                resource_id_t{input.object_id.value}, required, validation))
         return validation.diagnostics.front().message;
-    return resource_pointer_spec_t{resource_id_t{input.object_id}, kind, required,
+    return resource_pointer_spec_t{resource_id_t{input.object_id.value}, kind, required,
                                    input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE};
 }
 
@@ -37,7 +37,7 @@ auto resource_pointer_bga_kind(const wormedit::ui::compose_input_action_t& input
                                wormedit::resource_placement_kind_t kind)
     -> std::optional<wormedit::visual_event_kind_t> {
     return kind == wormedit::resource_placement_kind_t::bga_background
-               ? std::optional{static_cast<wormedit::visual_event_kind_t>(input.bga_lane_kind)}
+               ? std::optional{input.bga_lane_kind}
                : std::nullopt;
 }
 
@@ -95,7 +95,7 @@ auto place_virtual_source_resource(const wormedit::ui::compose_input_action_t& i
          .resource = spec.resource,
          .canvas_row = *row,
          .source_lane = spec.kind == resource_placement_kind_t::bgm_event
-                            ? object_id_t{input.lane_id}
+                            ? object_id_t{input.lane_id.value}
                             : object_id_t{},
          .kind = spec.kind,
          .snap_denominator = edit_snap_denominator(chart, context.state),
@@ -151,23 +151,23 @@ auto replacement_target_for_resource(const wormedit::ui::compose_input_action_t&
     using namespace wormedit;
     if (spec.kind == resource_placement_kind_t::sample_note && pointer.note)
         return editor_selection_object_t{editor_selection_object_kind_t::note, *pointer.note};
-    if (spec.kind == resource_placement_kind_t::bgm_event && input.lane_id != 0)
+    if (spec.kind == resource_placement_kind_t::bgm_event && input.lane_id.value != 0)
         return editor_selection_object_t{editor_selection_object_kind_t::bgm_event,
-                                         object_id_t{input.lane_id}};
+                                         object_id_t{input.lane_id.value}};
     std::optional<editor_selection_object_t> target;
     if (spec.kind == resource_placement_kind_t::bga_background) {
-        if (input.lane_id != 0) {
+        if (input.lane_id.value != 0) {
             const auto event =
-                std::ranges::find(chart.bga_events, object_id_t{input.lane_id}, &bga_event_t::id);
+                std::ranges::find(chart.bga_events, object_id_t{input.lane_id.value}, &bga_event_t::id);
             if (event == chart.bga_events.end() ||
                 editor_bga_lane_index(event->kind) !=
-                    editor_bga_lane_index(static_cast<visual_event_kind_t>(input.bga_lane_kind)))
+                    editor_bga_lane_index(input.bga_lane_kind))
                 return "The selected BGA event is stale or cannot be replaced in this lane.";
             return editor_selection_object_t{editor_selection_object_kind_t::bga_event, event->id};
         }
         for (const auto& event : chart.bga_events) {
             if (editor_bga_lane_index(event.kind) !=
-                    editor_bga_lane_index(static_cast<visual_event_kind_t>(input.bga_lane_kind)) ||
+                    editor_bga_lane_index(input.bga_lane_kind) ||
                 event.position != position)
                 continue;
             if (target)
@@ -229,7 +229,7 @@ auto dispatch_resource_pointer(const wormedit::ui::compose_input_action_t& input
              .position = *position,
              .lane = pointer.lane,
              .source_lane = spec.kind == resource_placement_kind_t::bgm_event
-                                ? object_id_t{input.lane_id}
+                                ? object_id_t{input.lane_id.value}
                                 : object_id_t{},
              .kind = spec.kind,
              .semantic_layers = context.state.armed_note_layers,

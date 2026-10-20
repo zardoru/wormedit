@@ -22,7 +22,7 @@ TEST_CASE("one wav or ogg without BGM asks stem or sound", "[unit][frontend][sou
         const auto input = paths({file});
         CHECK(worm_ui_nuklear_sound_import_add(state, input, false) == 1);
         CHECK(state.phase == phase_t::choose_kind);
-        CHECK(state.items.front().kind == WORM_UI_SOUND_IMPORT_STEM);
+        CHECK(state.items.front().kind == wormedit::sound_kind_t::stem);
     }
 }
 
@@ -32,13 +32,13 @@ TEST_CASE("one mp3, or any single file when the chart has BGM, imports without a
     const auto song = paths({"/music/song.mp3"});
     worm_ui_nuklear_sound_import_add(mp3, song, false);
     CHECK(mp3.phase == phase_t::ready);
-    CHECK(mp3.items.front().kind == WORM_UI_SOUND_IMPORT_KEYSOUND);
+    CHECK(mp3.items.front().kind == wormedit::sound_kind_t::keysound);
 
     worm_ui_sound_import_state_t with_bgm;
     const auto hit = paths({"/music/hit.wav"});
     worm_ui_nuklear_sound_import_add(with_bgm, hit, true);
     CHECK(with_bgm.phase == phase_t::ready);
-    CHECK(with_bgm.items.front().kind == WORM_UI_SOUND_IMPORT_KEYSOUND);
+    CHECK(with_bgm.items.front().kind == wormedit::sound_kind_t::keysound);
 }
 
 TEST_CASE("several files always show the list with stems as the default only without BGM",
@@ -47,14 +47,14 @@ TEST_CASE("several files always show the list with stems as the default only wit
     worm_ui_sound_import_state_t state;
     CHECK(worm_ui_nuklear_sound_import_add(state, input, false) == 3);
     CHECK(state.phase == phase_t::review_list);
-    CHECK(state.items[0].kind == WORM_UI_SOUND_IMPORT_STEM);
-    CHECK(state.items[2].kind == WORM_UI_SOUND_IMPORT_KEYSOUND);
+    CHECK(state.items[0].kind == wormedit::sound_kind_t::stem);
+    CHECK(state.items[2].kind == wormedit::sound_kind_t::keysound);
     CHECK(state.items[0].name == "a");
 
     worm_ui_sound_import_state_t with_bgm;
     worm_ui_nuklear_sound_import_add(with_bgm, input, true);
     CHECK(with_bgm.phase == phase_t::review_list);
-    CHECK(with_bgm.items[0].kind == WORM_UI_SOUND_IMPORT_KEYSOUND);
+    CHECK(with_bgm.items[0].kind == wormedit::sound_kind_t::keysound);
 }
 
 TEST_CASE("non-audio files and duplicates are skipped with a message", "[unit][frontend][sounds]") {
@@ -101,12 +101,12 @@ TEST_CASE("list edits keep order and ignore bad input", "[unit][frontend][sounds
     worm_ui_nuklear_sound_import_move(state, 0, 1);
     CHECK(state.items[0].name == "b");
     CHECK(state.items[1].name == "a");
-    worm_ui_nuklear_sound_import_set_kind(state, 1, WORM_UI_SOUND_IMPORT_SAMPLE);
-    worm_ui_nuklear_sound_import_set_kind(state, 1, 9);
-    worm_ui_nuklear_sound_import_set_kind(state, 99, WORM_UI_SOUND_IMPORT_STEM);
-    CHECK(state.items[1].kind == WORM_UI_SOUND_IMPORT_SAMPLE);
-    worm_ui_nuklear_sound_import_set_all_kinds(state, WORM_UI_SOUND_IMPORT_STEM);
-    CHECK(state.items[2].kind == WORM_UI_SOUND_IMPORT_STEM);
+    worm_ui_nuklear_sound_import_set_kind(state, 1, wormedit::sound_kind_t::sample);
+    worm_ui_nuklear_sound_import_set_kind(state, 1, static_cast<wormedit::sound_kind_t>(9));
+    worm_ui_nuklear_sound_import_set_kind(state, 99, wormedit::sound_kind_t::stem);
+    CHECK(state.items[1].kind == wormedit::sound_kind_t::sample);
+    worm_ui_nuklear_sound_import_set_all_kinds(state, wormedit::sound_kind_t::stem);
+    CHECK(state.items[2].kind == wormedit::sound_kind_t::stem);
     worm_ui_nuklear_sound_import_remove(state, 0);
     CHECK(state.items.size() == 2);
     CHECK(state.phase == phase_t::review_list);
@@ -203,27 +203,27 @@ TEST_CASE("existing group matches are represented as joins and group names valid
 namespace {
 void section_check(bool value) { CHECK(value); }
 void section_require(bool value) { REQUIRE(value); }
-void fixed_section_kind(std::uint8_t kind) {
+void fixed_section_kind(wormedit::ui::sound_import_kind_t kind) {
     worm_ui_sound_import_state_t state;
     worm_ui_nuklear_sound_import_fix_kind(state, kind);
     const auto input = paths({"/music/one.ogg", "/music/two.mp3"});
     section_check(worm_ui_nuklear_sound_import_add(state, input, false) == 2);
-    worm_ui_nuklear_sound_import_set_kind(state, 0, WORM_UI_SOUND_IMPORT_SAMPLE);
-    worm_ui_nuklear_sound_import_set_all_kinds(state, WORM_UI_SOUND_IMPORT_SAMPLE);
+    worm_ui_nuklear_sound_import_set_kind(state, 0, wormedit::sound_kind_t::sample);
+    worm_ui_nuklear_sound_import_set_all_kinds(state, wormedit::sound_kind_t::sample);
     section_check(state.fixed_kind == kind);
-    section_check(state.items[0].kind == kind && state.items[1].kind == kind);
+    section_check(state.items[0].kind == static_cast<wormedit::sound_kind_t>(kind) && state.items[1].kind == static_cast<wormedit::sound_kind_t>(kind));
     const auto commit = worm_ui_nuklear_sound_import_confirm(state);
     section_require(commit.has_value());
-    section_check(commit->items[0].kind == kind && commit->items[1].kind == kind);
+    section_check(commit->items[0].kind == static_cast<wormedit::sound_kind_t>(kind) && commit->items[1].kind == static_cast<wormedit::sound_kind_t>(kind));
     worm_ui_nuklear_sound_import_commit_failed(state, "retry");
     section_check(state.fixed_kind == kind);
     worm_ui_nuklear_sound_import_cancel(state);
-    section_check(state.fixed_kind == 0 && state.items.empty());
+    section_check(state.fixed_kind == wormedit::ui::sound_import_kind_t::generic && state.items.empty());
 }
 }
 TEST_CASE("sound_import section kind remains fixed through review retry and cancel", "[frontend][sound_import]") {
-    fixed_section_kind(WORM_UI_SOUND_IMPORT_STEM);
-    fixed_section_kind(WORM_UI_SOUND_IMPORT_KEYSOUND);
+    fixed_section_kind(wormedit::ui::sound_import_kind_t::stem);
+    fixed_section_kind(wormedit::ui::sound_import_kind_t::keysound);
 }
 
 TEST_CASE("Sound import truncates names on UTF8 boundaries", "[frontend-state][shared-text]") {

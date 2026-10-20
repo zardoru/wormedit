@@ -113,7 +113,7 @@ TEST_CASE("bgm bar measure marks cover the window in order", "[sys][bgm-bar]") {
 TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][bgm-bar]") {
     wormedit::ui::workspace_action_t action{};
     auto push = [&](WormUiComposeInputKind kind, double fraction, double amount) {
-        auto& input = action.compose_inputs[action.compose_input_count++];
+        auto& input = action.compose_inputs.emplace_back();
         input = {};
         input.kind = kind;
         input.audio_fraction = fraction;
@@ -129,7 +129,7 @@ TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][b
         .project = song_id_t{1}, .chart = chart_id_t{2}, .document_revision = 3,
         .asset = asset_id_t{4}};
     CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
-    CHECK(action.compose_input_count == 2);
+    CHECK(action.compose_inputs.size() == 2);
     CHECK(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_UNDO);
     CHECK(action.compose_inputs[1].kind == WORM_UI_COMPOSE_INPUT_REDO);
     CHECK(range.end - range.begin == Catch::Approx(1.0 / (bgm_bar_zoom_step * bgm_bar_zoom_step)));
@@ -145,6 +145,6 @@ TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][b
     CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
     CHECK(range == bgm_bar_range_t{});
     check_bar_state(!pan_override.has_value());
-    CHECK(action.compose_input_count == 2);
+    CHECK(action.compose_inputs.size() == 2);
     CHECK_FALSE(consume_bgm_bar_inputs(action, range, pan_override, context));
 }

@@ -47,22 +47,20 @@ void set_unread_notifications(nuklear_event_harness_t& harness) {
 }
 
 void configure_screenshot_compose_view(nuklear_event_harness_t& harness) {
-    static std::array<WormUiComposeLaneView, 10> lanes{};
-    static constexpr std::array<WormUiComposeNoteView, 1> notes{{
-        {.bounds = {85.0, 96.0, 105.0, 112.0}, .note_id = 1, .lane_id = 1,
+    static std::array<wormedit::ui::compose_lane_view_t, 10> lanes{};
+    static constexpr std::array<wormedit::ui::compose_note_view_t, 1> notes{{
+        {.bounds = {85.0, 96.0, 105.0, 112.0}, .note_id = {1}, .lane_id = {1},
          .display_lane_number = 1, .selected = true},
     }};
     for (std::size_t index = 0; index < lanes.size(); ++index) {
         lanes[index] = {.bounds = {40.0 + 70.0 * static_cast<double>(index), 0.0,
                                    110.0 + 70.0 * static_cast<double>(index), 512.0},
-                        .lane_id = index + 1, .display_order = static_cast<std::uint32_t>(index)};
+                        .lane_id = {index + 1}, .display_order = static_cast<std::uint32_t>(index)};
     }
     auto& compose = harness.view().compose;
     compose.compose_measure_count = 4;
-    compose.lanes = lanes.data();
-    compose.lane_count = lanes.size();
-    compose.note_endpoints = notes.data();
-    compose.note_endpoint_count = notes.size();
+    compose.lanes.assign(lanes.data(), lanes.data() + lanes.size());
+    compose.note_endpoints.assign(notes.data(), notes.data() + notes.size());
     compose.selected_note_count = 1;
     compose.bgm_bar_available = false;
     compose.bgm_bar_reserved = true;

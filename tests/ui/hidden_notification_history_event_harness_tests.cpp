@@ -70,7 +70,7 @@ void verify_compose_motion_and_wheel(nuklear_event_harness_t& harness) {
     CHECK(motion_result.get().hover_source_frame_valid);
     const auto wheel = wheel_event(480.0F, 400.0F);
     const auto compose = harness.frame(std::span{&wheel, 1});
-    REQUIRE(compose.get().compose_viewport_input_count == 1);
+    REQUIRE(compose.get().compose_viewport_inputs.size() == 1);
     CHECK(compose.get().compose_viewport_inputs[0].kind ==
           WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL);
 }
@@ -113,7 +113,7 @@ void reopen_and_hide_stale_history(nuklear_event_harness_t& harness) {
 void verify_stale_hidden_wheel(nuklear_event_harness_t& harness) {
     const auto wheel = wheel_event(480.0F, 400.0F);
     const auto result = harness.frame(std::span{&wheel, 1});
-    CHECK(result.get().compose_viewport_input_count == 1);
+    CHECK(result.get().compose_viewport_inputs.size() == 1);
     CHECK(result.get().compose_viewport_inputs[0].kind ==
           WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL);
     CHECK(result.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY);
@@ -122,7 +122,7 @@ void verify_stale_hidden_wheel(nuklear_event_harness_t& harness) {
 void verify_absent_window_wheel(nuklear_event_harness_t& harness) {
     const auto wheel = wheel_event(480.0F, 400.0F);
     const auto result = harness.frame(std::span{&wheel, 1});
-    CHECK(result.get().compose_viewport_input_count == 1);
+    CHECK(result.get().compose_viewport_inputs.size() == 1);
     CHECK(result.get().compose_viewport_inputs[0].kind ==
           WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL);
 }
@@ -134,7 +134,7 @@ void verify_visible_history_capture(nuklear_event_harness_t& harness) {
     const auto wheel = wheel_event(100.0F, 100.0F);
     const auto result = harness.frame(std::span{&wheel, 1});
     CHECK(result.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
-    CHECK(result.get().compose_viewport_input_count == 0);
+    CHECK(result.get().compose_viewport_inputs.size() == 0);
 }
 } // namespace
 

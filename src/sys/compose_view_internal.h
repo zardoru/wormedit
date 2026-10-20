@@ -7,7 +7,6 @@
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 #include "sys/frame_timing.h"
-#include "sys/frontend_geometry.h"
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
@@ -154,7 +153,7 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
 auto prepare_compose_grid_rows(frontend_workspace_view_t& flattened, std::size_t count) -> bool;
 
 auto append_compose_grid_row(frontend_workspace_view_t& flattened,
-                             const WormUiComposeGridLineView& line,
+                             const wormedit::ui::compose_grid_line_view_t& line,
                              const wormedit::exact_chart_row_t& row) -> bool;
 
 auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::uint64_t row,
@@ -176,12 +175,12 @@ auto compose_note_display_lane_number(const wormedit::editor_field_scene_view_t&
 }
 
 auto compose_note_key_color(const wormedit::editor_field_scene_view_t& scene, const auto& endpoint)
-    -> std::uint8_t {
+    -> wormedit::lane_key_color_t {
     for (const auto& lane : scene.lanes) {
         if (lane.lane == endpoint.lane)
-            return static_cast<std::uint8_t>(lane.key_color);
+            return lane.key_color;
     }
-    return 0;
+    return wormedit::lane_key_color_t::generic;
 }
 
 auto compose_endpoint_snap_class(const compose_scene_projection_context_t& projection,
@@ -198,6 +197,19 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
             projection.index.measures, tail ? source.end_row : source.begin_row,
             projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure),
         projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure);
+}
+
+template <class T>
+auto prepare_compose_geometry_rows(frontend_workspace_view_t&, std::vector<T>& rows,
+                                   std::size_t count) -> bool {
+    rows.clear();
+    rows.reserve(count);
+    return true;
+}
+
+template <class T>
+void append_compose_geometry_row(std::vector<T>& rows, const T& row, bool&) {
+    rows.push_back(row);
 }
 
 template <class T>
@@ -493,7 +505,7 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                false);
 }
 
-void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened);
+void assign_compose_timing_marker_fractions(WormUiComposeView& view);
 
 auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
                                     wormedit::timing_lane_kind_t lane, std::uint64_t id) -> bool;
@@ -584,7 +596,7 @@ void populate_compose_timing_markers(
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
     const wormedit::timing_lane_pseudonote_outcome_t* timing_stage);
 
-std::string dead_span_label(const wormedit::sys::dead_span_band_t& band);
+void assign_dead_span_label(std::string& label, const wormedit::sys::dead_span_band_t& band);
 
 void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
                                  const compose_scene_cache_t& cache,
@@ -597,7 +609,6 @@ void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
                                   std::uint64_t total_rows, std::uint64_t kiai_selected_head);
 
-std::string recipe_area_label(const wormedit::sys::recipe_area_t& area);
 
 void populate_compose_recipe_areas(
     frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
@@ -685,7 +696,7 @@ auto quantize_layout_at(const wormedit::editor_field_scene_index_t& index, std::
 
 auto quantize_endpoint_bounds(const quantize_lane_geometry_t& lane, double y, double height,
                               wormedit::editor_field_scroll_direction_t direction)
-    -> WormUiComposeRect;
+    -> wormedit::ui::compose_rect_t;
 
 auto quantize_row_visible(const auto& note, const wormedit::editor_field_scene_request_t& request)
     -> bool {
@@ -697,13 +708,13 @@ auto quantize_row_visible(const auto& note, const wormedit::editor_field_scene_r
            !std::ranges::any_of(request.excluded_semantic_layers, has_layer);
 }
 
-auto quantize_endpoint_anchor(const WormUiComposeRect& bounds, wormedit::lane_glyph_t glyph,
+auto quantize_endpoint_anchor(const wormedit::ui::compose_rect_t& bounds, wormedit::lane_glyph_t glyph,
                               wormedit::editor_field_scroll_direction_t direction)
     -> std::pair<double, double>;
 
 struct quantize_endpoint_projection_t {
-    WormUiComposeRect bounds;
-    std::uint32_t glyph{};
+    wormedit::ui::compose_rect_t bounds;
+    wormedit::lane_glyph_t glyph{};
     double anchor_x{}, anchor_y{};
 };
 
@@ -714,17 +725,17 @@ auto build_quantize_endpoint_view(const quantize_projection_scope_t& scope,
 auto make_quantize_ghost_geometry(const quantize_projection_scope_t& scope,
                                   const WormUiComposeQuantizeReportRowView& report,
                                   const wormedit::editor_field_scene_note_source_t& note)
-    -> std::optional<WormUiComposeQuantizeGhostView>;
+    -> std::optional<wormedit::ui::compose_quantize_ghost_view_t>;
 
 auto add_quantize_tail_geometry(const quantize_projection_scope_t& scope,
-                                WormUiComposeQuantizeGhostView& ghost,
+                                wormedit::ui::compose_quantize_ghost_view_t& ghost,
                                 const WormUiComposeQuantizeReportRowView& report) -> bool;
 
 auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
                         const wormedit::chart_document_t& chart,
                         const wormedit::editor_field_scene_request_t& request, std::uint64_t scale,
                         double pixels_per_row, double scroll, double height, bool downscroll)
-    -> std::optional<WormUiComposeQuantizeGhostView>;
+    -> std::optional<wormedit::ui::compose_quantize_ghost_view_t>;
 
 void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
                                const WormUiComposeQuantizeReportRowView& report,
@@ -901,7 +912,7 @@ auto scalar_display_lane_number(const auto& record,
     const auto x = (record.bounds.left + record.bounds.right) * .5;
     const auto y = (record.bounds.top + record.bounds.bottom) * .5;
     for (const auto& lane : scene.lanes)
-        if (lane.lane.value == record.lane_id && x >= lane.bounds.left && x < lane.bounds.right &&
+        if (lane.lane == record.lane_id && x >= lane.bounds.left && x < lane.bounds.right &&
             y >= lane.bounds.top && y < lane.bounds.bottom)
             return lane.display_order + 1;
     return 0;
@@ -916,6 +927,7 @@ auto prepare_scalar_geometry_output(frontend_workspace_view_t& flattened, frame_
 template <class T>
 auto prepare_scalar_geometry_output(frontend_workspace_view_t&, std::vector<T>& output,
                                     std::size_t count) -> bool {
+    output.clear();
     output.reserve(count);
     return true;
 }
@@ -984,7 +996,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
 
 void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                  wormedit::editor_selection_object_t object,
-                                 WormUiComposeRect bounds, const WormUiComposeView& view,
+                                 wormedit::ui::compose_rect_t bounds, const WormUiComposeView& view,
                                  bool downscroll);
 
 void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,

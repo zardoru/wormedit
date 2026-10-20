@@ -66,7 +66,7 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined ob
     const auto clicked = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(clicked.empty());
     CHECK(clicked.back().get().compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-    CHECK(clicked.back().get().compose_semantic_layer_id == 7);
+    CHECK(clicked.back().get().compose_semantic_layer_id.value == 7);
 }
 
 TEST_CASE("Layer painting can begin over a BGM event in its pane",
@@ -94,7 +94,7 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     const auto frames = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : frames) {
-        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
+        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
             began = began || frame.get().compose_inputs[index].kind ==
                                  WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN;
         }
@@ -144,7 +144,7 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     const auto frames = click_at(harness, 300, 400, SDL_KMOD_ALT);
     bool began{}, released{};
     for (const auto& frame : frames) {
-        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
+        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index) {
             const auto& input = frame.get().compose_inputs[index];
             if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
                 began = true;
@@ -176,7 +176,7 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     const auto frames = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(frames.empty());
     check_layer_brush(frames.back().get().compose_action == WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER);
-    check_layer_brush(frames.back().get().compose_semantic_layer_id == 7);
+    check_layer_brush(frames.back().get().compose_semantic_layer_id.value == 7);
 }
 
 namespace {
@@ -202,7 +202,7 @@ auto click_chip(nuklear_event_harness_t& harness, const char* label)
 }
 
 void check_chip_inputs_empty(const std::vector<workspace_action_snapshot_t>& frames) {
-    for (const auto& frame : frames) check_layer_brush(frame.get().compose_input_count == 0);
+    for (const auto& frame : frames) check_layer_brush(frame.get().compose_inputs.size() == 0);
 }
 }
 
@@ -298,10 +298,10 @@ TEST_CASE("Tool chip owns a held click across source change without painting on 
     harness.view().compose.draw_source_id = 180;
     harness.view().compose.document_revision = 2;
     const auto held = harness.frame(std::array{motion_event(300, 400)});
-    check_layer_brush(held.get().compose_input_count == 0);
+    check_layer_brush(held.get().compose_inputs.size() == 0);
     check_layer_brush(worm_ui_nuklear_compose_state().pointer_capture.tool_chip_pointer_canceled);
     const auto released = harness.frame(std::array{button_event(false, 300, 400)});
-    check_layer_brush(released.get().compose_input_count == 0);
+    check_layer_brush(released.get().compose_inputs.size() == 0);
     check_no_layer_brush(worm_ui_nuklear_compose_state().pointer_capture.tool_chip_pointer_active);
 }
 
@@ -335,7 +335,7 @@ TEST_CASE("Tool chip leaves outside canvas presses available and missing source 
     const auto outside = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : outside) {
-        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index)
+        for (std::size_t index = 0; index < frame.get().compose_inputs.size(); ++index)
             began |= frame.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
     }
     check_layer_brush(began);

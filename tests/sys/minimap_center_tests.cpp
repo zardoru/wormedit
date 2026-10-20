@@ -138,7 +138,7 @@ TEST_CASE("minimap playback and zoom transitions preserve the field position",
     const auto field_scroll = fixture.interaction.viewport_scroll_pixels;
     const auto center = midpoint(fixture.flattened.view.compose);
     wormedit::ui::workspace_action_t action{};
-    auto& input = action.compose_inputs[action.compose_input_count++];
+    auto& input = action.compose_inputs.emplace_back();
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM;
     input.x_pixels = 2.0;
     std::optional<bgm_bar_pan_override_t> pan;
@@ -165,7 +165,7 @@ TEST_CASE("explicit minimap pan persists only while its stamped visible span is 
     auto range = bgm_bar_range_t{0.3, 0.7};
     std::optional<bgm_bar_pan_override_t> pan;
     wormedit::ui::workspace_action_t action{};
-    action.compose_input_count = 1;
+    action.compose_inputs.resize(1);
     action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN;
     action.compose_inputs[0].x_pixels = 0.1;
     const bgm_bar_input_context_t same{.total_frames = 768'000,
@@ -251,7 +251,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     editor_navigation_input_controller_t navigation;
     const auto toggle = [&](bool currently_visible) {
         wormedit::ui::workspace_action_t action{};
-        action.compose_input_count = 1;
+        action.compose_inputs.resize(1);
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
         action.compose_inputs[0].overview_primary = currently_visible;
         (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,

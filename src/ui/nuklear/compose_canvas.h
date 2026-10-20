@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <utility>
 
 struct WormUiTestingComposeGhostDrawState {
@@ -24,7 +25,7 @@ auto compose_quantize_ghosts_drawn_for_testing() -> bool;
 auto compose_quantize_ghost_draw_state_for_testing() -> WormUiTestingComposeGhostDrawState;
 
 auto compose_timing_marker_at(const WormUiComposeView& view, double x, double y)
-    -> const WormUiTimingMarkerView*;
+    -> const wormedit::ui::compose_timing_marker_view_t*;
 
 // Horizontal extent (document pixels) a visible timing lane's content may use; empty when hidden.
 auto compose_timing_lane_inner_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
@@ -39,3 +40,11 @@ auto process_compose_tool_chip(nk_context*, const WormUiComposeView&, struct nk_
 // Shared screen-space header button geometry for drawing and pointer capture.
 auto compose_bgm_mix_button_rect(const WormUiComposeBgmLaneView& lane,
     const WormUiComposeView& view, struct nk_rect viewport, bool solo) -> struct nk_rect;
+
+namespace wormedit::ui::nuklear {
+// The backend owns one canvas cache per main or comparison field surface.
+// Its implementation retains interval indices and tile projection scratch.
+struct compose_canvas_cache_t {
+    virtual ~compose_canvas_cache_t() = default;
+};
+}

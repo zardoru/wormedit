@@ -1,20 +1,25 @@
 #pragma once
 
 #include <algorithm>
+#include <utility>
 
 namespace wormedit::sys {
 
 template <typename RowToY>
 auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row, std::uint64_t last_row,
-                    RowToY&& row_to_y) -> sv_graph_t {
-    sv_graph_t graph;
-    if (last_row <= first_row) return graph;
+                    RowToY&& row_to_y, sv_graph_t& graph) -> void {
+    graph.points.clear();
+    graph.minimum = graph.maximum = 1.0;
+    graph.one_x = -1.0;
+    if (last_row <= first_row) return;
     // The value in force at first_row, then every step strictly inside the window.
     double current = 1.0;
     std::size_t next = 0;
     while (next < steps.steps.size() && steps.steps[next].row <= first_row)
         current = steps.steps[next++].value;
-    std::vector<std::pair<std::uint64_t, double>> held{{first_row, current}};
+    auto& held = graph.held;
+    held.clear();
+    held.emplace_back(first_row, current);
     for (; next < steps.steps.size() && steps.steps[next].row < last_row; ++next)
         held.emplace_back(steps.steps[next].row, steps.steps[next].value);
     graph.minimum = graph.maximum = held.front().second;
@@ -33,6 +38,13 @@ auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row, std::
         graph.points.push_back({x, y});
     }
     graph.points.push_back({normalize(held.back().second), row_to_y(last_row)});
+}
+
+template <typename RowToY>
+auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row, std::uint64_t last_row,
+                         RowToY&& row_to_y) -> sv_graph_t {
+    sv_graph_t graph;
+    build_sv_graph(steps, first_row, last_row, std::forward<RowToY>(row_to_y), graph);
     return graph;
 }
 

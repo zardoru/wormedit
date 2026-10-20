@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/frontend/sound_import.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -16,13 +17,6 @@
 
 inline constexpr std::size_t worm_ui_sound_import_capacity = wormedit::maximum_bulk_sound_import;
 
-// Values match wormedit::sound_kind_t (1 stem, 2 keysound, 3 sample).
-enum worm_ui_sound_import_kind_t : std::uint8_t {
-    WORM_UI_SOUND_IMPORT_STEM = 1,
-    WORM_UI_SOUND_IMPORT_KEYSOUND = 2,
-    WORM_UI_SOUND_IMPORT_SAMPLE = 3,
-};
-
 enum class worm_ui_sound_import_phase_t : std::uint8_t {
     closed,
     // One wav/ogg/flac file and no BGM yet: ask "stem or sound".
@@ -38,7 +32,7 @@ enum class worm_ui_sound_import_phase_t : std::uint8_t {
 struct worm_ui_sound_import_item_t {
     std::string path;
     std::string name;
-    std::uint8_t kind{WORM_UI_SOUND_IMPORT_KEYSOUND};
+    wormedit::sound_kind_t kind{wormedit::sound_kind_t::keysound};
     std::optional<std::size_t> group_index;
 };
 
@@ -74,7 +68,7 @@ struct worm_ui_sound_import_state_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
     std::uint64_t document_revision{};
-    std::uint8_t fixed_kind{};
+    wormedit::ui::sound_import_kind_t fixed_kind{};
     std::size_t member_first_row{};
     std::size_t member_row_limit{32};
     bool ungrouped_expanded{};
@@ -113,9 +107,9 @@ void worm_ui_nuklear_sound_import_leave_all_ungrouped(worm_ui_sound_import_state
 
 // Edits clamp to the list and ignore unknown kinds or indexes.
 void worm_ui_nuklear_sound_import_set_kind(worm_ui_sound_import_state_t& state,
-                                           std::size_t index, std::uint8_t kind);
+                                           std::size_t index, wormedit::sound_kind_t kind);
 void worm_ui_nuklear_sound_import_set_all_kinds(worm_ui_sound_import_state_t& state,
-                                                std::uint8_t kind);
+                                                wormedit::sound_kind_t kind);
 void worm_ui_nuklear_sound_import_rename(worm_ui_sound_import_state_t& state, std::size_t index,
                                          std::string name);
 void worm_ui_nuklear_sound_import_remove(worm_ui_sound_import_state_t& state, std::size_t index);
@@ -138,4 +132,4 @@ void worm_ui_nuklear_sound_import_cancel(worm_ui_sound_import_state_t& state);
 
 // Locks section imports to their requested kind; zero retains generic import behavior.
 void worm_ui_nuklear_sound_import_fix_kind(worm_ui_sound_import_state_t& state,
-                                          std::uint8_t kind);
+                                          wormedit::ui::sound_import_kind_t kind);

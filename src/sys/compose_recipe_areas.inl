@@ -23,14 +23,16 @@ inline auto value_at(const std::vector<recipe_value_point_t>& points, std::uint6
 
 template <typename RowToY>
 auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row, std::uint64_t last_row,
-                        RowToY&& row_to_y) -> recipe_graph_t {
-    recipe_graph_t graph;
+                        RowToY&& row_to_y, recipe_graph_t& graph) -> void {
+    graph.points.clear();
+    graph.minimum = graph.maximum = 1.0;
     const auto begin = std::max(first_row, area.begin_row);
     const auto end = std::min(last_row, area.end_row);
-    if (!area.evaluable || area.points.empty() || end <= begin) return graph;
+    if (!area.evaluable || area.points.empty() || end <= begin) return;
     // Window edges (interpolated) plus every sampled point strictly inside.
-    std::vector<std::pair<std::uint64_t, double>> kept{
-        {begin, recipe_area_detail::value_at(area.points, begin)}};
+    auto& kept = graph.kept;
+    kept.clear();
+    kept.emplace_back(begin, recipe_area_detail::value_at(area.points, begin));
     for (const auto& point : area.points)
         if (point.row > begin && point.row < end) kept.emplace_back(point.row, point.value);
     kept.emplace_back(end, recipe_area_detail::value_at(area.points, end));
@@ -42,6 +44,13 @@ auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row, std:
     const auto span = graph.maximum - graph.minimum;
     for (const auto& [row, value] : kept)
         graph.points.push_back({span > 0.0 ? (value - graph.minimum) / span : 0.5, row_to_y(row)});
+}
+
+template <typename RowToY>
+auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row, std::uint64_t last_row,
+                         RowToY&& row_to_y) -> recipe_graph_t {
+    recipe_graph_t graph;
+    build_recipe_graph(area, first_row, last_row, std::forward<RowToY>(row_to_y), graph);
     return graph;
 }
 

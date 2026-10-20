@@ -81,7 +81,7 @@ struct options_view_t {
     std::uint32_t p1_scratch_position{}, p2_scratch_position{};
     std::string_view field_scheme, current_field_layout_key, current_field_layout_name;
     std::string_view current_layout_field_scheme;
-    std::vector<WormUiComposeLaneView> current_field_layout_lanes;
+    std::vector<wormedit::ui::compose_lane_view_t> current_field_layout_lanes;
     std::string_view theme, dock_layout, shortcut_profile_path;
     std::vector<external_player_definition_view_t> players;
     std::size_t selected_player{};

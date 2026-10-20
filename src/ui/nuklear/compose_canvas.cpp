@@ -88,72 +88,67 @@ struct static_paint_indices_t {
         generation=view.static_scene_source_generation;
         bytes=0;
         const auto& source=*view.static_scene;
-        query_scratch.resize(std::max({source.band_count,source.lane_count,source.bgm_lane_count,
-            source.grid_line_count,source.timing_marker_count,source.hold_body_count,
-            source.bgm_event_count,source.bga_event_count,source.note_endpoint_count}));
+        query_scratch.resize(std::max({source.bands.size(),source.lanes.size(),source.bgm_lane_count,
+            source.grid_lines.size(),source.timing_markers.size(),source.hold_bodies.size(),
+            source.bgm_event_count,source.bga_event_count,source.note_endpoints.size()}));
         bytes+=query_scratch.capacity()*sizeof(std::size_t);
         glyph_guard=32;
-        for (std::size_t index=0; index<source.lane_count; ++index)
+        for (std::size_t index=0; index<source.lanes.size(); ++index)
             glyph_guard=std::max(glyph_guard,
                 (source.lanes[index].bounds.right-source.lanes[index].bounds.left)*.5+20);
         const auto rect=[](const auto& value) { return std::pair{value.bounds.top,value.bounds.bottom}; };
-        rebuild_pass(2,source.bands,source.band_count,rect);
-        rebuild_pass(3,source.lanes,source.lane_count,rect);
+        rebuild_pass(2,source.bands.data(),source.bands.size(),rect);
+        rebuild_pass(3,source.lanes.data(),source.lanes.size(),rect);
         rebuild_pass(4,source.bgm_lanes,source.bgm_lane_count,rect);
-        rebuild_pass(5,source.grid_lines,source.grid_line_count,
+        rebuild_pass(5,source.grid_lines.data(),source.grid_lines.size(),
             [](const auto& line) { return std::pair{line.y_pixels-16,line.y_pixels+16}; });
-        rebuild_pass(6,source.timing_markers,source.timing_marker_count,
+        rebuild_pass(6,source.timing_markers.data(),source.timing_markers.size(),
             [](const auto& marker) { return std::pair{marker.marker_y_pixels-16,marker.marker_y_pixels+16}; });
-        rebuild_pass(7,source.hold_bodies,source.hold_body_count,rect);
+        rebuild_pass(7,source.hold_bodies.data(),source.hold_bodies.size(),rect);
         rebuild_pass(8,source.bgm_events,source.bgm_event_count,rect);
-        rebuild_pass(9,source.note_endpoints,source.note_endpoint_count,rect);
+        rebuild_pass(9,source.note_endpoints.data(),source.note_endpoints.size(),rect);
         rebuild_pass(10,source.bga_events,source.bga_event_count,rect);
         notes_by_id.clear();
-        notes_by_id.reserve(source.note_endpoint_count+source.hold_body_count);
-        for (std::size_t index=0; index<source.note_endpoint_count; ++index)
-            notes_by_id[source.note_endpoints[index].note_id].notes.push_back(index);
-        for (std::size_t index=0; index<source.hold_body_count; ++index)
-            notes_by_id[source.hold_bodies[index].note_id].holds.push_back(index);
+        notes_by_id.reserve(source.note_endpoints.size()+source.hold_bodies.size());
+        for (std::size_t index=0; index<source.note_endpoints.size(); ++index)
+            notes_by_id[source.note_endpoints[index].note_id.value].notes.push_back(index);
+        for (std::size_t index=0; index<source.hold_bodies.size(); ++index)
+            notes_by_id[source.hold_bodies[index].note_id.value].holds.push_back(index);
         bytes+=notes_by_id.bucket_count()*sizeof(void*);
         for (const auto& [id,records]:notes_by_id)
             bytes+=sizeof(id)+sizeof(records)+6*sizeof(void*)+
                 (records.notes.capacity()+records.holds.capacity())*sizeof(std::size_t);
     }
 };
-static_paint_indices_t static_paint_indices;
 // Source publication caps the total record count at 32768. Together these
-// shallow scalar copies stay below 3.25 MiB; bounded geometry stays below 4 MiB.
-// Hitsample payloads and filenames remain arena-owned and charged by that owner.
-static_assert(sizeof(WormUiComposeNoteView)<=104 && sizeof(WormUiComposeHoldView)<=96 &&
-    sizeof(WormUiTimingMarkerView)<=96 && sizeof(WormUiComposeBgmEventView)<=96 &&
-    sizeof(WormUiComposeLaneView)<=96 && sizeof(WormUiComposeBandView)<=96 &&
+// scalar/string-view records stay below 4.5 MiB; charge their retained capacity below.
+// Hitsample payloads borrow the scene cache; filenames borrow the stamped document.
+static_assert(sizeof(wormedit::ui::compose_note_view_t)<=144 && sizeof(wormedit::ui::compose_hold_view_t)<=96 &&
+    sizeof(wormedit::ui::compose_timing_marker_view_t)<=112 && sizeof(WormUiComposeBgmEventView)<=96 &&
+    sizeof(wormedit::ui::compose_lane_view_t)<=96 && sizeof(wormedit::ui::compose_band_view_t)<=96 &&
     sizeof(WormUiComposeBgmLaneView)<=96 && sizeof(WormUiComposeBgaEventView)<=96 &&
-    sizeof(WormUiComposeGridLineView)<=96);
+    sizeof(wormedit::ui::compose_grid_line_view_t)<=96);
 struct static_paint_storage_t {
-    WormUiComposeView view;
-    std::vector<WormUiComposeBandView> bands;
-    std::vector<WormUiComposeLaneView> lanes;
-    std::vector<WormUiComposeGridLineView> grid;
-    std::vector<WormUiTimingMarkerView> timing;
-    std::vector<WormUiComposeHoldView> holds;
+    static_paint_indices_t& indices;
+    explicit static_paint_storage_t(static_paint_indices_t& source) : indices(source) {}
+    WormUiComposeView view{};
     std::vector<WormUiComposeBgmLaneView> bgm_lanes;
     std::vector<WormUiComposeBgmEventView> bgm;
     std::vector<WormUiComposeBgaEventView> bga;
-    std::vector<WormUiComposeNoteView> notes;
     template<class T>
-    void select(unsigned pass, const T* source, std::vector<T>& target,
-                const T*& pointer, std::size_t& count, double begin, double end,
-                double offset) {
-        const auto result=static_paint_indices.passes[pass].query_into(
-            begin,end,static_paint_indices.query_scratch);
-        static_paint_indices.scanned+=result.scanned;
+    void select_records(unsigned pass, const T* source, std::vector<T>& target,
+                        double begin, double end, double offset) {
+        const auto result=indices.passes[pass].query_into(
+            begin,end,indices.query_scratch);
+        indices.scanned+=result.scanned;
         // Scratch holds at least the source record count for every pass.
         // Overflow nevertheless preserves output/order with the compatible query.
-        const auto fallback=result.overflow ? static_paint_indices.passes[pass].query(begin,end)
+        const auto fallback=result.overflow ? indices.passes[pass].query(begin,end)
                                             : wormedit::common::interval_query_t{};
         const auto indices=result.overflow ? std::span<const std::size_t>(fallback.indices)
-            : std::span<const std::size_t>(static_paint_indices.query_scratch).first(result.count);
-        static_paint_indices.extracted+=indices.size();
+            : std::span<const std::size_t>(this->indices.query_scratch).first(result.count);
+        this->indices.extracted+=indices.size();
+        target.clear();
         target.reserve(indices.size());
         for (const auto index:indices) {
             auto value=source[index];
@@ -167,36 +162,106 @@ struct static_paint_storage_t {
             else value.marker_y_pixels+=offset;
             target.push_back(value);
         }
+    }
+    template<class T>
+    void select(unsigned pass, const T* source, std::vector<T>& target,
+                const T*& pointer, std::size_t& count, double begin, double end,
+                double offset) {
+        select_records(pass, source, target, begin, end, offset);
         pointer=target.data(); count=target.size();
     }
-    static_paint_storage_t(const WormUiComposeView& current, unsigned pass,
-                           double origin, double height, double scale) : view(current) {
+    template<class T>
+    void select(unsigned pass, const std::vector<T>& source, std::vector<T>& target,
+                double begin, double end, double offset) {
+        select_records(pass, source.data(), target, begin, end, offset);
+    }
+    auto accounted_bytes() const -> std::size_t {
+        return view.bands.capacity() * sizeof(wormedit::ui::compose_band_view_t) +
+            view.lanes.capacity() * sizeof(wormedit::ui::compose_lane_view_t) +
+            view.grid_lines.capacity() * sizeof(wormedit::ui::compose_grid_line_view_t) +
+            view.timing_markers.capacity() * sizeof(wormedit::ui::compose_timing_marker_view_t) +
+            view.hold_bodies.capacity() * sizeof(wormedit::ui::compose_hold_view_t) +
+            view.note_endpoints.capacity() * sizeof(wormedit::ui::compose_note_view_t) +
+            bgm_lanes.capacity() * sizeof(WormUiComposeBgmLaneView) +
+            bgm.capacity() * sizeof(WormUiComposeBgmEventView) +
+            bga.capacity() * sizeof(WormUiComposeBgaEventView);
+    }
+    void copy_drawing_metadata(const WormUiComposeView& current) {
+        view.viewport_width_pixels = current.viewport_width_pixels;
+        view.viewport_height_pixels = current.viewport_height_pixels;
+        view.playable_field_left_pixels = current.playable_field_left_pixels;
+        view.playable_field_right_pixels = current.playable_field_right_pixels;
+        view.bga_lane_visible = current.bga_lane_visible;
+        view.bga_lane_bounds = current.bga_lane_bounds;
+        view.timing_lane_visibility_mask = current.timing_lane_visibility_mask;
+        view.waveform_row_count = current.waveform_row_count;
+        view.waveform_timing_locked = current.waveform_timing_locked;
+        view.beat_fit_chart_row = current.beat_fit_chart_row;
+        view.beat_fit_drag_active = current.beat_fit_drag_active;
+        view.bms_measure_labels = current.bms_measure_labels;
+        view.selected_bms_measure_number_plus_one = current.selected_bms_measure_number_plus_one;
+        view.hover_note_visible = current.hover_note_visible;
+        view.hover_note_id = current.hover_note_id;
+        view.chart_id = current.chart_id;
+        view.document_revision = current.document_revision;
+    }
+    // Tile callbacks need drawing metadata and the selected primitive pass only.
+    // Keep their owned rows between callbacks instead of copying the complete frame view.
+    void build(const WormUiComposeView& current, unsigned pass,
+               double origin, double height, double scale) {
+        copy_drawing_metadata(current);
+        view.bands.clear(); view.lanes.clear(); view.grid_lines.clear();
+        view.timing_markers.clear(); view.hold_bodies.clear(); view.note_endpoints.clear();
+        view.bgm_lane_count = view.bgm_event_count = view.bga_event_count = 0;
         const auto& source=*current.static_scene;
         const auto offset=current.static_scene_world_origin_pixels-origin/scale;
-        const auto margin=std::max(32.0,static_paint_indices.glyph_guard);
+        const auto margin=std::max(32.0,indices.glyph_guard);
         const auto begin=-offset-margin, end=-offset+height/scale+margin;
         view.viewport_height_pixels=height/scale;
         switch (pass) {
         case 2:
-            select(2,source.bands,bands,view.bands,view.band_count,begin,end,offset);
-            select(3,source.lanes,lanes,view.lanes,view.lane_count,begin,end,offset);
+            select(2,source.bands,view.bands,begin,end,offset);
+            select(3,source.lanes,view.lanes,begin,end,offset);
             select(4,source.bgm_lanes,bgm_lanes,view.bgm_lanes,view.bgm_lane_count,begin,end,offset);
             break;
-        case 3: select(pass,source.lanes,lanes,view.lanes,view.lane_count,begin,end,offset); break;
+        case 3: select(pass,source.lanes,view.lanes,begin,end,offset); break;
         case 4: select(pass,source.bgm_lanes,bgm_lanes,view.bgm_lanes,view.bgm_lane_count,begin,end,offset); break;
-        case 5: select(pass,source.grid_lines,grid,view.grid_lines,view.grid_line_count,begin,end,offset); break;
-        case 6: select(pass,source.timing_markers,timing,view.timing_markers,view.timing_marker_count,begin,end,offset); break;
+        case 5: select(pass,source.grid_lines,view.grid_lines,begin,end,offset); break;
+        case 6: select(pass,source.timing_markers,view.timing_markers,begin,end,offset); break;
         case 7:
-            select(7,source.hold_bodies,holds,view.hold_bodies,view.hold_body_count,begin,end,offset);
+            select(7,source.hold_bodies,view.hold_bodies,begin,end,offset);
             select(8,source.bgm_events,bgm,view.bgm_events,view.bgm_event_count,begin,end,offset);
             break;
         case 8: select(pass,source.bgm_events,bgm,view.bgm_events,view.bgm_event_count,begin,end,offset); break;
-        case 9: select(pass,source.note_endpoints,notes,view.note_endpoints,view.note_endpoint_count,begin,end,offset); break;
+        case 9: select(pass,source.note_endpoints,view.note_endpoints,begin,end,offset); break;
         case 10: select(pass,source.bga_events,bga,view.bga_events,view.bga_event_count,begin,end,offset); break;
         default: break;
         }
     }
 };
+}
+
+namespace {
+struct canvas_cache_state_t final : wormedit::ui::nuklear::compose_canvas_cache_t {
+    static_paint_indices_t indices;
+    static_paint_storage_t scratch{indices};
+};
+auto canvas_cache(nk_context* context) -> canvas_cache_state_t& {
+    auto& owner = wormedit::ui::nuklear::compose_canvas_cache(context);
+    if (!owner) owner = std::make_unique<canvas_cache_state_t>();
+    return static_cast<canvas_cache_state_t&>(*owner);
+}
+auto paint_indices(nk_context* context) -> static_paint_indices_t& {
+    return canvas_cache(context).indices;
+}
+// The renderer's existing bounded tile geometry scratch still reserves 4 MiB.
+// Owned view scratch is charged by its actual retained capacity, including prior charts.
+constexpr std::size_t tile_geometry_scratch_budget_bytes = 4 * 1024 * 1024;
+auto canvas_cache_bytes(nk_context* context) -> std::size_t {
+    const auto& cache = canvas_cache(context);
+    return cache.indices.bytes + cache.scratch.accounted_bytes() +
+        tile_geometry_scratch_budget_bytes;
+}
 }
 
 void reset_compose_canvas_viewport_for_testing() {
@@ -257,7 +322,7 @@ static auto draw_quantize_dashed_connector(const ComposePaintContext& paint, flo
     return emitted;
 }
 
-static auto quantize_ghost_color(const WormUiComposeQuantizeGhostView& ghost, bool tail)
+static auto quantize_ghost_color(const wormedit::ui::compose_quantize_ghost_view_t& ghost, bool tail)
     -> nk_color {
     if (ghost.collision) {
         auto color = compose(ComposeColor::conflict);
@@ -269,8 +334,8 @@ static auto quantize_ghost_color(const WormUiComposeQuantizeGhostView& ghost, bo
     return nk_rgba(112, 220, 255, 170);
 }
 
-static auto draw_quantize_endpoint(const ComposePaintContext& paint, const WormUiComposeRect& source,
-                                   std::uint32_t glyph, nk_color color) -> bool {
+static auto draw_quantize_endpoint(const ComposePaintContext& paint, const wormedit::ui::compose_rect_t& source,
+                                   wormedit::lane_glyph_t glyph, nk_color color) -> bool {
     const auto scale_x = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
     const auto scale_y = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
     const auto rect = nk_rect(paint.viewport.x + static_cast<float>(source.left) * scale_x,
@@ -279,11 +344,11 @@ static auto draw_quantize_endpoint(const ComposePaintContext& paint, const WormU
         static_cast<float>(source.bottom - source.top) * scale_y);
     if (rect.w <= 0.0f || rect.h <= 0.0f) return false;
     bool emitted{};
-    if (wormedit::ui::is_arrow_glyph(static_cast<std::uint8_t>(glyph)) && rect.w >= 10.0f) {
+    if (wormedit::ui::is_arrow_glyph(glyph) && rect.w >= 10.0f) {
         const auto tile_size = rect.w;
         const auto tile_x = rect.x;
         const auto tile_y = rect.y + (rect.h - tile_size) * 0.5f;
-        const auto authored = wormedit::ui::arrow_polygon(static_cast<std::uint8_t>(glyph),
+        const auto authored = wormedit::ui::arrow_polygon(glyph,
                                                            tile_x, tile_y, tile_size);
         for (std::size_t point = 0; point < authored.size(); ++point) {
             const auto& from = authored[point];
@@ -309,7 +374,7 @@ static auto quantize_screen_point(struct nk_rect viewport, const WormUiComposeVi
 }
 
 static auto draw_quantize_head_ghost(const ComposePaintContext& paint,
-    const WormUiComposeQuantizeGhostView& ghost, struct nk_rect viewport) -> bool {
+    const wormedit::ui::compose_quantize_ghost_view_t& ghost, struct nk_rect viewport) -> bool {
     const auto color = quantize_ghost_color(ghost, false);
     bool emitted{};
     if (ghost.moved_head) {
@@ -325,7 +390,7 @@ static auto draw_quantize_head_ghost(const ComposePaintContext& paint,
 }
 
 static auto draw_quantize_tail_ghost(const ComposePaintContext& paint,
-    const WormUiComposeQuantizeGhostView& ghost, struct nk_rect viewport) -> bool {
+    const wormedit::ui::compose_quantize_ghost_view_t& ghost, struct nk_rect viewport) -> bool {
     const auto color = quantize_ghost_color(ghost, true);
     bool emitted{};
     if (ghost.moved_tail) {
@@ -353,7 +418,7 @@ static auto draw_quantize_tail_ghost(const ComposePaintContext& paint,
 static auto draw_quantize_ghost_rows(const ComposePaintContext& paint,
                                     const WormUiComposeView& view, struct nk_rect viewport) -> bool {
     bool emitted{};
-    for (std::size_t index = 0; index < view.quantize_ghost_count; ++index) {
+    for (std::size_t index = 0; index < view.quantize_ghosts.size(); ++index) {
         const auto& ghost = view.quantize_ghosts[index];
         emitted = draw_quantize_head_ghost(paint, ghost, viewport) || emitted;
         if (ghost.has_tail) emitted = draw_quantize_tail_ghost(paint, ghost, viewport) || emitted;
@@ -368,7 +433,7 @@ void draw_compose_quantize_ghosts_after_docks(nk_context* context,
     const auto saved = *quantize_overlay_viewport;
     quantize_overlay_viewport.reset();
     if (!context || !view || !view->quantize_preview_enabled || !view->quantize_ghosts_drawable ||
-        !view->scene_available || !view->quantize_ghosts || view->quantize_ghost_count == 0)
+        !view->scene_available || view->quantize_ghosts.empty())
         return;
     const auto viewport = nk_rect(saved.x, saved.y, saved.width, saved.height);
     auto* canvas = nk_window_get_canvas(context);
@@ -391,7 +456,7 @@ auto compose_quantize_ghost_draw_state_for_testing() -> WormUiTestingComposeGhos
     return quantize_ghost_draw_state;
 }
 
-static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
+static struct nk_rect compose_screen_rect(const wormedit::ui::compose_rect_t* source,
                                           const WormUiComposeView* view, struct nk_rect viewport) {
     const auto x_scale = viewport.w / static_cast<float>(view->viewport_width_pixels);
     const auto y_scale = viewport.h / static_cast<float>(view->viewport_height_pixels);
@@ -545,23 +610,24 @@ static void draw_indexed_region(const ComposePaintContext& paint,unsigned pass,
     if (!paint.view->static_scene) { draw(paint); return; }
     const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
     const auto delta=region.y-paint.viewport.y;
-    static_paint_storage_t storage(*paint.view,pass,viewport_origin+delta,region.h,scale);
+    auto& storage = canvas_cache(paint.context).scratch;
+    storage.build(*paint.view,pass,viewport_origin+delta,region.h,scale);
+    wormedit::ui::nuklear::compose_field(paint.context).account_tile_source(
+        paint.view->static_scene_accounted_bytes + canvas_cache_bytes(paint.context));
     storage.view.viewport_height_pixels=paint.view->viewport_height_pixels;
     const auto offset=delta/scale;
-    shift_static_records(storage.bands,offset); shift_static_records(storage.lanes,offset);
-    shift_static_records(storage.grid,offset); shift_static_records(storage.timing,offset);
-    shift_static_records(storage.holds,offset); shift_static_records(storage.bgm_lanes,offset);
+    shift_static_records(storage.view.bands,offset); shift_static_records(storage.view.lanes,offset);
+    shift_static_records(storage.view.grid_lines,offset); shift_static_records(storage.view.timing_markers,offset);
+    shift_static_records(storage.view.hold_bodies,offset); shift_static_records(storage.bgm_lanes,offset);
     shift_static_records(storage.bgm,offset); shift_static_records(storage.bga,offset);
-    shift_static_records(storage.notes,offset);
+    shift_static_records(storage.view.note_endpoints,offset);
     if (pass == 6) {
         // The interval halo includes neighboring bodies, but direct projection
         // publishes timing markers only when their centers are in the viewport.
-        std::erase_if(storage.timing, [&](const auto& marker) {
+        std::erase_if(storage.view.timing_markers, [&](const auto& marker) {
             return marker.marker_y_pixels < 0 ||
                    marker.marker_y_pixels > storage.view.viewport_height_pixels;
         });
-        storage.view.timing_markers = storage.timing.data();
-        storage.view.timing_marker_count = storage.timing.size();
     }
     auto indexed=paint; indexed.view=&storage.view;
     draw(indexed);
@@ -574,13 +640,16 @@ static void prepare_compose_tiles(const ComposePaintContext& paint,unsigned pass
     paint_field(paint.context).prepare_tiles(request,
         paint.view->static_scene_covered_begin_pixels*scale,
         paint.view->static_scene_covered_end_pixels*scale,
-        paint.view->static_scene_accounted_bytes+static_paint_indices.bytes+8*1024*1024,
+        paint.view->static_scene_accounted_bytes+canvas_cache_bytes(paint.context),
         [&](auto& renderer,double origin) {
             tile_renderer_scope_t scoped(renderer);
             // A geometry halo prevents tile-edge clipping from changing authored
             // arrow centers or clamped timing marker bodies before raster cropping.
             const auto halo=std::max(96.0f,paint.viewport.w*.5f);
-            static_paint_storage_t storage(*paint.view,pass,origin-halo,512+2*halo,scale);
+            auto& storage = canvas_cache(paint.context).scratch;
+            storage.build(*paint.view,pass,origin-halo,512+2*halo,scale);
+            wormedit::ui::nuklear::compose_field(paint.context).account_tile_source(
+                paint.view->static_scene_accounted_bytes + canvas_cache_bytes(paint.context));
             auto prepared=paint;
             storage.view.hover_note_visible=false;
             prepared.view=&storage.view;
@@ -599,7 +668,7 @@ static void append_hover_hole(std::vector<SDL_FRect>& holes,SDL_FRect bounds,
     const auto unique=wormedit::ui::field::subtract_rectangles({left,top,right-left,bottom-top},holes);
     holes.insert(holes.end(),unique.begin(),unique.end());
 }
-static auto hover_source_rect(const ComposePaintContext& paint,WormUiComposeRect bounds)
+static auto hover_source_rect(const ComposePaintContext& paint,wormedit::ui::compose_rect_t bounds)
     -> struct nk_rect {
     const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
     const auto origin=compose_tile_request(paint,9,true).origin/scale;
@@ -641,8 +710,8 @@ static auto compose_hover_holes(const ComposePaintContext& paint,unsigned pass)
     -> std::optional<std::vector<SDL_FRect>> {
     if (!paint.view->hover_note_visible) return std::vector<SDL_FRect>{};
     if (!paint.view->static_scene) return std::nullopt;
-    const auto found=static_paint_indices.notes_by_id.find(paint.view->hover_note_id);
-    if (found==static_paint_indices.notes_by_id.end()) return std::nullopt;
+    const auto found=paint_indices(paint.context).notes_by_id.find(paint.view->hover_note_id);
+    if (found==paint_indices(paint.context).notes_by_id.end()) return std::nullopt;
     std::vector<SDL_FRect> holes;
     if (pass==9) append_hover_note_holes(paint,found->second,holes);
     else append_hover_hold_holes(paint,found->second,holes);
@@ -680,7 +749,7 @@ static void draw_compose_cached_pass(const ComposePaintContext& paint, unsigned 
     const auto base_request=request;
     const bool retained=scrolling && paint.view->static_scene;
     const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
-    const auto guard_size=pass==9 ? static_paint_indices.glyph_guard*scale : 32.0;
+    const auto guard_size=pass==9 ? paint_indices(paint.context).glyph_guard*scale : 32.0;
     if (scrolling && pass!=2 && guard_size>=request.viewport.h*.5) {
         draw(paint); return;
     }
@@ -714,7 +783,7 @@ static void draw_compose_cached_pass(const ComposePaintContext& paint, unsigned 
 }
 
 static void draw_compose_grid_tick(const ComposePaintContext& paint,
-                                   const WormUiComposeGridLineView& line, float y) {
+                                   const wormedit::ui::compose_grid_line_view_t& line, float y) {
     const auto& view = *paint.view;
     auto& field = paint_field(paint.context);
     if (view.waveform_row_count != 0 && !view.waveform_timing_locked && worm_ui_nuklear_beat_fit_line(line)) {
@@ -746,7 +815,7 @@ static void draw_compose_grid_tick(const ComposePaintContext& paint,
 }
 
 static void draw_compose_grid_line(const ComposePaintContext& paint,
-                                   const WormUiComposeGridLineView& line) {
+                                   const wormedit::ui::compose_grid_line_view_t& line) {
     const auto& view = *paint.view;
     auto& field = paint_field(paint.context);
     if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
@@ -762,13 +831,13 @@ static void draw_compose_grid_line(const ComposePaintContext& paint,
 }
 
 static void draw_compose_grid_lines(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->grid_line_count; ++index) {
+    for (size_t index = 0; index < paint.view->grid_lines.size(); ++index) {
         draw_compose_grid_line(paint, paint.view->grid_lines[index]);
     }
 }
 
 static void draw_compose_lane_layout_segments(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->lane_layout_segment_count; ++index) {
+    for (size_t index = 0; index < paint.view->lane_layout_segments.size(); ++index) {
         const auto& segment = paint.view->lane_layout_segments[index];
         const auto y = paint.viewport.y + static_cast<float>(segment.y_pixels) * paint.viewport.h /
                                                static_cast<float>(paint.view->viewport_height_pixels);
@@ -789,7 +858,7 @@ static void draw_compose_measure_lane(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.measure_lane.visible) return;
     auto& field = paint_field(paint.context);
-    for (size_t index = 0; index < view.grid_line_count; ++index) {
+    for (size_t index = 0; index < view.grid_lines.size(); ++index) {
         const auto& line = view.grid_lines[index];
         const auto bounds = wormedit::ui::compose_bar_line_bounds(view, line);
         if (!bounds) continue;
@@ -980,13 +1049,14 @@ static void draw_compose_audio_bookmarks(const ComposePaintContext& paint,
 }
 
 // Generic lanes without a key color take their color from the lane role.
-static auto compose_lane_key_color(uint8_t key_color, uint8_t role) -> uint8_t {
-    if (key_color != 0) return key_color;
+static auto compose_lane_key_color(wormedit::lane_key_color_t key_color, wormedit::lane_role_t role)
+    -> wormedit::lane_key_color_t {
+    if (key_color != wormedit::lane_key_color_t::generic) return key_color;
     switch (role) {
-    case 1: return 3; // scratch
-    case 5: return 5; // free zone
-    case 6: return 4; // foot pedal
-    default: return 0;
+    case wormedit::lane_role_t::scratch: return wormedit::lane_key_color_t::scratch;
+    case wormedit::lane_role_t::free_zone: return wormedit::lane_key_color_t::free_zone;
+    case wormedit::lane_role_t::foot_pedal: return wormedit::lane_key_color_t::foot_pedal;
+    default: return wormedit::lane_key_color_t::generic;
     }
 }
 
@@ -997,22 +1067,22 @@ struct ComposeTimingLaneLayout {
 };
 
 static auto compose_timing_marker_document_rect(const WormUiComposeView& view,
-                                                const WormUiTimingMarkerView& marker)
-    -> WormUiComposeRect {
+                                                const wormedit::ui::compose_timing_marker_view_t& marker)
+    -> wormedit::ui::compose_rect_t {
     return wormedit::ui::compose_timing_marker_bounds(view, marker);
 }
 
 static auto compose_timing_marker_screen_rect(const ComposePaintContext& paint,
-                                               const WormUiTimingMarkerView& marker)
+                                               const wormedit::ui::compose_timing_marker_view_t& marker)
     -> struct nk_rect {
     const auto bounds = compose_timing_marker_document_rect(*paint.view, marker);
     return compose_screen_rect(&bounds, paint.view, paint.viewport);
 }
 
 static auto compose_hovered_timing_marker(const ComposePaintContext& paint)
-    -> const WormUiTimingMarkerView* {
-    const WormUiTimingMarkerView* hovered = nullptr;
-    for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
+    -> const wormedit::ui::compose_timing_marker_view_t* {
+    const wormedit::ui::compose_timing_marker_view_t* hovered = nullptr;
+    for (size_t index = 0; index < paint.view->timing_markers.size(); ++index) {
         const auto& marker = paint.view->timing_markers[index];
         const auto bounds = compose_timing_marker_screen_rect(paint, marker);
         if (bounds.w > 0.0f && bounds.h > 0.0f &&
@@ -1022,9 +1092,9 @@ static auto compose_hovered_timing_marker(const ComposePaintContext& paint)
 }
 
 auto compose_timing_marker_at(const WormUiComposeView& view, double x, double y)
-    -> const WormUiTimingMarkerView* {
-    const WormUiTimingMarkerView* hit = nullptr;
-    for (size_t index = 0; index < view.timing_marker_count; ++index) {
+    -> const wormedit::ui::compose_timing_marker_view_t* {
+    const wormedit::ui::compose_timing_marker_view_t* hit = nullptr;
+    for (size_t index = 0; index < view.timing_markers.size(); ++index) {
         const auto& marker = view.timing_markers[index];
         const auto bounds = compose_timing_marker_document_rect(view, marker);
         if (bounds.right > bounds.left && bounds.bottom > bounds.top &&
@@ -1043,7 +1113,7 @@ static void compose_timing_lane_layout(const ComposePaintContext& paint, Compose
         const auto extent = wormedit::ui::compose_timing_lane_extent(
             *paint.view, static_cast<wormedit::timing_lane_kind_t>(index));
         if (!extent) continue;
-        const WormUiComposeRect bounds{extent->first, 0, extent->second,
+        const wormedit::ui::compose_rect_t bounds{extent->first, 0, extent->second,
                                        paint.view->viewport_height_pixels};
         layout.lanes[index] = compose_screen_rect(&bounds, paint.view, paint.viewport);
     }
@@ -1103,7 +1173,7 @@ static void draw_compose_timing_header_tooltip(const ComposePaintContext& paint,
 }
 
 static void draw_compose_bands(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->band_count; ++index) {
+    for (size_t index = 0; index < paint.view->bands.size(); ++index) {
         const auto& band = paint.view->bands[index];
         field_rect(paint, compose_screen_rect(&band.bounds, paint.view, paint.viewport), 0,
                    band.split_stage ? compose(ComposeColor::band_split) : compose(ComposeColor::band));
@@ -1117,7 +1187,7 @@ static void draw_compose_bands(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_play_lanes(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->lane_count; ++index) {
+    for (size_t index = 0; index < paint.view->lanes.size(); ++index) {
         const auto& lane = paint.view->lanes[index];
         const auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
@@ -1133,7 +1203,7 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_play_lane_titles(const ComposePaintContext& paint) {
-    for (size_t index=0; index<paint.view->lane_count; ++index) {
+    for (size_t index=0; index<paint.view->lanes.size(); ++index) {
         const auto& lane=paint.view->lanes[index];
         const auto rect=compose_screen_rect(&lane.bounds,paint.view,paint.viewport);
         if (paint.view->lane_key_legend_visible && rect.w >= 28.0f && rect.h >= 18.0f) {
@@ -1367,7 +1437,7 @@ static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t la
     const auto found = std::find_if(lanes.begin(), lanes.end(),
         [&](const auto& lane) { return lane.source_lane_id == lane_id; });
     if (found == lanes.end()) return std::nullopt;
-    const WormUiComposeRect* bounds = &found->bounds;
+    const wormedit::ui::compose_rect_t* bounds = &found->bounds;
     const auto rect = compose_screen_rect(bounds, &view, paint.viewport);
     if (rect.w <= 1.0f || rect.h <= 0.0f) return std::nullopt;
     return rect;
@@ -1416,9 +1486,9 @@ static auto compose_stem_point_tile(const ComposePaintContext& paint, uint64_t o
     -> std::optional<std::pair<struct nk_rect, bool>> {
     const auto& view = *paint.view;
     if (playable) {
-        for (size_t index = 0; index < view.note_endpoint_count; ++index) {
+        for (size_t index = 0; index < view.note_endpoints.size(); ++index) {
             const auto& note = view.note_endpoints[index];
-            if (note.note_id != object_id || note.proposal_ghost) continue;
+            if (note.note_id.value != object_id || note.proposal_ghost) continue;
             return std::pair{compose_screen_rect(&note.bounds, &view, paint.viewport), note.selected};
         }
         return std::nullopt;
@@ -1485,7 +1555,7 @@ static void draw_compose_beat_fit_region(const ComposePaintContext& paint,
 }
 
 static void draw_compose_differences(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->difference_count; ++index) {
+    for (size_t index = 0; index < paint.view->differences.size(); ++index) {
         field_rect(paint, compose_screen_rect(&paint.view->differences[index].bounds,
                                               paint.view, paint.viewport),
                    0.0f, nk_rgba(229, 190, 58, 74), 6);
@@ -1544,9 +1614,10 @@ static void pin_compose_stem_envelopes(const ComposePaintContext& paint) {
 // The song, stem and channel waveforms skip Stop and Delay bands: that time takes no rows.
 static void draw_compose_waveforms_outside_pauses(const ComposePaintContext& paint) {
     std::vector<std::pair<float, float>> bands;
-    for (size_t index = 0; index < paint.view->dead_span_count; ++index) {
+    for (size_t index = 0; index < paint.view->dead_spans.size(); ++index) {
         const auto& span = paint.view->dead_spans[index];
-        if (span.kind > 1) continue;
+        if (span.kind != wormedit::timing_lane_kind_t::stop &&
+            span.kind != wormedit::timing_lane_kind_t::delay) continue;
         const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
         if (rect.h > 0.0f) bands.emplace_back(rect.y, rect.y + rect.h);
     }
@@ -1573,14 +1644,14 @@ static void draw_compose_waveform_layer(const ComposePaintContext& paint,
 }
 
 static void draw_compose_proposed_grid(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->proposed_grid_line_count; ++index) {
+    for (size_t index = 0; index < paint.view->proposed_grid_lines.size(); ++index) {
         const auto& line = paint.view->proposed_grid_lines[index];
         const auto y = compose_projected_y(paint, line.y_pixels);
-        const auto color = line.kind == 3                     ? nk_rgba(255, 207, 104, 230)
-                           : line.kind == 1 || line.kind == 2 ? nk_rgba(255, 207, 104, 155)
+        const auto color = line.kind == wormedit::editor_grid_line_kind_t::measure                     ? nk_rgba(255, 207, 104, 230)
+                           : line.kind == wormedit::editor_grid_line_kind_t::beat || line.kind == wormedit::editor_grid_line_kind_t::group ? nk_rgba(255, 207, 104, 155)
                                                               : nk_rgba(255, 207, 104, 75);
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       line.kind == 3 ? 1.6f : 1.0f, color, 4);
+                       line.kind == wormedit::editor_grid_line_kind_t::measure ? 1.6f : 1.0f, color, 4);
     }
 }
 
@@ -1644,7 +1715,7 @@ static void draw_compose_measure_resize_affordance(const ComposePaintContext& pa
     const auto band = 6.0f;
     const auto inside = nk_input_is_mouse_hovering_rect(&paint.context->input, paint.viewport);
     const auto mouse_y = paint.context->input.mouse.pos.y;
-    for (std::size_t index = 0; index < view.grid_line_count; ++index) {
+    for (std::size_t index = 0; index < view.grid_lines.size(); ++index) {
         const auto& line = view.grid_lines[index];
         if (line.measure_number < 2 || line.measure_number - 2 >= view.measure_row_count) continue;
         const auto y = compose_projected_y(paint, line.y_pixels);
@@ -1709,7 +1780,7 @@ static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_timing_preview_legend(const ComposePaintContext& paint) {
-    if (paint.view->timing_preview_rect_count == 0) {
+    if (paint.view->timing_preview_rects.size() == 0) {
         return;
     }
     constexpr const char* legend = "Outlines: proposed notes/holds in cyan, BGM in purple";
@@ -1726,14 +1797,14 @@ static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& pa
         state.timing_drag.timing_marker_capture.chart != paint.view->chart_id ||
         state.timing_drag.timing_marker_capture.revision != paint.view->document_revision) return;
     bool selected_fixed = false;
-    for (size_t index = 0; index < paint.view->timing_marker_count; ++index)
+    for (size_t index = 0; index < paint.view->timing_markers.size(); ++index)
         selected_fixed |= paint.view->timing_markers[index].selected &&
                           paint.view->timing_markers[index].fixed_initial;
     const auto ghost_color = selected_fixed ? nk_rgb(242, 111, 104) : nk_rgb(255, 207, 99);
     const auto delta = static_cast<float>(state.timing_marker.timing_marker_current_y_pixels -
                                            state.timing_marker.timing_marker_anchor_y_pixels) *
                        paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
-    for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
+    for (size_t index = 0; index < paint.view->timing_markers.size(); ++index) {
         const auto& marker = paint.view->timing_markers[index];
         if (!marker.selected) continue;
         auto ghost = compose_timing_marker_screen_rect(paint, marker);
@@ -1747,7 +1818,7 @@ static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& pa
 static void draw_compose_timing_markers(const ComposePaintContext& paint,
                                         const ComposeTimingLaneLayout& layout) {
     const auto* hovered = tile_renderer_override ? nullptr : compose_hovered_timing_marker(paint);
-    for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
+    for (size_t index = 0; index < paint.view->timing_markers.size(); ++index) {
         const auto& marker = paint.view->timing_markers[index];
         const auto marker_lane_ordinal = static_cast<size_t>(marker.lane);
         if (marker_lane_ordinal >= layout.lanes.size() ||
@@ -1757,19 +1828,19 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
         const auto bounds = compose_timing_marker_screen_rect(paint, marker);
         field_rect(paint, bounds, 1.0f, wormedit::ui::theme::compose_timing_color(marker_lane_ordinal).hold_body, 4);
         const auto selected = marker.selected ||
-                              (marker.fixed_initial && marker.object_id == 0 &&
+                              (marker.fixed_initial && marker.object_id.value == 0 &&
                                state.timing_marker.timing_missing_initial_selected);
         const auto outline = hovered == &marker ? compose(ComposeColor::timing_hover)
                              : selected ? compose(ComposeColor::timing_selected)
                                         : compose(ComposeColor::timing_border);
         field_stroke_rect(paint, bounds, 1.0f, hovered == &marker ? 2.0f : 1.5f,
                        outline, 4);
-        if (!marker.short_label || !marker.short_label[0]) continue;
+        if (marker.short_label.empty()) continue;
         const auto* font = paint.context->style.font;
-        const auto length = static_cast<int>(strlen(marker.short_label));
+        const auto length = static_cast<int>(marker.short_label.size());
         const auto text_bounds = nk_rect(bounds.x + 2.0f, bounds.y + (bounds.h - font->height) * 0.5f,
                                          std::max(0.0f, bounds.w - 4.0f), font->height);
-        field_text(paint, text_bounds, marker.short_label, length, font,
+        field_text(paint, text_bounds, marker.short_label.data(), length, font,
                      nk_rgba(18, 22, 31, 0), layout.colors[marker_lane_ordinal], 4);
     }
     draw_compose_timing_marker_drag_ghosts(paint);
@@ -1777,7 +1848,7 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
 
 static void draw_compose_timing_preview_markers(const ComposePaintContext& paint,
                                                 const ComposeTimingLaneLayout& layout) {
-    for (size_t index = 0; index < paint.view->timing_preview_marker_count; ++index) {
+    for (size_t index = 0; index < paint.view->timing_preview_markers.size(); ++index) {
         const auto& marker = paint.view->timing_preview_markers[index];
         const auto marker_lane_ordinal = static_cast<size_t>(marker.lane);
         if (marker_lane_ordinal >= layout.lanes.size() ||
@@ -1833,12 +1904,12 @@ static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
     double fixed_y = state.timing_drag.kiai_drag_anchor_y;
     if (state.timing_drag.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BODY) {
         // The whole area follows the pointer's travel.
-        const std::span spans(paint.view->kiai_spans, paint.view->kiai_span_count);
+        const std::span spans(paint.view->kiai_spans);
         const auto found = std::ranges::find_if(
-            spans, [](const auto& value) { return value.head_object_id == state.timing_drag.kiai_drag_head_id; });
+            spans, [](const auto& value) { return value.head_object_id.value == state.timing_drag.kiai_drag_head_id; });
         if (found == spans.end()) return;
         const auto travel = state.timing_drag.kiai_drag_current_y - state.timing_drag.kiai_drag_anchor_y;
-        const WormUiComposeRect moved{extent.first, found->bounds.top + travel, extent.second,
+        const wormedit::ui::compose_rect_t moved{extent.first, found->bounds.top + travel, extent.second,
                                       found->bounds.bottom + travel};
         const auto rect = compose_screen_rect(&moved, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) return;
@@ -1847,16 +1918,16 @@ static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
         return;
     }
     if (state.timing_drag.kiai_drag_edge != WORM_UI_SPAN_HANDLE_CREATE) {
-        const std::span spans(paint.view->kiai_spans, paint.view->kiai_span_count);
+        const std::span spans(paint.view->kiai_spans);
         const auto found = std::ranges::find_if(
-            spans, [](const auto& value) { return value.head_object_id == state.timing_drag.kiai_drag_head_id; });
+            spans, [](const auto& value) { return value.head_object_id.value == state.timing_drag.kiai_drag_head_id; });
         if (found == spans.end()) return;
         const auto* span = &*found;
         const bool head_is_top = !paint.view->downscroll;
         const bool fixed_is_top = state.timing_drag.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BEGIN ? !head_is_top : head_is_top;
         fixed_y = fixed_is_top ? span->bounds.top : span->bounds.bottom;
     }
-    const WormUiComposeRect bounds{extent.first, std::min(fixed_y, state.timing_drag.kiai_drag_current_y),
+    const wormedit::ui::compose_rect_t bounds{extent.first, std::min(fixed_y, state.timing_drag.kiai_drag_current_y),
                                    extent.second, std::max(fixed_y, state.timing_drag.kiai_drag_current_y)};
     const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
@@ -1868,9 +1939,9 @@ static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::kiai);
     if (!extent) return;
     draw_compose_kiai_drag_preview(paint, *extent);
-    for (size_t index = 0; index < paint.view->kiai_span_count; ++index) {
+    for (size_t index = 0; index < paint.view->kiai_spans.size(); ++index) {
         const auto& span = paint.view->kiai_spans[index];
-        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        const wormedit::ui::compose_rect_t bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
         const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
         field_rect(paint, rect, 0.0f, nk_rgba(250, 204, 92, span.selected ? 96 : 60), 10);
@@ -1891,9 +1962,9 @@ static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
 // While a recipe edge or body is dragged, the span it would become follows the pointer.
 static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
     if (!state.timing_drag.recipe_drag_active || !state.timing_drag.recipe_drag_moved) return;
-    const std::span areas(paint.view->recipe_areas, paint.view->recipe_area_count);
+    const std::span areas(paint.view->recipe_areas);
     const auto found = std::ranges::find_if(
-        areas, [](const auto& area) { return area.recipe_id == state.timing_drag.recipe_drag_id; });
+        areas, [](const auto& area) { return area.recipe_id.value == state.timing_drag.recipe_drag_id; });
     if (found == areas.end()) return;
     const auto extent = compose_timing_lane_inner_extent(
         *paint.view, static_cast<wormedit::timing_lane_kind_t>(found->lane));
@@ -1910,7 +1981,7 @@ static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
         top = std::min(fixed, state.timing_drag.recipe_drag_current_y);
         bottom = std::max(fixed, state.timing_drag.recipe_drag_current_y);
     }
-    const WormUiComposeRect bounds{extent->first, top, extent->second, bottom};
+    const wormedit::ui::compose_rect_t bounds{extent->first, top, extent->second, bottom};
     const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
     field_rect(paint, rect, 0.0f, nk_rgba(214, 226, 255, 60), 10);
@@ -1919,7 +1990,7 @@ static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
 
 // The line of one recipe's relative value inside its area rectangle.
 static void draw_compose_recipe_graph(const ComposePaintContext& paint,
-                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+                                      const wormedit::ui::compose_recipe_area_view_t& area, struct nk_rect rect) {
     const auto x_of = [&](double fraction) {
         return rect.x + 2.0f + static_cast<float>(fraction) * std::max(0.0f, rect.w - 4.0f);
     };
@@ -1935,7 +2006,7 @@ static void draw_compose_recipe_graph(const ComposePaintContext& paint,
 
 // Area fill, outline and the grabbable begin and end edges of one recipe.
 static void draw_compose_recipe_frame(const ComposePaintContext& paint,
-                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+                                      const wormedit::ui::compose_recipe_area_view_t& area, struct nk_rect rect) {
     const auto base = area.enabled ? nk_rgb(150, 170, 255) : nk_rgb(120, 126, 142);
     field_rect(paint, rect, 0.0f, nk_rgba(base.r, base.g, base.b, area.selected ? 70 : 38), 10);
     field_stroke_rect(paint, rect, 0.0f, area.selected ? 2.0f : 1.0f,
@@ -1953,12 +2024,12 @@ static void draw_compose_recipe_frame(const ComposePaintContext& paint,
 
 static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
     draw_compose_recipe_drag_preview(paint);
-    for (size_t index = 0; index < paint.view->recipe_area_count; ++index) {
+    for (size_t index = 0; index < paint.view->recipe_areas.size(); ++index) {
         const auto& area = paint.view->recipe_areas[index];
         const auto extent = compose_timing_lane_inner_extent(
             *paint.view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
         if (!extent) continue;
-        const WormUiComposeRect bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
+        const wormedit::ui::compose_rect_t bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
         const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
         draw_compose_recipe_frame(paint, area, rect);
@@ -1972,14 +2043,14 @@ static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
 static void draw_compose_speed_drag_preview(const ComposePaintContext& paint,
                                             const std::pair<double, double>& extent) {
     if (!state.timing_drag.kiai_drag_active || !state.timing_drag.kiai_drag_moved || !state.timing_drag.kiai_drag_speed) return;
-    const std::span spans(paint.view->speed_spans, paint.view->speed_span_count);
+    const std::span spans(paint.view->speed_spans);
     const auto found = std::ranges::find_if(
-        spans, [](const auto& value) { return value.object_id == state.timing_drag.kiai_drag_head_id; });
+        spans, [](const auto& value) { return value.object_id.value == state.timing_drag.kiai_drag_head_id; });
     if (found == spans.end()) return;
     if (state.timing_drag.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BODY) {
         // The whole span follows the pointer's travel.
         const auto travel = state.timing_drag.kiai_drag_current_y - state.timing_drag.kiai_drag_anchor_y;
-        const WormUiComposeRect moved{extent.first, found->bounds.top + travel, extent.second,
+        const wormedit::ui::compose_rect_t moved{extent.first, found->bounds.top + travel, extent.second,
                                       found->bounds.bottom + travel};
         const auto rect = compose_screen_rect(&moved, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) return;
@@ -1991,7 +2062,7 @@ static void draw_compose_speed_drag_preview(const ComposePaintContext& paint,
     const bool head_is_top = !paint.view->downscroll;
     const bool fixed_is_top = state.timing_drag.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BEGIN ? !head_is_top : head_is_top;
     const auto fixed_y = fixed_is_top ? found->bounds.top : found->bounds.bottom;
-    const WormUiComposeRect bounds{extent.first, std::min(fixed_y, state.timing_drag.kiai_drag_current_y),
+    const wormedit::ui::compose_rect_t bounds{extent.first, std::min(fixed_y, state.timing_drag.kiai_drag_current_y),
                                    extent.second, std::max(fixed_y, state.timing_drag.kiai_drag_current_y)};
     const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
@@ -2003,9 +2074,9 @@ static void draw_compose_speed_spans(const ComposePaintContext& paint) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::speed);
     if (!extent) return;
     draw_compose_speed_drag_preview(paint, *extent);
-    for (size_t index = 0; index < paint.view->speed_span_count; ++index) {
+    for (size_t index = 0; index < paint.view->speed_spans.size(); ++index) {
         const auto& span = paint.view->speed_spans[index];
-        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        const wormedit::ui::compose_rect_t bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
         auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f) continue;
         if (rect.h < 3.0f) rect.h = 3.0f;
@@ -2020,12 +2091,12 @@ static void draw_compose_speed_spans(const ComposePaintContext& paint) {
 
 // A value curve inside one timing lane: a faint 1.0x reference line, then the polyline.
 static void draw_compose_value_graph(const ComposePaintContext& paint, wormedit::timing_lane_kind_t lane,
-                                     const WormUiComposeSvGraphPointView* points, size_t count,
+                                     const wormedit::ui::compose_sv_graph_point_view_t* points, size_t count,
                                      double one_fraction, struct nk_color color) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, lane);
     if (!extent || count < 2) return;
     const auto x_of = [&](double fraction) {
-        const WormUiComposeRect probe{extent->first + (extent->second - extent->first) * fraction, 0.0,
+        const wormedit::ui::compose_rect_t probe{extent->first + (extent->second - extent->first) * fraction, 0.0,
                                       extent->first + (extent->second - extent->first) * fraction, 1.0};
         return compose_screen_rect(&probe, paint.view, paint.viewport).x;
     };
@@ -2043,14 +2114,14 @@ static void draw_compose_value_graph(const ComposePaintContext& paint, wormedit:
 }
 
 static void draw_compose_sv_graph(const ComposePaintContext& paint) {
-    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::scroll, paint.view->sv_graph_points,
-                             paint.view->sv_graph_point_count, paint.view->sv_graph_one_fraction,
+    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::scroll, paint.view->sv_graph_points.data(),
+                             paint.view->sv_graph_points.size(), paint.view->sv_graph_one_fraction,
                              nk_rgb(110, 222, 236));
 }
 
 static void draw_compose_speed_graph(const ComposePaintContext& paint) {
-    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::speed, paint.view->speed_graph_points,
-                             paint.view->speed_graph_point_count,
+    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::speed, paint.view->speed_graph_points.data(),
+                             paint.view->speed_graph_points.size(),
                              paint.view->speed_graph_one_fraction, nk_rgb(137, 207, 239));
 }
 
@@ -2070,7 +2141,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_unbound_lane_keys_hint(paint);
     const bool active_marker=state.timing_marker.timing_marker_drag_active || state.timing_marker.timing_missing_initial_selected ||
         compose_hovered_timing_marker(paint)!=nullptr ||
-        std::ranges::any_of(std::span(paint.view->timing_markers,paint.view->timing_marker_count),
+        std::ranges::any_of(std::span(paint.view->timing_markers),
                            [](const auto& marker) { return marker.selected; });
     draw_compose_cached_pass(paint,6,true,active_marker,[&](const ComposePaintContext& cached) { draw_compose_timing_markers(cached,layout); });
     draw_compose_timing_preview_markers(paint, layout);
@@ -2093,16 +2164,16 @@ static auto compose_move_conflict_color(bool ghost = false) -> nk_color {
 }
 
 static void draw_compose_hold_ghost(const ComposePaintContext& paint,
-                                    const WormUiComposeHoldView& hold, const struct nk_rect& rect) {
+                                    const wormedit::ui::compose_hold_view_t& hold, const struct nk_rect& rect) {
     const auto fill =
-        hold.move_conflict ? compose_move_conflict_color(true) : nk_rgba(240, 171, 71, 74);
-    const auto border = hold.move_conflict ? fill : nk_rgb(255, 224, 156);
+        (hold.move_conflict != wormedit::note_move_conflict_t::none) ? compose_move_conflict_color(true) : nk_rgba(240, 171, 71, 74);
+    const auto border = (hold.move_conflict != wormedit::note_move_conflict_t::none) ? fill : nk_rgb(255, 224, 156);
     field_rect(paint, rect, 0.0f, fill, 2);
     field_stroke_rect(paint, rect, 0.0f, 1.4f, border, 2);
 }
 
 static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->hold_body_count; ++index) {
+    for (size_t index = 0; index < paint.view->hold_bodies.size(); ++index) {
         const auto& hold = paint.view->hold_bodies[index];
         const auto rect = compose_screen_rect(&hold.bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
@@ -2120,7 +2191,7 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
         if (hold.selected) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, compose_selection_outline_color(), 2);
         }
-        if (paint.view->hover_note_visible && hold.note_id == paint.view->hover_note_id) {
+        if (paint.view->hover_note_visible && hold.note_id.value == paint.view->hover_note_id) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, compose(ComposeColor::hold_hover), 2);
         }
         if (hold.move_conflict_occupant)
@@ -2137,16 +2208,16 @@ struct ComposeNoteStyle {
 // Selection keeps the active view fill and adds a green outline (iBMSC style), unless a
 // ghost, hover, or paint preview already owns the border.
 static bool compose_note_shows_selection_outline(const WormUiComposeView& view,
-                                                 const WormUiComposeNoteView& note) {
-    const bool hovered = view.hover_note_visible && note.note_id == view.hover_note_id;
+                                                 const wormedit::ui::compose_note_view_t& note) {
+    const bool hovered = view.hover_note_visible && note.note_id.value == view.hover_note_id;
     const bool preview = note.proposal_ghost || note.paint_invalid_preview ||
                          note.paint_erase_preview || note.paint_preview;
     return note.selected && !hovered && !preview;
 }
 
-static auto compose_move_note_style(const WormUiComposeNoteView& note, ComposeNoteStyle style)
+static auto compose_move_note_style(const wormedit::ui::compose_note_view_t& note, ComposeNoteStyle style)
     -> ComposeNoteStyle {
-    if (note.proposal_ghost && note.move_conflict)
+    if (note.proposal_ghost && (note.move_conflict != wormedit::note_move_conflict_t::none))
         return {compose_move_conflict_color(true), compose_move_conflict_color(true), 2.0f};
     if (note.move_conflict_occupant) {
         style.border = compose_move_conflict_color();
@@ -2156,7 +2227,7 @@ static auto compose_move_note_style(const WormUiComposeNoteView& note, ComposeNo
 }
 
 static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
-                                           const WormUiComposeNoteView& note) {
+                                           const wormedit::ui::compose_note_view_t& note) {
     auto fill = note.proposal_origin
                     ? nk_rgb(73, 101, 120)
                     : compose_note_base_fill(
@@ -2167,7 +2238,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
         fill = nk_rgba(240, 171, 71, 132);
         border = nk_rgb(255, 224, 156);
         border_width = 2.0f;
-    } else if (view.hover_note_visible && note.note_id == view.hover_note_id) {
+    } else if (view.hover_note_visible && note.note_id.value == view.hover_note_id) {
         fill = compose(ComposeColor::hover_fill);
         border = compose(ComposeColor::hover_border);
         border_width = 2.0f;
@@ -2183,9 +2254,9 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
         fill = nk_rgba(81, 218, 145, 210);
         border = nk_rgb(185, 255, 216);
         border_width = 2.0f;
-    } else if (note.kind == 4) {
+    } else if (note.kind == wormedit::note_kind_t::mine) {
         fill = nk_rgb(214, 91, 104);
-    } else if (note.kind == 5) {
+    } else if (note.kind == wormedit::note_kind_t::lift) {
         fill = nk_rgb(236, 194, 112);
     } else if (note.tail) {
         fill = wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).long_note.value_or(compose(ComposeColor::tail));
@@ -2198,7 +2269,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
 }
 
 static void draw_compose_arrow_outline(const ComposePaintContext& paint,
-                                        const WormUiComposeNoteView& note,
+                                        const wormedit::ui::compose_note_view_t& note,
                                         const std::array<SDL_FPoint, 7>& points) {
     if (compose_arrow_layer_outline_visible(
             worm_ui_nuklear_compose_state().input_queue.color_view, *paint.view, note)) {
@@ -2209,19 +2280,19 @@ static void draw_compose_arrow_outline(const ComposePaintContext& paint,
     const auto style = compose_note_style(*paint.view, note);
     if (note.selected || note.proposal_ghost || note.paint_preview || note.paint_erase_preview ||
         note.paint_invalid_preview ||
-        (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id) ||
+        (paint.view->hover_note_visible && note.note_id.value == paint.view->hover_note_id) ||
         note.move_conflict_occupant) {
-        auto border = note.selected && !note.move_conflict && !note.move_conflict_occupant
+        auto border = note.selected && note.move_conflict == wormedit::note_move_conflict_t::none && !note.move_conflict_occupant
                           ? compose(ComposeColor::arrow_selection)
                           : style.border;
-        if (note.proposal_ghost && !note.move_conflict)
+        if (note.proposal_ghost && note.move_conflict == wormedit::note_move_conflict_t::none)
             border.a = 170;
         paint_field(paint.context).stroke_polygon(2, points, 2.0f, field_color(border), 1);
     }
 }
 
 static bool draw_compose_note_glyph(const ComposePaintContext& paint,
-                                    const WormUiComposeNoteView& note, struct nk_rect tile) {
+                                    const wormedit::ui::compose_note_view_t& note, struct nk_rect tile) {
     if (!wormedit::ui::is_arrow_glyph(note.glyph) || tile.w < 10.0f) return false;
     // Artwork alone becomes square; retained scene bounds still govern hit testing.
     const auto authored = wormedit::ui::arrow_polygon(
@@ -2232,7 +2303,7 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
     // Preserve the existing snap-colored arrow artwork for transient previews.
     const auto transient = compose_note_is_transient(*paint.view, note);
     const auto color =
-        note.proposal_ghost && note.move_conflict
+        note.proposal_ghost && (note.move_conflict != wormedit::note_move_conflict_t::none)
             ? compose_move_conflict_color(true)
             : compose_note_base_fill(transient ? worm_ui_nuklear_compose_color_view_t::snap
                                                : worm_ui_nuklear_compose_state().input_queue.color_view,
@@ -2240,7 +2311,7 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
     auto& field = paint_field(paint.context);
     // Proposal ghosts stay translucent so they do not read as materialized notes.
     const auto alpha =
-        static_cast<std::uint8_t>(note.proposal_ghost ? (note.move_conflict ? 153 : 120) : 255);
+        static_cast<std::uint8_t>(note.proposal_ghost ? ((note.move_conflict != wormedit::note_move_conflict_t::none) ? 153 : 120) : 255);
     field.polygon(
         2, points,
         field_color(nk_rgba(color.r, color.g, color.b, note.proposal_ghost ? alpha : color.a)), 1);
@@ -2308,7 +2379,7 @@ auto sample_set_icon(wormedit::osu_sample_set_t set) -> wormedit::ui::hitsound_i
     return normal;
 }
 
-void draw_compose_note_hitsound(const ComposePaintContext& paint, const WormUiComposeNoteView& note,
+void draw_compose_note_hitsound(const ComposePaintContext& paint, const wormedit::ui::compose_note_view_t& note,
                                 struct nk_rect tile, struct nk_color fill) {
     using wormedit::ui::hitsound_icons::shape_t;
     if (note.tail || !note.hitsound) return;
@@ -2334,13 +2405,13 @@ void draw_compose_note_hitsound(const ComposePaintContext& paint, const WormUiCo
 } // namespace
 
 static void draw_compose_note_sound_label(const ComposePaintContext& paint,
-                                          const WormUiComposeNoteView& note,
+                                          const wormedit::ui::compose_note_view_t& note,
                                           struct nk_rect tile, struct nk_color fill) {
     if (note.hitsound) {
         draw_compose_note_hitsound(paint, note, tile, fill);
         return;
     }
-    if (note.glyph > 1 || note.tail || !note.sound_label || !note.sound_label[0]) return;
+    if ((note.glyph != wormedit::lane_glyph_t::bar && note.glyph != wormedit::lane_glyph_t::square) || note.tail || note.sound_label.empty()) return;
     const auto* font = paint.context->style.font;
     if (tile.h < font->height) {
         draw_compose_note_sound_dot(paint, tile, fill);
@@ -2366,7 +2437,7 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
     const auto light_fill = note_label_is_light(fill);
     field_text(paint, text_bounds, text.c_str(), static_cast<int>(text.size()), font,
                  light_fill ? nk_rgba(0, 0, 0, 0) : nk_rgba(13, 21, 31, 220),
-                 (note.kind == 1 || note.kind == 2
+                 (note.kind == wormedit::note_kind_t::hold || note.kind == wormedit::note_kind_t::roll
                      ? wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).long_label
                      : wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).label).value_or(
                      light_fill ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255)), 2);
@@ -2374,7 +2445,7 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
 
 // Semantic layer color as a 3 px stripe inside the left edge; the Layer view already fills with it.
 static void draw_compose_note_layer_stripe(const ComposePaintContext& paint,
-                                           const WormUiComposeNoteView& note, struct nk_rect tile) {
+                                           const wormedit::ui::compose_note_view_t& note, struct nk_rect tile) {
     if (!note.semantic_color_visible || tile.w < 6.0f ||
         worm_ui_nuklear_compose_state().input_queue.color_view == worm_ui_nuklear_compose_color_view_t::layer ||
         compose_note_is_transient(*paint.view, note)) return;
@@ -2385,7 +2456,7 @@ static void draw_compose_note_layer_stripe(const ComposePaintContext& paint,
 
 // Selected tiles keep their fill and get a 2 px green ring just outside the tile.
 static void draw_compose_note_border(const ComposePaintContext& paint,
-                                     const WormUiComposeNoteView& note,
+                                     const wormedit::ui::compose_note_view_t& note,
                                      const ComposeNoteStyle& style, struct nk_rect tile) {
     if (compose_note_shows_selection_outline(*paint.view, note)) {
         field_stroke_rect(paint, tile, 0.0f, 1.0f, compose(ComposeColor::note_border), 2);
@@ -2394,12 +2465,12 @@ static void draw_compose_note_border(const ComposePaintContext& paint,
         return;
     }
     auto border = style.border;
-    if (note.proposal_ghost && !note.move_conflict) border.a = 170;
+    if (note.proposal_ghost && note.move_conflict == wormedit::note_move_conflict_t::none) border.a = 170;
     field_stroke_rect(paint, tile, 0.0f, style.border_width, border, 2);
 }
 
 static void draw_compose_note(const ComposePaintContext& paint,
-                              const WormUiComposeNoteView& note) {
+                              const wormedit::ui::compose_note_view_t& note) {
     const auto style = compose_note_style(*paint.view, note);
     const auto rect = compose_screen_rect(&note.bounds, paint.view, paint.viewport);
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
@@ -2443,7 +2514,7 @@ static void draw_compose_paint_ghost(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_notes(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->note_endpoint_count; ++index) {
+    for (size_t index = 0; index < paint.view->note_endpoints.size(); ++index) {
         draw_compose_note(paint, paint.view->note_endpoints[index]);
     }
 }
@@ -2451,7 +2522,7 @@ static void draw_compose_notes(const ComposePaintContext& paint) {
 // Timing focus mutes each note without touching what lies behind it, so the
 // waveform stays fully opaque.
 static void draw_compose_notes_veil(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->note_endpoint_count; ++index) {
+    for (size_t index = 0; index < paint.view->note_endpoints.size(); ++index) {
         const auto rect = compose_screen_rect(&paint.view->note_endpoints[index].bounds,
                                               paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
@@ -2460,15 +2531,15 @@ static void draw_compose_notes_veil(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_timing_preview_rects(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->timing_preview_rect_count; ++index) {
+    for (size_t index = 0; index < paint.view->timing_preview_rects.size(); ++index) {
         const auto& preview = paint.view->timing_preview_rects[index];
         const auto rect = compose_screen_rect(&preview.bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
-        const auto color = preview.kind == 1 ? nk_rgba(220, 164, 244, 200)
+        const auto color = preview.kind == wormedit::ui::compose_timing_preview_kind_t::bgm_event ? nk_rgba(220, 164, 244, 200)
                                              : nk_rgba(110, 222, 236, 195);
-        const auto fill = preview.kind == 1 ? nk_rgba(220, 164, 244, 38)
+        const auto fill = preview.kind == wormedit::ui::compose_timing_preview_kind_t::bgm_event ? nk_rgba(220, 164, 244, 38)
                                             : nk_rgba(110, 222, 236, 34);
         field_rect(paint, rect, 0.0f, fill, 5);
         field_stroke_rect(paint, rect, 0.0f, 1.5f, color, 5);
@@ -2506,10 +2577,10 @@ static void draw_compose_cursor(const ComposePaintContext& paint) {
                    nk_rgb(255, 243, 174), 5);
 }
 
-static nk_color compose_dead_span_color(std::uint8_t kind, std::uint8_t alpha) {
+static nk_color compose_dead_span_color(wormedit::timing_lane_kind_t kind, std::uint8_t alpha) {
     switch (kind) {
-    case 0: return nk_rgba(226, 110, 84, alpha);  // stop
-    case 1: return nk_rgba(232, 184, 82, alpha);  // delay
+    case wormedit::timing_lane_kind_t::stop: return nk_rgba(226, 110, 84, alpha);  // stop
+    case wormedit::timing_lane_kind_t::delay: return nk_rgba(232, 184, 82, alpha);  // delay
     default: return nk_rgba(168, 128, 232, alpha); // warp
     }
 }
@@ -2531,7 +2602,7 @@ static void draw_compose_dead_span_hatch(const ComposePaintContext& paint, struc
 }
 
 static void draw_compose_dead_spans(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->dead_span_count; ++index) {
+    for (size_t index = 0; index < paint.view->dead_spans.size(); ++index) {
         const auto& span = paint.view->dead_spans[index];
         const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
@@ -2543,7 +2614,7 @@ static void draw_compose_dead_spans(const ComposePaintContext& paint) {
                    compose_dead_span_color(span.kind, 200), 10);
         if (rect.h >= 12.0f && rect.w >= 60.0f) {
             const auto text = nk_rect(rect.x + rect.w - 120.0f, rect.y, 116.0f, std::min(rect.h, 16.0f));
-            field_text(paint, text, span.label, static_cast<int>(strlen(span.label)),
+            field_text(paint, text, span.label.data(), static_cast<int>(span.label.size()),
                        paint.context->style.font, compose(ComposeColor::timing_title_bg),
                        compose_dead_span_color(span.kind, 255), 10);
         }
@@ -2857,7 +2928,7 @@ static const char* compose_bga_lane_label(std::uint8_t kind) {
 }
 
 static void draw_compose_bga_lane(const ComposePaintContext& paint,
-                                 const WormUiComposeRect& rect, std::uint8_t kind) {
+                                 const wormedit::ui::compose_rect_t& rect, std::uint8_t kind) {
     const auto bounds = compose_screen_rect(&rect, paint.view, paint.viewport);
     if (bounds.w <= 0.0f || bounds.h <= 0.0f) return;
     field_rect(paint, bounds, 0.0f, nk_rgba(25, 30, 39, 225), 1);
@@ -2939,7 +3010,7 @@ static void draw_compose_area_band(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_selection_preview(const ComposePaintContext& paint,
-                                           const WormUiComposeRect& bounds,
+                                           const wormedit::ui::compose_rect_t& bounds,
                                            WormUiComposeSelectionMode mode) {
     const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
@@ -3020,15 +3091,15 @@ static auto compose_pointer_tooltip_bounds(const ComposePaintContext& paint,
 }
 
 static auto compose_hover_display_lane_number(const WormUiComposeView& view) -> uint32_t {
-    for (size_t index = 0; index < view.note_endpoint_count; ++index) {
+    for (size_t index = 0; index < view.note_endpoints.size(); ++index) {
         const auto& note = view.note_endpoints[index];
-        if (note.note_id == view.hover_note_id && note.display_lane_number != 0) {
+        if (note.note_id.value == view.hover_note_id && note.display_lane_number != 0) {
             return note.display_lane_number;
         }
     }
-    for (size_t index = 0; index < view.hold_body_count; ++index) {
+    for (size_t index = 0; index < view.hold_bodies.size(); ++index) {
         const auto& hold = view.hold_bodies[index];
-        if (hold.note_id == view.hover_note_id && hold.display_lane_number != 0) {
+        if (hold.note_id.value == view.hover_note_id && hold.display_lane_number != 0) {
             return hold.display_lane_number;
         }
     }
@@ -3050,13 +3121,13 @@ static auto compose_note_tooltip_title(const WormUiComposeView& view) -> std::st
 
 static auto compose_note_tooltip_lines(const WormUiComposeView& view) -> std::vector<std::string> {
     std::vector<std::string> lines{compose_note_tooltip_title(view)};
-    for (size_t index = 0; index < view.note_endpoint_count; ++index) {
+    for (size_t index = 0; index < view.note_endpoints.size(); ++index) {
         const auto& note = view.note_endpoints[index];
-        if (note.note_id != view.hover_note_id) continue;
-        if (note.sound_detail && note.sound_detail[0]) {
+        if (note.note_id.value != view.hover_note_id) continue;
+        if (!note.sound_detail.empty()) {
             auto resource_text = std::string{note.sound_detail};
-            if (note.sound_label && note.sound_label[0] && resource_text != note.sound_label)
-                resource_text += std::string{"  (ID "} + note.sound_label + ")";
+            if (!note.sound_label.empty() && resource_text != note.sound_label)
+                resource_text += std::string{"  (ID "} + std::string{note.sound_label} + ")";
             lines.push_back(std::move(resource_text));
         }
         if (note.hitsound) {
@@ -3091,10 +3162,10 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
 
 static void draw_compose_timing_tooltip(const ComposePaintContext& paint) {
     const auto* marker = compose_hovered_timing_marker(paint);
-    if (!marker || !marker->detail || !marker->detail[0]) return;
+    if (!marker || marker->detail.empty()) return;
     const auto* font = paint.context->style.font;
-    const auto length = static_cast<int>(strlen(marker->detail));
-    const auto text_width = font->width(font->userdata, font->height, marker->detail, length);
+    const auto length = static_cast<int>(marker->detail.size());
+    const auto text_width = font->width(font->userdata, font->height, marker->detail.data(), length);
     const auto width = std::max(1.0f, std::min(paint.viewport.w - 16.0f,
                                               text_width + 16.0f));
     const auto mouse = paint.context->input.mouse.pos;
@@ -3107,7 +3178,7 @@ static void draw_compose_timing_tooltip(const ComposePaintContext& paint) {
     const auto bounds = nk_rect(x, y, width, 24.0f);
     field_rect(paint, bounds, 3.0f, nk_rgba(12, 16, 24, 245), 5);
     field_stroke_rect(paint, bounds, 3.0f, 1.0f, compose(ComposeColor::timing_hover), 5);
-    field_text(paint, bounds, marker->detail, length, font,
+    field_text(paint, bounds, marker->detail.data(), length, font,
                  nk_rgb(12, 16, 24), nk_rgb(255, 244, 192), 5);
 }
 
@@ -3137,9 +3208,9 @@ static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
 }
 
 static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
-                                     const WormUiComposePasteGhostView& ghost,
+                                     const wormedit::ui::compose_paste_ghost_view_t& ghost,
                                      struct nk_rect tile, nk_color color) {
-    if (ghost.kind != 0 || !wormedit::ui::is_arrow_glyph(ghost.glyph) || tile.w < 10.0f) return false;
+    if (ghost.kind != wormedit::ui::compose_paste_ghost_kind_t::note_endpoint || !wormedit::ui::is_arrow_glyph(ghost.glyph) || tile.w < 10.0f) return false;
     const auto authored = wormedit::ui::arrow_polygon(
         ghost.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
     std::array<SDL_FPoint, 7> points{};
@@ -3155,9 +3226,9 @@ static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
 // A pasted timing object fills its lane slot; a warp keeps its full span, other objects use the
 // usual marker height.
 static auto compose_timing_ghost_rect(const ComposePaintContext& paint,
-                                      const WormUiComposePasteGhostView& ghost) -> struct nk_rect {
-    WormUiTimingMarkerView marker{};
-    marker.lane = static_cast<wormedit::timing_lane_kind_t>(ghost.glyph);
+                                      const wormedit::ui::compose_paste_ghost_view_t& ghost) -> struct nk_rect {
+    wormedit::ui::compose_timing_marker_view_t marker{};
+    marker.lane = ghost.timing_lane;
     marker.marker_y_pixels = (ghost.bounds.top + ghost.bounds.bottom) * 0.5;
     marker.marker_left_fraction = 0.0;
     marker.marker_right_fraction = 1.0;
@@ -3173,9 +3244,9 @@ static void draw_compose_paste_ghosts(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     const auto color = view.paste_valid ? nk_rgba(240, 171, 71, 130)
                                        : nk_rgba(242, 70, 83, 155);
-    for (size_t index = 0; index < view.paste_ghost_count; ++index) {
+    for (size_t index = 0; index < view.paste_ghosts.size(); ++index) {
         const auto& ghost = view.paste_ghosts[index];
-        const auto rect = ghost.kind == 3 ? compose_timing_ghost_rect(paint, ghost)
+        const auto rect = ghost.kind == wormedit::ui::compose_paste_ghost_kind_t::timing_object ? compose_timing_ghost_rect(paint, ghost)
                                           : compose_screen_rect(&ghost.bounds, &view, paint.viewport);
         if (draw_compose_paste_arrow(paint, ghost, rect, color)) continue;
         field_rect(paint, rect, 0.0f, color, 5);
@@ -3261,20 +3332,21 @@ static auto compose_notes_require_direct(const WormUiComposeView& view) -> bool 
     // A published reusable source cannot contain transient note proposals;
     // the core window policy rejects those previews before source publication.
     if (view.static_scene) return false;
-    return std::ranges::any_of(std::span(view.note_endpoints,view.note_endpoint_count),
+    return std::ranges::any_of(std::span(view.note_endpoints),
         [](const auto& note) { return note.selected || note.proposal_ghost || note.proposal_origin; }) ||
-        std::ranges::any_of(std::span(view.hold_bodies,view.hold_body_count),
+        std::ranges::any_of(std::span(view.hold_bodies),
         [](const auto& hold) { return hold.selected || hold.proposal_ghost || hold.proposal_origin; });
 }
 
 static void bind_compose_field_layout(const WormUiComposeView& view) {
     if (!wormedit::ui::theme::field_uses_positions()) return;
-    const auto* lanes = view.lanes;
-    const auto count = view.lane_count;
+    const auto& lanes = view.lanes;
+    const auto count = view.lanes.size();
     std::vector<wormedit::ui::theme::field_lane_t> field_lanes;
     field_lanes.reserve(count);
-    for (const auto& lane : std::span(lanes, count))
-        field_lanes.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
+    for (const auto& lane : std::span(lanes))
+        field_lanes.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+            static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.lane_id.value});
     wormedit::ui::theme::bind_field_layout(field_lanes);
 }
 
@@ -3283,12 +3355,12 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
     last_compose_viewport_for_testing = wormedit::ui::testing_rect_view_t{
         viewport.x, viewport.y, viewport.w, viewport.h};
     quantize_overlay_viewport = last_compose_viewport_for_testing;
-    static_paint_indices.refresh(*view);
     bind_compose_field_layout(*view);
     wormedit::ui::nuklear::begin_compose_field(context,
                                               {viewport.x, viewport.y, viewport.w, viewport.h});
+    paint_indices(context).refresh(*view);
     paint_field(context).account_tile_source(view->static_scene_accounted_bytes+
-        static_paint_indices.bytes+8*1024*1024);
+        canvas_cache_bytes(context));
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
     const ComposePaintContext background{context, view, canvas, viewport, viewport};

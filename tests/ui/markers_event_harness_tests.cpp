@@ -114,8 +114,8 @@ TEST_CASE("clicking a bookmark row navigates to it with the document stamps",
         const auto& action = frame.get();
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) continue;
         navigated = true;
-        CHECK(action.compose_bookmark_id == 22);
-        CHECK(action.compose_input_chart_id == 7);
+        CHECK(action.compose_bookmark_id.value == 22);
+        CHECK(action.compose_input_chart_id.value == 7);
         CHECK(action.compose_input_document_revision == 12);
     }
     CHECK(navigated);
@@ -188,8 +188,8 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     enter.key.scancode = SDL_SCANCODE_RETURN;
     const auto committed = fixture.harness.frame(std::array{enter}).get();
     CHECK(committed.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL);
-    CHECK(committed.compose_section_id == 31);
+    CHECK(committed.compose_section_id.value == 31);
     CHECK(std::string{committed.compose_marker_label} == "intro");
-    CHECK(committed.compose_input_chart_id == 7);
+    CHECK(committed.compose_input_chart_id.value == 7);
     CHECK(committed.compose_input_document_revision == 12);
 }

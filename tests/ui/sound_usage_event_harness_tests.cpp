@@ -124,8 +124,8 @@ TEST_CASE("Sounds rows preserve distinct resource selection for shared assets",
     (void)harness.frame();
     const auto alias = click_action(click_text(harness, "Alias  ·  Keysound"),
                                     WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE);
-    check_sound_usage_ui(alias.audio_resource_id == 102);
-    check_sound_usage_ui(alias.audio_asset_id == 0);
+    check_sound_usage_ui(alias.audio_resource_id.value == 102);
+    check_sound_usage_ui(alias.audio_asset_id.value == 0);
 }
 
 TEST_CASE("Find uses activates positioned references and source rows without inventing a position",
@@ -164,14 +164,14 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
     const auto note_action = click_action(click_text(harness, "Measure 3 · row 12"),
                                           WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(note_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(note_action.sound_usage_song_id == harness.view().project_id.value);
+    check_sound_usage_ui(note_action.sound_usage_song_id.value == harness.view().project_id.value);
     check_sound_usage_ui(note_action.sound_usage_document_revision ==
                          harness.view().document_revision);
-    check_sound_usage_ui(note_action.sound_usage_resource_id == 101);
-    check_sound_usage_ui(note_action.sound_usage_chart_id == 7);
-    check_sound_usage_ui(note_action.sound_usage_measure_id == 8);
+    check_sound_usage_ui(note_action.sound_usage_resource_id.value == 101);
+    check_sound_usage_ui(note_action.sound_usage_chart_id.value == 7);
+    check_sound_usage_ui(note_action.sound_usage_measure_id.value == 8);
     check_sound_usage_ui(note_action.sound_usage_row == 12);
-    check_sound_usage_ui(note_action.sound_usage_object_id == 99);
+    check_sound_usage_ui(note_action.sound_usage_object_id.value == 99);
     check_sound_usage_ui(note_action.sound_usage_position_valid);
 
     (void)harness.frame();
@@ -179,11 +179,11 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
     const auto source_action = click_action(click_text(harness, "Source clip"),
                                             WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(source_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(source_action.sound_usage_chart_id == 9);
-    check_sound_usage_ui(source_action.sound_usage_channel_id == 50);
-    check_sound_usage_ui(source_action.sound_usage_clip_id == 51);
+    check_sound_usage_ui(source_action.sound_usage_chart_id.value == 9);
+    check_sound_usage_ui(source_action.sound_usage_channel_id.value == 50);
+    check_sound_usage_ui(source_action.sound_usage_clip_id.value == 51);
     check_sound_usage_ui(!source_action.sound_usage_position_valid);
-    check_sound_usage_ui(source_action.sound_usage_measure_id == 0);
+    check_sound_usage_ui(source_action.sound_usage_measure_id.value == 0);
     const auto& state = worm_ui_nuklear_audio_state();
     check_sound_usage_ui(state.selected_channel_id == 0);
     check_sound_usage_ui(state.selected_clip_id == 0);
@@ -214,10 +214,10 @@ TEST_CASE("Find uses activation keeps the resource asset when transport shows an
     const auto action = click_action(click_text(harness, "Measure 2 · row 3"),
                                      WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(action.sound_usage_resource_id == 201);
-    check_sound_usage_ui(action.sound_usage_asset_id == 0);
-    check_sound_usage_ui(action.sound_usage_chart_id == 7);
-    check_sound_usage_ui(action.sound_usage_object_id == 200);
+    check_sound_usage_ui(action.sound_usage_resource_id.value == 201);
+    check_sound_usage_ui(action.sound_usage_asset_id.value == 0);
+    check_sound_usage_ui(action.sound_usage_chart_id.value == 7);
+    check_sound_usage_ui(action.sound_usage_object_id.value == 200);
     check_sound_usage_ui(action.sound_usage_position_valid);
 }
 

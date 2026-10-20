@@ -78,12 +78,12 @@ TEST_CASE("note double-click opens a prefilled inline label editor and Enter app
 
     // Typing reaches the field, not the canvas.
     const auto typed = harness.frame(std::array{text_input("2")}).get();
-    check_label(typed.compose_input_count == 0);
+    check_label(typed.compose_inputs.size() == 0);
     const auto enter = harness.frame(std::array{key_down(SDLK_RETURN, SDL_SCANCODE_RETURN)}).get();
     check_label(enter.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL);
     // The field opens with its text selected, so typing replaces the prefilled label.
     check_label(std::string_view{enter.compose_note_label} == "2");
-    check_label(enter.compose_input_chart_id == 7);
+    check_label(enter.compose_input_chart_id.value == 7);
     check_label(enter.compose_input_document_revision == 12);
     check_label(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_rename.active);
 

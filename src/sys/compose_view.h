@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
 #include "sys/bookmark_navigation.h"
 #include "sys/compose_audition_requests.h"
@@ -81,6 +82,8 @@ struct compose_bga_move_preview_input_t {
 
 inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
 inline constexpr std::size_t compose_timing_lane_count{8};
+// Core scene construction work budget, independent of frontend list storage.
+inline constexpr std::size_t compose_scene_grid_work_limit{16384};
 inline constexpr double compose_bgm_lane_width_pixels{36.0};
 inline constexpr double compose_playable_lane_width_pixels{48.0};
 inline constexpr double compose_minimum_playable_field_width_pixels{160.0};
@@ -158,17 +161,6 @@ struct compose_timing_marker_payload_t {
 enum class compose_scene_key_policy_t { projection, stem_geometry, measure_geometry,
                                         paint_occupancy, transport };
 
-struct compose_scene_source_key_t {
-    const void* document_identity{};
-    const void* chart_identity{};
-    wormedit::chart_stamp_t stamp;
-    auto operator==(const compose_scene_source_key_t&) const -> bool = default;
-
-    static auto from(const wormedit::song_document_t& document,
-                     const wormedit::chart_document_t& chart) -> compose_scene_source_key_t {
-        return {&document, &chart, {.document = {document.id, document.revision}, .chart = chart.id}};
-    }
-};
 
 using compose_timing_payload_cache_t = wormedit::keyed_cache_t<compose_scene_source_key_t,
     std::vector<compose_timing_marker_payload_t>>;
@@ -319,6 +311,13 @@ struct compose_scene_cache_t {
 
     // Retained chart geometry and reusable projections share the document/chart stamp.
     struct scene_state_t {
+        using note_hitsounds_t = std::unordered_map<std::uint64_t, wormedit::ui::hitsound_note_view_t>;
+        wormedit::keyed_cache_t<compose_scene_source_key_t, note_hitsounds_t> note_hitsounds;
+        [[nodiscard]] auto note_hitsound_accounted_bytes() const -> std::size_t {
+            const auto& rows = note_hitsounds.value();
+            return rows.bucket_count() * sizeof(void*) + rows.size() *
+                (sizeof(note_hitsounds_t::value_type) + 4 * sizeof(void*));
+        }
         wormedit::keyed_cache_t<compose_scene_source_key_t,
             std::optional<wormedit::editor_field_scene_index_t>> index;
         wormedit::editor_field_scene_window_t scene_window;
@@ -355,7 +354,6 @@ struct compose_scene_cache_t {
         quantize_preview_cache_t quantize_preview;
         std::vector<WormUiComposeQuantizePresetView> quantize_preset_views;
         std::vector<WormUiComposeQuantizeReportRowView> quantize_preview_row_views;
-        std::vector<WormUiComposeQuantizeGhostView> quantize_ghost_views;
         std::vector<WormUiComposeQuantizeReportRowView> quantize_applied_row_views;
     } quantize;
 
@@ -546,7 +544,6 @@ struct application_command_state_t {
         wormedit::chart_paste_outcome_t proposal;
         wormedit::chart_document_t geometry;
         std::optional<wormedit::editor_field_scene_index_t> index;
-        std::vector<WormUiComposePasteGhostView> ghosts;
     };
     struct bmson_marker_draft_t;
     using bmson_marker_draft_proposal_t = wormedit::proposal_t<bmson_marker_draft_t>;

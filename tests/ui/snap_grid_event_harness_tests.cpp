@@ -49,11 +49,11 @@ void check_snap(const wormedit::ui::workspace_action_t& action, std::uint64_t de
     INFO("action " << action.compose_action << " snap " << action.compose_snap_denominator);
     check_grid(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
     check_grid(action.compose_snap_denominator == denominator);
-    check_grid(action.compose_input_project_id == 1);
-    check_grid(action.compose_input_chart_id == 1);
+    check_grid(action.compose_input_project_id.value == 1);
+    check_grid(action.compose_input_chart_id.value == 1);
     check_grid(action.compose_input_document_revision == 1);
-    check_grid(action.compose_input_count == 0);
-    check_grid(action.shortcut_event_count == 0);
+    check_grid(action.compose_inputs.size() == 0);
+    check_grid(action.shortcut_events.size() == 0);
 }
 }
 
@@ -62,7 +62,7 @@ TEST_CASE("Snap fraction badge opens supported grids and applies keyboard choice
     prepare(harness);
     check_grid(harness.drawn_text().find("Editing grid") != std::string::npos);
     check_grid(harness.drawn_text().find("Snap 1/") == std::string::npos);
-    check_grid(press(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT).get().shortcut_event_count == 0);
+    check_grid(press(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT).get().shortcut_events.size() == 0);
     check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
     check_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_choice == 1);
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
@@ -79,7 +79,7 @@ TEST_CASE("Snap popup mouse choice supports custom denominators", "[frontend-sta
     const auto selected = mouse(harness, target->first, target->second, true);
     check_snap(selected.get(), 7);
     const auto released = mouse(harness, target->first, target->second, false);
-    check_grid(released.get().compose_input_count == 0);
+    check_grid(released.get().compose_inputs.size() == 0);
 }
 
 TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss and modal ownership", "[frontend-state][event-harness][snap-grid]") {
@@ -104,7 +104,7 @@ TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss a
         if (cause >= 2 && cause < 8) result = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
         check_grid(result.get().compose_action != WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
         // Focus loss may emit the existing cancel/release input, never a chart press.
-        for (std::size_t index = 0; index < result.get().compose_input_count; ++index)
+        for (std::size_t index = 0; index < result.get().compose_inputs.size(); ++index)
             check_grid(result.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
         check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
     }
@@ -122,9 +122,9 @@ TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action"
     require_grid(target.has_value());
     const auto picked=mouse(h,target->first,target->second,true);
     check_grid(picked.get().compose_action==WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
-    check_grid(picked.get().compose_input_chart_id==1);
+    check_grid(picked.get().compose_input_chart_id.value==1);
     check_grid(picked.get().compose_input_document_revision==1);
-    check_grid(picked.get().compose_input_count==0);
+    check_grid(picked.get().compose_inputs.size()==0);
     (void)mouse(h,target->first,target->second,false);
     check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }

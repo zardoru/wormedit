@@ -189,7 +189,7 @@ TEST_CASE("real picker callback errors publish once after consumption", "[event-
     check_drop_notification(entries[0].source == notification_source_t::system);
     static_cast<void>(worm_ui_frontend_consume_project_dialog_for_testing());
     generation = worm_ui_frontend_begin_project_dialog_for_testing(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
-    const std::string long_path(WORM_UI_PROJECT_PATH_CAPACITY, 'a');
+    const std::string long_path(wormedit::maximum_project_path_bytes + 1, 'a');
     const char* files[]{long_path.c_str(), nullptr};
     worm_ui_frontend_project_dialog_callback_for_testing(generation, files);
     static_cast<void>(worm_ui_frontend_consume_project_dialog_for_testing());

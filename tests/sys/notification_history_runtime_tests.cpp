@@ -220,7 +220,7 @@ TEST_CASE("history availability cache follows row identity after eviction and in
     notification_history_runtime_t runtime;
     runtime.visible = true;
     const auto document = history_song();
-    ui::notification_history_view_t::from(runtime, center, document, 0ns);
+    (void)ui::notification_history_view_t::from(runtime, center, document, 0ns);
     center.dismiss(existing);
     post_target(center, object_id_t{999});
     CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);

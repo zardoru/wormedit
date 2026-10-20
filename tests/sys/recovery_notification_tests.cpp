@@ -87,6 +87,23 @@ TEST_CASE("Recovery validation warns and stale controller diagnostics retain act
     expect_recovery(fixture.history.document.revision == 5);
     expect_recovery(!fixture.recovered);
 }
+TEST_CASE("Owned recovery destinations retain the input bound", "[unit][sys][recovery-notification]") {
+    recovery_fixture_t fixture;
+    auto action = fixture.action(WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS);
+    SECTION("overlength") {
+        action.recovery_save_as_destination.assign(maximum_recovery_destination_bytes + 1, 'x');
+    }
+    SECTION("embedded null") {
+        action.recovery_save_as_destination = std::string{"a\0b", 3};
+    }
+    expect_recovery(fixture.dispatch(action) ==
+        "The recovery destination is too long or contains a null byte.");
+    expect_recovery(fixture.history.document.revision == 5);
+    expect_recovery(!fixture.recovered);
+    const auto entries = fixture.entries();
+    REQUIRE(entries.size() == 1);
+    expect_recovery(entries.front().severity == notification_severity_t::warning);
+}
 TEST_CASE("Recovery scan diagnostics post once per actual generation", "[unit][sys][recovery-notification]") {
     recovery_fixture_t fixture;
     const auto broken = fixture.directory / "broken.wormedit";

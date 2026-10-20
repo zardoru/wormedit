@@ -65,8 +65,6 @@ struct worm_ui_keysound_group_review_t {
     std::uint64_t document_revision{};
     std::vector<worm_ui_keysound_group_candidate_t> candidates;
     std::vector<worm_ui_keysound_group_proposal_t> groups;
-    std::vector<worm_ui_keysound_group_assignment_t> staged_assignments;
-    std::vector<wormedit::ui::sound_group_assignment_t> staged_payload;
     std::string message;
 };
 enum class worm_ui_sound_group_review_action_t : std::uint8_t { none, confirm, cancel };
@@ -88,10 +86,7 @@ void worm_ui_keysound_group_review_leave_all_ungrouped(
 [[nodiscard]] auto worm_ui_keysound_group_review_confirm(
     worm_ui_keysound_group_review_t& review)
     -> std::vector<worm_ui_keysound_group_assignment_t>;
-void worm_ui_keysound_group_review_stage_payload(
-    worm_ui_keysound_group_review_t& review,
-    std::span<const worm_ui_keysound_group_assignment_t> assignments,
-    bool keep_ids_together);
+
 void worm_ui_keysound_group_review_cancel(worm_ui_keysound_group_review_t& review);
 
 enum class worm_ui_keysound_layer_state_t : std::uint8_t { none, some, all };

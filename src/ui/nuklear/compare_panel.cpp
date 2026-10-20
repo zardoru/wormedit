@@ -26,8 +26,8 @@ void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t&
             if (nk_button_label(context, label)) {
                 action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
                 action.compare_diagnostic_row = diagnostic.row;
-                action.compare_diagnostic_measure = diagnostic.measure.value;
-                action.compare_diagnostic_chart = view.diagnostic_chart_id.value;
+                action.compare_diagnostic_measure.value = diagnostic.measure.value;
+                action.compare_diagnostic_chart = view.diagnostic_chart_id;
             }
         } else {
             nk_label(context, label, NK_TEXT_LEFT);
@@ -57,7 +57,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
             selected, 24, nk_vec2(220, 300), &wormedit::ui::compare_chart_view_t::label);
         if (next != selected && static_cast<std::size_t>(next) < view->charts.size()) {
             action->kind = WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART;
-            action->compare_chart_id = view->charts[next].id.value;
+            action->compare_chart_id = view->charts[next].id;
         }
     }
     nk_layout_row_dynamic(context, 18, 2);

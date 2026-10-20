@@ -71,11 +71,11 @@ void activate_command(const wormedit::ui::workspace_view_t& view, std::size_t in
                       wormedit::ui::workspace_action_t& action) {
     const auto& row = view.command_menu_rows[index];
     if (!state.open || state.current != state.opened || !row.enabled || row.id.empty() ||
-        row.id.size() >= sizeof(action.command_menu_command_id) || action.menu_command_id[0]) return;
-    std::snprintf(action.command_menu_command_id, sizeof(action.command_menu_command_id), "%s", row.id.data());
+        row.id.size() >= 129 || action.menu_command_id[0]) return;
+    action.command_menu_command_id = row.id.data();
     action.command_menu_invoked = true;
-    action.compose_input_project_id = state.opened.project;
-    action.compose_input_chart_id = state.opened.chart;
+    action.compose_input_project_id.value = state.opened.project;
+    action.compose_input_chart_id.value = state.opened.chart;
     action.compose_input_document_revision = state.opened.revision;
     action.tab = state.opened.tab;
     cancel_command_menu();

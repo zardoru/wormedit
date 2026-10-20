@@ -434,7 +434,7 @@ auto process_compose_area_boundary(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     if (compose_area_pause_conversion(context.action.compose_action) &&
         context.environment.document.history.document.id.value !=
-            context.action.compose_input_project_id)
+            context.action.compose_input_project_id.value)
         return compose_action_outcome_t::blocked(stale_action_message("Area conversion"));
     if (context.action.compose_area_clear_requested) {
         clear_compose_area_range(context);

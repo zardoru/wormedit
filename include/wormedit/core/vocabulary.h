@@ -15,6 +15,8 @@ namespace wormedit {
 inline constexpr std::size_t maximum_batch_chart_metadata_charts = 256;
 inline constexpr std::size_t maximum_external_players = 64;
 inline constexpr std::size_t maximum_preference_string_bytes = 4096;
+inline constexpr std::size_t maximum_project_path_bytes = 4096;
+inline constexpr std::size_t maximum_recovery_destination_bytes = 511;
 
 // Instrument color class; append only because native projects store the integer value.
 enum class lane_key_color_t {
@@ -46,6 +48,14 @@ enum class visual_event_kind_t {
     video,
     storyboard,
     layer2,
+};
+
+enum class resource_role_t {
+    sample,
+    bgm,
+    bga,
+    music,
+    preview,
 };
 
 // How the user classifies a sound in the Sounds tab. Unspecified keeps the
@@ -92,6 +102,22 @@ enum class format_family_t {
     bmson,
     midi,
     quaver,
+};
+
+enum class quantization_space_t {
+    standard_measure,
+    authored_measure,
+};
+
+enum class quantization_tie_t {
+    earlier,
+    later,
+    reject,
+};
+
+enum class quantization_hold_t {
+    start_only,
+    both_endpoints,
 };
 
 enum class text_encoding_t {
@@ -252,5 +278,25 @@ enum class sound_usage_kind_t : std::uint8_t {
 };
 
 enum class sound_usage_scope_t : std::uint8_t { resource_reference, shared_asset_reference };
+
+enum class stage_group_t {
+    none,
+    left,
+    right,
+};
+
+enum class sv_recipe_curve_t {
+    constant,
+    linear,
+    exponential,
+    bump,
+    // Reserved for Lua expression curves (see docs/osbx-draft-spec.md): the recipe's relative value
+    // is a Lua function of the normalized position t in [0, 1], kept in expression_source. The
+    // source is stored and round-tripped, but nothing evaluates it yet: sampling and export report
+    // an unsupported-feature diagnostic instead of guessing.
+    lua_expression,
+};
+
+enum class note_move_conflict_t { none, occupied, out_of_lane, out_of_chart, other };
 
 } // namespace wormedit

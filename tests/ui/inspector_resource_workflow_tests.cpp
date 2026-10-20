@@ -43,7 +43,7 @@ auto note_paint_begin(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames) {
         const auto& action = frame.get();
-        for (std::size_t index = 0; index < action.compose_input_count; ++index) {
+        for (std::size_t index = 0; index < action.compose_inputs.size(); ++index) {
             if (action.compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN)
                 return &action.compose_inputs[index];
         }
@@ -86,7 +86,7 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
         return false;
     const auto frames = click_at(harness, 300.0f, 400.0f);
     const auto* paint = note_paint_begin(frames);
-    return paint && paint->resource_id == 40;
+    return paint && paint->resource_id.value == 40;
 }
 
 auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool {

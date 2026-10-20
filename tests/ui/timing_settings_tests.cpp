@@ -51,7 +51,7 @@ auto click_position(nuklear_event_harness_t& harness, float x, float y)
     button.button.y = y;
     const std::array down{motion, button};
     const auto pressed = harness.frame(down);
-    CHECK(pressed.get().compose_input_count == 0);
+    CHECK(pressed.get().compose_inputs.size() == 0);
     button.type = SDL_EVENT_MOUSE_BUTTON_UP;
     button.button.down = false;
     const std::array up{motion, button};
@@ -104,7 +104,7 @@ TEST_CASE("Timing modeless panel blank body and disabled controls own pointer in
     (void)harness.frame();
     CHECK_FALSE(click_text(harness, "BPM: On").get().compose_action ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-    CHECK(click_position(harness, 500, 450).get().compose_input_count == 0);
+    CHECK(click_position(harness, 500, 450).get().compose_inputs.size() == 0);
     view.compose.scene_available = false;
     CHECK_FALSE(click_text(harness, "ANC: On").get().compose_action ==
                 WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
@@ -163,7 +163,7 @@ TEST_CASE("Timing Settings owns blank-body clicks, cannot be dragged, and close 
     motion.motion.y = down.button.y;
     motion.motion.state = SDL_BUTTON_LMASK;
     const auto moved = harness.frame(std::array{motion});
-    CHECK(moved.get().compose_input_count == 0);
+    CHECK(moved.get().compose_inputs.size() == 0);
     down.type = SDL_EVENT_MOUSE_BUTTON_UP;
     down.button.down = false;
     down.button.x = motion.motion.x;
@@ -172,7 +172,7 @@ TEST_CASE("Timing Settings owns blank-body clicks, cannot be dragged, and close 
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Timing Settings", &bounds));
     CHECK(bounds.x == before.x);
     CHECK(bounds.y == before.y);
-    CHECK(click_position(harness, bounds.x + 180, bounds.y + bounds.height - 6).get().compose_input_count == 0);
+    CHECK(click_position(harness, bounds.x + 180, bounds.y + bounds.height - 6).get().compose_inputs.size() == 0);
     const auto closed = click_position(harness, bounds.x + bounds.width - 28, bounds.y + 28);
     CHECK(closed.get().timing_settings.close);
     view.timing_settings_visible = false;
@@ -223,7 +223,7 @@ TEST_CASE("Timing Settings moves all timing lane controls into a modeless panel"
     for (std::size_t lane = 0; lane < labels.size(); ++lane) {
         const auto action = click_text(harness, labels[lane]);
         CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
-        CHECK(action.get().compose_timing_lane == lane);
+        CHECK(static_cast<std::uint8_t>(action.get().compose_timing_lane) == lane);
     }
     view.timing_settings_visible = false;
     (void)harness.frame();

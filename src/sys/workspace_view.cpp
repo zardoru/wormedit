@@ -282,6 +282,7 @@ struct workspace_projection_context_t {
     WormUiBookmarkChooserRequest bookmark_chooser_request;
     keysound_list_cache_t* keysound_cache{};
     bookmark_chooser_indices_t bookmark_indices;
+    compose_resource_catalog_cache_t* resource_catalog_cache{};
 };
 
 void publish_workspace_summary(frontend_workspace_view_t& result, const char* text) {
@@ -602,9 +603,14 @@ auto append_compose_resource(frontend_workspace_view_t& result, frame_arena_t& a
 void populate_compose_resources(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& view = result.view.compose;
-    const auto catalog = compose_resource_catalog_t::from(projection.document,
-        projection.source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
-        projection.source.selected_visual_asset);
+    compose_resource_catalog_t uncached;
+    const auto& catalog = projection.resource_catalog_cache
+        ? compose_resource_catalog_t::from(*projection.resource_catalog_cache, projection.document,
+              projection.source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
+              projection.source.selected_visual_asset)
+        : (uncached = compose_resource_catalog_t::from(projection.document,
+              projection.source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
+              projection.source.selected_visual_asset));
     auto* arena = result.arena();
     result.compose.resource.view = arena
         ? arena_array<WormUiComposeResourceView>(*arena, catalog.entries.size())
@@ -1149,7 +1155,7 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
     auto& result = projection.result;
     const auto& source = projection.source;
                 result.view.compose.visible = true;
-                const auto& outline = tab.bms_branch_outline;
+                const auto& outline = tab.bms_branch_outline();
                 auto& compose = result.view.compose;
                 compose.selected_audio_asset_id =
                     source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
@@ -1436,7 +1442,8 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
     WormUiKeysoundDockRequest keysound_request, WormUiSoundUsageRequest sound_usage_request,
                        WormUiBookmarkChooserRequest bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
-                       const bookmark_chooser_indices_t& bookmark_indices) -> frontend_workspace_view_t {
+                       const bookmark_chooser_indices_t& bookmark_indices,
+                       compose_resource_catalog_cache_t* resource_catalog_cache) -> frontend_workspace_view_t {
     frontend_workspace_view_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -1480,7 +1487,7 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
     const workspace_projection_context_t projection{
         result,        source,           document,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
-        keysound_cache, bookmark_indices};
+        keysound_cache, bookmark_indices, resource_catalog_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     // Export is project UI and must not depend on building a Compose scene.
     const auto* compose_tab = std::get_if<workspace_compose_view_t>(&source.tab_view);

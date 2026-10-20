@@ -542,7 +542,7 @@ TEST_CASE("workspace exposes the complete BMS branch outline with current active
     const auto result = workspace_view_t::from(workspace, song);
     wormedit::test::require_workspace_result(result);
     const auto& compose = std::get<workspace_compose_view_t>(result.value->tab_view);
-    const auto& outline = compose.bms_branch_outline;
+    const auto& outline = compose.bms_branch_outline();
     REQUIRE(outline.available);
     CHECK_FALSE(outline.rows_truncated);
     CHECK_FALSE(outline.display_text_truncated);
@@ -599,7 +599,7 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     auto row_result = workspace_view_t::from(*row_capped.value, song);
     wormedit::test::require_workspace_result(row_result);
     const auto& row_outline =
-        std::get<workspace_compose_view_t>(row_result.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(row_result.value->tab_view).bms_branch_outline();
     CHECK(row_outline.rows.size() == 4);
     CHECK(row_outline.rows_truncated);
     CHECK(row_outline.choices_truncated);
@@ -613,7 +613,7 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     auto text_result = workspace_view_t::from(*text_capped.value, song);
     wormedit::test::require_workspace_result(text_result);
     const auto& text_outline =
-        std::get<workspace_compose_view_t>(text_result.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(text_result.value->tab_view).bms_branch_outline();
     CHECK(text_outline.display_text_truncated);
     CHECK(has_code(text_outline.diagnostics, diagnostic_code_t::invalid_resolution));
     CHECK(std::ranges::all_of(text_outline.rows,
@@ -627,7 +627,7 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     auto diagnostics_result = workspace_view_t::from(*diagnostics_capped.value, song);
     wormedit::test::require_workspace_result(diagnostics_result);
     const auto& diagnostics_outline =
-        std::get<workspace_compose_view_t>(diagnostics_result.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(diagnostics_result.value->tab_view).bms_branch_outline();
     CHECK(diagnostics_outline.rows_truncated);
     CHECK(diagnostics_outline.diagnostics.empty());
     CHECK(diagnostics_outline.diagnostics_truncated);
@@ -644,7 +644,7 @@ TEST_CASE("BMS branch choices expose one reachable unresolved control at a time"
     const auto result = workspace_view_t::from(*bound.value, song);
     wormedit::test::require_workspace_result(result);
     const auto& outline =
-        std::get<workspace_compose_view_t>(result.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(result.value->tab_view).bms_branch_outline();
     REQUIRE(outline.choices.size() == 2);
     const auto& random = outline.choices.front();
     CHECK(random.id == branch_id_t{1001});
@@ -670,7 +670,7 @@ TEST_CASE("BMS branch choices keep invalid imported selections clearable",
     const auto result = workspace_view_t::from(*bound.value, song);
     wormedit::test::require_workspace_result(result);
     const auto& outline =
-        std::get<workspace_compose_view_t>(result.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(result.value->tab_view).bms_branch_outline();
     REQUIRE_FALSE(outline.choices.empty());
     const auto& random = outline.choices.front();
     CHECK(random.active);
@@ -702,7 +702,7 @@ TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses s
     const auto updated = workspace_view_t::from(workspace, stale_choice_song);
     wormedit::test::require_workspace_result(updated);
     const auto& outline =
-        std::get<workspace_compose_view_t>(updated.value->tab_view).bms_branch_outline;
+        std::get<workspace_compose_view_t>(updated.value->tab_view).bms_branch_outline();
     CHECK(has_code(outline.diagnostics, diagnostic_code_t::invalid_id));
     CHECK_FALSE(outline.rows_truncated);
 }
@@ -746,8 +746,8 @@ auto branch_cache_matches_reference(const song_document_t& song,
     const auto reference = workspace_view_t::from(workspace, song, workspace_tab_t::compose);
     if (!(cached.value && cached.diagnostics.empty()) || !(reference.value && reference.diagnostics.empty())) return false;
     return branch_cache_outlines_equal(
-        std::get<workspace_compose_view_t>(cached.value->tab_view).bms_branch_outline,
-        std::get<workspace_compose_view_t>(reference.value->tab_view).bms_branch_outline);
+        std::get<workspace_compose_view_t>(cached.value->tab_view).bms_branch_outline(),
+        std::get<workspace_compose_view_t>(reference.value->tab_view).bms_branch_outline());
 }
 auto branch_cache_large_song() -> song_document_t {
     auto song = bms_branch_workspace_song();
@@ -771,10 +771,14 @@ auto branch_cache_tracks_choices_without_revision() -> bool {
     if (!branch_cache_matches_reference(song, workspace, cache) ||
         !branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 1)
         return false;
+    const auto shared = workspace_view_t::from(workspace, song, workspace_tab_t::compose, nullptr, &cache);
+    if (!shared.value || std::get<workspace_compose_view_t>(shared.value->tab_view)
+                             .shared_bms_branch_outline != cache.value())
+        return false;
     const auto before = cache.value();
     song.charts.front().active_branch_selection.front().selected_value = 1;
     return branch_cache_matches_reference(song, workspace, cache) && cache.build_count() == 2 &&
-        !branch_cache_outlines_equal(before, cache.value());
+        !branch_cache_outlines_equal(*before, *cache.value());
 }
 auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     auto song = branch_cache_large_song();
@@ -785,10 +789,10 @@ auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     if (!branch_cache_matches_reference(song, workspace, cache)) return false;
     workspace.limits.maximum_bms_branch_rows = 5;
     if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 2 ||
-        !cache.value().rows_truncated) return false;
+        !cache.value()->rows_truncated) return false;
     workspace.limits.maximum_bms_branch_display_bytes = 1;
     if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 3 ||
-        !cache.value().display_text_truncated) return false;
+        !cache.value()->display_text_truncated) return false;
     ++song.revision;
     workspace.document_revision = song.revision;
     if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 4)
@@ -812,7 +816,7 @@ auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
     if (!binding.value || !binding.diagnostics.empty()) return false;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, *binding.value, cache) ||
-        cache.value().rows.size() != 2 || cache.build_count() != 1) return false;
+        cache.value()->rows.size() != 2 || cache.build_count() != 1) return false;
     chart.bms_control_tree.reset();
     return branch_cache_matches_reference(song, *binding.value, cache) && cache.build_count() == 1;
 }

@@ -40,8 +40,6 @@ auto compose_note_sound_text(std::optional<resource_id_t> sound,
 
 namespace {
 auto make_resource_entry(const song_document_t& document, const resource_entry_t& resource,
-                          std::optional<asset_id_t> selected_audio_asset,
-                          std::optional<asset_id_t> selected_visual_asset,
                           const resource_reference_counts_t& counts) -> compose_resource_entry_t {
     const auto has_role = [&](resource_role_t role) {
         return std::ranges::find(resource.roles, role) != resource.roles.end();
@@ -66,11 +64,8 @@ auto make_resource_entry(const song_document_t& document, const resource_entry_t
     entry.bgm = has_role(resource_role_t::bgm);
     entry.bga = has_role(resource_role_t::bga);
     entry.audio_asset = audio != nullptr;
-    entry.selected_audio_asset = entry.audio_asset && selected_audio_asset == resource.asset;
     entry.image_asset = visual != document.visual_assets.end() &&
                         visual->kind == asset_kind_t::image;
-    entry.selected_visual_asset = entry.image_asset &&
-                                  selected_visual_asset == resource.asset;
     entry.missing = resource.missing || (audio == nullptr &&
                                          visual == document.visual_assets.end());
     entry.target_index = target == resource.target_identities.end()
@@ -113,10 +108,51 @@ auto compose_resource_catalog_t::from(const song_document_t& document,
             continue;
         }
 
-        result.entries.push_back(make_resource_entry(document, resource, selected_audio_asset,
-                                                       selected_visual_asset, counts));
+        result.entries.push_back(make_resource_entry(document, resource, counts));
     }
+    result.select(selected_audio_asset, selected_visual_asset);
     return result;
+}
+
+auto compose_resource_catalog_t::from(compose_resource_catalog_cache_t& cache,
+                                   const song_document_t& document,
+                                   std::optional<asset_id_t> selected_audio_asset,
+                                   std::size_t maximum_entries,
+                                   std::optional<asset_id_t> selected_visual_asset)
+    -> const compose_resource_catalog_t& {
+    const compose_resource_catalog_query_t query{document, maximum_entries};
+    auto& catalog = cache.catalog.get_or_build(query, [&] {
+        return compose_resource_catalog_t::from(document, std::nullopt, maximum_entries);
+    });
+    catalog.select(selected_audio_asset, selected_visual_asset);
+    return catalog;
+}
+
+void compose_resource_catalog_t::select(std::optional<asset_id_t> audio_asset,
+                                        std::optional<asset_id_t> visual_asset) {
+    for (auto& entry : entries) {
+        entry.selected_audio_asset = entry.audio_asset && audio_asset == entry.asset;
+        entry.selected_visual_asset = entry.image_asset && visual_asset == entry.asset;
+    }
+}
+
+auto compose_resource_catalog_key_t::from(const compose_resource_catalog_query_t& query)
+    -> compose_resource_catalog_key_t {
+    compose_resource_catalog_key_t key;
+    key.assign(query);
+    return key;
+}
+
+void compose_resource_catalog_key_t::assign(const compose_resource_catalog_query_t& query) {
+    document_identity = &query.document;
+    stamp = document_stamp_t::from(query.document);
+    maximum_entries = query.maximum_entries;
+}
+
+auto compose_resource_catalog_key_t::operator==(const compose_resource_catalog_query_t& query) const
+    -> bool {
+    return document_identity == &query.document && stamp.is_current(query.document) &&
+           maximum_entries == query.maximum_entries;
 }
 
 auto find_compose_resource_uses(const chart_document_t& chart, resource_id_t resource)

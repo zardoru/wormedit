@@ -777,18 +777,23 @@ auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
                                                const chart_document_t& chart,
                                                const workspace_limits_t& limits,
                                                workspace_bms_branch_outline_cache_t* cache)
-    -> workspace_bms_branch_outline_view_t {
+    -> workspace_shared_bms_branch_outline_t {
     // Retained ordinary statements are visible too; only an absent tree is empty.
     if (!chart.bms_control_tree) return {};
-    if (!cache)
-        return workspace_bms_branch_outline_view_t::from(chart, limits);
+    const auto build = [&] {
+        return std::make_shared<const workspace_bms_branch_outline_view_t>(
+            workspace_bms_branch_outline_view_t::from(chart, limits));
+    };
+    if (!cache) return build();
     const workspace_bms_branch_outline_cache_query_t key{
         .document = {.document = document, .limits = limits}, .chart = chart};
-    return cache->get_or_build(key, std::bind_front(
-        static_cast<workspace_bms_branch_outline_view_t (*)(const chart_document_t&,
-                                                           const workspace_limits_t&)>(
-            &workspace_bms_branch_outline_view_t::from),
-        std::cref(key.chart), std::cref(key.document.limits)));
+    return cache->get_or_build(key, build);
+}
+
+auto workspace_compose_view_t::bms_branch_outline() const
+    -> const workspace_bms_branch_outline_view_t& {
+    static const workspace_bms_branch_outline_view_t empty;
+    return shared_bms_branch_outline ? *shared_bms_branch_outline : empty;
 }
 
 auto workspace_bms_branch_outline_view_t::from(const chart_document_t& chart,
@@ -1372,7 +1377,7 @@ auto build_compose_tab(workspace_view_build_context_t& context,
         .layout_segment_count = chart->lane_layouts.size(),
         .lane_count = lane_count,
         .layer_count = chart->semantic_layers.size(),
-        .bms_branch_outline = workspace_bms_branch_outline_view_t::from(
+        .shared_bms_branch_outline = workspace_bms_branch_outline_view_t::from(
             document, *chart, workspace.limits, branch_cache),
     };
     return true;

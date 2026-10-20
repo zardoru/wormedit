@@ -6524,7 +6524,7 @@ TEST_CASE("Workspace frame cache clears when the same document is reopened", "[s
     const workspace_bms_branch_outline_cache_query_t branch_key{
         .document = key, .chart = document.charts.front()};
     static_cast<void>(cache.branch_outline.get_or_build(branch_key,
-        std::bind_front(std::identity{}, workspace_bms_branch_outline_view_t{})));
+        [] { return std::make_shared<const workspace_bms_branch_outline_view_t>(); }));
     static_cast<void>(cache.diagnostics.get_or_build(wormedit::document_stamp_t{},
         [](wormedit::diagnostic_list_t& diagnostics) { diagnostics.push_back({}); }));
     cache.bind_project_session(7);

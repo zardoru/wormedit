@@ -134,7 +134,8 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
                               context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
             keysound_request, sound_usage_request, bookmark_request,
-            &context.compose_scene_cache.keysound_list_cache, bookmark_indices);
+            &context.compose_scene_cache.keysound_list_cache, bookmark_indices,
+            &context.compose_scene_cache.resource_catalog_cache);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.metronome_settings().enabled;

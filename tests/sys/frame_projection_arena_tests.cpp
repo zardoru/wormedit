@@ -11,6 +11,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <new>
@@ -951,7 +952,9 @@ auto branch_arena_model(std::size_t count = 3) -> wormedit::workspace_view_t {
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::compose;
     wormedit::workspace_compose_view_t tab{.chart = wormedit::chart_id_t{1}};
-    auto& outline = tab.bms_branch_outline;
+    auto shared = std::make_shared<wormedit::workspace_bms_branch_outline_view_t>();
+    tab.shared_bms_branch_outline = shared;
+    auto& outline = *shared;
     outline.available = true;
     for (std::size_t index = 0; index < count; ++index) {
         outline.rows.push_back({.depth = index, .source_order = index == 0
@@ -982,7 +985,9 @@ auto project_branch_arena(const wormedit::workspace_view_t& model, frame_arena_t
 }
 auto branch_outline(wormedit::workspace_view_t& model)
     -> wormedit::workspace_bms_branch_outline_view_t& {
-    return std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline;
+    // branch_arena_model creates the outline non-const, so tests may edit it in place.
+    return const_cast<wormedit::workspace_bms_branch_outline_view_t&>(
+        std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline());
 }
 void check_branch_choice(const WormUiComposeBranchChoiceView& view,
                          const wormedit::workspace_bms_branch_choice_t& source) {
@@ -1105,7 +1110,7 @@ TEST_CASE("Compose empty branch outlines preserve availability and source flags"
 
 TEST_CASE("Compose branch storage exhaustion retains complete row and diagnostic prefixes", "[sys][frame-arena][compose-branch]") {
     const auto model = branch_arena_model();
-    const auto& source = std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline;
+    const auto& source = std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline();
     bool row_prefix = false, diagnostic_prefix = false, zero_choice = false;
     for (std::size_t limit = 32; limit <= 1400; limit += 8) {
         frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});

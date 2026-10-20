@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -249,14 +250,18 @@ struct workspace_bms_branch_choice_t {
 
 struct workspace_bms_branch_outline_cache_key_t;
 struct workspace_bms_branch_outline_view_t;
+// Shared so a cached outline reaches each frame's view without copying rows and choices.
+using workspace_shared_bms_branch_outline_t =
+    std::shared_ptr<const workspace_bms_branch_outline_view_t>;
 using workspace_bms_branch_outline_cache_t = keyed_cache_t<
-    workspace_bms_branch_outline_cache_key_t, workspace_bms_branch_outline_view_t>;
+    workspace_bms_branch_outline_cache_key_t, workspace_shared_bms_branch_outline_t>;
 
 struct workspace_bms_branch_outline_view_t {
+    // Null when the chart has no BMS control tree.
     [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart,
                                    const workspace_limits_t& limits,
                                    workspace_bms_branch_outline_cache_t* cache)
-        -> workspace_bms_branch_outline_view_t;
+        -> workspace_shared_bms_branch_outline_t;
 
     [[nodiscard]] static auto from(const chart_document_t& chart, const workspace_limits_t& limits)
         -> workspace_bms_branch_outline_view_t;
@@ -319,7 +324,10 @@ struct workspace_compose_view_t {
     std::size_t layout_segment_count{};
     std::size_t lane_count{};
     std::size_t layer_count{};
-    workspace_bms_branch_outline_view_t bms_branch_outline;
+    workspace_shared_bms_branch_outline_t shared_bms_branch_outline;
+
+    // An absent outline reads as an empty, unavailable one.
+    [[nodiscard]] auto bms_branch_outline() const -> const workspace_bms_branch_outline_view_t&;
 };
 
 struct workspace_storyboard_view_t {

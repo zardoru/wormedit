@@ -280,7 +280,8 @@ auto edit_options_draft(options_runtime_t& r, std::uint64_t revision,
     return true;
 }
 auto options_view(options_runtime_t& r) -> WormUiOptionsView {
-    validate_draft(r);
+    // Validation serializes the draft; a hidden window shows no diagnostics.
+    if (r.visible) validate_draft(r);
     r.diagnostic_views.clear();
     for (const auto& item : r.diagnostics) r.diagnostic_views.push_back({item.field, item.message.c_str()});
     r.player_views.clear();

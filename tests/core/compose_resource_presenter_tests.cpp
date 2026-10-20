@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+
 using namespace wormedit;
 
 TEST_CASE("Compose resource catalog retains indexed roles selection and missing state",
@@ -51,6 +53,60 @@ TEST_CASE("Compose resource catalog retains indexed roles selection and missing 
     CHECK(catalog.entries[1].selected_visual_asset);
     CHECK(catalog.entries[1].target_index == "#BMPA1");
     CHECK(catalog.entries[1].source_name == "bg.png");
+}
+
+namespace {
+auto catalog_cache_document() -> song_document_t {
+    song_document_t document;
+    document.audio_assets.push_back({.id = asset_id_t{1}, .source_path = "audio/kick.wav"});
+    document.audio_assets.push_back({.id = asset_id_t{3}, .source_path = "audio/snare.wav"});
+    document.resources = {
+        {.id = resource_id_t{10}, .name = "Kick", .asset = asset_id_t{1},
+         .roles = {resource_role_t::sample}},
+        {.id = resource_id_t{11}, .name = "Snare", .asset = asset_id_t{3},
+         .roles = {resource_role_t::sample}},
+    };
+    return document;
+}
+
+auto catalogs_match(const sys::compose_resource_catalog_t& left,
+                    const sys::compose_resource_catalog_t& right) -> bool {
+    return std::ranges::equal(left.entries, right.entries, [](const auto& a, const auto& b) {
+        return a.name == b.name && a.selected_audio_asset == b.selected_audio_asset &&
+               a.use_count == b.use_count;
+    });
+}
+} // namespace
+
+TEST_CASE("Compose resource catalog cache matches the uncached catalog",
+          "[unit][frontend][compose][resources]") {
+    const auto document = catalog_cache_document();
+    sys::compose_resource_catalog_cache_t cache;
+    const auto& cached = sys::compose_resource_catalog_t::from(cache, document, asset_id_t{1}, 4);
+    CHECK(catalogs_match(cached, sys::compose_resource_catalog_t::from(document, asset_id_t{1}, 4)));
+}
+
+TEST_CASE("Compose resource catalog cache refreshes selection without rebuilding",
+          "[unit][frontend][compose][resources]") {
+    const auto document = catalog_cache_document();
+    sys::compose_resource_catalog_cache_t cache;
+    (void)sys::compose_resource_catalog_t::from(cache, document, asset_id_t{1}, 4);
+    const auto& reselected = sys::compose_resource_catalog_t::from(cache, document, asset_id_t{3}, 4);
+    CHECK(cache.catalog.build_count() == 1);
+    CHECK_FALSE(reselected.entries[0].selected_audio_asset);
+    CHECK(reselected.entries[1].selected_audio_asset);
+}
+
+TEST_CASE("Compose resource catalog cache rebuilds after a document revision",
+          "[unit][frontend][compose][resources]") {
+    auto document = catalog_cache_document();
+    sys::compose_resource_catalog_cache_t cache;
+    (void)sys::compose_resource_catalog_t::from(cache, document, asset_id_t{3}, 4);
+    document.resources[1].name = "Rim";
+    ++document.revision;
+    const auto& rebuilt = sys::compose_resource_catalog_t::from(cache, document, asset_id_t{3}, 4);
+    CHECK(cache.catalog.build_count() == 2);
+    CHECK(catalogs_match(rebuilt, sys::compose_resource_catalog_t::from(document, asset_id_t{3}, 4)));
 }
 
 TEST_CASE("Compose resource catalog falls back to stable IDs and diagnoses absent assets",

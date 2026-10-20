@@ -240,6 +240,7 @@ struct compose_scene_cache_t {
   public:
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
+    compose_resource_catalog_cache_t resource_catalog_cache;
     // Main-loop projection cache; const view builders may populate it.
     mutable compose_timing_payload_cache_t timing_payload_cache;
     // Internal reference-projection bypass for correctness/performance probes.

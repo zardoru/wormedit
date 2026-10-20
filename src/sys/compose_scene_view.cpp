@@ -1,4 +1,5 @@
 #include "sys/compose_view_internal.h"
+#include "ui/compose_draw_source_labels.h"
 #include <wormedit/formats/osu_mania.h>
 namespace wormedit::sys::compose_projection_detail {
 namespace {
@@ -681,7 +682,7 @@ bool initialize_compose_view_state(
         wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
     view.draw_source_kind = application_state.project.compose_gesture.draw_source_kind;
     view.draw_source_id = application_state.project.compose_gesture.draw_source_id;
-    view.draw_source_label = "silent note";
+    view.draw_source_label = ui::no_draw_sound_resource_label;
     view.draw_source_missing = false;
     view.semantic_layer_target_row = 0;
     view.note_paint_mode_active = notes_editable && application_state.project.compose_gesture.note_paint_mode_active;

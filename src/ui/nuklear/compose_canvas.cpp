@@ -1,6 +1,7 @@
 #include "ui/nuklear/catalog_view.h"
 #include "ui/field/rect.h"
 #include "ui/hitsound_icons.h"
+#include "ui/compose_draw_source_labels.h"
 
 #include <wormedit/core/rational.h>
 #include "core/text_util.h"
@@ -3392,7 +3393,7 @@ auto tool_chip(nk_context* context, const WormUiComposeView& view, struct nk_rec
         : chip.layer ? " · Alt+drag removes" : " · right-drag erases";
     chip.warning = !chip.layer && view.draw_source_missing;
     const auto* source = chip.layer ? view.semantic_layer_target.name : view.draw_source_label;
-    if (!source) source = chip.layer ? "Pick a layer" : "silent note";
+    if (!source) source = chip.layer ? "Pick a layer" : wormedit::ui::no_draw_sound_resource_label;
     const auto prefix_width = chip_text_width(font, chip.prefix);
     const auto suffix_width = chip_text_width(font, chip.suffix);
     const auto source_width = std::max(0.0f, available - 40 - prefix_width - suffix_width);

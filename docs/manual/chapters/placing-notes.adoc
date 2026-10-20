@@ -132,3 +132,5 @@ Sounds that play without a note to hit live in the BGM columns to the right of t
 Set how many there are with *BGM columns* in the toolbar. kbd:[`] moves the selected notes into
 BGM, keeping their timing and sounds; kbd:[Shift+`] moves just the next selected note. Draw on a
 BGM column with the Draw tool to place a sound there directly.
+On BMSON charts, moving a linked playable note to BGM returns it to its original source stem,
+keeping its timing and slice point.

@@ -187,7 +187,7 @@ void render_bgm_action(nk_context* context, const WormUiComposeView& view,
     std::snprintf(bgm_label, sizeof(bgm_label), "Move to BGM%s%s", view.move_to_bgm_shortcut[0] ? "  " : "",
                   view.move_to_bgm_shortcut);
     if (chrome::context_menu_button(context, bgm_label,
-            view.move_to_bgm_available ? nullptr : "Requires selected playable notes on an editable BMS chart")) {
+            view.move_to_bgm_available ? nullptr : "Requires selected playable notes on an editable BMS/BMSON chart")) {
         emit_compose_menu_command(action, view, "edit.move_to_bgm");
         chrome::context_menu_close(menu.popup);
     }

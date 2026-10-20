@@ -5995,7 +5995,17 @@ TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick
     t475_check(repicked == "Draw source selected.");
     t475_project(fixture);
     t475_check(!fixture.flattened.view.compose.draw_source_missing);
-    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "silent note");
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "no sound resource");
+}
+
+TEST_CASE("Unassigned Draw source describes resource assignment rather than hitsound audibility",
+          "[sys][compose][source-chip][hitsound]") {
+    compose_test_fixture_t fixture(chip_source_song());
+    t475_project(fixture);
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "no sound resource");
+    fixture.interaction->armed_hitsample = osu_hitsample_t{.whistle = true, .clap = true};
+    t475_project(fixture);
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "no sound resource");
 }
 
 TEST_CASE("Tool chip BGA uses resource identity and Layer reveals the off-page target ordinal",

@@ -7051,7 +7051,9 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
 
 TEST_CASE("Timing focus projects the same Move to BGM capability as its command",
           "[frontend-state][event-harness][gesture-verbs]") {
-    t422_fixture_t f{t424_song()};
+    auto song = t424_song();
+    song.charts.front().source_family = GENERATE(wormedit::format_family_t::bms, wormedit::format_family_t::bmson);
+    t422_fixture_t f{std::move(song)};
     expect_t422(f.harness.view().compose.move_to_bgm_available);
     f.application.project.compose_view.compose_timing_focus = true;
     f.project();

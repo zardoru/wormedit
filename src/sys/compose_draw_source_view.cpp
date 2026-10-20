@@ -1,4 +1,5 @@
 #include "core/text_util.h"
+#include "ui/compose_draw_source_labels.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_resource_presenter.h"
@@ -112,7 +113,7 @@ auto compose_scene_cache_t::draw_stem_source_data_t::label_t::from(
     std::uint8_t kind, std::uint64_t id) -> label_t {
     const auto found = source.resource_indices.find(id);
     const bool missing = kind != 0 && found == source.resource_indices.end();
-    return {.text = kind == 0 ? "silent note" : missing ? "missing source"
+    return {.text = kind == 0 ? ui::no_draw_sound_resource_label : missing ? "missing source"
                    : bounded_draw_source_label(document.resources[found->second]),
             .is_missing = missing};
 }
@@ -126,20 +127,20 @@ void populate_draw_source_label(frontend_workspace_view_t& flattened, compose_sc
             return compose_scene_cache_t::draw_stem_source_data_t::label_t::from(
                 source, document, view.draw_source_kind, view.draw_source_id);
         });
-    view.draw_source_label = view.draw_source_kind == 0 ? "silent note"
+    view.draw_source_label = view.draw_source_kind == 0 ? ui::no_draw_sound_resource_label
                              : label.is_missing ? "missing source"
                              : draw_stem_source_name(flattened, label.text);
     view.draw_source_missing = label.is_missing;
 }
 
-// Draw on a BGM lane needs a sound; with a silent source the chip says so.
+// Draw on a BGM lane needs a resource, independently of armed note hitsounds.
 // BMSON lanes use stem and packed-column drawing, which have their own source
 // tooltips.
 void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_document_t& chart) {
     if (view.draw_source_kind != 0 || chart.bgm_source_lanes.empty() ||
         chart.source_family == wormedit::format_family_t::bmson)
         return;
-    view.draw_source_label = "silent note · Pick a sound to draw BGM";
+    view.draw_source_label = ui::no_draw_bgm_resource_hint;
 }
 
 auto compose_sound_is_stem(const compose_scene_cache_t& cache, std::uint64_t resource) -> bool {

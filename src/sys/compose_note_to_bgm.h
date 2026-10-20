@@ -10,7 +10,7 @@ namespace wormedit::sys {
 
 inline auto compose_move_to_bgm_available(const chart_document_t& chart,
     const editor_interaction_state_t& state, const application_command_state_t& application) -> bool {
-    return chart.source_family == format_family_t::bms &&
+    return (chart.source_family == format_family_t::bms || chart.source_family == format_family_t::bmson) &&
         !state.is_pending() && !application.project.clipboard.paste_session &&
         ui::compose_notes_editable(compose_mode_of(application)) &&
         (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects,

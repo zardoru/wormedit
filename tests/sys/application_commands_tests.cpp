@@ -13,6 +13,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/compose_note_to_bgm.h"
 #include "sys/native_chart_edit_action.h"
 #include "sys/output_group_export.h"
 #include "sys/transport_player_actions.h"
@@ -1149,6 +1150,99 @@ void seed_layer_commands(TimingInsertFixture& fixture, bool locked = false) {
 }
 }
 
+namespace {
+auto bmson_bgm_command_history() -> wormedit::document_history_t {
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson",
+                        std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    return wormedit::document_history_t::from(std::move(song));
+}
+
+struct bmson_bgm_command_fixture_t {
+    TimingInsertFixture route;
+    wormedit::bgm_event_t original;
+    std::size_t measure_index{};
+    std::size_t source_channel_count{};
+
+    bmson_bgm_command_fixture_t() {
+        using namespace wormedit;
+        auto& history = route.fixture.history;
+        history = bmson_bgm_command_history();
+        const auto& chart = history.document.charts.front();
+        source_channel_count = chart.sound_channels.size();
+        const auto measure = std::ranges::find_if(chart.measures, [](const auto& item) {
+            return !item.bgm_events.empty();
+        });
+        REQUIRE(measure != chart.measures.end());
+        measure_index = static_cast<std::size_t>(measure - chart.measures.begin());
+        original = measure->bgm_events.front();
+        const auto chart_id = chart.id;
+        const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+        const std::array events{original.id};
+        REQUIRE(move_bgm_events_to_lane(history, chart_id, events, lane).applied);
+        constexpr std::array snaps{std::uint64_t{4}};
+        auto setup = editor_interaction_state_t::from(history, chart_id, lane, original.position, snaps, 4, 192);
+        REQUIRE(setup);
+        route.compose_state = std::move(*setup.state);
+        route.compose_state->selected_notes = {original.id};
+        route.workspace.song = history.document.id;
+        route.workspace.selected_chart = chart_id;
+    }
+
+    void check_stem_binding(const wormedit::bgm_event_t& restored) const {
+        CHECK(restored.source_lane == original.source_lane);
+        CHECK(restored.position == original.position);
+        CHECK(restored.sound_channel_event == original.sound_channel_event);
+        CHECK(restored.sound == original.sound);
+    }
+
+    void check_returned(bool successive) const {
+        using namespace wormedit;
+        const auto& chart = route.fixture.history.document.charts.front();
+        CHECK(chart.sound_channels.size() == source_channel_count);
+        CHECK(chart.find_note(original.id) == nullptr);
+        const auto& events = chart.measures[measure_index].bgm_events;
+        const auto restored = std::ranges::find(events, original.id, &bgm_event_t::id);
+        REQUIRE(restored != events.end());
+        check_stem_binding(*restored);
+        CHECK(route.compose_state->selected_notes.empty());
+        CHECK(route.compose_state->selected_objects.empty() == successive);
+    }
+};
+}
+
+TEST_CASE("Move to BGM availability includes BMSON without enabling other format families",
+          "[sys][application_commands][note-to-bgm][bmson]") {
+    using namespace wormedit;
+    const auto family = GENERATE(format_family_t::bms, format_family_t::bmson, format_family_t::native_project,
+        format_family_t::stepmania, format_family_t::osu_mania, format_family_t::midi, format_family_t::quaver);
+    TimingInsertFixture f;
+    auto& chart = f.fixture.history.document.charts.front();
+    chart.source_family = family;
+    CHECK(compose_move_to_bgm_available(chart, *f.compose_state, f.application_state) ==
+          (family == format_family_t::bms || family == format_family_t::bmson));
+}
+
+TEST_CASE("Move to BGM commands return linked BMSON notes to their source stem in one undo step",
+          "[sys][application_commands][note-to-bgm][bmson]") {
+    using namespace wormedit;
+    const auto successive = GENERATE(false, true);
+    bmson_bgm_command_fixture_t f;
+    auto& history = f.route.fixture.history;
+    const auto before = write_native_project(history.document).value;
+    const auto undo_count = history.undo.size();
+    REQUIRE(f.route.invoke(successive ? application_command_kind_t::edit_move_next_to_bgm
+                                     : application_command_kind_t::edit_move_to_bgm).value);
+    f.check_returned(successive);
+    CHECK(history.undo.size() == undo_count + 1);
+    REQUIRE(f.route.invoke(application_command_kind_t::history_undo).value);
+    CHECK(write_native_project(history.document).value == before);
+}
+
 TEST_CASE("Application route groups retain their own missing-context rejection",
           "[sys][application_commands][route-parity]") {
     using kind_t = application_command_kind_t;
@@ -1159,7 +1253,7 @@ TEST_CASE("Application route groups retain their own missing-context rejection",
         std::pair{kind_t::transport_loop_selection, "Select a committed area to loop playback."},
         std::pair{kind_t::transport_play_pause, "Chart preview is unavailable."},
         std::pair{kind_t::transport_external_play_start, "External player is unavailable."},
-        std::pair{kind_t::edit_move_to_bgm, "Move to BGM requires selected notes on an editable BMS chart."},
+        std::pair{kind_t::edit_move_to_bgm, "Move to BGM requires selected notes on an editable BMS/BMSON chart."},
         std::pair{kind_t::edit_copy, "Clipboard requires the active Compose chart."},
         std::pair{kind_t::edit_delete, "Delete requires the active Compose chart."},
         std::pair{kind_t::selection_select_all, "Selection command requires the active Compose chart."},

@@ -388,7 +388,7 @@ auto note_to_bgm_command(command_context_t& context) -> command_result_t {
     if (!state || !chart ||
         !compose_move_to_bgm_available(*chart, *state, context.environment.editor.commands))
         return compose_action_outcome_t::from(
-            "Move to BGM requires selected notes on an editable BMS chart.",
+            "Move to BGM requires selected notes on an editable BMS/BMSON chart.",
             notification_severity_t::hint, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
     const auto moved =

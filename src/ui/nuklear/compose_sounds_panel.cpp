@@ -1,4 +1,5 @@
 #include "ui/nuklear/catalog_chrome.h"
+#include "ui/compose_draw_source_labels.h"
 #include "ui/nuklear/content_layout.h"
 #include "core/text_util.h"
 #include "ui/nuklear/compose_sounds_panel.h"
@@ -477,7 +478,7 @@ void render_toolbar(const SoundsPanel& panel) {
     IconButton::layout_columns(context, panel.view->keysound_ids_available ? 11 : 9, 27.0f);
     nk_layout_row_template_end(context);
 
-    if (IconButton{Glyph::minus, "Current source: silent note", state.pointer_capture.draw_source_kind == 0}.render(context))
+    if (IconButton{Glyph::minus, wormedit::ui::no_draw_sound_resource_tooltip, state.pointer_capture.draw_source_kind == 0}.render(context))
         worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available sound shown",
                    state.resource_picker.auto_increment_on_place}.render(context)) {

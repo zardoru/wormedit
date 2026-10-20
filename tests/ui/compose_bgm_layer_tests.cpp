@@ -309,7 +309,7 @@ TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an
           "[unit][event-harness][tool-chip][semantic-layer]") {
     nuklear_event_harness_t harness{1280, 900};
     require_layer_brush(harness.ready());
-    initialize_chip(harness, 0, 0, "silent note");
+    initialize_chip(harness, 0, 0, "no sound resource");
     auto& view = harness.view().compose;
     view.note_paint_mode_active = false;
     view.semantic_layer_paint_mode_active = true;
@@ -331,7 +331,7 @@ TEST_CASE("Tool chip leaves outside canvas presses available and missing source 
           "[unit][event-harness][tool-chip]") {
     nuklear_event_harness_t harness{1280, 900};
     require_layer_brush(harness.ready());
-    initialize_chip(harness, 0, 0, "silent note");
+    initialize_chip(harness, 0, 0, "no sound resource");
     const auto outside = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : outside) {

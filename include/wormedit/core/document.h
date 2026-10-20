@@ -326,6 +326,7 @@ struct bgm_source_lane_t {
     std::string name;
     std::size_t source_order{};
     std::optional<object_id_t> stem_channel{};
+    auto operator==(const bgm_source_lane_t&) const -> bool = default;
 };
 
 struct bpm_event_t {

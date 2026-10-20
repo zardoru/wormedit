@@ -3,6 +3,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
+#include <wormedit/core/bgm_columns.h>
 #include "lane_occupancy.h"
 
 #include <wormedit/core/sound_slice.h>
@@ -661,6 +662,11 @@ namespace {
 // index the pasted objects are placed against.
 auto add_paste_bar_lines(chart_document_t& chart, const chart_clipboard_t& clipboard, std::uint64_t anchor,
                          chart_paste_report_t& report) -> result_t<measure_index_t, std::string> {
+    const auto original_columns = chart.bgm_source_lanes.size();
+    if (auto grown = grow_bgm_columns(chart, clipboard.required_bgm_column_count); !grown)
+        return std::unexpected(std::move(grown.error()));
+    report.new_bgm_lanes.assign(chart.bgm_source_lanes.begin() + original_columns,
+                                chart.bgm_source_lanes.end());
     for (const auto& offset : clipboard.bar_lines) {
         const auto rows = exact_rows(offset, chart.divisions_per_standard_measure);
         if (!rows || *rows > std::numeric_limits<std::uint64_t>::max() - anchor)
@@ -768,6 +774,8 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(stamp.chart);
+    chart->bgm_source_lanes.insert(chart->bgm_source_lanes.end(),
+        report.new_bgm_lanes.begin(), report.new_bgm_lanes.end());
     // Same revision, same splits: the new measure IDs match the ones the objects name.
     if (auto diagnostics = add_bar_lines(*chart, report.bar_line_rows); !diagnostics.empty())
         return {.diagnostics = std::move(diagnostics)};

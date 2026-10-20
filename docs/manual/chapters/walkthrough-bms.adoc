@@ -89,7 +89,8 @@ What to know:
 * *Sounds are matched by number.* A note copied with sound `01` uses this project's sound with
 BMS ID `01`. If a number has no sound, nothing is pasted and the message reports a missing WAV
 identity.
-* *BGM needs columns.* Add at least as many BGM columns as the copied data uses before pasting.
+* *BGM columns grow automatically.* The preview includes missing columns; committing adds them
+  and the pasted objects together. One Undo removes both.
 * *Positions are exact.* Rows that BMSE and iBMSC store as decimals are recovered as exact
 fractions; long notes keep their exact length.
 * *Wormedit's own clipboard comes first while the system clipboard text is unchanged.* If you copy

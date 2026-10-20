@@ -272,12 +272,25 @@ TEST_CASE("bms_clipboard ambiguous target lane channels reject instead of choosi
         song, chart, layout));
 }
 
-TEST_CASE("bms_clipboard a missing target BGM lane rejects without fabricating geometry", "[formats]") {
+TEST_CASE("bms_clipboard reports required BGM columns without changing the chart", "[formats]") {
     auto song = target_document();
     auto& chart = song.charts.front();
     chart.bgm_source_lanes.clear();
-    CHECK_FALSE(wormedit::parse_bms_chart_clipboard("iBMSC Clipboard Data\r\n27 0 30000 0 0 0",
-        song, chart, chart.lane_layouts.front().layout));
+    const auto decoded = wormedit::parse_bms_chart_clipboard(
+        "iBMSC Clipboard Data\r\n29 0 30000 0 0 0", song, chart,
+        chart.lane_layouts.front().layout);
+    REQUIRE(decoded);
+    CHECK(decoded->required_bgm_column_count == 3);
+    CHECK(decoded->objects.front().lane_index == 2);
+    CHECK(chart.bgm_source_lanes.empty());
+}
+
+TEST_CASE("bms_clipboard BGM column overflow names the format limit", "[formats]") {
+    const auto text = GENERATE("iBMSC Clipboard Data\r\n155 0 30000 0 0 0",
+        "BMSE ClipBoard Object Data Format\r\n13L000000003\r\n");
+    const auto decoded = decode(text);
+    REQUIRE_FALSE(decoded);
+    CHECK(decoded.error() == "BMS BGM column count cannot exceed 128.");
 }
 
 TEST_CASE("bms_clipboard pairs reordered iBMSC long-note endpoints", "[formats]") {

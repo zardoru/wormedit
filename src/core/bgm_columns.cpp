@@ -18,15 +18,19 @@ auto events_in_column(const chart_document_t& chart, object_id_t column) -> std:
     return total;
 }
 
-auto grow_columns(chart_document_t& chart, std::size_t count, document_command_result_t& result)
-    -> bool {
+} // namespace
+
+auto grow_bgm_columns(chart_document_t& chart, std::size_t count)
+    -> result_t<void, std::string> {
+    if (count > maximum_bgm_column_count)
+        return std::unexpected("BGM column count cannot exceed 128.");
+    if (count <= chart.bgm_source_lanes.size()) return {};
     auto next_id = id_ceiling_t<object_id_t>::from(chart).maximum;
     std::size_t order{};
     for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
     const auto missing = count - chart.bgm_source_lanes.size();
     if (next_id > std::numeric_limits<std::uint64_t>::max() - missing) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
-        return false;
+        return std::unexpected("BGM source lane ID space is exhausted");
     }
     while (chart.bgm_source_lanes.size() < count) {
         chart.bgm_source_lanes.push_back(
@@ -34,9 +38,10 @@ auto grow_columns(chart_document_t& chart, std::size_t count, document_command_r
              .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
              .source_order = order++});
     }
-    return true;
+    return {};
 }
 
+namespace {
 auto shrink_columns(chart_document_t& chart, std::size_t count, document_command_result_t& result)
     -> bool {
     while (chart.bgm_source_lanes.size() > count) {
@@ -76,9 +81,12 @@ auto apply_bgm_column_count(document_history_t& history,
     }
     const auto current = target->bgm_source_lanes.size();
     if (count == current) return result;
-    const auto changed = count > current ? grow_columns(*target, count, result)
-                                         : shrink_columns(*target, count, result);
-    if (!changed) return result;
+    if (count > current) {
+        if (auto grown = grow_bgm_columns(*target, count); !grown) {
+            reject(result, diagnostic_code_t::invalid_id, std::move(grown.error()));
+            return result;
+        }
+    } else if (!shrink_columns(*target, count, result)) return result;
     return transaction.commit("Set BGM column count");
 }
 

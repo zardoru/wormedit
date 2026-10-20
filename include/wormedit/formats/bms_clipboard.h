@@ -19,6 +19,8 @@ struct bms_clipboard_decode_options_t {
 // The caller supplies the target profile explicitly; resources resolve only
 // through that document's BMS WAV identities. Ambiguous/undefined mappings,
 // malformed records and unsupported objects reject the entire payload.
+// BGM columns are ordinal: required_bgm_column_count requests any missing columns from
+// the native paste proposal, which allocates their stable IDs without changing this target.
 // Positions use standard measures and bounded rational recovery (denominator
 // <= 192 * 64, error <= 1e-9 measure). This function never changes the document.
 // True when the first line names one of those four grammars, whatever its line ending, so a

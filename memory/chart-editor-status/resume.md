@@ -1,9 +1,16 @@
 # Status: resume checklist
 
-## Active queue (2026-10-19)
+## Active queue (2026-10-20)
 
 No sequential follow-up is active. T-729 export-cut sections and T-730 timing links remain
 deferred until the owner names them.
+
+Completed **T-704** (2026-10-20): BMSE/iBMSC paste grows missing BGM columns in the
+proposal, shows them with the ghost preview and commits columns plus objects in one Undo step.
+Existing lanes/events and native clipboard behavior are preserved; requests above 128 columns
+name the limit. Focused core/decoder and application paste checks pass; GATE passes 4,265/4,265
+(`/tmp/wormedit-gate.baznWP`), affected default clang-tidy has only existing complexity warnings,
+and isolated Xvfb verifies preview, commit and Undo in the empty tutorial project.
 
 Completed **T-728** (2026-10-19): Create project now uses a short game row, grouped lane-shape
 cards, applicable variants and a role-colored lane preview instead of the roughly 60-entry combo.

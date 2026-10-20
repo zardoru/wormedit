@@ -54,11 +54,23 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 ## T-704 Add BGM columns when pasting BMS editor data needs them
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
+- **Stale-plan audit / wiring:** The decoder rejected absent source lanes in `finish_record`;
+  `chart_paste_proposal_t` already owned placement and atomic publication. The decoder now records
+  the highest required column, the proposal allocates columns through the shared BGM allocator,
+  and `compose_view.cpp` projects the proposed lanes and ghosts through existing frontend drawing.
+  Format, core clipboard and sys paste regressions cover both external grammars, existing events,
+  zero/fewer/enough columns, rejection, native-copy behavior and one-step Undo.
+- **Scope extension (2026-10-20):** `include/wormedit/core/chart_clipboard.h` carries the external
+  column requirement and proposed lanes; `include/wormedit/core/bgm_columns.h` and
+  `src/core/bgm_columns.cpp` expose the existing column allocator for proposal reuse. Coordinator
+  approved within the card's outcome; no separate allocator or scratch-history command.
+  `include/wormedit/core/document.h` gives BGM source lanes default value equality, needed by the
+  paste report's existing equality contract now that it retains proposed columns.
 - **Value:** Medium: pasting iBMSC or BMSE notes with BGM into a chart with fewer BGM columns is refused today ("BMS BGM column has no matching target source lane"), so users must count columns and add them first.
 - **Outcome:** When external BMS editor text (T-700) refers to more BGM columns than the chart has, the paste preview shows the extra columns and committing adds them and the notes in one Undo step.
 - **Read first:** `src/formats/bms_clipboard.cpp` (BGM column mapping), `src/sys/compose_view.cpp` (`begin_compose_paste`, `decode_external_clipboard`), `src/core/bgm_columns.cpp` (`Set BGM column count`).
-- **Files owned:** `src/formats/bms_clipboard.cpp`, `include/wormedit/formats/bms_clipboard.h`, `src/sys/compose_view.cpp`, `src/core/chart_clipboard.cpp` (applying with column growth), tests, `docs/manual/chapters/walkthrough-bms.adoc` (drop the "BGM needs columns" note), this card.
+- **Files owned:** `src/formats/bms_clipboard.cpp`, `include/wormedit/formats/bms_clipboard.h`, `src/sys/compose_view.cpp`, `src/core/chart_clipboard.cpp` (applying with column growth), `include/wormedit/core/chart_clipboard.h`, `include/wormedit/core/bgm_columns.h`, `src/core/bgm_columns.cpp`, `include/wormedit/core/document.h`, tests, `docs/manual/chapters/walkthrough-bms.adoc` (drop the "BGM needs columns" note), `memory/chart-editor-status/resume.md` (completion record), this card.
 - **Steps:**
   1. Let the decoder report the highest BGM column the text uses instead of rejecting.
   2. Stage the column growth in the paste proposal so preview and commit agree; one transaction adds columns and pastes.
@@ -66,6 +78,22 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Invariants:** Existing BGM events and their columns are untouched; wormedit's own clipboard paste is unchanged.
 - **Reject/failure behavior:** Beyond the format's BGM column limit the paste is refused with the limit named.
 - **Verify:** GATE; Xvfb paste of iBMSC text with BGM into the empty tutorial project.
+- **Verification (2026-10-20):** Focused core/decoder tests pass 379 assertions in 46 cases;
+  application paste tests pass 132 assertions in six cases. Affected default clang-tidy reports
+  only existing complexity warnings; no allowances changed. Isolated Xvfb on
+  `docs/manual/fixtures/tutorial/tutorial-empty.wormedit` shows three staged columns and a ghost,
+  the committed event and column count 3, then one Undo restoring count 0 and no event:
+  `/tmp/t704-preview.png`, `/tmp/t704-committed.png`, `/tmp/t704-undone.png`.
+  Real GATE output tail:
+  ```text
+  gate: 8 job(s), min(8, 16 cores / 1 agent(s)); logs in /tmp/wormedit-gate.baznWP
+    pass  build
+    pass  ctest
+    pass  whitespace
+    pass  complexity
+    100% tests passed out of 4265
+  gate: passed
+  ```
 - **Out of scope:** Pasting into BMS virtual measures past the chart's end (separate limitation, documented in the manual).
 
 ## T-705 Ship the manual in packages, opt-out

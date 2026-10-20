@@ -2,6 +2,7 @@
 #include "../core/text_util.h"
 #include "../core/timing_arithmetic.h"
 #include <wormedit/core/bms36.h>
+#include <wormedit/core/bgm_columns.h>
 #include <wormedit/core/numeric_text.h>
 #include <wormedit/formats/bms_clipboard.h>
 
@@ -264,7 +265,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         return std::pair{*kind, std::string{channel}};
     }
     constexpr std::uint32_t first_bgm = 36U * 36U + 1U;
-    if (*numeric >= first_bgm && *numeric < first_bgm + 128U) {
+    if (*numeric >= first_bgm) {
         bgm_lane = *numeric - first_bgm;
         return std::pair{object_kind_t::bgm, std::string{}};
     }
@@ -284,7 +285,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
     if (column >= 14 && column <= 20)
         return std::pair{object_kind_t::note, std::string{two_player.substr((column - 14) * 2, 2)}};
     if (column == 21) return std::pair{object_kind_t::note, std::string{"26"}};
-    if (column >= 27 && column < 155) {
+    if (column >= 27) {
         bgm_lane = static_cast<std::size_t>(column - 27);
         return std::pair{object_kind_t::bgm, std::string{}};
     }
@@ -318,8 +319,8 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
         return {};
     }
     if (record.kind == object_kind_t::bgm) {
-        if (record.bgm_lane >= context.chart.bgm_source_lanes.size())
-            return "BMS BGM column has no matching target source lane.";
+        if (record.bgm_lane >= maximum_bgm_column_count)
+            return "BMS BGM column count cannot exceed 128.";
         const auto number = resource_number(record.value);
         if (!number) return "BMS BGM resource index must be a positive integer.";
         const auto resource = resolve_resource(context.resources, *number,
@@ -618,10 +619,13 @@ void append_record_object(chart_clipboard_t& clipboard, const record_t& record,
             append_note_object(clipboard, record, grammar, context, id, record.duration);
         return;
     case object_kind_t::bgm:
+        clipboard.required_bgm_column_count =
+            std::max(clipboard.required_bgm_column_count, record.bgm_lane + 1);
         clipboard.objects.push_back({.offset = record.offset,
             .lane_index = record.bgm_lane,
             .payload = bgm_event_t{.id = object_id_t{id}, .position = {},
-                .source_lane = context.chart.bgm_source_lanes[record.bgm_lane].id,
+                .source_lane = record.bgm_lane < context.chart.bgm_source_lanes.size()
+                    ? context.chart.bgm_source_lanes[record.bgm_lane].id : object_id_t{},
                 .sound = record.sound, .provenance = provenance}});
         return;
     case object_kind_t::bpm:

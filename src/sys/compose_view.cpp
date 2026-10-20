@@ -215,6 +215,8 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     chart.input_profile = source.input_profile;
     chart.semantic_layers = source.semantic_layers;
     chart.bgm_source_lanes = source.bgm_source_lanes;
+    chart.bgm_source_lanes.insert(chart.bgm_source_lanes.end(),
+        report.new_bgm_lanes.begin(), report.new_bgm_lanes.end());
     chart.active_branch_selection = source.active_branch_selection;
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
@@ -1996,8 +1998,12 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
     const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
         {.bgm_lane_widths_pixels = cache.scene.bgm_lane_widths_pixels});
-    const auto preview_lane_count = interaction_view.gesture<wormedit::pending_note_move_gesture_t>()
+    auto preview_lane_count = interaction_view.gesture<wormedit::pending_note_move_gesture_t>()
         ? interaction_view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.size() : 0;
+    const auto& paste = application_state.project.clipboard.paste_session;
+    const auto paste_preview = paste ? wormedit::chart_paste_preview_view_t::from(paste->proposal)
+                                     : wormedit::chart_paste_preview_view_t{};
+    preview_lane_count += paste_preview.report ? paste_preview.report->new_bgm_lanes.size() : 0;
     const auto maximum_bgm_scroll = std::max(0.0,
         bgm_content + preview_lane_count * compose_bgm_lane_width_pixels - bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.project.compose_view.bgm_horizontal_scroll_pixels[chart.id.value];
@@ -2219,6 +2225,39 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
     }
 }
 
+void append_paste_bgm_lanes(
+    const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
+    const wormedit::editor_field_scene_view_t& scene,
+    const wormedit::chart_paste_report_t& report) {
+    auto& rows = input.frame.flattened.compose.bgm.lane;
+    auto& view = input.frame.view();
+    if (report.new_bgm_lanes.empty()) return;
+    const auto original = rows;
+    const auto count = std::min<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY,
+        original.size() + report.new_bgm_lanes.size());
+    if (!prepare_compose_geometry_rows(input.frame.flattened, rows, count)) {
+        rows = original;
+        view.truncated = true;
+        return;
+    }
+    for (const auto& lane : original) append_compose_geometry_row(rows, lane, view.truncated);
+    for (const auto& lane : scene.bgm_lanes) {
+        if (std::ranges::find(report.new_bgm_lanes, lane.source_lane,
+                              &wormedit::bgm_source_lane_t::id) == report.new_bgm_lanes.end()) continue;
+        if (rows.size() >= WORM_UI_COMPOSE_BGM_LANE_CAPACITY) {
+            view.truncated = true;
+            break;
+        }
+        append_compose_geometry_row(rows,
+            {.bounds = to_frontend_rect(lane.bounds), .source_lane_id = lane.source_lane.value,
+             .source_order = lane.source_order,
+             .width_pixels = lane.unclipped_right_pixels - lane.unclipped_left_pixels,
+             .resize_edge_pixels = lane.unclipped_right_pixels}, view.truncated);
+    }
+    view.bgm_lanes = rows.data();
+    view.bgm_lane_count = rows.size();
+}
+
 void populate_compose_paste_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input) {
     auto& application = input.frame.application_state;
     if (!input.frame.retained_state || !application.project.clipboard.paste_session)
@@ -2242,6 +2281,7 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         session.geometry, *session.index, input.scope.interaction_view,
         input.frame.cache.frame.preview_scene_request);
     if (!composed.value) return;
+    if (preview.report) append_paste_bgm_lanes(input, *composed.value, *preview.report);
     const auto append = [&session](const auto& object, std::uint8_t kind, std::uint8_t glyph = 0) {
         const auto& b = object.bounds;
         session.ghosts.push_back({{b.left, b.top, b.right, b.bottom}, kind, glyph});

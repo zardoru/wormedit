@@ -490,6 +490,20 @@ TEST_CASE("Chart clipboard pastes plain BGM events without a tail and undoes exa
     expect(!history.document.charts.front().measures[1].bgm_events.front().end);
 }
 
+TEST_CASE("Native BGM copies still reject unavailable target columns") {
+    auto song = bgm_hold_song(std::nullopt);
+    const auto copied = chart_clipboard_t::from(song, bgm_only_selection(), 7);
+    REQUIRE(copied);
+    song.charts.front().bgm_source_lanes.clear();
+    song.charts.front().measures[1].bgm_events.clear();
+    auto history = document_history_t::from(std::move(song));
+    const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied,
+        {measure_id_t{3}, 0});
+    CHECK_FALSE(result.applied);
+    CHECK(history.document.charts.front().bgm_source_lanes.empty());
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("Captured paste batches apply exact proposal IDs with one Undo record",
           "[core][paste-proposal-stamp]") {
     auto [song, clipboard] = paste_fixture();

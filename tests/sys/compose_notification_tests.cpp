@@ -9,6 +9,7 @@
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/native_project.h>
 
 #include <array>
 #include <bit>
@@ -744,9 +745,56 @@ struct bms_editor_paste_fixture_t {
     auto pasted_object_count() const -> std::size_t {
         return application.project.clipboard.paste_session->clipboard.objects.size();
     }
+    void set_bgm_columns(unsigned count) {
+        auto& chart = history.document.charts.front();
+        chart.bgm_source_lanes.clear();
+        for (unsigned index = 0; index < count; ++index)
+            chart.bgm_source_lanes.push_back({.id = object_id_t{1000 + index},
+                .name = "Existing", .source_order = index});
+        if (count) chart.measures.front().bgm_events.push_back({.id = object_id_t{2000},
+            .position = {chart.measures.front().id, 24},
+            .source_lane = chart.bgm_source_lanes.front().id});
+        history = document_history_t::from(history.document);
+        state.cursor = {history.document.charts.front().measures.front().id, 0};
+    }
 };
 
 constexpr std::string_view ibmsc_one_note = "iBMSC Clipboard Data\r\n6 0 10000 0 0 0";
+
+auto paste_document_content(song_document_t song) -> std::string {
+    song.revision = 0;
+    const auto serialized = write_native_project(song);
+    REQUIRE(serialized.value);
+    return *serialized.value;
+}
+
+auto check_bgm_paste_preview(const bms_editor_paste_fixture_t& fixture)
+    -> std::vector<bgm_source_lane_t> {
+    const auto& session = *fixture.application.project.clipboard.paste_session;
+    REQUIRE(session.proposal.value);
+    CHECK(session.geometry.bgm_source_lanes.size() == 3);
+    const auto lane = session.geometry.bgm_source_lanes.back().id;
+    CHECK(session.geometry.measures.front().bgm_events.front().source_lane == lane);
+    return session.geometry.bgm_source_lanes;
+}
+
+void check_retained_bgm_events(song_document_t before, const chart_document_t& after) {
+    const auto before_content = paste_document_content(before);
+    before.charts.front().measures.front().bgm_events = after.measures.front().bgm_events;
+    before.charts.front().measures.front().bgm_events.pop_back();
+    CHECK(paste_document_content(std::move(before)) == before_content);
+}
+
+void check_bgm_paste_commit(bms_editor_paste_fixture_t& fixture,
+                            const std::vector<bgm_source_lane_t>& expected_lanes) {
+    std::string status;
+    const auto applied = apply_compose_paste(fixture.application, fixture.history, fixture.state, status);
+    INFO(status);
+    REQUIRE(applied);
+    const auto& after = fixture.history.document.charts.front();
+    CHECK(after.bgm_source_lanes == expected_lanes);
+    CHECK(after.measures.front().bgm_events.back().source_lane == expected_lanes.back().id);
+}
 } // namespace
 
 TEST_CASE("Paste decodes iBMSC text from the system clipboard",
@@ -757,6 +805,27 @@ TEST_CASE("Paste decodes iBMSC text from the system clipboard",
     REQUIRE(fixture.paste(status));
     CHECK(fixture.pasted_object_count() == 1);
     CHECK(status.starts_with("Pasting BMS editor data"));
+}
+
+TEST_CASE("External BGM paste previews column growth and commits it with the events",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    const auto initial_count = GENERATE(0U, 1U, 3U);
+    fixture.set_bgm_columns(initial_count);
+    const auto before_document = fixture.history.document;
+    const auto before_content = paste_document_content(fixture.history.document);
+    fixture.system_clipboard = GENERATE("iBMSC Clipboard Data\r\n29 0 10000 0 0 0",
+        "BMSE ClipBoard Object Data Format\r\n103000000001\r\n");
+    std::string status;
+    REQUIRE(fixture.paste(status));
+    const auto expected_lanes = check_bgm_paste_preview(fixture);
+    CHECK(paste_document_content(fixture.history.document) == before_content);
+    check_bgm_paste_commit(fixture, expected_lanes);
+    const auto& after = fixture.history.document.charts.front();
+    check_retained_bgm_events(before_document, after);
+    CHECK(fixture.history.undo.size() == 1);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(paste_document_content(fixture.history.document) == before_content);
 }
 
 TEST_CASE("Paste keeps wormedit's own copy until the system clipboard changes",
@@ -772,6 +841,23 @@ TEST_CASE("Paste keeps wormedit's own copy until the system clipboard changes",
     fixture.system_clipboard = std::string{ibmsc_one_note} + "\r\n6 48 10000 0 0 0";
     REQUIRE(fixture.paste(status));
     CHECK(fixture.pasted_object_count() == 2);
+}
+
+TEST_CASE("Rejected external paste does not publish proposed BGM columns",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.bgm_source_lanes.clear();
+    fixture.state.cursor = chart.measures[1].notes.front().position;
+    fixture.history = document_history_t::from(fixture.history.document);
+    const auto before = paste_document_content(fixture.history.document);
+    fixture.system_clipboard = "iBMSC Clipboard Data\r\n6 0 10000 0 0 0\r\n29 0 10000 0 0 0";
+    std::string status;
+    REQUIRE(fixture.paste(status));
+    REQUIRE_FALSE(fixture.application.project.clipboard.paste_session->proposal.value);
+    CHECK_FALSE(apply_compose_paste(fixture.application, fixture.history, fixture.state, status));
+    CHECK(paste_document_content(fixture.history.document) == before);
+    CHECK(fixture.history.undo.empty());
 }
 
 TEST_CASE("Paste ignores unrelated system clipboard text",

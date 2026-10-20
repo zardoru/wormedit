@@ -70,8 +70,7 @@ void print_shortcuts() {
 
 auto lane_keys_cell(const lane_input_profile_t& profile) -> std::string {
     if (profile.input.bindings.empty()) return "none by default";
-    auto lanes = profile.layout.lanes;
-    std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+    const auto lanes = profile.layout.lanes_in_stage_order();
     std::string text;
     for (const auto& lane : lanes) {
         const auto binding = std::ranges::find(profile.input.bindings, lane.id, &lane_binding_t::lane);

@@ -115,6 +115,7 @@ add_library(wormedit_core
     src/core/shortcut_profile_storage.cpp
     src/core/atomic_file_storage.cpp
     src/core/preferences.cpp
+    src/core/lane_keys.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp
     src/core/audio_slicer.cpp
@@ -395,6 +396,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bmson_lane_mode_ui.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/external_player_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/options_window.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/lane_keys_dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/shortcuts_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_toasts.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_panel.cpp"
@@ -565,6 +567,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/external_player.cpp
         src/sys/preferences_runtime.cpp
         src/sys/options_runtime.cpp
+        src/sys/lane_keys_runtime.cpp
         src/sys/shortcut_rows.cpp
         src/sys/menu_command_view.cpp
         src/sys/notification_history_runtime.cpp

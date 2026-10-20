@@ -135,22 +135,6 @@ struct bms_channel_map_t {
     auto operator==(const bms_channel_map_t&) const -> bool = default;
 };
 
-// Instrument color class of a lane. Appended-only: the integer value is stored
-// in native projects.
-enum class lane_key_color_t {
-    generic,
-    white,
-    black,
-    scratch,
-    foot_pedal,
-    free_zone,
-    pms_white,
-    pms_yellow,
-    pms_green,
-    pms_blue,
-    pms_red,
-};
-
 struct lane_definition_t {
     [[nodiscard]] static auto from(std::uint64_t id, std::uint32_t column, stage_group_t stage)
         -> lane_definition_t;
@@ -179,6 +163,9 @@ struct lane_layout_t {
     [[nodiscard]] auto find(lane_id_t id) const -> const lane_definition_t*;
     [[nodiscard]] auto find(lane_id_t id) -> lane_definition_t*;
     [[nodiscard]] auto has_lane(lane_id_t id) const -> bool;
+    [[nodiscard]] auto lanes_in_display_order() const -> std::vector<lane_definition_t>;
+    // display_order can restart in P2. Keyboard maps traverse P1, then P2.
+    [[nodiscard]] auto lanes_in_stage_order() const -> std::vector<lane_definition_t>;
     // Branch reprojection compares source lane shape, ignoring generated IDs/presentation.
     [[nodiscard]] auto has_same_shape(const lane_layout_t& other) const -> bool;
 };

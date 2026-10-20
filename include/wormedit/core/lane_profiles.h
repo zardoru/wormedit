@@ -195,7 +195,8 @@ struct new_project_output_group_descriptor_t {
 };
 struct new_project_layout_descriptor_t {
     // The layout's profile with lane_keys bound left to right in display order. A layout without
-    // lane_keys keeps its factory bindings; wider than ten lanes, that is none (D7).
+    // explicit lane_keys keeps factory bindings up to ten lanes; wider new projects start
+    // unbound (D7). The raw make_profile factory retains its legacy bindings for presets.
     [[nodiscard]] auto profile() const -> lane_input_profile_t;
     // A shared output family enables its authoring tools; mixed/empty outputs stay native.
     [[nodiscard]] auto source_family() const -> format_family_t;

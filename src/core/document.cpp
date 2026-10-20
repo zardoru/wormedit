@@ -100,6 +100,16 @@ auto chart_document_t::find_bgm_event(object_id_t id) -> bgm_event_t* { return f
 auto chart_document_t::find_bgm_event(object_id_t id) const -> const bgm_event_t* { return find_measure_object(*this, id, &measure_chunk_t::bgm_events); }
 auto lane_layout_t::find(lane_id_t id) -> lane_definition_t* { return find_id(lanes, id); }
 auto lane_layout_t::find(lane_id_t id) const -> const lane_definition_t* { return find_id(lanes, id); }
+auto lane_layout_t::lanes_in_display_order() const -> std::vector<lane_definition_t> {
+    auto ordered = lanes;
+    std::ranges::stable_sort(ordered, {}, &lane_definition_t::display_order);
+    return ordered;
+}
+auto lane_layout_t::lanes_in_stage_order() const -> std::vector<lane_definition_t> {
+    auto ordered = lanes_in_display_order();
+    std::ranges::stable_sort(ordered, {}, [](const auto& lane) { return lane.stage == stage_group_t::right; });
+    return ordered;
+}
 auto lane_definition_t::is_editable() const noexcept -> bool {
     return role != lane_role_t::autoplay && role != lane_role_t::invisible && role != lane_role_t::mine;
 }

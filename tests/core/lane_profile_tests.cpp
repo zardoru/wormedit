@@ -1056,8 +1056,7 @@ TEST_CASE("New Project double-play layouts bind the owner's lane keys left to ri
     using enum physical_key_t;
     const auto keys_of = [](std::string_view id) {
         const auto profile = find_new_project_layout(id)->profile();
-        auto lanes = profile.layout.lanes;
-        std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+        const auto lanes = profile.layout.lanes_in_stage_order();
         std::vector<physical_key_t> keys;
         for (const auto& lane : lanes)
             keys.push_back(std::ranges::find(profile.input.bindings, lane.id, &lane_binding_t::lane)->key);

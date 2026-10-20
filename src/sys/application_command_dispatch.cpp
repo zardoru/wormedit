@@ -1299,6 +1299,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::document_new_chart:
     case command_kind_t::view_notifications:
     case command_kind_t::workspace_options:
+    case command_kind_t::workspace_lane_keys:
     case command_kind_t::timing_tap_assistant:
     case command_kind_t::timing_tap:
     case command_kind_t::audio_paint_hitsound:

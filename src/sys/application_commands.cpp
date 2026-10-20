@@ -69,6 +69,7 @@ constexpr command_name_t command_names[]{
     {"view.notifications", application_command_kind_t::view_notifications},
     {"workspace.command_menu", application_command_kind_t::workspace_command_menu},
     {"workspace.options", application_command_kind_t::workspace_options},
+    {"workspace.lane_keys", application_command_kind_t::workspace_lane_keys},
     {"workspace.open_setup", application_command_kind_t::workspace_open_setup},
     {"workspace.open_metadata", application_command_kind_t::workspace_open_metadata},
     {"workspace.open_timing", application_command_kind_t::workspace_open_timing},

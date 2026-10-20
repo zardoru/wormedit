@@ -448,6 +448,7 @@ typedef struct WormUiWorkspaceAction {
     WormUiClipboardAction clipboard;
     WormUiNotificationAction notifications;
     WormUiOptionsAction options;
+    wormedit::ui::lane_keys_action_t lane_keys;
     WormUiCloseDecision close_decision;
     uint64_t close_project_id, close_revision;
     WormUiProjectChartAction project_chart;

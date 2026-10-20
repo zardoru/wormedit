@@ -12,6 +12,12 @@
 
 namespace wormedit {
 
+// Instrument color class; append only because native projects store the integer value.
+enum class lane_key_color_t {
+    generic, white, black, scratch, foot_pedal, free_zone,
+    pms_white, pms_yellow, pms_green, pms_blue, pms_red,
+};
+
 struct signed_rational_t {
     std::int64_t numerator{};
     std::uint64_t denominator{1};

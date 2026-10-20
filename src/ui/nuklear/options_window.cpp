@@ -219,10 +219,16 @@ void render_categories(nk_context* context, const WormUiOptionsView& view, WormU
     }
     nk_group_end(context);
 }
-void render_page(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void render_page(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+                 wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!nk_group_begin(context, "Options page", 0)) return;
     nk_layout_row_dynamic(context, 28, 1);
     nk_label(context, category_names[view.category], NK_TEXT_LEFT);
+    if (view.category == WORM_UI_OPTIONS_INPUT && lane_keys) {
+        nk_layout_row_dynamic(context, 30, 1);
+        if (nk_button_label(context, "Lane keys…"))
+            lane_keys->kind = wormedit::ui::lane_keys_action_kind_t::open;
+    }
     pages[view.category](context, &view, &action);
     nk_layout_row_dynamic(context, 32, 1);
     for (size_t i = 0; i < view.diagnostic_count; ++i)
@@ -269,7 +275,7 @@ bool worm_ui_nuklear_options_view_valid(const WormUiOptionsView* view) {
     return true;
 }
 void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOptionsView* view,
-    WormUiOptionsAction* action) {
+    WormUiOptionsAction* action, wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!context || !action || !worm_ui_nuklear_options_view_valid(view) || !view->visible) {
         worm_ui_nuklear_cancel_options_drag();
         return;
@@ -289,7 +295,7 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOpti
         constexpr float ratios[]{0.28f, 0.72f};
         nk_layout_row(context, NK_DYNAMIC, body_height, 2, ratios);
         render_categories(context, *view, *action);
-        render_page(context, *view, *action);
+        render_page(context, *view, *action, lane_keys);
         render_footer(dialog, context, *view, *action);
     }
     if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)

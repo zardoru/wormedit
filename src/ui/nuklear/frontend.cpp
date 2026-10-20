@@ -15,6 +15,7 @@
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/options_window.h"
+#include "ui/nuklear/lane_keys_dialog.h"
 #include "ui/nuklear/tap_timing_panel.h"
 #include "ui/nuklear/timing_settings_panel.h"
 
@@ -2714,7 +2715,7 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 }
 
 static bool external_project_modal_active(const WormUiWorkspaceView& view) {
-    return view.file_jobs.opening.active || (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
+    return (view.lane_keys && view.lane_keys->visible) || view.file_jobs.opening.active || (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
            g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open ||
@@ -3286,6 +3287,11 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
 }
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    if (frame.view.lane_keys && frame.view.lane_keys->visible) {
+        wormedit::ui::nuklear::render_lane_keys_dialog(g_context, *frame.view.lane_keys,
+            frame.action.lane_keys, frame.width, frame.height);
+        return;
+    }
     const auto jobs = file_job_bounds(frame.view.file_jobs, frame.height);
     render_file_job(frame.view.file_jobs.opening, file_job_titles[0], frame.action.file_jobs.cancel_open, jobs[0]);
     render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1]);
@@ -3297,7 +3303,8 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
                                                    frame.width, frame.height))
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE);
     if (!project_modal_active(frame.view))
-        worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options);
+        worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options,
+                                               &frame.action.lane_keys);
     if (project_modal_active(frame.view)) {
         worm_ui_nuklear_cancel_options_drag();
         return;

@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/lane_keys.h>
 #include "sys/bookmark_navigation.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/compose_action_outcome.h"
@@ -199,6 +200,7 @@ struct compose_static_source_key_t {
 };
 
 struct compose_scene_cache_t {
+    wormedit::lane_key_profile_cache_t lane_keys;
     auto stamp() const -> wormedit::chart_stamp_t {
         return scene.index.key() ? scene.index.key()->stamp : wormedit::chart_stamp_t{};
     }
@@ -652,6 +654,7 @@ struct application_command_state_t {
         return metronome ? metronome->settings : defaults;
     }
     struct preferences_t {
+        wormedit::lane_key_preferences_t lane_keys;
         // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
         bool minimap_click_moves_paused_playhead{};

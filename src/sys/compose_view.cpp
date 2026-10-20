@@ -1900,6 +1900,29 @@ auto compose_has_bgm_pane(const chart_document_t& chart,
         !view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.empty());
 }
 
+auto build_compose_lane_key_view(
+    const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input) -> bool {
+    const auto& chart = input.scope.chart_scope.chart;
+    auto& rows = input.frame.flattened.compose.lane_key;
+    auto& view = input.frame.view();
+    const auto* segment = wormedit::active_lane_layout_segment(chart, input.frame.retained_state->cursor);
+    const auto& profile = segment ? input.frame.cache.lane_keys.resolve(
+        input.frame.application_state.preferences.lane_keys, segment->layout, chart.input_profile)
+        : chart.input_profile;
+    std::size_t count{};
+    bool truncated{};
+    for (const auto& binding : profile.bindings) {
+        const auto scancode = compose_physical_scancode(binding.key);
+        if (scancode == 0) continue;
+        if (count >= rows.size()) { truncated = true; break; }
+        rows[count++] = {.scancode = scancode, .lane_id = binding.lane.value};
+    }
+    view.lane_key_bindings = rows.data();
+    view.lane_key_binding_count = count;
+    view.lane_keys_unbound = profile.bindings.empty();
+    return truncated;
+}
+
 bool compose_project_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
                            std::uint64_t canvas_rows) {
     auto& flattened = input.frame.flattened;
@@ -1943,25 +1966,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         interaction_view.selected_canvas_measure
             ? static_cast<std::uint32_t>(*interaction_view.selected_canvas_measure + 1)
             : 0;
-    std::size_t lane_key_binding_count{};
-    bool lane_key_bindings_truncated{};
-    for (const auto& binding : chart.input_profile.bindings) {
-        const auto scancode = compose_physical_scancode(binding.key);
-        if (scancode == 0) {
-            continue;
-        }
-        if (lane_key_binding_count >= flattened.compose.lane_key.size()) {
-            lane_key_bindings_truncated = true;
-            break;
-        }
-        flattened.compose.lane_key[lane_key_binding_count++] = {
-            .scancode = scancode,
-            .lane_id = binding.lane.value,
-        };
-    }
-    view.lane_key_bindings = flattened.compose.lane_key.data();
-    view.lane_key_binding_count = lane_key_binding_count;
-    view.lane_keys_unbound = chart.input_profile.bindings.empty();
+    const auto lane_key_bindings_truncated = build_compose_lane_key_view(input);
 
     view.bga_lane_visible = interaction_view.bga_lane_visible &&
         wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;

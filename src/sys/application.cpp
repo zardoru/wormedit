@@ -54,6 +54,7 @@
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
+#include "sys/lane_keys_runtime.h"
 #include "sys/shortcut_rows.h"
 #include "sys/menu_command_view.h"
 #include <set>
@@ -367,6 +368,7 @@ void initialize_program_preferences(wormedit::sys::program_preferences_runtime_t
     player.preferences = preferences.preferences.players;
     state.preferences.minimap_click_moves_paused_playhead = preferences.preferences.minimap.click_moves_paused_playhead;
     state.preferences.editor_preferences = preferences.preferences.editor;
+    state.preferences.lane_keys = preferences.preferences.lane_keys;
     for (const auto& warning : preferences.warnings)
         notifications.post(wormedit::notification_severity_t::warning,
                            wormedit::notification_source_t::system, warning);
@@ -826,6 +828,7 @@ void refresh_application_command_states(
         (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
     };
     set("document.new_project", true);
+    set("workspace.lane_keys", wormedit::sys::lane_keys_runtime_t::can_open(chart));
     set("document.new_chart", chart != nullptr);
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
@@ -2090,6 +2093,7 @@ struct application_t::implementation_t {
         program_preferences_runtime_t program_preferences{};
         external_player_runtime_t external_player_runtime{};
         options_runtime_t options_runtime{};
+        lane_keys_runtime_t lane_keys{};
         shortcut_editor_runtime_t shortcut_editor{};
     } preferences;
     application_command_state_t commands{};
@@ -4069,8 +4073,44 @@ struct application_t::implementation_t {
 #endif
     }
 
+    auto open_lane_keys() -> dispatch_outcome_t {
+        preferences.shortcut_editor.capture.reset();
+        const auto chart = session.workspace.selected_chart.value_or(chart_id_t{});
+        const auto cursor = views.compose_interaction_state
+            ? views.compose_interaction_state->cursor : local_position_t{};
+        if (preferences.lane_keys.open(session.history.document, chart, cursor,
+                                       preferences.program_preferences.preferences))
+            return {.value = true};
+        return reject_application_command(platform.notification_sink,
+            "Select a chart with a named lane layout before editing lane keys.",
+            notification_severity_t::warning, notification_source_t::input);
+    }
+
+    void dispatch_lane_keys(WormUiWorkspaceAction& action) {
+        if (action.lane_keys.kind == ui::lane_keys_action_kind_t::open) (void)open_lane_keys();
+        preferences.lane_keys.refresh(session.history.document);
+        if (!preferences.lane_keys.view().visible) return;
+        preferences.lane_keys.capture({action.shortcut_events,
+            std::min(action.shortcut_event_count, std::size(action.shortcut_events))});
+        action.shortcut_event_count = 0;
+        action.compose_input_count = 0;
+        action.compose_viewport_input_count = 0;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+        action.clipboard = WORM_UI_CLIPBOARD_NONE;
+        action.menu_command_id[0] = '\0';
+        action.command_menu_command_id[0] = '\0';
+        if (!preferences.lane_keys.dispatch(action.lane_keys, preferences.program_preferences)) return;
+        commands.preferences.lane_keys = preferences.program_preferences.preferences.lane_keys;
+        const auto& error = preferences.lane_keys.status();
+        platform.notification_sink.post(error.empty() ? notification_severity_t::success : notification_severity_t::error,
+            notification_source_t::system, error.empty() ? "Lane keys saved." : error);
+    }
+
     auto invoke_registry_command(const command_invocation_context_t& invocation)
         -> dispatch_outcome_t {
+        const auto command = parse_application_command(invocation.command.value);
+        if (command && command->kind == application_command_kind_t::workspace_lane_keys)
+            return open_lane_keys();
         return dispatch_options_or_editor_command(
             invocation, preferences.options_runtime, preferences.program_preferences.preferences,
             views.notification_history, platform.notifications, [this, &invocation] {
@@ -4572,6 +4612,8 @@ struct application_t::implementation_t {
             commands.preferences.transport_keep_pitch_available;
         flattened.view.notifications = frame.notifications;
         flattened.view.options = wormedit::sys::options_view(preferences.options_runtime);
+        preferences.lane_keys.refresh(session.history.document);
+        flattened.view.lane_keys = &preferences.lane_keys.view();
         flattened.view.options.current_field_layout_lanes = frame.field_skin_lanes.data();
         flattened.view.options.current_field_layout_lane_count = frame.field_skin_lanes.size();
         attach_shortcut_rows(flattened.view.options, preferences.options_runtime,
@@ -4608,6 +4650,7 @@ struct application_t::implementation_t {
     void dispatch_confirmed_workspace_actions(
         double viewport_delta_seconds, WormUiWorkspaceAction& action,
         const std::optional<std::uint32_t>& selected_waveform_sample_rate, double viewport_height) {
+        dispatch_lane_keys(action);
         dispatch_options_page_action(action.options);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audio_runtime.resident_loader.set_budget_bytes(

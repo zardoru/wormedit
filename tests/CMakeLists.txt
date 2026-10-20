@@ -162,6 +162,7 @@ add_executable(wormedit_core_tests
     core/sound_groups_tests.cpp
     core/sound_group_proposal_tests.cpp
     core/preferences_tests.cpp
+    core/lane_keys_tests.cpp
     core/shortcut_profile_storage_tests.cpp
     core/shortcut_profile_startup_tests.cpp
     core/arena_tests.cpp
@@ -635,6 +636,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/dock_shortcut_event_harness_tests.cpp
         ui/snap_grid_event_harness_tests.cpp
+        ui/lane_keys_event_harness_tests.cpp
+        ../src/sys/lane_keys_runtime.cpp
+        ../src/sys/preferences_runtime.cpp
+        ../src/sys/platform_shortcut_profile.cpp
         ui/sound_picker_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp

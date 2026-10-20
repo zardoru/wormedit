@@ -1158,9 +1158,7 @@ void unbind_wide_project_profile(lane_input_profile_t& profile) {
 }
 template <auto Factory>
 auto make_catalog_profile() -> lane_input_profile_t {
-    auto profile = Factory();
-    unbind_wide_project_profile(profile);
-    return profile;
+    return Factory();
 }
 
 constexpr auto catalog_default_step_type(std::size_t keys) -> std::string_view {
@@ -1177,21 +1175,15 @@ constexpr auto catalog_mania_outputs(std::size_t keys)
 template <std::uint32_t Keys, bool Special = false>
 auto make_catalog_mania_profile() -> lane_input_profile_t {
     static_assert(Keys >= minimum_osu_mania_keys && Keys <= maximum_osu_mania_keys);
-    auto profile = *make_osu_mania_profile(Keys, Special);
-    unbind_wide_project_profile(profile);
-    return profile;
+    return *make_osu_mania_profile(Keys, Special);
 }
 template <auto Factory, scratch_placement_t Scratch>
 auto make_catalog_single_scratch_profile() -> lane_input_profile_t {
-    auto profile = Factory(Scratch);
-    unbind_wide_project_profile(profile);
-    return profile;
+    return Factory(Scratch);
 }
 template <auto Factory, scratch_placement_t Left, scratch_placement_t Right>
 auto make_catalog_double_scratch_profile() -> lane_input_profile_t {
-    auto profile = Factory(Left, Right);
-    unbind_wide_project_profile(profile);
-    return profile;
+    return Factory(Left, Right);
 }
 
 auto make_catalog_pump_double_profile() -> lane_input_profile_t {
@@ -1298,9 +1290,9 @@ auto new_project_layout_descriptor_t::source_family() const -> format_family_t {
 }
 auto new_project_layout_descriptor_t::profile() const -> lane_input_profile_t {
     auto result = make_profile();
+    unbind_wide_project_profile(result);
     if (lane_keys.empty()) return result;
-    auto lanes = result.layout.lanes;
-    std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+    const auto lanes = result.layout.lanes_in_stage_order();
     result.input.bindings.clear();
     result.input.requires_focused_stage = false;
     for (std::size_t index = 0; index < lanes.size() && index < lane_keys.size(); ++index)

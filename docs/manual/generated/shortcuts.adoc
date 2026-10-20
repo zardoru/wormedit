@@ -134,6 +134,7 @@
 |Notifications |`+Ctrl+Shift+M+`
 |Command menu |`+Ctrl+Shift+P+`
 |Options |`+Ctrl+,+`
+|Lane Keys… |unbound
 |Open Layers |`+Ctrl+L+`
 |Toggle Sounds Dock |`+Ctrl+Shift+K+`
 |Open Project |`+F1+`

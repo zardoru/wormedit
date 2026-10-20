@@ -58,7 +58,7 @@
 |PMS 9-button |9 |`+1 2 3 4 5 6 7 8 9+` |BMS
 |PMS 9-button (BME-style) |9 |`+1 2 3 4 5 6 7 8 9+` |BMS
 |PMS 18-button (BME-style) |18 |none by default |BMS
-|BMS 10K (no scratch) |10 |`+1 Q 2 W 3 E 4 R 5 T+` |BMS
+|BMS 10K (no scratch) |10 |`+1 2 3 4 5 Q W E R T+` |BMS
 |BMS Double Scratch / FPP |9 |`+1 2 3 4 5 6 7 8 9+` |BMS
 |BMS Octave / Foot Pedal |16 |none by default |BMS
 |Project2DX 7K |8 |`+1 2 3 4 5 6 7 8+` |BMS

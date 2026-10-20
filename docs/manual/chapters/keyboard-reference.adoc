@@ -9,9 +9,25 @@ Commands marked _unbound_ have no default key and can be run from the command me
 
 include::../generated/shortcuts.adoc[]
 
+== Lane keys per layout
+
+Open *Lane Keys…* from the command menu, or *Options → Input & shortcuts → Lane keys…*.
+Click a lane and press a letter or digit, or click its key on the keyboard map. Bindings use
+physical key positions, so changing the keyboard language does not move them. Backspace unbinds
+the selected lane; Escape during capture keeps its previous key.
+
+Choose *Wormedit default*, the available *iBMSC interleaved (DP)* preset, or customize individual
+lanes. Duplicate keys are flagged and block Apply. Space, Tab, arrows and editing keys are reserved.
+*Apply* saves the current layout's keys to your program preferences; every chart with that layout
+uses them. It does not edit the project or add an Undo step. Cancel discards the draft.
+
+*Reset to preset* stages removal of the personal override. Apply then restores the chart's stored
+bindings, which are also the fallback for a layout you have never customized.
+
 == Keys that are not commands
 
-These keys are part of Compose itself and cannot be rebound.
+These keys are part of Compose itself. Lane keys can be customized separately; the other keys
+in this table cannot be rebound.
 
 [cols="2,3",options="header"]
 |===
@@ -19,7 +35,8 @@ These keys are part of Compose itself and cannot be rebound.
 
 |lane keys
 |Place or remove the armed note at the cursor (Draw tool), or move the selection to that lane.
-See the <<layout-reference,layout reference>> for each layout's keys.
+See the <<layout-reference,layout reference>> for the defaults, or open *Lane Keys…* from the
+command menu or *Options → Input & shortcuts* to customize the current layout.
 
 |kbd:[Shift] + lane key
 |Move the first selected note to that lane and deselect it.

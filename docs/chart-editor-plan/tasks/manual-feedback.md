@@ -35,12 +35,49 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 ## T-703 Let users bind lane keys per layout
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
+- **Stale-plan audit / wiring (2026-10-20):** Preferences contain no lane-key overrides;
+  Compose projects `chart.input_profile.bindings` directly. Shortcut capture is owned by
+  `src/sys/shortcut_rows.cpp`; Options uses `options_runtime.*` and `options_window.cpp`.
+  This card adds a core preference value, a sys draft/dialog owner, and a C++ frontend surface.
+- **Scope extension:** Coordinator approves `src/core/lane_keys.cpp`, `src/sys/lane_keys_runtime.*`,
+  `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
+  `src/sys/application.cpp`, `src/sys/application_commands.*`, `src/sys/application_command_dispatch.cpp`,
+  `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
+  and `memory/chart-editor-status/resume.md` for persistence, dialog lifecycle, command routing,
+  input isolation, cached binding projection, build registration and completion evidence.
+  `include/wormedit/core/lane_keys.h` owns the resolved-profile cache. `include/wormedit/core/document.h`,
+  `include/wormedit/core/vocabulary.h` and `src/core/document.cpp` expose lane color vocabulary and
+  the display-order query; `src/core/lane_migration.cpp` reuses that query instead of retaining its
+  private copy. `src/ui/nuklear/options_window.h` threads the new typed Options entry action.
+  The final DP7 check found stage-local display columns and intentionally unbound new-project
+  factories. Coordinator also approves `src/core/lane_profiles.cpp` and
+  `tests/core/lane_profile_tests.cpp`: defaults and saved keys now traverse P1 then P2, and the
+  iBMSC preset uses raw BMS factories and built-in BMS compatibility metadata, preserving
+  migration's existing column-rank query. The D7 unbinding policy now belongs to `profile()`;
+  raw factories retain legacy bindings for every scratch placement. `include/wormedit/core/lane_profiles.h`
+  documents this distinction, while new-project unbound-wide behavior stays unchanged.
+  `src/tools/wormedit_manual_reference.cpp` also uses stage order so the generated layout reference
+  agrees with the actual bindings rather than repeating the former ordering mistake.
 - **Value:** High for wide and unusual layouts: today a chart whose layout has no default keys ("No lane keys are bound for this chart") can only be keyed with the mouse, and nobody can change a default they dislike.
 - **Outcome:** A *Lane keys* dialog (Options, and the command menu) shows the current layout's lanes by stage with their keys and a physical keyboard map; clicking a lane and pressing a key binds it, Backspace unbinds, presets (Wormedit default, iBMSC interleaved for DP, Custom) fill all lanes at once, and *Apply* saves the layout's keys to the user's preferences, where every chart with that layout uses them. See the [mockup](https://claude.ai/artifact/12NUndRq3jDPrJCzcSfhXN) (owner, 2026-10-18: "quite beautiful").
 - **Decision (owner, 2026-10-18):** lane keys per layout are the user's personal configuration, global: program preferences keyed by layout profile ID, not chart or project data. A chart's stored `input_profile_t` is only the fallback for a layout the user never customized.
 - **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/options_window.cpp`.
-- **Files owned:** a new `src/ui/nuklear/lane_keys_dialog.cpp/.h`, its C++ view and action (per the frontend recipe in [frontend-cxx-views.md](frontend-cxx-views.md)), `include/wormedit/core/preferences.h` and `src/core/preferences.cpp` (per-layout lane keys), the sys code that resolves a chart's active bindings (`src/sys/compose_view.cpp`, lane key projection), `src/core/command_registry.cpp` (a *Lane Keys…* command), tests, `docs/manual` (layout reference note), this card.
+- **Files owned:** `src/ui/nuklear/lane_keys_dialog.cpp`, `src/ui/nuklear/lane_keys_dialog.h`,
+  `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
+  `include/wormedit/core/preferences.h`, `include/wormedit/core/lane_keys.h`, `include/wormedit/core/lane_profiles.h`,
+  `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/preferences.cpp`,
+  `src/core/lane_keys.cpp`, `src/core/document.cpp`, `src/core/lane_migration.cpp`, `src/core/lane_profiles.cpp`,
+  `src/core/command_registry.cpp`, `src/sys/lane_keys_runtime.cpp`, `src/sys/lane_keys_runtime.h`,
+  `src/tools/wormedit_manual_reference.cpp`,
+  `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/application.cpp`,
+  `src/sys/application_commands.h`, `src/sys/application_commands.cpp`, `src/sys/application_command_dispatch.cpp`,
+  `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/options_window.h`,
+  `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
+  `tests/ui/lane_keys_event_harness_tests.cpp`, `docs/manual/generated/shortcuts.adoc`,
+  `docs/manual/generated/layouts.adoc`,
+  `docs/manual/chapters/keyboard-reference.adoc`, `docs/manual/chapters/getting-started.adoc`,
+  `memory/chart-editor-status/resume.md`, this card.
 - **Steps:**
   1. Preferences: a per-layout map from profile ID to ordered physical keys, stored with the program preferences (not Undo history, not the project), validated with `validate_input_profile` against the layout before use.
   2. Resolution: Compose uses the preference keys for the chart's layout when present, otherwise the chart's own `input_profile_t`. Opened charts and new projects follow the same rule.
@@ -50,6 +87,26 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Invariants:** Bindings are physical keys; changing them never touches chart data, lanes or the project's dirty state.
 - **Reject/failure behavior:** Cancel or Escape leaves bindings unchanged; an invalid profile is never applied.
 - **Verify:** GATE; event harness; isolated Xvfb capture compared with the mockup.
+- **Verification (2026-10-20):** Focused core/preferences checks pass 337 assertions in 38
+  cases; lane-key event-harness checks pass 337 assertions in nine cases, including a second
+  chart, capture isolation, duplicates, Reset/Cancel and the 800×700 footer. Affected default
+  clang-tidy has no new complexity findings; no baseline allowances changed. Isolated Xvfb
+  captures match the owner's supplied screenshot's stage/keyboard structure:
+  `/tmp/t703-default-final.png` and `/tmp/t703-dialog-wide-fixed.png`. A disposable tutorial
+  project retained its source hash while an A binding persisted to preferences and survived
+  restart (`/tmp/t703-persisted-final.png`); A then placed the intended lane's note and Undo
+  removed it (`/tmp/t703-placement.png`, `/tmp/t703-placement-undone.png`). The Options entry
+  was also exercised (`/tmp/t703-options-input.png`, `/tmp/t703-options-entry.png`).
+  Real GATE output tail:
+  ```text
+  gate: 8 job(s), min(8, 16 cores / 1 agent(s)); logs in /tmp/wormedit-gate.5ts4LX
+    pass  build
+    pass  ctest
+    pass  whitespace
+    pass  complexity
+    100% tests passed out of 4280
+  gate: passed
+  ```
 - **Out of scope:** MIDI or second-keyboard input; per-stage focus switching for 48K.
 
 ## T-704 Add BGM columns when pasting BMS editor data needs them

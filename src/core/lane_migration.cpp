@@ -29,12 +29,6 @@ struct source_lane_rank_t {
     bool ambiguous{};
 };
 
-auto ordered_lanes(const lane_layout_t& layout) -> std::vector<lane_definition_t> {
-    auto lanes = layout.lanes;
-    std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
-    return lanes;
-}
-
 auto has_target_layout_unique_ids(const lane_layout_t& layout) -> bool {
     std::unordered_set<std::uint64_t> ids;
     for (const auto& lane : layout.lanes)
@@ -46,7 +40,7 @@ auto collect_source_lanes(const chart_document_t& chart,
                           std::unordered_map<std::uint64_t, source_lane_rank_t>& lanes)
     -> bool {
     for (const auto& segment : chart.lane_layouts) {
-        const auto ordered = ordered_lanes(segment.layout);
+        const auto ordered = segment.layout.lanes_in_display_order();
         for (std::size_t rank = 0; rank < ordered.size(); ++rank) {
             if (!ordered[rank].id) return false;
             auto& saved = lanes[ordered[rank].id.value];
@@ -75,7 +69,7 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
         return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::missing_layout,
                 "The chart has no usable lane layout.", pending.stamp, std::move(proposal.report)));
     }
-    const auto targets = ordered_lanes(target);
+    const auto targets = target.lanes_in_display_order();
     if (targets.empty()) {
         return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_target_profile,
                 "The target profile has no lanes.", pending.stamp, std::move(proposal.report)));

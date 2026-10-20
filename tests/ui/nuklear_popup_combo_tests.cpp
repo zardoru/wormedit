@@ -2,7 +2,9 @@
 #include "ui/nuklear/chrome.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
+#include <cmath>
 #include <source_location>
 #include <string>
 #include <string_view>
@@ -59,15 +61,46 @@ auto popup_combo_frame(nk_context& context, int selected) -> int {
     return next;
 }
 
-auto ordinary_combo_frame(nk_context& context) -> bool {
+auto ordinary_combo_frame(nk_context& context, int count = 3, int item_height = 24,
+                          float maximum_height = 150) -> bool {
     expect_combo(nk_begin(&context, "Ordinary", nk_rect(0, 0, 400, 400), NK_WINDOW_NO_SCROLLBAR));
     const char* choices[]{"First", "Second", "Third"};
     nk_layout_row_dynamic(&context, 24, 1);
     static_cast<void>(wormedit::ui::chrome::safe_combo(
-        &context, choices, 3, 0, 24, nk_vec2(200, 150)));
+        &context, choices, count, 0, item_height, nk_vec2(200, maximum_height)));
     const bool open = context.current->popup.active != 0;
     nk_end(&context);
     return open;
+}
+
+void check_combo_vertical_padding(nk_context& context) {
+    const auto* host = nk_window_find(&context, "Ordinary");
+    expect_combo(host && host->popup.win);
+    const auto bounds = host->popup.win->bounds;
+    float first = bounds.y + bounds.h;
+    float last = bounds.y;
+    bool has_scrollbar{};
+    const nk_command* command;
+    nk_foreach(command, &context) {
+        if (command->type == NK_COMMAND_RECT_FILLED) {
+            const auto* rect = reinterpret_cast<const nk_command_rect_filled*>(command);
+            if (rect->x >= bounds.x + bounds.w - context.style.window.scrollbar_size.x &&
+                rect->y >= bounds.y && rect->y + rect->h <= bounds.y + bounds.h)
+                has_scrollbar = true;
+        }
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto* text = reinterpret_cast<const nk_command_text*>(command);
+        if (text->y < bounds.y) continue;
+        first = std::min(first, static_cast<float>(text->y));
+        last = std::max(last, text->y + text->height);
+    }
+    expect_combo(last > first);
+    const auto top = first - bounds.y;
+    const auto bottom = bounds.y + bounds.h - last;
+    INFO("popup " << bounds.y << "," << bounds.h << " text " << first << "," << last
+         << " padding " << top << "," << bottom);
+    CHECK(std::abs(top - bottom) <= 1.0f);
+    CHECK_FALSE(has_scrollbar);
 }
 
 }
@@ -99,6 +132,28 @@ TEST_CASE("Ordinary window combo guard keeps the native dropdown", "[unit][front
     nk_clear(&context);
     input_frame(context, first, false);
     expect_combo(ordinary_combo_frame(context));
+}
+
+TEST_CASE("Ordinary dropdowns balance top and bottom padding around their choices",
+          "[unit][frontend][popup-combo]") {
+    const auto count = GENERATE(1, 2, 3);
+    const auto height = GENERATE(24, 28);
+    combo_context_t fixture;
+    auto& context = fixture.context;
+    input_frame(context, nk_vec2(0, 0), false);
+    expect_combo(!ordinary_combo_frame(context, count, height));
+    const auto first = text_position(context, "First");
+    nk_clear(&context);
+    input_frame(context, first, true);
+    static_cast<void>(ordinary_combo_frame(context, count, height));
+    nk_clear(&context);
+    input_frame(context, first, false);
+    expect_combo(ordinary_combo_frame(context, count, height));
+    check_combo_vertical_padding(context);
+    nk_clear(&context);
+    input_frame(context, nk_vec2(0, 0), false);
+    expect_combo(ordinary_combo_frame(context, count, height, 40));
+    CHECK(nk_window_find(&context, "Ordinary")->popup.win->bounds.h <= 40);
 }
 
 TEST_CASE("Popup label-combo guard rejects nesting safely", "[unit][frontend][popup-combo]") {

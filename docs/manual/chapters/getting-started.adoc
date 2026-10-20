@@ -32,8 +32,8 @@ or inside each stage; _free zone_ and _foot pedal_ variants add those lanes.
 The <<layout-reference,layout reference>> lists every layout with its lanes, lane keys and
 outputs. Double-play and the wider osu!mania layouts interleave the number row with the row
 below it (for BME DP7: kbd:[1] kbd:[Q] kbd:[2] kbd:[W] … on the left, kbd:[Y] kbd:[7] kbd:[U]
-kbd:[8] … on the right). A few wide layouts have no default lane keys yet; place their notes with
-the mouse.
+kbd:[8] … on the right). A few wide layouts have no default lane keys yet; bind them in
+*Options → Input & shortcuts → Lane keys…*, or place their notes with the mouse.
 
 You can add more charts to the project later from the *Project* tab (kbd:[F1]): *New chart*
 (kbd:[Ctrl+Shift+N]), *Import chart…* to bring in difficulties from another file, *Duplicate* and

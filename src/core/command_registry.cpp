@@ -777,6 +777,8 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 global, {chord(shortcut_key_t::p, modified(shortcut_modifier_t::shift))});
     add_builtin(registry, invoker, "workspace.options", "Options", command_category_t::workspace,
                 global, {chord(static_cast<shortcut_key_t>(0x36), primary())});
+    add_builtin(registry, invoker, "workspace.lane_keys", "Lane Keys…", command_category_t::workspace,
+                global, {});
     add_builtin(registry, invoker, "document.new_project", "New Project",
                 command_category_t::document, global, {chord(shortcut_key_t::n, primary())}, true);
     add_builtin(registry, invoker, "document.save_project", "Save Project",

@@ -13,6 +13,29 @@
 
 namespace wormedit {
 
+struct lane_layout_t;
+struct input_profile_t;
+inline constexpr std::size_t maximum_lane_key_layouts = 128;
+inline constexpr std::size_t maximum_lane_key_bindings = 128;
+
+// USB HID usages in lane display order; zero leaves a lane unbound.
+struct lane_key_bindings_t {
+    std::vector<std::uint16_t> keys;
+    [[nodiscard]] auto is_valid() const -> bool;
+    [[nodiscard]] static auto from(const lane_layout_t&, const input_profile_t&) -> lane_key_bindings_t;
+    [[nodiscard]] static auto preset(const lane_layout_t&, const input_profile_t&, bool interleaved)
+        -> lane_key_bindings_t;
+    [[nodiscard]] static auto has_interleaved_preset(const lane_layout_t&) -> bool;
+    [[nodiscard]] auto profile_for(const lane_layout_t&, const input_profile_t& fallback) const
+        -> result_t<input_profile_t, std::string>;
+    auto operator==(const lane_key_bindings_t&) const -> bool = default;
+};
+struct lane_key_preferences_t {
+    std::map<std::string, lane_key_bindings_t, std::less<>> layouts;
+    [[nodiscard]] auto is_valid() const -> bool;
+    auto operator==(const lane_key_preferences_t&) const -> bool = default;
+};
+
 inline constexpr std::size_t maximum_preferences_bytes = 1024 * 1024;
 inline constexpr std::size_t maximum_preferences_depth = 16;
 inline constexpr std::size_t maximum_external_players = 64;
@@ -99,6 +122,7 @@ struct program_preferences_t {
     external_player_preferences_t players{external_player_preferences_t::with_defaults()};
     minimap_preferences_t minimap;
     layout_preferences_t layout;
+    lane_key_preferences_t lane_keys;
     auto operator==(const program_preferences_t&) const -> bool = default;
 };
 struct preferences_parse_effect_t {

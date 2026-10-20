@@ -440,12 +440,16 @@ inline auto safe_combo(nk_context* context, const char* const* items, int count,
         return selected;
     }
     const auto& window = context->style.window;
-    size.y = std::min(size.y, count * (height + window.spacing.y) +
-                      2.0f * (window.spacing.y + window.combo_padding.y));
+    // Padding surrounds the rows; spacing belongs only between adjacent rows.
+    size.y = std::min(size.y, count * height + (count - 1) * window.spacing.y +
+                      2.0f * window.combo_padding.y);
     if (safe_combo_begin_label(context, items[selected], size)) {
         nk_layout_row_dynamic(context, height, 1);
         for (int index = 0; index < count; ++index)
             if (nk_combo_item_label(context, items[index], NK_TEXT_LEFT)) selected = index;
+        // Nuklear includes the final row's spacing in its scroll extent, although
+        // there is no following row. Keep it consistent with the fitted height.
+        context->current->layout->row.height -= window.spacing.y;
         safe_combo_end(context);
     }
     return selected;
@@ -597,6 +601,10 @@ inline void apply_field_theme(nk_context* context) {
     property.label_active = text_bright;
     property.rounding = metrics::radius_control;
     property.edit = edit;
+    // Property values are already inside a control. Nuklear sizes their editor
+    // from the measured number, so standalone-field insets would clip its text.
+    property.edit.padding = nk_vec2(0, 0);
+    property.edit.border = 0.0f;
     auto& slider = style.slider;
     slider.normal = surface;
     slider.hover = hover;

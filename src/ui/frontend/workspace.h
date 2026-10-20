@@ -1,5 +1,6 @@
 #pragma once
 #include "file_jobs.h"
+#include "lane_keys.h"
 #include "options_notifications.h"
 #include "catalog.h"
 #include <span>
@@ -99,6 +100,7 @@ typedef struct WormUiWorkspaceView {
     WormUiMenuCommandView menu_commands[WORM_UI_MENU_COMMAND_CAPACITY];
     WormUiNotificationView notifications;
     WormUiOptionsView options;
+    const wormedit::ui::lane_keys_view_t* lane_keys{};
     WormUiCloseConfirmationView close_confirmation;
     WormUiChartImportView chart_import;
     WormUiTapTimingView tap_timing;

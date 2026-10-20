@@ -65,6 +65,7 @@ enum class application_command_kind_t {
     markers_add_bookmark,
     view_notifications,
     workspace_options,
+    workspace_lane_keys,
     workspace_open_setup,
     workspace_open_metadata,
     workspace_open_timing,

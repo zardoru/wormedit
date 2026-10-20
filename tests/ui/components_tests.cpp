@@ -73,6 +73,26 @@ void verify_inside(struct nk_rect inner, struct nk_rect outer) {
     CHECK(inner.y + inner.h <= outer.y + outer.h);
 }
 
+auto property_value_bounds(nk_context& context, std::string_view value) -> struct nk_rect {
+    struct nk_rect clip{};
+    const nk_command* command{};
+    nk_foreach(command, &context) {
+        if (command->type == NK_COMMAND_SCISSOR) {
+            const auto* scissor = reinterpret_cast<const nk_command_scissor*>(command);
+            clip = nk_rect(scissor->x, scissor->y, scissor->w, scissor->h);
+        }
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto* text = reinterpret_cast<const nk_command_text*>(command);
+        if (std::string_view(text->string, static_cast<std::size_t>(text->length)) != value) continue;
+        const auto width = text->font->width(text->font->userdata, text->height, text->string, text->length);
+        const auto bounds = nk_rect(text->x, text->y, width, text->height);
+        verify_inside(bounds, clip);
+        return bounds;
+    }
+    FAIL("Numeric property did not draw its value");
+    return nk_rect(0, 0, 0, 0);
+}
+
 struct command_summary_t {
     std::vector<struct nk_rect> scissors;
     std::vector<struct nk_rect> fills;
@@ -104,6 +124,22 @@ void check_content_height(float actual, float expected) {
 }
 
 } // namespace
+
+TEST_CASE("Numeric property values fit their scissor without an inset border",
+          "[components][property-field]") {
+    const auto initial = GENERATE(1, 512, 8192, -128);
+    fixture_t fixture;
+    fixture.font.height = GENERATE(13.0f, 18.0f);
+    auto& context = fixture.context;
+    int value = initial;
+    fixture.frame({}, [&] {
+        nk_layout_row_dynamic(&context, metrics::control_default, 1);
+        nk_property_int(&context, "Memory", -8192, &value, 8192, 1, 1);
+        static_cast<void>(property_value_bounds(context, std::to_string(initial)));
+    });
+    CHECK(context.style.property.edit.border == 0);
+    CHECK(context.style.edit.border > 0);
+}
 
 TEST_CASE("Content height keeps reserve spacing and panel minima",
           "[components][content-layout]") {

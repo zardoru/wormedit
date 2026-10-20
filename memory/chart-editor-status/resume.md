@@ -5,6 +5,15 @@
 No sequential follow-up is active. T-729 export-cut sections and T-730 timing links remain
 deferred until the owner names them.
 
+Completed **T-703** (2026-10-20): Lane Keys is available from Options → Input & shortcuts
+and the command menu. Stage cards, a physical keyboard map, presets and validated capture save
+personal bindings per layout, without editing project data or Undo history. Compose resolves
+the override through a cache and otherwise retains authored bindings. DP defaults now traverse
+P1 then P2; raw factory presets retain their legacy bindings while wide new-project defaults
+stay unchanged. Focused core/preferences and event-harness checks pass, GATE passes 4,280/4,280
+(`/tmp/wormedit-gate.5ts4LX`), and isolated Xvfb verifies both DP7 presets, Options entry,
+persistence across restart and actual note placement/Undo using the new key.
+
 Completed **T-704** (2026-10-20): BMSE/iBMSC paste grows missing BGM columns in the
 proposal, shows them with the ghost preview and commits columns plus objects in one Undo step.
 Existing lanes/events and native clipboard behavior are preserved; requests above 128 columns

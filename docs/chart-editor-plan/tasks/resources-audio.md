@@ -226,6 +226,22 @@ stale-plan check (rule 9) first.
 
 - **T-271 verification evidence (2026-09-30):** integrated application build passed; `ctest --test-dir build --output-on-failure -R 'arena|storyboard|^core\.'` reported `100% tests passed out of 801` (14.22 s). Configured clang-tidy passed for the arena implementation and tests. The old and new preview implementations matched bitwise across 98 frame results (easing, loops, arena limits); canonical output SHA-256 `d8d2a58bbc3c7532f90dbb3cedbfc325e0f798a859882bed23bafa75119d611e`. Forced allocation failures return typed errors; append stale accounting excludes alignment padding. Shared chunk ownership adds one control-block allocation when a chunk is created.
 
+## T-749 Author preview points and spans with format-aware duration
+
+- **Status:** deferred (owner requested a later card, 2026-10-20)
+- **Outcome:** set a song/chart preview point and edit its playback region as a span, preserving formats that store a point only versus a point and duration, including osu!mania and StepMania.
+- **Read first:** `docs/architecture.md`, `include/wormedit/core/document.h`, `src/formats/osu_mania.cpp`, `src/formats/stepmania.cpp`, `src/sys/preview_audio_export.cpp`, `src/ui/nuklear/compose_area_menu.cpp`.
+- **Files owned:** this card, `docs/chart-editor-plan/editing/metadata-interop.md`, `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/osu_mania.cpp`, `src/formats/stepmania.cpp`, `src/formats/conversion.cpp`, `src/sys/preview_audio_export.cpp`, `src/ui/nuklear/compose_area_menu.cpp`, `docs/manual/chapters/sounds-and-layers.adoc`; the first step must name exact shared command, projection, gesture and regression-test consumers before implementation.
+- **Steps:**
+  1. Audit existing preview metadata/import/export and playback-region owners; record the actual osu!mania and SM/SSC point/duration capabilities and units, distinguishing authored duration from an editor audition default.
+  2. Specify one native preview owner and command contract, format conversion/loss policy and span-handle behavior; resolve uncovered ownership questions before changing data or codecs.
+  3. Implement setting the preview point and dragging/moving/resizing its span through shared transactions and gesture cancellation, with one Undo step and explicit duration when the target supports it.
+  4. Round-trip native, osu!mania and SM/SSC fixtures; test point-only imports/exports, explicit duration, offsets, cancellation, invalid/empty spans and compatibility diagnostics. Document the workflow.
+- **Invariants:** point-only formats do not gain a fabricated authored duration; supported durations and exact time offsets survive round trips; audition defaults do not silently modify authored metadata.
+- **Reject/failure behavior:** invalid ranges, stale gestures and unsupported/lossy target mappings reject or report through existing diagnostics without partial edits or publication.
+- **Verify:** GATE; isolated Xvfb set/move/resize/cancel workflow and native/osu!mania/StepMania round-trip tests named by the audit.
+- **Out of scope:** current mouse-selection cancellation/history fix; automatic preview selection or waveform analysis; implementation is not started by this planning request.
+
 ## T-514 Mark missing audio on open, and relink sounds without needing lanes
 
 - **Status:** done (2026-10-11)

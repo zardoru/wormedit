@@ -1007,6 +1007,8 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 command_category_t::audio, command_focus_scope_t::tab, {}, false, compose);
     add_builtin(registry, invoker, "audio.toggle_click_audition", "Play Sound on Click",
                 command_category_t::audio, global, {}, false);
+    add_builtin(registry, invoker, "audio.toggle_playback_audition", "Play Hitsounds on Playback",
+                command_category_t::audio, global, {}, false);
 
     return registry;
 }

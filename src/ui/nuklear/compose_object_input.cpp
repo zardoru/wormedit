@@ -843,9 +843,11 @@ static auto update_note_move_candidate(const ComposePointerEventContext& input,
     } else if (input.left_released) {
         if (state.note_move.note_move_select_on_release)
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
-                                 state.note_move.note_move_anchor_x, state.note_move.note_move_anchor_y);
+                                 state.note_move.note_move_anchor_x, state.note_move.note_move_anchor_y,
+                                 0, false, state.note_move.selection_mode);
         state.note_move.note_move_candidate_active = false;
-    } else if (input.left_down) {
+    } else if (input.left_down && state.note_move.selection_mode == WORM_UI_COMPOSE_SELECTION_REPLACE &&
+               wormedit::ui::compose_notes_editable(compose_mode_of(*input.view))) {
         constexpr float drag_threshold_pixels = 4.0f;
         const auto dx = input.context->input.mouse.pos.x - state.note_move.note_move_anchor_screen_x;
         const auto dy = input.context->input.mouse.pos.y - state.note_move.note_move_anchor_screen_y;

@@ -67,10 +67,12 @@ ordinary search also finds names and tag text.
 
 == osu! hitsounds
 
-osu!mania charts show hitsound tiles below the note-kind palette. The *W*, *F* and *C* tiles
-toggle Whistle, Finish and Clap; a dash means the selection is mixed. Clicking a mixed addition
-turns it on for every selected note. The two sample-set tiles show *A*, *N*, *S* or *D* for
-Auto, Normal, Soft or Drum. Click to cycle, or right-click to choose a set.
+osu!mania charts show hitsound controls below the note-kind palette. The whistle, cymbal and
+clapping-hands icons toggle Whistle, Finish and Clap. Their small checkboxes show off, on or a
+mixed-selection dash; clicking a mixed addition turns it on for every selected note. Below
+them, the music-note and layers selectors choose the normal and addition sample sets. They
+show *A*, *N*, *S* or *D* for Auto, Normal, Soft or Drum, with a dropdown chevron. Click to cycle,
+or right-click to choose a set.
 
 With notes selected, a tile edits the selection in one Undo step. With nothing selected, it
 sets defaults for the next notes you place, including painted notes and holds. These settings
@@ -87,6 +89,16 @@ with kbd:[Alt] for the addition set. They are remappable in *Options → Input &
 Playback prefers map samples, then the folder set under *Options → Playback & audio → osu!
 hitsound skin folder*, then Wormedit's bundled samples. Auto sets, index zero and volume zero
 inherit the map's timing-point settings.
+
+Notes with hitsounds show compact sample-set and addition icons, with contrast chosen for the
+note color. Hover a note for the requested and resolved sets, additions, custom index, volume
+and filename. Imported custom-set references are retained for playback; they are not a separate
+custom-set authoring interface.
+
+*Play sound on click* also auditions these hitsounds when you select or place a note. Independently,
+*Playback → Play Hitsounds on Playback* turns hitsound monitoring on or off (on by default).
+It does not mute music or ordinary BMS keysounds. Preview-audio export still includes the authored
+mix, regardless of this live-monitoring setting.
 
 == Exporting preview audio
 

@@ -18,6 +18,81 @@ using interaction_detail::normalized_position_span;
 using interaction_detail::absolute_row_at_y_pixels;
 using interaction_detail::find_active_lane;
 using interaction_detail::snapped_position;
+
+auto editor_selection_snapshot_t::from(const editor_interaction_state_t& state)
+    -> editor_selection_snapshot_t {
+    return {.chart = state.chart, .notes = state.selected_notes, .objects = state.selected_objects,
+        .range = state.retained_selection_range, .canvas_range = state.retained_canvas_selection_range,
+        .canvas_measure = state.selected_canvas_measure};
+}
+
+void editor_selection_snapshot_t::restore(editor_interaction_state_t& state) const {
+    state.selected_notes = notes;
+    state.selected_objects = objects;
+    state.retained_selection_range = range;
+    state.retained_canvas_selection_range = canvas_range;
+    state.selected_canvas_measure = canvas_measure;
+    state.selection_checked_revision.reset();
+}
+
+void editor_selection_history_t::record(document_history_t& history,
+    editor_selection_snapshot_t before, editor_selection_snapshot_t after) {
+    if (before == after) return;
+    undo.push_back({.sequence = history.next_history_sequence++,
+        .before = std::move(before), .after = std::move(after)});
+    if (undo.size() > history.maximum_undo_entries)
+        undo.erase(undo.begin(), undo.begin() + static_cast<std::ptrdiff_t>(undo.size() - history.maximum_undo_entries));
+    redo.clear();
+    history.redo.clear();
+}
+
+namespace {
+auto restore_history_selection(const document_history_t& history, editor_interaction_state_t& state,
+    const editor_selection_snapshot_t& selection) -> bool {
+    if (selection.chart != state.chart) {
+        const auto* chart = history.document.find_chart(selection.chart);
+        if (!chart || chart->measures.empty() || chart->lane_layouts.empty() ||
+            chart->lane_layouts.front().layout.lanes.empty()) return false;
+        auto setup = editor_interaction_state_t::from(history, selection.chart,
+            chart->lane_layouts.front().layout.lanes.front().id, {chart->measures.front().id, 0},
+            state.supported_snap_denominators, state.active_snap_denominator, state.viewport_height_pixels);
+        if (!setup) return false;
+        state = std::move(*setup.state);
+    }
+    selection.restore(state);
+    return true;
+}
+}
+
+auto apply_editor_history(document_history_t& history, editor_interaction_state_t& state, bool undo)
+    -> editor_history_result_t {
+    state.clear();
+    auto& selections = history.selections;
+    auto& source = undo ? selections.undo : selections.redo;
+    const auto& documents = undo ? history.undo : history.redo;
+    const auto selection_first = !source.empty() && (documents.empty() ||
+        (undo ? source.back().sequence > documents.back().sequence
+              : source.back().sequence < documents.back().sequence));
+    if (selection_first) {
+        const auto& selection = undo ? source.back().before : source.back().after;
+        if (!restore_history_selection(history, state, selection)) return {};
+        auto& destination = undo ? selections.redo : selections.undo;
+        destination.push_back(std::move(source.back()));
+        source.pop_back();
+        return {.changed = true};
+    }
+    const auto changed = undo ? undo_document_command(history) : redo_document_command(history);
+    if (changed) {
+        state.selected_notes.clear();
+        state.selected_objects.clear();
+        state.retained_selection_range.reset();
+        state.retained_canvas_selection_range.reset();
+        state.selected_canvas_measure.reset();
+        state.selection_checked_revision.reset();
+    }
+    return {.changed = changed, .document_changed = changed};
+}
+
 namespace {
 
 auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_kind_t kind) -> bool {

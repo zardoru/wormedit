@@ -18,6 +18,7 @@
 #include <cstring>
 #include <iterator>
 #include <optional>
+#include <string>
 
 using wormedit::ui::lucide::Glyph;
 
@@ -534,6 +535,8 @@ bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
 }
 
 namespace {
+constexpr std::array hitsound_set_labels{"Auto", "Normal", "Soft", "Drum"};
+
 void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_field_t field,
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
@@ -543,29 +546,77 @@ void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_fiel
     action.compose_input_document_revision = toolbar.view->document_revision;
 }
 
+void draw_hitsound_check(nk_context* context, struct nk_rect bounds, std::optional<int> value,
+                         struct nk_color tint) {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto box = nk_rect(bounds.x + bounds.w - 10, bounds.y + bounds.h - 10, 8, 8);
+    nk_fill_rect(canvas, box, 1, wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::surface_hover));
+    nk_stroke_rect(canvas, box, 1, 1, tint);
+    if (!value)
+        nk_stroke_line(canvas, box.x + 2, box.y + 4, box.x + 6, box.y + 4, 1, tint);
+    else if (*value == 1) {
+        const float tick[]{box.x + 1, box.y + 4, box.x + 3, box.y + 6, box.x + 7, box.y + 2};
+        nk_stroke_polyline(canvas, const_cast<float*>(tick), 3, 1.2f, tint);
+    }
+}
+
+void render_hitsound_toggle(const ComposeToolbarContext& toolbar, std::size_t index) {
+    namespace chrome = wormedit::ui::chrome;
+    constexpr std::array icons{wormedit::ui::vector_icons::whistle,
+        wormedit::ui::vector_icons::cymbal, wormedit::ui::vector_icons::clap};
+    constexpr std::array names{"Whistle (W)", "Finish (E)", "Clap (R)"};
+    const auto value = toolbar.view->hitsounds.values.fields[index];
+    const auto tooltip = std::string{names[index]} + ": " +
+        (!value ? "mixed" : *value == 1 ? "on" : "off") + "; click toggles";
+    nk_layout_row_static(toolbar.context, 30, 30, 1);
+    const chrome::NativeIconCell cell{toolbar.context, value == 1, true, tooltip.c_str()};
+    icons[index](nk_window_get_canvas(toolbar.context), cell.bounds(), cell.tint());
+    draw_hitsound_check(toolbar.context, cell.bounds(), value, cell.tint());
+    if (cell.is_clicked()) emit_hitsound(toolbar, static_cast<wormedit::hitsound_field_t>(index));
+}
+
+void draw_hitsound_set(nk_context* context, struct nk_rect bounds, bool addition,
+                       std::optional<int> value, struct nk_color tint) {
+    namespace chrome = wormedit::ui::chrome;
+    auto* canvas = nk_window_get_canvas(context);
+    nk_stroke_rect(canvas, bounds, 3, 1, chrome::color(wormedit::ui::theme::UiColor::border));
+    wormedit::ui::lucide::draw(context, nk_rect(bounds.x + 3, bounds.y, 22, 20),
+        addition ? Glyph::layers : Glyph::music_2, tint);
+    constexpr std::array labels{"A", "N", "S", "D"};
+    const char* label = value ? labels[static_cast<std::size_t>(*value)] : "−";
+    nk_draw_text(canvas, nk_rect(bounds.x + 4, bounds.y + 16, 14, 14), label,
+        static_cast<int>(std::strlen(label)), context->style.font, nk_rgba(0, 0, 0, 0), tint);
+    const float arrow[]{bounds.x + 20, bounds.y + 22, bounds.x + 23, bounds.y + 25,
+        bounds.x + 26, bounds.y + 22};
+    nk_stroke_polyline(canvas, const_cast<float*>(arrow), 3, 1.2f, tint);
+}
+
+void render_hitsound_set(const ComposeToolbarContext& toolbar, std::size_t index) {
+    namespace chrome = wormedit::ui::chrome;
+    auto* context = toolbar.context;
+    const auto value = toolbar.view->hitsounds.values.fields[index];
+    const auto field = static_cast<wormedit::hitsound_field_t>(index);
+    const auto tooltip = std::string{index == 3 ? "Normal sample set: " : "Addition sample set: "} +
+        (value ? hitsound_set_labels[static_cast<std::size_t>(*value)] : "mixed") +
+        "; click cycles, right-click chooses";
+    nk_layout_row_static(context, 30, 30, 1);
+    const chrome::NativeIconCell cell{context, false, true, tooltip.c_str()};
+    draw_hitsound_set(context, cell.bounds(), index == 4, value, cell.tint());
+    if (cell.is_clicked()) emit_hitsound(toolbar, field);
+    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+        nk_input_is_mouse_hovering_rect(&context->input, cell.bounds())) {
+        state.hitsound_menu.field = field;
+        chrome::context_menu_open(state.hitsound_menu.menu, context->input.mouse.pos,
+            chrome::PopupContextStamp::from(*toolbar.view));
+    }
+}
+
 void render_hitsound_tiles(const ComposeToolbarContext& toolbar) {
     if (!toolbar.view->hitsounds.visible) return;
-    auto* context = toolbar.context;
-    wormedit::ui::chrome::section_separator(context);
-    constexpr std::array labels{"W", "F", "C"};
-    constexpr std::array tooltips{"Whistle (W)", "Finish (E)", "Clap (R)",
-        "Normal sample set: click cycles, right-click chooses", "Addition sample set: click cycles, right-click chooses"};
-    constexpr std::array sets{"A", "N", "S", "D"};
-    for (std::size_t index = 0; index < 5; ++index) {
-        const auto value = toolbar.view->hitsounds.values.fields[index];
-        const auto field = static_cast<wormedit::hitsound_field_t>(index);
-        const char* label = !value ? "−" : index < 3 ? labels[index] : sets[static_cast<std::size_t>(*value)];
-        nk_layout_row_static(context, 30, 30, 1);
-        const auto bounds = nk_widget_bounds(context);
-        if (wormedit::ui::chrome::Chip{.label = label, .chosen = index < 3 && value == 1,
-                .tooltip = tooltips[index]}.render(context)) emit_hitsound(toolbar, field);
-        if (index >= 3 && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
-            nk_input_is_mouse_hovering_rect(&context->input, bounds)) {
-            state.hitsound_menu.field = field;
-            wormedit::ui::chrome::context_menu_open(state.hitsound_menu.menu, context->input.mouse.pos,
-                wormedit::ui::chrome::PopupContextStamp::from(*toolbar.view));
-        }
-    }
+    wormedit::ui::chrome::section_separator(toolbar.context);
+    for (std::size_t index = 0; index < 3; ++index) render_hitsound_toggle(toolbar, index);
+    wormedit::ui::chrome::section_separator(toolbar.context);
+    for (std::size_t index = 3; index < 5; ++index) render_hitsound_set(toolbar, index);
 }
 } // namespace
 
@@ -577,9 +628,8 @@ void render_compose_hitsound_menu(const ComposeToolbarContext& toolbar) {
     if (!menu.opened_this_frame) (void)chrome::context_menu_update(menu, context);
     if (!chrome::context_menu_begin(menu, context, chrome::PopupContextStamp::from(*toolbar.view),
         nk_vec2(220, chrome::context_menu_height(4)))) return;
-    constexpr std::array labels{"Auto", "Normal", "Soft", "Drum"};
-    for (std::size_t index = 0; index < labels.size(); ++index) {
-        if (chrome::context_menu_item(menu, context, labels[index], nullptr))
+    for (std::size_t index = 0; index < hitsound_set_labels.size(); ++index) {
+        if (chrome::context_menu_item(menu, context, hitsound_set_labels[index], nullptr))
             emit_hitsound(toolbar, state.hitsound_menu.field, static_cast<int>(index));
     }
     chrome::context_menu_end(menu, context);

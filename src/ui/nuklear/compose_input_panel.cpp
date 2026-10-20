@@ -119,9 +119,9 @@ struct compose_gesture_entry_t {
     bool cancel_core{true};
 };
 
-void cancel_compose_gestures(WormUiWorkspaceAction* action) {
+static auto compose_gesture_registry() -> const auto& {
     // Candidate flags are captures too: a late release must not resurrect a cancelled press.
-    static const auto compose_gesture_registry = std::to_array<compose_gesture_entry_t>({
+    static const auto entries = std::to_array<compose_gesture_entry_t>({
         {&state.pointer_capture.pointer_hold_begin_pending, reset_hold_capture},
         {&state.pointer_capture.pointer_hold_active, reset_hold_capture},
         {&state.range_selection.lane_hold_active, reset_hold_capture},
@@ -157,10 +157,19 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
         {&state.pointer_capture.tool_chip_pointer_active, reset_tool_chip_capture, false},
         {&state.stem_lanes.bgm_mix_pointer_active},
     });
+    return entries;
+}
+
+auto has_compose_gesture_capture() -> bool {
     bool pending = state.input_queue.cancel_pending || state.input_queue.core_gesture_active;
-    for (const auto& entry : compose_gesture_registry)
+    for (const auto& entry : compose_gesture_registry())
         pending |= entry.cancel_core && *entry.active;
     pending |= state.stem_lanes.stem_lane_resize.has_value() || state.bmson_input.bmson_point_capture.has_value();
+    return pending;
+}
+
+void cancel_compose_gestures(WormUiWorkspaceAction* action) {
+    const auto pending = has_compose_gesture_capture();
     // Audio offset is a separate transaction, so preserve its stamp until the deferred cancel.
     state.input_queue.waveform_offset_cancel_pending |= state.waveform_drag.waveform_beat_zero_drag_active;
     if (action && state.input_queue.waveform_offset_cancel_pending) {
@@ -168,7 +177,7 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
                                         state.waveform_drag.waveform_beat_zero_drag_delta_frames);
         state.input_queue.waveform_offset_cancel_pending = false;
     }
-    for (const auto& entry : compose_gesture_registry) {
+    for (const auto& entry : compose_gesture_registry()) {
         state.pointer_capture.draw_left_cancelled_until_release |= *entry.active;
         if (entry.reset) entry.reset();
         *entry.active = false;
@@ -1010,13 +1019,11 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
 }
 
 static void start_compose_note_move_candidate(const ComposePointerEventContext& input) {
-    const auto can_move = wormedit::ui::compose_notes_editable(compose_mode_of(*input.view));
-    state.note_move.note_move_select_on_release = can_move && compose_point_hits_selected_note(
-        input.view, input.pointer_started_x, input.pointer_started_y);
-    if (!state.note_move.note_move_select_on_release)
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
-                             input.pointer_started_x, input.pointer_started_y);
-    state.note_move.note_move_candidate_active = can_move && !state.input_queue.action_overflowed;
+    // A press only reserves the gesture. A completed click selects on release; a drag's
+    // Core proposal chooses its reference without replacing the committed selection.
+    state.note_move.note_move_select_on_release = true;
+    state.note_move.selection_mode = compose_selection_mode(input.pointer_modifiers);
+    state.note_move.note_move_candidate_active = !state.input_queue.action_overflowed;
     state.note_move.note_move_anchor_x = input.pointer_started_x;
     state.note_move.note_move_anchor_y = input.pointer_started_y;
     state.note_move.note_move_anchor_screen_x = input.left_clicked_screen_x;
@@ -1032,11 +1039,10 @@ static auto handle_compose_note_field_pointer_start(const ComposePointerEventCon
         state.area_selection.area_selection_candidate_active || state.timing_drag.kiai_drag_active || state.timing_drag.recipe_drag_active ||
         input.compose_note_double_click_in_view)
         return false;
-    const auto selection_mode = compose_selection_mode(input.pointer_modifiers);
     const bool note_hit = input.pointer_started_in_note_field &&
         compose_point_hits_note(&view, input.pointer_started_x, input.pointer_started_y);
     if (note_hit) {
-        if (selection_mode != WORM_UI_COMPOSE_SELECTION_REPLACE || !input.left_down)
+        if (!input.left_down)
             return false;
         start_compose_note_move_candidate(input);
         return true;
@@ -1047,7 +1053,7 @@ static auto handle_compose_note_field_pointer_start(const ComposePointerEventCon
     state.area_selection.area_selection_anchor_y = input.pointer_started_y;
     state.area_selection.area_selection_anchor_screen_x = input.left_clicked_screen_x;
     state.area_selection.area_selection_anchor_screen_y = input.left_clicked_screen_y;
-    state.area_selection.area_selection_mode = selection_mode;
+    state.area_selection.area_selection_mode = compose_selection_mode(input.pointer_modifiers);
     return true;
 }
 

@@ -164,37 +164,37 @@ auto clear_selection_or_cancel_preview(command_context_t& context) -> compose_ac
             "Clear Selection requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     }
+    if (state->is_pending())
+        return compose_action_outcome_t::from(
+            wormedit::dispatch_editor_action(history, *state, wormedit::cancel_editor_gesture_action_t{}),
+            "Compose gesture cancelled; selection kept.",
+            notification_severity_t::success, notification_source_t::edit);
     (void)wormedit::dispatch_editor_action(history, *state,
                                            wormedit::cancel_editor_gesture_action_t{});
-    application_state.project.compose_gesture.note_paint_mode_active = false;
-    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-    application_state.project.semantic_layer.semantic_layer_solo_active = false;
     return compose_action_outcome_t::from(
         wormedit::dispatch_editor_action(history, *state, wormedit::select_editor_notes_action_t{}),
-        "Selection, pending Compose gesture, and note-paint mode cleared.",
+        "Selection and pending Compose gesture cleared.",
         notification_severity_t::success, notification_source_t::edit);
 }
 
 auto history_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
-    if (context.environment.editor.retained) {
-        (void)dispatch_editor_action(context.environment.document.history,
-                                     *context.environment.editor.retained,
-                                     cancel_editor_gesture_action_t{});
-        (void)dispatch_editor_action(context.environment.document.history,
-                                     *context.environment.editor.retained,
-                                     select_editor_notes_action_t{});
-    }
     const bool undo = kind == command_kind_t::history_undo;
-    const auto changed = undo ? undo_document_command(context.environment.document.history)
-                              : redo_document_command(context.environment.document.history);
+    auto& history = context.environment.document.history;
+    const auto applied = context.environment.editor.retained
+        ? apply_editor_history(history, *context.environment.editor.retained, undo)
+        : editor_history_result_t{.changed = undo ? undo_document_command(history) : redo_document_command(history),
+                                 .document_changed = true};
+    const auto changed = applied.changed;
+    if (changed && context.environment.editor.retained)
+        context.environment.document.workspace.selected_chart = context.environment.editor.retained->chart;
     auto outcome = compose_action_outcome_t::from(
         changed ? (undo ? "Undo applied." : "Redo applied.")
                 : (undo ? "Nothing to undo." : "Nothing to redo."),
         changed ? notification_severity_t::success : notification_severity_t::info,
         notification_source_t::edit, compose_message_lifetime_t::borrowed);
-    outcome.mutated = changed;
+    outcome.mutated = applied.document_changed && changed;
     if (!changed)
         return outcome;
     context.environment.editor.timing_stage.reset();
@@ -1319,6 +1319,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::timing_tap:
     case command_kind_t::audio_paint_hitsound:
     case command_kind_t::audio_toggle_click_audition:
+    case command_kind_t::audio_toggle_playback_audition:
     case command_kind_t::workspace_command_menu:
         break;
     }

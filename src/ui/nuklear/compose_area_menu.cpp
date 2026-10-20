@@ -329,8 +329,6 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
         if (horizontal && (std::abs(mouse.pos.y - a) <= 5 || std::abs(mouse.pos.y - b) <= 5)) {
             capture.start(view, std::abs(mouse.pos.y - a) <= std::abs(mouse.pos.y - b));
             consumed = true;
-        } else if (!inside) {
-            action.compose_area_clear_requested = true;
         }
     }
     render_menu(context, view, action);

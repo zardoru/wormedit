@@ -62,6 +62,8 @@ struct editor_preferences_t {
     bool lane_key_legend_visible{true};
     // Editor placement audition is distinct from Sounds-panel preview-on-click.
     bool audition_on_click{true};
+    // Live playback monitoring only; offline audio export retains the authored mix.
+    bool audition_on_playback{true};
     bool invert_scroll_wheel{};
     std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;

@@ -91,6 +91,7 @@ constexpr command_name_t command_names[]{
     {"semantic_layer.toggle", application_command_kind_t::semantic_layer_toggle},
     {"audio.paint_hitsound", application_command_kind_t::audio_paint_hitsound},
     {"audio.toggle_click_audition", application_command_kind_t::audio_toggle_click_audition},
+    {"audio.toggle_playback_audition", application_command_kind_t::audio_toggle_playback_audition},
 };
 
 constexpr std::string_view semantic_layer_slot_prefix = "semantic_layer.select_slot_";

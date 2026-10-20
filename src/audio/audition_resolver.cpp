@@ -432,6 +432,11 @@ struct preview_binding_builder_t {
     std::unordered_map<std::uint64_t, const hitsound_binding_t*> hitsounds;
     std::size_t total_clips{};
 
+    void include_hitsounds() {
+        for (const auto& binding : options.hitsounds)
+            hitsounds.emplace(binding.binding.object.value, &binding);
+    }
+
     auto append_sources(object_id_t object, resource_id_t resource,
                          preview_object_source_binding_t& output) -> bool {
         if (!resource) return true;
@@ -468,6 +473,8 @@ struct preview_binding_builder_t {
                                   extra->second->binding.voices.end());
             for (auto& voice : output.voices) voice.gain *= extra->second->gain;
         }
+        if (index.has_hitsample(object))
+            for (auto& voice : output.voices) voice.is_hitsound = true;
         if (output.voices.size() > options.maximum_total_clips - total_clips) {
             result.diagnostics.push_back(error(audition_resolve_code_t::capacity_exceeded,
                 "preview schedule exceeds the configured audition clip limit", object));
@@ -478,6 +485,25 @@ struct preview_binding_builder_t {
         return true;
     }
 };
+
+auto resolve_hitsample_audition(const song_document_t& song, chart_id_t chart,
+    object_id_t object, audition_resolver_index_t& index, const audition_resolve_options_t& options)
+    -> audition_resolve_outcome_t {
+    preview_bindings_resolve_outcome_t resolved{
+        .value = {.document_revision = song.revision, .chart = chart}};
+    preview_binding_builder_t builder{.index = index, .options = options, .result = resolved};
+    builder.include_hitsounds();
+    (void)builder.append(object, index.resource_for(object).value_or(resource_id_t{}));
+    audition_resolve_outcome_t result{
+        .value = {.document_revision = song.revision, .chart = chart, .object = object},
+        .diagnostics = std::move(resolved.diagnostics)};
+    if (!result.diagnostics.empty()) return result;
+    for (auto& binding : resolved.value.bindings)
+        for (auto& voice : binding.voices)
+            result.value.clips.push_back({.source = std::move(voice.source),
+                .source_start_frame = voice.source_start_frame, .frame_count = voice.frame_count, .gain = voice.gain});
+    return result;
+}
 
 } // namespace
 
@@ -508,6 +534,7 @@ auto audition_resolution_t::from(const song_document_t& song, chart_id_t chart_i
         return result;
     }
     audition_resolver_index_t index{song, *chart, bindings, options};
+    if (index.has_hitsample(object)) return resolve_hitsample_audition(song, chart_id, object, index, options);
     return from(index.resolve(object));
 }
 
@@ -547,8 +574,7 @@ auto preview_bindings_resolution_t::from(const song_document_t& song, chart_id_t
 
     result.value.bindings.reserve(scheduled.size());
     preview_binding_builder_t builder{.index = index, .options = options, .result = result};
-    for (const auto& binding : options.hitsounds)
-        builder.hitsounds.emplace(binding.binding.object.value, &binding);
+    builder.include_hitsounds();
     for (const auto& [object, scheduled_resource] : scheduled) {
         if (!builder.append(object, scheduled_resource)) {
             result.value.bindings.clear();

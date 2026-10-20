@@ -839,8 +839,8 @@ void refresh_application_command_states(
     set("document.new_project", true);
     set("workspace.lane_keys", wormedit::sys::lane_keys_runtime_t::can_open(chart));
     set("document.new_chart", chart != nullptr);
-    set("history.undo", !history.undo.empty());
-    set("history.redo", !history.redo.empty());
+    set("history.undo", history.can_undo());
+    set("history.redo", history.can_redo());
     set("edit.delete", compose_ready);
     const bool can_move_bgm = bgm_move_enabled(chart, compose_state, compose_ready, pending, application_state);
     set("edit.move_to_bgm", can_move_bgm);
@@ -930,6 +930,7 @@ void refresh_application_command_states(
                                           application_state, compose_state);
     set("audio.paint_hitsound", false);
     set("audio.toggle_click_audition", true, application_state.preferences.editor_preferences.audition_on_click);
+    set("audio.toggle_playback_audition", true, application_state.preferences.editor_preferences.audition_on_playback);
     wormedit::sys::apply_timing_focus_command_policy(
         registry, !application_state.project.compose_view.compose_timing_focus);
 }
@@ -1882,19 +1883,31 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
         return clock;
 }
 
-auto dispatch_click_audition_toggle(const wormedit::command_invocation_context_t& invocation,
+auto dispatch_audition_toggle(const wormedit::command_invocation_context_t& invocation,
     wormedit::sys::program_preferences_runtime_t& program, application_command_state_t& state,
     wormedit::notification_sink_t& notifications)
     -> std::optional<wormedit::dispatch_outcome_t> {
     const auto command = parse_application_command(invocation.command.value);
-    if (!command || command->kind != wormedit::sys::application_command_kind_t::audio_toggle_click_audition)
+    if (!command)
         return std::nullopt;
-    const auto error = wormedit::sys::toggle_audition_on_click(program, state.preferences.editor_preferences.audition_on_click);
+    auto& editor = state.preferences.editor_preferences;
+    std::string error;
+    bool enabled{};
+    std::string label;
+    if (command->kind == wormedit::sys::application_command_kind_t::audio_toggle_click_audition) {
+        error = wormedit::sys::toggle_audition_on_click(program, editor.audition_on_click);
+        enabled = editor.audition_on_click;
+        label = "Play sound on click";
+    } else if (command->kind == wormedit::sys::application_command_kind_t::audio_toggle_playback_audition) {
+        error = wormedit::sys::toggle_audition_on_playback(program, editor.audition_on_playback);
+        enabled = editor.audition_on_playback;
+        label = "Play hitsounds on playback";
+    } else return std::nullopt;
     if (!error.empty())
         return wormedit::sys::reject_application_command(notifications, error,
             wormedit::notification_severity_t::error, wormedit::notification_source_t::system);
     notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
-        state.preferences.editor_preferences.audition_on_click ? "Play sound on click enabled." : "Play sound on click disabled.");
+        label + (enabled ? " enabled." : " disabled."));
     return wormedit::dispatch_outcome_t{.value = true};
 }
 
@@ -2857,6 +2870,20 @@ struct application_t::implementation_t {
     }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    void sync_hitsound_monitoring() {
+        const auto enabled = preferences.program_preferences.preferences.editor.audition_on_playback;
+        auto& preview = audio_runtime.preview_session;
+        if (preview.is_hitsounds_enabled() == enabled) return;
+        preview.set_hitsounds_enabled(enabled);
+        if (!audio_runtime.preview_output.playing()) return;
+        const auto refreshed = audio_runtime.preview_output.seek(audio_runtime.preview_output.timeline_frame());
+        if (!refreshed)
+            post_project_feedback(wormedit::notification_severity_t::error,
+                wormedit::notification_source_t::audio,
+                refreshed.message().empty() ? "Could not refresh hitsound playback monitoring."
+                                            : std::string{refreshed.message()});
+    }
+
     void sync_bgm_mix_selection() {
         const auto* chart = wormedit::sys::selected_chart(session.history, session.workspace);
         const auto found = chart ? commands.project.bgm.bgm_lane_mix.find(chart->id.value)
@@ -3653,7 +3680,7 @@ struct application_t::implementation_t {
 
         using severity_t = wormedit::notification_severity_t;
         using source_t = wormedit::notification_source_t;
-        if (auto toggled = dispatch_click_audition_toggle(invocation, program,
+        if (auto toggled = dispatch_audition_toggle(invocation, program,
                                                           application_command_state, notifications))
             return *toggled;
         const auto command = parse_application_command(invocation.command.value);
@@ -4689,6 +4716,7 @@ struct application_t::implementation_t {
         dispatch_preview_audio_export(action);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         const auto& skin = preferences.program_preferences.preferences.audio.osu_skin_directory;
+        sync_hitsound_monitoring();
         if (audio_runtime.project_sources.hitsounds.environment.skin_directory != skin) {
             audio_runtime.project_sources.hitsounds.environment.skin_directory = skin;
             audio_runtime.preview_state.invalidate();

@@ -5,6 +5,18 @@
 namespace wormedit::audio {
 
 namespace {
+auto is_generated_hitsound_clip(const audition_clip_t& clip,
+    std::span<const hitsound_binding_t> hitsounds) -> bool {
+    for (const auto& binding : hitsounds) {
+        for (const auto& voice : binding.binding.voices) {
+            if (voice.source != clip.source || clip.source_start_frame < voice.source_start_frame) continue;
+            const auto offset = clip.source_start_frame - voice.source_start_frame;
+            if (offset <= voice.frame_count && clip.frame_count <= voice.frame_count - offset) return true;
+        }
+    }
+    return false;
+}
+
 auto is_stem_audition_resource(const song_document_t& song, resource_id_t id) -> bool {
     const auto resource = std::ranges::find(song.resources, id, &resource_entry_t::id);
     if (resource == song.resources.end()) return false;
@@ -22,9 +34,11 @@ auto is_stem_audition_resource(const song_document_t& song, resource_id_t id) ->
 }
 
 auto is_bound_stem_audition(const song_document_t& song, std::optional<resource_id_t> resource,
-    std::span<const audition_source_binding_t> bindings, std::span<audition_clip_t> clips) -> bool {
+    std::span<const audition_source_binding_t> bindings, std::span<audition_clip_t> clips,
+    std::span<const hitsound_binding_t> hitsounds) -> bool {
     if (!resource || !is_stem_audition_resource(song, *resource)) return true;
     for (auto& clip : clips) {
+        if (is_generated_hitsound_clip(clip, hitsounds)) continue;
         const auto binding = std::ranges::find(bindings, clip.source, &audition_source_binding_t::source);
         if (binding == bindings.end() || !binding->output_sample_rate || clip.source_start_frame > binding->output_frame_count ||
             clip.frame_count > binding->output_frame_count - clip.source_start_frame)

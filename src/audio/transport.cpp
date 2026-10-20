@@ -160,9 +160,9 @@ struct transport_t::mix_operation_t {
             static_cast<float>(owner.click_volume_percent_.load(std::memory_order_acquire)) /
             100.0F;
         const auto clicks_enabled = owner.clicks_enabled_.load(std::memory_order_acquire);
+        const auto hitsounds_enabled = owner.hitsounds_enabled_.load(std::memory_order_acquire);
         for (auto& entry : owner.scheduled_voices_) {
-            if (entry.active && !owner.muted_mix_groups_.contains(entry.voice.mix_group) &&
-                (entry.voice.kind != voice_kind_t::click_preview || clicks_enabled)) {
+            if (entry.active && owner.is_voice_audible(entry.voice, clicks_enabled, hitsounds_enabled)) {
                 if (mix_voice(context, entry.voice)) {
                     entry.active = false;
                     --owner.active_scheduled_voices_;
@@ -208,6 +208,13 @@ transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum
     scheduled_voices_.reserve(maximum_scheduled_voices_);
 }
 
+auto transport_t::is_voice_audible(const transport_voice_t& voice,
+    bool clicks_enabled, bool hitsounds_enabled) const -> bool {
+    return !muted_mix_groups_.contains(voice.mix_group) &&
+           (!voice.is_hitsound || hitsounds_enabled) &&
+           (voice.kind != voice_kind_t::click_preview || clicks_enabled);
+}
+
 void transport_t::set_muted_mix_groups(std::span<const std::uint64_t> groups) {
     std::unordered_set<std::uint64_t> next{groups.begin(), groups.end()};
     next.erase(0);
@@ -215,6 +222,9 @@ void transport_t::set_muted_mix_groups(std::span<const std::uint64_t> groups) {
         const std::scoped_lock lock(mutex_);
         muted_mix_groups_.swap(next);
     }
+}
+void transport_t::set_hitsounds_enabled(bool enabled) noexcept {
+    hitsounds_enabled_.store(enabled, std::memory_order_release);
 }
 
 void transport_t::set_clicks_enabled(bool enabled) {

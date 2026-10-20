@@ -402,6 +402,48 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
     }
 }
 
+TEST_CASE("Object selection waits for release and Escape consumes a pending selection press",
+          "[frontend-state][event-harness][selection-history]") {
+    lifecycle_fixture_t f{lifecycle_family::move};
+    f.note.selected = false;
+    (void)f.harness.frame();
+    const std::array press{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, true)};
+    const auto pressed = f.harness.frame(press);
+    CHECK_FALSE(lifecycle_has(pressed.get(), WORM_UI_COMPOSE_INPUT_POINTER_CLICK));
+    CHECK(worm_ui_nuklear_compose_state().note_move.note_move_candidate_active);
+    const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto cancelled = f.harness.frame(std::span{&escape, 1});
+    CHECK(lifecycle_has(cancelled.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
+    CHECK(cancelled.get().shortcut_event_count == 0);
+    const auto release = lifecycle_button(f.x, f.y, false);
+    const auto late = f.harness.frame(std::span{&release, 1});
+    CHECK_FALSE(lifecycle_has(late.get(), WORM_UI_COMPOSE_INPUT_POINTER_CLICK));
+    (void)f.harness.frame(press);
+    const auto clicked = f.harness.frame(std::span{&release, 1});
+    CHECK(lifecycle_has(clicked.get(), WORM_UI_COMPOSE_INPUT_POINTER_CLICK));
+}
+
+TEST_CASE("Pressing outside a selected area keeps it until a replacement gesture finishes",
+          "[frontend-state][event-harness][selection-history]") {
+    lifecycle_fixture_t f{lifecycle_family::area};
+    auto& view = f.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 480;
+    view.area_range_end_row = 960;
+    (void)f.harness.frame();
+    const std::array press{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, true)};
+    const auto pressed = f.harness.frame(press);
+    CHECK(worm_ui_nuklear_compose_state().area_selection.area_selection_candidate_active);
+    CHECK_FALSE(pressed.get().compose_area_clear_requested);
+    CHECK(pressed.get().compose_action != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR);
+    const auto escape = lifecycle_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto cancelled = f.harness.frame(std::span{&escape, 1});
+    CHECK(cancelled.get().compose_action != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR);
+    CHECK(cancelled.get().shortcut_event_count == 0);
+}
+
 TEST_CASE("Keyboard queue overflow fences held paint until release and permits a fresh stroke",
           "[frontend-state][event-harness][keyboard-overflow]") {
     lifecycle_fixture_t f{lifecycle_family::paint};

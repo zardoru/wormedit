@@ -102,6 +102,9 @@ TEST_CASE("Menu commands use one registry invocation across editing chart and pl
     SECTION("Play") { check_dispatch("Playback", "Play from cursor / Pause", "transport.play_pause"); }
     SECTION("Start") { check_dispatch("Playback", "Play from start", "transport.play_from_start"); }
     SECTION("Stop") { check_dispatch("Playback", "Stop", "transport.stop"); }
+    SECTION("Hitsound monitoring") {
+        check_dispatch("Playback", "Play Hitsounds on Playback", "audio.toggle_playback_audition");
+    }
     SECTION("External") { check_dispatch("Playback", "External play from here", "transport.external_play_here"); }
 }
 
@@ -113,6 +116,7 @@ TEST_CASE("Menu projections follow remaps unbinding platform modifiers and regis
     (void)remap_command(registry, {"history.redo"}, {});
     (void)update_command_state(registry, {"history.undo"}, false, std::nullopt);
     (void)update_command_state(registry, {"timing.toggle_lock"}, true, true);
+    (void)update_command_state(registry, {"audio.toggle_playback_audition"}, true, true);
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
     sys::build_menu_commands_view(registry, harness.view(), shortcut_primary_modifier_t::control);
@@ -122,6 +126,7 @@ TEST_CASE("Menu projections follow remaps unbinding platform modifiers and regis
     check_menu(!(item(model, Action::undo).enabled));
     check_menu(std::string_view{item(model, Action::redo).shortcut}.empty());
     check_menu(item(model, Action::timing_lock).checked);
+    check_menu(item(model, Action::playback_audition).checked);
     sys::build_menu_commands_view(registry, harness.view(), shortcut_primary_modifier_t::meta);
     model = ui::build_workspace_menu(harness.view(), false, false, false);
     check_menu(std::string_view{item(model, Action::undo).shortcut} == "Shift+⌘+U");
@@ -151,7 +156,7 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
     require_menu(separator != model.end());
     require_menu(separator != model.begin());
     require_menu(separator + 1 != model.end());
-    check_menu((separator - 1)->action == Action::metronome);
+    check_menu((separator - 1)->action == Action::playback_audition);
     check_menu((separator + 1)->action == Action::external_preferences);
     check_menu(!separator->enabled);
     const auto blocked = ui::build_workspace_menu(harness.view(), true, false, false);

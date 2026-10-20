@@ -16,6 +16,54 @@
 
 namespace {
 
+auto session_hitsound_monitoring_preserves_loop_and_frame() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto generated = sources.create_generated_source({
+        .source = {"generated:monitoring-loop", "v1"},
+        .interleaved_stereo = std::vector<float>(512 * output_channel_count, 0.125F)});
+    if (!generated) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    schedule.music = preview_schedule_t::music_event_t{.resource = resource_id_t{2}, .frame_count = 512};
+    const std::array bindings{
+        preview_object_source_binding_t{.object = object_id_t{1},
+            .voices = {{.source = generated->source, .frame_count = 512, .is_hitsound = true},
+                       {.source = generated->source, .frame_count = 512}}},
+        preview_object_source_binding_t{.object = preview_music_object,
+            .voices = {{.source = generated->source, .frame_count = 512}}}};
+    const preview_loop_region_t loop{0, 512};
+    if (!session.set_loop_region(loop) || !session.start_session(schedule, bindings)) return false;
+    (void)session.pump_session();
+    std::array<float, 32> output{};
+    (void)session.render_frames(output);
+    if (output.front() != 0.375F) return false;
+    const auto frame = session.timeline_frame();
+    session.set_hitsounds_enabled(false);
+    if (!session.seek_session(frame)) return false;
+    (void)session.pump_session();
+    (void)session.render_frames(output);
+    if (output.front() != 0.25F || session.loop_region() != loop ||
+        session.timeline_frame() != frame + 16 || !session.is_active()) return false;
+    session.set_hitsounds_enabled(true);
+    (void)session.render_frames(output);
+    return output.front() == 0.375F && session.loop_region() == loop && session.is_hitsounds_enabled();
+}
+
+} // namespace
+
+TEST_CASE("Session hitsound monitoring keeps authored bindings loop and audible position",
+          "[unit][audio][preview-session][hitsound-monitoring]") {
+    CHECK(session_hitsound_monitoring_preserves_loop_and_frame());
+}
+
+namespace {
+
 auto start_primed(wormedit::audio::preview_session_t& session,
                   const wormedit::preview_schedule_t& schedule,
                   std::span<const wormedit::audio::preview_object_source_binding_t> objects,

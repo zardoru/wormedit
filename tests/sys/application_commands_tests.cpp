@@ -142,6 +142,8 @@ TEST_CASE("Dock command IDs parse into typed commands", "[unit][sys][commands][d
           application_command_t{.kind = application_command_kind_t::semantic_layer_create});
     CHECK(parse_application_command("view.toggle_sounds") ==
           application_command_t{.kind = application_command_kind_t::view_toggle_sounds});
+    CHECK(parse_application_command("audio.toggle_playback_audition") ==
+          application_command_t{.kind = application_command_kind_t::audio_toggle_playback_audition});
 }
 
 TEST_CASE("application command parser rejects unknown IDs and malformed slots",
@@ -1042,6 +1044,67 @@ TEST_CASE("application command selection clear invokes producer-owned cursor res
     REQUIRE(entries.size() == 1);
     CHECK(entries.front().message == "Chart preview stopped; cursor restored.");
     CHECK(wormedit::write_native_project(fixture.fixture.history.document).value == original);
+}
+
+TEST_CASE("Clearing Compose selection preserves the active tool and layer solo",
+          "[unit][sys][commands][selection-escape]") {
+    TimingInsertFixture fixture;
+    auto& app = fixture.application_state;
+    const bool layer_brush = GENERATE(false, true);
+    app.project.compose_gesture.note_paint_mode_active = !layer_brush;
+    app.project.compose_gesture.semantic_layer_paint_mode_active = layer_brush;
+    app.project.semantic_layer.semantic_layer_solo_active = true;
+    const auto tool = app.project.compose_gesture.note_paint_mode_active;
+    const auto brush = app.project.compose_gesture.semantic_layer_paint_mode_active;
+    REQUIRE(fixture.invoke(application_command_kind_t::selection_clear).value);
+    CHECK(fixture.compose_state->selected_objects.empty());
+    CHECK(fixture.compose_state->selected_notes.empty());
+    CHECK(app.project.compose_gesture.note_paint_mode_active == tool);
+    CHECK(app.project.compose_gesture.semantic_layer_paint_mode_active == brush);
+    CHECK(app.project.semantic_layer.semantic_layer_solo_active);
+}
+
+TEST_CASE("Escape cancels a mouse selection without clearing its committed selection",
+          "[sys][commands][selection-history][selection-escape]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& state = *fixture.compose_state;
+    auto& history = fixture.fixture.history;
+    const auto before = editor_selection_snapshot_t::from(state);
+    REQUIRE(dispatch_editor_action(history, state,
+        begin_editor_area_selection_action_t{10.0, 0.5, 0.0, 200.0}));
+    REQUIRE(fixture.invoke(application_command_kind_t::selection_clear).value);
+    CHECK_FALSE(state.is_pending());
+    CHECK(editor_selection_snapshot_t::from(state) == before);
+    CHECK(history.selections.undo.empty());
+}
+
+TEST_CASE("Selection Undo is routed without changing the document revision",
+          "[sys][commands][selection-history]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& state = *fixture.compose_state;
+    auto& history = fixture.fixture.history;
+    const auto before = editor_selection_snapshot_t::from(state);
+    REQUIRE(fixture.invoke(application_command_kind_t::selection_clear).value);
+    CHECK(state.selected_notes.empty());
+    REQUIRE(fixture.invoke(application_command_kind_t::history_undo).value);
+    CHECK(editor_selection_snapshot_t::from(state) == before);
+    CHECK(history.document.revision == 9);
+}
+
+TEST_CASE("Clearing an area span is an undoable transient selection change",
+          "[sys][commands][selection-history]") {
+    using namespace wormedit;
+    AreaFixture f;
+    f.state.retained_selection_range = position_span_t{{measure_id_t{1}, 121}, {measure_id_t{1}, 620}};
+    const auto before = editor_selection_snapshot_t::from(f.state);
+    f.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR;
+    (void)f.dispatch();
+    CHECK_FALSE(f.state.retained_selection_range);
+    CHECK(apply_editor_history(f.history, f.state, true).changed);
+    CHECK(editor_selection_snapshot_t::from(f.state) == before);
+    CHECK(f.history.document.revision == 9);
 }
 
 TEST_CASE("application command notification severity preserves original rejection diagnostic",
@@ -2530,6 +2593,7 @@ void check_placement_audition(bool enabled) {
                           application, nullptr);
     REQUIRE(flattened.view.compose.scene_available);
     REQUIRE(interaction.has_value());
+    interaction->armed_hitsample = osu_hitsample_t{.clap = true};
     const auto& compose = flattened.view.compose;
     const auto& chart = history.document.charts.front();
     const local_position_t position{chart.measures.front().id, 240};
@@ -2581,6 +2645,29 @@ TEST_CASE("Click audition command flips the preference through the program save 
     CHECK(toggle_audition_on_click(program, enabled).empty());
     CHECK(enabled);
     CHECK(program.preferences.editor.audition_on_click);
+    fs::remove_all(dir);
+}
+namespace {
+void check_playback_preference(bool condition) { CHECK(condition); }
+}
+
+TEST_CASE("Playback hitsound monitoring persists independently from click audition",
+          "[sys][application_commands][audition]") {
+    namespace fs = std::filesystem;
+    const auto dir = fs::temp_directory_path() / "wormedit-playback-hitsound-preference";
+    fs::create_directories(dir);
+    program_preferences_runtime_t program;
+    program.path = dir / "preferences.json";
+    bool enabled = program.preferences.editor.audition_on_playback;
+    REQUIRE(enabled);
+    check_playback_preference(toggle_audition_on_playback(program, enabled).empty());
+    check_playback_preference(!enabled);
+    check_playback_preference(program.preferences.editor.audition_on_click);
+    const auto stored = wormedit::load_program_preferences(program.path);
+    check_playback_preference(!stored.contents.preferences.editor.audition_on_playback);
+    check_playback_preference(stored.contents.preferences.editor.audition_on_click);
+    check_playback_preference(toggle_audition_on_playback(program, enabled).empty());
+    check_playback_preference(enabled);
     fs::remove_all(dir);
 }
 #endif

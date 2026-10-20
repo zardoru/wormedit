@@ -2,6 +2,27 @@
 
 ## Active queue (2026-10-20)
 
+Completed selection-safety follow-up (2026-10-20): pressing outside a retained area no longer
+clears it; note clicks commit selection on release, and Escape cancels pending mouse capture or
+the active gesture without also clearing the previous selection. Accepted selection changes
+share Ctrl+Z / Ctrl+Shift+Z chronology with document edits through bounded, session-only snapshots,
+without modifying song data, saved revisions or dirty state. New selection/document branches clear
+both redo streams; history eviction cannot leave selection steps behind an unreachable document
+boundary. Core, command and event-harness regressions pass; GATE passes **4,343/4,343**, whitespace
+and changed-C++ complexity (`/tmp/wormedit-gate.G5cppZ`). Isolated Xvfb verifies an eight-object
+selection during marquee preview, Escape retention, completed-click Undo and Redo, with no dirty
+title marker (`/tmp/wormedit-selection-{pending,cancelled,undone,redone}.png`).
+
+Completed owner feedback follow-up (2026-10-20): lane-key chords continue across their own
+accepted edits while external-revision guards remain intact; Escape clears selection without
+changing tools; Compose status prioritizes the selected-object count at narrow widths. Hitsound
+palette controls use semantic icons and toggle/set affordances; notes show contrast-aware badges
+and extended hover details. Click audition obeys its existing preference, and independent persisted
+Play Hitsounds on Playback gates live voices without changing offline export. GATE passes
+**4,334/4,334**, whitespace and changed-C++ complexity (`/tmp/wormedit-gate.kUyGAE`). Isolated
+Xvfb verifies chords, Escape, narrow counts, badges/tooltips and checked/unchecked playback-menu
+states during dummy-output playback; no loudspeaker listening was performed.
+
 Completed owner-requested priorities **T-330**, **T-215–T-217** and **T-107** (2026-10-20):
 sound-tag chips/filtering; typed osu! samples and native persistence; selection/default hitsound
 palette edits and remappable shortcuts; map/skin/generated-bundle playback; cancellable, verified,
@@ -17,6 +38,15 @@ succeeds, but the build stops at three pre-existing missing `stepmania` initiali
 
 No sequential follow-up is active. T-729 export-cut sections and T-730 timing links remain
 deferred until the owner names them.
+
+Later preview-point/span authoring is recorded as [T-749](../../docs/chart-editor-plan/tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration): audit osu!mania and StepMania point/duration semantics, preserve point-only versus explicit duration, then add cancellable span editing and format-aware round trips. Implementation remains deferred.
+
+Shared authored multivoice Sounds **planned separately, not implemented** (2026-10-20):
+[T-745–T-748](../../docs/chart-editor-plan/tasks/compose-ux.md#t-745-specify-one-authored-multivoice-sound-model)
+cover the ownership/design audit, Sounds/audio integration, conversion of **only edited affected
+osu! custom-set notes**, and BMSON layered authoring. Existing retained BMSON fusion/playback
+remains supported. Question 25 gates the model; no flattened-composite shortcut, hidden BMSON
+generic backing or whole-set migration is approved. Start only when the owner requests it.
 
 Scoped BMS program **plan written** (2026-10-20; implementation not started):
 [approved Control/Chart/Text contract](../../docs/chart-editor-plan/editing/bms-scoped-program.md),

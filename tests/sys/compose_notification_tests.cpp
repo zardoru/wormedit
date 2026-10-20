@@ -35,10 +35,15 @@ struct compose_notification_fixture_t {
 
     bool is_workspace_current_when_feedback_posted{true};
     std::size_t feedback_post_count{};
+    bool advance_revision_on_feedback{};
     inline static thread_local compose_notification_fixture_t* feedback_probe{};
 
     static auto feedback_time() -> notification_time_t {
         if (feedback_probe) {
+            if (feedback_probe->advance_revision_on_feedback && !feedback_probe->history.undo.empty()) {
+                feedback_probe->advance_revision_on_feedback = false;
+                ++feedback_probe->history.document.revision;
+            }
             ++feedback_probe->feedback_post_count;
             feedback_probe->is_workspace_current_when_feedback_posted &=
                 feedback_probe->workspace.document_revision ==
@@ -85,6 +90,37 @@ struct compose_notification_fixture_t {
         return center.snapshot(notification_capacity);
     }
 
+    void prepare_lane_chord() {
+        auto song = history.document;
+        auto& chart = song.charts.front();
+        chart.measures.front().notes.clear();
+        chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{2}, .name = "Second"});
+        chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "Third"});
+        history = document_history_t::from(std::move(song));
+        const std::array<std::uint64_t, 1> snaps{4};
+        const auto setup = editor_interaction_state_t::from(history, chart_id_t{7}, lane_id_t{1},
+            {measure_id_t{1}, 0}, snaps, 4);
+        REQUIRE(setup.state);
+        state = *setup.state;
+        state.armed_hitsample = osu_hitsample_t{.clap = true};
+        const auto bound = workspace_controller_t::from(history);
+        REQUIRE(bound.value);
+        workspace = *bound.value;
+        workspace.active_tab = workspace_tab_t::compose;
+        application.project.compose_gesture.note_paint_mode_active = true;
+    }
+
+    auto batch(std::span<const WormUiComposeInputAction> inputs) -> std::string {
+        WormUiWorkspaceAction action{};
+        action.compose_input_chart_id = state.chart.value;
+        action.compose_input_document_revision = history.document.revision;
+        action.compose_input_viewport_width_pixels = 800;
+        action.compose_input_count = inputs.size();
+        std::ranges::copy(inputs, action.compose_inputs);
+        return dispatch_compose_input_action(action, history, workspace, state, viewport,
+            navigation, application, cache, 0, &sink);
+    }
+
     auto input(WormUiComposeInputKind kind) -> std::string {
         WormUiWorkspaceAction action{};
         action.compose_input_chart_id = state.chart.value;
@@ -96,6 +132,82 @@ struct compose_notification_fixture_t {
             navigation, application, cache, 0, &sink);
     }
 };
+
+void check_lane_chord(compose_notification_fixture_t& fixture) {
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    REQUIRE(notes.size() == 3);
+    std::vector<std::uint64_t> lanes;
+    for (const auto& note : notes) {
+        lanes.push_back(note.lane.value);
+        CHECK(note.osu_hitsample == osu_hitsample_t{.clap = true});
+    }
+    std::ranges::sort(lanes);
+    CHECK(lanes == std::vector<std::uint64_t>{1, 2, 3});
+    const auto entries = fixture.drain();
+    CHECK(std::ranges::none_of(entries, [](const auto& entry) {
+        return entry.severity == notification_severity_t::warning || entry.severity == notification_severity_t::error;
+    }));
+}
+
+TEST_CASE("Lane draw chords admit their own note commits within one frame", "[unit][sys][lane-chord]") {
+    compose_notification_fixture_t fixture;
+    fixture.prepare_lane_chord();
+    std::vector<WormUiComposeInputAction> inputs;
+    SECTION("grouped press and release") {
+        for (std::uint64_t lane = 1; lane <= 3; ++lane)
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = lane});
+        for (std::uint64_t lane = 3; lane != 0; --lane)
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = lane});
+    }
+    SECTION("interleaved taps") {
+        for (std::uint64_t lane = 1; lane <= 3; ++lane) {
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = lane});
+            inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = lane});
+        }
+    }
+    (void)fixture.batch(inputs);
+    check_lane_chord(fixture);
+    CHECK_FALSE(fixture.state.is_pending());
+}
+
+TEST_CASE("Held lane chords commit all releases and retain hitsound defaults", "[unit][sys][lane-chord]") {
+    compose_notification_fixture_t fixture;
+    fixture.prepare_lane_chord();
+    const std::array presses{
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 2},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 3}};
+    (void)fixture.batch(presses);
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        move_edit_cursor_action_t{interaction_direction_t::forward}));
+    const auto end = fixture.state.cursor;
+    const std::array releases{
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 3},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 2}};
+    (void)fixture.batch(releases);
+    check_lane_chord(fixture);
+    CHECK_FALSE(fixture.state.is_pending());
+    for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
+        CHECK(note.end == end);
+}
+
+TEST_CASE("Lane chord continuation still rejects an external revision during feedback", "[unit][sys][lane-chord]") {
+    compose_notification_fixture_t fixture{compose_notification_fixture_t::feedback_time};
+    fixture.prepare_lane_chord();
+    fixture.feedback_probe = &fixture;
+    fixture.advance_revision_on_feedback = true;
+    const std::array inputs{
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1},
+        WormUiComposeInputAction{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 2}};
+    (void)fixture.batch(inputs);
+    CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 1);
+    CHECK_FALSE(fixture.state.is_pending());
+    CHECK(std::ranges::any_of(fixture.drain(), [](const auto& entry) {
+        return entry.severity == notification_severity_t::warning;
+    }));
+}
 
 void expect_entry(const notification_entry_t& entry, notification_severity_t severity,
                   notification_source_t source, std::string_view message) {

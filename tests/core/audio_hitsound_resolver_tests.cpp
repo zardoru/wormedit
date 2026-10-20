@@ -103,3 +103,48 @@ TEST_CASE("Osu missing custom sample fallback is reported once per source enviro
     CHECK(resolver.bindings(song, song.charts[0], registry, 1).size() == 1);
     CHECK_FALSE(resolver.take_fallback_notice());
 }
+
+TEST_CASE("Hitsound object audition shares all playback voices and gain", "[unit][audio][hitsound][object-audition]") {
+    decoded_source_registry_t registry;
+    hitsound_resolver_t resolver;
+    resolver.environment.bundle_directory = bundled_samples();
+    song_document_t song{.id = song_id_t{1}, .charts = {{.id = chart_id_t{2},
+        .measures = {{.id = measure_id_t{3}, .notes = {{.id = object_id_t{10},
+            .position = {measure_id_t{3}, 0}, .lane = lane_id_t{1},
+            .osu_hitsample = osu_hitsample_t{.whistle = true, .finish = true, .clap = true, .volume = 50}}}}}}}};
+    const auto extras = resolver.bindings(song, song.charts.front(), registry, 1);
+    const auto clicked = audition_resolution_t::from(song, chart_id_t{2}, object_id_t{10}, {},
+        {.hitsounds = extras});
+    REQUIRE(clicked.diagnostics.empty());
+    REQUIRE(clicked.value.clips.size() == 4);
+    CHECK(clicked.value.clips.front().gain == 0.5F);
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable.push_back({.object = object_id_t{10}, .lane = lane_id_t{1}});
+    const auto playback = preview_bindings_resolution_t::from(song, chart_id_t{2}, schedule, {}, {.hitsounds = extras});
+    REQUIRE(playback.diagnostics.empty());
+    REQUIRE(playback.value.bindings.size() == 1);
+    CHECK(playback.value.bindings.front().voices.front().is_hitsound);
+}
+
+TEST_CASE("Hitsound playback bindings distinguish typed notes from ordinary resources and music", "[unit][audio][hitsound]") {
+    song_document_t song{.id = song_id_t{1},
+        .audio_assets = {{.id = asset_id_t{1}, .source_path = "sample.wav"}},
+        .resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}}},
+        .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}, .notes = {
+            {.id = object_id_t{10}, .position = {measure_id_t{3}, 0}, .lane = lane_id_t{1},
+             .sound = resource_id_t{1}, .osu_hitsample = osu_hitsample_t{}},
+            {.id = object_id_t{11}, .position = {measure_id_t{3}, 240}, .lane = lane_id_t{1}, .sound = resource_id_t{1}}}}}}}};
+    const decoded_source_binding_t source{.asset = asset_id_t{1}, .source = {"fixture", "v1"},
+        .source_sample_rate = output_sample_rate, .output_sample_rate = output_sample_rate, .output_frame_count = 4410};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.object = object_id_t{10}, .resource = resource_id_t{1}, .lane = lane_id_t{1}},
+                         {.object = object_id_t{11}, .resource = resource_id_t{1}, .lane = lane_id_t{1}}};
+    auto playback = preview_bindings_resolution_t::from(song, chart_id_t{2}, schedule, std::span{&source, 1});
+    REQUIRE(playback.diagnostics.empty());
+    REQUIRE(playback.value.bindings.size() == 2);
+    CHECK(playback.value.bindings[0].voices.front().is_hitsound);
+    CHECK_FALSE(playback.value.bindings[1].voices.front().is_hitsound);
+    playback.value.append_music(resource_id_t{1}, source, schedule);
+    REQUIRE(schedule.music);
+    CHECK_FALSE(playback.value.bindings.back().voices.front().is_hitsound);
+}

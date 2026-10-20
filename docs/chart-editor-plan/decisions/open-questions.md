@@ -103,6 +103,13 @@
    - **No provisional choice:** never implicitly mutate another scope/Chart owner, edit hidden unrelated content, silently change authored control parameters, or redirect a missing target to Root.
    - **Blocks:** final selection/preview integration in [T-743](../tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
 
+25. What is the shared authored multivoice sound model for native notes, edited osu! custom sets and BMSON layered sounds?
+   - **Agreed (2026-10-20):** plan this extension separately, not as immediate implementation. Imported osu! custom sample-set references remain read-only for faithful playback; editing materializes only the affected notes into the ordinary Sounds model, never every note sharing that set. Include BMSON layered sound authoring in the later design.
+   - **Existing behavior to preserve:** retained BMSON sound-channel layers already fuse for audition/playback; this is not a claim that BMSON layering is unsupported. Existing runtime preview voice bindings are derived audio data, not a persistent authoring model.
+   - **Still open:** whether the canonical binding belongs to a note or reusable sound definition; stable voice identities/order, gain and slice ownership; how layers are added, selected, removed and assigned from Sounds; the loss policy for targets that cannot encode those bindings. Resolve how inherited osu! set/index/volume is frozen on affected notes without baking gain twice, and how BMSON continuation/restart and channel attribution retain one semantic owner.
+   - **No provisional choice:** do not flatten voices into generated composite audio, use hidden retained BMSON objects as the generic model, mutate shared source sets, or silently omit voices. No migration starts merely because a note is selected or played.
+   - **Blocks:** implementation in [T-746–T-748](../tasks/compose-ux.md#t-746-integrate-approved-authored-voices-with-sounds-and-audio); [T-745](../tasks/compose-ux.md#t-745-specify-one-authored-multivoice-sound-model) is the code-free ownership/design audit that prepares this decision.
+
 ## How to use this list
 
 An executing model never resolves an open question by itself. If a task depends on one, implement only behavior that holds for the provisional default, keep it behind a policy value, and say in the report which question it relied on. The defaults are unconfirmed suggestions written on 2026-09-29; the user may overturn any of them.

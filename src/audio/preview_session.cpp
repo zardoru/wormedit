@@ -268,6 +268,9 @@ auto preview_session_t::set_layer_tick_frames(std::span<const std::uint64_t> fra
 void preview_session_t::set_muted_mix_groups(std::span<const std::uint64_t> groups) {
     transport_.set_muted_mix_groups(groups);
 }
+void preview_session_t::set_hitsounds_enabled(bool enabled) noexcept {
+    transport_.set_hitsounds_enabled(enabled);
+}
 
 void preview_session_t::set_metronome_enabled(bool enabled) {
     const std::scoped_lock lock(mutex_);

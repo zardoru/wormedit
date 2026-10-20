@@ -1,5 +1,6 @@
 #include "ui/nuklear/catalog_view.h"
 #include "ui/field/rect.h"
+#include "ui/hitsound_icons.h"
 
 #include <wormedit/core/rational.h>
 #include "core/text_util.h"
@@ -121,8 +122,9 @@ struct static_paint_indices_t {
 };
 static_paint_indices_t static_paint_indices;
 // Source publication caps the total record count at 32768. Together these
-// shallow scalar copies stay below 3 MiB; bounded geometry stays below 4 MiB.
-static_assert(sizeof(WormUiComposeNoteView)<=96 && sizeof(WormUiComposeHoldView)<=96 &&
+// shallow scalar copies stay below 3.25 MiB; bounded geometry stays below 4 MiB.
+// Hitsample payloads and filenames remain arena-owned and charged by that owner.
+static_assert(sizeof(WormUiComposeNoteView)<=104 && sizeof(WormUiComposeHoldView)<=96 &&
     sizeof(WormUiTimingMarkerView)<=96 && sizeof(WormUiComposeBgmEventView)<=96 &&
     sizeof(WormUiComposeLaneView)<=96 && sizeof(WormUiComposeBandView)<=96 &&
     sizeof(WormUiComposeBgmLaneView)<=96 && sizeof(WormUiComposeBgaEventView)<=96 &&
@@ -2273,9 +2275,71 @@ static void draw_compose_note_sound_dot(const ComposePaintContext& paint, struct
                size * 0.5f, light ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255), 2);
 }
 
+namespace {
+struct field_hitsound_stroke_t {
+    const ComposePaintContext& paint;
+    struct nk_rect bounds;
+    nk_color tint;
+    void line(float x0, float y0, float x1, float y1) {
+        field_line(paint, bounds.x + x0*bounds.w/24, bounds.y + y0*bounds.h/24,
+            bounds.x + x1*bounds.w/24, bounds.y + y1*bounds.h/24, std::max(1.0f, bounds.h/14), tint, 2);
+    }
+    void path(std::span<const wormedit::ui::hitsound_icons::point_t> points) {
+        for (std::size_t index = 1; index < points.size(); ++index)
+            line(points[index-1][0], points[index-1][1], points[index][0], points[index][1]);
+    }
+    void circle(float x, float y, float radius) {
+        for (int index = 0; index < 12; ++index) {
+            const auto a = static_cast<float>(index)*6.2831853f/12;
+            const auto b = static_cast<float>(index+1)*6.2831853f/12;
+            line(x+radius*std::cos(a), y+radius*std::sin(a), x+radius*std::cos(b), y+radius*std::sin(b));
+        }
+    }
+};
+
+auto sample_set_icon(wormedit::osu_sample_set_t set) -> wormedit::ui::hitsound_icons::shape_t {
+    using enum wormedit::ui::hitsound_icons::shape_t;
+    switch (set) {
+    case wormedit::osu_sample_set_t::automatic:
+    case wormedit::osu_sample_set_t::normal: return normal;
+    case wormedit::osu_sample_set_t::soft: return soft;
+    case wormedit::osu_sample_set_t::drum: return drum;
+    }
+    return normal;
+}
+
+void draw_compose_note_hitsound(const ComposePaintContext& paint, const WormUiComposeNoteView& note,
+                                struct nk_rect tile, struct nk_color fill) {
+    using wormedit::ui::hitsound_icons::shape_t;
+    if (note.tail || !note.hitsound) return;
+    const auto& sample = *note.hitsound;
+    std::array<shape_t, 5> icons{};
+    std::size_t count{};
+    icons[count++] = sample_set_icon(sample.resolved_normal_set);
+    if (sample.additions != 0 && sample.resolved_addition_set != sample.resolved_normal_set)
+        icons[count++] = sample_set_icon(sample.resolved_addition_set);
+    if (sample.additions & 2) icons[count++] = shape_t::whistle;
+    if (sample.additions & 4) icons[count++] = shape_t::cymbal;
+    if (sample.additions & 8) icons[count++] = shape_t::clap;
+    const auto side = std::min({14.0f, tile.h-2, (tile.w-4)/static_cast<float>(count)});
+    if (side < 6) { draw_compose_note_sound_dot(paint, tile, fill); return; }
+    const auto tint = note_label_is_light(fill) ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255);
+    auto x = tile.x + (tile.w-side*static_cast<float>(count))*.5f;
+    for (std::size_t index = 0; index < count; ++index) {
+        field_hitsound_stroke_t stroke{paint, nk_rect(x, tile.y+(tile.h-side)*.5f, side, side), tint};
+        wormedit::ui::hitsound_icons::draw(stroke, icons[index]);
+        x += side;
+    }
+}
+} // namespace
+
 static void draw_compose_note_sound_label(const ComposePaintContext& paint,
                                           const WormUiComposeNoteView& note,
                                           struct nk_rect tile, struct nk_color fill) {
+    if (note.hitsound) {
+        draw_compose_note_hitsound(paint, note, tile, fill);
+        return;
+    }
     if (note.glyph > 1 || note.tail || !note.sound_label || !note.sound_label[0]) return;
     const auto* font = paint.context->style.font;
     if (tile.h < font->height) {
@@ -2343,7 +2407,10 @@ static void draw_compose_note(const ComposePaintContext& paint,
     }
     const auto tile = nk_rect(rect.x + 1.0f, rect.y, std::max(1.0f, rect.w - 2.0f),
                               std::max(2.0f, rect.h));
-    if (draw_compose_note_glyph(paint, note, tile)) return;
+    if (draw_compose_note_glyph(paint, note, tile)) {
+        if (!note.proposal_ghost) draw_compose_note_hitsound(paint, note, tile, style.fill);
+        return;
+    }
     field_rect(paint, tile, 0.0f, style.fill, 2);
     draw_compose_note_border(paint, note, style, tile);
     if (note.proposal_ghost) return;
@@ -2981,44 +3048,44 @@ static auto compose_note_tooltip_title(const WormUiComposeView& view) -> std::st
     return title;
 }
 
-static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
-    const auto& view = *paint.view;
-    if (!view.hover_note_visible || !view.hover_tooltip || view.hover_tooltip[0] == '\0') {
-        return;
-    }
-    std::string resource_text;
+static auto compose_note_tooltip_lines(const WormUiComposeView& view) -> std::vector<std::string> {
+    std::vector<std::string> lines{compose_note_tooltip_title(view)};
     for (size_t index = 0; index < view.note_endpoint_count; ++index) {
         const auto& note = view.note_endpoints[index];
-        if (note.note_id == view.hover_note_id && note.sound_detail && note.sound_detail[0]) {
-            resource_text = note.sound_detail;
+        if (note.note_id != view.hover_note_id) continue;
+        if (note.sound_detail && note.sound_detail[0]) {
+            auto resource_text = std::string{note.sound_detail};
             if (note.sound_label && note.sound_label[0] && resource_text != note.sound_label)
                 resource_text += std::string{"  (ID "} + note.sound_label + ")";
-            break;
+            lines.push_back(std::move(resource_text));
         }
+        if (note.hitsound) {
+            const auto details = note.hitsound->details();
+            lines.insert(lines.end(), details.begin(), details.end());
+        }
+        break;
     }
-    const char* resource_detail = resource_text.empty() ? nullptr : resource_text.c_str();
+    return lines;
+}
+
+static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (!view.hover_note_visible || !view.hover_tooltip || view.hover_tooltip[0] == '\0') return;
+    const auto lines = compose_note_tooltip_lines(view);
     const auto* font = paint.context->style.font;
-    const auto title = compose_note_tooltip_title(view);
-    const auto title_length = static_cast<int>(title.size());
-    auto text_width = font->width(font->userdata, font->height,
-                                  title.c_str(), title_length);
-    if (resource_detail) {
-        const auto detail_length = static_cast<int>(strlen(resource_detail));
+    float text_width{};
+    for (const auto& line : lines)
         text_width = std::max(text_width, font->width(font->userdata, font->height,
-                                                      resource_detail, detail_length));
-    }
+            line.c_str(), static_cast<int>(line.size())));
     const auto bounds = compose_pointer_tooltip_bounds(
-        paint, text_width, resource_detail ? 50.0f : 24.0f);
+        paint, text_width, static_cast<float>(lines.size())*26-2);
     field_rect(paint, bounds, 3.0f, nk_rgba(12, 16, 24, 235), 5);
     field_stroke_rect(paint, bounds, 3.0f, 1.0f, compose(ComposeColor::hold_hover), 5);
-    field_text(paint, nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, 24.0f),
-                 title.c_str(), title_length, font,
-                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192), 5);
-    if (resource_detail) {
-        field_text(paint, nk_rect(bounds.x + 8.0f, bounds.y + 26.0f,
-                                           bounds.w - 16.0f, 24.0f),
-                     resource_detail, static_cast<int>(strlen(resource_detail)), font,
-                     nk_rgb(12, 16, 24), nk_rgb(245, 227, 255), 5);
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        const auto& line = lines[index];
+        field_text(paint, nk_rect(bounds.x + 8, bounds.y+26*static_cast<float>(index), bounds.w-16, 24),
+            line.c_str(), static_cast<int>(line.size()), font, nk_rgb(12, 16, 24),
+            index == 0 ? nk_rgb(255, 244, 192) : nk_rgb(245, 227, 255), 5);
     }
 }
 

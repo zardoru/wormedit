@@ -2,6 +2,7 @@
 
 #include <wormedit/core/quantize.h>
 #include <wormedit/core/result.h>
+#include <wormedit/core/selection_history.h>
 
 #include <algorithm>
 #include <array>
@@ -184,6 +185,7 @@ struct document_command_record_t {
     std::string label;
     song_document_t before;
     song_document_t after;
+    std::uint64_t sequence{};
 };
 
 struct document_history_t {
@@ -204,6 +206,11 @@ struct document_history_t {
     std::uint64_t next_revision{1};
     std::optional<std::uint64_t> saved_revision;
     std::size_t maximum_undo_entries{128};
+    editor_selection_history_t selections;
+    std::uint64_t next_history_sequence{1};
+
+    [[nodiscard]] auto can_undo() const -> bool { return !undo.empty() || !selections.undo.empty(); }
+    [[nodiscard]] auto can_redo() const -> bool { return !redo.empty() || !selections.redo.empty(); }
 
   private:
     [[nodiscard]] auto indices_storage(const chart_document_t& chart) const

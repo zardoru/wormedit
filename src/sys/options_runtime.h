@@ -41,4 +41,6 @@ void open_options(options_runtime_t&, const program_preferences_t&);
 // mirrors the accepted value into `enabled`. Returns the save error, or empty on success.
 [[nodiscard]] auto toggle_audition_on_click(program_preferences_runtime_t&, bool& enabled)
     -> std::string;
+[[nodiscard]] auto toggle_audition_on_playback(program_preferences_runtime_t&, bool& enabled)
+    -> std::string;
 } // namespace wormedit::sys

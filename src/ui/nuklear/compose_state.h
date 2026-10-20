@@ -335,6 +335,7 @@ struct worm_ui_nuklear_compose_state_t {
     struct note_move_t {
         bool note_move_candidate_active{};
         bool note_move_select_on_release{};
+        WormUiComposeSelectionMode selection_mode{WORM_UI_COMPOSE_SELECTION_REPLACE};
         bool note_move_active{};
         double note_move_anchor_x{};
         double note_move_anchor_y{};

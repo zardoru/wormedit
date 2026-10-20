@@ -372,6 +372,38 @@ TEST_CASE("BGM mix groups silence active and future voices without losing their 
     check_bgm_mix(transport.scheduled_voice_count() == 0);
 }
 
+TEST_CASE("Live hitsound monitoring preserves music keysounds and independent BGM lane mute",
+          "[unit][audio][transport][hitsound-monitoring]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    require_transport(token.has_value());
+    const auto shared = source("hitsound-monitoring");
+    const std::vector<float> pcm(64 * output_channel_count, 0.125F);
+    require_transport(cache.store({.source = shared, .block_index = 0}, 64, pcm).has_value());
+    const std::array voices{
+        transport_voice_t{.id = 1, .kind = voice_kind_t::music, .source = shared, .frame_count = 64},
+        transport_voice_t{.id = 2, .source = shared, .frame_count = 64},
+        transport_voice_t{.id = 3, .source = shared, .frame_count = 64, .mix_group = 7,
+                          .is_hitsound = true}};
+    require_transport(transport.schedule_voices(*token, voices) == std::monostate{});
+    std::array<float, 16> output{};
+    check_bgm_mix(transport.mix_frames(*token, 0, output).voices_mixed == 3);
+    check_bgm_mix(output.front() == 0.375F);
+    transport.set_hitsounds_enabled(false);
+    check_bgm_mix(transport.mix_frames(*token, 8, output).voices_mixed == 2);
+    check_bgm_mix(output.front() == 0.25F);
+    check_bgm_mix(transport.scheduled_voice_count() == 3);
+    transport.set_muted_mix_groups(std::array<std::uint64_t, 1>{7});
+    transport.set_hitsounds_enabled(true);
+    check_bgm_mix(transport.mix_frames(*token, 16, output).voices_mixed == 2);
+    transport.set_muted_mix_groups({});
+    check_bgm_mix(transport.mix_frames(*token, 24, output).voices_mixed == 3);
+    check_bgm_mix(output.front() == 0.375F);
+    check_bgm_mix(transport.is_current(*token));
+}
+
 namespace {
 auto stale_transport_outcomes_keep_frames_and_silence() -> bool {
     using namespace wormedit::audio;

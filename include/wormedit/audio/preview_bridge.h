@@ -24,6 +24,7 @@ struct preview_voice_source_t {
     std::uint64_t frame_count{};
     float gain{1.0F};
     std::uint64_t mix_group{};
+    bool is_hitsound{};
     auto operator==(const preview_voice_source_t&) const -> bool = default;
 };
 

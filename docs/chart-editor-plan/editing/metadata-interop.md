@@ -90,6 +90,40 @@ Treat BMSE and iBMSC clipboard formats as external compatibility formats with fi
 
 Cut deletes source events only after at least one requested clipboard representation is written successfully. Malformed or unsupported clipboard input must leave the document and existing selection unchanged.
 
+## Authored multivoice sounds (deferred)
+
+Owner request (2026-10-20): plan a shared authored sound model for several voices
+on one logical note, including native projects, edited osu! custom sample sets,
+and BMSON layered sounds. This is later work, not an instruction to replace the
+current model while polishing the hitsound palette. [T-745–T-748](../tasks/compose-ux.md#t-745-specify-one-authored-multivoice-sound-model)
+define the ordered design and implementation lane; [question 25](../decisions/open-questions.md)
+blocks unresolved model and authoring choices.
+
+Imported osu! set/index/volume references remain read-only and continue to resolve
+faithfully, including timing-point inheritance. When an actual sound edit affects
+such a note, materialize **only that note's affected authored sound configuration**
+into ordinary Sounds-list resources and the approved multivoice bindings in one
+undoable edit. Leave unedited notes, shared custom sets and timing declarations
+unchanged. Retain distinct normal/whistle/finish/clap identities, resolved source
+paths, effective gain and any source slice; apply inherited volume exactly once.
+Selection, audition, playback and a no-op edit do not trigger conversion.
+
+BMSON already supports retained sound-channel layering and fused runtime audition;
+extend authoring without losing that behavior. The later model must preserve
+coincident voices, channel/event attribution, exact slice spans and
+continuation/restart semantics while giving editable content one authoritative
+owner. Specify which retained constructs remain format backing and how their
+authored bindings stay synchronized; do not disguise BMSON source objects as a
+generic native sound model. Ordinary Sounds resources and decoded-source services
+remain shared owners, not a second per-format audio library.
+
+The design must cover stable identities, native save/reopen, Undo/Redo,
+copy/paste, sound assignment/usage/deletion, audition, playback, preview.ogg and
+target-format compatibility. Unsupported output requires an explicit loss report
+or refusal, never silently dropping voices. Flattening to a generated composite
+file is not an implementation shortcut. No whole-set migration or automatic
+rewrite of untouched imported content is authorized.
+
 ## Side-by-side chart comparison
 
 Allow two or more difficulties from the same song project to be previewed in parallel panes. The panes share transport, waveform time, vertical position, zoom, playback rate, and edit cursor; each keeps its own horizontal lane scroll where layouts differ. A baseline chart can be selected, or comparison can flag a row when any visible chart differs from another.

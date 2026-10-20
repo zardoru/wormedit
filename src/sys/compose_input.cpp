@@ -1415,20 +1415,17 @@ auto place_compose_bar_line(const WormUiComposeInputAction& input, compose_input
 auto dispatch_compose_undo_redo(const WormUiComposeInputAction& input,
                                 compose_input_context_t& context) -> compose_input_family_result_t {
     using namespace wormedit;
-    (void)dispatch_editor_action(context.environment.document.history, context.state,
-                                 cancel_editor_gesture_action_t{});
-    (void)dispatch_editor_action(context.environment.document.history, context.state,
-                                 select_editor_notes_action_t{});
     const auto undo = input.kind == WORM_UI_COMPOSE_INPUT_UNDO;
-    const auto changed = undo ? undo_document_command(context.environment.document.history)
-                              : redo_document_command(context.environment.document.history);
+    const auto applied = apply_editor_history(context.environment.document.history, context.state, undo);
+    const auto changed = applied.changed;
+    if (changed) context.environment.document.workspace.selected_chart = context.state.chart;
     const auto status = changed ? (undo ? "Undo applied." : "Redo applied.")
                                 : (undo ? "Nothing to undo." : "Nothing to redo.");
     if (!changed)
         return compose_input_family_result_t::continue_batch(
             status, notification_severity_t::info, notification_source_t::edit);
     auto outcome = compose_action_outcome_t::from(status, notification_severity_t::success,
-                                                  notification_source_t::edit, true);
+                                                  notification_source_t::edit, applied.document_changed);
     outcome.rebind_failure = "History changed, but workspace rebinding failed.";
     outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
     outcome.is_rebind_severity_diagnostic = false;
@@ -2167,12 +2164,37 @@ void finish_interrupted_compose_travel(const WormUiComposeInputAction& input,
         context.state, context.ui_action.compose_input_document_revision);
 }
 
+auto is_lane_key_input(const WormUiComposeInputAction& input) -> bool {
+    return input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS ||
+           input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
+}
+
+auto dispatch_compose_input_step(const WormUiComposeInputAction& input,
+    compose_input_context_t& context, wormedit::chart_stamp_t& lane_stamp) -> compose_input_step_t {
+    wormedit::editor_interaction_result_t result;
+    std::string_view accepted = "Compose interaction applied.";
+    const auto cursor = capture_cursor_pose(context.state);
+    auto dispatched = dispatch_compose_input_with_travel(input, context, result, accepted);
+    if (pointer_placement_keeps_cursor(input, result))
+        restore_pointer_placement_cursor(context, cursor, result);
+    finish_interrupted_compose_travel(input, context);
+    // Capture the edit's revision before feedback callbacks can change the document.
+    if (is_lane_key_input(input) && result.accepted && result.document_changed) {
+        lane_stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document, context.state.chart);
+        context.input_chart = context.chart();
+    }
+    return process_compose_input_result(input, context, std::move(dispatched), result, accepted);
+}
+
 auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::string {
     using namespace wormedit;
     auto status = std::string{};
+    auto lane_stamp = chart_stamp_t::from(context.environment.document.history.document, context.state.chart);
     for (std::size_t index = 0; index < context.ui_action.compose_input_count; ++index) {
+        const auto& input = context.ui_action.compose_inputs[index];
         // The entry boundary covers item zero; layout/hover setup cannot mutate the document.
-        if (index != 0 && !context.is_input_current()) {
+        const auto current = is_lane_key_input(input) ? context.is_input_current(lane_stamp) : context.is_input_current();
+        if (index != 0 && !current) {
             context.environment.commands.project.compose_gesture.bga_draw_stroke.reset();
             (void)dispatch_editor_action(context.environment.document.history, context.state,
                                          cancel_editor_gesture_action_t{});
@@ -2182,16 +2204,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
                                message);
             return message;
         }
-        const auto& input = context.ui_action.compose_inputs[index];
-        editor_interaction_result_t result;
-        std::string_view accepted = "Compose interaction applied.";
-        const auto cursor = capture_cursor_pose(context.state);
-        auto dispatched = dispatch_compose_input_with_travel(input, context, result, accepted);
-        if (pointer_placement_keeps_cursor(input, result))
-            restore_pointer_placement_cursor(context, cursor, result);
-        finish_interrupted_compose_travel(input, context);
-        auto step =
-            process_compose_input_result(input, context, std::move(dispatched), result, accepted);
+        auto step = dispatch_compose_input_step(input, context, lane_stamp);
         if (!step.handled) continue;
         status = std::move(step.status);
         if (step.stop) return status;

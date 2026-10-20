@@ -1158,7 +1158,15 @@ static auto dispatch_gesture_action(document_history_t& history, editor_interact
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_interaction_action_t& action)
     -> editor_interaction_result_t {
+    const auto* area = std::get_if<update_editor_area_selection_action_t>(&action);
+    const auto selection_action = is_gesture_action<select_editor_notes_action_t, select_editor_objects_action_t,
+        select_editor_lane_action_t, select_bms_canvas_measure_action_t, space_range_selection_action_t>(action) ||
+        (area && area->operation == proposal_operation_t::apply);
+    auto before = selection_action ? std::optional{editor_selection_snapshot_t::from(state)} : std::nullopt;
+    const auto sequence = history.next_history_sequence;
     auto result = dispatch_gesture_action(history, state, action);
+    if (before && result.accepted && !result.document_changed && history.next_history_sequence == sequence)
+        history.selections.record(history, std::move(*before), editor_selection_snapshot_t::from(state));
     result.ensure_view(history, state);
     return result;
 }

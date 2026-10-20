@@ -216,6 +216,7 @@ typedef struct WormUiComposeNoteView {
     const char* sound_label;
     const char* sound_detail;
     uint64_t sound_resource_id;
+    const wormedit::ui::hitsound_note_view_t* hitsound;
     uint8_t snap_class; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
     uint8_t kind;
     bool tail;

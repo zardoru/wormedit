@@ -251,6 +251,7 @@ TEST_CASE("Editor preference defaults preserve existing appearance and profile d
     expect_preference(defaults.editor.playhead_anchor_percent == 20);
     expect_preference(defaults.editor.note_kind_palette_visible);
     expect_preference(defaults.editor.lane_key_legend_visible);
+    expect_preference(defaults.editor.audition_on_playback);
     expect_preference(defaults.editor.area_band_alpha == 48);
     for (auto direction : defaults.editor.scroll_directions) expect_preference(direction == 0);
     expect_preference(preferences_parse_effect_t::from(R"({"version":1,"editor":{"default_snap":8}})").preferences.editor.area_band_alpha == 48);
@@ -261,6 +262,7 @@ TEST_CASE("Editor preference fields round trip and invalid individual values ret
     value.editor.playhead_anchor_percent = 35;
     value.editor.note_kind_palette_visible = false;
     value.editor.audition_on_click = false;
+    value.editor.audition_on_playback = false;
     value.editor.lane_key_legend_visible = false;
     value.editor.area_band_alpha = 0;
     const auto bytes = serialize_program_preferences(value);

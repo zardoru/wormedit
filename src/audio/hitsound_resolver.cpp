@@ -97,7 +97,8 @@ auto hitsound_resolver_t::binding_for(const note_t& note, decoded_source_registr
 }
 
 auto hitsound_resolver_t::bindings(const song_document_t& song, const chart_document_t& chart,
-    decoded_source_registry_t& registry, std::uint64_t generation) -> std::vector<hitsound_binding_t> {
+    decoded_source_registry_t& registry, std::uint64_t generation,
+    std::optional<object_id_t> object) -> std::vector<hitsound_binding_t> {
     if (generation_ != generation) {
         voices_.clear();
         generation_ = generation;
@@ -116,7 +117,7 @@ auto hitsound_resolver_t::bindings(const song_document_t& song, const chart_docu
         if (assets.contains(resource.asset.value)) available.insert(resource.id.value);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!note.osu_hitsample) continue;
+            if (!note.osu_hitsample || (object && note.id != *object)) continue;
             result.push_back(binding_for(note, registry,
                 context ? context->at(note.position) : osu_sample_context_t{},
                 note.sound && available.contains(note.sound->value)));

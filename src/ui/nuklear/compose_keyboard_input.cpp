@@ -259,10 +259,11 @@ static bool process_compose_escape(const auto& key_event,
                                    const WormUiComposeView* view,
                                    WormUiWorkspaceAction* action) {
     if (key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return false;
+    const auto pending = has_compose_gesture_capture();
     cancel_compose_gestures(action);
     state.bga_interaction.bga_stack_open = false;
     state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-    if (view->area_range_available || compose_area_capture_active())
+    if (!pending && (view->area_range_available || compose_area_capture_active()))
         cancel_compose_area_capture(*action);
     return true;
 }

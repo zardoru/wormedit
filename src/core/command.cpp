@@ -70,8 +70,12 @@ void trim_undo_history(document_history_t& history) {
         return;
     }
     const auto excess = history.undo.size() - history.maximum_undo_entries;
+    const auto retired_sequence = history.undo[excess - 1].sequence;
     history.undo.erase(history.undo.begin(),
                        history.undo.begin() + static_cast<std::ptrdiff_t>(excess));
+    std::erase_if(history.selections.undo, [retired_sequence](const auto& record) {
+        return record.sequence <= retired_sequence;
+    });
 }
 
 void mark_retained_sources_changed(song_document_t& document) {
@@ -180,11 +184,13 @@ static auto commit_validated_document(document_history_t& history, song_document
         .label = std::move(label),
         .before = history.document,
         .after = std::move(proposed),
+        .sequence = history.next_history_sequence++,
     };
     history.document = record.after;
     history.undo.push_back(std::move(record));
     trim_undo_history(history);
     history.redo.clear();
+    history.selections.redo.clear();
     ++history.next_revision;
     result.applied = true;
     result.revision = history.document.revision;
@@ -326,8 +332,13 @@ auto document_command_transaction_t::finish_execution(attempt_t<document_edit_ef
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {
     if (count < 2 || history.undo.size() < count) return;
     const auto first = history.undo.end() - static_cast<std::ptrdiff_t>(count);
+    if (std::ranges::any_of(history.selections.undo, [&](const auto& selection) {
+            return selection.sequence > first->sequence &&
+                   selection.sequence < history.undo.back().sequence;
+        })) return;
     document_command_record_t merged{.label = std::move(label), .before = std::move(first->before),
-                                     .after = std::move(history.undo.back().after)};
+                                     .after = std::move(history.undo.back().after),
+                                     .sequence = history.undo.back().sequence};
     history.undo.erase(first, history.undo.end());
     history.undo.push_back(std::move(merged));
 }

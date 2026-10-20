@@ -664,6 +664,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp
         ui/hitsound_palette_event_harness_tests.cpp
+        ui/compose_status_event_harness_tests.cpp
         ui/preview_audio_export_event_harness_tests.cpp
         ui/walkthrough_osu-stepmania_event_harness_tests.cpp
         ../src/sys/application_commands.cpp

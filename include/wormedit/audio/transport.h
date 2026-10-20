@@ -36,6 +36,7 @@ struct transport_voice_t {
     float gain{1.0F};
     // Stable BGM lane identity; zero is outside the lane mix.
     std::uint64_t mix_group{};
+    bool is_hitsound{};
 
     auto operator==(const transport_voice_t&) const -> bool = default;
 };
@@ -77,6 +78,11 @@ class transport_t {
     void set_clicks_enabled(bool enabled);
     // Control thread; active muted voices keep advancing and can resume mid-tail.
     void set_muted_mix_groups(std::span<const std::uint64_t> groups);
+    // Live monitoring policy; muted hitsounds retain their timeline and can resume mid-tail.
+    void set_hitsounds_enabled(bool enabled) noexcept;
+    [[nodiscard]] auto is_hitsounds_enabled() const noexcept -> bool {
+        return hitsounds_enabled_.load(std::memory_order_acquire);
+    }
     // Control thread: retire one preview family without restarting the transport.
     void clear_voices(voice_kind_t kind);
     [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
@@ -118,6 +124,8 @@ class transport_t {
   private:
     struct mix_operation_t;
     struct snapshot_operation_t;
+    [[nodiscard]] auto is_voice_audible(const transport_voice_t& voice,
+        bool clicks_enabled, bool hitsounds_enabled) const -> bool;
     struct scheduled_voice_entry_t {
         transport_voice_t voice;
         bool active{};
@@ -135,6 +143,7 @@ class transport_t {
     std::unordered_set<std::uint64_t> muted_mix_groups_;
     std::size_t active_scheduled_voices_{};
     std::atomic<bool> clicks_enabled_{true};
+    std::atomic<bool> hitsounds_enabled_{true};
     std::atomic<std::uint8_t> click_volume_percent_{100};
     std::optional<std::uint64_t> next_timeline_frame_;
 };

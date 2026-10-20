@@ -93,6 +93,10 @@ notes copied in iBMSC or BMSE (see <<pasting-from-bms-editors>>).
 * *Delete*: kbd:[Delete] or kbd:[Backspace] removes the selection, or with nothing selected, the
 note on the active lane at the cursor.
 * *Undo*: kbd:[Ctrl+Z]; *Redo*: kbd:[Ctrl+Shift+Z].
+Selection changes use the same chronological Undo/Redo stream, but are editor-only: they do not
+mark the project as modified. A mouse press keeps the current selection until release commits
+the click or area selection. During a selection gesture, kbd:[Escape] cancels the gesture and
+keeps the previous selection; with no gesture active, it clears the selection.
 
 == Selecting
 
@@ -117,7 +121,7 @@ note on the active lane at the cursor.
 it for the whole chart.
 
 |kbd:[Escape]
-|Clears the selection, or cancels the gesture in progress.
+|Clears the selection, or cancels the gesture in progress, without changing the active tool.
 |===
 
 You can also select a range from the keyboard: see <<keyboard-ranges>>.

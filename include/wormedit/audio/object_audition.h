@@ -10,7 +10,7 @@ namespace wormedit::audio {
 // clips and their source offsets remain unchanged; deliberate transport is separate.
 [[nodiscard]] auto is_bound_stem_audition(const song_document_t& song,
     std::optional<resource_id_t> resource, std::span<const audition_source_binding_t> bindings,
-    std::span<audition_clip_t> clips) -> bool;
+    std::span<audition_clip_t> clips, std::span<const hitsound_binding_t> hitsounds = {}) -> bool;
 
 struct object_audition_request_t {
     std::uint64_t document_revision{};

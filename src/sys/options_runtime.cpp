@@ -243,6 +243,13 @@ auto toggle_audition_on_click(program_preferences_runtime_t& program, bool& enab
     enabled = program.preferences.editor.audition_on_click;
     return error;
 }
+auto toggle_audition_on_playback(program_preferences_runtime_t& program, bool& enabled) -> std::string {
+    auto candidate = program.preferences;
+    candidate.editor.audition_on_playback = !enabled;
+    auto error = apply_program_preferences(program, std::move(candidate));
+    enabled = program.preferences.editor.audition_on_playback;
+    return error;
+}
 void set_options_field_layout(options_runtime_t& r, std::string_view key, std::string_view name) {
     if (!text_util::is_valid_bounded_text(key, maximum_preference_string_bytes)) key = {};
     if (!text_util::is_valid_bounded_text(name, maximum_preference_string_bytes)) name = {};

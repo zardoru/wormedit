@@ -182,3 +182,22 @@ TEST_CASE("Stem click audition rejects missing or zero-rate decoded sources",
     require_stem_preview(is_bound_stem_audition(song, resource_id_t{1}, sources, clips));
     expect_stem_preview(clips[0].frame_count == 16000);
 }
+
+TEST_CASE("Stem click bounds the normal source while admitting validated generated hitsounds",
+          "[unit][audio][object-audition][hitsound]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    song_document_t song;
+    song.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}, .sound_kind = sound_kind_t::stem}};
+    const auto source = binding(asset_id_t{1});
+    const std::array sources{source};
+    const preview_voice_source_t generated{.source = {"generated:hit", "v1"}, .source_start_frame = 100, .frame_count = 2000};
+    const std::array extras{hitsound_binding_t{.binding = {.object = object_id_t{2}, .voices = {generated}}}};
+    std::vector<audition_clip_t> clips{{.source = source.source, .frame_count = 199000},
+        {.source = generated.source, .source_start_frame = 100, .frame_count = 2000}};
+    REQUIRE(is_bound_stem_audition(song, resource_id_t{1}, sources, clips, extras));
+    CHECK(clips[0].frame_count == 2ULL * source.output_sample_rate);
+    CHECK(clips[1].frame_count == 2000);
+    clips[1].frame_count = 2001;
+    CHECK_FALSE(is_bound_stem_audition(song, resource_id_t{1}, sources, clips, extras));
+}

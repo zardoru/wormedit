@@ -1,5 +1,41 @@
 #include "sys/compose_view_internal.h"
+#include <wormedit/formats/osu_mania.h>
 namespace wormedit::sys::compose_projection_detail {
+namespace {
+using note_hitsounds_view_t = std::unordered_map<std::uint64_t, const wormedit::ui::hitsound_note_view_t*>;
+
+auto find_note_hitsound(const note_hitsounds_view_t& hitsounds, std::uint64_t id)
+    -> const wormedit::ui::hitsound_note_view_t* {
+    const auto found = hitsounds.find(id);
+    return found == hitsounds.end() ? nullptr : found->second;
+}
+
+auto build_note_hitsounds_view(const compose_scene_projection_context_t& projection) -> note_hitsounds_view_t {
+    note_hitsounds_view_t result;
+    const auto& chart = projection.inputs.scope.chart_scope.chart;
+    const auto context = wormedit::osu_sample_context_index_t::from(chart);
+    auto* arena = projection.inputs.frame.flattened.arena();
+    std::unordered_set<std::uint64_t> visible;
+    for (const auto& endpoint : projection.scene.note_endpoints) visible.insert(endpoint.note.value);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (!note.osu_hitsample || !visible.contains(note.id.value)) continue;
+            const auto& sample = *note.osu_hitsample;
+            const char* filename = sample.filename.empty() ? "" : arena ? arena_string(*arena, sample.filename) : nullptr;
+            auto views = arena ? arena_array<wormedit::ui::hitsound_note_view_t>(*arena, 1) :
+                frame_span<wormedit::ui::hitsound_note_view_t>{};
+            if (!filename || !views.push_back(wormedit::ui::hitsound_note_view_t::from(sample,
+                context ? context->at(note.position) : wormedit::osu_sample_context_t{}, filename))) {
+                projection.inputs.frame.view().truncated = true;
+                continue;
+            }
+            result.emplace(note.id.value, views.data());
+        }
+    }
+    return result;
+}
+} // namespace
+
 void populate_compose_sound_labels(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& history = projection.history();
@@ -186,6 +222,7 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
             view.truncated);
     }
     const auto& endpoints = scene.note_endpoints;
+    const auto hitsounds = build_note_hitsounds_view(projection);
     const auto endpoint_count =
         std::min(endpoints.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
     if (!prepare_compose_geometry_rows(flattened, flattened.compose.note, endpoint_count)) {
@@ -206,6 +243,7 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
              .sound_label = sound.label,
              .sound_detail = sound.detail,
              .sound_resource_id = endpoint.sound ? endpoint.sound->value : 0,
+             .hitsound = find_note_hitsound(hitsounds, endpoint.note.value),
              .snap_class = compose_endpoint_snap_class(projection, endpoint),
              .kind = static_cast<std::uint8_t>(endpoint.kind),
              .tail = endpoint.tail,

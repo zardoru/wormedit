@@ -24,14 +24,21 @@ namespace wormedit::sys {
 using namespace compose_action_detail;
 
 namespace {
+void clear_compose_area_range(compose_action_context_t& context) {
+    auto before = editor_selection_snapshot_t::from(context.state);
+    context.state.retained_selection_range.reset();
+    context.state.retained_canvas_selection_range.reset();
+    auto& history = context.environment.document.history;
+    history.selections.record(history, std::move(before), editor_selection_snapshot_t::from(context.state));
+}
+
 struct clear_compose_area_action_t {
     auto operator==(const clear_compose_area_action_t&) const -> bool = default;
     auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
         return std::nullopt;
     }
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
-        context.state.retained_selection_range.reset();
-        context.state.retained_canvas_selection_range.reset();
+        clear_compose_area_range(context);
         return compose_action_outcome_t::from(
             "Selected area cleared.", notification_severity_t::hint, notification_source_t::input);
     }
@@ -430,8 +437,7 @@ auto process_compose_area_boundary(compose_action_context_t& context)
             context.action.compose_input_project_id)
         return compose_action_outcome_t::blocked(stale_action_message("Area conversion"));
     if (context.action.compose_area_clear_requested) {
-        context.state.retained_selection_range.reset();
-        context.state.retained_canvas_selection_range.reset();
+        clear_compose_area_range(context);
     }
     return std::nullopt;
 }

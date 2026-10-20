@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_input_queries.h"
+#include "ui/nuklear/compose_gesture_registry.h"
 #include "ui/nuklear/content_layout.h"
 #include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
@@ -440,6 +441,8 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
 
     if (worm_ui_nuklear_setup_popup_owns_input()) return;
     if (!tap_capture && select_all_in_hovered_dock_list(*event)) return;
+    if (!tap_capture && event->key == SDLK_ESCAPE &&
+        g_context_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && has_compose_gesture_capture()) return;
 
     if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
         project_dialog_active() || g_new_project_wizard.open,
@@ -2013,9 +2016,11 @@ static void render_elided_status_label(std::string_view text, nk_flags alignment
     nk_label_colored(g_context, label.c_str(), alignment, color);
 }
 
-static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
+static auto workspace_status_line(const WormUiWorkspaceView& view, std::size_t selected) -> std::string {
     const auto* line = view.notifications.current_text ? view.notifications.current_text : view.status_text;
     std::string status = line;
+    if (selected != 0)
+        status = std::to_string(selected) + " objects selected · " + status;
     return status;
 }
 
@@ -2146,6 +2151,8 @@ static void render_status_transport_buttons(const WormUiWorkspaceView* view,
 
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
+    const auto selected = view->compose.visible ? std::max(view->compose.selected_object_count,
+        view->compose.selected_note_count + view->compose.selected_bgm_event_count) : 0;
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
     const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
@@ -2167,7 +2174,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         std::clamp((nk_window_get_bounds(g_context).w - 700.0f) * 0.5f, 40.0f, 180.0f));
     nk_layout_row_template_push_static(g_context, 80);
     nk_layout_row_template_push_static(g_context,
-        std::clamp(nk_window_get_bounds(g_context).w * 0.2f, 80.0f, 240.0f));
+        selected != 0 ? 80.0f : std::clamp(nk_window_get_bounds(g_context).w * 0.2f, 80.0f, 240.0f));
     nk_layout_row_template_end(g_context);
     render_status_transport_buttons(view, action);
     render_transport_rate(*view, action);
@@ -2176,7 +2183,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     if (zoom_label_visible)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
-    const auto status = workspace_status_line(*view);
+    const auto status = workspace_status_line(*view, selected);
     render_elided_status_label(status, NK_TEXT_LEFT, notification_status_color(view->notifications));
     if (notification_badge_visible(view->notifications))
         render_notification_badge(view->notifications, *action);

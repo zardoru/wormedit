@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <source_location>
 using wormedit::ui::field::renderer_t;
 namespace {
@@ -38,6 +39,7 @@ struct field_submission_fixture_t {
 
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/compose_state.h"
 namespace {
 void check_clipped_wide_stem_canvas(bool selected) {
     field_submission_fixture_t fixture;
@@ -87,6 +89,57 @@ TEST_CASE("Widened stem envelopes preserve true scale and clip to their visible 
           "[ui][field][compose][stem-lane-width][isolated-software-render]") {
     check_clipped_wide_stem_canvas(false);
     check_clipped_wide_stem_canvas(true);
+}
+
+namespace {
+void check_hitsound_note_contrast(bool light) {
+    INFO("light note fill: " << light);
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    const wormedit::osu_hitsample_t sample{.whistle = true, .finish = true, .clap = true,
+        .normal_set = wormedit::osu_sample_set_t::soft, .addition_set = wormedit::osu_sample_set_t::drum};
+    const auto hitsound = wormedit::ui::hitsound_note_view_t::from(sample, {}, "");
+    WormUiComposeNoteView note{};
+    note.bounds = {10, 40, 110, 62};
+    note.note_id = 1;
+    note.lane_id = 1;
+    note.hitsound = &hitsound;
+    note.semantic_color_visible = true;
+    note.semantic_red = note.semantic_green = note.semantic_blue = light ? 240 : 20;
+    note.semantic_alpha = 255;
+    WormUiComposeView view{};
+    view.scene_available = true;
+    view.viewport_width_pixels = view.viewport_height_pixels = 128;
+    view.note_endpoints = &note;
+    view.note_endpoint_count = 1;
+    auto& color_view = worm_ui_nuklear_compose_state().input_queue.color_view;
+    const auto previous = color_view;
+    color_view = worm_ui_nuklear_compose_color_view_t::layer;
+    nk_input_begin(fixture.context);
+    nk_input_end(fixture.context);
+    REQUIRE(nk_begin(fixture.context, "hitsound contrast", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
+    draw_compose_scene_canvas(fixture.context, &view, nk_window_get_canvas(fixture.context), nk_rect(0, 0, 128, 128));
+    nk_end(fixture.context);
+    color_view = previous;
+    const auto& field = wormedit::ui::nuklear::compose_field(fixture.context);
+    const auto expected = light ? 16.0f/255 : 248.0f/255;
+    std::size_t ink_vertices{};
+    for (const auto& batch : field.batches()) {
+        if (batch.layer != 2) continue;
+        for (std::size_t index = batch.index_offset; index < batch.index_offset+batch.index_count; ++index) {
+            const auto& vertex = field.vertices()[field.indices()[index]];
+            if (std::abs(vertex.color.r-expected) < .5f/255 && vertex.position.x > 20 && vertex.position.x < 100 &&
+                vertex.position.y > 42 && vertex.position.y < 60) ++ink_vertices;
+        }
+    }
+    CHECK(ink_vertices > 100);
+}
+} // namespace
+
+TEST_CASE("Hitsound note icons invert their ink against light and dark note fills",
+          "[ui][field][hitsound][isolated-software-render]") {
+    check_hitsound_note_contrast(false);
+    check_hitsound_note_contrast(true);
 }
 
 namespace {

@@ -3080,6 +3080,15 @@ void check_static_source_owned_geometry(const frontend_workspace_view_t& storage
     check_static_source_has_no_frame_markers(source);
     check_static_source_has_no_frame_previews(source);
 }
+void check_owned_hitsound_note(const WormUiComposeNoteView& note) {
+    expect_compose_test(note.hitsound != nullptr);
+    expect_compose_test(note.hitsound->resolved_normal_set == osu_sample_set_t::soft);
+    expect_compose_test(note.hitsound->resolved_addition_set == osu_sample_set_t::drum);
+    expect_compose_test(note.hitsound->additions == 10);
+    expect_compose_test(note.hitsound->resolved_custom_index == 3);
+    expect_compose_test(note.hitsound->resolved_volume == 75);
+    expect_compose_test(note.hitsound->filename == "custom-retained-hit.wav");
+}
 }
 TEST_CASE("Persistent Compose static source owns geometry across frame arena reset",
           "[sys][frame-arena][static-source-lifetime]") {
@@ -3090,6 +3099,10 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     song.output_groups.push_back({.name = "Disposable frame output group",
         .charts = {chart_id_t{1}}, .relative_output_path = "exports/chart.bms"});
     song.charts.front().measures.front().notes.front().sound = resource_id_t{9};
+    song.charts.front().measures.front().notes.front().osu_hitsample = osu_hitsample_t{
+        .whistle = true, .clap = true, .normal_set = osu_sample_set_t::soft,
+        .addition_set = osu_sample_set_t::drum, .custom_index = 3, .volume = 75,
+        .filename = "custom-retained-hit.wav"};
     compose_test_fixture_t fixture(std::move(song));
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     project_static_source_arena_frame(fixture, arena);
@@ -3098,6 +3111,7 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     check_static_source_owned_geometry(*stored);
     expect_compose_test(!stored->compose.note.empty());
     const auto before = stored->compose.note[0];
+    check_owned_hitsound_note(before);
     const std::string label = before.sound_label;
     const std::string detail = before.sound_detail;
     expect_compose_test(!stored->compose.timing_marker.empty());
@@ -3113,6 +3127,7 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     expect_compose_test(stored->compose.note[0].bounds.top == before.bounds.top);
     expect_compose_test(std::strcmp(stored->compose.note[0].sound_label, label.c_str()) == 0);
     expect_compose_test(std::strcmp(stored->compose.note[0].sound_detail, detail.c_str()) == 0);
+    check_owned_hitsound_note(stored->compose.note[0]);
     expect_compose_test(std::strcmp(stored->compose.timing_marker.front().short_label, timing_label.c_str()) == 0);
     expect_compose_test(std::strcmp(stored->compose.timing_marker.front().detail, timing_detail.c_str()) == 0);
     fixture.interaction->viewport_scroll_pixels = 0.5;

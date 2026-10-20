@@ -1646,6 +1646,36 @@ TEST_CASE("Layer assist runtime filters stable memberships and deduplicates chor
     CHECK(preview.layer_assist_frames().empty());
 }
 
+TEST_CASE("Refreshing live hitsound monitoring keeps loop playback rate and pitch mode",
+          "[integration][audio][sdl][hitsound-monitoring]") {
+    using namespace wormedit;
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    t276_output_fixture_t fixture;
+    expect_pitch(fixture.ready);
+    fixture.binding.voices.front().is_hitsound = true;
+    const audio::preview_loop_region_t loop{1'024, 44'100};
+    expect_pitch(fixture.output.set_loop_region(loop));
+    expect_pitch(fixture.output.set_playback_rate({1, 2}));
+    expect_pitch(fixture.output.set_keep_pitch(true));
+    expect_pitch(static_cast<bool>(fixture.output.start(fixture.schedule, std::span{&fixture.binding, 1})));
+    // Mode requests are applied by the audio callback, not synchronously by start().
+    wait_pitch_mode(fixture.output, true, {1, 2});
+    fixture.session.set_hitsounds_enabled(false);
+    expect_pitch(static_cast<bool>(fixture.output.seek(4'096)));
+    expect_pitch(fixture.output.playing());
+    expect_pitch(fixture.session.loop_region() == loop);
+    expect_pitch(fixture.output.playback_rate() == rational_t{1, 2});
+    expect_pitch(fixture.output.keep_pitch());
+    expect_pitch(!fixture.session.is_hitsounds_enabled());
+    fixture.session.set_hitsounds_enabled(true);
+    expect_pitch(static_cast<bool>(fixture.output.seek(fixture.output.timeline_frame())));
+    expect_pitch(fixture.output.playing());
+    expect_pitch(fixture.session.loop_region() == loop);
+    expect_pitch(fixture.output.playback_rate() == rational_t{1, 2});
+}
+
 namespace {
 auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint64_t length)
     -> std::size_t {

@@ -137,6 +137,7 @@
 |Command |Default keys
 |Paint Hitsound / Keysound |unbound
 |Play Sound on Click |unbound
+|Play Hitsounds on Playback |unbound
 |===
 
 .Workspace

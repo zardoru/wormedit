@@ -62,6 +62,21 @@ visual decoding, resource-copy and inspection requests, and conversion previews 
 and queue/progress services retain their domain lifecycles and publication rules; see
 [async task scheduling](async-task-scheduling.md).
 
+Compose input batches retain the admitted geometry revision. Lane-key events additionally carry
+a chart stamp advanced only by their own accepted synchronous edits, before feedback callbacks.
+This permits chord releases in one frame without treating the first note's commit as an external
+edit; pointer/viewport inputs still require the original geometry stamp. External changes and
+failed rebinding stop continuation.
+
+Selection commits share Undo/Redo chronology with document commands through the history owner's
+monotonic event sequence. Selection snapshots live only in its bounded transient selection
+history, not in song snapshots, codecs, saved revisions or document dirty state. The editor
+dispatcher records accepted selection changes once; marquee previews and cancellations record
+nothing. Both keyboard and command-menu history routes use `apply_editor_history`. A new accepted
+selection or document edit discards both redo branches. Pointer presses reserve capture without
+replacing selection; release commits a click or marquee, and Escape consumes an active capture
+without also invoking Clear Selection.
+
 ## Glossary
 
 | Term | Meaning and owner |
@@ -310,6 +325,13 @@ osu! note samples are semantic `osu_hitsample_t` values, persisted by the native
 palette actions change only `editor_interaction_state_t::armed_hitsample`, captured by tap,
 paint and hold placement. Preview resolves inherited sample context once per chart and
 expands normal/addition voices through the existing bridge's multi-voice bindings.
+Object audition uses the same hitsound binding builder, with object-filtered resolution from
+the project audio-source owner; generated voices do not bypass normal stem-source validation.
+The editor's persisted playback-audition preference gates typed hitsample voices in the live
+transport without removing their compiled bindings. Changing it refreshes prefetched output at
+the audible frame, preserving loop, rate and pitch mode. Click audition remains governed by its
+independent existing preference, and offline export retains the authored mix rather than the
+live-monitoring policy.
 
 ## Composing edits
 

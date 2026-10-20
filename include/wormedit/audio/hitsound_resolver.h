@@ -31,7 +31,8 @@ class hitsound_resolver_t {
   public:
     hitsound_environment_t environment;
     [[nodiscard]] auto bindings(const song_document_t& song, const chart_document_t& chart,
-        decoded_source_registry_t& registry, std::uint64_t generation) -> std::vector<hitsound_binding_t>;
+        decoded_source_registry_t& registry, std::uint64_t generation,
+        std::optional<object_id_t> object = {}) -> std::vector<hitsound_binding_t>;
     [[nodiscard]] auto take_fallback_notice() -> bool { return std::exchange(fallback_pending_, false); }
   private:
     std::uint64_t generation_{};

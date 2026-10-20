@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
+#include "ui/hitsound_icons.h"
 
 #include <algorithm>
 
@@ -200,6 +201,35 @@ inline void sound_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
                    thickness, tint);
     nk_stroke_line(canvas, frame.px(20.0f), frame.py(7.0f), frame.px(22.0f), frame.py(9.0f),
                    thickness, tint);
+}
+
+struct HitsoundStroke {
+    nk_command_buffer* canvas;
+    Frame frame;
+    nk_color tint;
+    void line(float x0, float y0, float x1, float y1) {
+        nk_stroke_line(canvas, frame.px(x0), frame.py(y0), frame.px(x1), frame.py(y1), frame.stroke(), tint);
+    }
+    void path(std::span<const hitsound_icons::point_t> points) {
+        for (std::size_t index = 1; index < points.size(); ++index)
+            line(points[index-1][0], points[index-1][1], points[index][0], points[index][1]);
+    }
+    void circle(float x, float y, float radius) {
+        nk_stroke_circle(canvas, nk_rect(frame.px(x-radius), frame.py(y-radius),
+            2*radius*frame.scale, 2*radius*frame.scale), frame.stroke(), tint);
+    }
+};
+inline void whistle(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    HitsoundStroke stroke{canvas, Frame::fit(bounds), tint};
+    hitsound_icons::draw(stroke, hitsound_icons::shape_t::whistle);
+}
+inline void cymbal(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    HitsoundStroke stroke{canvas, Frame::fit(bounds), tint};
+    hitsound_icons::draw(stroke, hitsound_icons::shape_t::cymbal);
+}
+inline void clap(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    HitsoundStroke stroke{canvas, Frame::fit(bounds), tint};
+    hitsound_icons::draw(stroke, hitsound_icons::shape_t::clap);
 }
 
 } // namespace wormedit::ui::vector_icons

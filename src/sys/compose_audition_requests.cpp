@@ -60,13 +60,17 @@ void compose_auditions_t::process_object_request(const editor_object_audition_re
 
     inputs.audition.sources.ensure_current(history.document);
     inputs.audition.sources.registry().await_pending();
+    const auto* chart = history.document.find_chart(request.chart);
+    const auto hitsounds = chart ? inputs.audition.sources.resolve_hitsounds(history.document, *chart, request.object.id)
+                                : std::vector<audio::hitsound_binding_t>{};
     auto prepared = inputs.audition.controller.prepare_object(
         history.document, {request.document_revision, request.chart, request.object.id},
-        inputs.audition.sources.bindings(history.document));
+        inputs.audition.sources.bindings(history.document),
+        {.skip_unavailable_preview_sources = true, .hitsounds = hitsounds});
     if (prepared) {
         if (!audio::is_bound_stem_audition(
                 history.document, object_sound(history.document, request.chart, request.object.id),
-                inputs.audition.sources.bindings(history.document), prepared->prepared->clips)) {
+                inputs.audition.sources.bindings(history.document), prepared->prepared->clips, hitsounds)) {
             inputs.notifications.post(notification_severity_t::warning,
                                       notification_source_t::audio,
                                       "The stem preview has invalid decoded source geometry.");

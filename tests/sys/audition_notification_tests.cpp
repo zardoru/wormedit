@@ -138,6 +138,27 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
     expect_audition(fixture.center.current_line()->message == "Edit applied.");
 }
 
+TEST_CASE("Native hitsound note click reaches dummy output independently of playback mute",
+          "[audio][audition-notification][hitsound]") {
+    expect_audition(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_audition(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_lifetime_t lifetime;
+    audition_fixture_t fixture;
+    fixture.history = document_history_t::from({.id = song_id_t{1}, .charts = {{.id = chart_id_t{2},
+        .measures = {{.id = measure_id_t{3}, .notes = {{.id = object_id_t{10},
+            .position = {measure_id_t{3}, 0}, .osu_hitsample = osu_hitsample_t{.clap = true}}}}}}}});
+    fixture.project_sources.hitsounds.environment.bundle_directory =
+        std::filesystem::path{WORMEDIT_FIXTURE_DIR}.parent_path().parent_path() / "assets/hitsounds";
+    fixture.preview_session.set_hitsounds_enabled(false);
+    expect_audition(fixture.output.open());
+    fixture.compose(editor_object_audition_request_t{
+        .document_revision = fixture.history.document.revision, .chart = chart_id_t{2},
+        .object = {editor_selection_object_kind_t::note, object_id_t{10}}});
+    expect_audition(fixture.audition_bridge.session_token().has_value());
+    expect_audition(fixture.entries().empty());
+    expect_audition(!fixture.auditions.has_pending_request());
+}
+
 namespace {
 auto wait_audition_failure(sdl_audition_output_t& output)
     -> std::optional<sdl_audition_service_result_t> {

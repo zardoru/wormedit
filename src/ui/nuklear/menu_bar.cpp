@@ -69,6 +69,8 @@ void append_playback(workspace_menu_t& menu, bool enabled) {
     menu.push_back({"Playback", "Play from start", Action::play_start, "transport.play_from_start", enabled});
     menu.push_back({"Playback", "Stop", Action::stop, "transport.stop", enabled});
     menu.push_back({"Playback", "Metronome", Action::metronome, "transport.toggle_metronome", enabled});
+    menu.push_back({"Playback", "Play Hitsounds on Playback", Action::playback_audition,
+                    "audio.toggle_playback_audition", enabled});
     menu.push_back({"Playback", "", Action::none, nullptr, false});
     menu.push_back({"Playback", "External player preferences...", Action::external_preferences, nullptr, enabled});
     menu.push_back({"Playback", "External play from start", Action::external_start, "transport.external_play_start", enabled});

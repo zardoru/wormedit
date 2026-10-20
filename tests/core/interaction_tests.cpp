@@ -2194,6 +2194,127 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
     CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
 }
 
+namespace {
+struct selection_history_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+    selection_history_fixture_t() {
+        auto song = make_song();
+        song.charts.front().measures.front().notes = {
+            {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+            {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}}};
+        history = document_history_t::from(std::move(song));
+        constexpr std::array snaps{std::uint64_t{4}};
+        auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
+            {measure_id_t{1}, 0}, snaps, 4, 192.0);
+        REQUIRE(setup);
+        state = std::move(*setup.state);
+    }
+    void select(object_id_t id) {
+        REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{{id}}));
+    }
+    void step(bool undo, bool document_changed = false) {
+        const auto result = apply_editor_history(history, state, undo);
+        CHECK(result.changed);
+        CHECK(result.document_changed == document_changed);
+    }
+    void check(std::vector<object_id_t> expected) const { CHECK(state.selected_notes == expected); }
+    void check_saved(std::optional<std::uint64_t> saved) const {
+        CHECK(history.document.revision == saved);
+        CHECK(history.saved_revision == saved);
+        CHECK(history.undo.empty());
+    }
+    void check_navigation(bool undo, bool redo) const {
+        CHECK(history.can_undo() == undo);
+        CHECK(history.can_redo() == redo);
+    }
+    void begin_area() {
+        REQUIRE(dispatch_editor_action(history, state,
+            begin_editor_area_selection_action_t{210.0, 95.0, 100.0, 200.0}));
+    }
+    void update_area(proposal_operation_t operation = proposal_operation_t::revise) {
+        REQUIRE(dispatch_editor_action(history, state,
+            update_editor_area_selection_action_t{.x_pixels = 290.0, .y_pixels = 100.0,
+                .operation = operation}));
+    }
+};
+}
+
+TEST_CASE("Selection history shares document chronology without changing saved revisions",
+          "[core][interaction][selection-history]") {
+    selection_history_fixture_t f;
+    const auto saved = f.history.saved_revision;
+    f.select(object_id_t{101});
+    f.check_saved(saved);
+    auto changed = f.history.document;
+    changed.metadata.title = "Edited title";
+    REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    f.select(object_id_t{102});
+    f.step(true); f.check({object_id_t{101}});
+    CHECK(f.history.document.metadata.title == "Edited title");
+    f.step(true, true);
+    CHECK(f.history.document.revision == 1);
+    f.step(true); f.check({});
+    f.check_navigation(false, true);
+    f.step(false); f.check({object_id_t{101}});
+    f.step(false, true);
+    f.step(false); f.check({object_id_t{102}});
+    f.check_navigation(true, false);
+}
+
+TEST_CASE("Selection history branches discard both kinds of redo and ignore no-ops",
+          "[core][interaction][selection-history]") {
+    selection_history_fixture_t f;
+    f.select(object_id_t{101});
+    f.select(object_id_t{101});
+    CHECK(f.history.selections.undo.size() == 1);
+    auto changed = f.history.document;
+    changed.metadata.title = "Discarded title";
+    REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    f.step(true, true);
+    f.select(object_id_t{102});
+    CHECK_FALSE(f.history.can_redo());
+    f.step(true);
+    CHECK(f.history.can_redo());
+    changed = f.history.document;
+    changed.metadata.title = "New branch";
+    REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    CHECK_FALSE(f.history.can_redo());
+}
+
+TEST_CASE("Selection history cannot cross an evicted document boundary",
+          "[core][interaction][selection-history]") {
+    selection_history_fixture_t f;
+    f.history.maximum_undo_entries = 1;
+    f.select(object_id_t{101});
+    for (const auto* title : {"First title", "Second title"}) {
+        auto changed = f.history.document;
+        changed.metadata.title = title;
+        REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    }
+    CHECK(f.history.selections.undo.empty());
+    f.step(true, true);
+    CHECK_FALSE(f.history.can_undo());
+}
+
+TEST_CASE("Mouse selection previews keep the committed selection and cancellation adds no step",
+          "[core][interaction][selection-history][area]") {
+    selection_history_fixture_t f;
+    f.select(object_id_t{101});
+    f.begin_area();
+    f.update_area();
+    f.check({object_id_t{101}});
+    CHECK(f.history.selections.undo.size() == 1);
+    REQUIRE(dispatch_editor_action(f.history, f.state, cancel_editor_gesture_action_t{}));
+    f.check({object_id_t{101}});
+    CHECK(f.history.selections.undo.size() == 1);
+    f.begin_area();
+    f.update_area(proposal_operation_t::apply);
+    f.check({object_id_t{102}});
+    f.step(true); f.check({object_id_t{101}});
+    CHECK(f.history.document.revision == 1);
+}
+
 TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
           "[unit][core][interaction][selection][area][stress]") {
     auto song = make_song();

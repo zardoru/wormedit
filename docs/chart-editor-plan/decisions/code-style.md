@@ -68,7 +68,8 @@ it in new code even before the card lands.
 | `make_` / `T::from` | builds a new value, no side effects |
 | `build_` | computes a derived index or cache from existing data |
 | `<x>_view_t::from` | a read-only view of the document for the frontend, when the view is its own C++ type (never `project_`, which means the song project) |
-| `build_<x>_view` | the same, only when the view is a `WormUi*` C struct not yet migrated (see "Frontend boundary") or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
+| `view.refill(…)` | refills a view kept across frames in place (`clear()`, then push), keeping its containers' capacity; the per-frame form of a frontend view, never `from` plus assignment (owner, 2026-10-20; see "Frontend boundary") |
+| `build_<x>_view` | the same as `<x>_view_t::from`, only when the view is a `WormUi*` C struct not yet migrated (see "Frontend boundary") or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
 | `create_` / `open_` | has side effects (files, sessions, OS resources) |
 | `plan_` / `prepare_` | computes a proposal; changes nothing |
 | `validate_` | checks and returns diagnostics; changes nothing |
@@ -222,6 +223,14 @@ it in new code even before the card lands.
 - **What a conversion removes:** fixed capacities and their truncation paths, the frame-storage
   flattening that keeps pointer-plus-count arrays alive, raw integer kinds and IDs, and that
   surface's `ui_codec` specialization once the frontend can read the view type directly.
+- **Frame views persist and refill in place** (owner, 2026-10-20). The application owns one root
+  frontend view and keeps it across frames; each frame calls `view.refill(context)`, and nested
+  producers take their view by reference. Do not build a fresh view per frame with `from` and
+  assign it: that throws away every vector's capacity and allocates again each frame. Owned
+  containers refilled in place reach zero steady-state allocations without a frame arena, so the
+  arena and `frame_span` are not the tool for frontend views (T-272 is superseded by the
+  [frontend C++ views lane](../tasks/frontend-cxx-views.md)). `from` stays right for views built
+  once, such as a dialog snapshot.
 - **Worked example (T-672):** `compose_measure_lane_view_t` in `src/ui/frontend/compose_measure_lane.h`
   is a C++ member of the C struct `WormUiComposeView`, so the surface converts without touching
   frame ownership. It uses core vocabulary (`bar_line_time_t`, `measure_id_t` from

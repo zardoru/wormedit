@@ -14,7 +14,7 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 
 1. **Type:** a C++ struct named `<area>_<thing>_view_t` (or `_request_t` / `_action_t` for payloads) replaces the C struct. It uses core vocabulary from `core/vocabulary.h` (enums, strong IDs, `rational_t`) instead of raw integers. It holds no document, history, index or editor state, and includes no backend header (`cmake/check_ui_boundary.cmake`).
 2. **Lists:** an owned `std::vector` replaces each pointer-plus-count pair and its capacity. Text becomes `std::string`, or `std::string_view` when the producer owns stable text for the frame.
-3. **Filling:** sys refills the view in place each frame (`clear()`, then push), so steady state allocates nothing. Nothing may copy a view per frame. A view that becomes non-trivially copyable leaves `frame_span` storage.
+3. **Filling:** sys refills the view in place each frame (`clear()`, then push), so steady state allocates nothing. Nothing may copy a view per frame. A view that becomes non-trivially copyable leaves `frame_span` storage. The root workspace view is persistent (owner, 2026-10-20): the application owns one, keeps it across frames and fills it with `view.refill(context)`; nothing builds a fresh root per frame with `from` and assigns it, because that discards every vector's capacity and brings back the per-frame allocations that T-272 tried to fix with an arena. Producers of nested views take the nested view by reference and refill it; they do not return it by value.
 4. **Queries:** a question the frontend asks of the view becomes a member on the type, e.g. `view.measure_lane.is_selected(id)`.
 5. **Editable objects carry their ID** (from T-653's proposed addition): a view of a selectable or editable object includes the object's ID, and display numbers are never used as keys.
 6. **Capacities:** a capacity that only sized storage is deleted, along with its truncation flag and "list truncated" path. A capacity that bounds real work (render budget, input size, format limit) moves to the consumer or core validation as a named constant, recorded on the card. Nothing is silently unbounded that was bounded before.
@@ -33,13 +33,14 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 
 - **Status:** ready
 - **Value:** Proves the recipe on 16 small structs before the large surfaces.
-- **Outcome:** `catalog.h`, `workspace.h` and `runtime.h` contain no `typedef struct WormUi`; their count fields and their capacities in `common.h` are gone.
-- **Read first:** the shared list, plus `src/sys/workspace_view.h` (`frame_span`).
-- **Files owned:** the shared list for `src/ui/frontend/catalog.h`, `workspace.h` and `runtime.h`.
+- **Outcome:** `catalog.h`, `workspace.h` and `runtime.h` contain no `typedef struct WormUi`; their count fields and their capacities in `common.h` are gone. The application owns one persistent frontend workspace view and refills it each frame; `frontend_workspace_view_t::from(const application_frame_projection_context_t&)` is gone.
+- **Read first:** the shared list, plus `src/sys/workspace_view.h` (`frame_span`, `rebind_view_pointers`), `src/sys/application_frame_view.cpp` (per-frame `from`).
+- **Files owned:** the shared list for `src/ui/frontend/catalog.h`, `workspace.h` and `runtime.h`, plus `src/sys/workspace_view.h/.cpp`, `src/sys/application_frame_view.h/.cpp` and `src/sys/application.cpp` (view ownership and the per-frame call only).
 - **Steps:**
-  1. Stale-plan check and inventory: `grep -rn "WormUi<Name>" src tests` for each struct in the three headers; record producers, consumers, the capacities each uses and the `frame_span` storage behind each list.
-  2. Convert per the recipe, one header per checkpoint.
-  3. Record any new conventions the recipe lacked as a proposed addition on this file's recipe section (coordinator transfers it).
+  1. Stale-plan check and inventory: `grep -rn "WormUi<Name>" src tests` for each struct in the three headers; record producers, consumers, the capacities each uses and the `frame_span` storage behind each list. `grep -rn "frontend_workspace_view_t::from\|rebind_view_pointers" src tests`; record every caller.
+  2. Make the root persistent (recipe step 3): the application owns one `frontend_workspace_view_t` and calls `refill(context)` on it each frame; replace the per-frame `from(context)` and its assignment. Tests construct a view and call `refill`. Keep `rebind_view_pointers` while unconverted C surfaces still point into `frame_span` storage; it now runs once per refill instead of after every move. Checkpoint with the steady-state allocation test before converting any header.
+  3. Convert per the recipe, one header per checkpoint. `WormUiWorkspaceView` becomes the C++ root view; unconverted nested C structs stay members of it, as in T-672.
+  4. Record any new conventions the recipe lacked as a proposed addition on this file's recipe section (coordinator transfers it).
 - **Invariants:** the shared list.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
@@ -148,12 +149,12 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 ## T-699 Retire the C boundary leftovers
 
 - **Status:** blocked-on T-698 and T-691–T-694
-- **Outcome:** all four frontend ratchet rows are 0 and their rows are deleted. `common.h` keeps only real bounds and SDL forward declarations. `frame_span` storage for frontend views is gone. The `ui_codec` naming row and T-653 are retired, and code-style.md's "Frontend boundary" says the migration is finished.
+- **Outcome:** all four frontend ratchet rows are 0 and their rows are deleted. `common.h` keeps only real bounds and SDL forward declarations. `frame_span` storage for frontend views is gone, along with `rebind_view_pointers` and the side storage in `frontend_workspace_view_t`: what remains is the persistent C++ root view that T-690 introduced, holding only view data. The `ui_codec` naming row and T-653 are retired, and code-style.md's "Frontend boundary" says the migration is finished.
 - **Read first:** this file, `src/sys/workspace_view.h`, `src/sys/application_frame_view.*`, code-style.md ("Frontend boundary", naming table).
 - **Files owned:** `src/ui/frontend/common.h`, `src/ui/frontend.h`, `src/sys/workspace_view.h/.cpp`, `src/sys/application_frame_view.h/.cpp`, `cmake/ceremony_ratchet.txt`, `docs/chart-editor-plan/decisions/code-style.md`, `docs/architecture.md`, T-653's status line in `state-ownership.md`, this card.
 - **Steps:**
   1. Stale-plan check: all four rows read 0. `grep -rn "frame_span" src` lists only users that are not frontend views (`src/core/arena.cpp`, storyboard preview); record them.
-  2. Delete frontend-only frame storage and dead capacities; keep the arena for its remaining users.
+  2. Delete frontend-only frame storage, `rebind_view_pointers` and dead capacities; keep the arena for its remaining users. If `frontend_workspace_view_t` then holds nothing beyond the root view, fold it into that type.
   3. Delete the ratchet rows. Update code-style.md (migration finished; remove the `ui_codec` row; C++ views are the only form) and the "Where to look" table in `docs/architecture.md`. Set T-653 to `superseded by T-690–T-699`.
 - **Invariants:** no behavior change; same frame-time budget.
 - **Reject/failure behavior:** a remaining user of a deleted storage type stops the step; record it and keep the type.

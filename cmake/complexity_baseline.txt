@@ -1,5 +1,5 @@
 # Cognitive complexity allowances: initial measured limits, not desired targets.
-# metadata: {"clang_tidy_version": "23.1.1", "format": 1, "source_commit": "feb3b831fc6255d173dbd65d73d54809373a44fe", "threshold": 25, "translation_units": 585}
+# metadata: {"clang_tidy_version": "23.1.3", "format": 1, "source_commit": "feb3b831fc6255d173dbd65d73d54809373a44fe", "threshold": 25, "translation_units": 595}
 # JSON lines keyed by file and stable Clang function identity; never source line numbers.
 # Catch names use macro string literals; lambdas use their owner and variable/call context.
 # Coverage: compiled src/ and tests/ C++ units in the Linux app build, including owned headers.
@@ -366,7 +366,6 @@
 {"file": "tests/core/resource_assignment_tests.cpp", "function": "macro:TEST_CASE:\"virtual BMS BGM and BGA placement commit geometry with the event\":\"[unit][core][resources][virtual-canvas]\"", "name": "TEST_CASE \"virtual BMS BGM and BGA placement commit geometry with the event\"", "score": 94}
 {"file": "tests/core/resource_assignment_tests.cpp", "function": "macro:TEST_CASE:\"virtual BMS BGM move materializes destination with one undo step\":\"[unit][core][resources][bgm-move][virtual-canvas]\"", "name": "TEST_CASE \"virtual BMS BGM move materializes destination with one undo step\"", "score": 52}
 {"file": "tests/core/resource_assignment_tests.cpp", "function": "macro:TEST_CASE:\"visual resource import records decoded geometry and BMP identity\":\"[unit][core][resources]\"", "name": "TEST_CASE \"visual resource import records decoded geometry and BMP identity\"", "score": 40}
-{"file": "tests/core/resource_file_copy_tests.cpp", "function": "macro:TEST_CASE:\"export asset copy stages beside an output group without changing project assets\":\"[unit][core][resources]\"", "name": "TEST_CASE \"export asset copy stages beside an output group without changing project assets\"", "score": 28}
 {"file": "tests/core/resource_file_copy_tests.cpp", "function": "macro:TEST_CASE:\"unlinked copy cleanup removes only its own intact publication\":\"[unit][core][resources]\"", "name": "TEST_CASE \"unlinked copy cleanup removes only its own intact publication\"", "score": 40}
 {"file": "tests/core/scroll_speed_editor_tests.cpp", "function": "macro:TEST_CASE:\"same-row scroll and speed events keep source ordering and compose their effective value\":\"[unit][core][scroll-speed-editor][ordering]\"", "name": "TEST_CASE \"same-row scroll and speed events keep source ordering and compose their effective value\"", "score": 40}
 {"file": "tests/core/scroll_speed_editor_tests.cpp", "function": "macro:TEST_CASE:\"scroll and speed editing is revision checked and undoable\":\"[unit][core][scroll-speed-editor]\"", "name": "TEST_CASE \"scroll and speed editing is revision checked and undoable\"", "score": 172}

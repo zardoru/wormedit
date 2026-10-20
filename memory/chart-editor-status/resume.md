@@ -2,8 +2,17 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-728](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-728-replace-the-new-project-layout-combo-with-a-grouped-picker)**
-replaces the long new-project layout combo with a grouped searchable picker.
+No sequential follow-up is active. T-729 export-cut sections and T-730 timing links remain
+deferred until the owner names them.
+
+Completed **T-728** (2026-10-19): Create project now uses a short game row, grouped lane-shape
+cards, applicable variants and a role-colored lane preview instead of the roughly 60-entry combo.
+Explicit descriptor metadata owns grouping without parsing labels, while stable catalog IDs still
+drive construction and preserve manual/audio defaults. Selection survives resizing and switching
+groups; keyboard navigation is bounded and a missing selected ID disables creation. Focused core,
+projection, defaults, walkthrough and event-harness tests pass; GATE passes 4,255/4,255
+(`/tmp/wormedit-gate.mAvtIq`). Isolated Xvfb captures cover all five game families at 1600×900 and
+the picker at 800×700.
 
 Completed **T-727** (2026-10-19): one core query owns format/layout compatibility and reasons.
 Target dialogs, removable card chips and chart-row Exports checklists publish complete atomic group

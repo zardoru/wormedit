@@ -963,7 +963,16 @@ void check_project_layout(const new_project_layout_descriptor_t& entry) {
     const auto profile = entry.profile();
     check_catalog(profile.layout.profile_id == entry.id);
     check_catalog(!entry.label.empty());
+    check_catalog(!entry.game.empty());
+    check_catalog(!entry.lane_shape.empty());
+    check_catalog(!entry.variant.empty());
     check_catalog(!profile.layout.lanes.empty());
+    const auto preview_lane_roles = entry.preview_lane_roles();
+    check_catalog(preview_lane_roles.size() == profile.layout.lanes.size());
+    auto lanes = profile.layout.lanes;
+    std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+    check_catalog(std::ranges::equal(preview_lane_roles, lanes, {}, std::identity{},
+                                     &lane_definition_t::role));
     check_catalog(find_new_project_layout(entry.id) == &entry);
     check_project_lane_keys(entry, profile);
     const auto groups = make_new_project_output_groups(entry, chart_id_t{42});

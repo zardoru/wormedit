@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend/catalog.h"
+#include "ui/frontend/workspace.h"
 #include <wormedit/core/catalogs.h>
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/formats/bms.h>
@@ -8,8 +9,14 @@
 #include <wormedit/audio/playback_rate.h>
 #include <vector>
 #include <wormedit/core/lane_profiles.h>
+#include <utility>
 
 namespace wormedit::sys {
+
+static_assert(static_cast<int>(lane_role_t::playable) ==
+              static_cast<int>(new_project_lane_role_t::playable));
+static_assert(static_cast<int>(lane_role_t::foot_pedal) ==
+              static_cast<int>(new_project_lane_role_t::foot_pedal));
 
 consteval auto build_sound_kind_catalog_view()
     -> std::array<WormUiKindDescriptorView, sound_kind_count> {
@@ -25,24 +32,28 @@ inline constexpr WormUiKindCatalogView sound_kind_view{
     .entries = sound_kind_catalog_view.data(), .count = sound_kind_catalog_view.size()};
 
 // Constructed once during process initialization; frame projection only borrows it.
-inline auto build_new_project_layout_catalog_view() -> std::vector<WormUiStringDescriptorView> {
-    std::vector<WormUiStringDescriptorView> result;
+inline auto build_new_project_layout_catalog_view()
+    -> std::vector<new_project_layout_entry_view_t> {
+    std::vector<new_project_layout_entry_view_t> result;
     result.reserve(new_project_layouts().size());
-    for (const auto& layout : new_project_layouts())
-        result.push_back({.id = layout.id.data(), .label = layout.label.data()});
+    for (const auto& layout : new_project_layouts()) {
+        const auto preview = layout.preview_lane_roles();
+        std::vector<new_project_lane_role_t> roles;
+        roles.reserve(preview.size());
+        for (const auto role : preview)
+            roles.push_back(static_cast<new_project_lane_role_t>(role));
+        result.push_back({.id = layout.id,
+                          .label = layout.label,
+                          .game = layout.game,
+                          .lane_shape = layout.lane_shape,
+                          .variant = layout.variant,
+                          .preview_lane_roles = std::move(roles)});
+    }
     return result;
 }
 inline const auto new_project_layout_catalog_view = build_new_project_layout_catalog_view();
-inline auto build_new_project_layout_labels() -> std::vector<const char*> {
-    std::vector<const char*> result;
-    result.reserve(new_project_layout_catalog_view.size());
-    for (const auto& entry : new_project_layout_catalog_view) result.push_back(entry.label);
-    return result;
-}
-inline const auto new_project_layout_labels = build_new_project_layout_labels();
-inline const WormUiStringCatalogView new_project_layout_view{
-    .entries = new_project_layout_catalog_view.data(), .count = new_project_layout_catalog_view.size(),
-    .labels = new_project_layout_labels.data()};
+inline const new_project_layout_catalog_view_t new_project_layout_view{
+    .entries = new_project_layout_catalog_view};
 
 consteval auto build_playback_rate_catalog_view()
     -> std::array<WormUiKindDescriptorView, audio::playback_rate_count> {

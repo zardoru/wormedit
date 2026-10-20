@@ -264,20 +264,26 @@ TEST_CASE("BMS walkthrough wizard creates BME and BMSON charts with their source
     const bool bmson = GENERATE(false, true);
     nuklear_event_harness_t harness{1280, 900};
     require_step(harness.ready());
-    // Keep the production combo interaction bounded to the default and the chosen catalog entry.
-    const std::array<WormUiStringDescriptorView, 2> entries{{
-        {.id = "osu-mania-7k", .label = "osu!mania 7K"},
-        {.id = bmson ? "bmson-generic-24keys" : "bme-7k-outside-scratch",
-         .label = bmson ? "BMSON generic 24K" : "BME 7K (outside scratch)"}}};
-    const std::array labels{entries[0].label, entries[1].label};
-    harness.view().new_project_layouts = {
-        .entries = entries.data(), .count = entries.size(), .labels = labels.data()};
+    // Keep the production picker interaction bounded to the default and chosen catalog entry.
+    const std::array<new_project_layout_entry_view_t, 2> entries{
+        {{.id = "osu-mania-7k",
+          .label = "osu!mania 7K",
+          .game = "osu!mania",
+          .lane_shape = "7 keys",
+          .variant = "Standard",
+          .preview_lane_roles = {new_project_lane_role_t::playable}},
+         {.id = bmson ? "bmson-generic-24keys" : "bme-7k-outside-scratch",
+          .label = bmson ? "BMSON generic 24K" : "BME 7K (outside scratch)",
+          .game = bmson ? "BMSON" : "BMS / BME",
+          .lane_shape = bmson ? "24 keys" : "BME 7K",
+          .variant = bmson ? "Generic" : "Outside scratch",
+          .preview_lane_roles = {new_project_lane_role_t::playable}}}};
+    harness.view().new_project_layouts = {.entries = entries};
     (void)harness.frame();
     require_step(worm_ui_frontend_request_new_project());
     (void)harness.frame();
     (void)harness.frame();
-    (void)click_text(harness, "osu!mania 7K");
-    (void)click_text(harness, entries[1].label);
+    (void)click_text(harness, entries[1].game.data());
     const auto created = click_text(harness, "Create project");
     require_step(created.front().get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     const auto document = make_initial_document(song_id_t{1}, created.front().get().new_project_layout_id);

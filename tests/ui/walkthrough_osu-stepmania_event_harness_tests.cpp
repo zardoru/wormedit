@@ -244,17 +244,7 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
     harness.view().pending_new_project_audio_path = "/music/song.ogg";
     (void)harness.frame();
     (void)harness.frame();
-    (void)click_label(harness, "4K");
-    const auto layout_row = harness.drawn_text_center("6K");
-    expect(layout_row);
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.y = -3;
-    wheel.wheel.mouse_x = layout_row->first;
-    wheel.wheel.mouse_y = layout_row->second;
-    const std::array scroll{wormedit::test::mouse_motion(layout_row->first, layout_row->second), wheel};
-    (void)harness.frame(scroll);
-    (void)click_label(harness, "7K");
+    (void)click_label(harness, "7 keys");
     const auto frames = click_label(harness, "Create project");
     const auto created = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;

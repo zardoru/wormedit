@@ -2,6 +2,39 @@
 #include "file_jobs.h"
 #include "options_notifications.h"
 #include "catalog.h"
+#include <span>
+#include <string_view>
+#include <vector>
+
+enum class new_project_lane_role_t {
+    playable,
+    scratch,
+    autoplay,
+    invisible,
+    mine,
+    free_zone,
+    foot_pedal,
+};
+
+struct new_project_layout_entry_view_t {
+    std::string_view id;
+    std::string_view label;
+    std::string_view game;
+    std::string_view lane_shape;
+    std::string_view variant;
+    std::vector<new_project_lane_role_t> preview_lane_roles;
+};
+
+struct new_project_layout_catalog_view_t {
+    std::span<const new_project_layout_entry_view_t> entries;
+
+    [[nodiscard]] auto find(std::string_view id) const -> const new_project_layout_entry_view_t* {
+        for (const auto& entry : entries)
+            if (entry.id == id)
+                return &entry;
+        return nullptr;
+    }
+};
 
 typedef enum WormUiCloseDecision {
     WORM_UI_CLOSE_NONE = 0, WORM_UI_CLOSE_CANCEL, WORM_UI_CLOSE_DISCARD, WORM_UI_CLOSE_SAVE
@@ -56,7 +89,7 @@ typedef struct WormUiCommandMenuRow {
 
 typedef struct WormUiWorkspaceView {
     wormedit::ui::file_jobs_view_t file_jobs;
-    WormUiStringCatalogView new_project_layouts;
+    new_project_layout_catalog_view_t new_project_layouts;
     WormUiKindCatalogView playback_rates;
     WormUiKindCatalogView bms_encodings;
     uint32_t transport_rate_id;

@@ -85,7 +85,9 @@ class RenderSubphaseScope {
 #include <new>
 #include <stddef.h>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 using wormedit::ui::lucide::Glyph;
 static bool g_menu_popup_open{};
@@ -203,8 +205,8 @@ void worm_ui_frontend_notify(WormUiNotificationSeverity severity,
 struct NewProjectWizardState {
     bool open{};
     bool audio{};
-    std::uint8_t layout_index{3};
     const char* layout_id{"osu-mania-7k"};
+    std::vector<std::string_view> recent_layout_ids;
     std::string audio_path;
     std::string last_pending_audio_path;
 };
@@ -216,24 +218,24 @@ static int g_bms_encoding_choice{};
 static void request_manual_new_project() {
     g_new_project_wizard.open = true;
     g_new_project_wizard.audio = false;
-    g_new_project_wizard.layout_index = 3;
     g_new_project_wizard.layout_id = "osu-mania-7k";
     g_new_project_wizard.audio_path.clear();
 }
 
 static void sync_pending_audio_project(const WormUiWorkspaceView& view) {
-    const std::string pending = view.pending_new_project_audio_path
-                                    ? view.pending_new_project_audio_path : "";
+    const std::string pending =
+        view.pending_new_project_audio_path ? view.pending_new_project_audio_path : "";
     if (pending.empty()) {
         g_new_project_wizard.last_pending_audio_path.clear();
-        if (g_new_project_wizard.audio) g_new_project_wizard.open = false;
+        if (g_new_project_wizard.audio)
+            g_new_project_wizard.open = false;
         return;
     }
-    if (pending == g_new_project_wizard.last_pending_audio_path) return;
+    if (pending == g_new_project_wizard.last_pending_audio_path)
+        return;
     g_new_project_wizard.last_pending_audio_path = pending;
     g_new_project_wizard.audio_path = pending;
     g_new_project_wizard.audio = true;
-    g_new_project_wizard.layout_index = 0;
     g_new_project_wizard.layout_id = "osu-mania-4k";
     g_new_project_wizard.open = true;
 }
@@ -2804,46 +2806,222 @@ static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
 
 static wormedit::ui::chrome::Dialog g_project_modal_dialog;
 
-static void render_new_project_layout_choice(const WormUiStringCatalogView& catalog) {
-    if (!catalog.entries || !catalog.labels || catalog.count == 0) return;
-    int selected = 0;
-    for (std::size_t i = 0; i < catalog.count; ++i) {
-        if (std::strcmp(catalog.entries[i].id, g_new_project_wizard.layout_id) == 0)
-            selected = static_cast<int>(i);
-    }
-    selected = wormedit::ui::chrome::safe_combo(g_context, catalog.labels,
-        static_cast<int>(catalog.count), selected, 25, nk_vec2(420.0f, 225.0f));
-    g_new_project_wizard.layout_id = catalog.entries[selected].id;
-    g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+static auto new_project_button(const char* label, bool selected) -> bool {
+    const auto style = wormedit::ui::chrome::button_style(g_context, selected);
+    return nk_button_label_styled(g_context, &style, label) != 0;
 }
 
-static void render_new_project_wizard(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action, int width, int height) {
-    if (!g_new_project_wizard.open) return;
+static auto new_project_games(const new_project_layout_catalog_view_t& catalog)
+    -> std::vector<std::string_view> {
+    std::vector<std::string_view> result;
+    for (const auto& entry : catalog.entries)
+        if (std::ranges::find(result, entry.game) == result.end())
+            result.push_back(entry.game);
+    return result;
+}
+
+static auto new_project_shapes(const new_project_layout_catalog_view_t& catalog,
+                               std::string_view game) -> std::vector<std::string_view> {
+    std::vector<std::string_view> result;
+    for (const auto& entry : catalog.entries) {
+        if (entry.game != game || std::ranges::find(result, entry.lane_shape) != result.end())
+            continue;
+        result.push_back(entry.lane_shape);
+    }
+    return result;
+}
+
+static auto select_first_new_project_layout(const new_project_layout_catalog_view_t& catalog,
+                                            std::string_view game, std::string_view shape = {})
+    -> bool {
+    for (auto remembered = g_new_project_wizard.recent_layout_ids.rbegin();
+         remembered != g_new_project_wizard.recent_layout_ids.rend(); ++remembered) {
+        const auto* entry = catalog.find(*remembered);
+        if (!entry || entry->game != game || (!shape.empty() && entry->lane_shape != shape))
+            continue;
+        g_new_project_wizard.layout_id = entry->id.data();
+        return true;
+    }
+    for (const auto& entry : catalog.entries) {
+        if (entry.game != game || (!shape.empty() && entry.lane_shape != shape))
+            continue;
+        g_new_project_wizard.layout_id = entry.id.data();
+        return true;
+    }
+    return false;
+}
+
+static void select_new_project_layout(const new_project_layout_entry_view_t& entry) {
+    g_new_project_wizard.layout_id = entry.id.data();
+    auto& remembered = g_new_project_wizard.recent_layout_ids;
+    std::erase(remembered, entry.id);
+    remembered.push_back(entry.id);
+}
+
+static auto bounded_new_project_index(std::size_t current, std::size_t count, int delta)
+    -> std::size_t {
+    if (delta < 0)
+        return current == 0 ? 0 : current - 1;
+    return current + 1 < count ? current + 1 : current;
+}
+
+static void navigate_new_project_layout(const new_project_layout_catalog_view_t& catalog) {
+    const auto* selected = catalog.find(g_new_project_wizard.layout_id);
+    if (!selected)
+        return;
+    const int game_delta = nk_input_is_key_pressed(&g_context->input, NK_KEY_UP)     ? -1
+                           : nk_input_is_key_pressed(&g_context->input, NK_KEY_DOWN) ? 1
+                                                                                     : 0;
+    if (game_delta != 0) {
+        const auto games = new_project_games(catalog);
+        const auto current = std::ranges::find(games, selected->game) - games.begin();
+        (void)select_first_new_project_layout(
+            catalog, games[bounded_new_project_index(current, games.size(), game_delta)]);
+        return;
+    }
+    const int shape_delta = nk_input_is_key_pressed(&g_context->input, NK_KEY_LEFT)    ? -1
+                            : nk_input_is_key_pressed(&g_context->input, NK_KEY_RIGHT) ? 1
+                                                                                       : 0;
+    if (shape_delta != 0) {
+        const auto shapes = new_project_shapes(catalog, selected->game);
+        const auto current = std::ranges::find(shapes, selected->lane_shape) - shapes.begin();
+        (void)select_first_new_project_layout(
+            catalog, selected->game,
+            shapes[bounded_new_project_index(current, shapes.size(), shape_delta)]);
+        return;
+    }
+    if (!nk_input_is_key_pressed(&g_context->input, NK_KEY_TAB))
+        return;
+    std::vector<const new_project_layout_entry_view_t*> variants;
+    for (const auto& entry : catalog.entries)
+        if (entry.game == selected->game && entry.lane_shape == selected->lane_shape)
+            variants.push_back(&entry);
+    const auto current = std::ranges::find(variants, selected) - variants.begin();
+    select_new_project_layout(*variants[bounded_new_project_index(current, variants.size(), 1)]);
+}
+
+static void render_new_project_games(const new_project_layout_catalog_view_t& catalog,
+                                     const new_project_layout_entry_view_t& selected) {
+    const auto games = new_project_games(catalog);
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default,
+                          static_cast<int>(games.size()));
+    for (const auto game : games)
+        if (new_project_button(game.data(), game == selected.game))
+            (void)select_first_new_project_layout(catalog, game);
+}
+
+static void render_new_project_shapes(const new_project_layout_catalog_view_t& catalog,
+                                      const new_project_layout_entry_view_t& selected) {
+    const auto shapes = new_project_shapes(catalog, selected.game);
+    constexpr int columns = 6;
+    for (std::size_t offset = 0; offset < shapes.size(); offset += columns) {
+        const auto count = static_cast<int>(std::min<std::size_t>(columns, shapes.size() - offset));
+        nk_layout_row_dynamic(g_context, 34.0f, count);
+        for (int column = 0; column < count; ++column) {
+            const auto shape = shapes[offset + static_cast<std::size_t>(column)];
+            if (new_project_button(shape.data(), shape == selected.lane_shape))
+                (void)select_first_new_project_layout(catalog, selected.game, shape);
+        }
+    }
+}
+
+static void render_new_project_variants(const new_project_layout_catalog_view_t& catalog,
+                                        const new_project_layout_entry_view_t& selected) {
+    std::vector<const new_project_layout_entry_view_t*> variants;
+    for (const auto& entry : catalog.entries)
+        if (entry.game == selected.game && entry.lane_shape == selected.lane_shape)
+            variants.push_back(&entry);
+    constexpr std::size_t columns = 4;
+    for (std::size_t offset = 0; offset < variants.size(); offset += columns) {
+        const auto count = static_cast<int>(std::min(columns, variants.size() - offset));
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_compact, count);
+        for (int column = 0; column < count; ++column) {
+            const auto* entry = variants[offset + static_cast<std::size_t>(column)];
+            if (new_project_button(entry->variant.data(), entry->id == selected.id))
+                select_new_project_layout(*entry);
+        }
+    }
+}
+
+static auto new_project_lane_color(new_project_lane_role_t role) -> nk_color {
+    using wormedit::ui::theme::UiColor;
+    using enum new_project_lane_role_t;
+    if (role == scratch)
+        return nk_rgb(139, 50, 37);
+    if (role == foot_pedal)
+        return nk_rgb(138, 106, 44);
+    if (role == free_zone)
+        return nk_rgb(47, 79, 89);
+    if (role == autoplay || role == invisible || role == mine)
+        return wormedit::ui::chrome::color(UiColor::surface_active);
+    return wormedit::ui::chrome::color(UiColor::surface_hover);
+}
+
+static void render_new_project_preview(const new_project_layout_entry_view_t& selected) {
+    namespace chrome = wormedit::ui::chrome;
+    nk_layout_row_dynamic(g_context, 18.0f, 1);
+    nk_label_colored(g_context, selected.label.data(), NK_TEXT_LEFT,
+                     chrome::color(chrome::UiColor::text_bright));
+    nk_layout_row_dynamic(g_context, 54.0f, 1);
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID || selected.preview_lane_roles.empty())
+        return;
+    auto* canvas = nk_window_get_canvas(g_context);
+    nk_fill_rect(canvas, bounds, 4.0f, chrome::color(chrome::UiColor::surface));
+    const auto lanes = static_cast<float>(selected.preview_lane_roles.size());
+    const auto lane_width = std::max(2.0f, (bounds.w - 16.0f) / lanes);
+    for (std::size_t index = 0; index < selected.preview_lane_roles.size(); ++index) {
+        const auto x = bounds.x + 8.0f + static_cast<float>(index) * lane_width;
+        nk_fill_rect(canvas, nk_rect(x, bounds.y + 7.0f, lane_width - 1.0f, bounds.h - 14.0f), 1.0f,
+                     new_project_lane_color(selected.preview_lane_roles[index]));
+    }
+}
+
+static auto render_new_project_layout_choice(const new_project_layout_catalog_view_t& catalog)
+    -> bool {
+    navigate_new_project_layout(catalog);
+    auto* selected = catalog.find(g_new_project_wizard.layout_id);
+    if (!selected)
+        return false;
+    render_new_project_games(catalog, *selected);
+    selected = catalog.find(g_new_project_wizard.layout_id);
+    render_new_project_shapes(catalog, *selected);
+    selected = catalog.find(g_new_project_wizard.layout_id);
+    render_new_project_variants(catalog, *selected);
+    selected = catalog.find(g_new_project_wizard.layout_id);
+    render_new_project_preview(*selected);
+    return true;
+}
+
+static void render_new_project_wizard(const WormUiWorkspaceView& view,
+                                      WormUiWorkspaceAction& action, int width, int height) {
+    if (!g_new_project_wizard.open)
+        return;
     namespace chrome = wormedit::ui::chrome;
 
     auto& dialog = g_project_modal_dialog;
-    const bool audio_path_too_long = g_new_project_wizard.audio &&
-                                     g_new_project_wizard.audio_path.size() >=
-                                         sizeof(action.project_path);
-    if (chrome::dialog_begin(dialog, g_context, "Create project",
+    const bool audio_path_too_long =
+        g_new_project_wizard.audio &&
+        g_new_project_wizard.audio_path.size() >= sizeof(action.project_path);
+    if (chrome::dialog_begin(
+            dialog, g_context, "Create project",
             g_new_project_wizard.audio ? "Import audio as a new project?" : "Create a new project",
-            {.modal = true, .width = 500.0f,
+            {.modal = true,
+             .width = 760.0f,
              .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
         if (g_new_project_wizard.audio)
             chrome::dialog_text(dialog, g_context, g_new_project_wizard.audio_path.c_str(),
                                 chrome::color(chrome::UiColor::text_muted));
-        nk_layout_row_dynamic(g_context, 15, 1);
-        nk_label_colored(g_context, "Chart layout", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
-        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
-        render_new_project_layout_choice(view.new_project_layouts);
+        const bool valid_layout = render_new_project_layout_choice(view.new_project_layouts);
         if (audio_path_too_long)
             chrome::dialog_text(dialog, g_context, "Audio path is too long to import.",
                                 chrome::color(chrome::UiColor::conflict));
         chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_new_project_wizard(action);
-        if (chrome::dialog_button(dialog, g_context, "Create project", chrome::DialogButtonRole::primary,
-                                  !audio_path_too_long))
+        if (chrome::dialog_button(dialog, g_context, "Create project",
+                                  chrome::DialogButtonRole::primary,
+                                  !audio_path_too_long && valid_layout))
             confirm_new_project_wizard(action);
     }
     // Escape cancels like the Cancel button (the dialog may already have closed itself).

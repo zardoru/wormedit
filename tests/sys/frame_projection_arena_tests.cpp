@@ -1404,10 +1404,14 @@ TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sy
 }
 
 namespace {
-void check_new_project_catalog_entry(const WormUiStringDescriptorView& actual,
+void check_new_project_catalog_entry(const new_project_layout_entry_view_t& actual,
                                      const wormedit::new_project_layout_descriptor_t& expected) {
-    CHECK(std::string_view{actual.id} == expected.id);
-    CHECK(std::string_view{actual.label} == expected.label);
+    CHECK(actual.id == expected.id);
+    CHECK(actual.label == expected.label);
+    CHECK(actual.game == expected.game);
+    CHECK(actual.lane_shape == expected.lane_shape);
+    CHECK(actual.variant == expected.variant);
+    CHECK(actual.preview_lane_roles.size() == expected.profile().layout.lanes.size());
 }
 } // namespace
 
@@ -1415,8 +1419,8 @@ TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys]
     wormedit::workspace_view_t model;
     auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     const auto& view = frame.view.new_project_layouts;
-    REQUIRE(view.count == wormedit::new_project_layouts().size());
-    for (std::size_t i = 0; i < view.count; ++i)
+    REQUIRE(view.entries.size() == wormedit::new_project_layouts().size());
+    for (std::size_t i = 0; i < view.entries.size(); ++i)
         check_new_project_catalog_entry(view.entries[i], wormedit::new_project_layouts()[i]);
 }
 

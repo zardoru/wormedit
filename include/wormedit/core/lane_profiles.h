@@ -199,6 +199,7 @@ struct new_project_layout_descriptor_t {
     [[nodiscard]] auto profile() const -> lane_input_profile_t;
     // A shared output family enables its authoring tools; mixed/empty outputs stay native.
     [[nodiscard]] auto source_family() const -> format_family_t;
+    [[nodiscard]] auto preview_lane_roles() const -> std::vector<lane_role_t>;
 
     std::string_view id;
     std::string_view label;
@@ -206,6 +207,10 @@ struct new_project_layout_descriptor_t {
     std::span<const new_project_output_group_descriptor_t> default_output_groups;
     std::string_view step_type;
     std::span<const physical_key_t> lane_keys{};
+    // Picker presentation is explicit catalog data. UI grouping must not parse the display label.
+    std::string_view game;
+    std::string_view lane_shape;
+    std::string_view variant;
 };
 // Static descriptors and factories allocate only when a project is constructed.
 [[nodiscard]] auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t>;

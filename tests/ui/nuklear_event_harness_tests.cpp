@@ -8537,23 +8537,116 @@ void check_new_project_choice(nuklear_event_harness_t& harness) {
 }
 } // namespace
 
-TEST_CASE("New project wizard reads view labels and emits a PMS catalog identity", "[frontend-state][event-harness][catalog-wiring]") {
+TEST_CASE("New project wizard reads view labels and emits a PMS catalog identity",
+          "[frontend-state][event-harness][catalog-wiring]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
-    static constexpr WormUiStringDescriptorView entries[]{
-        {"osu-mania-7k", "Catalog default seven"},
-        {"pms-bme-style-18button", "Catalog PMS eighteen"}};
-    static constexpr const char* labels[]{entries[0].label, entries[1].label};
-    harness.view().new_project_layouts = {.entries = entries, .count = std::size(entries), .labels = labels};
+    static const std::array entries{
+        new_project_layout_entry_view_t{.id = "osu-mania-7k",
+                                        .label = "Catalog default seven",
+                                        .game = "osu!mania",
+                                        .lane_shape = "Seven keys",
+                                        .variant = "Standard",
+                                        .preview_lane_roles = {new_project_lane_role_t::playable}},
+        new_project_layout_entry_view_t{.id = "pms-bme-style-18button",
+                                        .label = "Catalog PMS eighteen",
+                                        .game = "PMS",
+                                        .lane_shape = "Eighteen buttons",
+                                        .variant = "BME-style",
+                                        .preview_lane_roles = {new_project_lane_role_t::playable}}};
+    harness.view().new_project_layouts = {.entries = entries};
     REQUIRE(worm_ui_frontend_request_new_project());
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
-    click_new_project_text(harness, "Catalog default seven");
-    click_new_project_text(harness, "Catalog PMS eighteen");
+    click_new_project_text(harness, "PMS");
     check_new_project_choice(harness);
 }
 
-TEST_CASE("Transport rate label comes from the view and is selected by stable id", "[frontend-state][event-harness][catalog-wiring]") {
+TEST_CASE("New project picker selects one stable identity from every game family",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    const auto [game, expected] =
+        GENERATE(table<const char*, const char*>({{"osu!mania", "osu-mania-7k"},
+                                                  {"BMS / BME", "bms-5k-outside-scratch"},
+                                                  {"PMS", "pms-standard-5button"},
+                                                  {"StepMania", "stepmania:pump-single"},
+                                                  {"BMSON", "bmson-generic-24keys"}}));
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    REQUIRE(worm_ui_frontend_request_new_project());
+    (void)harness.frame();
+    (void)harness.frame();
+    if (std::string_view{game} != "osu!mania")
+        click_new_project_text(harness, game);
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(std::string_view{actions[0].get().new_project_layout_id} == expected);
+}
+
+TEST_CASE("New project picker switches variants without changing its lane-shape group",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    REQUIRE(worm_ui_frontend_request_new_project());
+    (void)harness.frame();
+    (void)harness.frame();
+    click_new_project_text(harness, "BMS / BME");
+    click_new_project_text(harness, "Inside + pedal");
+    click_new_project_text(harness, "BME 7K");
+    click_new_project_text(harness, "BMS 5K");
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(std::string_view{actions[0].get().new_project_layout_id} ==
+          "bms-5k-inside-scratch-foot-pedal");
+}
+
+TEST_CASE("New project picker bounds game card and variant keyboard navigation",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness{800, 700};
+    REQUIRE(harness.ready());
+    REQUIRE(worm_ui_frontend_request_new_project());
+    (void)harness.frame();
+    (void)harness.frame();
+    for (const auto [key, scan] : std::array{std::pair{SDLK_DOWN, SDL_SCANCODE_DOWN},
+                                             std::pair{SDLK_RIGHT, SDL_SCANCODE_RIGHT},
+                                             std::pair{SDLK_TAB, SDL_SCANCODE_TAB}}) {
+        const auto down = key_event(SDL_EVENT_KEY_DOWN, key, scan);
+        (void)harness.frame(std::span{&down, 1});
+        const auto up = key_event(SDL_EVENT_KEY_UP, key, scan);
+        (void)harness.frame(std::span{&up, 1});
+    }
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(std::string_view{actions[0].get().new_project_layout_id} == "bme-7k-inside-scratch");
+}
+
+TEST_CASE("New project picker disables creation when the selected stable identity disappears",
+          "[frontend-state][event-harness][catalog-wiring]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    static const std::array entries{new_project_layout_entry_view_t{
+        .id = "pms-standard-5button",
+        .label = "PMS five",
+        .game = "PMS",
+        .lane_shape = "Five buttons",
+        .variant = "Standard",
+        .preview_lane_roles = {new_project_lane_role_t::playable}}};
+    harness.view().new_project_layouts = {.entries = entries};
+    REQUIRE(worm_ui_frontend_request_new_project());
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto actions = click_at(harness, create->first, create->second);
+    CHECK(actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+    CHECK(harness.frame(std::span{&enter, 1}).get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+}
+
+TEST_CASE("Transport rate label comes from the view and is selected by stable id",
+          "[frontend-state][event-harness][catalog-wiring]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static constexpr WormUiKindDescriptorView entries[]{{8, "R@"}, {7, "S@"}};

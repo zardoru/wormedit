@@ -308,7 +308,15 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-728 Replace the new-project layout combo with a grouped picker
 
-- **Status:** ready
+- **Status:** done
+- **Completed:** The Create project dialog now chooses from a short game row, lane-shape cards,
+  group-local variants and a role-colored lane preview. Explicit descriptor metadata drives the
+  groups without parsing labels, while stable catalog IDs remain the only construction key and
+  preserve the manual/audio defaults. Selection is retained by ID across group changes and
+  resizing; bounded keyboard navigation and disappearing-ID rejection are covered. Focused core,
+  projection, defaults, walkthrough and event-harness tests pass; GATE passes 4,255/4,255
+  (`/tmp/wormedit-gate.mAvtIq`). Isolated Xvfb captures cover all five game families at 1600×900
+  and the picker at 800×700.
 - **Outcome:** The Create project dialog matches
   [new-project-layout.svg](../mockups/new-project-layout.svg): a short game list, layout cards grouped
   by lane shape, variant toggles and a lane preview replace the roughly 60-entry combo, while the
@@ -321,6 +329,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/sys/workspace_view.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/sys/application_defaults_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.
+- **Supporting-file extensions (2026-10-19):** `tests/sys/frame_projection_arena_tests.cpp`
+  verifies the typed catalog projection. `tests/ui/walkthrough_bms_event_harness_tests.cpp` and
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp` supply the new typed picker view and
+  exercise its replacement controls. `cmake/complexity_baseline.txt` records the installed
+  clang-tidy 23.1.3 full 595-translation-unit remeasurement and removes one stale allowance; no
+  allowance increased.
 - **Steps:**
   1. Stale-plan check: count catalog entries and inventory stable IDs, labels, lane roles, variants,
      step types, bindings and default outputs; do not infer grouping by parsing display labels.

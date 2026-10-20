@@ -4,6 +4,7 @@
 
 #include <wormedit/core/interaction_actions.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/time_shift.h>
 
 #include <array>
 #include <concepts>
@@ -238,6 +239,24 @@ struct pending_note_move_gesture_t {
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };
 
+// A vertical drag anchored by a selected bar line. Unlike the note-move gesture, this has no
+// playable-lane component: it moves the current note/bar-line selection by one snapped row delta.
+struct pending_bar_line_move_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::move;
+    static constexpr auto revision_message = "bar-line move update requires an active gesture";
+    measure_id_t reference_bar_line;
+    std::uint64_t reference_row{};
+    std::int64_t preview_rows{};
+    local_position_t preview_position;
+    shift_selection_action_t selection;
+
+    [[nodiscard]] static auto begin(editor_edit_context_t&, measure_id_t)
+        -> diagnosed_t<std::optional<pending_bar_line_move_gesture_t>>;
+    [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const pending_bar_line_move_gesture_t&) const -> bool = default;
+};
+
 struct pending_note_paint_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::paint;
     static constexpr auto revision_message = "note paint update requires an active gesture";
@@ -362,6 +381,7 @@ struct space_range_selection_preview_t {
 // Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
 using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_move_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_bar_line_move_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_editor_area_selection_t, document_stamp_t>,
@@ -371,7 +391,8 @@ using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t
 // A projection contains only render data; paint's visited cells stay in the capture.
 using active_gesture_preview_t = std::variant<
     proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
-    proposal_t<pending_note_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t,
+    proposal_t<pending_note_move_gesture_t, document_stamp_t>,
+    proposal_t<pending_bar_line_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t,
     editor_area_selection_preview_t, space_range_selection_preview_t,
     proposal_t<hold_gesture_preview_t, document_stamp_t>>;
 

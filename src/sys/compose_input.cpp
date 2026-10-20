@@ -1674,7 +1674,11 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
 auto compose_input_notification_source(WormUiComposeInputKind kind)
     -> wormedit::notification_source_t {
     using namespace wormedit;
-    if (compose_input_edits_notes(kind) || kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION ||
+    if (compose_input_edits_notes(kind) ||
+        kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN ||
+        kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_UPDATE ||
+        kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE ||
+        kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE ||

@@ -97,6 +97,8 @@ private:
             {.active = state.range_selection.lane_hold_active, .hover = true, .paint = false},
             {.active = state.note_move.note_move_active, .hover = true, .paint = false},
             {.active = state.note_move.note_move_candidate_active, .hover = true, .paint = false},
+            {.active = state.bar_line_move.active, .hover = true, .paint = false},
+            {.active = state.bar_line_move.capture.active, .hover = true, .paint = false},
             {.active = state.area_selection.area_selection_active, .hover = true, .paint = false},
             {.active = state.timing_marker.timing_marker_candidate_active, .hover = true, .paint = false},
             {.active = state.timing_marker.timing_marker_drag_active, .hover = true, .paint = false},

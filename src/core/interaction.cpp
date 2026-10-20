@@ -2118,6 +2118,31 @@ template <> struct editor_action_handler_t<update_note_move_gesture_action_t> {
     }
 };
 
+template <> struct editor_action_handler_t<begin_bar_line_move_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch,
+                        const begin_bar_line_move_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        return begin_gesture<pending_bar_line_move_gesture_t>(dispatch.edit,
+                                                               action.reference_bar_line);
+    }
+};
+
+template <> struct editor_action_handler_t<update_bar_line_move_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch,
+                        const update_bar_line_move_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        if (action.operation == proposal_operation_t::apply)
+            return apply_gesture<pending_bar_line_move_gesture_t>(dispatch.edit,
+                                                                  action.reference_position);
+        return revise_gesture<pending_bar_line_move_gesture_t>(dispatch.edit,
+                                                               action.reference_position);
+    }
+};
+
 template <> struct editor_action_handler_t<begin_note_paint_gesture_action_t> {
     static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
 

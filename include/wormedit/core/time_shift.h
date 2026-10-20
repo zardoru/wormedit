@@ -34,6 +34,7 @@ struct shift_selection_action_t {
     // lanes). They are not moved again, and propagation leaves them where the caller put them.
     std::vector<object_id_t> already_moved_notes;
     std::vector<object_id_t> already_moved_bgm_events;
+    auto operator==(const shift_selection_action_t&) const -> bool = default;
 };
 
 // Moves every beat-anchored object at or after `cursor`: notes whose head is at

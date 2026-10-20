@@ -3837,6 +3837,71 @@ TEST_CASE("Dragging notes carries selected bar lines under the session's time po
     CHECK(validate_document(history.document).empty());
 }
 
+struct bar_line_move_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+
+    bar_line_move_fixture_t()
+        : history(document_history_t::from(make_document())), state(make_state(history)) {}
+
+    static auto make_document() -> song_document_t {
+        auto song = make_song();
+        song.charts.front().measures.push_back({.id = measure_id_t{3}});
+        song.charts.front().measures.front().notes = {
+            {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
+        return song;
+    }
+
+    void select_objects() {
+        REQUIRE(dispatch_editor_action(
+            history, state,
+            select_editor_objects_action_t{{
+                {editor_selection_object_kind_t::note, object_id_t{101}},
+                {editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
+    }
+
+    void preview_move() {
+        REQUIRE(dispatch_editor_action(
+            history, state, begin_bar_line_move_gesture_action_t{measure_id_t{2}}));
+        const auto preview = dispatch_editor_action(
+            history, state, update_bar_line_move_gesture_action_t{{measure_id_t{2}, 240}});
+        for (const auto& diagnostic : preview.diagnostics) UNSCOPED_INFO(diagnostic.message);
+        REQUIRE(preview);
+        REQUIRE(state.gesture<pending_bar_line_move_gesture_t>() != nullptr);
+        CHECK(state.gesture<pending_bar_line_move_gesture_t>()->preview_rows == 240);
+        CHECK(history.document.revision == 1);
+    }
+
+    void apply_move() {
+        const auto committed = dispatch_editor_action(
+            history, state,
+            update_bar_line_move_gesture_action_t{
+                .reference_position = {measure_id_t{2}, 240},
+                .operation = proposal_operation_t::apply});
+        for (const auto& diagnostic : committed.diagnostics) UNSCOPED_INFO(diagnostic.message);
+        REQUIRE(committed);
+        CHECK(committed.document_changed);
+    }
+
+    void check_committed_move() {
+        CHECK(absolute_row(history, 101) == 480);
+        const auto index = measure_index_t::from(history.document.charts.front()).value();
+        CHECK(index.entries[1].absolute_begin_row == 1200);
+        CHECK(state.cursor == local_position_t{measure_id_t{2}, 0});
+        CHECK(history.undo.size() == 1);
+        CHECK(validate_document(history.document).empty());
+    }
+};
+
+TEST_CASE("Dragging a selected bar line anchors the shared row-move gesture",
+          "[unit][core][interaction][gesture][move][bar-line]") {
+    bar_line_move_fixture_t fixture;
+    fixture.select_objects();
+    fixture.preview_move();
+    fixture.apply_move();
+    fixture.check_committed_move();
+}
+
 TEST_CASE("The step-move request carries selected notes and bar lines with the session policy",
           "[unit][core][interaction][move][bar-line]") {
     auto song = make_song();

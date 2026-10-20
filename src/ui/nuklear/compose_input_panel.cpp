@@ -134,6 +134,8 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
         {&state.range_selection.space_range_hold_active, reset_range_capture},
         {&state.note_move.note_move_active},
         {&state.note_move.note_move_candidate_active},
+        {&state.bar_line_move.active},
+        {&state.bar_line_move.capture.active},
         {&state.area_selection.area_selection_active},
         {&state.area_selection.area_selection_candidate_active},
         {&state.bga_interaction.bga_event_move_active, reset_bga_event_move_capture},

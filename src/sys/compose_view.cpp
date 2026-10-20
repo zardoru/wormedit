@@ -1434,6 +1434,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         (retained_state->hold() != nullptr) ||
         retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
+        retained_state->gesture<wormedit::pending_bar_line_move_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr ||
         static_cast<bool>(retained_state->gesture<wormedit::pending_editor_area_selection_t>()) ||

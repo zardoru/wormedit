@@ -8744,6 +8744,42 @@ TEST_CASE("The measure lane selects bar lines and places them in Draw mode",
     check_measure_lane(find_compose_input(on_line, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) != nullptr);
 }
 
+TEST_CASE("Dragging a measure-lane handle starts and releases a bar-line move",
+          "[unit][frontend-state][event-harness][measure-lane]") {
+    measure_lane_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.measure_lane.visible = true;
+    const auto x = fixture.viewport.x + 20.0f;
+    const auto start_y = fixture.viewport.y + 300.0f;
+    const auto target_y = fixture.viewport.y + 360.0f;
+
+    const std::array press{mouse_motion(x, start_y), mouse_button(true, x, start_y)};
+    const auto pressed = fixture.harness.frame(press);
+    const auto* selected = find_compose_input(
+        std::vector{pressed}, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT);
+    REQUIRE(selected != nullptr);
+    check_measure_lane(selected->object_id == 11);
+
+    const std::array move{mouse_motion(x, target_y)};
+    const auto moved = fixture.harness.frame(move);
+    const std::vector moved_frames{moved};
+    const auto* begun = find_compose_input(
+        moved_frames, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN);
+    const auto* updated = find_compose_input(
+        moved_frames, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_UPDATE);
+    REQUIRE(begun != nullptr);
+    REQUIRE(updated != nullptr);
+    check_measure_lane(begun->object_id == 11);
+    check_measure_lane(std::abs(updated->y_pixels - 360.0) < 1.0);
+
+    const std::array release{mouse_motion(x, target_y), mouse_button(false, x, target_y)};
+    const auto released = fixture.harness.frame(release);
+    const auto* committed = find_compose_input(
+        std::vector{released}, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE);
+    REQUIRE(committed != nullptr);
+    check_measure_lane(committed->object_id == 11);
+}
+
 TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propagation",
           "[frontend-state][event-harness][measure-lane]") {
     nuklear_event_harness_t harness{1280, 900};

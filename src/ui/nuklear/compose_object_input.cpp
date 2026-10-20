@@ -877,6 +877,90 @@ static auto update_note_move_active(const ComposePointerEventContext& input,
     return true;
 }
 
+static void reset_bar_line_move_capture() {
+    state.bar_line_move = {};
+}
+
+static void append_bar_line_select(const ComposePointerEventContext& input,
+                                   std::uint64_t measure_id) {
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT,
+                         input.pointer_x, input.pointer_y, 0, false,
+                         WORM_UI_COMPOSE_SELECTION_REPLACE,
+                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, measure_id);
+}
+
+static auto update_bar_line_move_capture(const ComposePointerEventContext& input) -> bool {
+    auto& move = state.bar_line_move;
+    if (!move.capture.active) return false;
+    const auto valid = input.window_focused && input.view->measure_lane.visible &&
+        !state.input_queue.action_overflowed && move.capture.matches(*input.view);
+    const auto continuation = move.capture.advance(
+        {.down = input.left_down,
+         .released = input.left_released,
+         .x = input.context->input.mouse.pos.x,
+         .y = input.context->input.mouse.pos.y},
+        valid, compose_drag_release_policy_t::latched_planar, move.active);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
+        if (state.bar_line_move.active)
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+        reset_bar_line_move_capture();
+        return true;
+    }
+    state.bar_line_move.current_y = input.pointer_y;
+    if (input.left_released) {
+        if (state.bar_line_move.active)
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE,
+                                 input.pointer_x, input.pointer_y, 0, false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 state.bar_line_move.measure_id);
+        else if (state.bar_line_move.select_on_release)
+            append_bar_line_select(input, state.bar_line_move.measure_id);
+        reset_bar_line_move_capture();
+        return true;
+    }
+    if (!state.bar_line_move.active && continuation.moved) {
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN,
+                             state.bar_line_move.anchor_x, state.bar_line_move.anchor_y, 0, false,
+                             WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                             state.bar_line_move.measure_id);
+        state.bar_line_move.active = !state.input_queue.action_overflowed;
+    }
+    if (state.bar_line_move.active && nk_input_is_mouse_moved(&input.context->input))
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_UPDATE,
+                             input.pointer_x, input.pointer_y, 0, false,
+                             WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                             state.bar_line_move.measure_id);
+    return true;
+}
+
+static auto begin_bar_line_move_capture(const ComposePointerEventContext& input,
+                                        bool paint_pointer_consumed) -> bool {
+    const auto& view = *input.view;
+    if (state.input_queue.action_overflowed || paint_pointer_consumed || !view.scene_available ||
+        !view.measure_lane.visible || !input.window_focused || !input.left_down ||
+        !input.pointer_started_in_view || state.bar_line_move.capture.active ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+        compose_selection_mode(input.pointer_modifiers) != WORM_UI_COMPOSE_SELECTION_REPLACE)
+        return false;
+    const auto* line = wormedit::ui::compose_bar_line_at(
+        view, input.pointer_started_x, input.pointer_started_y);
+    if (!line) return false;
+    if (!state.bar_line_move.capture.begin(
+            view, input.left_clicked_screen_x, input.left_clicked_screen_y, false))
+        return false;
+    state.bar_line_move.select_on_release = view.measure_lane.is_selected(line->measure_id);
+    state.bar_line_move.measure_id = line->measure_id.value;
+    state.bar_line_move.anchor_x = input.pointer_started_x;
+    state.bar_line_move.anchor_y = input.pointer_started_y;
+    state.bar_line_move.current_y = input.pointer_started_y;
+    if (!state.bar_line_move.select_on_release)
+        append_bar_line_select(input, state.bar_line_move.measure_id);
+    return true;
+}
+
 static bool area_selection_drag_threshold_reached(const ComposePointerEventContext& input) {
     const auto dx = input.context->input.mouse.pos.x - state.area_selection.area_selection_anchor_screen_x;
     const auto dy = input.context->input.mouse.pos.y - state.area_selection.area_selection_anchor_screen_y;
@@ -994,6 +1078,8 @@ void process_compose_drag_gestures(const ComposePointerEventContext& input,
                                           bool paint_pointer_consumed) {
     if (input.view->paste_active) return;
     if (compose_area_pointer_consumed()) return;
+    if (update_bar_line_move_capture(input)) return;
+    if (begin_bar_line_move_capture(input, paint_pointer_consumed)) return;
     if (update_note_move_candidate(input, paint_pointer_consumed)) return;
     if (update_note_move_active(input, paint_pointer_consumed)) return;
     if (update_area_selection_candidate(input, paint_pointer_consumed)) return;
@@ -1005,6 +1091,7 @@ static auto is_compose_rail_click(const ComposePointerEventContext& input, bool 
         input.pointer_clicked && input.pointer_inside && input.pointer_x < compose_measure_rail_width &&
         input.window_focused && !state.pointer_capture.pointer_hold_active &&
         !state.range_selection.lane_hold_active && !state.note_move.note_move_active &&
+        !state.bar_line_move.active && !state.bar_line_move.capture.active &&
         !state.area_selection.area_selection_active && !state.area_selection.area_selection_candidate_active &&
         !state.timing_drag.timing_stage_drag_active;
 }

@@ -294,6 +294,64 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
                                 bar_line_shift ? &*bar_line_shift : nullptr);
 }
 
+auto pending_bar_line_move_gesture_t::begin(editor_edit_context_t& context,
+                                             measure_id_t reference)
+    -> diagnosed_t<std::optional<pending_bar_line_move_gesture_t>> {
+    const auto position = local_position_t{reference, 0};
+    const auto row = context.scope.measures.row_of(position);
+    auto selection = editor_shift_selection(context.state, 0);
+    if (!row || std::ranges::find(selection.bar_lines, reference) == selection.bar_lines.end())
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                   "Bar-line move requires a selected bar line", object_id_t{reference.value})}};
+    return {.value = pending_bar_line_move_gesture_t{
+        .reference_bar_line = reference,
+        .reference_row = *row,
+        .preview_position = position,
+        .selection = std::move(selection),
+    }};
+}
+
+auto pending_bar_line_move_gesture_t::revise(editor_edit_context_t& context,
+                                              local_position_t requested_position)
+    -> diagnostic_list_t {
+    const auto snapped = snapped_position(
+        context.scope.chart, context.scope.measures, requested_position,
+        edit_snap_denominator(context.scope.chart, context.state));
+    const auto row = snapped ? context.scope.measures.row_of(*snapped) : std::nullopt;
+    if (!row)
+        return {error(diagnostic_code_t::row_out_of_range,
+                      "Bar-line move target cannot be snapped inside the chart")};
+    const auto delta = static_cast<std::int64_t>(*row) -
+                       static_cast<std::int64_t>(reference_row);
+    auto action = selection;
+    action.rows = delta;
+    auto transaction = document_command_transaction_t(context.history);
+    auto staged = transaction.stage([&](song_document_t& proposed)
+                                        -> attempt_t<document_edit_effect_t> {
+        auto shifted = stage_shift_selection(proposed, action);
+        if (diagnostic_queries::has_errors(shifted.command.diagnostics))
+            return {.diagnostics = std::move(shifted.command.diagnostics)};
+        return {.value = document_edit_effect_t{},
+                .diagnostics = std::move(shifted.command.diagnostics)};
+    });
+    if (!staged.ok()) return std::move(staged.diagnostics);
+    preview_rows = delta;
+    preview_position = *snapped;
+    return {};
+}
+
+auto pending_bar_line_move_gesture_t::apply(editor_edit_context_t& context) const
+    -> editor_interaction_result_t {
+    auto action = selection;
+    action.rows = preview_rows;
+    return commit_editor_edit(
+        context,
+        {.label = "Move selected objects",
+         .cursor = local_position_t{reference_bar_line, 0},
+         .noop_policy = command_noop_policy_t::accept_without_diagnostics},
+        [&] { return apply_shift_selection(context.history, action).command; });
+}
+
 auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row,
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
@@ -1001,7 +1059,9 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
     case editor_gesture_kind_t::duration:
         return is_gesture_action<update_note_duration_gesture_action_t>(action);
     case editor_gesture_kind_t::move:
-        return is_gesture_action<update_note_move_gesture_action_t>(action);
+        return state.gesture<pending_bar_line_move_gesture_t>()
+            ? is_gesture_action<update_bar_line_move_gesture_action_t>(action)
+            : is_gesture_action<update_note_move_gesture_action_t>(action);
     case editor_gesture_kind_t::paint:
         return is_gesture_action<update_note_paint_gesture_action_t,
                                  end_note_paint_gesture_action_t>(action);

@@ -171,6 +171,15 @@ struct update_note_move_gesture_action_t {
     proposal_operation_t operation{proposal_operation_t::revise};
 };
 
+struct begin_bar_line_move_gesture_action_t {
+    measure_id_t reference_bar_line;
+};
+
+struct update_bar_line_move_gesture_action_t {
+    local_position_t reference_position;
+    proposal_operation_t operation{proposal_operation_t::revise};
+};
+
 // The mode is captured on the first Space press and applied atomically when
 // Space is pressed again.
 struct space_range_selection_action_t {
@@ -316,6 +325,7 @@ using editor_interaction_action_t = std::variant<
     update_alt_pointer_hold_gesture_action_t, release_alt_pointer_hold_gesture_action_t,
     begin_note_duration_gesture_action_t, update_note_duration_gesture_action_t,
     begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
+    begin_bar_line_move_gesture_action_t, update_bar_line_move_gesture_action_t,
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
     end_note_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,
     update_semantic_layer_paint_gesture_action_t, begin_editor_area_selection_action_t,

@@ -7539,6 +7539,58 @@ TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
     CHECK(handle.bottom_pixels > 300.0);
 }
 
+TEST_CASE("Measure-lane drag inputs dispatch through the bar-line move gesture",
+          "[frame-timing][measure-lane][gesture]") {
+    auto song = compose_test_song();
+    song.charts.front().measures.push_back({.id = measure_id_t{2}});
+    song.charts.front().measures.push_back({.id = measure_id_t{3}});
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.project.compose_view.measure_lane_visible = true;
+    fixture.project();
+    REQUIRE(dispatch_editor_action(
+        fixture.history, *fixture.interaction,
+        select_editor_objects_action_t{{{
+            editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
+    fixture.project();
+
+    notification_center_t center;
+    notification_sink_t sink{center};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto dispatch = [&](WormUiComposeInputKind kind, std::uint64_t row) {
+        WormUiWorkspaceAction action{};
+        action.compose_input_project_id = fixture.history.document.id.value;
+        action.compose_input_chart_id = 1;
+        action.compose_input_document_revision = fixture.history.document.revision;
+        action.compose_input_count = 1;
+        const auto& view = fixture.flattened.view.compose;
+        const auto downscroll = fixture.cache.frame.preview_scene_request.scroll_direction ==
+            editor_field_scroll_direction_t::down;
+        action.compose_inputs[0] = {
+            .kind = kind,
+            .object_id = 2,
+            .x_pixels = 20,
+            .y_pixels = compose_project_y(
+                static_cast<double>(row), view.pixels_per_standard_measure / 960.0,
+                fixture.interaction->viewport_scroll_pixels, view.viewport_height_pixels,
+                downscroll)};
+        action.compose_input_viewport_width_pixels = view.viewport_width_pixels;
+        return dispatch_compose_input_action(
+            action, fixture.history, *fixture.binding.value, *fixture.interaction,
+            viewport, navigation, fixture.application, fixture.cache, 0, &sink);
+    };
+
+    (void)dispatch(WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN, 960);
+    REQUIRE(fixture.interaction->gesture<pending_bar_line_move_gesture_t>() != nullptr);
+    (void)dispatch(WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_UPDATE, 1200);
+    CHECK(fixture.interaction->gesture<pending_bar_line_move_gesture_t>()->preview_rows == 240);
+    (void)dispatch(WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE, 1200);
+    CHECK_FALSE(fixture.interaction->gesture<pending_bar_line_move_gesture_t>());
+    const auto index = measure_index_t::from(fixture.history.document.charts.front()).value();
+    CHECK(index.entries[1].absolute_begin_row == 1200);
+    CHECK(fixture.history.undo.size() == 1);
+}
+
 TEST_CASE("Pasted timing ghosts retain all eight lane identities",
           "[sys][clipboard][paste-preview]") {
     using lane_case = std::pair<chart_clipboard_payload_t, WormUiTimingLaneKind>;

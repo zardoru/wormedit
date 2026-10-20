@@ -1084,6 +1084,54 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
+template <typename PositionAtComposeY>
+auto dispatch_bar_line_move_gesture(const WormUiComposeInputAction& input,
+                                    compose_gesture_context_t& context,
+                                    PositionAtComposeY&& position_at_compose_y)
+    -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& [environment, state, result, accepted] = context;
+    auto& history = environment.document.history;
+    const auto* chart = history.document.find_chart(state.chart);
+    const auto view = compose_view_for_state(history, state);
+    if (!chart || !view) {
+        (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        return compose_input_family_result_t::from(
+            "The selected chart field is no longer available.");
+    }
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN) {
+        const auto reference = measure_id_t{input.object_id};
+        if (!reference || std::ranges::find(state.selected_objects,
+                editor_selection_object_t{editor_selection_object_kind_t::bar_line,
+                                          object_id_t{reference.value}}) == state.selected_objects.end())
+            return compose_input_family_result_t::from(
+                "Begin a bar-line move by dragging a selected measure-lane handle.");
+        result = dispatch_editor_action(
+            history, state, begin_bar_line_move_gesture_action_t{reference});
+        accepted = "Selected-object move started.";
+        return compose_input_family_result_t::continue_with_result();
+    }
+    const auto y = input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE
+        ? input.y_pixels
+        : std::clamp(input.y_pixels, 0.0, std::max(0.0, view->viewport_height_pixels - 0.001));
+    const auto position = position_at_compose_y(*chart, *view, y);
+    if (!position) {
+        (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        return compose_input_family_result_t::from(
+            "Bar-line move input left chart geometry and was canceled.");
+    }
+    result = dispatch_editor_action(
+        history, state,
+        update_bar_line_move_gesture_action_t{
+            .reference_position = *position,
+            .operation = input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE
+                ? proposal_operation_t::apply : proposal_operation_t::revise});
+    accepted = input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE
+        ? (result.document_changed ? "Selected objects moved." : "Selected-object move released.")
+        : "Selected-object move preview updated.";
+    return compose_input_family_result_t::continue_with_result();
+}
+
 template <typename HitTargetAt, typename BgmEventAt, typename PositionAtComposeY>
 auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
                                     const compose_input_inputs_t& environment,
@@ -1114,6 +1162,10 @@ auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:
         return dispatch_note_move_gesture(input, context, hit_target_at, position_at_compose_y);
+    case WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE:
+        return dispatch_bar_line_move_gesture(input, context, position_at_compose_y);
     default:
         return {};
     }

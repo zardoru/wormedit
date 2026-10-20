@@ -799,6 +799,12 @@ static void draw_compose_measure_lane(const ComposePaintContext& paint) {
                                     : wormedit::ui::field::color_t{120, 140, 170};
         field.rect(1, {paint.rail.x + 2.0f, y - height * 0.5f, paint.rail.w - 4.0f, height}, color);
     }
+    if (state.bar_line_move.active) {
+        const auto y = compose_projected_y(paint, state.bar_line_move.current_y);
+        if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h)
+            field.rect(1, {paint.rail.x + 1.0f, y - 3.0f, paint.rail.w - 2.0f, 6.0f},
+                       {255, 207, 104, 180});
+    }
 }
 
 static void draw_compose_beat_sections(const ComposePaintContext& paint) {

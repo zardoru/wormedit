@@ -337,6 +337,16 @@ struct worm_ui_nuklear_compose_state_t {
         float note_move_anchor_screen_y{};
     } note_move;
 
+    struct bar_line_move_t {
+        compose_drag_capture_t capture{};
+        bool active{};
+        bool select_on_release{};
+        std::uint64_t measure_id{};
+        double anchor_x{};
+        double anchor_y{};
+        double current_y{};
+    } bar_line_move;
+
     struct timing_drag_t {
         compose_drag_capture_t timing_stage_capture{}, span_capture{}, recipe_capture{};
         compose_drag_capture_t timing_marker_capture{}, fit_capture{}, beat_zero_capture{},

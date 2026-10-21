@@ -1,3 +1,4 @@
+#include "bms_timing_directive.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
@@ -85,89 +86,6 @@ using text_util::path_from_utf8;
 
 using text_util::invalid_utf8_offset;
 
-auto decode_line(std::string_view input, text_encoding_t encoding) -> text_codec_result_t {
-    if (encoding == text_encoding_t::ascii) {
-        for (std::size_t index = 0; index < input.size(); ++index) {
-            if (static_cast<unsigned char>(input[index]) > 0x7fU) {
-                return std::unexpected(text_codec_error_t{.error_offset = index});
-            }
-        }
-        return std::string(input);
-    }
-    if (encoding == text_encoding_t::utf8) {
-        if (const auto error = invalid_utf8_offset(input); error.has_value()) {
-            return std::unexpected(text_codec_error_t{.error_offset = *error});
-        }
-        return std::string(input);
-    }
-
-    const auto source_name = text_encoding_iconv_name(encoding);
-    if (!source_name.has_value()) {
-        return std::unexpected(text_codec_error_t{.unsupported = true});
-    }
-#if defined(WORMEDIT_HAS_ICONV)
-    const auto converter = iconv_open("UTF-8", std::string(*source_name).c_str());
-    if (converter == reinterpret_cast<iconv_t>(-1)) {
-        return std::unexpected(text_codec_error_t{.unsupported = true});
-    }
-
-    std::string output(std::max<std::size_t>(input.size() * 4U + 16U, 32U), '\0');
-    auto* source = const_cast<char*>(input.data());
-    auto source_remaining = input.size();
-    std::size_t written{};
-    while (true) {
-        auto* destination = output.data() + written;
-        auto destination_remaining = output.size() - written;
-        errno = 0;
-        const auto status =
-            iconv(converter, &source, &source_remaining, &destination, &destination_remaining);
-        written = output.size() - destination_remaining;
-        if (status != static_cast<std::size_t>(-1)) {
-            break;
-        }
-        if (errno != E2BIG) {
-            const auto error_offset = input.size() - source_remaining;
-            iconv_close(converter);
-            return std::unexpected(text_codec_error_t{.error_offset = error_offset});
-        }
-        if (output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
-            iconv_close(converter);
-            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
-        }
-        output.resize(output.size() * 2U);
-    }
-
-    while (true) {
-        auto* destination = output.data() + written;
-        auto destination_remaining = output.size() - written;
-        errno = 0;
-        const auto status =
-            iconv(converter, nullptr, nullptr, &destination, &destination_remaining);
-        written = output.size() - destination_remaining;
-        if (status != static_cast<std::size_t>(-1)) {
-            break;
-        }
-        if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
-            iconv_close(converter);
-            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
-        }
-        output.resize(output.size() * 2U);
-    }
-    iconv_close(converter);
-    output.resize(written);
-    return output;
-#elif defined(_WIN32)
-    const auto code_page = win32_codepage::code_page_for(encoding);
-    if (!code_page.has_value()) {
-        return std::unexpected(text_codec_error_t{.unsupported = true});
-    }
-    auto converted = win32_codepage::to_utf8(*code_page, input);
-    return converted;
-#else
-    return std::unexpected(text_codec_error_t{.unsupported = true});
-#endif
-}
-
 #if defined(WORMEDIT_HAS_ICONV)
 auto encode_with_iconv(std::string_view input, std::string_view destination_name)
     -> text_codec_result_t {
@@ -244,7 +162,7 @@ auto encode_line(std::string_view input, text_encoding_t encoding) -> text_codec
 #else
     return std::unexpected(text_codec_error_t{.unsupported = true});
 #endif
-    const auto round_trip = decode_line(output, encoding);
+    const auto round_trip = decode_bms_text(output, encoding);
     if (!round_trip || *round_trip != input) {
         return std::unexpected(text_codec_error_t{});
     }
@@ -318,7 +236,7 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
         }
 
         const std::string_view raw_line(data + begin, content_end - begin);
-        auto decoded = decode_line(raw_line, encoding);
+        auto decoded = decode_bms_text(raw_line, encoding);
         if (has_unsupported_codec_error(decoded)) {
             add_line_diagnostic(result, diagnostic_severity_t::error,
                                 bms_parse_diagnostic_code_t::unsupported_encoding,
@@ -709,6 +627,7 @@ struct bms_channel_materializer_t {
     std::map<std::string, resource_id_t, std::less<>>& resource_ids;
     const std::map<std::string, signed_rational_t, std::less<>>& extended_bpms;
     const std::map<std::string, signed_rational_t, std::less<>>& stop_definitions;
+    const std::map<std::string, signed_rational_t, std::less<>>& scroll_definitions;
     const std::optional<lane_input_profile_t>& selected_profile;
     std::map<std::uint64_t, std::vector<long_note_endpoint_t>>& long_note_endpoints;
     // BGM lines already placed per measure; the k-th line of a measure uses
@@ -934,6 +853,21 @@ struct bms_channel_materializer_t {
         });
     }
 
+    void add_scroll_event(const bms_control_node_t& node, std::size_t slot,
+        const std::string& object_id, local_position_t position) {
+        if (object_id == "00") return;
+        const auto found = scroll_definitions.find(object_id);
+        if (found == scroll_definitions.end()) {
+            diagnose(node, diagnostic_severity_t::warning, bms_parse_diagnostic_code_t::unresolved_reference,
+                     "SCROLL object references an undeclared value; source slot remains raw");
+            return;
+        }
+        chart.scrolls.push_back({.id = new_id<object_id_t>(ids), .position = position,
+            .multiplier = found->second, .provenance = source_provenance(
+                "SC slot " + std::to_string(slot) + " object " + object_id,
+                node.original_text, node.source_order)});
+    }
+
     void add_note_slot(const root_channel_line_t& channel_line, const bms_control_node_t& node,
                        std::string_view channel, std::size_t slot,
                        const std::string& object_id, local_position_t position) {
@@ -1019,6 +953,8 @@ struct bms_channel_materializer_t {
                 add_extended_bpm(node, slot, object_id, *position);
             } else if (channel == "09") {
                 add_stop_event(node, slot, object_id, *position);
+            } else if (channel == "SC") {
+                add_scroll_event(node, slot, object_id, *position);
             } else {
                 add_note_slot(channel_line, node, channel, slot, object_id, *position);
             }
@@ -1537,7 +1473,7 @@ auto retained_line_text(const retained_source_t& source, const bms_control_node_
         ending) {
         return std::nullopt;
     }
-    const auto decoded = decode_line(
+    const auto decoded = decode_bms_text(
         std::string_view(bytes + node.source_span.byte_begin, content_size), source.encoding);
     if (!decoded) {
         return std::nullopt;
@@ -1614,6 +1550,89 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
 }
 
 } // namespace
+
+auto decode_bms_text(std::string_view input, text_encoding_t encoding) -> text_codec_result_t {
+    if (encoding == text_encoding_t::ascii) {
+        for (std::size_t index = 0; index < input.size(); ++index) {
+            if (static_cast<unsigned char>(input[index]) > 0x7fU) {
+                return std::unexpected(text_codec_error_t{.error_offset = index});
+            }
+        }
+        return std::string(input);
+    }
+    if (encoding == text_encoding_t::utf8) {
+        if (const auto error = invalid_utf8_offset(input); error.has_value()) {
+            return std::unexpected(text_codec_error_t{.error_offset = *error});
+        }
+        return std::string(input);
+    }
+
+    const auto source_name = text_encoding_iconv_name(encoding);
+    if (!source_name.has_value()) {
+        return std::unexpected(text_codec_error_t{.unsupported = true});
+    }
+#if defined(WORMEDIT_HAS_ICONV)
+    const auto converter = iconv_open("UTF-8", std::string(*source_name).c_str());
+    if (converter == reinterpret_cast<iconv_t>(-1)) {
+        return std::unexpected(text_codec_error_t{.unsupported = true});
+    }
+
+    std::string output(std::max<std::size_t>(input.size() * 4U + 16U, 32U), '\0');
+    auto* source = const_cast<char*>(input.data());
+    auto source_remaining = input.size();
+    std::size_t written{};
+    while (true) {
+        auto* destination = output.data() + written;
+        auto destination_remaining = output.size() - written;
+        errno = 0;
+        const auto status =
+            iconv(converter, &source, &source_remaining, &destination, &destination_remaining);
+        written = output.size() - destination_remaining;
+        if (status != static_cast<std::size_t>(-1)) {
+            break;
+        }
+        if (errno != E2BIG) {
+            const auto error_offset = input.size() - source_remaining;
+            iconv_close(converter);
+            return std::unexpected(text_codec_error_t{.error_offset = error_offset});
+        }
+        if (output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
+            iconv_close(converter);
+            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
+        }
+        output.resize(output.size() * 2U);
+    }
+
+    while (true) {
+        auto* destination = output.data() + written;
+        auto destination_remaining = output.size() - written;
+        errno = 0;
+        const auto status =
+            iconv(converter, nullptr, nullptr, &destination, &destination_remaining);
+        written = output.size() - destination_remaining;
+        if (status != static_cast<std::size_t>(-1)) {
+            break;
+        }
+        if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
+            iconv_close(converter);
+            return std::unexpected(text_codec_error_t{.error_offset = input.size()});
+        }
+        output.resize(output.size() * 2U);
+    }
+    iconv_close(converter);
+    output.resize(written);
+    return output;
+#elif defined(_WIN32)
+    const auto code_page = win32_codepage::code_page_for(encoding);
+    if (!code_page.has_value()) {
+        return std::unexpected(text_codec_error_t{.unsupported = true});
+    }
+    auto converted = win32_codepage::to_utf8(*code_page, input);
+    return converted;
+#else
+    return std::unexpected(text_codec_error_t{.unsupported = true});
+#endif
+}
 
 auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool {
     if (encoding == text_encoding_t::ascii || encoding == text_encoding_t::utf8) {
@@ -1928,6 +1947,7 @@ struct active_statement_scan_context_t {
     std::vector<std::size_t>& ordered_metadata_source_orders;
     std::map<std::string, signed_rational_t, std::less<>>& extended_bpms;
     std::map<std::string, signed_rational_t, std::less<>>& stop_definitions;
+    std::map<std::string, signed_rational_t, std::less<>>& scroll_definitions;
     std::optional<std::pair<const bms_control_node_t*, signed_rational_t>>& initial_bpm;
     std::vector<root_channel_line_t>& channel_lines;
     std::vector<std::string>& used_playable_channels;
@@ -2133,8 +2153,8 @@ auto collect_measure_length_statement(active_statement_scan_context_t& context,
 }
 
 auto is_bpm_definition(std::string_view token) -> bool {
-    return token == "BPM" || (token.size() == 5 && token.starts_with("BPM") &&
-                               is_base36_digit(token[3]) && is_base36_digit(token[4]));
+    const auto* directive = bms_timing_directive_t::from(token);
+    return token == "BPM" || (directive && directive->name == "BPM");
 }
 
 auto collect_bpm_statement(active_statement_scan_context_t& context,
@@ -2170,8 +2190,8 @@ auto collect_bpm_statement(active_statement_scan_context_t& context,
 }
 
 auto is_stop_definition(std::string_view token) -> bool {
-    return token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
-           is_base36_digit(token[5]);
+    const auto* directive = bms_timing_directive_t::from(token);
+    return directive && directive->name == "STOP";
 }
 
 auto collect_stop_statement(active_statement_scan_context_t& context,
@@ -2194,6 +2214,20 @@ auto collect_stop_statement(active_statement_scan_context_t& context,
                          "duplicate STOP identifier; later valid value is applied");
     }
     context.stop_definitions.insert_or_assign(identifier, *parsed_value);
+    return true;
+}
+
+auto collect_scroll_statement(active_statement_scan_context_t& context,
+    const bms_control_node_t& node, std::string_view token, std::string_view value) -> bool {
+    const auto* directive = bms_timing_directive_t::from(token);
+    if (!directive || directive->name != "SCROLL") return false;
+    const auto parsed = parse_exact_decimal(value, 38);
+    if (!parsed) {
+        context.diagnose(node, diagnostic_severity_t::warning, bms_parse_diagnostic_code_t::invalid_number,
+                         "SCROLL declaration is not an exact decimal; raw text is retained");
+        return true;
+    }
+    context.scroll_definitions.insert_or_assign(std::string(token.substr(6)), *parsed);
     return true;
 }
 
@@ -2245,6 +2279,7 @@ void collect_active_statement_data(active_statement_scan_context_t& context,
         if (collect_measure_length_statement(context, *node, token, value, command) ||
             collect_bpm_statement(context, *node, token, value) ||
             collect_stop_statement(context, *node, token, value) ||
+            collect_scroll_statement(context, *node, token, value) ||
             retain_custom_header(context, *node, token, command)) {
             continue;
         }
@@ -2424,7 +2459,7 @@ auto select_lane_profile(chart_document_t& chart, bms_parse_outcome_t& result,
 
 auto is_builtin_materialized_channel(std::string_view channel) -> bool {
     return channel == "01" || channel == "03" || channel == "08" || channel == "09" ||
-           channel == "04" || channel == "06" || channel == "07" || channel == "0A";
+           channel == "04" || channel == "06" || channel == "07" || channel == "0A" || channel == "SC";
 }
 
 template <typename Diagnose>
@@ -2567,6 +2602,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 
     std::map<std::string, signed_rational_t, std::less<>> extended_bpms;
     std::map<std::string, signed_rational_t, std::less<>> stop_definitions;
+    std::map<std::string, signed_rational_t, std::less<>> scroll_definitions;
     std::optional<std::pair<const bms_control_node_t*, signed_rational_t>> initial_bpm;
     std::vector<root_channel_line_t> channel_lines;
     std::vector<std::string> used_playable_channels;
@@ -2575,7 +2611,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 
     auto statement_context = active_statement_scan_context_t{
         song, chart, result, ids, options, resource_ids, last_measure_length_order,
-        ordered_metadata_fields, ordered_metadata_source_orders, extended_bpms, stop_definitions,
+        ordered_metadata_fields, ordered_metadata_source_orders, extended_bpms, stop_definitions, scroll_definitions,
         initial_bpm, channel_lines, used_playable_channels, player_header, octave_fp_header,
         ensure_measure, line_diagnostic, add_resource};
     collect_active_statement_data(statement_context, active_statements);
@@ -2599,7 +2635,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         std::map<std::uint64_t, std::vector<long_note_endpoint_t>>{};
     auto channel_materializer = bms_channel_materializer_t{.chart = chart, .song = song, .result = result,
         .ids = ids, .resource_ids = resource_ids, .extended_bpms = extended_bpms,
-        .stop_definitions = stop_definitions, .selected_profile = selected_profile,
+        .stop_definitions = stop_definitions, .scroll_definitions = scroll_definitions, .selected_profile = selected_profile,
         .long_note_endpoints = long_note_endpoints};
     auto incomplete_long_note_lanes = std::set<std::uint64_t>{};
     for (const auto& channel : unmaterialized_long_note_channels) {

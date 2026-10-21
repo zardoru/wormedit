@@ -1,3 +1,4 @@
+#include "fixture_encoding.h"
 #include "sys/project_open.h"
 
 #include <wormedit/formats/bms.h>
@@ -18,6 +19,7 @@
 #include <vector>
 
 namespace {
+using wormedit::test::explicit_fixture_encoding;
 
 using wormedit::conversion_diagnostic_code_t;
 using wormedit::diagnostic_severity_t;
@@ -42,16 +44,7 @@ auto read_text(const std::filesystem::path& path) -> std::string {
     return {std::istreambuf_iterator<char>{input}, {}};
 }
 
-auto bms_encoding(const std::filesystem::path& path) -> std::optional<wormedit::text_encoding_t> {
-    using wormedit::text_encoding_t;
-    static const std::map<std::string, text_encoding_t> choices{
-        {"cp932-shift-jis.bms", text_encoding_t::cp932},
-        {"euc-kr.bms", text_encoding_t::euc_kr},
-        {"cp949-extension.bms", text_encoding_t::cp949},
-        {"windows-1252.bms", text_encoding_t::windows_1252}};
-    const auto found = choices.find(path.filename().string());
-    return found == choices.end() ? std::nullopt : std::optional{found->second};
-}
+
 
 // Mirrors the fixture inventory: BMS-family files need an explicit lane
 // profile and encoding choice, legacy-negative StepMania files an explicit
@@ -63,7 +56,7 @@ auto load_fixture(const std::filesystem::path& path) -> std::optional<wormedit::
     if (extension == ".bms" || extension == ".bme" || extension == ".bml" || extension == ".pms") {
         wormedit::bms_parse_options_t options;
         options.file_extension = extension;
-        options.encoding_override = bms_encoding(path);
+        options.encoding_override = explicit_fixture_encoding(path);
         options.lane_profile_id = extension == ".pms"   ? "pms-standard-9button"
                                   : extension == ".bme" ? "bme-7k-outside-scratch"
                                                         : "bms-5k-outside-scratch-free-zone";

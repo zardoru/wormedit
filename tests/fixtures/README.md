@@ -58,3 +58,20 @@ The complete built-in BMS-family lane-map matrix has a separate, smaller [profil
 inventory](bms/profiles/README.md). Load that inventory only for lane-profile or BMS dialect work.
 
 The audio directory contains synthetic tones, a polyphonic source, silence, and a longer seek/stream sample; it does not contain recorded audio. The corpus does not yet contain clipboard captures, exhaustive automatic BMS profile-detection combinations, or a full published BMSON sample with media. The synthetic video fixture is inventoried separately under `video/`. No fixture should be described as passing a reader/writer test until a harness asserts its expected semantics.
+
+### BMS player export profiles (T-282)
+
+Paired `bms/export-{beatoraja,lr2}-{lnmode,scroll,preview,timing,encoding}.bms` fixtures cover LNMODE 2, SCROLL/SC, PREVIEW, classic extended BPM/STOP and UTF-8-BOM versus CP932 Japanese text. LR2 counterparts omit unsupported extensions; exporting the modern source to LR2 rejects with a classified loss rather than silently producing those counterparts. The [pinned source audit](../../docs/references/bms-export-profiles.md) records the player decoder and BOM evidence.
+
+| Fixture | Expected profile behavior |
+|---|---|
+| `bms/export-beatoraja-lnmode.bms` | LNMODE 2 is modern; the classic counterpart omits that extension. |
+| `bms/export-beatoraja-scroll.bms` | SCROLL01/SC carries 0.5 in the modern source; classic has no scroll directive. |
+| `bms/export-beatoraja-preview.bms` | PREVIEW names the modern preview asset; classic has none. |
+| `bms/export-beatoraja-timing.bms` | Both profiles retain extended BPM 180 and STOP 96. |
+| `bms/export-beatoraja-encoding.bms` | The same Japanese title uses UTF-8 BOM for beatoraja and CP932 for LR2. |
+| `bms/export-lr2-lnmode.bms` | LNMODE 2 is modern; the classic counterpart omits that extension. |
+| `bms/export-lr2-scroll.bms` | SCROLL01/SC carries 0.5 in the modern source; classic has no scroll directive. |
+| `bms/export-lr2-preview.bms` | PREVIEW names the modern preview asset; classic has none. |
+| `bms/export-lr2-timing.bms` | Both profiles retain extended BPM 180 and STOP 96. |
+| `bms/export-lr2-encoding.bms` | The same Japanese title uses UTF-8 BOM for beatoraja and CP932 for LR2. |

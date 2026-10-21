@@ -1,3 +1,4 @@
+#include "bms_timing_directive.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
@@ -206,15 +207,12 @@ auto generated_or_channel_token(std::string_view token) -> bool {
         upper == "DEF") {
         return true;
     }
+    if (bms_timing_directive_t::from(upper)) return true;
     const auto is_base36 = [](char value) { return is_base36_digit(value); };
     if ((upper.size() == 5 && upper.starts_with("WAV") && is_base36(upper[3]) &&
          is_base36(upper[4])) ||
         (upper.size() == 5 && upper.starts_with("BMP") && is_base36(upper[3]) &&
-         is_base36(upper[4])) ||
-        (upper.size() == 5 && upper.starts_with("BPM") && is_base36(upper[3]) &&
-         is_base36(upper[4])) ||
-        (upper.size() == 6 && upper.starts_with("STOP") && is_base36(upper[4]) &&
-         is_base36(upper[5]))) {
+         is_base36(upper[4]))) {
         return true;
     }
     return upper.size() == 5 && upper[0] >= '0' && upper[0] <= '9' && upper[1] >= '0' &&
@@ -224,35 +222,112 @@ auto generated_or_channel_token(std::string_view token) -> bool {
 
 using text_util::is_valid_utf8;
 
-auto retained_source_bytes(const song_document_t& song, const chart_document_t& chart)
-    -> std::shared_ptr<const std::vector<std::byte>> {
-    const auto find = [](const std::vector<format_metadata_t>& groups)
-        -> std::shared_ptr<const std::vector<std::byte>> {
-        const auto group = std::ranges::find_if(groups, [](const auto& candidate) {
-            return candidate.family == format_family_t::bms &&
-                   candidate.encoding.unchanged_since_import &&
-                   candidate.encoding.original_bytes != nullptr;
-        });
-        return group == groups.end() ? nullptr : group->encoding.original_bytes;
-    };
-    if (auto bytes = find(chart.metadata.format_groups); bytes)
-        return bytes;
-    return find(song.metadata.format_groups);
-}
+struct bms_source_t {
+    std::shared_ptr<const std::vector<std::byte>> bytes;
+    text_encoding_t encoding{};
+    auto operator==(const bms_source_t&) const -> bool = default;
+    static auto from(const song_document_t& song, const chart_document_t& chart, bool unchanged)
+        -> std::optional<bms_source_t> {
+        for (const auto* groups : {&chart.metadata.format_groups, &song.metadata.format_groups})
+            for (const auto& group : *groups)
+                if (group.family == format_family_t::bms && group.encoding.original_bytes &&
+                    (!unchanged || group.encoding.unchanged_since_import))
+                    return bms_source_t{.bytes = group.encoding.original_bytes,
+                        .encoding = group.encoding.user_override.value_or(group.encoding.detected)};
+        return std::nullopt;
+    }
+};
 
 auto source_provenance_bytes(const song_document_t& song, const chart_document_t& chart)
     -> std::shared_ptr<const std::vector<std::byte>> {
-    const auto find = [](const std::vector<format_metadata_t>& groups)
-        -> std::shared_ptr<const std::vector<std::byte>> {
-        const auto group = std::ranges::find_if(groups, [](const auto& candidate) {
-            return candidate.family == format_family_t::bms &&
-                   candidate.encoding.original_bytes != nullptr;
-        });
-        return group == groups.end() ? nullptr : group->encoding.original_bytes;
+    const auto source = bms_source_t::from(song, chart, false);
+    return source ? source->bytes : nullptr;
+}
+
+auto encode_bms_text(std::string_view utf8, text_encoding_t encoding) -> std::string {
+    auto encoded = encode_normalized_bms(utf8, encoding);
+    if (has_unsupported_codec_error(encoded))
+        fail(bms_write_diagnostic_code_t::unsupported_encoding,
+             "requested " + std::string(text_encoding_label(encoding)) + " output encoding is unavailable",
+             "$.output_encoding");
+    if (!encoded)
+        fail(bms_write_diagnostic_code_t::unrepresentable_text,
+             "BMS text cannot be represented as " + std::string(text_encoding_label(encoding)) +
+             " near UTF-8 byte " + std::to_string(encoded.error().error_offset), "$.output_encoding");
+    return std::move(*encoded);
+}
+
+auto write_retained_bms_source(const bms_source_t& source, const bms_write_options_t& options)
+    -> std::string {
+    const auto raw = std::string_view(reinterpret_cast<const char*>(source.bytes->data()), source.bytes->size());
+    const bool modern = options.profile == bms_export_profile_t::beatoraja;
+    if ((modern && (!options.convert_untouched_source_to_utf8 || source.encoding == text_encoding_t::ascii ||
+                    source.encoding == text_encoding_t::utf8)) ||
+        (!modern && (source.encoding == text_encoding_t::ascii || source.encoding == text_encoding_t::cp932)))
+        return std::string(raw);
+    auto decoded = decode_bms_text(raw, source.encoding);
+    if (!decoded)
+        fail(bms_write_diagnostic_code_t::unrepresentable_text,
+             "retained BMS source could not be decoded for the selected profile", "$.source");
+    constexpr std::string_view bom = "\xef\xbb\xbf";
+    if (!decoded->starts_with(bom)) decoded->insert(0, bom);
+    return encode_bms_text(*decoded, modern ? text_encoding_t::utf8 : text_encoding_t::cp932);
+}
+
+auto is_lr2_command(std::string_view command) -> bool {
+    if (command.empty()) return true; // blank/comment source lines
+    if (command.front() >= '0' && command.front() <= '9' && generated_or_channel_token(command)) {
+        const auto channel = command.substr(3);
+        return channel == "01" || channel == "02" || channel == "03" || channel == "04" ||
+            channel == "06" || channel == "07" || channel == "08" || channel == "09" ||
+            channel == "0A" || (((channel[0] >= '1' && channel[0] <= '6') ||
+                                channel[0] == 'D' || channel[0] == 'E') &&
+                               channel[1] >= '1' && channel[1] <= '9');
+    }
+    if (const auto* directive = bms_timing_directive_t::from(command))
+        return directive->name != "SCROLL";
+    if ((command.starts_with("WAV") || command.starts_with("BMP")) && command.size() == 5 &&
+        generated_or_channel_token(command)) return true;
+    constexpr std::array classic{"PLAYER", "TITLE", "SUBTITLE", "ARTIST", "SUBARTIST", "GENRE",
+        "BPM", "PLAYLEVEL", "RANK", "DEFEXRANK", "TOTAL", "VOLWAV", "STAGEFILE", "BANNER",
+        "BACKBMP", "COMMENT", "DIFFICULTY", "LNTYPE", "LNOBJ", "BGA", "PATH_WAV", "MIDIFILE"};
+    return std::ranges::find(classic, command) != classic.end();
+}
+
+void validate_lr2_statement(const bms_control_node_t& node) {
+    if (node.kind == bms_control_kind_t::raw_statement &&
+        !is_lr2_command(ascii_upper(node.command_token)))
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent #" + node.command_token,
+             "$.charts[].bms_control_tree[" + std::to_string(node.source_order) + "]");
+    if (node.kind == bms_control_kind_t::switch_block || node.kind == bms_control_kind_t::set_switch ||
+        node.kind == bms_control_kind_t::skip)
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent SWITCH/SETSWITCH/SKIP control flow", "$.charts[].bms_control_tree");
+    for (const auto& child : node.children) validate_lr2_statement(child);
+}
+
+void validate_bms_profile(const song_document_t& song, const chart_document_t& chart,
+    const bms_write_options_t& options) {
+    if (options.profile != bms_export_profile_t::lr2_compatible) return;
+    if (options.output_encoding && *options.output_encoding != text_encoding_t::cp932)
+        fail(bms_write_diagnostic_code_t::unsupported_encoding,
+             "lr2_compatible requires CP932 output", "$.output_encoding");
+    if (!chart.scrolls.empty() || chart.beat_zero_audio_offset_seconds.numerator != 0)
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent scroll changes or the editor OFFSET extension", "$.charts[]");
+    const auto validate_groups = [](const auto& groups) {
+        for (const auto& group : groups) if (group.family == format_family_t::bms)
+            for (const auto& [token, value] : group.ordered_fields) {
+                (void)value;
+                if (!is_lr2_command(ascii_upper(token)))
+                    fail(bms_write_diagnostic_code_t::lossy_transform,
+                         "lr2_compatible cannot represent #" + token, "$.metadata.format_groups[].ordered_fields");
+            }
     };
-    if (auto bytes = find(chart.metadata.format_groups); bytes)
-        return bytes;
-    return find(song.metadata.format_groups);
+    validate_groups(song.metadata.format_groups);
+    validate_groups(chart.metadata.format_groups);
+    if (chart.bms_control_tree) validate_lr2_statement(*chart.bms_control_tree);
 }
 
 auto exact_decimal(std::uint64_t numerator, std::uint64_t denominator, std::string path)
@@ -299,11 +374,10 @@ auto exact_decimal(std::uint64_t numerator, std::uint64_t denominator, std::stri
     return output;
 }
 
-auto exact_offset_decimal(signed_rational_t value) -> std::string {
-    constexpr std::string_view path = "$.charts[].beat_zero_audio_offset_seconds";
+auto exact_signed_decimal(signed_rational_t value, std::string path) -> std::string {
     if (value.denominator == 0) {
         fail(bms_write_diagnostic_code_t::unrepresentable_number,
-             "BMS OFFSET has an invalid denominator", std::string(path));
+             "BMS decimal has an invalid denominator", std::string(path));
     }
     if (value.numerator == 0) return "0";
     const bool negative = value.numerator < 0;
@@ -629,23 +703,15 @@ auto is_measure_length_command(std::string_view token) -> std::optional<std::siz
 }
 
 auto is_timing_command(std::string_view token) -> bool {
-    if (token == "BPM" ||
-        (token.size() == 5 && token.starts_with("BPM") && is_base36_digit(token[3]) &&
-         is_base36_digit(token[4])) ||
-        (token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
-         is_base36_digit(token[5]))) {
-        return true;
-    }
+    if (token == "BPM" || bms_timing_directive_t::from(token)) return true;
     return token.size() == 5 && token[0] >= '0' && token[0] <= '9' && token[1] >= '0' &&
            token[1] <= '9' && token[2] >= '0' && token[2] <= '9' &&
-           (token.substr(3) == "03" || token.substr(3) == "08" || token.substr(3) == "09");
+           (token.substr(3) == "03" || std::ranges::any_of(bms_timing_directives,
+               [token](const auto& directive) { return token.substr(3) == directive.channel; }));
 }
 
 auto is_timing_declaration(std::string_view token) -> bool {
-    return (token.size() == 5 && token.starts_with("BPM") && is_base36_digit(token[3]) &&
-            is_base36_digit(token[4])) ||
-           (token.size() == 6 && token.starts_with("STOP") && is_base36_digit(token[4]) &&
-            is_base36_digit(token[5]));
+    return bms_timing_directive_t::from(token) != nullptr;
 }
 
 auto source_line_for_node(const bms_control_node_t& node,
@@ -1158,7 +1224,7 @@ void validate_unsupported_chart_features(const chart_document_t& chart,
         });
     };
     if ((!can_project_timing && unsupported(chart.pauses)) || unsupported(chart.warps) ||
-        unsupported(chart.scrolls) || unsupported(chart.speeds) || unsupported(chart.kiai) ||
+        (!can_project_timing && unsupported(chart.scrolls)) || unsupported(chart.speeds) || unsupported(chart.kiai) ||
         !chart.timing_anchors.empty() || !chart.sections.empty() || !chart.sound_channels.empty())
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "chart contains timing or media features outside the normalized writer slice",
@@ -1769,7 +1835,7 @@ auto timing_identifier(timing_identifier_registry_t& registry, signed_rational_t
              "BMS timing exceeds 1295 " + registry.path, registry.path);
     const auto id = base36_id(registry.next++);
     declarations.push_back("#" + registry.directive + id + " " +
-                           exact_decimal(value, registry.path));
+                           exact_signed_decimal(value, registry.path));
     registry.identifiers.emplace_back(value, id);
     return id;
 }
@@ -1851,6 +1917,17 @@ void append_projected_pauses(const chart_document_t& chart, const measure_index_
     }
 }
 
+void append_projected_scrolls(const chart_document_t& chart, const measure_index_t& index,
+    std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines,
+    bms_timing_projection_t& result) {
+    timing_identifier_registry_t ids{.directive = "SCROLL", .path = "$.charts[].scrolls[].multiplier"};
+    for (const auto& scroll : chart.scrolls) {
+        const auto identifier = timing_identifier(ids, scroll.multiplier, result.declarations);
+        add_timing_channel_event(chart, index, lines, scroll.position, "SC", identifier,
+                                "$.charts[].scrolls[" + std::to_string(scroll.id.value) + "]");
+    }
+}
+
 auto bms_timing_projection_t::from(
     const chart_document_t& chart, const measure_index_t& index,
     std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines)
@@ -1858,6 +1935,7 @@ auto bms_timing_projection_t::from(
     bms_timing_projection_t result;
     append_projected_bpms(chart, index, lines, result);
     append_projected_pauses(chart, index, lines, result);
+    append_projected_scrolls(chart, index, lines, result);
     return result;
 }
 
@@ -3113,6 +3191,10 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     auto branch_direct_bpm_edits = collect_branch_direct_bpm_edits(
         chart, branch_tree, active_branch_orders, branch_source_bytes);
     validate_retained_pauses(chart, branch_tree);
+    if (!can_project_timing && !chart.scrolls.empty())
+        fail(bms_write_diagnostic_code_t::unsupported_branch_policy,
+             "normalized scroll export in a retained BMS program requires explicit flatten_active",
+             "$.charts[].scrolls");
 
     validate_unsupported_chart_features(chart, can_project_timing, branch_tree,
                                         diagnostics);
@@ -3181,7 +3263,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 
     const auto player_value = bms_player_value(layout);
     auto bms_metadata_groups = collect_bms_metadata_groups(song, chart);
-    const auto offset_decimal = exact_offset_decimal(chart.beat_zero_audio_offset_seconds);
+    const auto offset_decimal = exact_signed_decimal(chart.beat_zero_audio_offset_seconds, "$.charts[].beat_zero_audio_offset_seconds");
     if (chart.beat_zero_audio_offset_seconds.numerator != 0)
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
              "OFFSET is a Wormedit BMS extension and may be ignored by other players",
@@ -3264,6 +3346,15 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 
 } // namespace
 
+auto bms_write_options_t::from_profile(std::string_view name) -> std::optional<bms_write_options_t> {
+    constexpr std::array profiles{
+        std::pair{std::string_view{"beatoraja"}, bms_export_profile_t::beatoraja},
+        std::pair{std::string_view{"lr2_compatible"}, bms_export_profile_t::lr2_compatible}};
+    const auto found = std::ranges::find(profiles, name, &decltype(profiles)::value_type::first);
+    if (found == profiles.end()) return std::nullopt;
+    return bms_write_options_t{.profile = found->second};
+}
+
 auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
     bms_write_outcome_t result{};
     try {
@@ -3292,37 +3383,21 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                  "$.charts[].sv_recipes");
         }
         chart = &*baked_chart.value;
+        validate_bms_profile(song, *chart, options);
 
         if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
             song.charts.size() == 1 && !had_active_recipes &&
             chart->beat_zero_audio_offset_seconds.numerator == 0 &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
-            if (const auto source = retained_source_bytes(song, *chart); source) {
-                result.value =
-                    std::string(reinterpret_cast<const char*>(source->data()), source->size());
+            if (const auto source = bms_source_t::from(song, *chart, true)) {
+                result.value = write_retained_bms_source(*source, options);
                 return result;
             }
         }
         auto normalized = normalized_write(song, *chart, options, result.diagnostics);
-        if (!options.output_encoding.has_value()) {
-            result.value = std::move(normalized);
-            return result;
-        }
-        auto encoded = encode_normalized_bms(normalized, *options.output_encoding);
-        if (has_unsupported_codec_error(encoded)) {
-            fail(bms_write_diagnostic_code_t::unsupported_encoding,
-                 "requested " + std::string(text_encoding_label(*options.output_encoding)) +
-                     " output encoding is unavailable",
-                 "$.output_encoding");
-        }
-        if (!encoded.has_value()) {
-            fail(bms_write_diagnostic_code_t::unrepresentable_text,
-                 "normalized BMS text cannot be represented as " +
-                     std::string(text_encoding_label(*options.output_encoding)) + " near UTF-8 byte " +
-                     std::to_string(encoded.error().error_offset),
-                 "$.output_encoding");
-        }
-        result.value = std::move(*encoded);
+        const auto encoding = options.output_encoding.value_or(
+            options.profile == bms_export_profile_t::beatoraja ? text_encoding_t::utf8 : text_encoding_t::cp932);
+        result.value = encode_bms_text(normalized, encoding);
     } catch (const write_failure_t& failure) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, failure.code, failure.message, failure.path});

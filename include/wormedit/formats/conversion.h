@@ -4,6 +4,7 @@
 #include <wormedit/core/job_progress.h>
 #include <stop_token>
 #include <wormedit/formats/slice_spans.h>
+#include <wormedit/formats/bms_export_profile.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -39,6 +40,8 @@ struct conversion_request_t {
     slice_span_options_t slice_options;
     // BMS filename choice, independent of the lane profile.
     std::string bms_output_extension;
+    // Independent of target_profile's existing BMS lane-map selection.
+    std::optional<bms_export_profile_t> bms_profile;
 };
 
 enum class conversion_stage_t {

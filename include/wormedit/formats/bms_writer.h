@@ -1,10 +1,12 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/formats/bms_export_profile.h>
 
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
@@ -36,19 +38,24 @@ enum class bms_branch_policy_t {
 };
 
 struct bms_write_options_t {
+    [[nodiscard]] static auto from_profile(std::string_view name) -> std::optional<bms_write_options_t>;
+    bms_export_profile_t profile{bms_export_profile_t::beatoraja};
     // BMS-family files contain one chart. Omit this only for a single-chart song.
     std::optional<chart_id_t> chart;
     // Select a built-in lane profile when the chart has no authored BMS channel map.
     std::optional<std::string> lane_profile_id;
     // Original bytes are emitted only while their import provenance is still unchanged.
     bool preserve_unchanged_source{true};
+    // Re-encode untouched legacy source as UTF-8 without normalizing its lines.
+    // Disable to retain original import bytes under the same source profile.
+    bool convert_untouched_source_to_utf8{true};
     // Preserve actual control flow, not the original placement of ordinary timing.
     // Without control flow, edited BPM/STOP events are emitted normally. Discarding
     // control flow requires explicit flatten_active and resolved branch choices.
     bms_branch_policy_t branch_policy{bms_branch_policy_t::preserve_tree};
     // Omit to retain exact unchanged source bytes when possible and otherwise
-    // emit UTF-8 with BOM. Supplying an encoding forces normalized output in
-    // that encoding; unknown is rejected and legacy codecs require iconv.
+    // use the player default (UTF-8 BOM for beatoraja, CP932 for LR2).
+    // An explicit low-level override forces normalization; LR2 requires CP932.
     std::optional<text_encoding_t> output_encoding;
     // BMS channel payloads are bounded by both this slot count and the parser's line limit.
     std::size_t max_slots_per_line{500'000};

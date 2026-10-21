@@ -4,6 +4,7 @@
 #include "sys/project_open.h"
 
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/conversion_publication.h>
 
 #include <nlohmann/json.hpp>
@@ -126,6 +127,11 @@ void parse_policies(const json& object, conversion_request_t& conversion) {
     if (const auto name = string_field(object, "branches"); !name.empty())
         conversion.branches = lookup(branches, name, "branches");
     conversion.encoding = parse_encoding(string_field(object, "encoding"));
+    if (const auto name = string_field(object, "bms_profile"); !name.empty()) {
+        const auto profile = bms_write_options_t::from_profile(name);
+        if (!profile) throw request_error_t{"unknown BMS player profile: " + name};
+        conversion.bms_profile = profile->profile;
+    }
     conversion.overwrite = is_field_true(object, "overwrite");
     if (const auto found = object.find("stepmania"); found != object.end() && !found->is_null())
         conversion.stepmania = parse_stepmania_policy(*found);

@@ -1,3 +1,4 @@
+#include "fixture_encoding.h"
 #include "sys/project_open.h"
 
 #include <wormedit/core/interaction_dispatch.h>
@@ -19,6 +20,7 @@
 #include <vector>
 
 namespace {
+using wormedit::test::explicit_fixture_encoding;
 
 auto positive_chart_fixtures() -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> paths;
@@ -32,17 +34,7 @@ auto positive_chart_fixtures() -> std::vector<std::filesystem::path> {
     return paths;
 }
 
-auto explicit_fixture_encoding(const std::filesystem::path& path)
-    -> std::optional<wormedit::text_encoding_t> {
-    using wormedit::text_encoding_t;
-    static const std::map<std::string, text_encoding_t> choices{
-        {"cp932-shift-jis.bms", text_encoding_t::cp932},
-        {"euc-kr.bms", text_encoding_t::euc_kr},
-        {"cp949-extension.bms", text_encoding_t::cp949},
-        {"windows-1252.bms", text_encoding_t::windows_1252}};
-    const auto found = choices.find(path.filename().string());
-    return found == choices.end() ? std::nullopt : std::optional{found->second};
-}
+
 
 auto explicit_fixture_profile(const std::filesystem::path& path) -> std::optional<std::string> {
     static const std::map<std::string, std::string> choices{

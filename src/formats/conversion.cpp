@@ -541,6 +541,7 @@ auto prepare_bms_slice_layout(conversion_context_t& context, chart_document_t& c
         const auto profiles = built_in_bms_lane_profiles();
         const auto found = std::ranges::find_if(profiles, [&](const auto& descriptor) {
             return (context.request.target_profile.empty() ||
+                    bms_write_options_t::from_profile(context.request.target_profile).has_value() ||
                     descriptor.profile.layout.profile_id == context.request.target_profile) &&
                    is_bms_lane_layout_compatible(segment.layout, descriptor.profile.layout);
         });
@@ -619,6 +620,23 @@ auto has_bms_tree(const song_document_t& song, const std::vector<chart_id_t>& ch
     });
 }
 
+auto make_bms_reimport_options(const conversion_request_t& request, const conversion_output_t& output)
+    -> bms_parse_options_t {
+    bms_parse_options_t options;
+    options.file_extension = output.suggested_filename.substr(
+        output.suggested_filename.find_last_of('.'));
+    const auto player = bms_write_options_t::from_profile(request.target_profile);
+    if (!request.target_profile.empty() && !player)
+        options.lane_profile_id = request.target_profile;
+    if (request.bms_profile.value_or(player ? player->profile : bms_export_profile_t::beatoraja) ==
+        bms_export_profile_t::lr2_compatible)
+        options.encoding_override = text_encoding_t::cp932;
+    if (request.encoding && *request.encoding != text_encoding_t::ascii &&
+        *request.encoding != text_encoding_t::utf8)
+        options.encoding_override = request.encoding;
+    return options;
+}
+
 auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
                        const stepmania_export_policy_outcome_t* stepmania_options) -> bool {
     switch (output.target) {
@@ -631,14 +649,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
         break;
     }
     case format_family_t::bms: {
-        bms_parse_options_t options;
-        options.file_extension = output.suggested_filename.substr(
-            output.suggested_filename.find_last_of('.'));
-        if (!context.request.target_profile.empty())
-            options.lane_profile_id = context.request.target_profile;
-        if (context.request.encoding && *context.request.encoding != text_encoding_t::ascii &&
-            *context.request.encoding != text_encoding_t::utf8)
-            options.encoding_override = context.request.encoding;
+        auto options = make_bms_reimport_options(context.request, output);
         const auto parsed = parse_bms_bytes(byte_span(output.bytes), std::move(options));
         if (parsed.value.song && parsed.ok())
             return true;
@@ -711,9 +722,10 @@ auto validate_request_policies(conversion_context_t& context, const song_documen
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "StepMania export policy was supplied for a different target");
     }
-    if (context.request.target != format_family_t::bms && context.request.encoding) {
+    if (context.request.target != format_family_t::bms &&
+        (context.request.encoding || context.request.bms_profile)) {
         return reject(conversion_diagnostic_code_t::invalid_request,
-                      "Output text encoding is currently a BMS-family policy");
+                      "Output text encoding and BMS player profiles are BMS-family policies");
     }
     if (context.request.target == format_family_t::native_project &&
         (context.request.chart || !context.request.charts.empty())) {
@@ -813,16 +825,24 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
 
 void write_bms_outputs(conversion_context_t& context, const song_document_t& prepared,
                        const std::vector<chart_id_t>& charts) {
+    const auto player = bms_write_options_t::from_profile(context.request.target_profile);
+    if (player && context.request.bms_profile && player->profile != *context.request.bms_profile) {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+            conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+            context.request.target, context.request.chart, "Conflicting BMS player profiles");
+        return;
+    }
     for (const auto chart_id : charts) {
         if (!context.can_continue()) return;
-        bms_write_options_t options;
+        auto options = player.value_or(bms_write_options_t{});
+        options.profile = context.request.bms_profile.value_or(options.profile);
         options.chart = chart_id;
         options.preserve_unchanged_source = context.request.staged_assets.empty();
         options.branch_policy = context.request.branches == branch_projection_t::preserve_tree
                                     ? bms_branch_policy_t::preserve_tree
                                     : bms_branch_policy_t::flatten_active;
         options.output_encoding = context.request.encoding;
-        if (!context.request.target_profile.empty() &&
+        if (!context.request.target_profile.empty() && !player &&
             selected_chart(prepared, chart_id)->source_family != format_family_t::bmson) {
             options.lane_profile_id = context.request.target_profile;
         }
@@ -830,7 +850,7 @@ void write_bms_outputs(conversion_context_t& context, const song_document_t& pre
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
         const auto* chart = selected_chart(prepared, chart_id);
-        const auto profile = context.request.target_profile.empty() && !chart->lane_layouts.empty()
+        const auto profile = (context.request.target_profile.empty() || player) && !chart->lane_layouts.empty()
                                  ? chart->lane_layouts.front().layout.profile_id
                                  : context.request.target_profile;
         const auto extension = context.request.bms_output_extension.empty()

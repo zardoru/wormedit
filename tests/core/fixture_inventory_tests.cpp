@@ -12,6 +12,16 @@ namespace {
 
 constexpr std::array fixture_paths{
     "bms/bgm-columns-per-measure.bms",
+    "bms/export-beatoraja-lnmode.bms",
+    "bms/export-beatoraja-scroll.bms",
+    "bms/export-beatoraja-preview.bms",
+    "bms/export-beatoraja-timing.bms",
+    "bms/export-beatoraja-encoding.bms",
+    "bms/export-lr2-lnmode.bms",
+    "bms/export-lr2-scroll.bms",
+    "bms/export-lr2-preview.bms",
+    "bms/export-lr2-timing.bms",
+    "bms/export-lr2-encoding.bms",
     "bms/control-flow-fixed-values.bms",
     "bms/control-flow-mixed.bms",
     "bms/custom-channel.bme",

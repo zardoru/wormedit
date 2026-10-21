@@ -2,12 +2,24 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-282** (2026-10-21): BMS defaults to beatoraja with BOM-prefixed UTF-8
+normalization and optional untouched-source transcoding; explicit LR2 uses CP932 and
+classified extension refusals. Player policy is independent of lane mapping in conversion
+and CLI. SCROLL/SC round-trips exact signed multipliers; recipe output follows the same
+profile checks. GATE passes **4,400/4,400**, build, whitespace and eight-TU complexity;
+the final Clang preset build/tests also pass **4,400/4,400**. Documentation **5/5**,
+BMS/loss filter **70/70**, focused profiles **92 assertions / 5 cases**. The pinned beatoraja
+decoder retains Japanese text, eight notes, and zero/negative scrolls in actual CLI exports.
+See [the card](../../docs/chart-editor-plan/tasks/export.md#t-282-add-a-beatoraja-bms-export-profile)
+for evidence and scoped limits. Both owner-requested cards are complete; no sequential
+follow-up is active.
+
 Completed **T-418** (2026-10-21): Project chart selection uses the shared bar with
 author/rating popovers, atomic selected Duplicate/Delete, confirmation and clear. Invalid
 ratings stay open with a reason; stale popovers and Escape publish nothing. GATE passes
 **4,395/4,395**, build, whitespace and eight-TU complexity; isolated wide/narrow captures
 were inspected. See [the card](../../docs/chart-editor-plan/tasks/project-charts.md#t-418-move-batch-metadata-edits-into-a-contextual-selection-bar).
-The next owner-requested card is **T-282**, beatoraja/LR2 BMS export profiles.
+The following owner-requested card, **T-282**, is complete as recorded above.
 
 Completed **T-251** (2026-10-21): the frontend rasterizes window-point geometry directly
 at backbuffer resolution, with SDL-scaled scissors and a logical-presentation fallback.

@@ -19,6 +19,7 @@
 #include <iterator>
 #include <limits>
 #include <span>
+#include <source_location>
 #include <string>
 #include <string_view>
 
@@ -2500,7 +2501,7 @@ TEST_CASE("BMS writer validates only the selected chart", "[unit][format][bms][w
     CHECK(written.ok());
 }
 
-TEST_CASE("BMS export bakes recipes before reporting unsupported regular scroll events",
+TEST_CASE("BMS export bakes SV recipes into supported SCROLL declarations",
           "[unit][format][bms][writer][sv-recipe]") {
     const auto imported = simple_chart();
     REQUIRE(imported.value.song.has_value());
@@ -2516,8 +2517,10 @@ TEST_CASE("BMS export bakes recipes before reporting unsupported regular scroll 
         .parameters = {.value_from = {2, 1}},
     });
     const auto written = wormedit::write_bms(song);
-    CHECK_FALSE(written.value.has_value());
-    CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+    REQUIRE(written.value);
+    CHECK(written.value->find("#SCROLL01 2") != std::string::npos);
+    const auto classic = wormedit::write_bms(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible});
+    CHECK(has_error(classic, wormedit::bms_write_diagnostic_code_t::lossy_transform));
 }
 
 namespace {
@@ -2800,7 +2803,9 @@ TEST_CASE("BMS warns when a measure has more BGM lines than BMSE allows",
 }
 
 namespace {
-template <typename T> void require_bgm_export(const T& value) {
+template <typename T> void require_bms_export(const T& value,
+    const std::source_location& where = std::source_location::current()) {
+    INFO("BMS export assertion at " << where.line());
     REQUIRE(static_cast<bool>(value));
 }
 
@@ -2827,30 +2832,30 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
     options.lane_profile_id = "bme-7k-outside-scratch";
     if (conditional) options.branch_choices = {{line_order(source, "#RANDOM 2"), 1}};
     auto imported = parse(source, options);
-    require_bgm_export(imported.value.song);
+    require_bms_export(imported.value.song);
     auto history = wormedit::document_history_t::from(*imported.value.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history,
+    require_bms_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     const auto native = wormedit::write_native_project(history.document);
-    require_bgm_export(native.value);
+    require_bms_export(native.value);
     const auto written = wormedit::write_bms(history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
-    require_bgm_export(written.value);
+    require_bms_export(written.value);
     CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
         return diagnostic.message.find("hold tail") != std::string::npos;
     }) == hold);
     if (conditional) options.branch_choices = {{line_order(*written.value, "#RANDOM 2"), 1}};
     const auto reparsed = parse(*written.value, options);
-    require_bgm_export(reparsed.value.song);
+    require_bms_export(reparsed.value.song);
     CHECK(conversion_chart_object_counts(reparsed.value.song->charts.front()) ==
           std::pair<std::size_t, std::size_t>{0, 1});
     CHECK(wormedit::write_native_project(history.document).value == native.value);
     if (conditional) {
         options.branch_choices.front().selected_value = 2;
         const auto inactive = parse(*written.value, options);
-        require_bgm_export(inactive.value.song);
+        require_bms_export(inactive.value.song);
         CHECK(conversion_chart_object_counts(inactive.value.song->charts.front()) ==
               std::pair<std::size_t, std::size_t>{1, 0});
     }
@@ -2860,11 +2865,11 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
           "[unit][format][bms][writer][t423-codec]") {
     auto imported = parse("#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00051:0101\n",
                           {.lane_profile_id = "bme-7k-outside-scratch"});
-    require_bgm_export(imported.value.song);
+    require_bms_export(imported.value.song);
     auto history = wormedit::document_history_t::from(*imported.value.song);
     const auto chart = history.document.charts.front().id;
     const std::array ids{history.document.charts.front().measures.front().notes.front().id};
-    require_bgm_export(wormedit::move_notes_to_bgm(history,
+    require_bms_export(wormedit::move_notes_to_bgm(history,
                                                  chart, ids, std::nullopt));
     wormedit::conversion_request_t request;
     request.target = wormedit::format_family_t::bms;
@@ -2877,4 +2882,113 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
     CHECK_FALSE(warning.has_errors());
     CHECK(warning.outputs.size() == 1);
     CHECK_FALSE(warning.diagnostics.empty());
+}
+
+TEST_CASE("BMS player profiles accept paired extension fixtures and reject LR2 losses", "[bms][writer][player-profile]") {
+    const std::string extension = GENERATE("lnmode", "scroll", "preview", "timing");
+    for (const std::string profile : {"beatoraja", "lr2"}) {
+        const auto source = read_fixture_text("bms/export-" + profile + "-" + extension + ".bms");
+        const auto imported = parse(source);
+        require_bms_export(imported.value.song);
+        const auto modern = wormedit::write_bms(*imported.value.song);
+        require_bms_export(modern.value);
+        require_bms_export(*modern.value == source);
+        auto options = *wormedit::bms_write_options_t::from_profile("lr2_compatible");
+        const auto classic = wormedit::write_bms(*imported.value.song, options);
+        const bool compatible = profile == "lr2" || extension == "timing";
+        require_bms_export(classic.value.has_value() == compatible);
+        if (compatible) {
+            require_bms_export(classic.value);
+            require_bms_export(*classic.value == source);
+        } else require_bms_export(has_error(classic, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+    }
+}
+
+TEST_CASE("BMS profiles preserve selected source bytes and transcode legacy Japanese by default", "[bms][writer][player-profile][encoding]") {
+    const auto legacy = read_fixture_text("bms/export-lr2-encoding.bms");
+    const auto utf8 = read_fixture_text("bms/export-beatoraja-encoding.bms");
+    const auto imported = parse(legacy, {.encoding_override = wormedit::text_encoding_t::cp932});
+    require_bms_export(imported.value.song);
+    const auto modern = wormedit::write_bms(*imported.value.song);
+    require_bms_export(modern.value);
+    require_bms_export(*modern.value == utf8);
+    wormedit::bms_write_options_t preserve{.convert_untouched_source_to_utf8 = false};
+    require_bms_export(wormedit::write_bms(*imported.value.song, preserve).value == legacy);
+    auto classic = *wormedit::bms_write_options_t::from_profile("lr2_compatible");
+    require_bms_export(wormedit::write_bms(*imported.value.song, classic).value == legacy);
+    const auto unicode = parse(utf8);
+    require_bms_export(unicode.value.song);
+    require_bms_export(wormedit::write_bms(*unicode.value.song, classic).value == legacy);
+    auto song = *unicode.value.song;
+    song.metadata.title = "Cannot encode 😀";
+    classic.preserve_unchanged_source = false;
+    classic.lane_profile_id = "bme-7k-outside-scratch";
+    const auto rejected = wormedit::write_bms(song, classic);
+    for (const auto& diagnostic : rejected.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_bms_export(has_error(rejected, wormedit::bms_write_diagnostic_code_t::unrepresentable_text));
+}
+
+TEST_CASE("BMS authored scrolls export and reimport exact SC channel multipliers", "[bms][writer][player-profile][scroll]") {
+    auto imported = parse(read_fixture_text("bms/export-beatoraja-scroll.bms"),
+                          {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_bms_export(imported.value.song);
+    auto& song = *imported.value.song;
+    auto& chart = song.charts.front();
+    require_bms_export(chart.measures.front().notes.size() == 1);
+    require_bms_export(chart.scrolls.size() == 1);
+    require_bms_export(chart.scrolls.front().multiplier == wormedit::signed_rational_t{1, 2});
+    chart.scrolls.front().multiplier = {-3, 4};
+    chart.scrolls.push_back({.id = wormedit::object_id_t{9999},
+        .position = {chart.measures.front().id, 0}, .multiplier = {0, 1}});
+    const auto written = wormedit::write_bms(song, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_bms_export(written.value);
+    require_bms_export(written.value->find("#SCROLL01 -0.75") != std::string::npos);
+    const auto reparsed = parse(*written.value, {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_bms_export(reparsed.value.song);
+    require_bms_export(reparsed.value.song->charts.front().measures.front().notes.size() == 1);
+    const auto& scrolls = reparsed.value.song->charts.front().scrolls;
+    require_bms_export(scrolls.size() == 2);
+    require_bms_export(scrolls[0].multiplier == wormedit::signed_rational_t{0, 1});
+    require_bms_export(scrolls[1].multiplier == wormedit::signed_rational_t{-3, 4});
+    require_bms_export(has_error(wormedit::write_bms(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible}),
+                    wormedit::bms_write_diagnostic_code_t::lossy_transform));
+}
+
+TEST_CASE("BMS conversion chooses player profiles without treating them as lane profiles", "[bms][writer][player-profile][conversion]") {
+    const std::string profile = GENERATE("beatoraja", "lr2_compatible");
+    const auto imported = parse(read_fixture_text("bms/export-lr2-timing.bms"));
+    require_bms_export(imported.value.song);
+    wormedit::conversion_request_t request{.target = wormedit::format_family_t::bms,
+        .target_profile = profile};
+    const auto converted = wormedit::convert_document(*imported.value.song, request);
+    require_bms_export(static_cast<bool>(converted));
+    require_bms_export(converted.outputs.size() == 1);
+    require_bms_export(converted.outputs.front().reimport_validated);
+    auto modern = parse(read_fixture_text("bms/export-beatoraja-preview.bms"));
+    require_bms_export(modern.value.song);
+    const auto preview = wormedit::convert_document(*modern.value.song, request);
+    require_bms_export(static_cast<bool>(preview) == (profile == "beatoraja"));
+    if (profile == "lr2_compatible") require_bms_export(preview.outputs.empty());
+}
+
+TEST_CASE("BMS player policy can be combined with an explicit lane map", "[bms][writer][player-profile][conversion]") {
+    const auto profile = GENERATE(wormedit::bms_export_profile_t::beatoraja,
+                                  wormedit::bms_export_profile_t::lr2_compatible);
+    const auto imported = parse(read_fixture_text("bms/export-beatoraja-encoding.bms"),
+                                {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_bms_export(imported.value.song);
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bms,
+        .target_profile = "bme-7k-outside-scratch", .encoding = profile == wormedit::bms_export_profile_t::beatoraja
+            ? wormedit::text_encoding_t::utf8 : wormedit::text_encoding_t::cp932,
+        .loss_policy = wormedit::loss_policy_t::warn, .bms_profile = profile};
+    const auto converted = wormedit::convert_document(*imported.value.song, request);
+    require_bms_export(converted);
+    require_bms_export(converted.outputs.size() == 1);
+    require_bms_export(converted.outputs.front().reimport_validated);
+    require_bms_export(converted.outputs.front().suggested_filename.ends_with(".bme"));
+    const auto reparsed = parse(converted.outputs.front().bytes,
+        {.encoding_override = request.encoding, .lane_profile_id = "bme-7k-outside-scratch"});
+    require_bms_export(reparsed.value.song);
+    require_bms_export(reparsed.value.song->charts.front().measures.front().notes.size() == 1);
 }

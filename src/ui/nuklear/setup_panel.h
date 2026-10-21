@@ -18,3 +18,7 @@ void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const wormedit::u
 // Abandon an in-progress row drag on native focus loss.
 void worm_ui_nuklear_cancel_setup_drag();
 void worm_ui_nuklear_set_project_directory(const char* path);
+
+// Consume a focused chart row's Alt+arrow, using the current table identity/stamp.
+bool worm_ui_nuklear_project_chart_shortcut(const wormedit::ui::setup_view_t& view,
+    const wormedit::ui::shortcut_event_t& key, wormedit::ui::workspace_action_t& action);

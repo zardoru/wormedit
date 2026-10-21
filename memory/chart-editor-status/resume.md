@@ -2,6 +2,12 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-417** (2026-10-21): focused chart rows reorder with Alt+Up/Down through the
+existing atomic command, and the old Move menu entries are removed. GATE passes **4,397/4,397**,
+build, whitespace and five-TU complexity; explicit core **2,418/2,418**, event harness **599/599**
+and affected production clang-tidy pass. Isolated Xvfb verifies keyboard reorder/Undo and
+the drag insertion line, commit and Undo. Next owner-requested card: **T-416**, hover/focus row actions.
+
 Completed **T-282** (2026-10-21): BMS defaults to beatoraja with BOM-prefixed UTF-8
 normalization and optional untouched-source transcoding; explicit LR2 uses CP932 and
 classified extension refusals. Player policy is independent of lane mapping in conversion

@@ -78,12 +78,25 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-417 Reorder charts by dragging the grip or with Alt+Up/Down
 
-- **Status:** partial (T-415 is done; stable grip reorder landed, Alt+arrow remains)
+- **Status:** done (2026-10-21; focused Alt+arrow, stable grip reorder and single-step Undo verified)
 - **Done so far:** The visible grip emits stable source/target/side identity; the core/sys reorder
   creates one Undo entry and rejects stale, missing, adjacent and cancelled drops. The event harness
   covers insertion and Escape/outside/stale cancellation.
-- **Remaining:** Bind Alt+Up/Down for the focused row, remove the old Move up/down context-menu
-  entries, and verify the insertion line plus keyboard path in isolated Xvfb.
+- **Completion:** Alt+Up/Down consumes admitted shortcuts for the focused stable chart ID,
+  using the current revision/session and existing UP/DOWN command path. Boundaries do nothing;
+  popup/modal, focus, session and removed-row guards publish nothing. The old Move up/down
+  menu items are removed. No core edit or drag lifecycle was duplicated.
+- **Verification:** GATE passes **4,397/4,397**, build, whitespace and five-TU complexity
+  (`/tmp/t417-gate.log`, `/tmp/wormedit-gate.hSuGZK`, `/tmp/wormedit-complexity.ng2cr6p8`).
+  Explicit core **2,418/2,418** and event harness **599/599** pass; focused project cases pass
+  **123 assertions / 10 cases**. Default clang-tidy passes on both affected production TUs
+  (`/tmp/t417-tidy-{setup,frontend}.log`). Isolated Xvfb captures inspected:
+  `/tmp/t417-keyboard-{up,undo}.png`, `/tmp/t417-drag-{preview,committed,undo}.png`.
+- **Supporting ownership (2026-10-21):** `src/ui/nuklear/frontend.cpp` and
+  `src/ui/nuklear/setup_panel.h` consume admitted shortcuts through the existing focus/modal
+  gates, before command dispatch. New `tests/ui/project_chart_actions_event_harness_tests.cpp`
+  and `tests/CMakeLists.txt` keep new feature regressions out of the general harness file;
+  `tests/ui/popup_menu_event_harness_tests.cpp` must use a remaining menu-only label.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** dragging a row's ⠿ grip shows an insertion line and moves the chart there in one undo step on release. Alt+↑/↓ moves the focused row by one.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp`, the core handler for `WORM_UI_PROJECT_CHART_UP`/`DOWN` (`grep -rn PROJECT_CHART_UP src/sys`).
@@ -92,7 +105,9 @@ Charts  1                                                     [ + ]   ← headin
   `src/sys/project_view.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, this card and
-  `memory/chart-editor-status/resume.md`.
+  `memory/chart-editor-status/resume.md`, `src/ui/nuklear/frontend.cpp`,
+  `src/ui/nuklear/setup_panel.h`, `tests/ui/project_chart_actions_event_harness_tests.cpp`,
+  `tests/CMakeLists.txt`, `tests/ui/popup_menu_event_harness_tests.cpp`.
 - **Steps:**
   1. Add a core command that moves a chart to an index, with a revision check, that rejects atomically. Test it.
   2. Send it through the standard wiring pattern as `WORM_UI_PROJECT_CHART_MOVE_TO`.

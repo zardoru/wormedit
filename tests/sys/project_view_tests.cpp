@@ -295,6 +295,24 @@ TEST_CASE("Project grip reorder resolves stable destination and creates one atom
     expect_project((chart_ids(history) == std::vector{original[2], original[0], original[1]}));
 }
 
+TEST_CASE("Project chart arrow actions move one row and undo in one step", "[project-view][chart-reorder]") {
+    const bool up = GENERATE(false, true);
+    auto history = reorder_history();
+    const auto original = chart_ids(history);
+    auto expected = original;
+    std::swap(expected[1], expected[up ? 0 : 2]);
+    project_chart_runtime_t runtime;
+    const auto result = apply_project_chart_ui_action(runtime, history,
+        {.kind = up ? WORM_UI_PROJECT_CHART_UP : WORM_UI_PROJECT_CHART_DOWN,
+         .document_revision = history.document.revision, .session_generation = runtime.session_generation,
+         .chart_id = original[1]});
+    require_project(result.applied);
+    expect_project(chart_ids(history) == expected);
+    expect_project(history.undo.size() == 1);
+    require_project(static_cast<bool>(undo_document_command(history)));
+    expect_project(chart_ids(history) == original);
+}
+
 TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adjacent drops unchanged", "[project-view][chart-reorder]") {
     auto history = reorder_history();
     const auto original = chart_ids(history);

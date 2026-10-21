@@ -3545,6 +3545,11 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     else g_compose_text_hotkey_count = 0;
     expose_shortcut_input(&action, compose_lane_focused,
                           compose_lane_focused ? view->compose.cursor->lane_id.value : 0);
+    if (view->active_tab == WORM_UI_WORKSPACE_TAB_SETUP && !context_invocation_blocked() &&
+        !command_menu_owns_input() && !worm_ui_nuklear_setup_popup_owns_input())
+        std::erase_if(action.shortcut_events, [&](const auto& key) {
+            return worm_ui_nuklear_project_chart_shortcut(view->setup, key, action);
+        });
     g_audio.offset_escape_pending = false;
     return action;
 }

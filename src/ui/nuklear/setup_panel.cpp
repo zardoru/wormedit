@@ -327,16 +327,12 @@ void render_row_menu(nk_context* context, const wormedit::ui::setup_view_t& view
     using namespace wormedit::ui::chrome;
     auto& menu = project_state.row_menu;
     if (!context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view, project_state.menu_chart),
-                            nk_vec2(220, context_menu_height(5)))) return;
+                            nk_vec2(220, context_menu_height(3)))) return;
     const auto id = project_state.menu_chart;
     if (context_menu_item(menu, context, "Open in Compose"))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, id);
     if (context_menu_item(menu, context, "Duplicate"))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_DUPLICATE, id);
-    if (context_menu_item(menu, context, "Move up"))
-        publish_chart_action(view, action, WORM_UI_PROJECT_CHART_UP, id);
-    if (context_menu_item(menu, context, "Move down"))
-        publish_chart_action(view, action, WORM_UI_PROJECT_CHART_DOWN, id);
     if (context_menu_item(menu, context, "Delete…")) {
         project_state.selection.pending_delete = id;
         project_state.selection.pending_delete_revision = view.document_revision;
@@ -1238,6 +1234,25 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
 }
 
 } // namespace
+
+bool worm_ui_nuklear_project_chart_shortcut(const wormedit::ui::setup_view_t& view,
+    const wormedit::ui::shortcut_event_t& key, wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit;
+    namespace chrome = ui::chrome;
+    const bool up = key.hid_usage == shortcut_key_t::up;
+    if (!view.visible || key.modifiers != WORM_UI_SHORTCUT_MODIFIER_ALT ||
+        (!up && key.hid_usage != shortcut_key_t::down) || project_state.drag.source ||
+        chrome::context_menu_focused_target() != chrome::KeyboardContextTarget::charts)
+        return false;
+    const auto id = chrome::context_menu_focused_object();
+    if (!id || id != project_state.menu_chart) return false;
+    const auto row = std::ranges::find_if(view.charts,
+        [id](const auto& item) { return item.chart_id.value == id; });
+    if (row == view.charts.end()) return false;
+    if ((up && row != view.charts.begin()) || (!up && std::next(row) != view.charts.end()))
+        publish_chart_action(view, action, up ? WORM_UI_PROJECT_CHART_UP : WORM_UI_PROJECT_CHART_DOWN, id);
+    return true;
+}
 
 bool worm_ui_nuklear_setup_popup_owns_input() {
     return project_state.selection.pending_delete != 0 || !project_state.delete_selection.empty() ||

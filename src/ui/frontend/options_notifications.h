@@ -44,7 +44,11 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY,
     WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION,
     WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME,
-    WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY
+    WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY,
+    WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE, WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
+    WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME, WORM_UI_OPTIONS_FIELD_ACCENT_VOLUME,
+    WORM_UI_OPTIONS_FIELD_COUNT_IN, WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
+    WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY
 } WormUiOptionsField;
 namespace wormedit::ui {
 struct options_diagnostic_view_t {
@@ -78,6 +82,11 @@ struct options_view_t {
     std::uint32_t keysound_budget_mib{};
     std::string_view osu_skin_directory;
     std::uint64_t rate_numerator{}, rate_denominator{};
+    std::string_view output_device;
+    std::uint32_t buffer_frames{}, metronome_volume{100}, accent_volume{100}, count_in_measures{}, audition_volume{100};
+    std::int32_t preview_latency_ms{};
+    std::vector<std::string> audio_devices;
+    bool audio_output_pending{};
     std::uint32_t p1_scratch_position{}, p2_scratch_position{};
     std::string_view field_scheme, current_field_layout_key, current_field_layout_name;
     std::string_view current_layout_field_scheme;
@@ -96,15 +105,18 @@ struct options_view_t {
         auto retained_players = std::move(players);
         auto retained_diagnostics = std::move(diagnostics);
         auto shortcuts = std::move(shortcut_rows);
+        auto devices = std::move(audio_devices);
         *this = {};
         current_field_layout_lanes = std::move(lanes);
         players = std::move(retained_players);
         diagnostics = std::move(retained_diagnostics);
         shortcut_rows = std::move(shortcuts);
+        audio_devices = std::move(devices);
         current_field_layout_lanes.clear();
         players.clear();
         diagnostics.clear();
         shortcut_rows.clear();
+        audio_devices.clear();
     }
     void refill(wormedit::sys::options_runtime_t&);
     [[nodiscard]] static auto from(wormedit::sys::options_runtime_t&) -> options_view_t;
@@ -114,7 +126,8 @@ typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_NONE = 0, WORM_UI_OPTIONS_OPEN, WORM_UI_OPTIONS_CLOSE,
     WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
     WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD,
-    WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL
+    WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL,
+    WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES
 } WormUiOptionsActionKind;
 // EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
 namespace wormedit::ui {
@@ -124,6 +137,7 @@ struct options_action_t {
     WormUiOptionsCategory category{};
     WormUiOptionsField field{};
     std::uint64_t integer{}, denominator{};
+    std::int64_t signed_integer{};
     bool boolean{};
     std::uint32_t player_index{}, family_index{};
     std::string shortcut_command_id;

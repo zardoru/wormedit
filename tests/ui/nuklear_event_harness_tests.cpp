@@ -3212,6 +3212,14 @@ TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options
     harness.view().options = {.visible = true, .revision = 91, .category = WORM_UI_OPTIONS_AUDIO,
         .keysound_budget_mib = 512, .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
+    // Memory follows the device/mix controls; scroll the actual Options page to its lower fields.
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -12;
+    wheel.wheel.mouse_x = 850;
+    wheel.wheel.mouse_y = 450;
+    (void)harness.frame(std::array{mouse_motion(850, 450), wheel});
+    (void)harness.frame();
     const auto label = harness.drawn_text_center("Keysound memory (MiB)");
     REQUIRE(label);
     const auto value = harness.drawn_text_center("512");

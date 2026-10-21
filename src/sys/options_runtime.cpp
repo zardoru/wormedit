@@ -87,7 +87,11 @@ void refill_options_validation(options_runtime_t& r, bool& changed) {
             "The osu! skin directory must be bounded text without NUL characters.");
         diagnose(r, WORM_UI_OPTIONS_FIELD_RATE,
             std::ranges::find(audio::playback_rates, r.draft.audio.playback_rate) != audio::playback_rates.end(),
-            "Playback rate is unsupported."); break;
+            "Playback rate is unsupported.");
+        if (r.diagnostics.empty())
+            diagnose(r, WORM_UI_OPTIONS_FIELD_PAGE, r.draft.audio.is_valid(),
+                "Audio settings are out of range: volumes 0–100%, count-in 0–4, buffer 0–8192 frames, latency −1000–1000 ms.");
+        break;
     case WORM_UI_OPTIONS_DISPLAY: validate_display(r); break;
     case WORM_UI_OPTIONS_INPUT:
         diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, text_util::is_valid_bounded_text(r.draft.general.shortcut_profile_path, maximum_preference_string_bytes) &&
@@ -151,6 +155,13 @@ auto edit_editor(program_preferences_t& p, const wormedit::ui::options_action_t&
 }
 auto edit_audio(program_preferences_t& p, const wormedit::ui::options_action_t& a) -> bool {
     switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE: p.audio.output_device = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES: p.audio.buffer_frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.integer, UINT32_MAX)); return true;
+    case WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME: p.audio.metronome_volume = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.integer, UINT32_MAX)); return true;
+    case WORM_UI_OPTIONS_FIELD_ACCENT_VOLUME: p.audio.accent_volume = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.integer, UINT32_MAX)); return true;
+    case WORM_UI_OPTIONS_FIELD_COUNT_IN: p.audio.count_in_measures = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.integer, UINT32_MAX)); return true;
+    case WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME: p.audio.audition_volume = static_cast<std::uint32_t>(std::min<std::uint64_t>(a.integer, UINT32_MAX)); return true;
+    case WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY: p.audio.preview_latency_ms = static_cast<std::int32_t>(std::clamp<std::int64_t>(a.signed_integer, INT32_MIN, INT32_MAX)); return true;
     case WORM_UI_OPTIONS_FIELD_RATE: p.audio.playback_rate = {a.integer, a.denominator}; return true;
     case WORM_UI_OPTIONS_FIELD_KEEP_PITCH: p.audio.keep_pitch = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY: p.audio.osu_skin_directory = a.text; return true;
@@ -305,6 +316,7 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
     auto retained_diagnostics = std::move(diagnostics);
     auto lanes = std::move(current_field_layout_lanes);
     auto shortcuts = std::move(shortcut_rows);
+    auto devices = std::move(audio_devices);
     const auto& p = r.draft;
     *this = {.visible = r.visible, .revision = r.revision, .category = r.category,
         .changed = r.validation.value(), .can_apply = r.diagnostics.empty(),
@@ -327,6 +339,10 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
         .keysound_budget_mib = p.audio.keysound_budget_mib,
         .osu_skin_directory = p.audio.osu_skin_directory,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
+        .output_device = p.audio.output_device, .buffer_frames = p.audio.buffer_frames,
+        .metronome_volume = p.audio.metronome_volume, .accent_volume = p.audio.accent_volume,
+        .count_in_measures = p.audio.count_in_measures, .audition_volume = p.audio.audition_volume,
+        .preview_latency_ms = p.audio.preview_latency_ms, .audio_output_pending = r.audio_output_pending,
         .p1_scratch_position = p.display.scratch_positions[0], .p2_scratch_position = p.display.scratch_positions[1],
         .field_scheme = p.display.field_scheme.c_str(),
         .current_field_layout_key = r.current_field_layout_key.c_str(),
@@ -341,6 +357,8 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
     diagnostics = std::move(retained_diagnostics);
     current_field_layout_lanes = std::move(lanes);
     shortcut_rows = std::move(shortcuts);
+    audio_devices = std::move(devices);
+    audio_devices.assign(r.audio_devices.begin(), r.audio_devices.end());
     diagnostics.clear();
     for (const auto& item : r.diagnostics)
         diagnostics.push_back({.field = item.field, .message = item.message});

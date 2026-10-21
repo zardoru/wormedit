@@ -50,6 +50,8 @@ struct chart_preview_t {
         return compiled.has_value() ? std::get<2>(*compiled.key()) : std::nullopt;
     }
     std::uint64_t resume_frame{};
+    std::int32_t display_latency_ms{};
+    [[nodiscard]] auto display_frame(const audio::preview_session_t&) const -> std::uint64_t;
     bool paused{};
     std::optional<chart_id_t> bgm_mix_chart;
     std::vector<std::uint64_t> bgm_muted_lanes;

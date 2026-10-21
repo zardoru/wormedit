@@ -85,14 +85,39 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-256 Fill the Playback & audio page
 
-- **Status:** ready
+- **Status:** done (2026-10-21; device routing, levels, count-in, rate, pitch and display compensation verified)
+- **Implementation audit (2026-10-21):** persisted rate/keep-pitch and memory/skin controls exist;
+  device/buffer, level/count-in persistence, latency and their runtime wiring are missing.
+- **Supporting ownership (2026-10-21):** the current wiring owner is `src/sys/application.cpp`,
+  not the retired main loop. Also owned: `src/ui/frontend/options_notifications.h`,
+  `src/sys/options_runtime.h`, new `src/sys/audio_options_runtime.h/.cpp`, new
+  `src/sys/sdl_audio_output_config.h`, `src/sys/metronome.h`,
+  `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`,
+  `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`,
+  `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`,
+  `src/sys/chart_preview_state.h/.cpp`, `src/sys/audio_transport_frame.cpp`,
+  `src/sys/application_frame_view.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
+  new `tests/sys/audio_options_runtime_tests.cpp`, new `tests/ui/audio_options_event_harness_tests.cpp`,
+  `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`
+  (scroll the existing memory-field test past the new controls), `tests/core/audio_transport_tests.cpp`, and
+  `memory/chart-editor-status/resume.md`. These connect the same Options draft to actual outputs,
+  share device fallback/opening, add independent accent gain, and keep latency in display queries.
 - **Outcome:** output device choice (from `SDL_GetAudioPlaybackDevices`, "System default" first), buffer size, metronome volume and accent volume, count-in measures, default playback rate and keep-pitch (T-45/T-233/T-234), preview latency compensation in ms, audition volume.
 - **Read first:** `src/sys/sdl_preview_output.cpp`, `src/sys/sdl_audition_output.cpp`, `src/sys/audio_source_registration.cpp` (metronome sources), `include/wormedit/audio/playback_rate.h`.
 - **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/sys/options_runtime.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/sdl_audition_output.cpp/.h`, `tests/core/preferences_tests.cpp`.
 - **Steps:** 1. Device list refresh button. 2. Changing device reopens outputs only when stopped (otherwise "applies after Stop"). 3. Latency compensation shifts the reported playhead, not the schedule.
 - **Invariants:** Stop remains a hard boundary; defaults match today.
 - **Reject/failure behavior:** a device that fails to open falls back to the system default with a warning.
-- **Verify:** standard build/test; manual device switch.
+- **Verify:** GATE **4,418/4,418**, build, whitespace and **18-TU** complexity pass
+  (`/tmp/t256-gate-final.log`, `/tmp/wormedit-gate.7u3PaH`, `/tmp/wormedit-complexity.na9eehku`).
+  Focused preferences **285 assertions / 32 cases**, Options **364 / 28**, SDL runtime
+  **33 / 4**, accent PCM **10 / 1**, audio UI **17 / 3** pass. Isolated Xvfb
+  `/tmp/t256-audio-{full,devices,selected,applied}.png` inspected; the selected named dummy
+  device is retained in `/tmp/t256-device-preferences.json`. Reproduce with
+  `/tmp/t256-audio-switch.sh`. Device/buffer changes defer through paused previews and auditions
+  until Stop; unavailable devices warn once and fall back. The signed compensation affects
+  display queries only; schedules, seeks and tap clocks keep their original positions.
+  The SDL dummy driver validates routing and publication, not physical-device listening.
 - **Out of scope:** per-project audio settings.
 
 ## T-257 Fill the Display page

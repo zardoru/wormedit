@@ -315,6 +315,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             ../src/sys/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
+            sys/audio_options_runtime_tests.cpp
+            ../src/sys/audio_options_runtime.cpp
             ../src/sys/chart_preview_state.cpp
             ../src/sys/frame_timing.cpp
             ../src/sys/sdl_audition_output.cpp
@@ -651,6 +653,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp
         ui/project_chart_actions_event_harness_tests.cpp
+        ui/audio_options_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
         ../src/sys/menu_command_view.cpp
         ../src/sys/shortcut_rows.cpp

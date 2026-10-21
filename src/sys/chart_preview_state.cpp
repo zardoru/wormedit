@@ -269,6 +269,15 @@ std::uint64_t chart_preview_t::current_frame(
     return playing(session) ? session.timeline_frame() : resume_frame;
 }
 
+auto chart_preview_t::display_frame(const audio::preview_session_t& session) const -> std::uint64_t {
+    const auto frame = current_frame(session);
+    if (!playing(session)) return frame;
+    const auto delta = static_cast<std::int64_t>(display_latency_ms) * audio::output_sample_rate / 1000;
+    if (delta < 0) return frame - std::min(frame, static_cast<std::uint64_t>(-delta));
+    const auto advance = static_cast<std::uint64_t>(delta);
+    return frame + std::min(advance, std::numeric_limits<std::uint64_t>::max() - frame);
+}
+
 namespace {
 
 auto frame_to_milliseconds(std::uint64_t frame, std::uint32_t sample_rate)

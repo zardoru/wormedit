@@ -55,6 +55,7 @@
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
+#include "sys/audio_options_runtime.h"
 #include "sys/lane_keys_runtime.h"
 #include "sys/shortcut_rows.h"
 #include "sys/menu_command_view.h"
@@ -2095,6 +2096,7 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     struct audio_runtime_t {
         notification_sink_t& notifications;
+        audio_options_runtime_t options;
         metronome_t metronome{};
         project_audio_sources_t project_sources{.metronome = &metronome};
         audio::decoded_block_cache_t audition_cache{};
@@ -3870,6 +3872,9 @@ struct application_t::implementation_t {
     }
 
     void dispatch_options_frame_action(const wormedit::ui::options_action_t& action) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        refresh_audio_options_request(action);
+#endif
         const bool accepted = wormedit::sys::apply_options_action(
             preferences.options_runtime, preferences.program_preferences, action);
         worm_ui_frontend_set_snap_grid_opacity(
@@ -4010,16 +4015,8 @@ struct application_t::implementation_t {
         post_audio_inventory_feedback(
             audio_runtime.project_sources.reconcile(session.history.document,
                 session.project_identity.asset_base, false), platform.notification_sink);
-        std::string audition_output_error;
-        if (!audio_runtime.audition_output.open(&audition_output_error))
-            platform.notification_sink.post(notification_severity_t::error,
-                                            notification_source_t::audio,
-                                            "Audio output unavailable: " + audition_output_error);
-        std::string preview_output_error;
-        if (!audio_runtime.preview_output.open(&preview_output_error))
-            platform.notification_sink.post(
-                notification_severity_t::error, notification_source_t::audio,
-                "Chart preview output unavailable: " + preview_output_error);
+        audio_runtime.options.refresh_devices(preferences.options_runtime);
+        service_audio_options();
 #endif
         install_startup_recovery_scan(session.recovery_controller, startup);
         session.recovery_scan_feedback.publish(session.recovery_controller.view(),
@@ -4163,6 +4160,22 @@ struct application_t::implementation_t {
     }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    void refresh_audio_options_request(const wormedit::ui::options_action_t& action) {
+        const auto& options = preferences.options_runtime;
+        if (action.kind == WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES && options.visible &&
+            action.revision == options.revision && options.category == WORM_UI_OPTIONS_AUDIO)
+            audio_runtime.options.refresh_devices(preferences.options_runtime);
+    }
+
+    void service_audio_options() {
+        const auto message = audio_runtime.options.service(
+            preferences.program_preferences.preferences.audio, preferences.options_runtime,
+            audio_runtime.audition_output, audio_runtime.preview_output, audio_runtime.metronome,
+            audio_runtime.preview_state, audio_runtime.audition_session.is_active());
+        if (!message.empty())
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::audio, message);
+    }
+
     auto on_transport_play_pause() -> std::string {
         commands.invalidate_playing_seek_records();
         const auto compose_cursor =
@@ -4515,6 +4528,7 @@ struct application_t::implementation_t {
         }
         sync_layer_assist_selection();
         sync_bgm_mix_selection();
+        service_audio_options();
         wormedit::sys::service_audio_transport_frame(
             session.history.document, session.workspace, audio_runtime.preview_state,
             audio_runtime.preview_session, audio_runtime.audition_output,

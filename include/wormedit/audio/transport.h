@@ -37,6 +37,7 @@ struct transport_voice_t {
     // Stable BGM lane identity; zero is outside the lane mix.
     std::uint64_t mix_group{};
     bool is_hitsound{};
+    bool is_metronome_accent{};
 
     auto operator==(const transport_voice_t&) const -> bool = default;
 };
@@ -86,6 +87,7 @@ class transport_t {
     // Control thread: retire one preview family without restarting the transport.
     void clear_voices(voice_kind_t kind);
     [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto set_accent_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
     [[nodiscard]] auto click_preview_volume() const noexcept -> std::uint8_t {
         return click_volume_percent_.load(std::memory_order_acquire);
     }
@@ -145,6 +147,7 @@ class transport_t {
     std::atomic<bool> clicks_enabled_{true};
     std::atomic<bool> hitsounds_enabled_{true};
     std::atomic<std::uint8_t> click_volume_percent_{100};
+    std::atomic<std::uint8_t> accent_volume_percent_{100};
     std::optional<std::uint64_t> next_timeline_frame_;
 };
 

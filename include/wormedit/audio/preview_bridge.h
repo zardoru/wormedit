@@ -97,6 +97,9 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto set_layer_tick_frames(std::span<const std::uint64_t> frames,
                                              std::uint64_t current_frame) -> bool;
     [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto set_metronome_accent_volume(std::uint8_t volume_percent) noexcept -> bool {
+        return transport_.set_accent_preview_volume(volume_percent);
+    }
     [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
         return transport_.click_preview_volume();
     }

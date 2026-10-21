@@ -248,6 +248,31 @@ TEST_CASE("transport metronome volume changes scheduled chart and assist clicks 
     CHECK(silent_click.front() == 0.25F);
 }
 
+TEST_CASE("transport accent volume changes scheduled accented clicks independently", "[unit][audio][transport][audio-options]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 3};
+    const audio_source_identity_t source{"fixture:accent", "generated:accent"};
+    const std::vector<float> pcm(16 * output_channel_count, 0.25F);
+    require_transport(cache.store({.source = source, .block_index = 0}, 16, pcm).has_value());
+    const auto token = transport.start();
+    require_transport(token.has_value());
+    const std::array voices{
+        transport_voice_t{.id = 1, .kind = voice_kind_t::click_preview, .source = source, .frame_count = 16},
+        transport_voice_t{.id = 2, .kind = voice_kind_t::click_preview, .source = source, .frame_count = 16,
+            .is_metronome_accent = true},
+        transport_voice_t{.id = 3, .kind = voice_kind_t::music, .source = source, .frame_count = 16}};
+    require_transport(transport.schedule_voices(*token, voices) == std::monostate{});
+    std::array<float, 8> output{};
+    require_transport(transport.mix_frames(*token, 0, output).status == std::monostate{});
+    CHECK(output.front() == 0.75F);
+    require_transport(transport.set_click_preview_volume(50));
+    require_transport(transport.set_accent_preview_volume(20));
+    CHECK_FALSE(transport.set_accent_preview_volume(101));
+    require_transport(transport.mix_frames(*token, 4, output).status == std::monostate{});
+    CHECK(std::abs(output.front() - 0.4F) < 0.000001F);
+}
+
 TEST_CASE("transport reports missing source blocks without emitting garbage",
           "[unit][audio][transport]") {
     wormedit::audio::decoded_block_cache_t blocks;

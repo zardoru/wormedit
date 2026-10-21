@@ -81,7 +81,7 @@ auto preview_playhead_row(const runtime::chart_preview_t& state,
                           const audio::preview_session_t& session) -> std::optional<double> {
     if (!state.compiled.value().timing || (!state.playing(session) && !state.paused))
         return std::nullopt;
-    return state.compiled.value().timing->row_at_frame(state.current_frame(session), audio::output_sample_rate,
+    return state.compiled.value().timing->row_at_frame(state.display_frame(session), audio::output_sample_rate,
                                      chart_end_policy_t::clamp_to_last_row);
 }
 

@@ -70,6 +70,20 @@ struct preference_reader_t {
         }
         value = found->get<std::string>();
     }
+    void signed_integer(const json_t& object, const char* key, std::int32_t& value,
+                        std::int32_t minimum, std::int32_t maximum) {
+        const auto found = object.find(key);
+        if (found == object.end()) return;
+        if (!found->is_number_integer() ||
+            (found->is_number_unsigned() && found->get<std::uint64_t>() > static_cast<std::uint64_t>(maximum))) {
+            warn(std::string{key} + " must be a bounded integer; default retained."); return;
+        }
+        const auto candidate = found->get<std::int64_t>();
+        if (candidate < minimum || candidate > maximum) {
+            warn(std::string{key} + " is out of range; default retained."); return;
+        }
+        value = static_cast<std::int32_t>(candidate);
+    }
 };
 
 void read_general(preference_reader_t& reader, const json_t& root) {
@@ -168,7 +182,16 @@ void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     read_editor(reader, root);
     auto& values = reader.result.preferences;
     const auto& audio = reader.section(root, "audio");
-    reader.check_keys(audio, {"playback_rate", "keep_pitch", "keysound_budget_mib", "osu_skin_directory"});
+    reader.check_keys(audio, {"playback_rate", "keep_pitch", "keysound_budget_mib", "osu_skin_directory",
+        "output_device", "buffer_frames", "metronome_volume", "accent_volume", "count_in_measures",
+        "audition_volume", "preview_latency_ms"});
+    reader.string(audio, "output_device", values.audio.output_device);
+    reader.integer(audio, "buffer_frames", values.audio.buffer_frames, 0, 8192);
+    reader.integer(audio, "metronome_volume", values.audio.metronome_volume, 0, 100);
+    reader.integer(audio, "accent_volume", values.audio.accent_volume, 0, 100);
+    reader.integer(audio, "count_in_measures", values.audio.count_in_measures, 0, 4);
+    reader.integer(audio, "audition_volume", values.audio.audition_volume, 0, 100);
+    reader.signed_integer(audio, "preview_latency_ms", values.audio.preview_latency_ms, -1000, 1000);
     reader.string(audio, "osu_skin_directory", values.audio.osu_skin_directory);
     read_keysound_budget(reader, audio);
     reader.boolean(audio, "keep_pitch", values.audio.keep_pitch);
@@ -279,8 +302,7 @@ auto is_valid_preferences(const program_preferences_t& value) -> bool {
         value.general.recent_files_count >= 1 && value.general.recent_files_count <= 100 &&
         is_valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
         is_valid_editor(value.editor) &&
-        is_supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
-        value.audio.keysound_budget_mib <= 8192 && is_valid_string(value.audio.osu_skin_directory) &&
+        value.audio.is_valid() &&
         is_valid_string(value.display.theme) && is_valid_string(value.display.field_scheme) && is_valid_field_scheme_overrides(value.display) &&
         std::ranges::all_of(value.display.scratch_positions, [](auto side) { return side <= 3; }) &&
         value.display.snap_grid_opacity_percent <= 100 && value.display.field_waveform_opacity_percent <= 100 &&
@@ -304,6 +326,10 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
             {"keysound_budget_mib", value.audio.keysound_budget_mib},
+            {"output_device", value.audio.output_device}, {"buffer_frames", value.audio.buffer_frames},
+            {"metronome_volume", value.audio.metronome_volume}, {"accent_volume", value.audio.accent_volume},
+            {"count_in_measures", value.audio.count_in_measures}, {"audition_volume", value.audio.audition_volume},
+            {"preview_latency_ms", value.audio.preview_latency_ms},
             {"osu_skin_directory", value.audio.osu_skin_directory}}},
         {"display", {{"scratch_positions", value.display.scratch_positions}, {"field_scheme", value.display.field_scheme}, {"field_scheme_overrides", value.display.field_scheme_overrides}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
             {"frame_timing_overlay", value.display.frame_timing_overlay},
@@ -338,6 +364,12 @@ auto is_valid_field_scheme_overrides(const display_preferences_t& display) -> bo
     });
 }
 
+auto audio_preferences_t::is_valid() const -> bool {
+    return is_supported_rate(playback_rate) && keysound_budget_mib >= 256 && keysound_budget_mib <= 8192 &&
+        is_valid_string(osu_skin_directory) && is_valid_string(output_device) && buffer_frames <= 8192 &&
+        metronome_volume <= 100 && accent_volume <= 100 && count_in_measures <= 4 && audition_volume <= 100 &&
+        preview_latency_ms >= -1000 && preview_latency_ms <= 1000;
+}
 auto program_preferences_t::with_defaults() -> program_preferences_t { return {}; }
 auto is_valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
     if (value.players.empty() || value.players.size() > maximum_external_players || value.selected >= value.players.size())

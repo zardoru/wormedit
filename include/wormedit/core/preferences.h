@@ -73,6 +73,12 @@ struct audio_preferences_t {
     bool keep_pitch{};
     std::uint32_t keysound_budget_mib{512};
     std::string osu_skin_directory;
+    std::string output_device; // Empty follows the system default; SDL IDs are session-local.
+    std::uint32_t buffer_frames{}; // Zero keeps SDL's default.
+    std::uint32_t metronome_volume{100}, accent_volume{100}, count_in_measures{};
+    std::uint32_t audition_volume{100};
+    std::int32_t preview_latency_ms{};
+    [[nodiscard]] auto is_valid() const -> bool;
     auto operator==(const audio_preferences_t&) const -> bool = default;
 };
 struct display_preferences_t {

@@ -50,6 +50,26 @@ TEST_CASE("Program preferences defaults preserve existing player and minimap beh
     expect_preference(parsed.succeeded && parsed.warnings.empty() && parsed.preferences == values);
 }
 
+TEST_CASE("Audio preferences retain routing levels and signed preview compensation", "[unit][core][preferences][audio-options]") {
+    auto values = program_preferences_t::with_defaults();
+    values.audio.output_device = "Speakers";
+    values.audio.buffer_frames = 256;
+    values.audio.metronome_volume = 70;
+    values.audio.accent_volume = 45;
+    values.audio.count_in_measures = 3;
+    values.audio.audition_volume = 20;
+    values.audio.preview_latency_ms = -75;
+    const auto bytes = serialize_program_preferences(values);
+    require_preference(bytes.has_value());
+    const auto parsed = preferences_parse_effect_t::from(*bytes);
+    expect_preference(parsed.succeeded && parsed.warnings.empty() && parsed.preferences == values);
+    values.audio.preview_latency_ms = 1001;
+    expect_preference(!serialize_program_preferences(values));
+    const auto invalid = preferences_parse_effect_t::from(R"({"audio":{"metronome_volume":101,"preview_latency_ms":-1001}})");
+    expect_preference(invalid.succeeded && invalid.preferences.audio.metronome_volume == 100 &&
+        invalid.preferences.audio.preview_latency_ms == 0 && invalid.warnings.size() == 2);
+}
+
 TEST_CASE("Program preferences round trip every section without project data", "[unit][core][preferences]") {
     auto values = program_preferences_t::with_defaults();
     values.general = {30, 100, false, "profiles/custom.json"};

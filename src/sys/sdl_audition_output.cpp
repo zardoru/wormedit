@@ -1,6 +1,7 @@
 #include "sys/thread_priority.h"
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_audio_stream_lock.h"
+#include "sys/sdl_audio_output_config.h"
 
 #include <SDL3/SDL_error.h>
 
@@ -22,7 +23,7 @@ sdl_audition_output_t::~sdl_audition_output_t() {
     close();
 }
 
-auto sdl_audition_output_t::open(std::string* error_message) -> bool {
+auto sdl_audition_output_t::open(std::string* error_message, SDL_AudioDeviceID device, std::uint32_t buffer_frames) -> bool {
     if (stream_ != nullptr) {
         return true;
     }
@@ -31,14 +32,15 @@ auto sdl_audition_output_t::open(std::string* error_message) -> bool {
         .channels = static_cast<int>(audio::output_channel_count),
         .freq = static_cast<int>(audio::output_sample_rate),
     };
-    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
-                                        &sdl_audition_output_t::stream_callback, this);
+    stream_ = open_audio_output_stream(device, buffer_frames, spec,
+                                      &sdl_audition_output_t::stream_callback, this, error_message);
     if (stream_ == nullptr) {
         if (error_message != nullptr) {
             *error_message = sdl_error("could not open the default audio output");
         }
         return false;
     }
+    static_cast<void>(SDL_SetAudioStreamGain(stream_, static_cast<float>(volume_) / 100.0f));
     try {
         refill_worker_ = std::jthread([this](std::stop_token stop) { refill_loop(stop); });
     } catch (...) {
@@ -47,6 +49,13 @@ auto sdl_audition_output_t::open(std::string* error_message) -> bool {
         stream_ = nullptr;
         return false;
     }
+    return true;
+}
+
+auto sdl_audition_output_t::set_volume(std::uint32_t percent) -> bool {
+    if (percent > 100) return false;
+    if (stream_ && !SDL_SetAudioStreamGain(stream_, static_cast<float>(percent) / 100.0f)) return false;
+    volume_ = percent;
     return true;
 }
 

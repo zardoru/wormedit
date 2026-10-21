@@ -32,7 +32,13 @@ class sdl_audition_output_t {
     sdl_audition_output_t(const sdl_audition_output_t&) = delete;
     auto operator=(const sdl_audition_output_t&) -> sdl_audition_output_t& = delete;
 
-    [[nodiscard]] auto open(std::string* error_message = nullptr) -> bool;
+    [[nodiscard]] auto open(std::string* error_message = nullptr,
+        SDL_AudioDeviceID device = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, std::uint32_t buffer_frames = 0) -> bool;
+    [[nodiscard]] auto set_volume(std::uint32_t percent) -> bool;
+    [[nodiscard]] auto volume() const -> std::uint32_t { return volume_; }
+    [[nodiscard]] auto audio_device_id() const -> SDL_AudioDeviceID {
+        return stream_ ? SDL_GetAudioStreamDevice(stream_) : 0;
+    }
     void close() noexcept;
 
     [[nodiscard]] auto start(std::span<const audio::audition_clip_t> clips)
@@ -63,6 +69,7 @@ class sdl_audition_output_t {
     bool refill_enabled_{};
     std::optional<audio::audition_pump_effect_t> refill_result_;
     SDL_AudioStream* stream_{};
+    std::uint32_t volume_{100};
     std::atomic<sdl_callback_failure_t> callback_failure_{std::nullopt};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };

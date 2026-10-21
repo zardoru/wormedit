@@ -153,7 +153,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             context.preview_state.playing(context.preview_session) || context.audition_session.is_active();
         frame_transport.paused = context.preview_state.paused;
         frame_transport.frame =
-            context.preview_state.playing(context.preview_session) ? context.preview_state.current_frame(context.preview_session)
+            context.preview_state.playing(context.preview_session) ? context.preview_state.display_frame(context.preview_session)
             : context.audition_session.is_active() ? context.audition_session.timeline_frame()
                                                 : context.preview_state.resume_frame;
         frame_transport.end_frame = context.preview_state.compiled.value().end_frame;

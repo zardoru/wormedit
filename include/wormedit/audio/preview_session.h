@@ -109,6 +109,9 @@ class preview_session_t {
     [[nodiscard]] auto is_metronome_enabled() const -> bool;
 
     [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto set_metronome_accent_volume(std::uint8_t volume_percent) noexcept -> bool {
+        return bridge_.set_metronome_accent_volume(volume_percent);
+    }
     [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
         return bridge_.metronome_volume();
     }

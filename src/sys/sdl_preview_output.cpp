@@ -3,6 +3,7 @@
 #include "sys/thread_priority.h"
 #include "sys/sdl_preview_output.h"
 #include "sys/sdl_audio_stream_lock.h"
+#include "sys/sdl_audio_output_config.h"
 
 #include <SDL3/SDL_error.h>
 
@@ -49,7 +50,7 @@ sdl_preview_output_t::~sdl_preview_output_t() {
     close();
 }
 
-auto sdl_preview_output_t::open(std::string* error_message) -> bool {
+auto sdl_preview_output_t::open(std::string* error_message, SDL_AudioDeviceID device, std::uint32_t buffer_frames) -> bool {
     if (stream_ != nullptr)
         return true;
     const SDL_AudioSpec spec{
@@ -57,8 +58,8 @@ auto sdl_preview_output_t::open(std::string* error_message) -> bool {
         .channels = static_cast<int>(audio::output_channel_count),
         .freq = static_cast<int>(audio::output_sample_rate),
     };
-    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
-                                        &sdl_preview_output_t::stream_callback, this);
+    stream_ = open_audio_output_stream(device, buffer_frames, spec,
+                                      &sdl_preview_output_t::stream_callback, this, error_message);
     if (stream_ == nullptr) {
         if (error_message != nullptr)
             *error_message = sdl_error("could not open the default chart-preview audio output");

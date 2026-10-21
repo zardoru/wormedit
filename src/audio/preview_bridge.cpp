@@ -178,7 +178,9 @@ auto candidate_voices(const event_candidate_t& candidate,
                           .frame_count = music ? candidate.frame_count : source.frame_count,
                           .gain = source.gain,
                           .mix_group = source.mix_group,
-                          .is_hitsound = source.is_hitsound});
+                          .is_hitsound = source.is_hitsound,
+                          .is_metronome_accent = kind == voice_kind_t::click_preview &&
+                              candidate.accent != metronome_accent_t::regular});
     }
     return voices;
 }

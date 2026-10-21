@@ -36,6 +36,7 @@ struct transport_mix_context_t {
     std::span<float> interleaved_stereo;
     transport_mix_result_t& result;
     float click_preview_gain{1.0F};
+    float accent_gain{1.0F};
 };
 
 struct transport_block_window_t {
@@ -44,6 +45,12 @@ struct transport_block_window_t {
     std::size_t requested;
     float gain;
 };
+
+auto transport_voice_gain(const transport_mix_context_t& context, const transport_voice_t& voice) -> float {
+    const auto click = voice.kind == voice_kind_t::click_preview || voice.kind == voice_kind_t::layer_assist;
+    return voice.gain * (click ? context.click_preview_gain : 1.0F) *
+        (voice.is_metronome_accent ? context.accent_gain : 1.0F);
+}
 
 auto mix_pcm_samples(std::span<float> output, std::span<const float> pcm,
                      const transport_block_window_t& window) -> std::size_t {
@@ -109,9 +116,7 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
                 static_cast<std::size_t>(timeline_frame - context.first_timeline_frame),
             .requested = static_cast<std::size_t>(std::min<std::uint64_t>(
                 overlap_end - timeline_frame, maximum_read_frames - offset_in_block)),
-            .gain = voice.gain *
-                ((voice.kind == voice_kind_t::click_preview || voice.kind == voice_kind_t::layer_assist)
-                    ? context.click_preview_gain : 1.0F),
+            .gain = transport_voice_gain(context, voice),
         };
         const auto available = mix_source_block(context, voice, block_index, window);
         if (available != window.requested) {
@@ -160,6 +165,7 @@ struct transport_t::mix_operation_t {
             static_cast<float>(owner.click_volume_percent_.load(std::memory_order_acquire)) /
             100.0F;
         const auto clicks_enabled = owner.clicks_enabled_.load(std::memory_order_acquire);
+        context.accent_gain = static_cast<float>(owner.accent_volume_percent_.load(std::memory_order_acquire)) / 100.0F;
         const auto hitsounds_enabled = owner.hitsounds_enabled_.load(std::memory_order_acquire);
         for (auto& entry : owner.scheduled_voices_) {
             if (entry.active && owner.is_voice_audible(entry.voice, clicks_enabled, hitsounds_enabled)) {
@@ -241,6 +247,12 @@ void transport_t::clear_voices(voice_kind_t kind) {
             --active_scheduled_voices_;
         }
     }
+}
+
+auto transport_t::set_accent_preview_volume(std::uint8_t volume_percent) noexcept -> bool {
+    if (volume_percent > 100) return false;
+    accent_volume_percent_.store(volume_percent, std::memory_order_release);
+    return true;
 }
 
 auto transport_t::set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool {

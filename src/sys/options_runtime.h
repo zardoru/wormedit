@@ -23,6 +23,8 @@ struct options_runtime_t {
     std::string status;
     std::string current_field_layout_key;
     std::string current_field_layout_name;
+    std::vector<std::string> audio_devices;
+    bool audio_output_pending{};
     // One producer result per action; projection must never repost this value.
     std::optional<notification_post_t> notification;
 };

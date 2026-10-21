@@ -8,6 +8,7 @@
 #include "wormedit/nuklear_config.h"
 #include <array>
 #include <algorithm>
+#include <wormedit/audio/playback_rate.h>
 
 namespace {
 wormedit::ui::chrome::Dialog options_dialog;
@@ -90,7 +91,71 @@ void editor_page(nk_context* context, const wormedit::ui::options_view_t* view, 
     edit_toggle(context, *view, *action, "Minimap click moves paused playhead", WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
         view->minimap_click_moves_paused_playhead);
 }
+void audio_output_controls(nk_context* context, const wormedit::ui::options_view_t& view,
+                           wormedit::ui::options_action_t& action) {
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Output device", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 28, 2);
+    const auto label = view.output_device.empty() ? std::string{"System default"} : std::string{view.output_device};
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, label.c_str(), nk_vec2(360, 220))) {
+        nk_layout_row_dynamic(context, 28, 1);
+        if (nk_combo_item_label(context, "System default", NK_TEXT_LEFT)) {
+            action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision,
+                .category = view.category, .field = WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE};
+        }
+        for (const auto& name : view.audio_devices)
+            if (nk_combo_item_label(context, name.c_str(), NK_TEXT_LEFT)) {
+                action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision,
+                    .category = view.category, .field = WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE, .text = name};
+            }
+        wormedit::ui::chrome::safe_combo_end(context);
+    }
+    if (nk_button_label(context, "Refresh devices") && action.kind == WORM_UI_OPTIONS_NONE)
+        action = {.kind = WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES, .revision = view.revision, .category = view.category};
+    edit_integer(context, view, action, "Buffer (frames; 0 = automatic)", WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
+        view.buffer_frames, 0, 8192);
+    if (view.audio_output_pending) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_label(context, "Output changes apply after Stop.", NK_TEXT_LEFT);
+    }
+}
+void audio_level_controls(nk_context* context, const wormedit::ui::options_view_t& view,
+                          wormedit::ui::options_action_t& action) {
+    edit_integer(context, view, action, "Metronome volume (%)", WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME,
+        view.metronome_volume, 0, 100);
+    edit_integer(context, view, action, "Accent volume (%)", WORM_UI_OPTIONS_FIELD_ACCENT_VOLUME,
+        view.accent_volume, 0, 100);
+    edit_integer(context, view, action, "Count-in (measures)", WORM_UI_OPTIONS_FIELD_COUNT_IN,
+        view.count_in_measures, 0, 4);
+    edit_integer(context, view, action, "Audition volume (%)", WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
+        view.audition_volume, 0, 100);
+    nk_layout_row_dynamic(context, 28, 1);
+    int latency = view.preview_latency_ms;
+    nk_property_int(context, "Preview latency (ms; positive = ahead)", -1000, &latency, 1000, 1, 1);
+    if (latency != view.preview_latency_ms && action.kind == WORM_UI_OPTIONS_NONE)
+        action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+            .field = WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, .signed_integer = latency};
+}
+void audio_rate_controls(nk_context* context, const wormedit::ui::options_view_t& view,
+                         wormedit::ui::options_action_t& action) {
+    using namespace wormedit::audio;
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_label(context, "Default playback rate", NK_TEXT_LEFT);
+    std::array<const char*, playback_rate_count> labels{};
+    for (std::size_t index = 0; index < labels.size(); ++index) labels[index] = playback_rate_catalog[index].label.data();
+    const int current = static_cast<int>(playback_rate_index({view.rate_numerator, view.rate_denominator}).value_or(8));
+    const int selected = wormedit::ui::chrome::safe_combo(context, labels.data(), static_cast<int>(labels.size()), current, 28, nk_vec2(180, 240));
+    if (selected != current && action.kind == WORM_UI_OPTIONS_NONE) {
+        const auto rate = playback_rate_catalog[static_cast<std::size_t>(selected)].rate;
+        action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+            .field = WORM_UI_OPTIONS_FIELD_RATE, .integer = rate.numerator, .denominator = rate.denominator};
+    }
+    edit_toggle(context, view, action, "Keep pitch by default", WORM_UI_OPTIONS_FIELD_KEEP_PITCH, view.keep_pitch);
+}
 void audio_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
+    audio_output_controls(context, *view, *action);
+    audio_level_controls(context, *view, *action);
+    audio_rate_controls(context, *view, *action);
     edit_integer(context, *view, *action, "Keysound memory (MiB)", WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY,
         view->keysound_budget_mib, 256, 8192);
     nk_layout_row_dynamic(context, 48, 1);
@@ -98,7 +163,7 @@ void audio_page(nk_context* context, const wormedit::ui::options_view_t* view, w
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "osu! hitsound skin folder (empty uses bundled samples)", NK_TEXT_LEFT);
     std::array<char, wormedit::maximum_preference_string_bytes + 1> folder{};
-    std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.data());
+    std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.empty() ? "" : view->osu_skin_directory.data());
     nk_layout_row_dynamic(context, 28, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
         NK_EDIT_FIELD, folder.data(), folder.size(), nk_filter_default);

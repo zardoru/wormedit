@@ -41,7 +41,8 @@ class sdl_preview_output_t {
     sdl_preview_output_t(const sdl_preview_output_t&) = delete;
     auto operator=(const sdl_preview_output_t&) -> sdl_preview_output_t& = delete;
 
-    [[nodiscard]] auto open(std::string* error_message = nullptr) -> bool;
+    [[nodiscard]] auto open(std::string* error_message = nullptr,
+        SDL_AudioDeviceID device = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, std::uint32_t buffer_frames = 0) -> bool;
     void close() noexcept;
 
     [[nodiscard]] auto

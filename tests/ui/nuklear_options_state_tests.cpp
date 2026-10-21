@@ -58,6 +58,25 @@ TEST_CASE("Options opening and category switching retain isolated drafts", "[opt
     const auto view = wormedit::ui::options_view_t::from(r);
     expect_options(view.changed && view.can_apply && view.autosave_minutes == 12);
 }
+
+TEST_CASE("Audio Options validate levels and preserve drafts until Apply", "[options][audio-options]") {
+    temporary_preferences_t temporary;
+    program_preferences_runtime_t program{.path = temporary.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_AUDIO);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_AUDIO);
+    edit.field = WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME;
+    edit.integer = 101;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(!wormedit::ui::options_view_t::from(runtime).can_apply);
+    edit.revision = runtime.revision;
+    edit.integer = 25;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(program.preferences.audio.metronome_volume == 100);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY, WORM_UI_OPTIONS_AUDIO)));
+    expect_options(program.preferences.audio.metronome_volume == 25);
+}
 TEST_CASE("Options validates individual draft fields and stale actions atomically", "[options]") {
     program_preferences_runtime_t program;
     options_runtime_t r;

@@ -4,6 +4,7 @@
 #include "sys/recipe_form.h"
 
 #include <wormedit/core/grid.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/sv_recipe.h>
@@ -50,14 +51,6 @@ auto compose_surface_height(int window_height, const wormedit::ui::workspace_vie
 
 
 
-auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
-                            std::uint64_t active_denominator) -> std::uint64_t {
-    // A snap the chart's resolution cannot represent falls back to one standard measure.
-    if (active_denominator == 0 || chart.divisions_per_standard_measure % active_denominator != 0) {
-        return chart.divisions_per_standard_measure;
-    }
-    return chart.divisions_per_standard_measure / active_denominator;
-}
 
 
 struct timing_stage_value_context_t {
@@ -191,6 +184,12 @@ void populate_initial_bpm(wormedit::ui::timing_view_t& view, const wormedit::cha
 }
 
 } // namespace
+
+auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
+                            std::uint64_t active_denominator) -> std::uint64_t {
+    return wormedit::snap_step(chart, {.denominator = active_denominator}, 0)
+        .value_or(chart.divisions_per_standard_measure);
+}
 
 void populate_timing_view_for_compose(
     frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,

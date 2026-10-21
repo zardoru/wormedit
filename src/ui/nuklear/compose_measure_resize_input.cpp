@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_measure_resize_input.h"
 
 #include <wormedit/core/rational.h>
+#include <wormedit/core/snap.h>
 
 #include "ui/nuklear/measure_resize.h"
 
@@ -84,15 +85,25 @@ void preview(const ComposeBeatFitInput& input) {
     const auto delta = state.measure_resize.measure_resize_direction *
                        (std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels) -
                         state.measure_resize.measure_resize_anchor_y_pixels) / view.pixels_per_standard_measure;
-    const auto snap = view.edit_snap_enabled ? view.area_snap_denominator : view.area_rows_per_measure;
+    // Off snaps single standard rows, like every other edit (wormedit::effective_edit_snap_grid).
+    const auto grid = view.edit_snap_enabled
+        ? wormedit::snap_grid_t{.denominator = view.area_snap_denominator, .space = view.area_snap_space}
+        : wormedit::snap_grid_t{.denominator = view.area_rows_per_measure};
+    const auto step = [&](std::uint64_t numerator, std::uint64_t denominator) {
+        return wormedit::snap_length_step(view.area_rows_per_measure, grid, {numerator, denominator})
+            .value_or(wormedit::rational_t{0, 1});
+    };
+    const auto& resize = state.measure_resize;
     const auto old_length = wormedit::to_double(wormedit::rational_t{
-        state.measure_resize.measure_resize_old_numerator, state.measure_resize.measure_resize_old_denominator});
+        resize.measure_resize_old_numerator, resize.measure_resize_old_denominator});
     double new_length = 0.0;
     std::string label;
     if (state.measure_resize.measure_resize_move_line) {
         const auto moved = worm_ui_move_bar_line(
             state.measure_resize.measure_resize_old_numerator, state.measure_resize.measure_resize_old_denominator,
-            state.measure_resize.measure_resize_next_numerator, state.measure_resize.measure_resize_next_denominator, delta, snap);
+            state.measure_resize.measure_resize_next_numerator, state.measure_resize.measure_resize_next_denominator, delta,
+            step(resize.measure_resize_old_numerator, resize.measure_resize_old_denominator),
+            step(resize.measure_resize_next_numerator, resize.measure_resize_next_denominator));
         state.measure_resize.measure_resize_valid = moved.valid;
         state.measure_resize.measure_resize_numerator = moved.first_numerator;
         state.measure_resize.measure_resize_denominator = moved.first_denominator;
@@ -102,7 +113,9 @@ void preview(const ComposeBeatFitInput& input) {
         label = moved.label;
     } else {
         const auto result = worm_ui_resize_measure(state.measure_resize.measure_resize_old_numerator,
-                                                   state.measure_resize.measure_resize_old_denominator, delta, snap);
+                                                   state.measure_resize.measure_resize_old_denominator, delta,
+                                                   step(resize.measure_resize_old_numerator,
+                                                        resize.measure_resize_old_denominator));
         state.measure_resize.measure_resize_valid = result.valid;
         state.measure_resize.measure_resize_numerator = result.numerator;
         state.measure_resize.measure_resize_denominator = result.denominator;

@@ -19,7 +19,6 @@ using interaction_detail::minimum_viewport_scroll;
 using interaction_detail::normalized_position_span;
 using interaction_detail::absolute_row_at_y_pixels;
 using interaction_detail::find_active_lane;
-using interaction_detail::snapped_position;
 namespace {
 
 auto rational_label(signed_rational_t value) -> std::string {
@@ -694,8 +693,8 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
         return std::nullopt;
     const auto lane = lane_at_pointer(chart, index, view, request, *position);
     if (!lane) return std::nullopt;
-    const auto snapped = snapped_position(chart, index.measures, *position,
-                                          view.active_snap_denominator);
+    const auto snapped = snap_position(chart, index.measures, *position,
+                                          active_snap_grid(view));
     auto best = nearby_note_points(chart, index, view, request, *row, *lane,
                                    snapped.value_or(*position));
     if (best.priority == 0) {

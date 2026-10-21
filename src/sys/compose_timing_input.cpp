@@ -34,7 +34,7 @@ auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_
     if (!row)
         return std::nullopt;
     const auto snapped = wormedit::snap_absolute_row(
-        chart, *row, wormedit::edit_snap_denominator(chart, context.state));
+        chart, *row, wormedit::edit_snap_grid(chart, context.state));
     return snapped;
 }
 
@@ -272,7 +272,7 @@ auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input
                                                      : sv_recipe_range_handle_t::whole_span;
     auto drag = sv_recipe_range_drag_t::propose(
         context.environment.document.history, chart->id, recipe_id_t{input.object_id.value}, handle, *press,
-        edit_snap_denominator(*chart, context.state),
+        edit_snap_grid(*chart, context.state),
         context.environment.commands.project.timing_recipe.timing_locked);
     if (!drag.value) {
         result.diagnostics = drag.diagnostics;

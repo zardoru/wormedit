@@ -83,16 +83,16 @@ auto apply_bmson_restart_state(document_history_t& history,
 
 namespace {
 auto razor_grid_positions(const chart_document_t& chart, const measure_index_t& index,
-    std::uint64_t first, std::uint64_t last, std::uint64_t denominator,
+    std::uint64_t first, std::uint64_t last, snap_grid_t grid,
     std::size_t maximum_positions) -> std::optional<std::vector<local_position_t>> {
-    if (snap_absolute_row(chart, index, first, denominator) != first ||
-        snap_absolute_row(chart, index, last, denominator) != last) return std::nullopt;
+    if (snap_absolute_row(chart, index, first, grid) != first ||
+        snap_absolute_row(chart, index, last, grid) != last) return std::nullopt;
     std::vector<local_position_t> positions;
     positions.reserve(maximum_positions);
     auto row = first;
     while (row != last) {
         if (positions.size() == maximum_positions) return std::nullopt;
-        const auto next = adjacent_snap_canvas_row(chart, index, row, denominator,
+        const auto next = adjacent_snap_canvas_row(chart, index, row, grid,
                                                    index.total_rows, first < last);
         if (!next || (first < last ? *next > last : *next < last)) return std::nullopt;
         const auto position = index.position_at(*next);
@@ -106,7 +106,7 @@ auto razor_grid_positions(const chart_document_t& chart, const measure_index_t& 
 
 auto interpolate_bmson_razor_path(const chart_document_t& chart,
                                   local_position_t from, local_position_t to,
-                                  std::uint64_t snap_denominator,
+                                  snap_grid_t snap,
                                   std::size_t maximum_positions) -> bmson_razor_path_t {
     bmson_razor_path_t result;
     const auto reject_path = [&](diagnostic_code_t code, std::string message) {
@@ -134,16 +134,13 @@ auto interpolate_bmson_razor_path(const chart_document_t& chart,
                     "BMSON razor path endpoint is outside exact chart geometry");
         return result;
     }
-    if (chart.divisions_per_standard_measure == 0 ||
-        (snap_denominator != 0 &&
-         chart.divisions_per_standard_measure % snap_denominator != 0)) {
+    const auto grid = effective_edit_snap_grid(chart, snap, snap.denominator != 0);
+    if (!snap_step(chart, grid, 0)) {
         reject_path(diagnostic_code_t::invalid_resolution,
                     "BMSON razor path has an unsupported snap denominator");
         return result;
     }
-    const auto denominator = snap_denominator == 0
-        ? chart.divisions_per_standard_measure : snap_denominator;
-    auto positions = razor_grid_positions(chart, index, *first, *last, denominator,
+    auto positions = razor_grid_positions(chart, index, *first, *last, grid,
                                                 maximum_positions);
     if (!positions) {
         reject_path(diagnostic_code_t::invalid_resolution,

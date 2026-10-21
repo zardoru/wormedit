@@ -45,33 +45,6 @@ auto is_valid_bounded_rational(signed_rational_t value, long double maximum) -> 
     return std::isfinite(number) && std::abs(number) <= maximum;
 }
 
-auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t target, std::uint64_t denominator)
-    -> std::optional<local_position_t> {
-    const auto absolute = index.row_of(target, measure_chart_end_policy_t::allow);
-    if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0) {
-        return std::nullopt;
-    }
-    if (*absolute == index.total_rows) {
-        return index.position_at(index.total_rows, measure_chart_end_policy_t::allow);
-    }
-    const auto rounded = snap_absolute_row(chart, index, *absolute, denominator);
-    if (!rounded) {
-        return std::nullopt;
-    }
-    auto snapped = *rounded;
-    if (snapped > index.total_rows) {
-        snapped = index.total_rows;
-    }
-    const auto distance_to_snapped =
-        snapped >= *absolute ? snapped - *absolute : *absolute - snapped;
-    const auto distance_to_chart_end = index.total_rows - *absolute;
-    if (distance_to_chart_end < distance_to_snapped) {
-        snapped = index.total_rows;
-    }
-    return index.position_at(snapped, measure_chart_end_policy_t::allow);
-}
-
 auto multiply_divide_exact(std::uint64_t value, std::uint64_t numerator, std::uint64_t denominator)
     -> std::optional<std::uint64_t> {
     if (denominator == 0) {
@@ -1066,7 +1039,7 @@ auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>&,
 }
 
 auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
-    position_span_t pointer_hits, std::uint64_t active_snap_denominator)
+    position_span_t pointer_hits, snap_grid_t snap)
     -> bool {
     auto& draft = *this;
     auto& diagnostics = scope.diagnostics();
@@ -1077,8 +1050,8 @@ auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
         return false;
     }
     const auto& index = *built_index;
-    const auto snapped_begin = snapped_position(*chart, index, pointer_hits.begin, active_snap_denominator);
-    const auto snapped_end = snapped_position(*chart, index, pointer_hits.end, active_snap_denominator);
+    const auto snapped_begin = snap_span_position(*chart, index, pointer_hits.begin, snap);
+    const auto snapped_end = snap_span_position(*chart, index, pointer_hits.end, snap);
     const auto begin_row = snapped_begin
         ? index.row_of(*snapped_begin, measure_chart_end_policy_t::allow) : std::nullopt;
     const auto end_row = snapped_end
@@ -1312,13 +1285,13 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
 
 auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id_t chart_id,
     recipe_id_t recipe_id, sv_recipe_range_handle_t handle, local_position_t pointer_position,
-    std::uint64_t active_snap_denominator, bool timing_locked)
+    snap_grid_t snap, bool timing_locked)
     -> proposal_outcome_t<sv_recipe_range_drag_t> {
     proposal_outcome_t<sv_recipe_range_drag_t> outcome;
     proposal_t<sv_recipe_range_drag_t> pending{
         .stamp = chart_stamp_t::from(history.document, chart_id),
         .payload = {.recipe = recipe_id, .handle = handle,
-                    .active_snap_denominator = active_snap_denominator}};
+                    .snap = snap}};
     auto& drag = pending.payload;
     if (timing_locked) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
@@ -1343,7 +1316,7 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
         return outcome;
     }
     const auto& index = *built_index;
-    const auto snapped = snapped_position(*chart, index, pointer_position, active_snap_denominator);
+    const auto snapped = snap_span_position(*chart, index, pointer_position, snap);
     if (!snapped) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
             "SV recipe range drag pointer cannot be represented on the active grid"));
@@ -1361,7 +1334,7 @@ auto prepare_sv_recipe_range(const chart_document_t& chart, const sv_recipe_t& r
     const measure_index_t& index, const sv_recipe_range_drag_t& drag,
     local_position_t pointer_position) -> diagnosed_t<std::optional<position_span_t>> {
     diagnosed_t<std::optional<position_span_t>> outcome;
-    const auto snapped = snapped_position(chart, index, pointer_position, drag.active_snap_denominator);
+    const auto snapped = snap_span_position(chart, index, pointer_position, drag.snap);
     const auto original_begin = index.row_of(drag.original_range.begin);
     const auto original_end = index.row_of(drag.original_range.end, measure_chart_end_policy_t::allow);
     const auto anchor = index.row_of(drag.snapped_pointer_anchor, measure_chart_end_policy_t::allow);

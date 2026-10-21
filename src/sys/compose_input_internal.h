@@ -124,7 +124,7 @@ auto dispatch_bmson_razor_input(const wormedit::ui::compose_input_action_t& inpu
         return stale_action_message("BMSON razor stroke");
     }
     const auto denominator =
-        input.razor_stroke_start ? edit_snap_denominator(*chart, state) : stroke->payload.snap_denominator;
+        input.razor_stroke_start ? edit_snap_grid(*chart, state) : stroke->payload.snap;
     const auto raw = position_at_compose_y(*chart, *current_view, input.y_pixels);
     const auto position =
         raw ? resolve_resource_placement_position(*chart, *raw, denominator) : std::nullopt;
@@ -347,7 +347,7 @@ auto begin_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bms
 template <typename VirtualBmsRowAt>
 auto virtual_bms_move_target(const wormedit::chart_document_t& chart,
                              const wormedit::editor_interaction_view_model_t& view, double y_pixels,
-                             std::uint64_t snap_denominator, VirtualBmsRowAt&& virtual_bms_row_at)
+                             wormedit::snap_grid_t snap, VirtualBmsRowAt&& virtual_bms_row_at)
     -> std::optional<std::uint64_t> {
     using namespace wormedit;
     const auto raw_row = virtual_bms_row_at(chart, view, y_pixels);
@@ -355,18 +355,12 @@ auto virtual_bms_move_target(const wormedit::chart_document_t& chart,
         return std::nullopt;
     const auto built_canvas = build_virtual_canvas(chart);
     const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas);
-    if (!canvas ||
-        (snap_denominator != 0 && chart.divisions_per_standard_measure % snap_denominator != 0))
+    if (!canvas)
         return std::nullopt;
-    auto snapped = *raw_row;
-    if (snap_denominator != 0) {
-        const auto rounded = snap_absolute_row(chart, snapped, snap_denominator);
-        if (!rounded)
-            return std::nullopt;
-        snapped = *rounded;
-    }
-    const auto measure = canvas->measure_containing(snapped);
-    return measure && !measure->authored ? std::optional{snapped} : std::nullopt;
+    const auto snapped =
+        snap_canvas_row_or_exact(chart, canvas->authored_index, *raw_row, snap, canvas->total_rows);
+    const auto measure = snapped ? canvas->measure_containing(*snapped) : std::nullopt;
+    return measure && !measure->authored ? snapped : std::nullopt;
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
@@ -389,7 +383,7 @@ auto update_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bm
     else if (!position && chart != nullptr && view)
         virtual_row =
             virtual_bms_move_target(*chart, *view, input.y_pixels,
-                                    edit_snap_denominator(*chart, state), virtual_bms_row_at);
+                                    edit_snap_grid(*chart, state), virtual_bms_row_at);
     if (!position && !virtual_row) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::from(
@@ -468,7 +462,7 @@ auto insert_bmson_stem_point(const wormedit::ui::compose_input_action_t& input,
         return compose_input_family_result_t::from("The BMSON chart field is no longer available.");
     const auto raw = position_at_compose_y(*chart, *view, input.y_pixels);
     const auto position = raw ? resolve_resource_placement_position(
-                                    *chart, *raw, edit_snap_denominator(*chart, state))
+                                    *chart, *raw, edit_snap_grid(*chart, state))
                               : std::nullopt;
     if (!position)
         return compose_input_family_result_t::from(
@@ -669,7 +663,7 @@ struct compose_input_context_t {
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
                     chart, environment.commands.preferences.editor_preferences),
-                wormedit::edit_snap_denominator(chart, state));
+                wormedit::edit_snap_grid(chart, state));
         return wormedit::hit_test_editor(
             chart, *index, view,
             {.x_pixels = x_pixels,

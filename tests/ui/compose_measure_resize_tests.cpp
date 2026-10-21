@@ -50,7 +50,7 @@ struct resize_fixture_t {
         v.measure_rows = rows.data(); v.measure_row_ids = ids.data(); v.measure_row_count = rows.size();
         v.grid_lines.assign(lines.data(), lines.data() + lines.size());
         v.pixels_per_standard_measure = 400.0;
-        v.area_snap_denominator = 8; v.edit_snap_enabled = true;
+        v.area_rows_per_measure = 192; v.area_snap_denominator = 8; v.edit_snap_enabled = true;
         (void)harness.frame();
         wormedit::ui::testing_rect_view_t rect{};
         require_resize(worm_ui_frontend_compose_viewport_for_testing(&rect));

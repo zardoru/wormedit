@@ -55,6 +55,8 @@ struct cycle_edit_snap_action_t {
 // snap unchanged and is not an error (the Quantize grid chips share this value).
 struct set_edit_snap_action_t {
     std::uint64_t denominator{};
+    // Unset keeps the current space.
+    std::optional<quantization_space_t> space;
 };
 
 // The position is the view's unsnapped hit-test result. The controller maps it

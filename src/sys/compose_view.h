@@ -77,7 +77,7 @@ struct compose_bga_move_preview_input_t {
                                               const wormedit::editor_interaction_view_model_t& view,
                                               double x, double y, double field_left,
                                               double field_width, bool downscroll,
-                                              std::uint64_t snap)
+                                              wormedit::snap_grid_t snap)
     -> std::optional<wormedit::editor_hit_target_t>;
 
 inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
@@ -603,13 +603,13 @@ struct application_command_state_t {
     using bmson_razor_stroke_outcome_t = wormedit::proposal_outcome_t<bmson_razor_stroke_t>;
     struct bmson_razor_stroke_t {
         wormedit::object_id_t reference;
-        std::uint64_t snap_denominator{};
+        wormedit::snap_grid_t snap;
         wormedit::local_position_t last_position;
 
         // A token exists only after its marker owner staged this exact pulse.
         [[nodiscard]] static auto propose(const wormedit::document_history_t& history,
             wormedit::chart_id_t chart, const bmson_marker_draft_proposal_t* markers,
-            wormedit::object_id_t reference, std::uint64_t snap_denominator,
+            wormedit::object_id_t reference, wormedit::snap_grid_t snap,
             wormedit::local_position_t position) -> bmson_razor_stroke_outcome_t;
         // The input controller already validated the path and acknowledged its marker segment.
         [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
@@ -617,7 +617,7 @@ struct application_command_state_t {
     };
     static_assert(wormedit::staged_proposal<bmson_razor_stroke_t,
         std::tuple<const wormedit::document_history_t&, wormedit::chart_id_t,
-            const bmson_marker_draft_proposal_t*, wormedit::object_id_t, std::uint64_t,
+            const bmson_marker_draft_proposal_t*, wormedit::object_id_t, wormedit::snap_grid_t,
             wormedit::local_position_t>,
         std::tuple<wormedit::chart_stamp_t, wormedit::local_position_t>>);
     struct bga_draw_stroke_t;
@@ -748,6 +748,8 @@ struct application_command_state_t {
             std::uint8_t compose_timing_lane_visibility_mask{0xff};
             bool compose_timing_focus{};
             bool edit_snap_enabled{true};
+            // Shared by the edit grid and Quantize (see wormedit::snap_grid_t).
+            wormedit::quantization_space_t snap_space{wormedit::quantization_space_t::standard_measure};
             bool y_lock{false};
             // Session-only, like the bar-line time policy below: never persisted.
             bool measure_lane_visible{false};

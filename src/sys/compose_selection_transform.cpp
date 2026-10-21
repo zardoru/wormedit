@@ -3,6 +3,7 @@
 
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/interaction_dispatch.h>
 
 #include <algorithm>
@@ -23,17 +24,37 @@ auto command_status(const document_command_result_t& result, const char* applied
     return result.applied ? applied : unchanged;
 }
 
+// The selection moves as one block, by one step of the measure its earliest object moves within.
+auto selection_shift_step(const document_history_t& history, const chart_document_t& chart,
+                          const shift_selection_action_t& action, snap_grid_t grid, bool later)
+    -> std::optional<std::uint64_t> {
+    const auto* indices = history.indices(chart.id);
+    if (!indices || !indices->measures) return std::nullopt;
+    const auto& index = *indices->measures;
+    std::optional<std::uint64_t> earliest;
+    const auto consider = [&](std::optional<std::uint64_t> row) {
+        if (row && (!earliest || *row < *earliest)) earliest = row;
+    };
+    for (const auto id : action.notes)
+        if (const auto* note = chart.find_note(id)) consider(index.row_of(note->position));
+    for (const auto id : action.bar_lines) {
+        const auto entry = std::ranges::find(index.entries, id, &measure_index_entry_t::id);
+        if (entry != index.entries.end()) consider(entry->absolute_begin_row);
+    }
+    if (!earliest) return snap_step(chart, grid, 0);
+    return adjacent_snap_step(chart, index, *earliest, grid, later);
+}
+
 auto shift_selection(document_history_t& history, const editor_interaction_state_t& state,
                      const chart_document_t& chart, bool later,
                      notification_severity_t* severity) -> std::string {
-    if (state.active_snap_denominator == 0 ||
-        chart.divisions_per_standard_measure % state.active_snap_denominator != 0)
-        return "The active snap does not divide the chart's rows.";
-    const auto step = static_cast<std::int64_t>(chart.divisions_per_standard_measure /
-                                                state.active_snap_denominator);
-    const auto action = editor_shift_selection(state, later ? step : -step);
+    auto action = editor_shift_selection(state, 0);
     if (action.notes.empty() && action.bar_lines.empty())
         return "Select notes or bar lines before shifting them.";
+    const auto step = selection_shift_step(history, chart, action, active_snap_grid(state), later);
+    if (!step)
+        return "The active snap does not divide the chart's rows.";
+    action.rows = later ? static_cast<std::int64_t>(*step) : -static_cast<std::int64_t>(*step);
     const auto result = apply_shift_selection(history, action);
     return command_status(result.command, "Selection shifted by one snap step.",
                           "Selection did not move.", severity);

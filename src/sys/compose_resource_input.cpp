@@ -98,7 +98,7 @@ auto place_virtual_source_resource(const wormedit::ui::compose_input_action_t& i
                             ? object_id_t{input.lane_id.value}
                             : object_id_t{},
          .kind = spec.kind,
-         .snap_denominator = edit_snap_denominator(chart, context.state),
+         .snap = edit_snap_grid(chart, context.state),
          .semantic_layers = context.state.armed_note_layers,
          .bga_kind = resource_pointer_bga_kind(input, spec.kind)});
     result.accepted = applied.applied;
@@ -206,7 +206,7 @@ auto dispatch_resource_pointer(const wormedit::ui::compose_input_action_t& input
                          "Pointer placement could not snap to a valid chart row.");
     }
     const auto position = resolve_resource_placement_position(
-        *chart, *pointer.position, edit_snap_denominator(*chart, context.state));
+        *chart, *pointer.position, edit_snap_grid(*chart, context.state));
     if (!position)
         return compose_input_family_result_t::from(
             "Pointer placement could not snap to a valid chart row.");

@@ -548,8 +548,10 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     auto* c = i.context;
     render_quantize_grid(i);
     constexpr const char* spaces[]{"Standard", "Authored"};
-    constexpr const char* st[]{"Snap on the standard-measure grid across the chart.",
-                               "Divide each authored measure into this many equal parts."};
+    constexpr const char* st[]{
+        "Grid steps are fractions of a 4/4 measure: a 5/4 measure holds five 1/4 steps.",
+        "The grid divides each measure's own length: a 5/4 measure holds four 1/4 steps. "
+        "Measures it can't divide into whole rows snap on standard steps and block Quantize."};
     constexpr const char* ties[]{"Earlier", "Later", "Block"};
     constexpr const char* tt[]{
         "Round halfway objects to the earlier grid line.",

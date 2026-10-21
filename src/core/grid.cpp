@@ -223,9 +223,7 @@ auto error_if_invalid(const chart_document_t& chart, const editor_grid_request_t
     }
     if (!std::isfinite(request.pixels_per_standard_measure) ||
         request.pixels_per_standard_measure <= 0.0 || request.maximum_line_count == 0 ||
-        (request.active_snap_denominator.has_value() &&
-         (*request.active_snap_denominator == 0 ||
-          chart.divisions_per_standard_measure % *request.active_snap_denominator != 0))) {
+        (request.active_snap && !snap_step(chart, *request.active_snap, 0))) {
         result.push_back(error(diagnostic_code_t::invalid_resolution,
                                "editor grid zoom, snap, or line limit is invalid"));
     }
@@ -462,12 +460,14 @@ auto append_authored_groups(editor_grid_build_context_t& context,
 
 auto append_measure_snap_candidates(editor_grid_build_context_t& context,
                                     const measure_index_entry_t& entry) -> bool {
-    if (!context.request.active_snap_denominator ||
-        context.request.pixels_per_standard_measure /
-                static_cast<double>(*context.request.active_snap_denominator) <
+    if (!context.request.active_snap) return true;
+    const auto measure_step = snap_step(context.chart, *context.request.active_snap, entry.row_capacity);
+    if (!measure_step ||
+        context.request.pixels_per_standard_measure * static_cast<double>(*measure_step) /
+                static_cast<double>(context.divisions) <
             context.request.density.minimum_active_snap_spacing_pixels)
         return true;
-    const auto step = context.divisions / *context.request.active_snap_denominator;
+    const auto step = *measure_step;
     const auto begin = context.candidate_begin > entry.absolute_begin_row
         ? context.candidate_begin - entry.absolute_begin_row : 0;
     auto multiple = begin / step + (begin % step != 0);

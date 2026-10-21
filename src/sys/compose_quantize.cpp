@@ -30,7 +30,8 @@ auto compose_quantize_editor_for(document_history_t& history, editor_interaction
     if (!editor || !editor->stamp.is_identity_current(history.document, state.chart)) {
         editor = application_command_state_t::quantize_editor_t{
             .stamp = chart_stamp_t::from(history.document, state.chart),
-            .request = {.divisions = state.active_snap_denominator}};
+            .request = {.divisions = state.active_snap_denominator,
+                        .space = state.active_snap_space}};
     }
     return *editor;
 }

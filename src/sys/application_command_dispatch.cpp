@@ -95,9 +95,11 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
                                     const wormedit::editor_interaction_state_t& state) {
     auto& editor = application.project.quantize.quantize_editor;
     if (!editor || !editor->stamp.is_identity_current(history.document, state.chart) ||
-        editor->request.divisions == state.active_snap_denominator)
+        (editor->request.divisions == state.active_snap_denominator &&
+         editor->request.space == state.active_snap_space))
         return;
     editor->request.divisions = state.active_snap_denominator;
+    editor->request.space = state.active_snap_space;
     editor->preset_index.reset();
 }
 

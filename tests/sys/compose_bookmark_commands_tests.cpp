@@ -78,13 +78,13 @@ TEST_CASE("nearest snap row picks the closest row and ties go earlier",
     const auto chart = bookmark_song().charts.front();
     auto index = measure_index_t::from(chart).value();
     // A quarter-note snap of a 960-division measure is 240 rows.
-    CHECK(nearest_snap_row(chart, index, 100.0, 4) == std::optional<std::uint64_t>{0});
-    CHECK(nearest_snap_row(chart, index, 130.0, 4) == std::optional<std::uint64_t>{240});
-    CHECK(nearest_snap_row(chart, index, 120.0, 4) == std::optional<std::uint64_t>{0});
-    CHECK(nearest_snap_row(chart, index, 5000.0, 4) == std::optional<std::uint64_t>{1680});
-    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, 7));
+    CHECK(nearest_snap_row(chart, index, 100.0, {4}) == std::optional<std::uint64_t>{0});
+    CHECK(nearest_snap_row(chart, index, 130.0, {4}) == std::optional<std::uint64_t>{240});
+    CHECK(nearest_snap_row(chart, index, 120.0, {4}) == std::optional<std::uint64_t>{0});
+    CHECK(nearest_snap_row(chart, index, 5000.0, {4}) == std::optional<std::uint64_t>{1680});
+    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, {7}));
     index.total_rows = 0;
-    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, 4));
+    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, {4}));
 }
 
 TEST_CASE("Go To Bookmark shortcut maps to its application command",
@@ -461,9 +461,9 @@ TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
     chart.measures.front().definition.meter.reset();
     chart.sections.clear();
     const auto index = measure_index_t::from(chart).value();
-    CHECK(nearest_snap_row(chart, index, 300, 4) == 320);
-    CHECK(nearest_snap_row(chart, index, 440, 4) == 320);
-    CHECK(nearest_snap_row(chart, index, 441, 4) == 560);
+    CHECK(nearest_snap_row(chart, index, 300, {4}) == 320);
+    CHECK(nearest_snap_row(chart, index, 440, {4}) == 320);
+    CHECK(nearest_snap_row(chart, index, 441, {4}) == 560);
     fixture.application.services.transport_preview_playing = [] { return true; };
     fixture.application.project.transport.preview_playhead_absolute_row = 441;
     const auto added = fixture.application.bookmarks.add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);

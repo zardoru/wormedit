@@ -24,13 +24,14 @@ beat_section_edit_t make_beat_section_insertion(compose_action_context_t& contex
         from_selection = true;
     } else {
         const auto begin = (*measures).row_of( context.state.cursor);
-        const auto denominator = context.state.active_snap_denominator;
-        if (!begin || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0)
+        const auto grid = active_snap_grid(context.state);
+        if (!begin || !snap_step(chart, grid, 0))
             return {.error = "The active Compose grid cannot define a section span."};
-        const auto step = chart.divisions_per_standard_measure / denominator;
-        if (step == 0 || *begin >= measures->total_rows || step >= measures->total_rows - *begin)
+        const auto next = adjacent_snap_canvas_row(chart, *measures, *begin, grid,
+                                                   measures->total_rows, true);
+        if (!next)
             return {.error = "Move the cursor earlier to create a one-snap section."};
-        const auto end = measures->position_at(*begin + step);
+        const auto end = measures->position_at(*next);
         if (!end)
             return {.error = "The next active-snap row is outside the chart."};
         span = {context.state.cursor, *end};

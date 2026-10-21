@@ -5,7 +5,7 @@
 namespace wormedit::interaction_detail {
 auto resolve_resize_parameters(const chart_document_t& chart, const measure_index_t& index,
                                std::vector<object_id_t>& targets, object_id_t reference_id,
-                               local_position_t reference_end, std::uint64_t snap_denominator,
+                               local_position_t reference_end, snap_grid_t snap,
                                bool exact) -> std::variant<resize_parameters_t, diagnostic_list_t> {
     const auto* reference = chart.find_note(reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
@@ -14,7 +14,7 @@ auto resolve_resize_parameters(const chart_document_t& chart, const measure_inde
                                        reference_id)};
     const auto snapped =
         exact ? (index.row_of(reference_end) ? std::optional{reference_end} : std::nullopt)
-              : snapped_position(chart, index, reference_end, snap_denominator);
+              : snap_position(chart, index, reference_end, snap);
     const auto begin = index.row_of(reference->position);
     const auto old_end = reference->end ? index.row_of(*reference->end) : begin;
     const auto new_end = snapped ? index.row_of(*snapped) : std::nullopt;
@@ -107,12 +107,12 @@ auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
 
 auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& index,
                           std::vector<object_id_t> targets, object_id_t reference_id,
-                          local_position_t reference_end, std::uint64_t snap_denominator,
+                          local_position_t reference_end, snap_grid_t snap,
                           bool reference_end_is_exact)
     -> std::variant<duration_resize_plan_t, diagnostic_list_t> {
     auto parameters_result =
         resolve_resize_parameters(chart, index, targets, reference_id, reference_end,
-                                  snap_denominator, reference_end_is_exact);
+                                  snap, reference_end_is_exact);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&parameters_result))
         return *diagnostics;
     const auto parameters = std::get<resize_parameters_t>(parameters_result);
@@ -236,7 +236,7 @@ auto move_lane_column(const chart_document_t& chart, const measure_index_t& inde
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
                                   local_position_t reference_position, lane_id_t requested_lane,
-                                  std::uint64_t snap_denominator, bool exact, bool keep_rows,
+                                  snap_grid_t snap, bool exact, bool keep_rows,
                                   const editor_scratch_presentation_t& sides)
     -> std::variant<note_move_parameters_t, diagnostic_list_t> {
     const auto* reference = chart.find_note(reference_id);
@@ -247,12 +247,12 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
     auto snapped =
         exact ? (index.row_of(reference_position) ? std::optional{reference_position}
                                                          : std::nullopt)
-              : snapped_position(chart, index, reference_position, snap_denominator);
+              : snap_position(chart, index, reference_position, snap);
     // A pointer move that stays in the reference note's own grid cell (a
     // horizontal drag) keeps its exact row instead of resnapping it; Y-lock keeps
     // the row whatever the pointer does.
     if (!exact && snapped) {
-        const auto home = snapped_position(chart, index, reference->position, snap_denominator);
+        const auto home = snap_position(chart, index, reference->position, snap);
         if (keep_rows || (home && *home == *snapped))
             snapped = reference->position;
     }
@@ -418,12 +418,12 @@ void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
                     std::vector<object_id_t> targets, object_id_t reference_id,
                     local_position_t reference_position, lane_id_t requested_reference_lane,
-                    std::uint64_t snap_denominator, bool reference_position_is_exact,
+                    snap_grid_t snap, bool reference_position_is_exact,
                     bool keep_rows, const editor_scratch_presentation_t& sides)
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
     auto parameters_result = resolve_note_move_parameters(
         chart, index, targets, reference_id, reference_position, requested_reference_lane,
-        snap_denominator, reference_position_is_exact, keep_rows, sides);
+        snap, reference_position_is_exact, keep_rows, sides);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&parameters_result))
         return *diagnostics;
     const auto parameters = std::get<note_move_parameters_t>(parameters_result);
@@ -519,7 +519,7 @@ auto append_selected_bgm_moves(const chart_document_t& chart, const measure_inde
 auto plan_selected_object_move(const chart_document_t& chart, const measure_index_t& index,
                                const editor_interaction_state_t& state,
                                std::vector<object_id_t> notes, object_id_t reference,
-                               local_position_t position, lane_id_t lane, std::uint64_t snap,
+                               local_position_t position, lane_id_t lane, snap_grid_t snap,
                                bool exact) -> std::variant<note_move_plan_t, diagnostic_list_t> {
     const auto bgm_ids = selected_move_bgm_ids(state, reference, notes);
     const auto* reference_note = chart.find_note(reference);
@@ -540,7 +540,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
             error(diagnostic_code_t::invalid_id, "Move reference is unavailable", reference)};
     const auto target =
         state.y_lock ? std::optional{reference_bgm->position}
-                     : resolve_resource_placement_position(chart, position, exact ? 0 : snap);
+                     : resolve_resource_placement_position(chart, position, exact ? snap_grid_t{} : snap);
     if (!target)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "BGM move reference is outside chart geometry")};
@@ -562,7 +562,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
         if (!shifted)
             return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                            "Mixed move note is outside chart geometry")};
-        auto planned = plan_note_move(chart, index, std::move(notes), first->id, *shifted, {}, 0,
+        auto planned = plan_note_move(chart, index, std::move(notes), first->id, *shifted, {}, {},
                                       true, state.y_lock, state.scratch_on_right);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
             return *diagnostics;
@@ -579,7 +579,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
 
 auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const bgm_event_t& source,
                            local_position_t position, object_id_t lane,
-                           std::optional<std::uint64_t> canvas_row, std::uint64_t snap)
+                           std::optional<std::uint64_t> canvas_row, snap_grid_t snap)
     -> document_command_result_t {
     if (source.sound_channel_event) {
         if (canvas_row)
@@ -595,7 +595,7 @@ auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const 
                                                  .event = source.id,
                                                  .canvas_row = *canvas_row,
                                                  .source_lane = lane,
-                                                 .snap_denominator = snap});
+                                                 .snap = snap});
     return apply_bgm_event_move(
         scratch,
         {.chart = chart, .event = source.id, .position = position, .source_lane = lane});
@@ -611,14 +611,14 @@ auto plan_single_bgm_move(const document_history_t& history,
         state.y_lock ? std::optional{source.position}
         : canvas_row ? std::optional{source.position}
                      : resolve_resource_placement_position(
-                           chart, requested, exact ? 0 : edit_snap_denominator(chart, state));
+                           chart, requested, exact ? snap_grid_t{} : edit_snap_grid(chart, state));
     if (!target)
         return diagnostic_list_t{
             error(diagnostic_code_t::row_out_of_range, "BGM move cannot snap to this chart row")};
     auto scratch = document_history_t::from(history.document);
     const auto moved = stage_single_bgm_move(
         scratch, state.chart, source, *target, lane.value_or(source.source_lane),
-        state.y_lock ? std::nullopt : canvas_row, exact ? 0 : edit_snap_denominator(chart, state));
+        state.y_lock ? std::nullopt : canvas_row, exact ? snap_grid_t{} : edit_snap_grid(chart, state));
     if (!moved.diagnostics.empty())
         return moved.diagnostics;
     const auto& destination = *scratch.document.find_chart(state.chart);
@@ -662,7 +662,7 @@ auto plan_move_gesture(const editor_edit_context_t& context,
         return diagnostic_list_t{
             error(diagnostic_code_t::row_out_of_range, "Mixed moves require authored chart rows")};
     return plan_selected_object_move(chart, context.scope.measures, state, std::move(targets),
-                                     reference, position, lane, edit_snap_denominator(chart, state),
+                                     reference, position, lane, edit_snap_grid(chart, state),
                                      exact_position);
 }
 

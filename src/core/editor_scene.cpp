@@ -1874,7 +1874,8 @@ auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible
     const auto grid = editor_grid_t::from(
         context.chart, {.visible_begin_row = visible_begin,
                         .visible_end_row = visible_end,
-                        .active_snap_denominator = context.view.active_snap_denominator,
+                        .active_snap = snap_grid_t{.denominator = context.view.active_snap_denominator,
+                                                   .space = context.view.active_snap_space},
                         .include_virtual_bms_tail = context.request.include_virtual_bms_tail,
                         .pixels_per_standard_measure = context.view.pixels_per_standard_measure,
                         .density = context.request.grid_density,
@@ -2590,6 +2591,7 @@ auto is_window_key_current(const editor_field_scene_window_t& window,
         window.request.retained_window_minimum_margin_pixels ==
             request.retained_window_minimum_margin_pixels &&
         previous.active_snap_denominator == view.active_snap_denominator &&
+        previous.active_snap_space == view.active_snap_space &&
         previous.selected_notes == view.selected_notes &&
         previous.selected_objects == view.selected_objects &&
         is_window_bgm_width_current(window, request) &&

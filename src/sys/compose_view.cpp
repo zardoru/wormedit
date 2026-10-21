@@ -171,10 +171,11 @@ auto resolve_compose_paint_cell(const wormedit::chart_document_t& chart,
                                 const wormedit::editor_hit_test_index_t& index,
                                 const wormedit::editor_interaction_view_model_t& view, double x,
                                 double y, double field_left, double field_width, bool downscroll,
-                                std::uint64_t snap)
+                                wormedit::snap_grid_t snap)
     -> std::optional<wormedit::editor_hit_target_t> {
     auto hit_view = view;
-    hit_view.active_snap_denominator = snap;
+    hit_view.active_snap_denominator = snap.denominator;
+    hit_view.active_snap_space = snap.space;
     auto target = wormedit::hit_test_editor(chart, index, hit_view,
         {.x_pixels = x, .y_pixels = downscroll ? view.viewport_height_pixels - y : y,
          .field_left_pixels = field_left, .field_width_pixels = field_width});
@@ -1276,6 +1277,7 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
         retained_state->supported_snap_denominators = snap.supported_denominators;
         retained_state->active_snap_denominator = snap.active_denominator;
         retained_state->active_snap_was_fallback = snap.active_was_fallback;
+        retained_state->active_snap_space = application_state.project.compose_view.snap_space;
         retained_state->snap_enabled = application_state.project.compose_view.edit_snap_enabled;
         retained_state->y_lock = application_state.project.compose_view.y_lock;
         retained_state->bar_line_time = application_state.project.compose_view.bar_line_time;
@@ -1397,6 +1399,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     view.area_canvas_rows = canvas_rows;
     view.area_rows_per_measure = chart.divisions_per_standard_measure;
     view.area_snap_denominator = retained_state->active_snap_denominator;
+    view.area_snap_space = retained_state->active_snap_space;
     view.edit_snap_enabled = retained_state->snap_enabled;
     view.y_lock = retained_state->y_lock;
     auto& measure_lane = view.measure_lane;
@@ -1870,9 +1873,10 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
         field_width,
         bindings_truncated,
         input.frame.bga_move_preview,
-        input.frame.retained_state ? wormedit::edit_snap_denominator(input.scope.chart_scope.chart,
+        input.frame.retained_state ? wormedit::edit_snap_grid(input.scope.chart_scope.chart,
                                                                      *input.frame.retained_state)
-                                   : input.scope.chart_scope.chart.divisions_per_standard_measure};
+                                   : wormedit::snap_grid_t{
+                                         .denominator = input.scope.chart_scope.chart.divisions_per_standard_measure}};
     // Metadata contains no grid/objects; their immutable scalar records are extracted below.
     build_compose_layout_and_notes_view(projection);
     build_compose_bgm_view(projection, cache);
@@ -2102,8 +2106,8 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         playable_field_width,
         lane_key_bindings_truncated,
         input.frame.bga_move_preview,
-        retained_state ? wormedit::edit_snap_denominator(chart, *retained_state)
-                       : chart.divisions_per_standard_measure};
+        retained_state ? wormedit::edit_snap_grid(chart, *retained_state)
+                       : wormedit::snap_grid_t{.denominator = chart.divisions_per_standard_measure}};
     populate_compose_sound_labels(projection);
     build_compose_layout_and_notes_view(projection);
     build_compose_bgm_view(projection, cache);
@@ -2352,7 +2356,7 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
         input.scope.chart_scope.chart, *index, input.scope.interaction_view, x, y,
         view.playable_field_left_pixels,
         view.playable_field_right_pixels - view.playable_field_left_pixels, input.scope.downscroll,
-        edit_snap_denominator(input.scope.chart_scope.chart, *input.frame.retained_state));
+        edit_snap_grid(input.scope.chart_scope.chart, *input.frame.retained_state));
     if (!target) return;
     const auto row = (input.scope.chart_scope.measures).row_of(target->position);
     if (!row) return;
@@ -2379,8 +2383,9 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
         .display_lane_number = lane->display_order + 1,
         .key_color = lane->key_color,
         .glyph = lane->glyph,
-        .snap_class = wormedit::ui::note_snap_class(
-            target->position.row, input.scope.chart_scope.chart.divisions_per_standard_measure),
+        .snap_class = wormedit::ui::note_snap_class(wormedit::grid_phase(
+            input.scope.chart_scope.chart, input.scope.chart_scope.measures, *row,
+            input.scope.interaction_view.active_snap_space)),
         .kind = static_cast<wormedit::note_kind_t>(view.armed_note_kind),
         .paint_erase_preview = occupied,
         .paint_invalid_preview = !is_note_kind_allowed(input.scope.chart_scope.chart,

@@ -68,7 +68,7 @@ auto make_recipe_song() -> song_document_t {
 auto make_range_proposal(const document_history_t& history, sv_recipe_range_handle_t handle,
                           local_position_t pointer) -> proposal_outcome_t<sv_recipe_range_drag_t> {
     auto proposal = sv_recipe_range_drag_t::propose(history, chart_id_t{10}, recipe_id_t{20},
-        handle, pointer, 4, false);
+        handle, pointer, {4}, false);
     REQUIRE(proposal.value);
     return proposal;
 }
@@ -104,7 +104,7 @@ void revise_draft(const document_history_t& history, proposal_outcome_t<sv_recip
 }
 
 void revise_draft_range(const document_history_t& history,
-    proposal_outcome_t<sv_recipe_draft_t>& draft, position_span_t hits, std::uint64_t snap) {
+    proposal_outcome_t<sv_recipe_draft_t>& draft, position_span_t hits, snap_grid_t snap) {
     REQUIRE(draft.value);
     auto revised = draft.value->revise(history, {.diagnostics = std::move(draft.diagnostics)}, hits, snap);
     REQUIRE(revised.value);
@@ -444,7 +444,7 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
 
     auto locked =
         sv_recipe_range_drag_t::propose(history, chart_id_t{10}, recipe_id_t{20},
-                                   sv_recipe_range_handle_t::end, {measure_id_t{12}, 0}, 4, true);
+                                   sv_recipe_range_handle_t::end, {measure_id_t{12}, 0}, {4}, true);
     check_locked_range(locked);
 
     auto stale =
@@ -592,13 +592,13 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
         checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10},
                               make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1})));
     REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
-    revise_draft_range(history, draft, {{measure_id_t{12}, 451}, {measure_id_t{11}, 17}}, 4);
+    revise_draft_range(history, draft, {{measure_id_t{12}, 451}, {measure_id_t{11}, 17}}, snap_grid_t{4});
     CHECK((draft.value->payload.candidate.range.begin == local_position_t{measure_id_t{11}, 0}));
     CHECK((draft.value->payload.candidate.range.end == local_position_t{measure_id_t{12}, 480}));
     CHECK(history.document.revision == revision);
     CHECK(history.undo.size() == undo_size);
 
-    revise_draft_range(history, draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 959}}, 4);
+    revise_draft_range(history, draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 959}}, snap_grid_t{4});
     CHECK((draft.value->payload.candidate.range.begin == local_position_t{measure_id_t{11}, 0}));
     CHECK((draft.value->payload.candidate.range.end == local_position_t{measure_id_t{12}, 960}));
     const auto chart_end_preview = preview_sv_recipe_draft(history, *draft.value);
@@ -608,7 +608,7 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
 
     const auto before_failed_range = draft.value->payload.candidate.range;
     const auto failed_range = draft.value->revise(history, {},
-        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
+        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, snap_grid_t{4});
     CHECK_FALSE(failed_range.value);
     CHECK(draft.value->payload.candidate.range == before_failed_range);
     CHECK(history.document.revision == revision);
@@ -619,9 +619,9 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
     auto uneven_draft =
         checked_draft(sv_recipe_draft_t::propose(uneven_history, chart_id_t{10},
                               make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1})));
-    revise_draft_range(uneven_history, uneven_draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 840}}, 4);
+    revise_draft_range(uneven_history, uneven_draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 840}}, snap_grid_t{4});
     CHECK((uneven_draft.value->payload.candidate.range.end == local_position_t{measure_id_t{12}, 840}));
-    revise_draft_range(uneven_history, uneven_draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 838}}, 4);
+    revise_draft_range(uneven_history, uneven_draft, {{measure_id_t{11}, 0}, {measure_id_t{12}, 838}}, snap_grid_t{4});
     CHECK((uneven_draft.value->payload.candidate.range.end == local_position_t{measure_id_t{12}, 840}));
     const auto uneven_preview = preview_sv_recipe_draft(uneven_history, *uneven_draft.value);
     REQUIRE(uneven_preview);
@@ -861,7 +861,7 @@ TEST_CASE("SV draft range revisions transfer existing string storage",
     auto initial = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
     const auto* name_storage = initial.value->payload.candidate.name.data();
     const auto revised = initial.value->revise(history, {},
-        position_span_t{{measure_id_t{11}, 17}, {measure_id_t{12}, 451}}, 4);
+        position_span_t{{measure_id_t{11}, 17}, {measure_id_t{12}, 451}}, snap_grid_t{4});
     REQUIRE(revised.value);
     CHECK(revised.value->payload.candidate.name == candidate.name);
     CHECK(revised.value->payload.candidate.name.data() == name_storage);
@@ -981,7 +981,7 @@ TEST_CASE("SV draft failed range revisions reuse diagnostics and keep the captur
     diagnostics.push_back(error(diagnostic_code_t::invalid_hold, "Previous range error"));
     const auto* storage = diagnostics.data();
     const auto revised = pending.value->revise(history, {.diagnostics = std::move(diagnostics)},
-        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
+        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, snap_grid_t{4});
     CHECK_FALSE(revised.value);
     REQUIRE(revised.diagnostics.size() == 1);
     CHECK(revised.diagnostics.data() == storage);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/proposal.h>
+#include <wormedit/core/snap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -133,7 +134,7 @@ struct sv_recipe_draft_t {
     // range updates keep its last valid candidate. Reuse the prior diagnostic buffer.
     [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t candidate) -> bool;
     [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&,
-        position_span_t pointer_hits, std::uint64_t active_snap_denominator) -> bool;
+        position_span_t pointer_hits, snap_grid_t snap) -> bool;
     [[nodiscard]] auto preview_candidate() const -> sv_recipe_t;
 
     proposal_lifecycle_t lifecycle;
@@ -150,7 +151,7 @@ static_assert(staged_proposal<sv_recipe_draft_t,
     std::tuple<proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t>>);
 static_assert(staged_proposal<sv_recipe_draft_t,
     std::tuple<const document_history_t&, chart_id_t, sv_recipe_t, bool>,
-    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, position_span_t, std::uint64_t>>);
+    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, position_span_t, snap_grid_t>>);
 
 // Raw candidate samples and the effective composition preview are both
 // transient. Composition includes the candidate at its stored recipe order,
@@ -245,10 +246,10 @@ struct sv_recipe_range_drag_t {
     [[nodiscard]] auto is_unchanged() const noexcept -> bool;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
         const proposal_application_input_t& = {}) -> diagnosed_t<std::optional<std::string>>;
-    // The pointer is an unsnapped chart hit; snap must divide the chart resolution.
+    // The pointer is an unsnapped chart hit; the snap denominator must divide the chart resolution.
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         recipe_id_t recipe, sv_recipe_range_handle_t handle, local_position_t pointer_position,
-        std::uint64_t active_snap_denominator, bool timing_locked)
+        snap_grid_t snap, bool timing_locked)
         -> proposal_outcome_t<sv_recipe_range_drag_t>;
     // Failed pointer updates leave the previous valid range available. Fatal errors
     // mark this state rejected; neither failure returns an applicable proposal.
@@ -260,13 +261,13 @@ struct sv_recipe_range_drag_t {
     position_span_t original_range;
     position_span_t preview_range;
     local_position_t snapped_pointer_anchor;
-    std::uint64_t active_snap_denominator{};
+    snap_grid_t snap;
     auto operator==(const sv_recipe_range_drag_t&) const -> bool = default;
 };
 
 static_assert(staged_proposal<sv_recipe_range_drag_t,
     std::tuple<const document_history_t&, chart_id_t, recipe_id_t, sv_recipe_range_handle_t,
-               local_position_t, std::uint64_t, bool>,
+               local_position_t, snap_grid_t, bool>,
     std::tuple<proposal_revision_scope_t<chart_stamp_t>&, local_position_t>>);
 
 // Turns one recipe into ordinary scroll or speed events and removes the recipe. The events are the

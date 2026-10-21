@@ -577,6 +577,7 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         (static_cast<std::uint64_t>(view.lane_key_legend_visible)<<3) |
         (static_cast<std::uint64_t>(view.timing_focus)<<4) |
         (static_cast<std::uint64_t>(view.edit_snap_enabled)<<5) |
+        (static_cast<std::uint64_t>(view.area_snap_space)<<6) |
         // Snap changes the grid lines without bumping the document revision.
         (view.area_snap_denominator<<8)};
     // Color views affect raster artwork, not the retained core scene.

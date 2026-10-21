@@ -10,7 +10,7 @@
 namespace wormedit::sys {
 namespace {
 auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
-    const timing_index_t& timing, const measure_index_t& measures, std::uint64_t snap_denominator)
+    const timing_index_t& timing, const measure_index_t& measures, snap_grid_t snap)
     -> std::optional<compose_minimap_target_t> {
     if (measures.entries.empty() || measures.total_rows != timing.total_rows ||
         preview_rate == 0 || timing.total_rows == 0 ||
@@ -23,14 +23,14 @@ auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
     auto snapped = static_cast<std::uint64_t>(std::floor(row));
     // The chart endpoint has no editable row; choose its last active grid row.
     snapped = std::min(snapped, timing.total_rows - 1);
-    if (snap_denominator != 0) {
+    if (snap.denominator != 0) {
         chart_document_t chart;
         chart.divisions_per_standard_measure = timing.divisions_per_standard_measure;
         const auto source = std::min(row, static_cast<long double>(timing.total_rows - 1));
-        auto nearest = snap_canvas_row(chart, measures, source, snap_denominator, timing.total_rows);
+        auto nearest = snap_canvas_row(chart, measures, source, snap, timing.total_rows);
         if (!nearest) return std::nullopt;
         if (*nearest > source)
-            nearest = adjacent_snap_canvas_row(chart, measures, source, snap_denominator,
+            nearest = adjacent_snap_canvas_row(chart, measures, source, snap,
                                               timing.total_rows, false);
         if (!nearest) return std::nullopt;
         snapped = *nearest;
@@ -40,7 +40,7 @@ auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
 }
 auto compose_minimap_target(double fraction, std::uint64_t total_frames,
     std::uint32_t waveform_rate, std::uint32_t preview_rate, const timing_index_t& timing,
-    const measure_index_t& measures, std::uint64_t snap_denominator, std::optional<std::uint64_t> compiled_end)
+    const measure_index_t& measures, snap_grid_t snap, std::optional<std::uint64_t> compiled_end)
     -> std::optional<compose_minimap_target_t> {
     if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0 || total_frames == 0 ||
         waveform_rate == 0 || preview_rate == 0 || timing.divisions_per_standard_measure == 0 ||
@@ -51,7 +51,7 @@ auto compose_minimap_target(double fraction, std::uint64_t total_frames,
     if (converted >= 0x1p63L) return std::nullopt;
     auto frame = static_cast<std::uint64_t>(converted);
     if (compiled_end) frame = std::min(frame, *compiled_end);
-    return target_at_frame(frame, preview_rate, timing, measures, snap_denominator);
+    return target_at_frame(frame, preview_rate, timing, measures, snap);
 }
 auto move_compose_minimap_cursor(document_history_t& history, editor_interaction_state_t& state,
     const measure_index_t& measures, const timing_index_t& timing,
@@ -85,7 +85,7 @@ auto seek_stopped_compose_transport(document_history_t& history, editor_interact
             "Compose seek is unavailable until the chart is ready.", notification_source_t::input,
             compose_feedback_delivery_t::notification);
     const auto target = target_at_frame(frame, audio::output_sample_rate,
-        *cache.timing.marker_timing_index, *cache.scene.cached_measure_index, edit_snap_denominator(*chart, state));
+        *cache.timing.marker_timing_index, *cache.scene.cached_measure_index, edit_snap_grid(*chart, state));
     if (!target)
         return compose_action_outcome_t::blocked("The requested chart position is unavailable.",
                                                  notification_source_t::input,

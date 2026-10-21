@@ -2654,14 +2654,17 @@ auto quantize_editor_for(compose_action_context_t& context)
 }
 
 // The Quantize grid and the editing snap are one grid: setting the target also sets the snap
-// when the chart supports it. An unsupported grid stays quantize-only, silently.
-void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint64_t divisions) {
-    const auto result =
-        wormedit::dispatch_editor_action(context.environment.document.history, context.state,
-                                         wormedit::set_edit_snap_action_t{divisions});
-    if (result.accepted && context.state.active_snap_denominator == divisions)
-        context.environment.editor.commands.project.compose_view.requested_snap_denominators
-            .insert_or_assign(context.state.chart.value, divisions);
+// when the chart supports it. An unsupported grid stays quantize-only, silently; the space
+// always follows.
+void share_quantize_grid_with_snap(compose_action_context_t& context, wormedit::snap_grid_t grid) {
+    auto& compose_view = context.environment.editor.commands.project.compose_view;
+    compose_view.snap_space = grid.space;
+    const auto result = wormedit::dispatch_editor_action(
+        context.environment.document.history, context.state,
+        wormedit::set_edit_snap_action_t{.denominator = grid.denominator, .space = grid.space});
+    if (result.accepted && context.state.active_snap_denominator == grid.denominator)
+        compose_view.requested_snap_denominators.insert_or_assign(context.state.chart.value,
+                                                                  grid.denominator);
 }
 
 struct apply_compose_quantize_settings_action_t {
@@ -2686,7 +2689,7 @@ auto apply_compose_quantize_settings_action_t::perform(compose_action_context_t&
             notification_source_t::edit);
     editor.request = *request;
     editor.preset_index.reset();
-    share_quantize_grid_with_snap(context, request->divisions);
+    share_quantize_grid_with_snap(context, {.denominator = request->divisions, .space = request->space});
     return compose_action_outcome_t::from("Quantization settings updated.",
                                           notification_severity_t::info,
                                           notification_source_t::input);
@@ -2721,7 +2724,7 @@ auto select_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     editor.request = {.divisions = preset.divisions, .space = preset.space, .tie = preset.tie,
                       .collisions = quantization_collision_t::reject, .holds = preset.holds};
     editor.preset_index = index;
-    share_quantize_grid_with_snap(context, preset.divisions);
+    share_quantize_grid_with_snap(context, {.denominator = preset.divisions, .space = preset.space});
     return compose_action_outcome_t::from("Quantization preset selected.",
                                           notification_severity_t::info,
                                           notification_source_t::input);

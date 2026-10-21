@@ -1052,6 +1052,7 @@ typedef struct WormUiComposeView {
     uint64_t area_canvas_rows;
     uint64_t area_rows_per_measure;
     uint64_t area_snap_denominator;
+    wormedit::quantization_space_t area_snap_space;
     // False while pointer edits land on the finest chart row instead of the active grid.
     bool edit_snap_enabled;
     /* Y-lock: dragging notes changes lanes only, never rows. */

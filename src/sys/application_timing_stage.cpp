@@ -49,16 +49,6 @@
 #include <vector>
 
 namespace wormedit::sys {
-auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
-                            std::uint64_t active_denominator) -> std::uint64_t {
-    // A snap the chart's resolution cannot represent falls back to one standard
-    // measure.
-    if (active_denominator == 0 || chart.divisions_per_standard_measure % active_denominator != 0) {
-        return chart.divisions_per_standard_measure;
-    }
-    return chart.divisions_per_standard_measure / active_denominator;
-}
-
 auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
                                    const wormedit::chart_indices_t& indices, double fraction,
                                    std::uint64_t active_denominator)
@@ -81,7 +71,8 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
     const auto usable_denominator =
         step == chart.divisions_per_standard_measure ? std::uint64_t{1} : active_denominator;
     const auto snapped_row = wormedit::snap_canvas_row(chart, *measures, raw_row,
-                                                       usable_denominator, measures->total_rows)
+                                                       {.denominator = usable_denominator},
+                                                       measures->total_rows)
                                  .value_or(raw_row);
     return measures->position_at(snapped_row);
 }

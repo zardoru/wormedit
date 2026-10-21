@@ -99,7 +99,7 @@ auto quantize_report_row_view(const quantize_report_row_t& row)
 
 auto active_quantize_request(application_command_state_t& application,
                              const wormedit::song_document_t& document,
-                             const wormedit::chart_document_t& chart, std::uint64_t active_snap)
+                             const wormedit::chart_document_t& chart, wormedit::snap_grid_t active_snap)
     -> wormedit::quantize_request_t {
     using namespace wormedit;
     if (application.project.quantize.quantize_editor && application.project.quantize.quantize_editor->stamp.is_identity_current(document, chart.id)) {
@@ -119,7 +119,7 @@ auto active_quantize_request(application_command_state_t& application,
         }
         return request;
     }
-    return quantize_request_t{.divisions = active_snap};
+    return quantize_request_t{.divisions = active_snap.denominator, .space = active_snap.space};
 }
 
 void populate_quantize_presets(compose_scene_cache_t& cache,
@@ -212,7 +212,7 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
     populate_measure_rows(cache, chart, view);
     populate_quantize_applied_report(cache, document, chart, application, view);
     auto request =
-        active_quantize_request(application, document, chart, state.active_snap_denominator);
+        active_quantize_request(application, document, chart, wormedit::active_snap_grid(state));
     view.supported_snap_denominator_count = std::min(state.supported_snap_denominators.size(),
                                                      std::size(view.supported_snap_denominators));
     std::copy_n(state.supported_snap_denominators.begin(), view.supported_snap_denominator_count,
@@ -501,7 +501,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
         cache.quantize.quantize_preview_row_views.empty())
         return;
     auto quantize_request =
-        active_quantize_request(application, document, chart, state.active_snap_denominator);
+        active_quantize_request(application, document, chart, wormedit::active_snap_grid(state));
     quantize_request.selection = wormedit::editor_quantize_selection(state);
     const auto& preview = cache.quantize.quantize_preview.get(
         chart, document.revision, quantize_request.selection->notes, quantize_request);

@@ -47,10 +47,9 @@ auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
     return points;
 }
 
-auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)
-    -> std::uint8_t {
-    if (divisions_per_standard_measure == 0) return 0;
-    const auto denominator = wormedit::rows_to_fraction(row, divisions_per_standard_measure).denominator;
+auto note_snap_class(std::uint64_t row, std::uint64_t period) -> std::uint8_t {
+    if (period == 0) return 0;
+    const auto denominator = wormedit::rows_to_fraction(row, period).denominator;
     for (const auto snap : snap_classes) {
         if (snap % denominator == 0) return snap;
     }
@@ -72,16 +71,16 @@ auto scaled_remainder(std::uint64_t value, std::uint64_t scale,
 }
 
 auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
-                     std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t {
-    if (denominator == 0 || numerator >= denominator || divisions == 0) return 0;
-    if (numerator == 0) return note_snap_class(whole, divisions);
+                     std::uint64_t denominator, std::uint64_t period) -> std::uint8_t {
+    if (denominator == 0 || numerator >= denominator || period == 0) return 0;
+    if (numerator == 0) return note_snap_class(whole, period);
     const auto reduced = wormedit::rows_to_fraction(numerator, denominator);
     numerator = reduced.numerator;
     denominator = reduced.denominator;
     for (const auto snap : snap_classes) {
-        const auto common = std::gcd(static_cast<std::uint64_t>(snap), divisions);
+        const auto common = std::gcd(static_cast<std::uint64_t>(snap), period);
         const auto scale = snap / common;
-        const auto divisor = divisions / common;
+        const auto divisor = period / common;
         if (scale % denominator != 0) continue;
         const auto fraction = (numerator * (scale / denominator)) % divisor;
         const auto remainder = scaled_remainder(whole, scale, divisor);

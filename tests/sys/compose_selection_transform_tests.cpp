@@ -82,6 +82,19 @@ TEST_CASE("shift moves the selection by one snap step", "[sys][selection-transfo
     CHECK(fixture.history.document.charts[0].measures[0].notes[0].position.row == 240);
 }
 
+TEST_CASE("authored shift steps by the selection's own measure", "[sys][selection-transform][authored-snap]") {
+    fixture_t fixture;
+    auto song = transform_song();
+    song.charts[0].measures[0].definition = {{5, 4}, meter_t{5, 4}};
+    fixture.history = document_history_t::from(song);
+    fixture.state.active_snap_space = quantization_space_t::authored_measure;
+    CHECK(apply_selection_transform(fixture.history, fixture.state,
+                                    selection_transform_t::shift_later) ==
+          "Selection shifted by one snap step.");
+    // A quarter of the 1200-row 5/4 measure, not of a standard measure.
+    CHECK(fixture.note().position.row == 300);
+}
+
 TEST_CASE("transforms need a selection", "[sys][selection-transform]") {
     fixture_t fixture;
     fixture.state.selected_notes.clear();

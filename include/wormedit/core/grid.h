@@ -4,6 +4,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/result.h>
+#include <wormedit/core/snap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -61,7 +62,7 @@ struct editor_grid_request_t {
     // lines are visible when their whole_rows component lies in this interval.
     std::uint64_t visible_begin_row{};
     std::uint64_t visible_end_row{};
-    std::optional<std::uint64_t> active_snap_denominator;
+    std::optional<snap_grid_t> active_snap;
     bool include_virtual_bms_tail{};
     double pixels_per_standard_measure{192.0};
     editor_grid_density_t density;

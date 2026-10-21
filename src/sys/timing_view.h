@@ -13,6 +13,10 @@
 
 namespace wormedit::sys {
 
+// The timing stage keeps a standard grid; a snap the chart cannot represent is one measure.
+auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
+                            std::uint64_t active_denominator) -> std::uint64_t;
+
 struct timing_grid_state_t {
     wormedit::chart_id_t chart;
     std::vector<std::uint64_t> supported_denominators;

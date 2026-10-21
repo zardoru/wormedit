@@ -3463,9 +3463,9 @@ struct application_t::implementation_t {
             const auto denominator =
                 chart == nullptr
                     ? views.timing_grid.active_denominator
-                    : wormedit::effective_edit_snap_denominator(
-                          *chart, views.timing_grid.active_denominator,
-                          application_state.project.compose_view.edit_snap_enabled);
+                    : wormedit::effective_edit_snap_grid(
+                          *chart, {.denominator = views.timing_grid.active_denominator},
+                          application_state.project.compose_view.edit_snap_enabled).denominator;
             dispatch_timing_stage_action(
                 action, application_state.project.timing_recipe.timing_locked, denominator);
             return true;

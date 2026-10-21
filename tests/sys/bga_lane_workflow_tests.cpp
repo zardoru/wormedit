@@ -179,7 +179,7 @@ TEST_CASE("BGA lane move keeps event identity and leaves other event kinds untou
     const auto moved = apply_bga_event_move(
         history,
         {.chart = chart_id_t{7}, .event = object_id_t{11},
-         .position = {measure_id_t{1}, 480}, .snap_denominator = 4});
+         .position = {measure_id_t{1}, 480}, .snap = {4}});
     if (!moved) for (const auto& diagnostic : moved.diagnostics) WARN(diagnostic.message);
     REQUIRE(moved);
     REQUIRE(history.undo.size() == 1);
@@ -303,7 +303,7 @@ TEST_CASE("BGA move materializes one virtual BMS measure in the same undo step",
     const auto moved = apply_virtual_bms_bga_event_move(
         history,
         {.chart = chart_id_t{7}, .event = original.id, .canvas_row = 2 * 960 + 120,
-         .snap_denominator = 4});
+         .snap = {4}});
     if (!moved) for (const auto& diagnostic : moved.diagnostics) WARN(diagnostic.message);
     REQUIRE(moved);
     REQUIRE(history.undo.size() == 1);
@@ -320,7 +320,7 @@ TEST_CASE("BGA move with snap disabled preserves the requested virtual BMS row",
     const auto moved = apply_virtual_bms_bga_event_move(
         history,
         {.chart = chart_id_t{7}, .event = original.id, .canvas_row = 2 * 960 + 120,
-         .snap_denominator = 0});
+         .snap = {0}});
     REQUIRE(moved);
     REQUIRE(history.undo.size() == 1);
     const auto& chart = history.document.charts.front();

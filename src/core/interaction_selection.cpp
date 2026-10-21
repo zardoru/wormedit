@@ -17,7 +17,6 @@ using interaction_detail::minimum_viewport_scroll;
 using interaction_detail::normalized_position_span;
 using interaction_detail::absolute_row_at_y_pixels;
 using interaction_detail::find_active_lane;
-using interaction_detail::snapped_position;
 
 auto editor_selection_snapshot_t::from(const editor_interaction_state_t& state)
     -> editor_selection_snapshot_t {
@@ -819,7 +818,7 @@ auto snapped_area_selection_row(const editor_edit_context_t& context,
         std::clamp(y, 0.0, std::nextafter(view.viewport_height_pixels, 0.0)), true);
     if (!row)
         return std::nullopt;
-    const auto denominator = edit_snap_denominator(context.scope.chart, context.state);
+    const auto denominator = edit_snap_grid(context.scope.chart, context.state);
     auto total_rows = context.scope.measures.total_rows;
     if (has_chart_virtual_tail(context.scope.chart)) {
         const auto canvas = build_virtual_canvas(context.scope.chart);

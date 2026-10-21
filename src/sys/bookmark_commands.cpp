@@ -36,12 +36,12 @@ auto beat_position_for_audio_milliseconds(const chart_indices_t& indices,
 } // namespace
 
 auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& index,
-                      double absolute_row, std::uint64_t snap_denominator)
+                      double absolute_row, snap_grid_t snap)
     -> std::optional<std::uint64_t> {
     if (index.total_rows == 0 || !std::isfinite(absolute_row)) return std::nullopt;
     const auto row = std::clamp(static_cast<long double>(absolute_row), 0.0L,
                                 static_cast<long double>(index.total_rows - 1));
-    return snap_canvas_row(chart, index, row, snap_denominator, index.total_rows);
+    return snap_canvas_row(chart, index, row, snap, index.total_rows);
 }
 
 auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t& measures,
@@ -206,7 +206,7 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
                                                      notification_source_t::edit);
         const auto& index = *indices.measures;
         const auto row = nearest_snap_row(*chart, index, *application.project.transport.preview_playhead_absolute_row,
-                                          state.active_snap_denominator);
+                                          active_snap_grid(state));
         const auto snapped = row ? (index).position_at(*row) : std::nullopt;
         if (!snapped)
             return compose_action_outcome_t::blocked("The playhead is not on an editable row.",

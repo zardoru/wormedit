@@ -241,10 +241,9 @@ auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t&
 
 auto is_valid_view_snap(const chart_document_t& chart,
                      const editor_interaction_state_t& state) -> bool {
-    return state.active_snap_denominator != 0 &&
-        std::ranges::find(state.supported_snap_denominators, state.active_snap_denominator) !=
+    return std::ranges::find(state.supported_snap_denominators, state.active_snap_denominator) !=
             state.supported_snap_denominators.end() &&
-        chart.divisions_per_standard_measure % state.active_snap_denominator == 0;
+        snap_step(chart, active_snap_grid(state), 0).has_value();
 }
 
 auto is_valid_viewport(const chart_document_t& chart, const measure_index_t& index,
@@ -415,8 +414,11 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         return *diagnostics;
     auto space_preview =
         std::get<std::optional<space_range_selection_preview_t>>(std::move(range_preview));
-    const auto step =
-        geometry.chart->divisions_per_standard_measure / state.active_snap_denominator;
+    const auto has_grid_row = [&](bool forward) {
+        return adjacent_snap_canvas_row(*geometry.chart, geometry.index, geometry.absolute_row,
+                                        active_snap_grid(state), geometry.canvas_rows, forward)
+            .has_value();
+    };
     return editor_interaction_view_model_t{
         .chart = state.chart,
         .active_lane = state.active_lane,
@@ -426,6 +428,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
         .cursor_subrow = state.cursor_subrow,
         .active_snap_denominator = state.active_snap_denominator,
+        .active_snap_space = state.active_snap_space,
         .snap_enabled = state.snap_enabled,
         .y_lock = state.y_lock,
         .bga_lane_visible = state.bga_lane_visible,
@@ -450,8 +453,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .selected_canvas_measure = state.selected_canvas_measure,
         .selected_notes = state.selected_notes,
         .selected_objects = state.selected_objects,
-        .can_move_backward = geometry.absolute_row >= step,
-        .can_move_forward = step < geometry.canvas_rows - geometry.absolute_row,
+        .can_move_backward = has_grid_row(false),
+        .can_move_forward = has_grid_row(true),
     };
 }
 
@@ -747,6 +750,7 @@ auto recover_editor_interaction(const document_history_t& history,
         result.state->armed_note_kind = previous.armed_note_kind;
     result.state->armed_hitsample = previous.armed_hitsample;
     result.state->hitsound_palette_visible = previous.hitsound_palette_visible;
+    result.state->active_snap_space = previous.active_snap_space;
     const auto view = make_view(history, *result.state);
     if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
         result.view = *recovered;
@@ -769,7 +773,7 @@ auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t>
     -> std::variant<duration_resize_plan_t, diagnostic_list_t> {
     return plan_duration_resize(
         context.scope.chart, context.scope.measures, std::move(targets), reference, end,
-        edit_snap_denominator(context.scope.chart, context.state), exact_end);
+        edit_snap_grid(context.scope.chart, context.state), exact_end);
 }
 
 

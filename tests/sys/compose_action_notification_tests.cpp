@@ -1585,6 +1585,39 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     check_action(fixture.history.undo.empty());
 }
 
+TEST_CASE("Quantize Space is the editing grid's space too",
+          "[unit][sys][compose-action][quantize-snap][authored-snap]") {
+    action_notification_fixture_t fixture;
+    fixture.state.supported_snap_denominators = {4, 8, 16};
+    auto settings = fixture.action(WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
+    settings.compose_quantize_divisions = 4;
+    settings.compose_quantize_space = quantization_space_t::authored_measure;
+    (void)fixture.dispatch(settings);
+    const auto& chart = fixture.history.document.charts.front();
+    check_action(fixture.state.active_snap_space == quantization_space_t::authored_measure);
+    check_action(edit_snap_grid(chart, fixture.state) ==
+                 snap_grid_t{.denominator = 4, .space = quantization_space_t::authored_measure});
+    check_action(fixture.application.project.compose_view.snap_space ==
+                 quantization_space_t::authored_measure);
+
+    // Changing the grid from the snap badge keeps the space on both sides.
+    auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
+    snap.compose_snap_denominator = 8;
+    (void)fixture.dispatch(snap);
+    check_action(fixture.state.active_snap_space == quantization_space_t::authored_measure);
+    check_action(fixture.application.project.quantize.quantize_editor->request.space ==
+                 quantization_space_t::authored_measure);
+
+    // Turning snapping off lands on single standard rows whatever the space.
+    fixture.state.snap_enabled = false;
+    check_action(edit_snap_grid(chart, fixture.state) ==
+                 snap_grid_t{.denominator = chart.divisions_per_standard_measure});
+
+    settings.compose_quantize_space = quantization_space_t::standard_measure;
+    (void)fixture.dispatch(settings);
+    check_action(fixture.state.active_snap_space == quantization_space_t::standard_measure);
+}
+
 TEST_CASE("Snap badge changes supported editing grid without editing the document or quantize policies", "[unit][sys][compose-action][snap-grid]") {
     action_notification_fixture_t fixture;
     fixture.state.supported_snap_denominators = {4, 8, 16};

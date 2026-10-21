@@ -1371,23 +1371,23 @@ TEST_CASE("BMSON razor path fills exact grid cells across measures in pointer or
     REQUIRE(chart.measures.size() >= 2);
     const wormedit::local_position_t begin{chart.measures[0].id, 720};
     const wormedit::local_position_t end{chart.measures[1].id, 240};
-    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, 8);
+    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, {8});
     REQUIRE(forward);
     const std::vector<wormedit::local_position_t> expected{
         {chart.measures[0].id, 840}, {chart.measures[1].id, 0},
         {chart.measures[1].id, 120}, {chart.measures[1].id, 240}};
     CHECK(forward.positions == expected);
-    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, 8);
+    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, {8});
     REQUIRE(backward);
     CHECK(backward.positions == (std::vector<wormedit::local_position_t>{
         {chart.measures[1].id, 120}, {chart.measures[1].id, 0},
         {chart.measures[0].id, 840}, {chart.measures[0].id, 720}}));
-    const auto still = wormedit::interpolate_bmson_razor_path(chart, begin, begin, 8);
+    const auto still = wormedit::interpolate_bmson_razor_path(chart, begin, begin, {8});
     REQUIRE(still);
     CHECK(still.positions.empty());
-    CHECK_FALSE(wormedit::interpolate_bmson_razor_path(chart, begin, end, 8, 3));
+    CHECK_FALSE(wormedit::interpolate_bmson_razor_path(chart, begin, end, {8}, 3));
     CHECK_FALSE(wormedit::interpolate_bmson_razor_path(
-        chart, {chart.measures[0].id, 721}, end, 8));
+        chart, {chart.measures[0].id, 721}, end, {8}));
 }
 
 TEST_CASE("BMSON stem points classify span, Shift, EOF, before-first and empty-channel rows",
@@ -1639,23 +1639,23 @@ TEST_CASE("BMSON razor interpolation visits measure-local grids and shortened he
     const auto chart = fractional_razor_chart();
     const wormedit::local_position_t begin{chart.measures[0].id, 240};
     const wormedit::local_position_t end{chart.measures[3].id, 240};
-    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, 4, 4);
+    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, {4}, 4);
     REQUIRE(forward);
     check_local_razor(forward.positions == std::vector<wormedit::local_position_t>{
         {chart.measures[1].id, 0}, {chart.measures[2].id, 0},
         {chart.measures[3].id, 0}, end});
-    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, 4, 4);
+    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, {4}, 4);
     REQUIRE(backward);
     check_local_razor(backward.positions == std::vector<wormedit::local_position_t>{
         {chart.measures[3].id, 0}, {chart.measures[2].id, 0},
         {chart.measures[1].id, 0}, begin});
-    const auto limited = wormedit::interpolate_bmson_razor_path(chart, begin, end, 4, 3);
+    const auto limited = wormedit::interpolate_bmson_razor_path(chart, begin, end, {4}, 3);
     check_local_razor(!limited);
     check_local_razor(limited.positions.empty());
     check_local_razor(!wormedit::interpolate_bmson_razor_path(
-        chart, {chart.measures[1].id, 1}, end, 4));
+        chart, {chart.measures[1].id, 1}, end, {4}));
     const auto fine = wormedit::interpolate_bmson_razor_path(
-        chart, {chart.measures[1].id, 1}, {chart.measures[1].id, 4}, 0);
+        chart, {chart.measures[1].id, 1}, {chart.measures[1].id, 4}, {0});
     REQUIRE(fine);
     check_local_razor(fine.positions == std::vector<wormedit::local_position_t>{
         {chart.measures[1].id, 2}, {chart.measures[1].id, 3}, {chart.measures[1].id, 4}});
@@ -1670,14 +1670,14 @@ TEST_CASE("BMSON razor capacity counts tiny measure heads and retains the hard m
                                   .definition = {.length = {1, 16}}});
     const wormedit::local_position_t begin{chart.measures.front().id, 0};
     const auto exact = wormedit::interpolate_bmson_razor_path(
-        chart, begin, {chart.measures[256].id, 0}, 4, 999);
+        chart, begin, {chart.measures[256].id, 0}, {4}, 999);
     REQUIRE(exact);
     check_local_razor(exact.positions.size() == 256);
     const auto overflow = wormedit::interpolate_bmson_razor_path(
-        chart, begin, {chart.measures[257].id, 0}, 4, 999);
+        chart, begin, {chart.measures[257].id, 0}, {4}, 999);
     check_local_razor(!overflow);
     check_local_razor(overflow.positions.empty());
-    const auto stationary = wormedit::interpolate_bmson_razor_path(chart, begin, begin, 4, 0);
+    const auto stationary = wormedit::interpolate_bmson_razor_path(chart, begin, begin, {4}, 0);
     REQUIRE(stationary);
     check_local_razor(stationary.positions.empty());
 }

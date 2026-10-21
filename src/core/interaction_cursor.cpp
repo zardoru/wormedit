@@ -93,7 +93,7 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
     }
     const auto next_row = adjacent_snap_canvas_row(context.edit.scope.chart, context.edit.scope.measures,
         static_cast<long double>(context.absolute) + context.edit.state.cursor_subrow,
-        context.edit.state.active_snap_denominator, canvas_rows,
+        active_snap_grid(context.edit.state), canvas_rows,
         action.direction == interaction_direction_t::forward);
     if (!next_row)
         return editor_interaction_result_t{
@@ -307,8 +307,7 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const measure_index_t& index, editor_interaction_state_t& state) -> bool {
     if (!state.fixed_cursor_screen_y_pixels) return true;
     const auto rows = cursor_canvas_rows(chart, index);
-    if (!rows || !*rows || !state.active_snap_denominator || !chart.divisions_per_standard_measure ||
-        chart.divisions_per_standard_measure % state.active_snap_denominator) return false;
+    if (!rows || !*rows || !snap_step(chart, active_snap_grid(state), 0)) return false;
     const auto source = state.scroll_direction == editor_field_scroll_direction_t::down
         ? state.viewport_height_pixels - *state.fixed_cursor_screen_y_pixels
         : *state.fixed_cursor_screen_y_pixels;
@@ -316,7 +315,7 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
         static_cast<long double>(chart.divisions_per_standard_measure) / state.pixels_per_standard_measure;
     if (!std::isfinite(raw)) return false;
     const auto bounded = std::clamp(raw, 0.0L, static_cast<long double>(*rows - 1));
-    const auto snapped = snap_canvas_row(chart, index, bounded, state.active_snap_denominator, *rows);
+    const auto snapped = snap_canvas_row(chart, index, bounded, active_snap_grid(state), *rows);
     if (!snapped) return false;
     const auto row = *snapped;
     const auto position = index.position_at(row);

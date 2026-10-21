@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction_types.h>
+#include <wormedit/core/snap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -202,7 +203,7 @@ struct place_resource_action_t {
     resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
     // Zero keeps an already exact cursor row. Pointer tools pass the active
     // denominator so all placement kinds use the same nearest-row policy.
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
     std::optional<std::vector<layer_id_t>> semantic_layers;
     std::optional<visual_event_kind_t> bga_kind;
 };
@@ -214,7 +215,7 @@ struct place_virtual_bms_resource_action_t {
     lane_id_t lane;
     object_id_t source_lane;
     resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
     std::optional<std::vector<layer_id_t>> semantic_layers;
     std::optional<visual_event_kind_t> bga_kind;
 };
@@ -282,14 +283,14 @@ struct move_bgm_event_action_t {
     // Empty keeps the event in its current lane. An occupied target advances
     // through source-lane order, appending a lane when none is free.
     object_id_t source_lane;
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
 };
 
 struct move_bga_event_action_t {
     chart_id_t chart;
     object_id_t event;
     local_position_t position;
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
     std::optional<visual_event_kind_t> bga_kind;
 };
 
@@ -297,7 +298,7 @@ struct move_virtual_bms_bga_event_action_t {
     chart_id_t chart;
     object_id_t event;
     std::uint64_t canvas_row{};
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
     std::optional<visual_event_kind_t> bga_kind;
 };
 
@@ -318,7 +319,7 @@ struct move_virtual_bms_bgm_event_action_t {
     object_id_t event;
     std::uint64_t canvas_row{};
     object_id_t source_lane;
-    std::uint64_t snap_denominator{};
+    snap_grid_t snap;
 };
 
 // Moves one ordinary BGM event, preserving its ID and sound. Linked BMSON
@@ -335,7 +336,7 @@ struct move_virtual_bms_bgm_event_action_t {
 
 [[nodiscard]] auto resolve_resource_placement_position(const chart_document_t& chart,
                                                        local_position_t position,
-                                                       std::uint64_t snap_denominator)
+                                                       snap_grid_t snap)
     -> std::optional<local_position_t>;
 
 // Inserts one resource-backed event at an exact chart row. BGM placement

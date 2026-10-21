@@ -142,7 +142,7 @@ struct compose_scene_projection_context_t {
     double playable_field_width;
     bool lane_key_bindings_truncated;
     const compose_bga_move_preview_input_t* bga_move_preview{};
-    std::uint64_t bga_move_snap_denominator{};
+    wormedit::snap_grid_t bga_move_snap;
     auto history() const -> const wormedit::document_history_t& {
         return inputs.history();
     }
@@ -156,8 +156,9 @@ auto append_compose_grid_row(frontend_workspace_view_t& flattened,
                              const wormedit::ui::compose_grid_line_view_t& line,
                              const wormedit::exact_chart_row_t& row) -> bool;
 
-auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::uint64_t row,
-                               std::uint64_t divisions) -> std::uint64_t;
+// Where a row sits in the active snap space's measure grid, for snap colours.
+auto compose_grid_phase(const compose_scene_projection_context_t& projection, std::uint64_t row)
+    -> wormedit::grid_phase_t;
 
 void build_compose_grid_lines_view(const compose_scene_projection_context_t& projection);
 
@@ -193,10 +194,7 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
     if constexpr (requires { endpoint.tail; })
         tail = endpoint.tail;
     return wormedit::ui::note_snap_class(
-        compose_measure_local_row(
-            projection.index.measures, tail ? source.end_row : source.begin_row,
-            projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure),
-        projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure);
+        compose_grid_phase(projection, tail ? source.end_row : source.begin_row));
 }
 
 template <class T>
@@ -642,7 +640,7 @@ auto quantize_report_row_view(const quantize_report_row_t& row)
 
 auto active_quantize_request(application_command_state_t& application,
                              const wormedit::song_document_t& document,
-                             const wormedit::chart_document_t& chart, std::uint64_t active_snap)
+                             const wormedit::chart_document_t& chart, wormedit::snap_grid_t active_snap)
     -> wormedit::quantize_request_t;
 
 void populate_quantize_presets(compose_scene_cache_t& cache,

@@ -286,17 +286,6 @@ void append_chart_reference_counts(const chart_document_t& chart,
         retained[channel.source_clip.source.value] += channel.events.size();
 }
 
-auto snap_placement_position(const chart_document_t& chart, const measure_index_t& index,
-                             local_position_t position, std::uint64_t denominator)
-    -> std::optional<local_position_t> {
-    if (!index.row_of(position)) {
-        return std::nullopt;
-    }
-    if (denominator == 0) {
-        return position;
-    }
-    return snap_position(chart, index, position, denominator);
-}
 
 auto branch_source_orders(const chart_document_t& chart)
     -> std::unordered_set<std::size_t> {
@@ -427,14 +416,13 @@ auto apply_bms_identifier_renumber(document_history_t& history,
 
 auto resolve_resource_placement_position(const chart_document_t& chart,
                                          local_position_t position,
-                                         std::uint64_t snap_denominator)
+                                         snap_grid_t snap)
     -> std::optional<local_position_t> {
     const auto built = measure_index_t::from(chart);
     if (!built) {
         return std::nullopt;
     }
-    return snap_placement_position(chart, *built, position,
-                                   snap_denominator);
+    return snap_position_or_exact(chart, *built, position, snap);
 }
 
 auto translate_bgm_end(const measure_index_t& index, local_position_t old_head,
@@ -511,8 +499,8 @@ auto resolve_placement_target(const song_document_t& document,
                "resource placement chart has no valid measure index");
         return std::nullopt;
     }
-    const auto position = snap_placement_position(*chart, *built, action.position,
-                                                  action.snap_denominator);
+    const auto position = snap_position_or_exact(*chart, *built, action.position,
+                                                  action.snap);
     const auto row = position ? built->row_of(*position) : std::nullopt;
     if (!row) {
         reject(result, diagnostic_code_t::row_out_of_range,
@@ -1008,9 +996,9 @@ auto apply_bgm_event_move(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_measure, "BGM move chart index is invalid");
         return result;
     }
-    const auto target = snap_placement_position(*source_chart,
+    const auto target = snap_position_or_exact(*source_chart,
                                                 *built,
-                                                action.position, action.snap_denominator);
+                                                action.position, action.snap);
     if (!target) {
         reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
         return result;
@@ -1109,9 +1097,9 @@ auto apply_bga_event_move(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_measure, "BGA move chart index is invalid");
         return result;
     }
-    const auto target = snap_placement_position(*source_chart,
+    const auto target = snap_position_or_exact(*source_chart,
                                                 *built,
-                                                action.position, action.snap_denominator);
+                                                action.position, action.snap);
     if (!target) {
         reject(result, diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart");
         return result;
@@ -1152,24 +1140,19 @@ auto apply_virtual_bms_resource_placement(
     }
     const auto& canvas = std::get<virtual_canvas_t>(built);
     if (action.canvas_row >= canvas.total_rows ||
-        (action.snap_denominator != 0 &&
-         source_chart->divisions_per_standard_measure % action.snap_denominator != 0)) {
+        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
         reject(result, diagnostic_code_t::row_out_of_range,
                "virtual resource placement row or snap is invalid");
         return result;
     }
-    auto snapped_row = action.canvas_row;
-    if (action.snap_denominator != 0) {
-        const auto rounded =
-            snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
-                            action.snap_denominator, canvas.total_rows);
-        if (!rounded) {
-            reject(result, diagnostic_code_t::row_out_of_range,
-                   "virtual snap row is invalid or overflows");
-            return result;
-        }
-        snapped_row = *rounded;
+    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
+                                                  action.canvas_row, action.snap, canvas.total_rows);
+    if (!rounded) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual snap row is invalid or overflows");
+        return result;
     }
+    const auto snapped_row = *rounded;
     const auto destination = canvas.measure_containing(snapped_row);
     if (!destination || destination->authored ||
         destination->number >= bms_addressable_measure_count) {
@@ -1232,24 +1215,19 @@ auto apply_virtual_bms_bgm_event_move(
     }
     const auto& canvas = std::get<virtual_canvas_t>(built);
     if (action.canvas_row >= canvas.total_rows ||
-        (action.snap_denominator != 0 &&
-         source_chart->divisions_per_standard_measure % action.snap_denominator != 0)) {
+        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
         reject(result, diagnostic_code_t::row_out_of_range,
                "virtual BGM move row or snap is invalid");
         return result;
     }
-    auto snapped_row = action.canvas_row;
-    if (action.snap_denominator != 0) {
-        const auto rounded =
-            snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
-                            action.snap_denominator, canvas.total_rows);
-        if (!rounded) {
-            reject(result, diagnostic_code_t::row_out_of_range,
-                   "virtual snap row is invalid or overflows");
-            return result;
-        }
-        snapped_row = *rounded;
+    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
+                                                  action.canvas_row, action.snap, canvas.total_rows);
+    if (!rounded) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual snap row is invalid or overflows");
+        return result;
     }
+    const auto snapped_row = *rounded;
     const auto destination = canvas.measure_containing(snapped_row);
     if (!destination || destination->authored ||
         destination->number >= bms_addressable_measure_count) {
@@ -1305,22 +1283,18 @@ auto apply_virtual_bms_bga_event_move(
     }
     const auto& canvas = std::get<virtual_canvas_t>(built);
     if (action.canvas_row >= canvas.total_rows ||
-        (action.snap_denominator != 0 &&
-         source_chart->divisions_per_standard_measure % action.snap_denominator != 0)) {
+        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
         reject(result, diagnostic_code_t::row_out_of_range,
                "virtual BGA move row or snap is invalid");
         return result;
     }
-    auto snapped_row = action.canvas_row;
-    if (action.snap_denominator != 0) {
-        const auto rounded = snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
-                            action.snap_denominator, canvas.total_rows);
-        if (!rounded) {
-            reject(result, diagnostic_code_t::row_out_of_range, "virtual BGA snap row is invalid");
-            return result;
-        }
-        snapped_row = *rounded;
+    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
+                                                  action.canvas_row, action.snap, canvas.total_rows);
+    if (!rounded) {
+        reject(result, diagnostic_code_t::row_out_of_range, "virtual BGA snap row is invalid");
+        return result;
     }
+    const auto snapped_row = *rounded;
     const auto destination = canvas.measure_containing(snapped_row);
     if (!destination || destination->authored ||
         destination->number >= bms_addressable_measure_count) {

@@ -486,7 +486,7 @@ TEST_CASE("virtual BMS BGM move materializes destination with one undo step",
     const auto moved = apply_virtual_bms_bgm_event_move(history,
         {.chart = chart_id_t{2}, .event = object_id_t{11},
          .canvas_row = 959'061, .source_lane = object_id_t{20},
-         .snap_denominator = 4});
+         .snap = {4}});
     REQUIRE(moved);
     CHECK(history.undo.size() == 1);
     const auto& chart = history.document.charts.front();
@@ -538,7 +538,7 @@ TEST_CASE("virtual BMS BGM and BGA placement commit geometry with the event",
                                 ? object_id_t{20}
                                 : object_id_t{},
              .kind = kind,
-             .snap_denominator = 4});
+             .snap = {4}});
         REQUIRE(placed);
         CHECK(history.undo.size() == 1);
         const auto& chart = history.document.charts.front();
@@ -1215,22 +1215,22 @@ TEST_CASE("pointer resource placement snaps exactly and respects a requested BGM
     auto history = document_history_t::from(assignment_song());
     const auto& chart = history.document.charts.front();
     const auto snapped = resolve_resource_placement_position(
-        chart, {measure_id_t{3}, 190}, 8);
+        chart, {measure_id_t{3}, 190}, {8});
     REQUIRE(snapped);
     CHECK(snapped->row == 240);
     const auto tie = resolve_resource_placement_position(
-        chart, {measure_id_t{3}, 180}, 8);
+        chart, {measure_id_t{3}, 180}, {8});
     REQUIRE(tie);
     CHECK(tie->row == 120);
     CHECK_FALSE(resolve_resource_placement_position(
-        chart, {measure_id_t{3}, 190}, 7));
+        chart, {measure_id_t{3}, 190}, {7}));
 
     const auto occupied = apply_resource_placement(
         history, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
                      .position = {measure_id_t{3}, 190},
                      .source_lane = object_id_t{20},
                      .kind = resource_placement_kind_t::bgm_event,
-                     .snap_denominator = 8});
+                     .snap = {8}});
     CHECK_FALSE(occupied);
     CHECK(has_code(occupied, diagnostic_code_t::collision));
     const auto placed = apply_resource_placement(
@@ -1238,7 +1238,7 @@ TEST_CASE("pointer resource placement snaps exactly and respects a requested BGM
                      .position = {measure_id_t{3}, 510},
                      .source_lane = object_id_t{20},
                      .kind = resource_placement_kind_t::bgm_event,
-                     .snap_denominator = 8});
+                     .snap = {8}});
     REQUIRE(placed);
     CHECK(history.document.charts.front().measures.front().bgm_events.back().position.row == 480);
     CHECK(history.document.charts.front().measures.front().bgm_events.back().source_lane ==

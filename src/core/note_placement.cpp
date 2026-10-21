@@ -103,7 +103,7 @@ auto resolve_row_placement(const chart_document_t& chart, const measure_index_t&
                            local_position_t position)
     -> std::variant<local_position_t, diagnostic_list_t> {
     const auto target =
-        snapped_position(chart, index, position, edit_snap_denominator(chart, state));
+        snap_position(chart, index, position, edit_snap_grid(chart, state));
     if (!target)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "placement target cannot be snapped inside chart geometry")};
@@ -275,7 +275,7 @@ auto snap_virtual_row(const editor_edit_context_t& context, const virtual_canvas
     if (row >= canvas.total_rows)
         return std::nullopt;
     return snap_canvas_row(context.scope.chart, canvas.authored_index, row,
-                           edit_snap_denominator(context.scope.chart, context.state),
+                           edit_snap_grid(context.scope.chart, context.state),
                            canvas.total_rows);
 }
 
@@ -476,6 +476,7 @@ auto set_editor_snap(document_history_t& history, editor_interaction_state_t& st
         state.active_snap_denominator = action.denominator;
         state.active_snap_was_fallback = false;
     }
+    if (action.space) state.active_snap_space = *action.space;
     return editor_interaction_result_t::from(history, state, false);
 }
 

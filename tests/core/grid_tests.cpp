@@ -45,7 +45,7 @@ TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, an
     auto request = editor_grid_request_t{
         .visible_begin_row = 0,
         .visible_end_row = 1680,
-        .active_snap_denominator = 4,
+        .active_snap = snap_grid_t{4},
         .density = {0.0, 0.0, 0.0},
     };
 
@@ -105,11 +105,11 @@ TEST_CASE("grid zoom suppresses dense subdivisions without moving retained lines
     const auto chart = make_chart(960, {{.id = measure_id_t{1}}});
     const auto high_zoom = editor_grid_t::from(chart, {.visible_begin_row = 0,
                                                           .visible_end_row = 960,
-                                                          .active_snap_denominator = 16,
+                                                          .active_snap = snap_grid_t{16},
                                                           .pixels_per_standard_measure = 192.0});
     const auto low_zoom = editor_grid_t::from(chart, {.visible_begin_row = 0,
                                                          .visible_end_row = 960,
-                                                         .active_snap_denominator = 16,
+                                                         .active_snap = snap_grid_t{16},
                                                          .pixels_per_standard_measure = 24.0});
     REQUIRE(high_zoom.ok());
     REQUIRE(low_zoom.ok());
@@ -181,7 +181,7 @@ TEST_CASE("BMS grid projects the final virtual measure without materializing it"
     chart.source_family = format_family_t::bms;
     const auto request = editor_grid_request_t{.visible_begin_row = 959'000,
                                                .visible_end_row = 959'520,
-                                               .active_snap_denominator = 4,
+                                               .active_snap = snap_grid_t{4},
                                                .include_virtual_bms_tail = true,
                                                .density = {0.0, 0.0, 0.0}};
     const auto projected = editor_grid_t::from(chart, request);
@@ -232,7 +232,7 @@ TEST_CASE("snap subdivisions restart at every short authored measure head",
     });
     const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 180, .visible_end_row = 1140,
-        .active_snap_denominator = 8, .density = {0.0, 0.0, 0.0}});
+        .active_snap = snap_grid_t{8}, .density = {0.0, 0.0, 0.0}});
     expect_grid(result.ok());
     const auto* snap = line_at(result, 300);
     expect_grid(snap);
@@ -257,7 +257,7 @@ TEST_CASE("offset measure grids retain authored grouping and clipped snap phase"
     });
     const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 121, .visible_end_row = 421,
-        .active_snap_denominator = 16, .density = {0.0, 0.0, 0.0},
+        .active_snap = snap_grid_t{16}, .density = {0.0, 0.0, 0.0},
         .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}}});
     expect_grid(result.ok());
     const auto* snap = line_at(result, 240);
@@ -277,7 +277,7 @@ TEST_CASE("virtual BMS snap phase follows the final authored measure and stays b
     chart.source_family = format_family_t::bms;
     const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 958'141, .visible_end_row = 958'501,
-        .active_snap_denominator = 8, .include_virtual_bms_tail = true,
+        .active_snap = snap_grid_t{8}, .include_virtual_bms_tail = true,
         .density = {0.0, 0.0, 0.0}, .maximum_line_count = 32});
     expect_grid(result.ok());
     const auto* snap = line_at(result, 958'260);
@@ -287,6 +287,30 @@ TEST_CASE("virtual BMS snap phase follows the final authored measure and stays b
     expect_grid(result.value.lines.size() < 16);
     expect_grid(!editor_grid_t::from(chart, {
         .visible_begin_row = 60, .visible_end_row = 1020,
-        .active_snap_denominator = 960, .include_virtual_bms_tail = true,
+        .active_snap = snap_grid_t{960}, .include_virtual_bms_tail = true,
         .density = {0.0, 0.0, 0.0}, .maximum_line_count = 16}).ok());
+}
+
+TEST_CASE("authored snap space draws each measure's own subdivisions",
+          "[unit][core][grid][authored-snap]") {
+    auto chart = make_chart(960, {
+        {.id = measure_id_t{1}},
+        {.id = measure_id_t{2}, .definition = {{5, 4}, meter_t{5, 4}}},
+    });
+    const auto snap_rows = [&](quantization_space_t space) {
+        const auto result = editor_grid_t::from(chart, {
+            .visible_begin_row = 960, .visible_end_row = 2160,
+            .active_snap = snap_grid_t{.denominator = 4, .space = space},
+            .density = {0.0, 0.0, 0.0}});
+        expect_grid(result.ok());
+        std::vector<std::uint64_t> rows;
+        for (const auto& line : result.value.lines)
+            if (line.kind == editor_grid_line_kind_t::active_snap)
+                rows.push_back(line.position.whole_rows);
+        return rows;
+    };
+    // Standard quarters coincide with the five 5/4 beat lines, which take precedence.
+    expect_grid(snap_rows(quantization_space_t::standard_measure).empty());
+    expect_grid((snap_rows(quantization_space_t::authored_measure) ==
+                 std::vector<std::uint64_t>{300, 600, 900}));
 }

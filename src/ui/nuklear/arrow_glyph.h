@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/field/color.h"
+#include <wormedit/core/snap.h>
 #include <wormedit/core/vocabulary.h>
 
 #include <array>
@@ -30,13 +31,20 @@ inline auto arrow_polygon(wormedit::lane_glyph_t glyph, float x, float y, float 
     return arrow_polygon(static_cast<std::uint8_t>(glyph), x, y, size);
 }
 
-// First matching subdivision of a standard measure; 0 denotes "other".
-auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)
-    -> std::uint8_t;
+// First matching subdivision of `period` rows (a standard measure, or in authored space the
+// measure itself); 0 denotes "other".
+auto note_snap_class(std::uint64_t row, std::uint64_t period) -> std::uint8_t;
+inline auto note_snap_class(wormedit::grid_phase_t phase) -> std::uint8_t {
+    return note_snap_class(phase.row, phase.period);
+}
 
 // Exact fractional chart rows, without rounding into a neighboring snap class.
 auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
-                     std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t;
+                     std::uint64_t denominator, std::uint64_t period) -> std::uint8_t;
+inline auto note_snap_class(wormedit::grid_phase_t phase, std::uint64_t numerator,
+                            std::uint64_t denominator) -> std::uint8_t {
+    return note_snap_class(phase.row, numerator, denominator, phase.period);
+}
 
 auto arrow_snap_color(std::uint8_t snap_class) -> color_t;
 

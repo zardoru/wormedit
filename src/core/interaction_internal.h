@@ -271,12 +271,6 @@ auto make_view(const document_history_t& history, const editor_interaction_state
 
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t>;
 
-inline auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
-                      local_position_t target, std::uint64_t denominator)
-    -> std::optional<local_position_t> {
-    return snap_position(chart, index, target, denominator);
-}
-
 auto resolve_row_placement(const chart_document_t& chart, const measure_index_t& index,
                            const editor_interaction_state_t& state, lane_id_t lane,
                            local_position_t position)
@@ -493,7 +487,7 @@ struct duration_resize_context_t {
 
 auto resolve_resize_parameters(const chart_document_t& chart, const measure_index_t& index,
                                std::vector<object_id_t>& targets, object_id_t reference_id,
-                               local_position_t reference_end, std::uint64_t snap_denominator,
+                               local_position_t reference_end, snap_grid_t snap,
                                bool exact) -> std::variant<resize_parameters_t, diagnostic_list_t>;
 
 auto valid_resize_ids(const std::vector<object_id_t>& targets)
@@ -558,7 +552,7 @@ auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
 
 auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& index,
                           std::vector<object_id_t> targets, object_id_t reference_id,
-                          local_position_t reference_end, std::uint64_t snap_denominator,
+                          local_position_t reference_end, snap_grid_t snap,
                           bool reference_end_is_exact = false)
     -> std::variant<duration_resize_plan_t, diagnostic_list_t>;
 
@@ -630,7 +624,7 @@ auto move_lane_column(const chart_document_t& chart, const measure_index_t& inde
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
                                   local_position_t reference_position, lane_id_t requested_lane,
-                                  std::uint64_t snap_denominator, bool exact, bool keep_rows,
+                                  snap_grid_t snap, bool exact, bool keep_rows,
                                   const editor_scratch_presentation_t& sides)
     -> std::variant<note_move_parameters_t, diagnostic_list_t>;
 
@@ -830,7 +824,7 @@ void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
                     std::vector<object_id_t> targets, object_id_t reference_id,
                     local_position_t reference_position, lane_id_t requested_reference_lane,
-                    std::uint64_t snap_denominator, bool reference_position_is_exact = false,
+                    snap_grid_t snap, bool reference_position_is_exact = false,
                     bool keep_rows = false, const editor_scratch_presentation_t& sides = {})
     -> std::variant<note_move_plan_t, diagnostic_list_t>;
 

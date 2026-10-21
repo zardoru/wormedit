@@ -144,6 +144,11 @@ it in new code even before the card lands.
   The UI receives labels through the view; actions carry ids, never list positions across the
   frontend boundary; `static_assert` enum counts against tables. Constants (object limits, default snap set)
   are defined once.
+- **One snap owner (owner, 2026-10-20).** Every rounding onto the edit grid goes through
+  `snap.h` with a `snap_grid_t` (denominator and Quantize's standard/authored space). Callers get
+  the grid from `edit_snap_grid` (edits) or `active_snap_grid` (drawn lines, cursor steps); they
+  do not check divisibility, compute `divisions / denominator` steps, or wrap the snap functions.
+  Exact edits pass a zero denominator to the `_or_exact` helpers.
 - **Use the dependency instead of hand-rolling:** FFmpeg, miniaudio, iconv, nlohmann::json,
   stb_image and SDL3 already cover their formats and utilities. A new hand-written binary or
   file-format parser needs a stated reason in this file.
@@ -263,4 +268,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the frontend boundary? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")? 17. A migration left half done with no ratchet row holding the old form's count?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")? 17. A migration left half done with no ratchet row holding the old form's count? 18. Snap step or divisibility math outside `snap.h`, or a bare denominator where a `snap_grid_t` belongs?

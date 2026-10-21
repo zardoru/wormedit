@@ -72,11 +72,6 @@ auto area_position_at_row(const wormedit::measure_index_t& index, std::uint64_t 
     return std::nullopt;
 }
 
-auto snap_area_row(const wormedit::chart_document_t& chart, std::uint64_t row,
-                   std::uint64_t denominator) -> std::optional<std::uint64_t> {
-    return wormedit::snap_absolute_row(chart, row, denominator);
-}
-
 // A new SV recipe over the retained area: linear 1x to 2x on the generic SV output, so it is
 // visible and editable straight away. Its values and sampling are edited afterwards.
 struct add_sv_recipe_over_area_action_t {
@@ -290,7 +285,7 @@ auto resize_compose_area_action_t::validate(compose_action_context_t& context)
         return compose_action_outcome_t::blocked("The area is outside the chart geometry.");
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET) {
         auto& moving = context.action.compose_area_begin_edge ? begin : end;
-        const auto snapped = snap_area_row(chart, moving, wormedit::edit_snap_denominator(chart, context.state));
+        const auto snapped = wormedit::snap_absolute_row(chart, moving, wormedit::edit_snap_grid(chart, context.state));
         if (!snapped)
             return compose_action_outcome_t::blocked("The active grid cannot resize this area.");
         moving = *snapped;

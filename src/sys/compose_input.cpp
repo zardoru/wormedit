@@ -168,8 +168,8 @@ auto application_command_state_t::bga_draw_stroke_t::revise(
     std::optional<uint64_t> row, bool is_beginning) -> bga_draw_stroke_outcome_t {
     if (!row || !is_lane_valid(input)) return {};
     if (is_beginning) last_row = *row;
-    const auto denominator = wormedit::edit_snap_denominator(chart, state);
-    if (!denominator) return {};
+    const auto grid = wormedit::edit_snap_grid(chart, state);
+    if (!grid.denominator) return {};
     const auto kind = static_cast<uint8_t>(input.bga_lane_kind);
     const auto [first, last] = std::minmax(last_row, *row);
     auto current = first;
@@ -182,7 +182,7 @@ auto application_command_state_t::bga_draw_stroke_t::revise(
         }
         if (current == last) break;
         const auto next = wormedit::adjacent_snap_canvas_row(chart, geometry, current,
-            denominator, geometry.total_rows, true);
+            grid, geometry.total_rows, true);
         if (!next || *next > last) return {};
         current = *next;
     }
@@ -200,7 +200,7 @@ auto application_command_state_t::bmson_marker_draft_t::has_position(
 auto application_command_state_t::bmson_razor_stroke_t::propose(
     const wormedit::document_history_t& history, wormedit::chart_id_t chart,
     const bmson_marker_draft_proposal_t* markers, wormedit::object_id_t reference,
-    std::uint64_t snap_denominator, wormedit::local_position_t position)
+    wormedit::snap_grid_t snap, wormedit::local_position_t position)
     -> bmson_razor_stroke_outcome_t {
     if (!markers || !markers->stamp.is_current(history.document, chart,
             wormedit::document_identity_policy_t::revision_only) ||
@@ -208,7 +208,7 @@ auto application_command_state_t::bmson_razor_stroke_t::propose(
         return {};
     return {.value = bmson_razor_stroke_proposal_t{
         .stamp = wormedit::chart_stamp_t::from(history.document, chart),
-        .payload = {.reference = reference, .snap_denominator = snap_denominator,
+        .payload = {.reference = reference, .snap = snap,
                     .last_position = position}}};
 }
 
@@ -1247,7 +1247,7 @@ auto move_compose_bga_event(const wormedit::ui::compose_input_action_t& input,
         return stale_action_message("BGA event move");
     const auto y = std::clamp(input.y_pixels, 0.0,
                               std::max(0.0, view->viewport_height_pixels - 0.001));
-    const auto snap = edit_snap_denominator(*chart, context.state);
+    const auto snap = edit_snap_grid(*chart, context.state);
     const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
     const auto target_kind = input.bga_lane_kind_valid || input.bga_lane_kind != visual_event_kind_t::background
         ? std::optional{input.bga_lane_kind} : std::nullopt;
@@ -1259,14 +1259,14 @@ auto move_compose_bga_event(const wormedit::ui::compose_input_action_t& input,
                                      {.chart = chart->id,
                                       .event = object.id,
                                       .position = *position,
-                                      .snap_denominator = snap,
+                                      .snap = snap,
                                       .bga_kind = target_kind});
     } else if (const auto row = context.virtual_bms_row_at(*chart, *view, y)) {
         moved = apply_virtual_bms_bga_event_move(context.environment.document.history,
                                                  {.chart = chart->id,
                                                   .event = object.id,
                                                   .canvas_row = *row,
-                                                  .snap_denominator = snap,
+                                                  .snap = snap,
                                                   .bga_kind = target_kind});
     } else {
         return "BGA event move has no valid destination row.";
@@ -1880,7 +1880,7 @@ auto dispatch_compose_paste_input(const wormedit::ui::compose_input_action_t& in
     const auto raw = context.position_at_compose_y(*context.input_chart, *view, input.y_pixels);
     const auto position = raw ? wormedit::resolve_resource_placement_position(
         *context.input_chart, *raw,
-        edit_snap_denominator(*context.input_chart, context.state)) : std::nullopt;
+        edit_snap_grid(*context.input_chart, context.state)) : std::nullopt;
     if (!position) {
         application.project.clipboard.paste_session->anchor_available = false;
         application.project.clipboard.paste_session->anchor_error = "The paste anchor is outside the chart.";
@@ -1906,7 +1906,7 @@ auto bga_draw_row(const wormedit::ui::compose_input_action_t& input, const compo
     const auto raw = wormedit::editor_position_at_y_pixels(chart, index, *view,
         context.input_source_y(input.y_pixels));
     const auto position = raw ? wormedit::snap_position(chart, index, *raw,
-        wormedit::edit_snap_denominator(chart, context.state)) : std::nullopt;
+        wormedit::edit_snap_grid(chart, context.state)) : std::nullopt;
     return position ? (index).row_of( *position) : std::nullopt;
 }
 

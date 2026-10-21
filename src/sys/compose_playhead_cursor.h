@@ -62,8 +62,7 @@ namespace wormedit::sys {
         state.is_pending())
         return false;
     const auto chart = history.document.find_chart(state.chart);
-    if (chart == nullptr || state.active_snap_denominator == 0 ||
-        chart->divisions_per_standard_measure % state.active_snap_denominator != 0)
+    if (chart == nullptr || !snap_step(*chart, active_snap_grid(state), 0))
         return false;
     if (geometry.index && (geometry.chart != chart->id ||
                            geometry.document_revision != history.document.revision)) return false;
@@ -78,11 +77,11 @@ namespace wormedit::sys {
     const auto bounded_row = std::min(static_cast<long double>(absolute_row),
                                       static_cast<long double>(index->total_rows - 1));
     auto snapped = snap_canvas_row(*chart, *index, bounded_row,
-                                   state.active_snap_denominator, index->total_rows);
+                                   active_snap_grid(state), index->total_rows);
     if (!snapped) return false;
     if (*snapped > bounded_row)
         snapped = adjacent_snap_canvas_row(*chart, *index, bounded_row,
-            state.active_snap_denominator, index->total_rows, false);
+            active_snap_grid(state), index->total_rows, false);
     if (!snapped) return false;
     const auto row = *snapped;
     const auto after = std::ranges::upper_bound(index->entries, row, {},

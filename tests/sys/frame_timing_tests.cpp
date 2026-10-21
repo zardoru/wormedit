@@ -669,7 +669,7 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
 
 auto authored_release_position(const document_history_t& history,
                                const editor_interaction_state_t& state,
-                               std::uint64_t raw_row, std::uint64_t denominator)
+                               std::uint64_t raw_row, snap_grid_t grid)
     -> std::optional<local_position_t> {
     const auto& chart = history.document.charts.front();
     const auto model = inspect_editor_interaction(history, state);
@@ -677,10 +677,10 @@ auto authored_release_position(const document_history_t& history,
     const auto position = editor_position_at_y_pixels(chart,
         std::get<editor_interaction_view_model_t>(model),
         static_cast<double>(raw_row) * 192.0 / 960.0);
-    if (!position || denominator == 0) return position;
+    if (!position) return position;
     const auto index = measure_index_t::from(chart);
     REQUIRE(index.has_value());
-    return snap_position(chart, index.value(), *position, denominator);
+    return snap_position_or_exact(chart, index.value(), *position, grid);
 }
 
 auto committed_bga_row(const chart_document_t& chart) -> std::uint64_t {
@@ -697,13 +697,13 @@ auto commit_authored_bga_move(compose_test_fixture_t& fixture,
                               std::uint64_t raw_row) -> std::uint64_t {
     auto history = fixture.history;
     const auto& chart = history.document.charts.front();
-    const auto denominator = edit_snap_denominator(chart, *fixture.interaction);
+    const auto denominator = edit_snap_grid(chart, *fixture.interaction);
     const auto position = authored_release_position(history, *fixture.interaction,
                                                     raw_row, denominator);
     REQUIRE(position);
     const auto moved = apply_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .position = *position,
-         .snap_denominator = denominator});
+         .snap = denominator});
     REQUIRE(moved);
     return committed_bga_row(history.document.charts.front());
 }
@@ -714,7 +714,7 @@ auto commit_virtual_bga_move(compose_test_fixture_t& fixture,
     const auto& chart = history.document.charts.front();
     const auto moved = apply_virtual_bms_bga_event_move(history,
         {.chart = chart_id_t{1}, .event = object_id_t{500}, .canvas_row = raw_row,
-         .snap_denominator = edit_snap_denominator(chart, *fixture.interaction)});
+         .snap = edit_snap_grid(chart, *fixture.interaction)});
     REQUIRE(moved);
     return committed_bga_row(history.document.charts.front());
 }
@@ -2348,7 +2348,7 @@ auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uin
     const auto raw = editor_position_at_y_pixels(chart, *view,
         compose_source_y(screen_y, view->viewport_height_pixels, downscroll));
     const auto snapped = raw ? resolve_resource_placement_position(chart, *raw,
-        fixture.interaction->active_snap_denominator) : std::nullopt;
+        active_snap_grid(*fixture.interaction)) : std::nullopt;
     expect_compose_test(snapped.has_value());
     expect_compose_test(snapped->row == row);
     wormedit::ui::workspace_action_t action{};
@@ -7372,7 +7372,7 @@ TEST_CASE("Razor capture quietly has no proposal when its marker prerequisite is
     allocations = 0;
     count_allocations = true;
     const auto proposed = application_command_state_t::bmson_razor_stroke_t::propose(
-        history, chart_id_t{1}, nullptr, object_id_t{42}, 8, {measure_id_t{1}, 120});
+        history, chart_id_t{1}, nullptr, object_id_t{42}, {8}, {measure_id_t{1}, 120});
     count_allocations = false;
     const auto counted = allocations;
     CHECK_FALSE(proposed.value);
@@ -7391,11 +7391,11 @@ TEST_CASE("Razor capture keeps revision-only marker identity and captures the cu
     REQUIRE(proposed.value);
     fixture.history.document.id = song_id_t{99};
     const auto captured = application_command_state_t::bmson_razor_stroke_t::propose(
-        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, 8, position);
+        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, {8}, position);
     REQUIRE(captured.value);
     CHECK(captured.value->stamp == chart_stamp_t::from(fixture.history.document, fixture.state.chart));
     CHECK(captured.value->payload.reference == fixture.reference);
-    CHECK(captured.value->payload.snap_denominator == 8);
+    CHECK(captured.value->payload.snap == snap_grid_t{8});
     CHECK(captured.value->payload.last_position == position);
 }
 
@@ -7409,7 +7409,7 @@ TEST_CASE("Razor revision adopts an acknowledged staged cell without allocating"
         fixture.history, fixture.state, fixture.reference, markers);
     REQUIRE(proposed.value);
     auto captured = application_command_state_t::bmson_razor_stroke_t::propose(
-        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, 8, {measure, 120});
+        fixture.history, fixture.state.chart, &*proposed.value, fixture.reference, {8}, {measure, 120});
     REQUIRE(captured.value);
     const auto stamp = captured.value->stamp;
     allocations = 0;

@@ -425,7 +425,7 @@ auto click_compose_waveform(const wormedit::ui::compose_input_action_t& input, c
     const auto target = compose_minimap_target(
         input.audio_fraction, cache.waveform.waveform_overview_total_frames,
         cache.waveform.waveform_overview_sample_rate, audio::output_sample_rate, *cache.timing.marker_timing_index,
-        cache.scene.index.value()->measures, edit_snap_denominator(*context.input_chart, context.state), end);
+        cache.scene.index.value()->measures, edit_snap_grid(*context.input_chart, context.state), end);
     if (!target)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
     const auto position = (cache.scene.index.value()->measures).position_at(target->snapped_row);

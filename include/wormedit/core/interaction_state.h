@@ -49,6 +49,8 @@ struct editor_interaction_state_t {
     double cursor_subrow{};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t active_snap_denominator{};
+    // Shared with Quantize's Space: whether grid steps divide standard or authored measures.
+    quantization_space_t active_snap_space{quantization_space_t::standard_measure};
     bool active_snap_was_fallback{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
@@ -103,7 +105,7 @@ struct editor_interaction_state_t {
     // Document revision the selection was last checked against (see prune_stale_selection).
     std::optional<std::uint64_t> selection_checked_revision;
     // Edit snapping applies to every pointer-driven object class; while off, edits land on the
-    // chart's finest row instead of the active grid (see effective_edit_snap_denominator).
+    // chart's finest row instead of the active grid (see effective_edit_snap_grid).
     bool snap_enabled{true};
     // Y-lock (as in iBMSC and BMSE): pointer drags of notes change lanes only and never rows.
     bool y_lock{false};
@@ -112,11 +114,17 @@ struct editor_interaction_state_t {
     std::uint8_t bga_revealed_lane_mask{};
 };
 
-// The denominator pointer-driven edits of any object class should snap to.
-[[nodiscard]] inline auto edit_snap_denominator(const chart_document_t& chart,
-                                                const editor_interaction_state_t& state) noexcept
-    -> std::uint64_t {
-    return effective_edit_snap_denominator(chart, state.active_snap_denominator, state.snap_enabled);
+// The grid the user picked, whether or not snapping is on (drawn lines, cursor steps).
+[[nodiscard]] inline auto active_snap_grid(const editor_interaction_state_t& state) noexcept
+    -> snap_grid_t {
+    return {.denominator = state.active_snap_denominator, .space = state.active_snap_space};
+}
+
+// The grid pointer-driven edits of any object class should snap to.
+[[nodiscard]] inline auto edit_snap_grid(const chart_document_t& chart,
+                                         const editor_interaction_state_t& state) noexcept
+    -> snap_grid_t {
+    return effective_edit_snap_grid(chart, active_snap_grid(state), state.snap_enabled);
 }
 
 struct editor_interaction_view_model_t {
@@ -128,6 +136,7 @@ struct editor_interaction_view_model_t {
     std::optional<std::uint64_t> virtual_bms_cursor_row;
     double cursor_subrow{};
     std::uint64_t active_snap_denominator{};
+    quantization_space_t active_snap_space{quantization_space_t::standard_measure};
     bool snap_enabled{true};
     bool y_lock{false};
     bool bga_lane_visible{true};
@@ -181,6 +190,11 @@ struct editor_interaction_view_model_t {
     bool can_move_backward{};
     bool can_move_forward{};
 };
+
+[[nodiscard]] inline auto active_snap_grid(const editor_interaction_view_model_t& view) noexcept
+    -> snap_grid_t {
+    return {.denominator = view.active_snap_denominator, .space = view.active_snap_space};
+}
 
 struct editor_interaction_setup_t {
     std::optional<editor_interaction_state_t> state;

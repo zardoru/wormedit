@@ -78,13 +78,10 @@ auto append_compose_grid_row(frontend_workspace_view_t& flattened,
     return true;
 }
 
-auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::uint64_t row,
-                               std::uint64_t divisions) -> std::uint64_t {
-    if (row >= measures.total_rows)
-        return (row - measures.total_rows) % divisions;
-    const auto after = std::ranges::upper_bound(
-        measures.entries, row, {}, &wormedit::measure_index_entry_t::absolute_begin_row);
-    return after == measures.entries.begin() ? row : row - std::prev(after)->absolute_begin_row;
+auto compose_grid_phase(const compose_scene_projection_context_t& projection, std::uint64_t row)
+    -> wormedit::grid_phase_t {
+    return wormedit::grid_phase(projection.inputs.scope.chart_scope.chart, projection.index.measures,
+                                row, projection.inputs.scope.interaction_view.active_snap_space);
 }
 
 // The measure a real measure line starts; virtual BMS measures and other lines have none.
@@ -147,11 +144,9 @@ void build_compose_grid_lines_view(const compose_scene_projection_context_t& pro
                  .chart_row =
                      line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0,
                  .snap_class = wormedit::ui::note_snap_class(
-                     compose_measure_local_row(projection.index.measures, line.chart_row.whole_rows,
-                                               chart.divisions_per_standard_measure),
+                     compose_grid_phase(projection, line.chart_row.whole_rows),
                      line.chart_row.fractional_rows.numerator,
-                     line.chart_row.fractional_rows.denominator,
-                     chart.divisions_per_standard_measure),
+                     line.chart_row.fractional_rows.denominator),
                  .measure_id = grid_line_measure_id(line, measure_number, projection.index.measures)},
                 line.chart_row)) {
             view.truncated = true;
@@ -431,11 +426,8 @@ auto bga_preview_authored_row(const compose_scene_projection_context_t& projecti
         projection.inputs.scope.chart_scope.chart, projection.inputs.scope.interaction_view, source_y);
     if (!position)
         return std::nullopt;
-    const auto target =
-        projection.bga_move_snap_denominator == 0
-            ? position
-            : wormedit::snap_position(projection.inputs.scope.chart_scope.chart, projection.index.measures,
-                                      *position, projection.bga_move_snap_denominator);
+    const auto target = wormedit::snap_position_or_exact(projection.inputs.scope.chart_scope.chart,
+        projection.index.measures, *position, projection.bga_move_snap);
     return target ? (projection.index.measures).row_of(*target) : std::nullopt;
 }
 
@@ -458,10 +450,8 @@ auto bga_preview_virtual_row(const compose_scene_projection_context_t& projectio
     const auto source_measure = canvas ? canvas->measure_containing(rounded) : std::nullopt;
     if (!source_measure || source_measure->authored)
         return std::nullopt;
-    const auto target_row = projection.bga_move_snap_denominator == 0
-                                ? std::optional{rounded}
-                                : snap_absolute_row(projection.inputs.scope.chart_scope.chart, rounded,
-                                                    projection.bga_move_snap_denominator);
+    const auto target_row = snap_canvas_row_or_exact(projection.inputs.scope.chart_scope.chart,
+        canvas->authored_index, rounded, projection.bga_move_snap, canvas->total_rows);
     const auto target_measure =
         canvas && target_row ? canvas->measure_containing(*target_row) : std::nullopt;
     return target_measure && !target_measure->authored ? target_row : std::nullopt;

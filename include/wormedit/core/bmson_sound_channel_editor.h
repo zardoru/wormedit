@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/snap.h>
 
 #include <cstdint>
 #include <optional>
@@ -92,10 +93,10 @@ struct bmson_razor_path_t {
 };
 
 // Enumerates exact grid cells after `from` through `to`, in pointer order.
-// Both endpoints must already be snapped to the captured denominator.
+// Both endpoints must already be snapped to the captured grid; a zero denominator means rows.
 [[nodiscard]] auto interpolate_bmson_razor_path(
     const chart_document_t& chart, local_position_t from, local_position_t to,
-    std::uint64_t snap_denominator, std::size_t maximum_positions = 256)
+    snap_grid_t snap, std::size_t maximum_positions = 256)
     -> bmson_razor_path_t;
 
 // Commits up to 256 BGM/playable markers in one history step after validating

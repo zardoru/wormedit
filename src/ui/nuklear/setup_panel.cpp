@@ -310,17 +310,44 @@ void render_project_batch(nk_context* context, const wormedit::ui::setup_view_t&
 }
 
 
+void focus_project_chart(std::uint64_t id) {
+    project_state.menu_chart = id;
+    wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::charts, id);
+}
+
 void render_chart_actions(nk_context* context, const wormedit::ui::setup_view_t& view,
-    const wormedit::ui::project_chart_row_view_t& row, wormedit::ui::workspace_action_t& action) {
+    const wormedit::ui::project_chart_row_view_t& row, bool hovered, wormedit::ui::workspace_action_t& action) {
     using namespace wormedit::ui::chrome;
-    constexpr float ratios[]{0.56f, 0.44f};
-    nk_layout_row(context, NK_DYNAMIC, 26, 2, ratios);
-    if (Button{"Open", ButtonKind::secondary, "Open in Compose"}.render(context))
+    const bool focused = context_menu_focused_target() == KeyboardContextTarget::charts &&
+                         context_menu_focused_object() == row.chart_id.value;
+    if (!hovered && !focused) {
+        struct nk_rect unused{};
+        (void)nk_widget(&unused, context);
+        return;
+    }
+    char group[64]{};
+    std::snprintf(group, sizeof(group), "chart-actions-%llu", static_cast<unsigned long long>(row.chart_id.value));
+    nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(0, 0));
+    const bool open = nk_group_begin(context, group, NK_WINDOW_NO_SCROLLBAR);
+    if (!open) {
+        nk_style_pop_vec2(context);
+        return;
+    }
+    nk_layout_row_dynamic(context, 26, 2);
+    if (IconButton{wormedit::ui::lucide::Glyph::chevron_right, "Open in Compose"}.render(context))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id.value);
-    if (Button{"⋯", ButtonKind::secondary, "Chart actions"}.render(context)) {
-        project_state.menu_chart = row.chart_id.value;
+    const DrawnIconButton more{[](nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+        const auto x = bounds.x + bounds.w * 0.5f;
+        const auto y = bounds.y + bounds.h * 0.5f;
+        for (int index = -1; index <= 1; ++index)
+            nk_fill_circle(canvas, nk_rect(x + index * 5.0f - 1.5f, y - 1.5f, 3, 3), tint);
+    }, "Chart actions"};
+    if (more.render(context)) {
+        focus_project_chart(row.chart_id.value);
         context_menu_open(project_state.row_menu, context->input.mouse.pos, wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id.value));
     }
+    nk_group_end(context);
+    nk_style_pop_vec2(context);
 }
 
 void render_row_menu(nk_context* context, const wormedit::ui::setup_view_t& view, wormedit::ui::workspace_action_t& action) {
@@ -377,7 +404,7 @@ void render_delete_confirmation(nk_context* context, const wormedit::ui::setup_v
 // Fixed table template: grip, checkbox, eight text columns sharing the rest, and actions.
 constexpr float grip_width = 18.0f;
 constexpr float checkbox_width = 26.0f;
-constexpr float actions_width = 100.0f;
+constexpr float actions_width = 2 * wormedit::ui::chrome::IconButton::width;
 constexpr float cell_padding = 6.0f;
 // Name, Author, Rating, Mode, Keys, Groups, Notes, Length.
 constexpr std::array<float, 8> text_shares{22.0f, 18.0f, 8.0f, 12.0f, 6.0f, 14.0f, 8.0f, 8.0f};
@@ -506,10 +533,10 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
     begin_table_row(context, 30, ratios);
     const auto row_bounds = table_row_bounds(context, widths);
     const bool selected = worm_ui_nuklear_project_chart_selected(project_state.selection, row.chart_id.value);
-    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
+    if (!worm_ui_nuklear_setup_popup_owns_input() &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
         nk_input_is_mouse_hovering_rect(&context->input, row_bounds)) {
-        project_state.menu_chart = row.chart_id.value;
-        wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::charts, row.chart_id.value);
+        focus_project_chart(row.chart_id.value);
     }
     const bool keyboard_open = (project_state.menu_chart == row.chart_id.value ||
         (!project_state.menu_chart && selected)) &&
@@ -525,13 +552,15 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
             "Select chart"}.render(context))
         worm_ui_nuklear_click_project_chart(project_state.selection, {shown.data(), shown_count}, row.chart_id.value, true, false);
     const auto name_bounds = nk_widget_bounds(context);
-    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
-        nk_input_is_mouse_hovering_rect(&context->input, name_bounds)) {
-        project_state.menu_chart = row.chart_id.value;
+    if (!worm_ui_nuklear_setup_popup_owns_input() &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+        nk_input_is_mouse_hovering_rect(&context->input, row_bounds)) {
+        focus_project_chart(row.chart_id.value);
         wormedit::ui::chrome::context_menu_open(project_state.row_menu, context->input.mouse.pos,
                                                wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id.value));
     }
-    if (nk_input_mouse_clicked(&context->input, NK_BUTTON_DOUBLE, name_bounds))
+    if (!worm_ui_nuklear_setup_popup_owns_input() &&
+        nk_input_mouse_clicked(&context->input, NK_BUTTON_DOUBLE, name_bounds))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id.value);
     nk_bool name_selected = selected;
     const auto* label = row.name.data()[0] ? row.name.data() : "Untitled chart";
@@ -552,14 +581,9 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
         begin_chart_memberships(row.chart_id.value, view.document_revision);
     nk_labelf(context, NK_TEXT_LEFT, "%llu", static_cast<unsigned long long>(row.note_count));
     text_cell(context, row.length.data(), widths[7]);
-    char group[64]{};
-    std::snprintf(group, sizeof(group), "chart-actions-%llu", static_cast<unsigned long long>(row.chart_id.value));
-    nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(0, 0));
-    if (nk_group_begin(context, group, NK_WINDOW_NO_SCROLLBAR)) {
-        render_chart_actions(context, view, row, action);
-        nk_group_end(context);
-    }
-    nk_style_pop_vec2(context);
+    const bool hovered = nk_input_is_mouse_hovering_rect(&context->input, context->current->buffer.clip) &&
+                         nk_input_is_mouse_hovering_rect(&context->input, row_bounds);
+    render_chart_actions(context, view, row, hovered, action);
     preview_chart_drop(context, view, row.chart_id.value, row_bounds);
     if (row.diagnostic.data() && row.diagnostic.data()[0]) {
         nk_layout_row_dynamic(context, 22, 1);
@@ -1268,6 +1292,9 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const wormedit::ui::
     const bool same_session = view && view->visible && selection.song == view->song_id.value &&
         selection.session_generation == view->session_generation;
     if (!same_session) {
+        if (wormedit::ui::chrome::context_menu_focused_target() ==
+            wormedit::ui::chrome::KeyboardContextTarget::charts)
+            wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::none);
         if (context && project_state.delete_dialog.open) nk_window_close(context, "Delete chart");
         auto retired_metadata = project_state.metadata_popup;
         retired_metadata.cancel();

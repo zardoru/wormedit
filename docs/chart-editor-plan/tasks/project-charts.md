@@ -54,17 +54,31 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-416 Replace the per-row button strip with hover actions and a row menu
 
-- **Status:** partial (T-415 is done; compact actions, menu and dialog landed, hover-only cleanup remains)
+- **Status:** done (2026-10-21; hover/focus icons, row menu and dialog verified)
 - **Done so far:** Rows have compact **Open** and **⋯** actions, right-click and keyboard-opened
   `ContextMenu`, double-click Open, and a shared cancellable Delete dialog. Popup lifecycle closes on
   hidden/stale sessions. Production event-harness coverage is in the `project-charts` cases.
-- **Remaining:** Remove the always-present two-button action group so Open/⋯ appear only for the
-  hovered or focused row, and remove **Move up/Move down** from the menu once T-417 supplies its
-  remaining Alt+arrow path.
+- **Completion:** Open and menu are shared native icon cells, shown only on hovered/focused
+  rows. Hidden cells reserve the same table space; hover cannot change row heights. Right-click
+  works across the row; raw focus and double-click handlers cannot act through an open popup.
+  A new/hidden session drops chart focus even when stable IDs are reused. T-417 removed the
+  old Move items; Open, Duplicate, Delete confirmation/cancel and double-click Open remain.
+- **Verification:** GATE passes **4,409/4,409**, build, whitespace and three-TU complexity
+  (`/tmp/t416-gate-final.log`, `/tmp/wormedit-gate.R11BXK`, `/tmp/wormedit-complexity.ae_mbi4c`).
+  Explicit event harness **603/603** and focused project/tooltip **432 assertions / 26 cases**
+  pass (`/tmp/t416-events.log`, `/tmp/t416-focused-final4.log`). Default production clang-tidy
+  passes (`/tmp/t416-tidy-final2.log`). Isolated wide and 800×700 captures inspected:
+  `/tmp/t416-{idle,hover,focus,menu,narrow}.png`; reproduction `/tmp/t416-visual-steps.sh`.
+- **Supporting ownership (2026-10-21):** add
+  `tests/ui/project_chart_actions_event_harness_tests.cpp` to **Files owned** for visibility,
+  focus and action-emission regressions beside T-417's feature cases. Existing general harness
+  tooltip/menu tests switch from persistent text buttons to native icon lookup after row hover.
+  `cmake/complexity_baseline.txt` is also owned for reviewed decreases only: one legacy test's
+  allowance falls **65 → 61**, and obsolete **26/28** allowances are removed. No limit increases.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** no row has a button strip. Hovering a row shows Open and ⋯, and ⋯ or a right-click opens a `ContextMenu` with Open in Compose, Duplicate and Delete…. There are no move items, because reordering is T-417's grip and Alt+↑/↓. A double-click opens the chart. Delete… asks in a `chrome::Dialog`.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp` (`render_chart_actions`, `render_delete_confirmation`), `src/ui/nuklear/context_menu.h`, [dialogs](dialogs.md).
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `src/sys/project_view.h`, `src/sys/project_view.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`, `include/wormedit/core/metadata_rating.h`, `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/context_menu.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, this card and `memory/chart-editor-status/resume.md`.
+- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `src/sys/project_view.h`, `src/sys/project_view.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`, `include/wormedit/core/metadata_rating.h`, `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/context_menu.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, `tests/ui/project_chart_actions_event_harness_tests.cpp`, this card and `memory/chart-editor-status/resume.md`.
 - **Supporting ownership (2026-10-21):** selection-bar Duplicate/Delete must apply the entire selection in one transaction; extend the existing commands and reuse their ID remapping/membership rules. Expose the existing exact rating parser through a vocabulary-only header so the popover can show invalid-input feedback without importing document/command types or duplicating parsing. Metadata action payloads stay unchanged. Reuse the existing context-menu bounds calculation through the shared popup header; the keyboard-menu regression must distinguish menu-only controls from the new persistent selection-bar buttons.
 - **Steps:**
   1. Remove `render_chart_actions` and the inline delete confirmation.

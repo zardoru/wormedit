@@ -5014,12 +5014,17 @@ TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[
 }
 
 namespace {
-// One chart row on the Project tab. Its "Open" strip button carries the tooltip "Open in
-// Compose" and sits under the Tap timing window's rectangle at this window size.
+// One chart row on the Project tab, with hover actions at its right edge.
 void configure_project_row(nuklear_event_harness_t& harness, wormedit::ui::project_chart_row_view_t* row) {
     harness.view().setup.visible = true;
     harness.view().setup.charts = {*row};
     harness.view().setup.chart_count = 1;
+}
+auto project_row_action(nuklear_event_harness_t& harness, const char* tooltip) -> std::pair<float, float> {
+    const auto name = harness.drawn_text_center("Chart");
+    REQUIRE(name);
+    hover_overview_label(harness, *name);
+    return harness.widget_center(tooltip);
 }
 }
 
@@ -5029,9 +5034,8 @@ TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][
     nuklear_event_harness_t harness{1280, 720};
     configure_project_row(harness, &row);
     (void)harness.frame();
-    const auto open = harness.drawn_text_center("Open");
-    REQUIRE(open);
-    hover_overview_label(harness, *open);
+    const auto open = project_row_action(harness, "Open in Compose");
+    hover_overview_label(harness, open);
     CHECK(harness.drawn_text_center("Open in Compose").has_value());
 }
 
@@ -5049,18 +5053,17 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     harness.view().tap_timing.visible = true;
     (void)harness.frame();
     (void)harness.frame();
-    const auto open = harness.drawn_text_center("Open");
-    REQUIRE(open);
+    const auto open = project_row_action(harness, "Open in Compose");
     wormedit::ui::testing_rect_view_t tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     // Move the compact shared dialog by its header over the current action.
-    cover_with_tap_tool(harness, *open, 800, 720);
+    cover_with_tap_tool(harness, open, 800, 720);
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
-    const bool inside_x = open->first >= tap.x && open->first <= tap.x + tap.width;
-    const bool inside_y = open->second >= tap.y && open->second <= tap.y + tap.height;
+    const bool inside_x = open.first >= tap.x && open.first <= tap.x + tap.width;
+    const bool inside_y = open.second >= tap.y && open.second <= tap.y + tap.height;
     REQUIRE(inside_x);
     REQUIRE(inside_y);
-    hover_overview_label(harness, *open);
+    hover_overview_label(harness, open);
     CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
 }
 
@@ -5629,9 +5632,8 @@ TEST_CASE("Project charts use compact row menus and a cancellable delete dialog"
     (void)harness.frame();
     CHECK_FALSE(harness.drawn_text_center("Apply to selected charts"));
     CHECK_FALSE(harness.drawn_text_center("Duplicate"));
-    const auto more = harness.drawn_text_center("⋯");
-    REQUIRE(more);
-    for (const auto& frame : click_at(harness, more->first, more->second))
+    const auto more = project_row_action(harness, "Chart actions");
+    for (const auto& frame : click_at(harness, more.first, more.second))
         CHECK(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
     (void)harness.frame();
     const auto erase = harness.drawn_text_center("Delete…");
@@ -5693,9 +5695,8 @@ TEST_CASE("Project chart popups expire when the tab or project session changes",
     REQUIRE(harness.ready());
     configure_project_row(harness, &row);
     (void)harness.frame();
-    const auto more = harness.drawn_text_center("⋯");
-    REQUIRE(more);
-    (void)click_at(harness, more->first, more->second);
+    const auto more = project_row_action(harness, "Chart actions");
+    (void)click_at(harness, more.first, more.second);
     (void)harness.frame();
     REQUIRE(worm_ui_nuklear_setup_popup_owns_input());
     harness.view().setup.visible = false;
@@ -5703,9 +5704,8 @@ TEST_CASE("Project chart popups expire when the tab or project session changes",
     CHECK_FALSE(worm_ui_nuklear_setup_popup_owns_input());
     harness.view().setup.visible = true;
     (void)harness.frame();
-    const auto again = harness.drawn_text_center("⋯");
-    REQUIRE(again);
-    (void)click_at(harness, again->first, again->second);
+    const auto again = project_row_action(harness, "Chart actions");
+    (void)click_at(harness, again.first, again.second);
     (void)harness.frame();
     REQUIRE(worm_ui_nuklear_setup_popup_owns_input());
     ++harness.view().setup.session_generation;

@@ -2,11 +2,20 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-416** (2026-10-21): Project rows show native Open/menu icons only on hover
+or row focus, with stable row spacing. Row-wide context menus keep their captured target;
+underlying raw input is blocked, and session replacement clears focus. GATE passes **4,409/4,409**,
+build, whitespace and three-TU complexity; explicit event harness **603/603**, focused
+project/tooltip **432 assertions / 26 cases** and production clang-tidy pass. Inspected isolated
+wide/narrow captures cover idle, hover, focus and the menu. Reviewed legacy complexity allowances
+decrease **65 → 61**, with two obsolete allowances removed. Both owner-requested cards are complete;
+no sequential follow-up is active.
+
 Completed **T-417** (2026-10-21): focused chart rows reorder with Alt+Up/Down through the
 existing atomic command, and the old Move menu entries are removed. GATE passes **4,397/4,397**,
 build, whitespace and five-TU complexity; explicit core **2,418/2,418**, event harness **599/599**
 and affected production clang-tidy pass. Isolated Xvfb verifies keyboard reorder/Undo and
-the drag insertion line, commit and Undo. Next owner-requested card: **T-416**, hover/focus row actions.
+the drag insertion line, commit and Undo. The following owner-requested **T-416** is complete above.
 
 Completed **T-282** (2026-10-21): BMS defaults to beatoraja with BOM-prefixed UTF-8
 normalization and optional untouched-source transcoding; explicit LR2 uses CP932 and

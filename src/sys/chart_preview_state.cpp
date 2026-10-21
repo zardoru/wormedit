@@ -1,6 +1,6 @@
 #include "sys/chart_preview_state.h"
 #include "sys/preview_cursor_frame.h"
-#include "sys/timing_settings.h"
+#include "sys/timing/timing_settings.h"
 
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/audio/decoder.h>

@@ -72,7 +72,7 @@ stale-plan check (rule 9) first.
 - **Implementation notes (2026-10-01):** steps 1 and 2 are done: `suggest_meters(rational_t) -> std::vector<meter_t>` in `include/wormedit/core/measure.h` (denominators 4, 8, 16 in order; at most three entries; empty when no exact candidate or for zero/overflowing input) with tests for 1, 3/4, 5/4, 7/8, 1/3 and degenerate inputs in `tests/core/measure_tests.cpp`. Step 3 (buttons in the meter form) remains and touches UI files. **Step 3 (2026-10-02, Claude):** the meter form shows a `Suggest` row of up to three buttons computed from the typed numerator/denominator by `worm_ui_nuklear_suggest_meters` (`src/ui/nuklear/timing_state.cpp`, a core-free mirror of `suggest_meters` because the Nuklear layer does not include core headers; tested in `tests/ui/nuklear_timing_state_tests.cpp`). Picking one rewrites numerator and denominator to an equal length. Nuklear side uncompiled here; the state test was compiled standalone.
 - **Outcome:** when a measure length is entered, the meter form lists candidate signatures (for example length 3/4 → 3/4, 6/8) and fills the chosen one.
 - **Read first:** `docs/chart-editor-plan/document-model.md` (measure length paragraph), `include/wormedit/core/measure.h`, `src/ui/nuklear/timing_panel.cpp` (meter form).
-- **Files owned:** `include/wormedit/core/measure.h`, `src/core/measure.cpp`, `tests/core/measure_tests.cpp`, `src/sys/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.
+- **Files owned:** `include/wormedit/core/measure.h`, `src/core/measure.cpp`, `tests/core/measure_tests.cpp`, `src/sys/timing/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.
 - **Steps:**
   1. Core: `suggest_meters(rational length) -> bounded list` using denominators 4, 8, 16 in that order.
   2. Tests for 1, 3/4, 5/4, 7/8, 1/3 (no suggestion).
@@ -113,11 +113,11 @@ stale-plan check (rule 9) first.
 
 ## T-76 Use the active snap for Timing-pane insertion
 
-- **Status:** done (2026-10-02; `timing_stage_grid_step` in `src/sys/main.cpp` and `src/sys/timing_view.cpp`)
+- **Status:** done (2026-10-02; `timing_stage_grid_step` in `src/sys/main.cpp` and `src/sys/timing/timing_view.cpp`)
 - **Implementation notes (2026-10-02, Claude):** the Timing pane already snapped to the active Compose snap (`timing_position_from_fraction`); the missing part was the documented fallback, so an unrepresentable snap now uses one standard measure instead of rejecting. The helper lives in `main.cpp`, so no automated test covers it; verify by double-clicking a Timing lane with a snap the chart's resolution does not divide.
 - **Outcome:** double-clicking an empty Timing-lane row snaps to the active Compose snap instead of the fixed quarter beat, falling back to one measure only if the resolution cannot represent it.
-- **Read first:** `src/sys/timing_view.cpp`, `src/sys/timing_edit_runtime.cpp`, `include/wormedit/core/grid.h`.
-- **Files owned:** `src/sys/timing_view.cpp`, `src/sys/timing_edit_runtime.cpp`, `tests/ui/nuklear_timing_state_tests.cpp`.
+- **Read first:** `src/sys/timing/timing_view.cpp`, `src/sys/timing/timing_edit_runtime.cpp`, `include/wormedit/core/grid.h`.
+- **Files owned:** `src/sys/timing/timing_view.cpp`, `src/sys/timing/timing_edit_runtime.cpp`, `tests/ui/nuklear_timing_state_tests.cpp`.
 - **Steps:** 1. Find the fixed quarter-beat snap constant. 2. Replace it with the workspace's active snap. 3. Test both a supported and an unsupported snap.
 - **Invariants:** Compose snap state is read, never changed, by the Timing pane.
 - **Reject/failure behavior:** unsupported snap uses the documented measure fallback.
@@ -310,7 +310,7 @@ Implementation review (2026-10-04): Atomic Apply, rounded choices, combined cach
 - **Status:** ready
 - **Outcome:** BPM and timing edits keep every object's musical position by default (objects move in time with the grid, user decision 2026-09-30, question 5); a per-edit option "Keep audio time of notes" re-positions playable notes, BGM, and audio-time markers so their audio times stay fixed, shown in the edit preview.
 - **Read first:** `include/wormedit/core/bpm_editor.h` (`apply_bpm_edit`), `include/wormedit/core/timing.h` (`musical_position_at`), `docs/chart-editor-plan/document-model.md` (positioning domain paragraph), `include/wormedit/core/quantize.h` (exact repositioning helpers).
-- **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/timing_edit_runtime.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
+- **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/timing/timing_edit_runtime.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Steps:** 1. Policy enum on timing edit commands (default `musical`). 2. `audio` policy: compute each affected object's audio time before, its exact row after (inverse lookup), quantize only if the resolution cannot represent it (report count). 3. Preview counts; checkbox in the timing editor. 4. Tests for both policies with an osu!mania import.
 - **Invariants:** default behavior unchanged from today.
 - **Reject/failure behavior:** positions that cannot be represented exactly are reported and the edit is rejected unless the user allows quantization.

@@ -26,8 +26,8 @@
 #include <fstream>
 #include "sys/preferences/options_runtime.h"
 #include "sys/recipe_form.h"
-#include "sys/timing_view.h"
-#include "sys/timing_edit_runtime.h"
+#include "sys/timing/timing_view.h"
+#include "sys/timing/timing_edit_runtime.h"
 #include "sys/waveform_analysis_runtime.h"
 #include "sys/waveform_view.h"
 #include <algorithm>

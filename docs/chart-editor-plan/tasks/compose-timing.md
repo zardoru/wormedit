@@ -17,7 +17,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (headless projection; pixel view moves to T-314)
 - **Outcome:** A single bounded projection lists every Stop, Delay and Warp as a dead span with its row range, duration and kind, consumed by both the canvas and the waveform.
-- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `src/sys/timing_view.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/frontend.h`.
+- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `src/sys/timing/timing_view.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/frontend.h`.
 - **Files owned:** `src/sys/compose_dead_spans.h/.cpp` (new), `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/sys/compose_dead_spans_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Grep for an existing projection first (rule 9). 2. Define `WormUiComposeDeadSpanView` (kind stop/delay/warp, begin/end row, begin/end seconds, selected, object id). 3. Build it from `timing_index_t` and `warp_event_t::span` with a fixed capacity and a clipped visible window. 4. Test overlapping, adjacent, negative-stop-as-warp and empty charts.
 - **Invariants:** Pure projection; the document is never mutated. Stop/Delay occupy zero rows, Warp occupies rows but zero seconds; both are rational-exact until the final pixel conversion.
@@ -63,7 +63,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (headless projection; drawing moves to T-317)
 - **Outcome:** Kiai is drawn in Compose as a rectangle covering its whole active area, with head and tail, merging overlaps; the data model keeps point on/off events.
-- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/marker_editor.h`, `src/sys/timing_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
+- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/marker_editor.h`, `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
 - **Files owned:** `src/sys/compose_kiai_spans.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_kiai_spans_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Derive merged intervals from on/off pairs; an open interval ends at the chart end. 2. Draw the rectangle with selectable head and tail handles. 3. Test overlapping, duplicate, leading-off and unmatched events.
 - **Invariants:** Projection only: import/export and native schema are unchanged and byte-identical.
@@ -95,7 +95,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (impulse insertion already implemented: double-click on the SV lane stages an event with an inline value field)
 - **Outcome:** The Compose SV lane inserts impulse events and draws a line graph of the relative value that keeps the discrete step shape (horizontal hold, vertical jump) for non-recipes, with the 1.0x line marked.
-- **Read first:** `src/sys/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/timing_lane_controller.h`.
+- **Read first:** `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/timing_lane_controller.h`.
 - **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Grep how the Timing screen inserts SV/scroll events and reuse its core commands. 2. Project (row, value) breakpoints with a bounded count. 3. Draw latched steps with vertical jumps inside the area on the SV lane, normalized to the visible value range (1.0x marked when in range). 4. Test insertion and projection.
 - **Invariants:** Existing SV semantics and exports stay identical.
@@ -113,7 +113,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (recipe parameter editing moves to T-320; Lua evaluation is T-189)
 - **Outcome:** A recipe applied without materializing persists as a Compose area (range, parameters, sampling) that can be edited and materialized into SV events by an explicit command.
-- **Read first:** `include/wormedit/core/document.h`, `src/ui/nuklear/timing_panel.cpp`, `src/sys/timing_edit_runtime.h`, `src/sys/compose_sv_graph.h` (T-318).
+- **Read first:** `include/wormedit/core/document.h`, `src/ui/nuklear/timing_panel.cpp`, `src/sys/timing/timing_edit_runtime.h`, `src/sys/compose_sv_graph.h` (T-318).
 - **Files owned:** `src/sys/compose_recipe_areas.h/.cpp` (new), `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_recipe_areas_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Reuse `sv_recipe_t` as a persistent document entity (user decision), including native schema round trip. 2. Draw each area on the lane with its resolved value line graph (T-318), normalized to the visible range. 3. Add Materialize and Delete actions, one undo step each. 4. Test save/load round trip and materialization equality with the immediate path.
 - **Invariants:** Materializing later yields exactly the same events as materializing immediately.
@@ -175,7 +175,7 @@ Owner request (2026-10-20): eventually allow adding a Compose lane to control th
 
 - **Status:** done (the focus-mode inline editor changes the multiplier only; transitions are edited in the full-mode inspector)
 - **Outcome:** StepMania SPEEDS appear in the SPD lane as spans with their exact extent and transition, can be inserted, dragged and edited from Compose, and SPEEDS-output recipes keep their areas there.
-- **Read first:** `src/ui/nuklear/timing_panel.cpp` (`draw_speed_markers`, `draw_hovered_speed_span`, stage editor transition fields), `include/wormedit/core/timing_lane_controller.h`, `src/sys/timing_view.cpp` (speed projection), `src/ui/nuklear/compose_canvas.cpp`.
+- **Read first:** `src/ui/nuklear/timing_panel.cpp` (`draw_speed_markers`, `draw_hovered_speed_span`, stage editor transition fields), `include/wormedit/core/timing_lane_controller.h`, `src/sys/timing/timing_view.cpp` (speed projection), `src/ui/nuklear/compose_canvas.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, new `src/sys/compose_speed_spans.h/.cpp` and its test, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Project each SPEEDS event to its affected span (from its row to the next event, with the transition length) as a pure, tested function. 2. Draw spans in the SPD lane with hover detail. 3. Make markers and the staged editor accept transition seconds/beats exactly as the Timing screen does. 4. State and projection tests; Xvfb capture.
 - **Invariants:** exact rational multipliers and transitions; StepMania export unchanged.

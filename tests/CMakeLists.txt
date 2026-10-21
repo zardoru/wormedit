@@ -826,7 +826,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
-        ../src/sys/timing_view.cpp
+        ../src/sys/timing/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_view.cpp
         ../src/sys/bookmark_chooser_view.cpp
@@ -936,7 +936,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/bookmark_navigation.cpp
         ../src/sys/sound_list_view.cpp
         ../src/sys/sound_picker_view.cpp
-        ../src/sys/timing_view.cpp
+        ../src/sys/timing/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/metadata_view.cpp

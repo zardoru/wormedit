@@ -1,8 +1,8 @@
 #pragma once
 #include "sys/compose_interaction_view.h"
 #include "sys/application_edit_inputs.h"
-#include "sys/timing_edit_runtime.h"
-#include "sys/timing_view.h"
+#include "sys/timing/timing_edit_runtime.h"
+#include "sys/timing/timing_view.h"
 #include "sys/compose_input.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_navigation.h"

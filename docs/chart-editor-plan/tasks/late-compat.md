@@ -37,7 +37,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-171)
 - **Outcome:** a Ticks timing lane in Timing/Compose edits tick-count segments; player preview draws tick marks along holds.
 - **Read first:** `include/wormedit/core/timing_lane_controller.h`, `src/ui/nuklear/timing_panel.cpp`, `src/core/player_preview.cpp`.
-- **Files owned:** `include/wormedit/core/timing_lane_controller.h`, `src/core/timing_lane_controller.cpp`, `tests/core/timing_lane_controller_tests.cpp`, `src/sys/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/core/player_preview.cpp`, `tests/core/player_preview_tests.cpp`.
+- **Files owned:** `include/wormedit/core/timing_lane_controller.h`, `src/core/timing_lane_controller.cpp`, `tests/core/timing_lane_controller_tests.cpp`, `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/core/player_preview.cpp`, `tests/core/player_preview_tests.cpp`.
 - **Steps:** 1. New lane kind in the pseudo-note controller. 2. Tick positions computed exactly over hold intervals. 3. Preview drawing.
 - **Invariants:** as T-171.
 - **Reject/failure behavior:** timing lock applies.

@@ -4,8 +4,8 @@
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/player_preview_presenter.h"
-#include "sys/timing_edit_runtime.h"
-#include "sys/timing_view.h"
+#include "sys/timing/timing_edit_runtime.h"
+#include "sys/timing/timing_view.h"
 #include "sys/workspace_frame_view.h"
 #include "sys/workspace_view.h"
 

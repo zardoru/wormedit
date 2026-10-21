@@ -10,8 +10,8 @@
 #include "sys/metadata_actions.h"
 #include "sys/project_open.h"
 #include "sys/project_view.h"
-#include "sys/timing_edit_runtime.h"
-#include "sys/timing_view.h"
+#include "sys/timing/timing_edit_runtime.h"
+#include "sys/timing/timing_view.h"
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/recovery_controller.h>
 namespace wormedit::sys {

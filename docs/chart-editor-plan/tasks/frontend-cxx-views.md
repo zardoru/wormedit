@@ -202,7 +202,7 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 - **Status:** done (2026-10-20)
 - **Outcome:** `timing_preview.h` contains no C structs, and `ui_codec<WormUiTimingLaneKind>` is gone (`frontend_ui_codec` 0).
 - **Read first:** the shared list.
-- **Files owned:** the shared list for `src/ui/frontend/timing_preview.h`, plus `src/sys/timing_view.cpp`, `src/sys/timing_lane_ui.h` and `src/sys/player_preview_presenter.cpp`.
+- **Files owned:** the shared list for `src/ui/frontend/timing_preview.h`, plus `src/sys/timing/timing_view.cpp`, `src/sys/timing_lane_ui.h` and `src/sys/player_preview_presenter.cpp`.
 - **Steps:** 1. Inventory as in T-690. 2. Convert; the timing-lane kind becomes the core enum. 3. Delete the codec and its callers' conversions.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
@@ -653,7 +653,7 @@ Coordinator-approved supporting ownership for the leaf and root conversion:
 - `src/sys/recipe_form.h`
 - `src/sys/shortcut_rows.cpp`
 - `src/sys/shortcut_rows.h`
-- `src/sys/timing_view.cpp`
+- `src/sys/timing/timing_view.cpp`
 - `src/sys/waveform_view.cpp`
 - `src/sys/workspace_view.cpp`
 - `src/sys/workspace_view.h`

@@ -2,15 +2,15 @@
 #include "sys/application_timing_stage.h"
 #include "sys/application_edit_inputs.h"
 #include "core/timing_event_internal.h"
-#include "sys/timing_edit_runtime.h"
-#include "sys/timing_view.h"
+#include "sys/timing/timing_edit_runtime.h"
+#include "sys/timing/timing_view.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/macos_menu.h"
 #endif
 
 #include "sys/application_defaults.h"
 #include "sys/compose_timing_target.h"
-#include "sys/timing_view.h"
+#include "sys/timing/timing_view.h"
 #include "ui/frontend.h"
 #include <SDL3/SDL_clipboard.h>
 #include <wormedit/core/snap.h>

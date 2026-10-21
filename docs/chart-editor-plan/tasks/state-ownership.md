@@ -511,6 +511,10 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
   Clang rejected the earlier initializer under `-Werror`; the fix is isolated in commit
   `9e83121e59a0929e5d6cabeb7fdb74afa7fa28b6`. GCC application and Clang object builds pass. The inventory
   retains original hashes and records this reviewed source baseline; move commits stay path-only.
+- **Resource budget (owner steering, 2026-10-21):** after the concurrent compiler run
+  exhausted shared memory, verification runs sequentially with one worker, low CPU/I/O
+  priority, a 3 GiB memory cap and at most two CPU cores for internal test threads.
+  Preserve desktop headroom; interrupted timing verification is rerun before committing.
 - **Shrink-wrap dependency (2026-10-18):** T-678 removed the unused legacy Chart and Field models. Their deleted paths and the obsolete lowercase-header step are removed from this card; the unrelated interval-index owner remains.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/application.cpp` (about 4,800 lines), `src/sys/compose_actions.cpp` (3,700), `src/ui/nuklear/compose_canvas.cpp` (3,400), `src/sys/compose_view.cpp` (2,700) and `src/sys/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
 - **Findings closed:** FL1–FL5 (targets; not yet closed).

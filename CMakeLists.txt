@@ -556,8 +556,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application.cpp
         src/sys/application_timing_stage.cpp
         src/sys/frame_timing.cpp
-        src/sys/timing_view.cpp
-        src/sys/timing_edit_runtime.cpp
+        src/sys/timing/timing_view.cpp
+        src/sys/timing/timing_edit_runtime.cpp
         src/sys/metadata_drop_state.cpp
         src/sys/metadata_asset_runtime.cpp
         src/sys/metadata_actions.cpp

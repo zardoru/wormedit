@@ -8,7 +8,7 @@
 #include <wormedit/core/arena.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
-#include "sys/timing_view.h"
+#include "sys/timing/timing_view.h"
 #include "sys/metadata_view.h"
 #include <array>
 #include <cstring>

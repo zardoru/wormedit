@@ -5,7 +5,7 @@
 Today every message is one string. `src/sys/main.cpp` threads a single
 `std::string& status` through dozens of handlers (last writer wins), Compose and
 Timing keep their own `status` strings (`src/sys/compose_view.h`,
-`src/sys/timing_view.h`), and the Nuklear frontend has a separate
+`src/sys/timing/timing_view.h`), and the Nuklear frontend has a separate
 `g_project_dialog_error`. Nothing carries a severity, so a routine hint such as
 "Compose navigation canceled." can hide a command's result or an error in the
 same frame (seen in T-207), and worker failures (autosave, export, decode)
@@ -113,7 +113,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 - **Status:** done (2026-10-08 audit; see Result and Inventory bullets)
 - **Outcome:** `compose_input_family_result_t` messages, `flattened.compose.status`, the Timing view `status`, and `g_project_dialog_error` post notifications; routine gesture messages ("Compose navigation canceled.", "… move") become `hint`, so they can no longer hide a command result (fixes the precedence half of T-207).
-- **Read first:** `src/sys/compose_input.cpp` (`continue_batch` messages), `src/sys/compose_actions.cpp` (`compose_result_status`), `src/sys/compose_view.cpp` (`view.status_text` assignments), `src/sys/timing_view.cpp`, `src/ui/nuklear/frontend.cpp` (`g_project_dialog_error`).
+- **Read first:** `src/sys/compose_input.cpp` (`continue_batch` messages), `src/sys/compose_actions.cpp` (`compose_result_status`), `src/sys/compose_view.cpp` (`view.status_text` assignments), `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/frontend.cpp` (`g_project_dialog_error`).
 - **Files owned:** those files and their headers, `src/ui/frontend.h`.
 - **Steps:** as T-221, file by file; add a regression test that a command success followed by a navigation-cancel hint in the same frame keeps the success as the current line.
 - **Invariants:** as T-221.

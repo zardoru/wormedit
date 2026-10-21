@@ -81,6 +81,7 @@ void compose_scene_cache_t::invalidate_scene_cache() {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     waveform.channel_waveform_slices.value().reset();
     waveform.channel_projection.invalidate(true);
+    waveform.direct_projection.invalidate();
 #endif
     frame.interaction_view.reset();
     frame.hover.reset();
@@ -748,15 +749,21 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
     return result;
 }
 
-auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
-    const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t> {
+void build_compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
+    const bgm_lane_mix_state_t& mix, std::vector<std::uint64_t>& muted) {
+    muted.clear();
     const auto any_solo = std::ranges::any_of(chart.bgm_source_lanes,
         [&](const auto& lane) { return mix.solo.contains(lane.id.value); });
-    std::vector<std::uint64_t> muted;
     for (const auto& lane : chart.bgm_source_lanes)
         if (mix.muted.contains(lane.id.value) || (any_solo && !mix.solo.contains(lane.id.value)))
             muted.push_back(lane.id.value);
     std::ranges::sort(muted);
+}
+
+auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
+    const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t> {
+    std::vector<std::uint64_t> muted;
+    build_compose_bgm_muted_lanes(chart, mix, muted);
     return muted;
 }
 
@@ -1520,7 +1527,12 @@ auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> s
         compose_vector_bytes(storage.view.compose.grid_lines) +
         compose_vector_bytes(storage.view.compose.note_endpoints) +
         compose_vector_bytes(storage.view.compose.hold_bodies) +
-        compose_vector_bytes(storage.view.compose.differences);
+        compose_vector_bytes(storage.view.compose.differences) +
+        compose_vector_bytes(storage.view.compose.bgm_lanes) +
+        compose_vector_bytes(storage.view.compose.bgm_events);
+    bytes += data.stem_filenames.bucket_count() * sizeof(void*);
+    for (const auto& [id, name] : data.stem_filenames)
+        bytes += sizeof(id) + sizeof(name) + 4 * sizeof(void*) + name.capacity() + 1;
     bytes += compose_vector_bytes(data.grid.row) + compose_vector_bytes(data.visible_sound_ids);
     for (const auto& label : data.timing_marker_labels)
         bytes += label.first.capacity() + label.second.capacity() + 2;
@@ -1554,7 +1566,7 @@ void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeVi
 void clear_static_source_selection(frontend_workspace_view_t& storage) {
     for (auto& note:storage.view.compose.note_endpoints) note.selected=false;
     for (auto& hold:storage.view.compose.hold_bodies) hold.selected=false;
-    for (auto& event:storage.compose.bgm.event) event.selected=false;
+    for (auto& event:storage.view.compose.bgm_events) event.selected=false;
     for (auto& event:storage.compose.bga_event) event.selected=false;
     for (auto& marker:storage.view.compose.timing_markers) marker.selected=false;
 }
@@ -1634,8 +1646,8 @@ auto build_compose_static_source(const compose_scene_projection_context_t& proje
     clear_static_source_selection(*storage);
     publish_compose_scene(expanded);
     const auto count = retained.bands.size() + retained.lanes.size() + retained.grid_lines.size() +
-        retained.hold_bodies.size() + retained.note_endpoints.size() + retained.bgm_lane_count +
-        retained.bgm_event_count + retained.bga_event_count + retained.timing_markers.size();
+        retained.hold_bodies.size() + retained.note_endpoints.size() + retained.bgm_lanes.size() +
+        retained.bgm_events.size() + retained.bga_event_count + retained.timing_markers.size();
     const auto bytes = compose_static_storage_bytes(*storage) +
         cache.scene.note_hitsound_accounted_bytes();
     if (retained.truncated || count > compose_scene_primitive_work_limit ||
@@ -1691,13 +1703,13 @@ void build_scalar_projection_indices(const frontend_workspace_view_t& storage,
     };
     rebuild_scalar_intervals(data.indices[0], geometry.note_endpoints, bounds);
     rebuild_scalar_intervals(data.indices[1], geometry.hold_bodies, bounds);
-    rebuild_scalar_intervals(data.indices[2], source.bgm.event, bounds);
+    rebuild_scalar_intervals(data.indices[2], geometry.bgm_events, bounds);
     rebuild_scalar_intervals(data.indices[4], source.bga_event, bounds);
     rebuild_scalar_intervals(
         data.indices[3], source.grid.row,
         [](const auto& row) { return std::pair{double(row.whole_rows), double(row.whole_rows)}; });
     data.scratch.resize(std::max(
-        {geometry.note_endpoints.size(), geometry.hold_bodies.size(), source.bgm.event.size(),
+        {geometry.note_endpoints.size(), geometry.hold_bodies.size(), geometry.bgm_events.size(),
          source.bga_event.size(), source.grid.row.size()}));
     data.accounted_bytes =
         data.scratch.capacity() * sizeof(std::size_t);
@@ -1781,7 +1793,7 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
            extract_scalar_rectangles(cache, flattened, 1, geometry.hold_bodies, flattened.view.compose.hold_bodies,
                                      metadata.hold_clip_top, metadata.hold_clip_bottom, shift,
                                      hold) &&
-           extract_scalar_rectangles(cache, flattened, 2, source.bgm.event, flattened.compose.bgm.event, 0,
+           extract_scalar_rectangles(cache, flattened, 2, geometry.bgm_events, flattened.view.compose.bgm_events, 0,
                                      height, shift, bgm) &&
            extract_scalar_rectangles(cache, flattened, 4, source.bga_event,
                                      flattened.compose.bga_event, 0, height, shift, bga) &&
@@ -1794,10 +1806,9 @@ auto scalar_projection_fits_budget(const compose_scene_projection_context_t& pro
     const auto& geometry = projection.inputs.frame.view();
     const auto count = scene.layout_bands.size() + scene.lanes.size() + scene.bgm_lanes.size() +
                        std::size_t(scene.cursor.has_value()) + geometry.note_endpoints.size() +
-                       geometry.hold_bodies.size() + scalar.bgm.event.size() + scalar.bga_event.size() +
+                       geometry.hold_bodies.size() + geometry.bgm_events.size() + scalar.bga_event.size() +
                        geometry.grid_lines.size();
     return count <= request.maximum_scene_primitives &&
-           scalar.bgm.event.size() <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
            scalar.bga_event.size() <= WORM_UI_COMPOSE_BGA_EVENT_CAPACITY;
 }
 void discard_scalar_projection(frontend_workspace_view_t& flattened) {
@@ -1805,8 +1816,8 @@ void discard_scalar_projection(frontend_workspace_view_t& flattened) {
     flattened.view.compose.lanes.clear();
     flattened.view.compose.note_endpoints.clear();
     flattened.view.compose.hold_bodies.clear();
-    flattened.compose.bgm.lane.clear();
-    flattened.compose.bgm.event.clear();
+    flattened.view.compose.bgm_lanes.clear();
+    flattened.view.compose.bgm_events.clear();
     flattened.compose.bga_event.clear();
     flattened.view.compose.grid_lines.clear();
     flattened.compose.grid.row.clear();
@@ -1823,7 +1834,7 @@ auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComp
     const auto& retained = *cache.scene.scene_window.scene;
     return geometry.note_endpoints.size() == retained.note_endpoints.size() &&
            geometry.hold_bodies.size() == retained.hold_bodies.size() &&
-           source.bgm.event.size() == retained.bgm_events.size() &&
+           geometry.bgm_events.size() == retained.bgm_events.size() &&
            source.bga_event.size() == retained.bga_events.size() &&
            source.grid.row.size() == retained.grid_lines.size();
 }
@@ -2179,7 +2190,7 @@ void cache_area_object_geometry(const compose_projection_context_t<wormedit::edi
         input.scope.interaction_view.viewport_scroll_pixels,
         input.scope.interaction_view.pixels_per_standard_measure,
         input.scope.interaction_view.viewport_height_pixels};
-    for (std::size_t i = 0; i < view.bgm_event_count; ++i) {
+    for (std::size_t i = 0; i < view.bgm_events.size(); ++i) {
         const auto& event = view.bgm_events[i];
         append_area_object_geometry(*snapshot,
                                     {wormedit::editor_selection_object_kind_t::bgm_event,
@@ -2247,33 +2258,19 @@ void append_paste_bgm_lanes(
     const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
     const wormedit::editor_field_scene_view_t& scene,
     const wormedit::chart_paste_report_t& report) {
-    auto& rows = input.frame.flattened.compose.bgm.lane;
+    auto& rows = input.frame.flattened.view.compose.bgm_lanes;
     auto& view = input.frame.view();
     if (report.new_bgm_lanes.empty()) return;
-    const auto original = rows;
-    const auto count = std::min<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY,
-        original.size() + report.new_bgm_lanes.size());
-    if (!prepare_compose_geometry_rows(input.frame.flattened, rows, count)) {
-        rows = original;
-        view.truncated = true;
-        return;
-    }
-    for (const auto& lane : original) append_compose_geometry_row(rows, lane, view.truncated);
+    rows.reserve(rows.size() + report.new_bgm_lanes.size());
     for (const auto& lane : scene.bgm_lanes) {
         if (std::ranges::find(report.new_bgm_lanes, lane.source_lane,
                               &wormedit::bgm_source_lane_t::id) == report.new_bgm_lanes.end()) continue;
-        if (rows.size() >= WORM_UI_COMPOSE_BGM_LANE_CAPACITY) {
-            view.truncated = true;
-            break;
-        }
         append_compose_geometry_row(rows,
-            {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds), .source_lane_id = lane.source_lane.value,
+            {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds), .source_lane_id = lane.source_lane,
              .source_order = lane.source_order,
              .width_pixels = lane.unclipped_right_pixels - lane.unclipped_left_pixels,
              .resize_edge_pixels = lane.unclipped_right_pixels}, view.truncated);
     }
-    view.bgm_lanes = rows.data();
-    view.bgm_lane_count = rows.size();
 }
 
 void populate_compose_paste_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input) {
@@ -2396,14 +2393,15 @@ void populate_compose_bgm_mix(const compose_projection_context_t<wormedit::edito
         input.frame.application_state.project.bgm.bgm_lane_mix.find(input.scope.chart_scope.chart.id.value);
     const auto* mix =
         found == input.frame.application_state.project.bgm.bgm_lane_mix.end() ? nullptr : &found->second;
-    const auto muted = mix ? compose_bgm_muted_lanes(input.scope.chart_scope.chart, *mix)
-                           : std::vector<std::uint64_t>{};
+    auto& muted = input.frame.cache.frame.muted_bgm_lanes;
+    muted.clear();
+    if (mix) build_compose_bgm_muted_lanes(input.scope.chart_scope.chart, *mix, muted);
     input.frame.view().bgm_mix_available =
         static_cast<bool>(input.frame.application_state.services.transport_set_bgm_mix);
-    for (auto& lane : input.frame.flattened.compose.bgm.lane) {
-        lane.muted = mix && mix->muted.contains(lane.source_lane_id);
-        lane.solo = mix && mix->solo.contains(lane.source_lane_id);
-        lane.mix_silent = std::ranges::binary_search(muted, lane.source_lane_id);
+    for (auto& lane : input.frame.flattened.view.compose.bgm_lanes) {
+        lane.muted = mix && mix->muted.contains(lane.source_lane_id.value);
+        lane.solo = mix && mix->solo.contains(lane.source_lane_id.value);
+        lane.mix_silent = std::ranges::binary_search(muted, lane.source_lane_id.value);
     }
 }
 

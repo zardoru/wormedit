@@ -426,14 +426,22 @@ void decoded_source_registry_t::clear() {
     for (const auto& entry : removed) detach(entry);
 }
 
-auto decoded_source_registry_t::bindings() const -> std::vector<decoded_source_binding_t> {
+void decoded_source_registry_t::bindings(std::vector<decoded_source_binding_t>& result) const {
     const std::scoped_lock lock(mutex_);
-    std::vector<decoded_source_binding_t> result;
-    result.reserve(entries_.size());
+    const auto ready = std::ranges::count_if(entries_, [](const auto& entry) {
+        return !entry->generated && entry->state == probe_state_t::ready;
+    });
+    // Assign live slots so their owned source strings retain capacity across frames.
+    result.resize(static_cast<std::size_t>(ready));
+    std::size_t next = 0;
     for (const auto& entry : entries_) {
         if (!entry->generated && entry->state == probe_state_t::ready)
-            result.push_back(entry->binding);
+            result[next++] = entry->binding;
     }
+}
+auto decoded_source_registry_t::bindings() const -> std::vector<decoded_source_binding_t> {
+    std::vector<decoded_source_binding_t> result;
+    bindings(result);
     return result;
 }
 

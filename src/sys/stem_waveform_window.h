@@ -272,17 +272,25 @@ inline void prepare_packed_waveform_index(packed_waveform_index_t& index,
     if (!succeeded) index.invalidate_value(); // Preserve retry after a failed packed build.
     else if (index.build_count() == previous_builds) ++data.cache_hits;
 }
-inline auto visible_packed_waveform_pieces(const packed_waveform_index_t& index,
-    double begin_seconds, double end_seconds) -> std::vector<const packed_waveform_piece_t*> {
-    std::vector<const packed_waveform_piece_t*> result;
+inline void visible_packed_waveform_pieces(const packed_waveform_index_t& index,
+    double begin_seconds, double end_seconds, std::vector<const packed_waveform_piece_t*>& result,
+    std::vector<std::size_t>& selected_indices) {
+    result.clear();
     index.value().queried_pieces = 0;
-    if (!index.has_value() || !std::isfinite(begin_seconds) || !std::isfinite(end_seconds)) return result;
-    const auto queried = index.value().intervals.query(begin_seconds, end_seconds);
+    if (!index.has_value() || !std::isfinite(begin_seconds) || !std::isfinite(end_seconds)) return;
+    selected_indices.resize(index.value().pieces.size());
+    const auto queried = index.value().intervals.query_into(begin_seconds, end_seconds, selected_indices);
     index.value().queried_pieces = queried.scanned;
-    for (const auto selected : queried.indices) {
+    for (const auto selected : std::span{selected_indices}.first(queried.count)) {
         const auto& piece = index.value().pieces[selected];
         if (piece.begin_seconds < end_seconds && piece.end_seconds > begin_seconds) result.push_back(&piece);
     }
+}
+inline auto visible_packed_waveform_pieces(const packed_waveform_index_t& index,
+    double begin_seconds, double end_seconds) -> std::vector<const packed_waveform_piece_t*> {
+    std::vector<const packed_waveform_piece_t*> result;
+    std::vector<std::size_t> selected_indices;
+    visible_packed_waveform_pieces(index, begin_seconds, end_seconds, result, selected_indices);
     return result;
 }
 
@@ -319,11 +327,16 @@ inline auto packed_window_seconds(const timing_index_t& timing, double scroll, d
     return found == chart.bgm_source_lanes.end() ? nullptr : &*found;
 }
 
-[[nodiscard]] inline auto all_stem_channels( const chart_document_t& chart) -> std::vector<const sound_channel_t*> {
-    std::vector<const sound_channel_t*> result;
+inline void all_stem_channels(const chart_document_t& chart,
+                              std::vector<const sound_channel_t*>& result) {
+    result.clear();
     for (const auto& channel : chart.sound_channels) {
         if (stem_lane_for_channel(chart, channel.id)) result.push_back(&channel);
     }
+}
+[[nodiscard]] inline auto all_stem_channels(const chart_document_t& chart) -> std::vector<const sound_channel_t*> {
+    std::vector<const sound_channel_t*> result;
+    all_stem_channels(chart, result);
     return result;
 }
 
@@ -583,11 +596,12 @@ inline void update_stem_selection(stem_index_data_t& index, const chart_document
             selected.push_back(i);
 }
 
-[[nodiscard]] inline auto indexed_visible_stem_channels(stem_index_t& index,
+inline void indexed_visible_stem_channels(stem_index_t& index,
     const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
     std::size_t window, std::span<const audio::decoded_source_binding_t> bindings,
-    stem_geometry_indices_t indices = {}) -> std::vector<const sound_channel_t*> {
-    if (indices.measures && !*indices.measures) return all_stem_channels(chart);
+    std::vector<const sound_channel_t*>& result, stem_geometry_indices_t indices = {}) {
+    result.clear();
+    if (indices.measures && !*indices.measures) return all_stem_channels(chart, result);
     std::uint64_t built_timing_fingerprint{};
     auto& data = index.get_or_build(
         stem_index_query_t{chart_stamp_t::from(document, chart.id), bindings, indices.timing,
@@ -596,21 +610,28 @@ inline void update_stem_selection(stem_index_data_t& index, const chart_document
             build_stem_index(retained, document, chart, bindings, indices);
             built_timing_fingerprint = retained.timing.source_fingerprint;
         }, [](const stem_index_data_t& retained) { return retained.is_built; });
-    if (!data.is_built) return all_stem_channels(chart);
+    if (!data.is_built) return all_stem_channels(chart, result);
     const auto& selected = data.selection.get_or_build(std::pair{cursor, window},
         [&data, &chart, cursor, window](std::vector<std::size_t>& selected) {
             update_stem_selection(data, chart, cursor, window, selected);
         });
-    std::vector<const sound_channel_t*> result;
     result.reserve(selected.size());
     for (const auto i : selected) {
-        if (i >= data.channels.size()) return all_stem_channels(chart);
+        if (i >= data.channels.size()) return all_stem_channels(chart, result);
         const auto& entry = data.channels[i];
         if (entry.chart_position >= chart.sound_channels.size() ||
             chart.sound_channels[entry.chart_position].id.value != entry.id)
-            return all_stem_channels(chart);
+            return all_stem_channels(chart, result);
         result.push_back(&chart.sound_channels[entry.chart_position]);
     }
+}
+
+[[nodiscard]] inline auto indexed_visible_stem_channels(stem_index_t& index,
+    const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
+    std::size_t window, std::span<const audio::decoded_source_binding_t> bindings,
+    stem_geometry_indices_t indices = {}) -> std::vector<const sound_channel_t*> {
+    std::vector<const sound_channel_t*> result;
+    indexed_visible_stem_channels(index, document, chart, cursor, window, bindings, result, indices);
     return result;
 }
 

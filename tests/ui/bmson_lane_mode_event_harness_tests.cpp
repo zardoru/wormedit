@@ -65,12 +65,12 @@ TEST_CASE("BMSON lane_mode menus convert packed events and stem headers", "[fron
     view.viewport_width_pixels = viewport.width;
     view.viewport_height_pixels = viewport.height;
     const auto x = viewport.width * .6f;
-    WormUiComposeBgmLaneView lane{.bounds = {x, 0, x + 70, viewport.height},
-        .source_lane_id = 90, .stem = stem, .width_pixels = 70, .bmson_channel_id = stem ? 71U : 0U, .bmson_channel_continues = stem && continues};
-    WormUiComposeBgmEventView event{.bounds = {x, 90, x + 70, 110}, .event_id = 201,
-        .source_lane_id = 90, .sound_id = 42, .has_sound = true, .bmson_slice = true};
-    view.bgm_lanes = &lane; view.bgm_lane_count = 1;
-    view.bgm_events = &event; view.bgm_event_count = 1;
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {x, 0, x + 70, viewport.height},
+        .source_lane_id = wormedit::object_id_t{90}, .stem = stem, .width_pixels = 70, .bmson_channel_id = stem ? 71U : 0U, .bmson_channel_continues = stem && continues};
+    wormedit::ui::compose_bgm_event_view_t event{.bounds = {x, 90, x + 70, 110}, .event_id = wormedit::object_id_t{201},
+        .source_lane_id = wormedit::object_id_t{90}, .sound_id = wormedit::resource_id_t{42}, .has_sound = true, .bmson_slice = true};
+    view.bgm_lanes = {lane};
+    view.bgm_events = {event};
     (void)harness.frame();
     (void)click(harness, viewport.x + x + 30, viewport.y + (stem ? 8 : 100), SDL_BUTTON_RIGHT);
     require_ui(compose_note_menu_open());

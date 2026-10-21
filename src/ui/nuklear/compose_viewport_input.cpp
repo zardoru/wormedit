@@ -243,7 +243,7 @@ static bool compose_beat_fit_start_allowed(const ComposeBeatFitInput& input) {
            input.left_down && input.shortcut_event_count == 0 &&
            (input.pointer_modifiers & input.blocked_modifiers) == 0 &&
            input.pointer_started_x >= 22.0 && input.pointer_started_x <= 42.0 &&
-           view.waveform_row_count != 0 && view.waveform_overview_sample_rate != 0 &&
+           view.waveform_rows.size() != 0 && view.waveform_overview_sample_rate != 0 &&
            !view.waveform_timing_locked && !view.waveform_offset_drag_active &&
            !state.waveform_drag.beat_fit_drag_active && !state.waveform_drag.waveform_beat_zero_drag_active;
 }
@@ -257,7 +257,7 @@ static bool compose_offset_fit_start_allowed(const ComposeBeatFitInput& input) {
            (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
            (input.pointer_modifiers & other_modifiers) == 0 &&
            input.pointer_started_x >= 22.0 && input.pointer_started_x <= 42.0 &&
-           view.waveform_row_count != 0 && view.waveform_overview_sample_rate != 0 &&
+           view.waveform_rows.size() != 0 && view.waveform_overview_sample_rate != 0 &&
            !view.waveform_timing_locked && !view.audio_offset_locked && !view.waveform_offset_drag_active &&
            !state.waveform_drag.offset_fit_drag_active && !state.waveform_drag.waveform_beat_zero_drag_active;
 }

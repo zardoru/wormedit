@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-696** (2026-10-20): all ten BGM, waveform and stem primitive types are
+C++ views; eleven root lists retain capacity and stem rows borrow cached spans. Removed eight
+storage-capacity macros and the stem-cut cutoff while preserving audio/scene/render work budgets.
+Warmed populated BGM/waveform/stem and direct sample-point projections allocate zero bytes.
+Exact timing factors use stack arrays; decoded-source bindings refill retained storage. Cache
+content revisions refresh equal-sized PCM replacements/removals, and selection changes rebuild
+stem pieces. GATE passes **4,373/4,373**, build, whitespace and complexity across **34 changed
+translation units** (`/tmp/wormedit-gate.x9DjjZ`); final Clang build/tests pass **4,373/4,373**
+(`/tmp/t696-clang-ctest-final.log`); event harness **591/591**. Isolated Xvfb Compose, waveform,
+stem and song-bar captures were inspected. Ratchets: **36 C structs / 22 capacities / 74 count
+fields / 0 codecs**. The reviewed stem-test complexity allowance drops **42 → 38**.
+
 Completed **T-695** (2026-10-20): all 18 Compose geometry primitive types are C++ views;
 20 owned lists retain capacity, and the cursor is optional. Timing/graph producers refill retained
 buffers; main and Compare surfaces own separate canvas scratch. Storage cutoffs are removed while
@@ -14,8 +26,8 @@ The user-requested Clang preset repair explicitly initializes three absent StepM
 the preset build and **4,370 Clang tests** pass. Ratchets: **46 C structs / 30 capacities /
 86 count fields / 0 codecs**; the obsolete speed-graph complexity allowance is removed.
 
-**Next: T-696, Compose BGM, waveform and stem views.** Compose cards T-696–T-698 run sequentially.
-See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-696-convert-the-compose-bgm-waveform-and-stem-views)
+**Next: T-697, Compose sound, keysound and BGA views.** Compose cards T-697–T-698 run sequentially.
+See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-697-convert-the-compose-sound-keysound-and-bga-views)
 for ownership and verification requirements.
 
 Completed **T-694** (2026-10-20): action payloads own their text and lists, carry core IDs

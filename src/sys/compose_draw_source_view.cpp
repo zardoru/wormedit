@@ -162,9 +162,9 @@ void populate_note_stem_sources(frontend_workspace_view_t& flattened,
         note.sound_is_stem = compose_sound_is_stem(cache, note.sound_resource_id.value);
         note.sound_missing = compose_sound_missing(cache, document, note.sound_resource_id.value);
     }
-    for (auto& event : flattened.compose.bgm.event)
-        event.armable_stem = event.has_sound && compose_sound_is_stem(cache, event.sound_id) &&
-                             !compose_sound_missing(cache, document, event.sound_id);
+    for (auto& event : flattened.view.compose.bgm_events)
+        event.armable_stem = event.has_sound && compose_sound_is_stem(cache, event.sound_id.value) &&
+                             !compose_sound_missing(cache, document, event.sound_id.value);
 }
 
 void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,

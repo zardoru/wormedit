@@ -38,7 +38,7 @@ void draw_compose_tool_chip(nk_context*, const WormUiComposeView&, nk_command_bu
 auto process_compose_tool_chip(nk_context*, const WormUiComposeView&, struct nk_rect, bool focused) -> bool;
 
 // Shared screen-space header button geometry for drawing and pointer capture.
-auto compose_bgm_mix_button_rect(const WormUiComposeBgmLaneView& lane,
+auto compose_bgm_mix_button_rect(const wormedit::ui::compose_bgm_lane_view_t& lane,
     const WormUiComposeView& view, struct nk_rect viewport, bool solo) -> struct nk_rect;
 
 namespace wormedit::ui::nuklear {

@@ -103,6 +103,7 @@ class decoded_source_registry_t {
     [[nodiscard]] auto remove(asset_id_t asset) -> bool;
     void clear();
 
+    void bindings(std::vector<decoded_source_binding_t>& result) const;
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
     [[nodiscard]] auto binding(asset_id_t asset) const -> std::optional<decoded_source_binding_t>;
     [[nodiscard]] auto decode_source_block(transport_t& transport, session_token_t token,

@@ -44,6 +44,7 @@ struct project_audio_sources_t {
     [[nodiscard]] auto reconcile(const song_document_t&, const std::filesystem::path&, bool stop_playback = true)
         -> std::optional<std::size_t>;
     [[nodiscard]] auto reconcile_if_needed(const song_document_t&) -> std::optional<std::size_t>;
+    void bindings(const song_document_t&, std::vector<audio::decoded_source_binding_t>& result);
     [[nodiscard]] auto bindings(const song_document_t&) -> std::vector<audio::decoded_source_binding_t>;
     [[nodiscard]] auto binding(const song_document_t&, asset_id_t) -> std::optional<audio::decoded_source_binding_t>;
     void reset_dependents(bool stop_playback);

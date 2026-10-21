@@ -85,12 +85,12 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     REQUIRE(pointer.get().compose_has_pointer_hover);
     const auto x = pointer.get().compose_pointer_hover_x_pixels;
     const auto y = pointer.get().compose_pointer_hover_y_pixels;
-    WormUiComposeBgmEventView event{};
+    wormedit::ui::compose_bgm_event_view_t event{};
     event.bounds = {x - 48, y - 24, x + 48, y + 24};
-    event.event_id = 42;
-    event.source_lane_id = 1;
-    view.bgm_events = &event;
-    view.bgm_event_count = 1;
+    event.event_id = wormedit::object_id_t{42};
+    event.source_lane_id = wormedit::object_id_t{1};
+    view.bgm_events = {event};
+
     const auto frames = click_at(harness, 300, 400);
     bool began{};
     for (const auto& frame : frames) {
@@ -124,15 +124,15 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     view.semantic_layer_target = {.layer_id = 7, .name = "Verse", .visible = true};
     const std::array hover{motion_event(300, 400)};
     const auto pointer = harness.frame(hover);
-    WormUiComposeBgmEventView bgm{};
+    wormedit::ui::compose_bgm_event_view_t bgm{};
     bgm.bounds = {pointer.get().compose_pointer_hover_x_pixels - 48,
                   pointer.get().compose_pointer_hover_y_pixels - 24,
                   pointer.get().compose_pointer_hover_x_pixels + 48,
                   pointer.get().compose_pointer_hover_y_pixels + 24};
-    bgm.event_id = 42;
-    bgm.source_lane_id = 1;
-    view.bgm_events = &bgm;
-    view.bgm_event_count = 1;
+    bgm.event_id = wormedit::object_id_t{42};
+    bgm.source_lane_id = wormedit::object_id_t{1};
+    view.bgm_events = {bgm};
+
     SDL_Event alt{};
     alt.type = SDL_EVENT_KEY_DOWN;
     alt.key.type = SDL_EVENT_KEY_DOWN;

@@ -131,20 +131,8 @@ struct frontend_workspace_view_t {
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
         std::optional<std::pair<compose_scene_source_key_t, std::uint64_t>> sound_labels_source;
         std::vector<std::uint64_t> visible_sound_ids;
-        struct {
-            frame_span<WormUiComposeBgmLaneView> lane;
-            frame_span<WormUiComposeBgmEventView> event;
-            std::vector<WormUiComposeBgmDraftView> draft;
-            std::optional<WormUiComposeBgmMovePreviewView> move;
-        } bgm;
+        std::unordered_map<std::uint64_t, std::string> stem_filenames;
         frame_span<WormUiComposeBgaEventView> bga_event;
-        struct {
-            frame_span<WormUiComposeWaveformRowView> row;
-            frame_span<WormUiComposeWaveformOverviewRowView> overview_row;
-            frame_span<WormUiComposeWaveformOverviewRowView> bar_row;
-            frame_span<WormUiComposeBgmBarMarkView> bar_mark;
-            frame_span<WormUiComposeBgmBarBookmarkView> bar_bookmark;
-        } waveform;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;
         struct {

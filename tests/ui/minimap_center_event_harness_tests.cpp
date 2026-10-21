@@ -34,7 +34,7 @@ auto left_button_down(float x, float y) -> SDL_Event {
 }
 
 void prepare_overview(nuklear_event_harness_t& harness,
-                      WormUiComposeWaveformOverviewRowView& row) {
+                      wormedit::ui::compose_waveform_overview_row_view_t& row) {
     auto& workspace = harness.view();
     workspace.project_id.value = 11;
     workspace.document_revision = 5;
@@ -44,8 +44,8 @@ void prepare_overview(nuklear_event_harness_t& harness,
     compose.document_revision = 5;
     compose.scene_available = true;
     compose.bgm_bar_reserved = true;
-    compose.bgm_bar_rows = &row;
-    compose.bgm_bar_row_count = 1;
+    compose.bgm_bar_rows = {row};
+
     compose.bgm_bar_begin_fraction = 0.2;
     compose.bgm_bar_end_fraction = 0.6;
     compose.waveform_overview_visible_begin_fraction = 0.45;
@@ -74,7 +74,7 @@ TEST_CASE("minimap capture freezes its displayed window and navigation mapping",
           "[unit][frontend-state][event-harness][minimap-center]") {
     nuklear_event_harness_t harness{1280, 900};
     require_minimap_event(harness.ready());
-    WormUiComposeWaveformOverviewRowView row{};
+    wormedit::ui::compose_waveform_overview_row_view_t row{};
     prepare_overview(harness, row);
     constexpr float x = 351.0f;
     constexpr float y = 120.0f;
@@ -111,7 +111,7 @@ TEST_CASE("minimap capture matching invalidates project, chart, revision, asset,
           "[unit][frontend-state][event-harness][minimap-center]") {
     nuklear_event_harness_t harness{1280, 900};
     require_minimap_event(harness.ready());
-    WormUiComposeWaveformOverviewRowView row{};
+    wormedit::ui::compose_waveform_overview_row_view_t row{};
     prepare_overview(harness, row);
     auto& view = harness.view().compose;
     view.document_revision = 0;

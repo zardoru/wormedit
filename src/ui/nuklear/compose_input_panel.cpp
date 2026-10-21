@@ -445,12 +445,12 @@ uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y)
     if (!view || !std::isfinite(x) || !std::isfinite(y)) {
         return 0;
     }
-    for (size_t index = view->bgm_event_count; index-- > 0;) {
+    for (size_t index = view->bgm_events.size(); index-- > 0;) {
         const auto& event = view->bgm_events[index];
         if (event.proposal_ghost) continue;
         const auto bounds = wormedit::ui::compose_bgm_head_bounds(event);
         if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
-            return event.event_id;
+            return event.event_id.value;
         }
     }
     return 0;
@@ -472,13 +472,13 @@ uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double
             return note.note_id.value;
     }
     if (const auto bgm = compose_bgm_event_at(&view, x, y)) return bgm;
-    for (size_t i = 0; i < view.stem_cut_count; ++i) {
+    for (size_t i = 0; i < view.stem_cuts.size(); ++i) {
         const auto& cut = view.stem_cuts[i];
         if (std::abs(y - cut.y_pixels) > 6) continue;
-        for (size_t j = 0; j < view.bgm_lane_count; ++j) {
+        for (size_t j = 0; j < view.bgm_lanes.size(); ++j) {
             const auto& lane = view.bgm_lanes[j];
             if (lane.source_lane_id == cut.bgm_lane_id && x >= lane.bounds.left && x <= lane.bounds.right)
-                return cut.object_id;
+                return cut.object_id.value;
         }
     }
     return 0;
@@ -763,10 +763,10 @@ static auto arm_double_clicked_stem(const ComposeDoubleClickContext& input, doub
         return true;
     }
     const auto event_id = compose_bgm_event_at(input.view, x, y);
-    const auto events = std::span(input.view->bgm_events, input.view->bgm_event_count);
-    const auto event = std::ranges::find(events, event_id, &WormUiComposeBgmEventView::event_id);
+    const auto events = std::span(input.view->bgm_events);
+    const auto event = std::ranges::find(events, wormedit::object_id_t{event_id}, &wormedit::ui::compose_bgm_event_view_t::event_id);
     if (!event_id || event == events.end() || !event->armable_stem || !event->sound_id) return false;
-    arm_compose_stem_source(*input.action, event->sound_id);
+    arm_compose_stem_source(*input.action, event->sound_id.value);
     return true;
 }
 
@@ -1125,11 +1125,11 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
     }
     const auto event_id = compose_bgm_event_at(&view, input.pointer_x, input.pointer_y);
     if (event_id == 0) return true;
-    const auto event = std::find_if(view.bgm_events, view.bgm_events + view.bgm_event_count,
+    const auto event = std::find_if(view.bgm_events.begin(), view.bgm_events.end(),
                                     [event_id](const auto& item) {
-                                        return item.event_id == event_id;
+                                        return item.event_id.value == event_id;
                                     });
-    const auto shift_restart = event != view.bgm_events + view.bgm_event_count &&
+    const auto shift_restart = event != view.bgm_events.end() &&
                                event->bmson_slice &&
                                compose_pointer_chord(input.pointer_modifiers) == compose_pointer_chord_t::add;
     append_compose_input(action, shift_restart ? WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE

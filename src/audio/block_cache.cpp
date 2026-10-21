@@ -150,6 +150,7 @@ auto decoded_block_cache_t::store(const audio_block_key_t& key, std::size_t fram
         .frame_count = frame_count,
         .interleaved_stereo = {interleaved_stereo.begin(), interleaved_stereo.end()},
     });
+    ++mutation_revision_;
     ++stats_.entries;
     stats_.cached_frames += frame_count;
     stats_.cached_bytes += *required_bytes;
@@ -169,6 +170,7 @@ auto decoded_block_cache_t::asset_usage(std::string_view asset_identity) const
 }
 
 void decoded_block_cache_t::erase(entry_iterator_t entry, bool eviction) {
+    ++mutation_revision_;
     stats_.cached_frames -= entry->frame_count;
     stats_.cached_bytes -= entry->interleaved_stereo.size() * sizeof(float);
     --stats_.entries;
@@ -180,6 +182,7 @@ void decoded_block_cache_t::erase(entry_iterator_t entry, bool eviction) {
 
 void decoded_block_cache_t::clear() {
     std::scoped_lock lock(mutex_);
+    if (!most_recent_first_.empty()) ++mutation_revision_;
     most_recent_first_.clear();
     stats_.entries = 0;
     stats_.cached_frames = 0;
@@ -200,6 +203,11 @@ void decoded_block_cache_t::clear_source(const audio_source_identity_t& source) 
 
 auto decoded_block_cache_t::limits() const noexcept -> block_cache_limits_t {
     return limits_;
+}
+
+auto decoded_block_cache_t::mutation_revision() const -> std::uint64_t {
+    std::scoped_lock lock(mutex_);
+    return mutation_revision_;
 }
 
 auto decoded_block_cache_t::stats() const -> block_cache_stats_t {

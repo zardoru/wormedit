@@ -97,6 +97,8 @@ class decoded_block_cache_t {
 
     [[nodiscard]] auto limits() const noexcept -> block_cache_limits_t;
     [[nodiscard]] auto stats() const -> block_cache_stats_t;
+    // Changes only when retained PCM content changes, including same-size replacements.
+    [[nodiscard]] auto mutation_revision() const -> std::uint64_t;
 
   private:
     using entry_list_t = std::list<decoded_audio_block_t>;
@@ -111,6 +113,7 @@ class decoded_block_cache_t {
     mutable std::mutex mutex_;
     entry_list_t most_recent_first_;
     block_cache_stats_t stats_;
+    std::uint64_t mutation_revision_{};
 };
 
 struct session_token_t {

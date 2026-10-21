@@ -44,18 +44,18 @@ enum class lifecycle_family { paint, erase, semantic, pointer_hold, lane_hold, r
 struct lifecycle_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_note_view_t note{};
-    WormUiComposeWaveformRowView wave{};
+    wormedit::ui::compose_waveform_row_view_t wave{};
     wormedit::ui::compose_grid_line_view_t beat{};
     wormedit::ui::compose_speed_span_view_t speed{};
     wormedit::ui::compose_recipe_area_view_t recipe{};
     wormedit::ui::compose_timing_marker_view_t marker{};
     WormUiComposeLaneKeyBinding binding{};
-    WormUiComposeWaveformOverviewRowView overview{};
+    wormedit::ui::compose_waveform_overview_row_view_t overview{};
     std::array<WormUiComposeMeasureRowView, 2> measures{};
     std::array<std::uint64_t, 2> measure_ids{77, 78};
     std::array<wormedit::ui::compose_grid_line_view_t, 2> measure_lines{};
-    WormUiComposeBgmLaneView lane{};
-    WormUiComposeBgmEventView bgm{};
+    wormedit::ui::compose_bgm_lane_view_t lane{};
+    wormedit::ui::compose_bgm_event_view_t bgm{};
     WormUiComposeBgaEventView bga{};
     WormUiComposeBookmarkView bookmark{};
     wormedit::ui::testing_rect_view_t rect{};
@@ -121,7 +121,7 @@ struct lifecycle_fixture_t {
         }
         if (family == lifecycle_family::beat_fit || family == lifecycle_family::offset_fit) {
             beat.chart_row = 480; beat.kind = wormedit::editor_grid_line_kind_t::beat; beat.y_pixels = 300;
-            v.waveform_rows = &wave; v.waveform_row_count = 1;
+            v.waveform_rows = {wave};
             v.grid_lines = {beat};
             v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
             if (family == lifecycle_family::offset_fit) modifiers = SDL_KMOD_SHIFT;
@@ -184,12 +184,12 @@ struct lifecycle_fixture_t {
     }
     void configure_other() {
         auto& v = harness.view().compose;
-        lane.bounds = {1010, 0, 1110, 900}; lane.source_lane_id = 77;
+        lane.bounds = {1010, 0, 1110, 900}; lane.source_lane_id = wormedit::object_id_t{77};
         lane.stem = true; lane.width_pixels = 100; lane.resize_edge_pixels = 1110;
-        bgm.bounds = {1010, 295, 1110, 305}; bgm.event_id = 21;
-        bgm.source_lane_id = 77; bgm.selected = true;
+        bgm.bounds = {1010, 295, 1110, 305}; bgm.event_id = wormedit::object_id_t{21};
+        bgm.source_lane_id = wormedit::object_id_t{77}; bgm.selected = true;
         if (family == lifecycle_family::overview || family == lifecycle_family::beat_zero) {
-            v.bgm_bar_reserved = true; v.bgm_bar_rows = &overview; v.bgm_bar_row_count = 1;
+            v.bgm_bar_reserved = true; v.bgm_bar_rows = {overview};
             v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
             v.selected_audio_asset_id = 12; v.waveform_overview_sample_rate = 48000;
             v.waveform_overview_total_frames = 480000;
@@ -207,8 +207,8 @@ struct lifecycle_fixture_t {
         }
         if (family == lifecycle_family::stem || family == lifecycle_family::bmson ||
             family == lifecycle_family::mix || family == lifecycle_family::razor) {
-            v.bmson_tools_available = true; v.bgm_lanes = &lane; v.bgm_lane_count = 1;
-            if (family == lifecycle_family::bmson) { v.bgm_events = &bgm; v.bgm_event_count = 1; }
+            v.bmson_tools_available = true; v.bgm_lanes = {lane};
+            if (family == lifecycle_family::bmson) { v.bgm_events = {bgm};  }
         }
         configure_markers();
     }

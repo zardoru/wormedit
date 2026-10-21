@@ -228,7 +228,7 @@ void add_bgm_column(walkthrough_t& flow) {
     require_step(flow.history.document.charts.front().bgm_source_lanes.size() == 1);
     require_step(rebind_workspace(*flow.workspace.value, flow.history).value);
     flow.project();
-    check_step(flow.harness.view().compose.bgm_lane_count == 1);
+    check_step(flow.harness.view().compose.bgm_lanes.size() == 1);
     (void)flow.harness.frame();
 }
 

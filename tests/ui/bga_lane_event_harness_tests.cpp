@@ -448,8 +448,8 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     view.playable_field_right_pixels = 600;
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
-    WormUiComposeBgmLaneView bgm_lane{.bounds = {604, 0, 640, 600},
-                                     .source_lane_id = 44};
+    wormedit::ui::compose_bgm_lane_view_t bgm_lane{.bounds = {604, 0, 640, 600},
+                                     .source_lane_id = wormedit::object_id_t{44}};
     view.playable_field_left_pixels = 138;
     view.bga_lane_bounds.right = 138;
     view.bga_lane_count = 2;
@@ -457,8 +457,8 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     view.bga_lane_kinds[1] = 5;
     view.bga_lane_rects[0] = {42, 0, 90, 600};
     view.bga_lane_rects[1] = {90, 0, 138, 600};
-    view.bgm_lanes = &bgm_lane;
-    view.bgm_lane_count = 1;
+    view.bgm_lanes = {bgm_lane};
+
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
@@ -597,9 +597,9 @@ auto any_input_of(const std::array<workspace_action_snapshot_t, 2>& actions, Wor
 
 struct stem_lane_fixture_t {
     nuklear_event_harness_t harness{1280, 800};
-    WormUiComposeBgmLaneView lanes[2]{{.bounds = {604, 0, 640, 600}, .source_lane_id = 44, .stem = true},
-                                      {.bounds = {644, 0, 680, 600}, .source_lane_id = 45}};
-    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501, .source_lane_id = 44,
+    wormedit::ui::compose_bgm_lane_view_t lanes[2]{{.bounds = {604, 0, 640, 600}, .source_lane_id = wormedit::object_id_t{44}, .stem = true},
+                                      {.bounds = {644, 0, 680, 600}, .source_lane_id = wormedit::object_id_t{45}}};
+    wormedit::ui::compose_bgm_event_view_t marker{.bounds = {604, 20, 640, 36}, .event_id = wormedit::object_id_t{501}, .source_lane_id = wormedit::object_id_t{44},
                                      .bmson_slice = true};
     stem_lane_fixture_t() {
         REQUIRE(harness.ready());
@@ -614,10 +614,10 @@ struct stem_lane_fixture_t {
         view.viewport_height_pixels = 600;
         view.playable_field_left_pixels = 90;
         view.playable_field_right_pixels = 600;
-        view.bgm_lanes = lanes;
-        view.bgm_lane_count = 2;
-        view.bgm_events = &marker;
-        view.bgm_event_count = 1;
+        view.bgm_lanes.assign(std::begin(lanes), std::end(lanes));
+
+        view.bgm_events = {marker};
+
         (void)harness.frame();
     }
     auto at(double x, double y) { return canvas_point(harness, x, y); }
@@ -683,6 +683,7 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
     wormedit::ui::compose_lane_view_t lane{.bounds = {100, 0, 150, 600}, .lane_id = {3}};
     view.lanes = {lane};
     f.marker.selected = true;
+    view.bgm_events = {f.marker};
     view.selected_bgm_event_id = 501;
     (void)f.harness.frame();
     const auto from = f.at(622, 28);
@@ -805,11 +806,11 @@ TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][b
 namespace {
 struct resizable_stem_lane_fixture_t {
     nuklear_event_harness_t harness{1600, 900};
-    WormUiComposeBgmLaneView lane{.bounds = {604, 0, 640, 600}, .source_lane_id = 44,
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {604, 0, 640, 600}, .source_lane_id = wormedit::object_id_t{44},
         .stem = true, .width_pixels = 36, .resize_edge_pixels = 640,
         .filename = "素材/かなり長い stem filename.wav"};
-    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501,
-        .source_lane_id = 44, .bmson_slice = true};
+    wormedit::ui::compose_bgm_event_view_t marker{.bounds = {604, 20, 640, 36}, .event_id = wormedit::object_id_t{501},
+        .source_lane_id = wormedit::object_id_t{44}, .bmson_slice = true};
     resizable_stem_lane_fixture_t() {
         REQUIRE(harness.ready());
         hide_compose_docks();
@@ -825,10 +826,10 @@ struct resizable_stem_lane_fixture_t {
         view.playable_field_left_pixels = 90;
         view.playable_field_right_pixels = 600;
         view.bmson_tools_available = true;
-        view.bgm_lanes = &lane;
-        view.bgm_lane_count = 1;
-        view.bgm_events = &marker;
-        view.bgm_event_count = 1;
+        view.bgm_lanes = {lane};
+
+        view.bgm_events = {marker};
+
         (void)harness.frame();
     }
     auto at(double x, double y) { return canvas_point(harness, x, y); }
@@ -847,6 +848,8 @@ struct resizable_stem_lane_fixture_t {
         lane.bounds.right = lane.bounds.left + lane.width_pixels;
         lane.resize_edge_pixels = lane.bounds.right;
         marker.bounds.right = lane.bounds.right;
+        harness.view().compose.bgm_lanes = {lane};
+        harness.view().compose.bgm_events = {marker};
     }
 };
 
@@ -947,6 +950,7 @@ TEST_CASE("stem lane resize ignores packed and clipped lane edges",
           "[event-harness][bmson-stem][resize]") {
     resizable_stem_lane_fixture_t f;
     f.lane.stem = false;
+    f.harness.view().compose.bgm_lanes = {f.lane};
     (void)f.harness.frame();
     (void)drag_stem_edge(f, 100);
     check_bga(f.width() == 36.0);
@@ -955,6 +959,7 @@ TEST_CASE("stem lane resize ignores packed and clipped lane edges",
     f.lane.bounds.left = 620;
     f.lane.bounds.right = 640;
     f.lane.resize_edge_pixels = 700;
+    f.harness.view().compose.bgm_lanes = {f.lane};
     (void)f.harness.frame();
     check_bga(no_stem_point_actions(double_click_stem_edge(f)));
     check_bga(f.width() == 36.0);
@@ -1101,7 +1106,7 @@ TEST_CASE("Draw BGA source emits one stroke with the destination kind and no res
 TEST_CASE("Draw accepts empty stem lanes while Select only clears selection",
           "[event-harness][bmson-stem][draw]") {
     stem_lane_fixture_t f;
-    f.harness.view().compose.bgm_event_count = 0;
+    f.harness.view().compose.bgm_events.clear();
     const auto point = f.at(622, 300);
     const auto draw = click(f.harness, point.first, point.second);
     check_bga(has_input(draw, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 44));
@@ -1138,13 +1143,13 @@ namespace {
 
 struct dock_stem_fixture_t {
     nuklear_event_harness_t harness{1280, 800};
-    WormUiComposeBgmLaneView lanes[3]{
-        {.bounds = {604, 0, 640, 600}, .source_lane_id = 44, .stem = true},
-        {.bounds = {644, 0, 680, 600}, .source_lane_id = 45},
-        {.bounds = {684, 0, 720, 600}, .source_lane_id = 46, .stem = true},
+    wormedit::ui::compose_bgm_lane_view_t lanes[3]{
+        {.bounds = {604, 0, 640, 600}, .source_lane_id = wormedit::object_id_t{44}, .stem = true},
+        {.bounds = {644, 0, 680, 600}, .source_lane_id = wormedit::object_id_t{45}},
+        {.bounds = {684, 0, 720, 600}, .source_lane_id = wormedit::object_id_t{46}, .stem = true},
     };
-    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501,
-        .source_lane_id = 44, .bmson_slice = true};
+    wormedit::ui::compose_bgm_event_view_t marker{.bounds = {604, 20, 640, 36}, .event_id = wormedit::object_id_t{501},
+        .source_lane_id = wormedit::object_id_t{44}, .bmson_slice = true};
     WormUiComposeKeysoundRowView source{.resource_id = 81, .slot = "", .name = "Dock stem sample",
         .stem_source_lane_id = 44, .stem_lane_name = "Voice stem"};
 
@@ -1165,10 +1170,10 @@ struct dock_stem_fixture_t {
         view.viewport_height_pixels = 600;
         view.playable_field_left_pixels = 90;
         view.playable_field_right_pixels = 600;
-        view.bgm_lanes = lanes;
-        view.bgm_lane_count = 3;
-        view.bgm_events = &marker;
-        view.bgm_event_count = 1;
+        view.bgm_lanes.assign(std::begin(lanes), std::end(lanes));
+
+        view.bgm_events = {marker};
+
         view.keysounds_available = true;
         view.keysounds = &source;
         view.keysound_count = 1;
@@ -1441,7 +1446,7 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
     }
     {
         stem_lane_fixture_t empty;
-        empty.harness.view().compose.bgm_event_count = 0;
+        empty.harness.view().compose.bgm_events.clear();
         const auto empty_point = empty.at(622, 300);
         const auto empty_click = click(empty.harness, empty_point.first, empty_point.second);
         check_bga(input_payload_undoes_once(empty_click[1],
@@ -1472,6 +1477,7 @@ TEST_CASE("Mixed selection starts a BGM drag without a singular inspector event"
     auto& view = f.harness.view().compose;
     view.note_paint_mode_active = false;
     f.marker.selected = true;
+    view.bgm_events = {f.marker};
     view.selected_bgm_event_id = 0;
     view.selected_bgm_event_count = 2;
     (void)f.harness.frame();
@@ -1494,8 +1500,11 @@ TEST_CASE("Single ordinary BGM drag sends the destination source lane through re
     auto& view = f.harness.view().compose;
     view.note_paint_mode_active = false;
     f.marker.selected = true;
+    view.bgm_events = {f.marker};
     f.marker.bmson_slice = false;
+    view.bgm_events = {f.marker};
     f.lanes[0].stem = false;
+    view.bgm_lanes.assign(std::begin(f.lanes), std::end(f.lanes));
     view.selected_bgm_event_id = 501;
     view.selected_bgm_event_count = 1;
     (void)f.harness.frame();
@@ -1553,12 +1562,12 @@ TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible prof
 namespace {
 struct timing_controls_fixture_t {
     nuklear_event_harness_t harness{1600, 1000};
-    std::array<WormUiComposeWaveformOverviewRowView, 2> rows{{{0, 0.5f}, {1, 0.5f}}};
+    std::array<wormedit::ui::compose_waveform_overview_row_view_t, 2> rows{{{0, 0.5f}, {1, 0.5f}}};
     timing_controls_fixture_t() {
         REQUIRE(harness.ready());
         auto& view = harness.view().compose;
-        view.waveform_overview_rows = rows.data();
-        view.waveform_overview_row_count = rows.size();
+        view.waveform_overview_rows.assign(rows.begin(), rows.end());
+
         view.waveform_overview_total_frames = 96000;
         view.waveform_overview_sample_rate = 48000;
         view.waveform_audio_offset_denominator = 1;

@@ -1260,7 +1260,18 @@ void frontend_workspace_view_t::reset() {
         view.compose.speed_graph_points,
         view.compose.differences,
         view.compose.hold_bodies,
-        view.compose.note_endpoints);
+        view.compose.note_endpoints,
+        view.compose.bgm_lanes,
+        view.compose.bgm_events,
+        view.compose.waveform_rows,
+        view.compose.stem_waveforms,
+        view.compose.stem_cuts,
+        view.compose.channel_waveform_rows,
+        view.compose.waveform_overview_rows,
+        view.compose.bgm_bar_rows,
+        view.compose.bgm_bar_marks,
+        view.compose.bgm_bar_bookmarks,
+        view.compose.bmson_marker_drafts);
     view.setup.reset();
     view.options.reset();
     view.chart_import.reset();
@@ -1296,6 +1307,17 @@ void frontend_workspace_view_t::reset() {
     view.compose.differences.clear();
     view.compose.hold_bodies.clear();
     view.compose.note_endpoints.clear();
+    view.compose.bgm_lanes.clear();
+    view.compose.bgm_events.clear();
+    view.compose.waveform_rows.clear();
+    view.compose.stem_waveforms.clear();
+    view.compose.stem_cuts.clear();
+    view.compose.channel_waveform_rows.clear();
+    view.compose.waveform_overview_rows.clear();
+    view.compose.bgm_bar_rows.clear();
+    view.compose.bgm_bar_marks.clear();
+    view.compose.bgm_bar_bookmarks.clear();
+    view.compose.bmson_marker_drafts.clear();
 
 }
 

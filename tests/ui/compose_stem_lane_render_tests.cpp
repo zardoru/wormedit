@@ -44,28 +44,28 @@ namespace {
 void check_clipped_wide_stem_canvas(bool selected) {
     field_submission_fixture_t fixture;
     expect_field(fixture.context != nullptr);
-    WormUiComposeBgmLaneView lane{.bounds = {80, 0, 128, 128}, .source_lane_id = 44,
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {80, 0, 128, 128}, .source_lane_id = wormedit::object_id_t{44},
         .stem = true, .width_pixels = 96, .resize_edge_pixels = 128};
-    const std::array<WormUiComposeWaveformRowView, 2> rows{{
+    const std::array<wormedit::ui::compose_waveform_row_view_t, 2> rows{{
         {.y_pixels = 40, .absolute_peak = {1, 1}, .rms = {.5f, .5f}},
         {.y_pixels = 41, .absolute_peak = {1, 1}, .rms = {.5f, .5f}}}};
-    WormUiComposeStemWaveformView stem{.stem_key = 45, .source_lane_id = 44,
-        .rows = rows.data(), .row_count = rows.size()};
+    wormedit::ui::compose_stem_waveform_view_t stem{.stem_key = 45, .source_lane_id = wormedit::object_id_t{44},
+        .rows = rows};
     WormUiComposeView view{};
     view.scene_available = true;
     view.viewport_width_pixels = 128;
     view.viewport_height_pixels = 128;
     view.playable_field_left_pixels = 42;
     view.playable_field_right_pixels = 80;
-    view.bgm_lanes = &lane;
-    view.bgm_lane_count = 1;
+    view.bgm_lanes = {lane};
+
     if (selected) {
-        view.channel_waveform_source_lane_id = 44;
-        view.channel_waveform_rows = rows.data();
-        view.channel_waveform_row_count = rows.size();
+        view.channel_waveform_source_lane_id = wormedit::object_id_t{44};
+        view.channel_waveform_rows.assign(rows.begin(), rows.end());
+
     } else {
-        view.stem_waveforms = &stem;
-        view.stem_waveform_count = 1;
+        view.stem_waveforms = {stem};
+
     }
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
@@ -159,7 +159,7 @@ void check_stem_header_golden(double width, bool stem, const char* expected,
                               const char* filename = "音楽1234567890123456789.ogg") {
     field_submission_fixture_t fixture;
     expect_field(fixture.context != nullptr);
-    WormUiComposeBgmLaneView lane{.bounds = {32, 0, 32 + width, 128}, .source_lane_id = 44,
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {32, 0, 32 + width, 128}, .source_lane_id = wormedit::object_id_t{44},
         .stem = stem, .width_pixels = width, .resize_edge_pixels = 32 + width,
         .filename = filename};
     WormUiComposeView view{};
@@ -168,8 +168,8 @@ void check_stem_header_golden(double width, bool stem, const char* expected,
     view.viewport_height_pixels = 128;
     view.playable_field_left_pixels = 42;
     view.playable_field_right_pixels = 32;
-    view.bgm_lanes = &lane;
-    view.bgm_lane_count = 1;
+    view.bgm_lanes = {lane};
+
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
     expect_field(nk_begin(fixture.context, "stem label", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
@@ -205,9 +205,9 @@ namespace {
 void check_bgm_tail_with_offscreen_head(bool selected) {
     field_submission_fixture_t fixture;
     expect_field(fixture.context != nullptr);
-    WormUiComposeBgmLaneView lane{.bounds = {80, 0, 120, 128}, .source_lane_id = 44};
-    WormUiComposeBgmEventView event{.bounds = {80, -100, 120, 110}, .event_id = 50,
-        .source_lane_id = 44, .sound_id = 1, .has_sound = true, .selected = selected,
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {80, 0, 120, 128}, .source_lane_id = wormedit::object_id_t{44}};
+    wormedit::ui::compose_bgm_event_view_t event{.bounds = {80, -100, 120, 110}, .event_id = wormedit::object_id_t{50},
+        .source_lane_id = wormedit::object_id_t{44}, .sound_id = wormedit::resource_id_t{1}, .has_sound = true, .selected = selected,
         .has_tail = true, .sound_label = "offscreen head", .head_top_pixels = -100,
         .head_bottom_pixels = -90};
     WormUiComposeView view{};
@@ -215,10 +215,10 @@ void check_bgm_tail_with_offscreen_head(bool selected) {
     view.viewport_width_pixels = view.viewport_height_pixels = 128;
     view.playable_field_left_pixels = 42;
     view.playable_field_right_pixels = 80;
-    view.bgm_lanes = &lane;
-    view.bgm_lane_count = 1;
-    view.bgm_events = &event;
-    view.bgm_event_count = 1;
+    view.bgm_lanes = {lane};
+
+    view.bgm_events = {event};
+
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
     expect_field(nk_begin(fixture.context, "BGM tail", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));

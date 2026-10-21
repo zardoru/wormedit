@@ -7,6 +7,7 @@
 #include "wide_math.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -91,9 +92,12 @@ auto compare_exact(signed_rational_t left, signed_rational_t right) -> std::opti
     return comparison;
 }
 
-auto positive_fraction(std::vector<std::uint64_t> numerators,
-                       std::vector<std::uint64_t> denominators)
+template <std::size_t Numerators, std::size_t Denominators>
+auto positive_fraction(const std::uint64_t (&numerator_factors)[Numerators],
+                       const std::uint64_t (&denominator_factors)[Denominators])
     -> std::optional<signed_rational_t> {
+    auto numerators = std::to_array(numerator_factors);
+    auto denominators = std::to_array(denominator_factors);
     if (std::ranges::find(denominators, std::uint64_t{}) != denominators.end()) {
         return std::nullopt;
     }

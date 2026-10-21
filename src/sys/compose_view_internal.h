@@ -240,7 +240,7 @@ void build_compose_bgm_events_view(
     WormUiComposeView& view);
 
 auto compose_stem_filename(const compose_scene_projection_context_t& projection,
-                           const wormedit::bgm_source_lane_t& lane) -> const char*;
+                           const wormedit::bgm_source_lane_t& lane) -> std::string_view;
 
 void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t& projection,
                                     const compose_scene_cache_t& cache);
@@ -286,7 +286,7 @@ void build_compose_draft_marker_view(const compose_scene_projection_context_t& p
     }
     if (!bounds)
         return;
-    projection.inputs.frame.flattened.compose.bgm.draft.push_back(
+    projection.inputs.frame.flattened.view.compose.bmson_marker_drafts.push_back(
         {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
          .restart = marker.restart,
          .playable = marker.playable_lane.has_value()});

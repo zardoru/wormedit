@@ -13,6 +13,8 @@
 
 namespace wormedit::sys {
 namespace {
+// Measure-mark sampling work is independent of owned output storage.
+constexpr std::size_t bgm_bar_measure_mark_budget = 1024;
 auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& timing,
                        long double row, timing_boundary_side_t side, bool round_up)
     -> std::optional<double> {
@@ -63,14 +65,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel),
         timing_boundary_side_t::after_stops, true);
     if (!begin || !end) return false;
-    for (const auto& row : overview.rows) {
-        if (!flattened.compose.waveform.overview_row.push_back(row)) {
-            flattened.compose.waveform.overview_row.clear();
-            return false;
-        }
-    }
-    view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
-    view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
+    view.waveform_overview_rows.assign(overview.rows.begin(), overview.rows.end());
     view.waveform_overview_generation = overview.generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
@@ -83,24 +78,14 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
     return true;
 }
 void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
-    flattened.compose.waveform.row = {};
-    flattened.compose.waveform.overview_row = {};
-    flattened.compose.waveform.bar_row = {};
-    flattened.compose.waveform.bar_mark = {};
-    flattened.compose.waveform.bar_bookmark = {};
     auto& view = flattened.view.compose;
-    view.waveform_rows = nullptr;
-    view.waveform_row_count = 0;
-    view.waveform_overview_rows = nullptr;
-    view.waveform_overview_row_count = 0;
-    view.bgm_bar_rows = nullptr;
-    view.bgm_bar_row_count = 0;
+    view.waveform_rows.clear();
+    view.waveform_overview_rows.clear();
+    view.bgm_bar_rows.clear();
     view.bgm_bar_begin_fraction = 0;
     view.bgm_bar_end_fraction = 1;
-    view.bgm_bar_marks = nullptr;
-    view.bgm_bar_mark_count = 0;
-    view.bgm_bar_bookmarks = nullptr;
-    view.bgm_bar_bookmark_count = 0;
+    view.bgm_bar_marks.clear();
+    view.bgm_bar_bookmarks.clear();
     view.waveform_overview_generation = 0;
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
@@ -108,28 +93,6 @@ void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
     view.waveform_overview_visible_end_fraction = 0;
     view.waveform_beat_zero_visible = false;
     view.waveform_beat_zero_fraction = 0;
-}
-auto prepare_frame_waveform_storage(frontend_workspace_view_t& flattened) -> bool {
-    auto* arena = flattened.arena();
-    if (!arena) return false;
-    auto rows = arena_array<WormUiComposeWaveformRowView>(*arena,
-        WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
-    auto overview = arena_array<WormUiComposeWaveformOverviewRowView>(*arena,
-        WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY);
-    auto bar_rows = arena_array<WormUiComposeWaveformOverviewRowView>(*arena,
-        WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
-    auto bar_marks = arena_array<WormUiComposeBgmBarMarkView>(*arena,
-        WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY);
-    auto bar_bookmarks = arena_array<WormUiComposeBgmBarBookmarkView>(*arena,
-        WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY);
-    if (rows.capacity() == 0 || overview.capacity() == 0 || bar_rows.capacity() == 0 ||
-        bar_marks.capacity() == 0 || bar_bookmarks.capacity() == 0) return false;
-    flattened.compose.waveform.row = rows;
-    flattened.compose.waveform.overview_row = overview;
-    flattened.compose.waveform.bar_row = bar_rows;
-    flattened.compose.waveform.bar_mark = bar_marks;
-    flattened.compose.waveform.bar_bookmark = bar_bookmarks;
-    return true;
 }
 struct envelope_projection_context_t {
     envelope_projection_ring_t& ring;
@@ -206,7 +169,7 @@ auto cpu_row_needs_projection(const envelope_projection_ring_t& ring, std::int64
     return row.world_row != world || (row.incomplete && changed);
 }
 auto populate_cpu_envelope(const envelope_projection_context_t& context,
-                            frame_span<WormUiComposeWaveformRowView>& output) -> bool {
+                            std::vector<wormedit::ui::compose_waveform_row_view_t>& output) -> bool {
     const auto& request = context.request;
     if (!std::isfinite(request.viewport_scroll_pixels) || std::abs(request.viewport_scroll_pixels) > 1e12 ||
         !std::isfinite(request.viewport_height_pixels) || request.viewport_height_pixels <= 0 ||
@@ -231,20 +194,24 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
         auto value = stored.value;
         value.y_pixels -= std::floor(request.viewport_scroll_pixels);
         if (value.y_pixels < 0 || value.y_pixels > request.viewport_height_pixels) continue;
-        if (!output.push_back(value)) {
-            output.clear();
-            return false;
-        }
+        output.push_back(value);
     }
     return true;
 }
 
-void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
-    const audio::waveform_t& waveform, const audio::waveform_t* selected_waveform,
-    const timing_index_t& timing, const audio::aligned_waveform_request_t& request,
-    audio::decoded_block_cache_t* decoded_blocks,
-    const audio::waveform_analysis_result_t* detail_analysis,
-    const audio::aligned_waveform_style_t* stable_style) {
+struct direct_envelope_context_t {
+    const audio::waveform_t& waveform;
+    const audio::waveform_t* selected_waveform;
+    const timing_index_t& timing;
+    audio::aligned_waveform_request_t request;
+    audio::decoded_block_cache_t* decoded_blocks;
+    const audio::waveform_analysis_result_t* detail_analysis;
+    const audio::aligned_waveform_style_t* stable_style;
+};
+void populate_direct_envelope(std::vector<wormedit::ui::compose_waveform_row_view_t>& output,
+                              const direct_envelope_context_t& context) {
+    const auto& [waveform, selected_waveform, timing, request, decoded_blocks, detail_analysis,
+                 stable_style] = context;
     audio::aligned_waveform_view_result_t aligned;
     aligned = stable_style
         ? audio::aligned_waveform_view_result_t::from(waveform,
@@ -256,7 +223,7 @@ void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
         aligned = audio::aligned_waveform_view_result_t::from(*selected_waveform, timing, request);
     if (!aligned.status.has_failure()) {
         for (const auto& row : aligned.rows) {
-            if (!output.push_back({
+            output.push_back({
                 .y_pixels = row.y_pixels,
                 .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                                   std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -264,12 +231,31 @@ void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
                         std::clamp(row.rms[1], 0.0f, 1.0f)},
                 .sample_point = row.sample_point,
                 .samples = {row.samples[0], row.samples[1]},
-            })) {
-                output.clear();
-                return;
-            }
+            });
         }
     }
+}
+void populate_cached_direct_envelope(frontend_workspace_view_t& flattened,
+                                      compose_scene_cache_t& cache,
+                                      const direct_envelope_context_t& context) {
+    const auto* detail = context.detail_analysis && context.detail_analysis->waveform
+        ? &*context.detail_analysis->waveform : nullptr;
+    const auto mutation_revision = context.decoded_blocks ? context.decoded_blocks->mutation_revision() : 0;
+    const compose_scene_cache_t::waveform_state_t::direct_projection_lookup_t key{
+        cache.stamp(), flattened.query_session_generation, context.timing.source_fingerprint,
+        {&context.waveform, detail, context.selected_waveform, &context.timing, context.decoded_blocks},
+        {context.request.viewport_scroll_pixels, context.request.viewport_height_pixels,
+         context.request.pixels_per_standard_measure},
+        mutation_revision,
+        context.stable_style != nullptr, context.stable_style ? *context.stable_style : audio::aligned_waveform_style_t{},
+        context.waveform.key, detail ? detail->key : context.waveform.key,
+        context.selected_waveform->key};
+    const auto& rows = cache.waveform.direct_projection.get_or_build(key,
+        [&context](std::vector<ui::compose_waveform_row_view_t>& rows) {
+            rows.clear();
+            populate_direct_envelope(rows, context);
+        });
+    flattened.view.compose.waveform_rows.assign(rows.begin(), rows.end());
 }
 auto envelope_style(const audio::aligned_waveform_style_t* playback,
                      std::optional<audio::aligned_waveform_window_t> window)
@@ -279,7 +265,7 @@ auto envelope_style(const audio::aligned_waveform_style_t* playback,
     return {.sample_points = window->frames_per_pixel < 1,
             .detail_level = window->frames_per_pixel < 256};
 }
-void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows,
+void orient_compose_waveform_rows(std::vector<wormedit::ui::compose_waveform_row_view_t>& rows,
                                   const WormUiComposeView& view) {
     for (auto& row : rows)
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
@@ -287,9 +273,9 @@ void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows
 // Rows are cached per (source, window): projecting the whole song is the costly case.
 auto build_bgm_bar_rows(const audio::waveform_t& waveform, bgm_bar_range_t range,
                         bool& succeeded,
-                        std::vector<WormUiComposeWaveformOverviewRowView>& rows) -> bool {
+                        std::vector<wormedit::ui::compose_waveform_overview_row_view_t>& rows) -> bool {
     const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
-                                                         WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
+                                                         audio::maximum_waveform_range_rows);
     succeeded = !projected.status.has_failure();
     if (!succeeded) return false;
     rows.clear();
@@ -306,12 +292,12 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
     return succeeded;
 }
 void build_bgm_bar_marks(const compose_scene_cache_t& cache, const audio::waveform_t& waveform,
-                         bgm_bar_range_t range, std::vector<WormUiComposeBgmBarMarkView>& marks) {
+                         bgm_bar_range_t range, std::vector<wormedit::ui::compose_bgm_bar_mark_view_t>& marks) {
     marks.clear();
     if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
     for (const auto& mark : bgm_bar_measure_marks(*cache.scene.cached_measure_index,
              *cache.timing.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
-             WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY))
+             bgm_bar_measure_mark_budget))
         marks.push_back({mark.audio_fraction, mark.measure});
 }
 void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
@@ -325,7 +311,7 @@ void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t
 void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const compose_scene_cache_t& cache,
                                 const audio::waveform_t& waveform, bgm_bar_range_t range) {
     auto& view = flattened.view.compose;
-    auto& out = flattened.compose.waveform.bar_bookmark;
+    auto& out = view.bgm_bar_bookmarks;
     const auto add = [&](double fraction, const char* label, bool audio) {
         if (std::isfinite(fraction) && fraction >= range.begin && fraction <= range.end)
             (void)out.push_back({fraction, label, audio});
@@ -348,8 +334,6 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
         add(frames_to_fraction(static_cast<long double>(bookmark.audio_milliseconds) / 1000.0L),
             bookmark.label, true);
     }
-    view.bgm_bar_bookmarks = out.data();
-    view.bgm_bar_bookmark_count = out.size();
 }
 // Publishes the BGM bar rows and measure marks for the requested song window.
 void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
@@ -378,27 +362,13 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
             projection_view.waveform_overview_visible_end_fraction, minimum_span);
     if (!refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range)) return;
     refresh_bgm_bar_marks(cache, waveform, range);
-    auto& waveform_views = flattened.compose.waveform;
-    for (const auto& row : cache.waveform.bgm_bar.rows.value()) {
-        if (!waveform_views.bar_row.push_back(row)) {
-            waveform_views.bar_row.clear();
-            return;
-        }
-    }
-    for (const auto& mark : cache.waveform.bgm_bar.marks.value()) {
-        if (!waveform_views.bar_mark.push_back(mark)) {
-            waveform_views.bar_mark.clear();
-            waveform_views.bar_row.clear();
-            return;
-        }
-    }
     auto& view = flattened.view.compose;
-    view.bgm_bar_rows = waveform_views.bar_row.data();
-    view.bgm_bar_row_count = waveform_views.bar_row.size();
+    const auto& rows = cache.waveform.bgm_bar.rows.value();
+    view.bgm_bar_rows.assign(rows.begin(), rows.end());
+    const auto& marks = cache.waveform.bgm_bar.marks.value();
+    view.bgm_bar_marks.assign(marks.begin(), marks.end());
     view.bgm_bar_begin_fraction = range.begin;
     view.bgm_bar_end_fraction = range.end;
-    view.bgm_bar_marks = waveform_views.bar_mark.data();
-    view.bgm_bar_mark_count = waveform_views.bar_mark.size();
     populate_bgm_bar_bookmarks(flattened, cache, waveform, range);
 }
 } // namespace
@@ -486,17 +456,12 @@ auto populate_compose_waveform_projection(
         !analysis || !analysis->waveform)
         return false;
 
-    if (!prepare_frame_waveform_storage(flattened)) {
-        compose.truncated = true;
-        return false;
-    }
-
     const auto& waveform = *analysis->waveform;
     const audio::aligned_waveform_request_t request{
         .viewport_scroll_pixels = interaction_state->viewport_scroll_pixels,
         .viewport_height_pixels = compose.viewport_height_pixels,
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
-        .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
+        .maximum_rows = audio::maximum_aligned_waveform_rows};
     (void)prepare_compose_display_row_table(cache,
         request, {compose.project_id, cache.stamp().chart.value, cache.stamp().document.revision});
     const auto window = audio::aligned_waveform_window(waveform, *cache.timing.marker_timing_index, request);
@@ -513,17 +478,15 @@ auto populate_compose_waveform_projection(
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.stamp().document.revision,
             compose.project_id, cache.stamp().chart.value, cache.waveform.waveform_row_table};
-        cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
+        cached_envelope = populate_cpu_envelope(projection, compose.waveform_rows);
     } else {
         cache.waveform.waveform_envelope_ring.invalidate();
     }
     if (!cached_envelope)
-        populate_direct_envelope(flattened.compose.waveform.row, waveform, selected_waveform,
-                                 *cache.timing.marker_timing_index, request, decoded_blocks,
-                                 detail_analysis, stable_style);
-    orient_compose_waveform_rows(flattened.compose.waveform.row, compose);
-    compose.waveform_rows = flattened.compose.waveform.row.data();
-    compose.waveform_row_count = flattened.compose.waveform.row.size();
+        populate_cached_direct_envelope(flattened, cache,
+            {waveform, selected_waveform, *cache.timing.marker_timing_index, request, decoded_blocks,
+             detail_analysis, stable_style});
+    orient_compose_waveform_rows(compose.waveform_rows, compose);
 
     if (!populate_cached_overview(flattened, cache, waveform, request)) return false;
     compose.waveform_overview_sample_rate = waveform.sample_rate;

@@ -65,10 +65,10 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
     REQUIRE(harness.ready());
     auto& view = harness.view();
     auto& compose = view.compose;
-    WormUiComposeWaveformOverviewRowView bar_row{};
+    wormedit::ui::compose_waveform_overview_row_view_t bar_row{};
     compose.bgm_bar_reserved = true;
-    compose.bgm_bar_row_count = 1;
-    compose.bgm_bar_rows = &bar_row;
+
+    compose.bgm_bar_rows = {bar_row};
     compose.bgm_bar_begin_fraction = 0.0;
     compose.bgm_bar_end_fraction = 1.0;
     compose.selected_audio_asset_id = 5;

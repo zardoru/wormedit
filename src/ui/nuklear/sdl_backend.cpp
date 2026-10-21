@@ -1350,8 +1350,8 @@ static bool prepare_overview_cache(nk_sdl* sdl, nk_command_buffer* canvas,
                                    const WormUiComposeView& view, OverviewKey key) {
     auto& cache = *sdl->overview;
     cache.invalidate();
-    if (key.colors[3] != 255 || key.generation == 0 || !view.waveform_overview_rows ||
-        view.waveform_overview_row_count > 512 ||
+    if (key.colors[3] != 255 || key.generation == 0 || view.waveform_overview_rows.empty() ||
+        view.waveform_overview_rows.size() > 512 ||
         (key.logical_mode != SDL_LOGICAL_PRESENTATION_DISABLED &&
          key.logical_mode != SDL_LOGICAL_PRESENTATION_STRETCH)) return false;
     for (const auto value : key.geometry)
@@ -1362,7 +1362,7 @@ static bool prepare_overview_cache(nk_sdl* sdl, nk_command_buffer* canvas,
     SDL_GetRenderViewport(sdl->renderer, &viewport);
     if (viewport.x != 0 || viewport.y != 0 || SDL_RenderViewportSet(sdl->renderer) ||
         SDL_GetRenderTarget(sdl->renderer)) return false;
-    for (std::size_t row = 0; row < view.waveform_overview_row_count; ++row)
+    for (std::size_t row = 0; row < view.waveform_overview_rows.size(); ++row)
         if (!std::isfinite(view.waveform_overview_rows[row].audio_fraction) ||
             !std::isfinite(view.waveform_overview_rows[row].absolute_peak)) return false;
     cache.entry.value().scale_x = sx;

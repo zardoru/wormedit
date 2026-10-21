@@ -109,7 +109,7 @@ struct envelope_projection_geometry_t {
 struct envelope_projection_data_t {
     struct row_t {
         std::int64_t world_row{std::numeric_limits<std::int64_t>::min()};
-        WormUiComposeWaveformRowView value{};
+        wormedit::ui::compose_waveform_row_view_t value{};
         bool present{}, incomplete{};
     };
     std::vector<row_t> rows;
@@ -125,14 +125,14 @@ using envelope_projection_ring_t = wormedit::keyed_cache_t<
 using envelope_projection_lookup_t = std::tuple<const audio::waveform_key_t&, const void*,
                                                envelope_projection_geometry_t>;
 struct compose_channel_projection_data_t {
-    std::vector<WormUiComposeWaveformRowView> rows;
+    std::vector<wormedit::ui::compose_waveform_row_view_t> rows;
     struct piece_t {
         std::uint64_t lane{};
         bool playable{};
-        std::vector<WormUiComposeWaveformRowView> rows;
+        std::vector<wormedit::ui::compose_waveform_row_view_t> rows;
     };
     std::vector<piece_t> pieces;
-    std::vector<WormUiComposeStemCutView> cuts;
+    std::vector<wormedit::ui::compose_stem_cut_view_t> cuts;
 };
 struct compose_channel_projection_t {
     wormedit::keyed_cache_t<std::tuple<double, double, double>, compose_channel_projection_data_t> view;
@@ -292,10 +292,10 @@ struct compose_scene_cache_t {
     struct bgm_bar_cache_t {
         wormedit::keyed_cache_t<
             std::tuple<audio::waveform_key_t, const void*, bgm_bar_range_t>,
-            std::vector<WormUiComposeWaveformOverviewRowView>> rows;
+            std::vector<wormedit::ui::compose_waveform_overview_row_view_t>> rows;
         wormedit::keyed_cache_t<
             std::tuple<std::uint64_t, std::uint64_t, bgm_bar_range_t>,
-            std::vector<WormUiComposeBgmBarMarkView>> marks;
+            std::vector<wormedit::ui::compose_bgm_bar_mark_view_t>> marks;
     };
 #endif
     struct hover_timing_snapshot_t {
@@ -399,8 +399,10 @@ struct compose_scene_cache_t {
         packed_waveform_index_t packed_waveform_index;
         audio::display_row_table_t packed_waveform_row_table;
         std::vector<stem_waveform_cache_t> packed_waveforms;
-        std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
-        std::vector<WormUiComposeStemCutView> stem_cut_views;
+        std::vector<const wormedit::sound_channel_t*> visible_channels;
+        std::vector<audio::decoded_source_binding_t> source_bindings;
+        std::vector<const packed_waveform_piece_t*> visible_packed_pieces;
+        std::vector<std::size_t> visible_packed_indices;
         auto stem_for(wormedit::object_id_t channel) -> stem_waveform_cache_t& {
             const auto found = std::ranges::find(stem_waveforms, channel, &stem_waveform_cache_t::channel);
             if (found != stem_waveforms.end()) return *found;
@@ -427,9 +429,21 @@ struct compose_scene_cache_t {
         compose_channel_projection_t channel_projection;
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
+        // One bounded direct/sample-point projection. Borrowed lookup keys avoid copying
+        // waveform source strings on unchanged frames.
+        using direct_projection_key_t = std::tuple<chart_stamp_t, std::uint64_t, std::uint64_t,
+            std::array<const void*, 5>, std::array<double, 3>, std::uint64_t,
+            bool, audio::aligned_waveform_style_t,
+            audio::waveform_key_t, audio::waveform_key_t, audio::waveform_key_t>;
+        using direct_projection_lookup_t = std::tuple<chart_stamp_t, std::uint64_t, std::uint64_t,
+            std::array<const void*, 5>, std::array<double, 3>, std::uint64_t,
+            bool, audio::aligned_waveform_style_t,
+            const audio::waveform_key_t&, const audio::waveform_key_t&, const audio::waveform_key_t&>;
+        wormedit::keyed_cache_t<direct_projection_key_t,
+            std::vector<wormedit::ui::compose_waveform_row_view_t>> direct_projection;
         struct overview_data_t {
             std::uint64_t generation{};
-            std::vector<WormUiComposeWaveformOverviewRowView> rows;
+            std::vector<wormedit::ui::compose_waveform_overview_row_view_t> rows;
         };
         wormedit::keyed_cache_t<std::tuple<audio::waveform_key_t, const void*>, overview_data_t> overview;
         // BGM bar rows re-project only when the song window or the source changes; measure
@@ -448,6 +462,7 @@ struct compose_scene_cache_t {
         std::optional<std::pair<double, double>> paint_pointer;
         std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
         std::unordered_map<std::uint64_t, std::size_t> semantic_layer_bgm_membership_counts;
+        std::vector<std::uint64_t> muted_bgm_lanes;
         bool focus_note_label_editor{};
         // The song has audio (decided last frame; the surface height is needed before the
         // waveform).
@@ -515,6 +530,9 @@ struct bgm_lane_mix_state_t {
 };
 auto compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
                              const bgm_lane_mix_state_t& mix) -> std::vector<std::uint64_t>;
+void build_compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
+                                  const bgm_lane_mix_state_t& mix,
+                                  std::vector<std::uint64_t>& muted);
 
 struct application_command_state_t {
     struct bms_branch_statement_feedback_t {

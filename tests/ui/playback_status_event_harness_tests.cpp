@@ -29,17 +29,17 @@ void check_position(const wormedit::ui::testing_drawn_text_view_t& actual, const
 
 struct playback_status_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiComposeWaveformOverviewRowView, 2> rows{{{0, 0.5f}, {1, 0.5f}}};
+    std::array<wormedit::ui::compose_waveform_overview_row_view_t, 2> rows{{{0, 0.5f}, {1, 0.5f}}};
     playback_status_fixture_t() {
         REQUIRE(harness.ready());
         auto& view = harness.view().compose;
         view.bgm_bar_reserved = true;
         view.has_bgm_events = true;
-        view.bgm_bar_rows = rows.data();
-        view.bgm_bar_row_count = rows.size();
+        view.bgm_bar_rows.assign(rows.begin(), rows.end());
+
         view.bgm_bar_end_fraction = 1;
-        view.waveform_overview_rows = rows.data();
-        view.waveform_overview_row_count = rows.size();
+        view.waveform_overview_rows.assign(rows.begin(), rows.end());
+
         view.waveform_overview_total_frames = 96000;
         view.waveform_overview_sample_rate = 48000;
         view.waveform_audio_offset_denominator = 1;
@@ -56,9 +56,10 @@ TEST_CASE("Malformed overview publication leaves the editable workspace and stat
     REQUIRE(worm_ui_nuklear_compose_overview_valid(&view));
     for (const int invalid : {0, 1, 2, 3}) {
         view.waveform_overview_visible_end_fraction = invalid == 0 ? 1.00001 : 1;
-        view.waveform_overview_row_count = invalid == 1 ? WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY + 1 : 2;
-        view.waveform_overview_rows = invalid == 2 ? nullptr : fixture.rows.data();
-        fixture.rows[0].absolute_peak = invalid == 3 ? std::numeric_limits<float>::quiet_NaN() : 0.5f;
+        view.waveform_overview_rows.assign(fixture.rows.begin(), fixture.rows.end());
+        view.waveform_overview_rows[0].audio_fraction = invalid == 1 ? -0.1 : 0;
+        view.waveform_overview_rows[1].audio_fraction = invalid == 2 ? 1.1 : 1;
+        view.waveform_overview_rows[0].absolute_peak = invalid == 3 ? std::numeric_limits<float>::quiet_NaN() : 0.5f;
         CHECK(worm_ui_nuklear_compose_view_valid(&view));
         CHECK_FALSE(worm_ui_nuklear_compose_overview_valid(&view));
         REQUIRE(worm_ui_nuklear_compose_overview_error(&view));
@@ -76,8 +77,8 @@ TEST_CASE("Playback status geometry stays fixed across overview and notification
     const auto clock = text_bounds(fixture.harness, "0:00");
     const auto details = text_bounds(fixture.harness, "Test artist · Normal");
     for (const bool available : {false, true}) {
-        workspace.compose.bgm_bar_row_count = available ? 2 : 0;
-        workspace.compose.waveform_overview_row_count = available ? 2 : 0;
+        workspace.compose.bgm_bar_rows.assign(fixture.rows.begin(), fixture.rows.begin() + (available ? 2 : 0));
+        workspace.compose.waveform_overview_rows.assign(fixture.rows.begin(), fixture.rows.begin() + (available ? 2 : 0));
         workspace.notifications.unread_warnings = available ? 1 : 0;
         workspace.transport_playing = available;
         (void)fixture.harness.frame();
@@ -110,10 +111,11 @@ TEST_CASE("Malformed BGM overview arrays are bounded independently of chart geom
           "[event-harness][playback-status]") {
     playback_status_fixture_t fixture;
     auto& view = fixture.harness.view().compose;
-    std::array<WormUiComposeWaveformOverviewRowView, 1> bad_rows{{{0.5, 1.5f}}};
+    std::array<wormedit::ui::compose_waveform_overview_row_view_t, 1> bad_rows{{{0.5, 1.5f}}};
     for (const int invalid : {0, 1, 2}) {
-        view.bgm_bar_rows = invalid == 0 ? nullptr : bad_rows.data();
-        view.bgm_bar_row_count = invalid == 1 ? WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY + 1 : 1;
+        view.bgm_bar_rows.assign(bad_rows.begin(), bad_rows.end());
+        view.bgm_bar_rows[0].audio_fraction = invalid == 0 ? -0.5 : 0.5;
+        view.bgm_bar_rows[0].absolute_peak = invalid == 1 ? std::numeric_limits<float>::quiet_NaN() : 1.5f;
         CHECK(worm_ui_nuklear_compose_view_valid(&view));
         CHECK_FALSE(worm_ui_nuklear_compose_overview_valid(&view));
         (void)fixture.harness.frame();

@@ -318,8 +318,8 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
         context.compose_scene_cache.frame.bgm_bar_audio_seen =
             flattened.view.compose.has_bgm_events ||
             context.workspace.transport.audio_asset.has_value() ||
-            flattened.view.compose.bgm_bar_row_count != 0 ||
-            flattened.view.compose.waveform_overview_row_count != 0;
+            flattened.view.compose.bgm_bar_rows.size() != 0 ||
+            flattened.view.compose.waveform_overview_rows.size() != 0;
     }
     build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);

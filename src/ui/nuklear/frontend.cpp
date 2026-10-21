@@ -1940,8 +1940,8 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
 
 static bool status_minimap_available(const WormUiComposeView& view) {
     // Any song waveform enables the bar, whether or not the chart has BGM events.
-    const bool has_audio = view.has_bgm_events || view.bgm_bar_row_count != 0 ||
-                           view.waveform_overview_row_count != 0;
+    const bool has_audio = view.has_bgm_events || view.bgm_bar_rows.size() != 0 ||
+                           view.waveform_overview_rows.size() != 0;
     return view.visible && view.scene_available && has_audio &&
            worm_ui_nuklear_compose_overview_valid(&view);
 }
@@ -1980,7 +1980,7 @@ static void render_minimap_preferences(const wormedit::ui::workspace_view_t& vie
 
 static void render_status_minimap(const wormedit::ui::workspace_view_t& view,
                                   wormedit::ui::workspace_action_t* action, bool available) {
-    if (available && view.compose.bgm_bar_row_count == 0) {
+    if (available && view.compose.bgm_bar_rows.size() == 0) {
         const auto bounds = nk_widget_bounds(g_context);
         nk_widget_disable_begin(g_context);
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);

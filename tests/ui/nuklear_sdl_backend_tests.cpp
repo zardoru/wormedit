@@ -164,12 +164,12 @@ void overview_frame(backend_fixture_t& backend, std::uint64_t generation,
     SDL_RenderClear(backend.renderer);
     nk_input_begin(backend.context);
     nk_input_end(backend.context);
-    std::array<WormUiComposeWaveformOverviewRowView, 512> rows{};
+    std::array<wormedit::ui::compose_waveform_overview_row_view_t, 512> rows{};
     for (std::size_t index = 0; index < rows.size(); ++index)
         rows[index] = {(index + .5) / rows.size(), .1f + .8f * std::abs(std::sin(index * .173f))};
     WormUiComposeView view{};
-    view.waveform_overview_rows = rows.data();
-    view.waveform_overview_row_count = rows.size();
+    view.waveform_overview_rows.assign(rows.begin(), rows.end());
+
     view.waveform_overview_generation = generation;
     if (nk_begin(backend.context, "overview", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR)) {
         auto* canvas = nk_window_get_canvas(backend.context);

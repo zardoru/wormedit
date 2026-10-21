@@ -224,25 +224,25 @@ void render_channel_menu(nk_context* context, const WormUiComposeView& view,
 }
 
 bool channel_at(const WormUiComposeView& view, double x, double y) {
-    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count)) {
+    for (const auto& lane : std::span(view.bgm_lanes)) {
         if (x < lane.bounds.left || x > lane.bounds.right) continue;
         if (y <= 18 && lane.stem && lane.bmson_channel_id) {
             menu.bgm = true;
             menu.resource = 0;
-            menu.channel = lane.bmson_channel_id;
+            menu.channel = lane.bmson_channel_id.value;
             menu.stem = true;
             menu.continues = lane.bmson_channel_continues;
             return true;
         }
         if (lane.stem) return false;
     }
-    for (const auto& event : std::span(view.bgm_events, view.bgm_event_count)) {
+    for (const auto& event : std::span(view.bgm_events)) {
         const auto& rect = event.bounds;
         if (!event.proposal_ghost && event.bmson_slice && event.has_sound && x >= rect.left && x <= rect.right &&
             y >= rect.top && y <= rect.bottom) {
             menu.bgm = true;
             menu.channel = 0;
-            menu.resource = event.sound_id;
+            menu.resource = event.sound_id.value;
             menu.stem = false;
             menu.continues = false;
             return true;

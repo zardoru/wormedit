@@ -919,7 +919,7 @@ void check_overview_replacement(frontend_workspace_view_t& flattened, compose_sc
     auto replacement = overview_analysis(0.75f);
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &replacement, false,
                                                  true, &interaction));
-    CHECK(flattened.compose.waveform.overview_row.front().absolute_peak == 0.75f);
+    CHECK(flattened.view.compose.waveform_overview_rows.front().absolute_peak == 0.75f);
     auto scene_binding = cache.scene.index.key().value_or(compose_scene_source_key_t{});
     ++scene_binding.stamp.document.revision;
     static_cast<void>(cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
@@ -968,9 +968,9 @@ TEST_CASE("Compose waveform remains visible in a padded one-measure viewport", "
     auto analysis = overview_analysis(0.5f);
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &analysis, false,
                                                 true, &interaction));
-    REQUIRE(flattened.view.compose.waveform_row_count > 0);
-    CHECK(flattened.compose.waveform.row.front().y_pixels >= 160);
-    CHECK(flattened.compose.waveform.row.front().absolute_peak[0] == 0.5f);
+    REQUIRE(flattened.view.compose.waveform_rows.size() > 0);
+    CHECK(flattened.view.compose.waveform_rows.front().y_pixels >= 160);
+    CHECK(flattened.view.compose.waveform_rows.front().absolute_peak[0] == 0.5f);
 }
 namespace { void expect_gpu_work(bool value); }
 TEST_CASE("Compose envelope projects only exposed stable world rows during follow", "[sys][waveform-projection]") {
@@ -989,7 +989,7 @@ TEST_CASE("Compose envelope projects only exposed stable world rows during follo
     audio::decoded_block_cache_t blocks;
     const audio::aligned_waveform_style_t style{};
     const auto project = [&] {
-        flattened.compose.waveform.row.clear();
+        flattened.view.compose.waveform_rows.clear();
         return populate_compose_waveform_projection(flattened, cache, &analysis, false, true,
                                                     &interaction, nullptr, &blocks, &style);
     };
@@ -1053,7 +1053,7 @@ struct envelope_projection_fixture_t {
             true, &interaction, nullptr, &blocks, &style));
     }
 };
-void expect_published_waveform_rows(std::span<const WormUiComposeWaveformRowView> rows, double height) {
+void expect_published_waveform_rows(std::span<const wormedit::ui::compose_waveform_row_view_t> rows, double height) {
     for (const auto& row : rows)
         expect_gpu_work(std::isfinite(row.y_pixels) && row.y_pixels >= 0 && row.y_pixels <= height);
 }
@@ -1070,24 +1070,24 @@ void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
     for (const auto& row : reference.rows) {
         const auto y = row.y_pixels - 1;
         if (y < 0 || y > height) continue;
-        expect_gpu_work(index < fixture.flattened.compose.waveform.row.size());
-        const auto& cached = fixture.flattened.compose.waveform.row[index++];
+        expect_gpu_work(index < fixture.flattened.view.compose.waveform_rows.size());
+        const auto& cached = fixture.flattened.view.compose.waveform_rows[index++];
         expect_gpu_work(std::abs(cached.y_pixels - y) < 1e-8);
         expect_gpu_work(std::abs(cached.absolute_peak[0] - row.absolute_peak[0]) < 1e-6f);
         expect_gpu_work(std::abs(cached.rms[0] - row.rms[0]) < 1e-6f);
     }
-    expect_gpu_work(index == fixture.flattened.compose.waveform.row.size());
+    expect_gpu_work(index == fixture.flattened.view.compose.waveform_rows.size());
 }
 void check_waveform_axis(envelope_projection_fixture_t& fixture, bool sample_points) {
     auto& view = fixture.flattened.view.compose;
     view.downscroll = false;
     fixture.project();
-    const auto& source = fixture.flattened.compose.waveform.row;
-    const std::vector<WormUiComposeWaveformRowView> upscroll(source.begin(), source.end());
+    const auto& source = fixture.flattened.view.compose.waveform_rows;
+    const std::vector<wormedit::ui::compose_waveform_row_view_t> upscroll(source.begin(), source.end());
     expect_gpu_work(!upscroll.empty());
     view.downscroll = true;
     fixture.project();
-    const auto& downscroll = fixture.flattened.compose.waveform.row;
+    const auto& downscroll = fixture.flattened.view.compose.waveform_rows;
     expect_gpu_work(downscroll.size() == upscroll.size());
     for (std::size_t index = 0; index < upscroll.size(); ++index) {
         const auto& before = upscroll[index];
@@ -1099,7 +1099,7 @@ void check_waveform_axis(envelope_projection_fixture_t& fixture, bool sample_poi
     }
 }
 void check_waveform_scroll(envelope_projection_fixture_t& fixture) {
-    const auto before = fixture.flattened.compose.waveform.row[80];
+    const auto before = fixture.flattened.view.compose.waveform_rows[80];
     const auto& view = fixture.flattened.view.compose;
     const auto pixels_per_row = view.pixels_per_standard_measure /
         fixture.cache.timing.marker_timing_index->divisions_per_standard_measure;
@@ -1107,7 +1107,7 @@ void check_waveform_scroll(envelope_projection_fixture_t& fixture) {
         view.viewport_height_pixels - before.y_pixels) / pixels_per_row;
     fixture.interaction.viewport_scroll_pixels += 25;
     fixture.project();
-    const auto& after = fixture.flattened.compose.waveform.row[55];
+    const auto& after = fixture.flattened.view.compose.waveform_rows[55];
     expect_gpu_work(std::ranges::equal(after.absolute_peak, before.absolute_peak));
     expect_gpu_work(after.y_pixels == before.y_pixels + 25);
     const auto chart_y = compose_project_y(world_row, pixels_per_row,
@@ -1173,7 +1173,7 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 34);
     expect_gpu_work(std::ranges::any_of(fixture.cache.waveform.waveform_envelope_ring.value().rows,
         [](const auto& row) { return row.incomplete; }));
-    const auto coarse_peak = fixture.flattened.compose.waveform.row.front().absolute_peak[0];
+    const auto coarse_peak = fixture.flattened.view.compose.waveform_rows.front().absolute_peak[0];
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
@@ -1184,7 +1184,7 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projection_calls == 1);
     expect_gpu_work(std::ranges::all_of(fixture.cache.waveform.waveform_envelope_ring.value().rows,
         [](const auto& row) { return row.present && !row.incomplete; }));
-    const auto& resolved = fixture.flattened.compose.waveform.row.front();
+    const auto& resolved = fixture.flattened.view.compose.waveform_rows.front();
     expect_gpu_work(std::abs(resolved.absolute_peak[0] - .8f) < .00001f);
     expect_gpu_work(std::abs(resolved.rms[0] - .8f) < .00001f);
     expect_gpu_work(resolved.absolute_peak[0] != coarse_peak);
@@ -1193,15 +1193,15 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().reused_rows == 34);
-    expect_gpu_work(std::abs(fixture.flattened.compose.waveform.row.front().absolute_peak[0] - .8f) < .00001f);
+    expect_gpu_work(std::abs(fixture.flattened.view.compose.waveform_rows.front().absolute_peak[0] - .8f) < .00001f);
 }
 TEST_CASE("Compose envelope chart identity changes recompute actual source timing at unchanged revision",
           "[sys][waveform-projection]") {
     envelope_projection_fixture_t fixture;
     fixture.project();
     compare_cached_envelope_source(fixture);
-    expect_gpu_work(!fixture.flattened.compose.waveform.row.empty());
-    const auto peak = fixture.flattened.compose.waveform.row.front().absolute_peak[0];
+    expect_gpu_work(!fixture.flattened.view.compose.waveform_rows.empty());
+    const auto peak = fixture.flattened.view.compose.waveform_rows.front().absolute_peak[0];
     auto second = fixture.history.document.charts.front();
     second.id = chart_id_t{2};
     second.bpms.front().beats_per_minute = {240, 1};
@@ -1213,7 +1213,7 @@ TEST_CASE("Compose envelope chart identity changes recompute actual source timin
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
     compare_cached_envelope_source(fixture);
-    expect_gpu_work(fixture.flattened.compose.waveform.row.front().absolute_peak[0] < peak);
+    expect_gpu_work(fixture.flattened.view.compose.waveform_rows.front().absolute_peak[0] < peak);
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     ++fixture.flattened.view.compose.project_id;
@@ -1227,8 +1227,8 @@ TEST_CASE("Compose envelope padding stays private at zero fractional and normal 
     for (const auto scroll : {0.0, .75, 10.0, 10.75, 100.25}) {
         fixture.interaction.viewport_scroll_pixels = scroll;
         fixture.project();
-        expect_published_waveform_rows(fixture.flattened.compose.waveform.row, 532);
-        expect_gpu_work(fixture.flattened.compose.waveform.row.size() <= 532);
+        expect_published_waveform_rows(fixture.flattened.view.compose.waveform_rows, 532);
+        expect_gpu_work(fixture.flattened.view.compose.waveform_rows.size() <= 532);
     }
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
@@ -1315,6 +1315,15 @@ TEST_CASE("BMSON channel switches sharing an asset preserve independent timing a
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.channel_projection.view.value().rows.front().y_pixels > 140);
 }
+namespace {
+void check_swapped_stem_publication(const WormUiComposeView& view) {
+    REQUIRE(view.stem_waveforms.size() == 1);
+    const auto& swapped = view.stem_waveforms.front();
+    CHECK(swapped.stem_key == 71000);
+    CHECK(swapped.source_lane_id == object_id_t{3});
+    CHECK(!swapped.rows.empty());
+}
+}
 TEST_CASE("BMSON stems other than the selected one get their own lane rows or a pending band",
           "[sys][waveform-projection][bmson][stems]") {
     channel_projection_fixture_t fixture;
@@ -1326,17 +1335,17 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
 
     // Channel 71000 is selected through its marker, so only 71001 is a stem.
     populate_bmson_waveform_projection(context);
-    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    CHECK(fixture.flattened.view.compose.stem_waveforms.size() == 1);
     const auto& stem = fixture.flattened.view.compose.stem_waveforms[0];
-    CHECK(stem.source_lane_id == 4);
+    CHECK(stem.source_lane_id == object_id_t{4});
     expect_gpu_work(stem.stem_key == 71001);
-    CHECK((!stem.pending && stem.row_count > 0));
-    CHECK(stem.row_count <= fixture.flattened.view.compose.viewport_height_pixels + 2);
+    CHECK((!stem.pending && stem.rows.size() > 0));
+    CHECK(stem.rows.size() <= fixture.flattened.view.compose.viewport_height_pixels + 2);
 
     // Selecting the other marker swaps which stem is the extra one.
     fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
     populate_bmson_waveform_projection(context);
-    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    check_swapped_stem_publication(fixture.flattened.view.compose);
     // The selected channel keeps an entry too, for its field taps and cut lines.
     CHECK(fixture.cache.stems.stem_waveforms.size() == 2);
     CHECK(fixture.cache.stems.stem_waveforms.front().channel == object_id_t{71000});
@@ -1347,10 +1356,10 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
         &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources), {fixture.asset, nullptr},
         {std::nullopt, nullptr}, 1, [&](asset_id_t) { return stem_result; }};
     populate_bmson_waveform_projection(pending_context);
-    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    CHECK(fixture.flattened.view.compose.stem_waveforms.size() == 1);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].pending);
     expect_gpu_work(fixture.flattened.view.compose.stem_waveforms[0].stem_key == 71000);
-    CHECK(fixture.flattened.view.compose.stem_waveforms[0].row_count == 0);
+    CHECK(fixture.flattened.view.compose.stem_waveforms[0].rows.size() == 0);
 }
 
 namespace {
@@ -1363,10 +1372,10 @@ auto project_stable_stem_keys(channel_projection_fixture_t& fixture, bool pendin
         [&](asset_id_t) { return pending ? nullptr : fixture.channel_analysis; }};
     populate_bmson_waveform_projection(context);
     std::vector<std::uint64_t> keys;
-    for (std::size_t i = 0; i < fixture.flattened.view.compose.stem_waveform_count; ++i) {
+    for (std::size_t i = 0; i < fixture.flattened.view.compose.stem_waveforms.size(); ++i) {
         const auto& view = fixture.flattened.view.compose.stem_waveforms[i];
         expect_gpu_work(view.pending == pending);
-        expect_gpu_work((view.row_count == 0) == pending);
+        expect_gpu_work((view.rows.size() == 0) == pending);
         keys.push_back(view.stem_key);
     }
     std::ranges::sort(keys);
@@ -2165,8 +2174,8 @@ void compare_scalar_holds_bgm(const WormUiComposeView& actual, const WormUiCompo
         expect_static_style(actual.hold_bodies[index].selected ==
                             expected.hold_bodies[index].selected);
     }
-    expect_static_style(actual.bgm_event_count == expected.bgm_event_count);
-    for (std::size_t index = 0; index < actual.bgm_event_count; ++index) {
+    expect_static_style(actual.bgm_events.size() == expected.bgm_events.size());
+    for (std::size_t index = 0; index < actual.bgm_events.size(); ++index) {
         compare_scalar_bounds(actual.bgm_events[index].bounds, expected.bgm_events[index].bounds);
         expect_static_style(actual.bgm_events[index].event_id ==
                             expected.bgm_events[index].event_id);
@@ -2938,12 +2947,12 @@ TEST_CASE("Compose overview BGM presence follows the full cached chart index",
     ++fixture.history.document.revision;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
-    expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
+    expect_compose_test(fixture.flattened.view.compose.bgm_events.size() == 0);
     const auto* full_index = &*fixture.cache.scene.index.value();
     fixture.project();
     expect_compose_test(&*fixture.cache.scene.index.value() == full_index);
     expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
-    expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
+    expect_compose_test(fixture.flattened.view.compose.bgm_events.size() == 0);
 
     retained_chart.measures.back().bgm_events.clear();
     ++fixture.history.document.revision;
@@ -3041,7 +3050,9 @@ TEST_CASE("Compose overview generation ignores playback scroll timing offsets an
     frontend_workspace_view_t second;
     second.view.compose = fixture.flattened.view.compose;
     expect_compose_test(fixture.project(second) == generation);
-    expect_compose_test(second.view.compose.waveform_overview_rows !=
+    expect_compose_test(second.view.compose.waveform_overview_rows.data() !=
+        fixture.flattened.view.compose.waveform_overview_rows.data());
+    expect_compose_test(second.view.compose.waveform_overview_rows ==
         fixture.flattened.view.compose.waveform_overview_rows);
 }
 TEST_CASE("Compose overview source revision changes generation even when waveform address is reused",
@@ -3054,7 +3065,7 @@ TEST_CASE("Compose overview source revision changes generation even when wavefor
     const auto replacement = fixture.project();
     expect_compose_test(std::get<1>(*fixture.cache.waveform.overview.key()) == identity);
     expect_compose_test(replacement > before);
-    expect_compose_test(fixture.flattened.compose.waveform.overview_row.front().absolute_peak == .75f);
+    expect_compose_test(fixture.flattened.view.compose.waveform_overview_rows.front().absolute_peak == .75f);
     expect_compose_test(fixture.project() == replacement);
 }
 TEST_CASE("Compose overview detail identity and cleared cache publish unique generations",
@@ -3101,10 +3112,10 @@ void check_static_source_has_no_frame_previews(const WormUiComposeView& source) 
     expect_compose_test(source.proposed_grid_lines.empty());
     expect_compose_test(source.timing_preview_rects.empty());
     expect_compose_test(source.timing_preview_markers.empty());
-    expect_compose_test(!source.waveform_rows && source.waveform_row_count == 0);
-    expect_compose_test(!source.channel_waveform_rows && source.channel_waveform_row_count == 0);
-    expect_compose_test(!source.waveform_overview_rows && source.waveform_overview_row_count == 0);
-    expect_compose_test(!source.bmson_marker_drafts && source.bmson_marker_draft_count == 0);
+    expect_compose_test(source.waveform_rows.empty());
+    expect_compose_test(source.channel_waveform_rows.empty());
+    expect_compose_test(source.waveform_overview_rows.empty());
+    expect_compose_test(source.bmson_marker_drafts.empty());
     expect_compose_test(!source.bmson_marker_move_preview && !source.cursor && !source.static_scene);
 }
 void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit::frame_arena_t& arena) {
@@ -3122,8 +3133,6 @@ void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit
 }
 void check_static_source_owned_geometry(const frontend_workspace_view_t& storage) {
     const auto& source = storage.view.compose;
-    expect_compose_test(source.bgm_lanes == storage.compose.bgm.lane.data());
-    expect_compose_test(source.bgm_events == storage.compose.bgm.event.data());
     check_static_source_has_no_frame_overlays(source);
     check_static_source_has_no_frame_markers(source);
     check_static_source_has_no_frame_previews(source);
@@ -3572,20 +3581,20 @@ auto bgm_arena_song(format_family_t family) -> song_document_t {
     return song;
 }
 void compare_bgm_arena_views(const WormUiComposeView& a, const WormUiComposeView& b) {
-    expect_compose_test(a.bgm_lane_count == b.bgm_lane_count && a.bgm_event_count == b.bgm_event_count);
-    for (std::size_t i = 0; i < a.bgm_lane_count; ++i) {
+    expect_compose_test(a.bgm_lanes.size() == b.bgm_lanes.size() && a.bgm_events.size() == b.bgm_events.size());
+    for (std::size_t i = 0; i < a.bgm_lanes.size(); ++i) {
         compare_geometry_rect(a.bgm_lanes[i].bounds, b.bgm_lanes[i].bounds);
         expect_compose_test(a.bgm_lanes[i].source_lane_id == b.bgm_lanes[i].source_lane_id);
         expect_compose_test(a.bgm_lanes[i].source_order == b.bgm_lanes[i].source_order);
     }
-    for (std::size_t i = 0; i < a.bgm_event_count; ++i) {
+    for (std::size_t i = 0; i < a.bgm_events.size(); ++i) {
         const auto& x = a.bgm_events[i]; const auto& y = b.bgm_events[i];
         compare_geometry_rect(x.bounds, y.bounds);
         expect_compose_test(std::tie(x.event_id,x.source_lane_id,x.sound_id,x.has_sound,x.bmson_slice,
             x.bmson_restart,x.selected) == std::tie(y.event_id,y.source_lane_id,y.sound_id,y.has_sound,
             y.bmson_slice,y.bmson_restart,y.selected));
-        expect_compose_test(std::strcmp(x.sound_label,y.sound_label)==0);
-        expect_compose_test(std::strcmp(x.sound_detail,y.sound_detail)==0);
+        expect_compose_test(x.sound_label == y.sound_label);
+        expect_compose_test(x.sound_detail == y.sound_detail);
     }
 }
 }
@@ -3596,8 +3605,8 @@ void check_bgm_arena_family(format_family_t family) {
         wormedit::frame_arena_t a({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
         wormedit::frame_arena_t b({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
         project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
-        REQUIRE(reused.flattened.view.compose.bgm_lane_count > 0);
-        REQUIRE(reused.flattened.view.compose.bgm_event_count > 0);
+        REQUIRE(reused.flattened.view.compose.bgm_lanes.size() > 0);
+        REQUIRE(reused.flattened.view.compose.bgm_events.size() > 0);
         compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
         const auto& initial = reused.flattened.view.compose.bgm_events[0];
         expect_compose_test(initial.bmson_slice == (family == format_family_t::bmson));
@@ -3613,15 +3622,15 @@ void check_bgm_arena_family(format_family_t family) {
             fresh.interaction->viewport_scroll_pixels=scroll;
             project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
             compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
-            if (reused.flattened.view.compose.bgm_event_count)
+            if (reused.flattened.view.compose.bgm_events.size())
                 expect_compose_test(reused.flattened.view.compose.bgm_events[0].selected);
-            expect_compose_test(reused.flattened.view.compose.bgm_lanes == reused.flattened.compose.bgm.lane.data());
-            expect_compose_test(reused.flattened.view.compose.bgm_events == reused.flattened.compose.bgm.event.data());
+            expect_compose_test(reused.flattened.view.compose.bgm_lanes.capacity() >= reused.flattened.view.compose.bgm_lanes.size());
+            expect_compose_test(reused.flattened.view.compose.bgm_events.capacity() >= reused.flattened.view.compose.bgm_events.size());
         }
-        expect_compose_test(storage->view.compose.bgm_event_count > 0);
-        expect_compose_test(std::strcmp(storage->view.compose.bgm_events[0].sound_label,"01")==0);
-        expect_compose_test(std::strcmp(storage->view.compose.bgm_events[0].sound_detail,
-            "Independent BGM resource label")==0);
+        expect_compose_test(storage->view.compose.bgm_events.size() > 0);
+        expect_compose_test(storage->view.compose.bgm_events[0].sound_label == "01");
+        expect_compose_test(storage->view.compose.bgm_events[0].sound_detail ==
+            "Independent BGM resource label");
 }
 }
 TEST_CASE("Compose BGM arena rows preserve fresh and retained projection labels and clipping",
@@ -3639,31 +3648,27 @@ TEST_CASE("Compose BGM arena storage remains stable across 1000 reused frames",
     for (int i=0;i<1000;++i) {
         arena.reset(); project_geometry_arena(fixture,arena);
         stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
-            fixture.flattened.view.compose.bgm_lane_count>0 && fixture.flattened.view.compose.bgm_event_count>0;
+            fixture.flattened.view.compose.bgm_lanes.size()>0 && fixture.flattened.view.compose.bgm_events.size()>0;
     }
     expect_compose_test(stable);
 }
-TEST_CASE("Compose BGM arena exhaustion publishes bounded initialized rows",
+TEST_CASE("Compose owned BGM geometry survives exhausted unrelated frame storage",
           "[sys][compose-bgm-arena]") {
     compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
     wormedit::frame_arena_t arena({.chunk_bytes=64,.maximum_bytes=64});
     project_geometry_arena(fixture,arena);
     const auto& view=fixture.flattened.view.compose;
-    expect_compose_test(view.truncated);
-    expect_compose_test(view.bgm_lane_count==fixture.flattened.compose.bgm.lane.size());
-    expect_compose_test(view.bgm_event_count==fixture.flattened.compose.bgm.event.size());
-    expect_compose_test(view.bgm_lane_count<=WORM_UI_COMPOSE_BGM_LANE_CAPACITY);
-    expect_compose_test(view.bgm_event_count<=WORM_UI_COMPOSE_BGM_EVENT_CAPACITY);
+    expect_compose_test(!view.bgm_lanes.empty() && !view.bgm_events.empty());
 }
-TEST_CASE("Compose BGM arena respects primitive budget on oversized source projection",
+TEST_CASE("Compose BGM primitive budget rejects oversized source projection",
           "[sys][compose-bgm-arena]") {
     compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=16*1024*1024});
     project_geometry_arena(fixture,arena,2000000);
     expect_compose_test(!fixture.flattened.view.compose.scene_available);
     expect_compose_test(!fixture.flattened.view.compose.static_scene);
-    expect_compose_test(fixture.flattened.view.compose.bgm_lane_count<=WORM_UI_COMPOSE_BGM_LANE_CAPACITY);
-    expect_compose_test(fixture.flattened.view.compose.bgm_event_count<=WORM_UI_COMPOSE_BGM_EVENT_CAPACITY);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes.empty());
+    expect_compose_test(fixture.flattened.view.compose.bgm_events.empty());
 }
 
 namespace {
@@ -3908,9 +3913,9 @@ void expect_waveform_arena(bool value, const std::source_location location = std
     REQUIRE(value);
 }
 void borrow_waveform_frame(envelope_projection_fixture_t& fixture, frame_arena_t& arena) {
-    const auto view = fixture.flattened.view;
+    auto view = std::move(fixture.flattened.view);
     fixture.flattened = frontend_workspace_view_t{&arena};
-    fixture.flattened.view = view;
+    fixture.flattened.view = std::move(view);
 }
 auto project_waveform_frame(envelope_projection_fixture_t& fixture) -> bool {
     return populate_compose_waveform_projection(fixture.flattened, fixture.cache,
@@ -3918,8 +3923,8 @@ auto project_waveform_frame(envelope_projection_fixture_t& fixture) -> bool {
         &fixture.blocks, &fixture.style);
 }
 void check_empty_frame_waveform(const WormUiComposeView& view) {
-    expect_waveform_arena(view.waveform_rows == nullptr && view.waveform_row_count == 0);
-    expect_waveform_arena(view.waveform_overview_rows == nullptr && view.waveform_overview_row_count == 0);
+    expect_waveform_arena(view.waveform_rows.empty());
+    expect_waveform_arena(view.waveform_overview_rows.empty());
     expect_waveform_arena(view.waveform_overview_generation == 0);
     expect_waveform_arena(view.waveform_overview_total_frames == 0 && view.waveform_overview_sample_rate == 0);
 }
@@ -3957,39 +3962,28 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     expect_waveform_arena(maximum_allocations <= 10);
     expect_waveform_arena(projected > 0);
     expect_waveform_arena(fixture.cache.waveform.overview.value().rows.data() == persistent_overview);
-    expect_waveform_arena(fixture.flattened.view.compose.waveform_overview_rows != persistent_overview);
+    expect_waveform_arena(static_cast<const void*>(fixture.flattened.view.compose.waveform_overview_rows.data()) !=
+        static_cast<const void*>(persistent_overview));
     expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().rows.data() == persistent_envelope);
     expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
-    expect_waveform_arena(static_cast<const void*>(fixture.flattened.view.compose.waveform_rows) !=
+    expect_waveform_arena(static_cast<const void*>(fixture.flattened.view.compose.waveform_rows.data()) !=
         static_cast<const void*>(persistent_envelope));
     compare_cached_envelope_source(fixture);
 }
-TEST_CASE("Compose waveform arena exhaustion clears both output arrays without changing cached RMS",
+TEST_CASE("Compose owned waveform ignores unrelated arena exhaustion and clears unavailable publication",
           "[sys][waveform-arena]") {
     envelope_projection_fixture_t fixture;
-    fixture.project();
-    const auto projected = fixture.cache.waveform.waveform_envelope_ring.value().projected_rows;
-    const auto generation = fixture.cache.waveform.overview.value().generation;
-    for (const auto limit : {std::size_t{64}, sizeof(WormUiComposeWaveformRowView) * WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY}) {
-        frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
-        borrow_waveform_frame(fixture, arena);
-        expect_waveform_arena(!project_waveform_frame(fixture));
-        check_empty_frame_waveform(fixture.flattened.view.compose);
-        expect_waveform_arena(fixture.flattened.view.compose.truncated);
-        expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == projected);
-        expect_waveform_arena(fixture.cache.waveform.overview.value().generation == generation);
-    }
-}
-TEST_CASE("Compose waveform unavailable projection removes stale arena pointers after reset",
-          "[sys][waveform-arena]") {
-    envelope_projection_fixture_t fixture;
-    frame_arena_t arena;
-    borrow_waveform_frame(fixture, arena); fixture.project(); arena.reset();
+    frame_arena_t arena({.chunk_bytes=64,.maximum_bytes=64});
+    borrow_waveform_frame(fixture, arena);
+    expect_waveform_arena(project_waveform_frame(fixture));
+    const auto row_capacity = fixture.flattened.view.compose.waveform_rows.capacity();
+    const auto overview_capacity = fixture.flattened.view.compose.waveform_overview_rows.capacity();
+    expect_waveform_arena(row_capacity > 0 && overview_capacity > 0);
     expect_waveform_arena(!populate_compose_waveform_projection(fixture.flattened, fixture.cache,
         &fixture.analysis, false, false, &fixture.interaction));
     check_empty_frame_waveform(fixture.flattened.view.compose);
-    expect_waveform_arena(fixture.flattened.compose.waveform.row.capacity() == 0);
-    expect_waveform_arena(fixture.flattened.compose.waveform.overview_row.capacity() == 0);
+    expect_waveform_arena(fixture.flattened.view.compose.waveform_rows.capacity() == row_capacity);
+    expect_waveform_arena(fixture.flattened.view.compose.waveform_overview_rows.capacity() == overview_capacity);
 }
 TEST_CASE("Compose standalone waveform storage survives fixture destruction and move",
           "[sys][waveform-arena]") {
@@ -4000,17 +3994,17 @@ TEST_CASE("Compose standalone waveform storage survives fixture destruction and 
         envelope_projection_fixture_t fixture; fixture.project();
         expected_y=fixture.flattened.view.compose.waveform_rows[0].y_pixels;
         expected_peak=fixture.flattened.view.compose.waveform_rows[0].absolute_peak[0];
-        expected_rows=fixture.flattened.view.compose.waveform_row_count;
-        expected_overview=fixture.flattened.view.compose.waveform_overview_row_count;
+        expected_rows=fixture.flattened.view.compose.waveform_rows.size();
+        expected_overview=fixture.flattened.view.compose.waveform_overview_rows.size();
         retained=fixture.flattened;
     }
     auto moved=std::move(retained);
-    expect_waveform_arena(moved.view.compose.waveform_row_count == expected_rows && expected_rows>0);
-    expect_waveform_arena(moved.view.compose.waveform_overview_row_count == expected_overview && expected_overview>0);
+    expect_waveform_arena(moved.view.compose.waveform_rows.size() == expected_rows && expected_rows>0);
+    expect_waveform_arena(moved.view.compose.waveform_overview_rows.size() == expected_overview && expected_overview>0);
     expect_waveform_arena(moved.view.compose.waveform_rows[0].y_pixels == expected_y);
     expect_waveform_arena(moved.view.compose.waveform_rows[0].absolute_peak[0] == expected_peak);
-    expect_waveform_arena(moved.view.compose.waveform_rows == moved.compose.waveform.row.data());
-    expect_waveform_arena(moved.view.compose.waveform_overview_rows == moved.compose.waveform.overview_row.data());
+    expect_waveform_arena(retained.view.compose.waveform_rows.empty());
+    expect_waveform_arena(retained.view.compose.waveform_overview_rows.empty());
 }
 TEST_CASE("Compose waveform arena preserves every row at the maximum output capacity",
           "[sys][waveform-arena]") {
@@ -4022,7 +4016,7 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
         bin.frame_count = 1024;
         bin.rms = {.125f, .125f};
     }
-    fixture.flattened.view.compose.viewport_height_pixels = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY;
+    fixture.flattened.view.compose.viewport_height_pixels = audio::maximum_aligned_waveform_rows;
     frame_arena_t arena;
     borrow_waveform_frame(fixture, arena); fixture.project();
     const auto& view = fixture.flattened.view.compose;
@@ -4030,10 +4024,10 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
         *fixture.cache.timing.marker_timing_index, {.viewport_scroll_pixels=fixture.interaction.viewport_scroll_pixels,
             .viewport_height_pixels=view.viewport_height_pixels,
             .pixels_per_standard_measure=view.pixels_per_standard_measure,
-            .maximum_rows=WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
+            .maximum_rows=audio::maximum_aligned_waveform_rows});
     expect_waveform_arena(static_cast<bool>((!reference.status.has_failure())));
-    expect_waveform_arena(reference.rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
-    expect_waveform_arena(view.waveform_row_count == reference.rows.size());
+    expect_waveform_arena(reference.rows.size() == audio::maximum_aligned_waveform_rows);
+    expect_waveform_arena(view.waveform_rows.size() == reference.rows.size());
     for (std::size_t index=0; index<reference.rows.size(); ++index) {
         const auto& row = view.waveform_rows[index];
         const auto& expected = reference.rows[index];
@@ -5220,14 +5214,14 @@ void check_mixed_production_projection(channel_projection_fixture_t& fixture,
         [&](asset_id_t) { ++requests; return fixture.channel_analysis; }, visible};
     populate_bmson_waveform_projection(context);
     INFO("requests=" << requests << " cache entries=" << fixture.cache.stems.stem_waveforms.size()
-         << " projected views=" << fixture.flattened.view.compose.stem_waveform_count);
+         << " projected views=" << fixture.flattened.view.compose.stem_waveforms.size());
     expect_gpu_work(requests == 3 && fixture.cache.stems.stem_waveforms.size() == 3);
-    expect_gpu_work(fixture.flattened.view.compose.stem_waveform_count == 3);
+    expect_gpu_work(fixture.flattened.view.compose.stem_waveforms.size() == 3);
     expect_gpu_work(fixture.cache.waveform.channel_projection.view.value().rows.empty());
     expect_gpu_work(!fixture.cache.waveform.channel_waveform_slices.value());
     const std::vector<std::uint64_t> expected{71001, 71500, 72001};
     std::vector<std::uint64_t> keys;
-    for (std::size_t index = 0; index < fixture.flattened.view.compose.stem_waveform_count; ++index)
+    for (std::size_t index = 0; index < fixture.flattened.view.compose.stem_waveforms.size(); ++index)
         keys.push_back(fixture.flattened.view.compose.stem_waveforms[index].stem_key);
     std::ranges::sort(keys);
     expect_gpu_work(keys == expected);
@@ -5674,21 +5668,20 @@ struct packed_projection_fixture_t : channel_projection_fixture_t {
             [&](asset_id_t) { return ready ? channel_analysis : nullptr; }};
         populate_bmson_waveform_projection(context);
     }
-    auto piece() const -> const WormUiComposeStemWaveformView& {
-        const auto views = std::span(flattened.view.compose.stem_waveforms,
-                                     flattened.view.compose.stem_waveform_count);
+    auto piece() const -> const wormedit::ui::compose_stem_waveform_view_t& {
+        const auto views = std::span(flattened.view.compose.stem_waveforms);
         const auto found = std::ranges::find(views, std::uint64_t{74000},
-                                             &WormUiComposeStemWaveformView::stem_key);
+                                             &wormedit::ui::compose_stem_waveform_view_t::stem_key);
         expect_gpu_work(found != views.end());
         return *found;
     }
 };
 void check_packed_clip_rows(const packed_projection_fixture_t& fixture) {
     const auto& piece = fixture.piece();
-    expect_gpu_work(piece.piece_kind == WORM_UI_WAVEFORM_PIECE_PACKED_EVENT);
-    expect_gpu_work(piece.source_lane_id == 3 && !piece.pending && piece.row_count > 0);
+    expect_gpu_work(piece.piece_kind == wormedit::ui::compose_waveform_piece_kind_t::packed_event);
+    expect_gpu_work(piece.source_lane_id == object_id_t{3} && !piece.pending && piece.rows.size() > 0);
     const auto downscroll = compose_field_downscroll(fixture.history.document.charts.front());
-    for (const auto& row : std::span(piece.rows, piece.row_count)) {
+    for (const auto& row : piece.rows) {
         expect_gpu_work(downscroll ? row.y_pixels >= 99 : row.y_pixels <= 101);
         expect_gpu_work(row.absolute_peak[0] >= .20f);
     }
@@ -5723,7 +5716,7 @@ TEST_CASE("BMSON packed waveform pending band stays inside its event interval",
     packed_projection_fixture_t fixture;
     fixture.project_packed(false);
     const auto piece = fixture.piece();
-    expect_gpu_work(piece.pending && piece.row_count == 0 && piece.bounded);
+    expect_gpu_work(piece.pending && piece.rows.size() == 0 && piece.bounded);
     expect_gpu_work(piece.end_y_pixels - piece.begin_y_pixels <= 101);
     expect_gpu_work(piece.begin_y_pixels >= 0 && piece.end_y_pixels <= 200);
     fixture.project_packed();
@@ -5747,7 +5740,7 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     fixture.interaction.viewport_scroll_pixels = 220;
     fixture.project_packed();
     const auto& piece = fixture.piece();
-    expect_gpu_work(!piece.pending && piece.row_count > 0);
+    expect_gpu_work(!piece.pending && piece.rows.size() > 0);
     expect_gpu_work(fixture.cache.stems.packed_waveform_row_table.clock.value().total_rows > authored_rows);
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock.value().total_rows == authored_rows);
     expect_gpu_work(fixture.cache.timing.marker_timing_index->total_rows == authored_rows);
@@ -5820,7 +5813,7 @@ TEST_CASE("Compose BGM dispatcher reaches last widened lane and clamps resized c
     const auto& view = fixture.flattened.view.compose;
     const auto maximum = 996.0 - fixture.cache.frame.preview_scene_request.bgm_pane_width_pixels;
     expect_compose_test(std::abs(fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[1] - maximum) < 1e-6);
-    expect_compose_test(view.bgm_lanes[view.bgm_lane_count - 1].source_lane_id == 905);
+    expect_compose_test(view.bgm_lanes[view.bgm_lanes.size() - 1].source_lane_id == object_id_t{905});
     scroll_resized_bgm(fixture, -10000);
     expect_compose_test(fixture.application.project.compose_view.bgm_horizontal_scroll_pixels[1] == 0);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
@@ -6243,7 +6236,7 @@ TEST_CASE("Compose routes a shifted BGM drop and projects transient amber hold g
     const auto& view = fixture.compose.flattened.view.compose;
     expect_compose_test(view.scene_available && view.move_conflict_count == 0);
     expect_compose_test(view.move_to_bgm_count == 1);
-    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    const auto events = std::span(view.bgm_events);
     expect_compose_test(std::ranges::any_of(events, [](const auto& event) {
         return event.proposal_ghost && event.has_tail && !event.move_conflict;
     }));
@@ -6269,7 +6262,7 @@ TEST_CASE("Compose captures the collision preference and previews every displace
     fixture.compose.project();
     const auto& view = fixture.compose.flattened.view.compose;
     expect_compose_test(view.scene_available && view.move_conflict_count == 0 && view.move_to_bgm_count == 2);
-    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    const auto events = std::span(view.bgm_events);
     expect_compose_test(std::ranges::count_if(events, [](const auto& event) {
         return event.proposal_ghost && !event.move_conflict;
     }) == 2);
@@ -6289,7 +6282,7 @@ TEST_CASE("Compose shows rejected BGM displacement destinations in red and commi
     fixture.compose.project();
     const auto& view = fixture.compose.flattened.view.compose;
     expect_compose_test(view.scene_available && view.move_conflict_count == 1);
-    expect_compose_test(std::ranges::any_of(std::span(view.bgm_events, view.bgm_event_count), [](const auto& event) {
+    expect_compose_test(std::ranges::any_of(std::span(view.bgm_events), [](const auto& event) {
         return event.proposal_ghost && event.move_conflict;
     }));
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
@@ -6358,9 +6351,9 @@ TEST_CASE("Compose mixed move projects BGM tails and collision ghosts without a 
     const auto& view = fixture.compose.flattened.view.compose;
     expect_compose_test(view.scene_available && view.move_to_bgm_count == 0);
     expect_compose_test((view.move_conflict_count != 0) == collision);
-    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    const auto events = std::span(view.bgm_events);
     expect_compose_test(std::ranges::any_of(events, [collision](const auto& event) {
-        return event.event_id == 401 && event.proposal_ghost && event.has_tail && event.move_conflict == collision;
+        return event.event_id == object_id_t{401} && event.proposal_ghost && event.has_tail && event.move_conflict == collision;
     }));
     expect_compose_test(fixture.compose.history.undo.empty());
 }
@@ -6424,10 +6417,10 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     fixture.history.document.charts.front().sound_channels[1].events.front().continuation = true;
     t475_project(fixture);
     const auto& compose = fixture.flattened.view.compose;
-    const auto lanes = std::span(compose.bgm_lanes, compose.bgm_lane_count);
-    const auto lane = std::ranges::find(lanes, uint64_t{601}, &WormUiComposeBgmLaneView::source_lane_id);
+    const auto lanes = std::span(compose.bgm_lanes);
+    const auto lane = std::ranges::find(lanes, object_id_t{601}, &wormedit::ui::compose_bgm_lane_view_t::source_lane_id);
     t475_require(lane != lanes.end());
-    t475_check(lane->bmson_channel_id == 301 && lane->bmson_channel_continues);
+    t475_check(lane->bmson_channel_id == object_id_t{301} && lane->bmson_channel_continues);
     const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     t475_project(fixture);
     t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds);
@@ -7007,11 +7000,10 @@ TEST_CASE("BGM-only charts receive canvas width and mix controls without note in
     (void)dispatch_compose_bgm_mix_inputs(action, fixture.history, *fixture.binding.value, fixture.application);
     fixture.project();
     expect_compose_test(!fixture.interaction);
-    expect_compose_test(fixture.flattened.view.compose.bgm_lane_count == 3);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes.size() == 3);
     expect_compose_test(fixture.flattened.view.compose.bgm_mix_available);
     expect_compose_test(fixture.flattened.view.compose.bgm_lanes[0].muted);
-    for (const auto& lane : std::span(fixture.flattened.view.compose.bgm_lanes,
-        fixture.flattened.view.compose.bgm_lane_count)) expect_compose_test(lane.bounds.right <= 800);
+    for (const auto& lane : std::span(fixture.flattened.view.compose.bgm_lanes)) expect_compose_test(lane.bounds.right <= 800);
 }
 
 
@@ -7026,9 +7018,9 @@ TEST_CASE("Compose classifies armable BGM stem heads after projection and cache 
     for (int pass = 0; pass < 2; ++pass) {
         t475_project(fixture);
         const auto& view = fixture.flattened.view.compose;
-        const auto events = std::span(view.bgm_events, view.bgm_event_count);
-        const auto stem = std::ranges::find(events, uint64_t{500}, &WormUiComposeBgmEventView::event_id);
-        const auto packed = std::ranges::find(events, uint64_t{502}, &WormUiComposeBgmEventView::event_id);
+        const auto events = std::span(view.bgm_events);
+        const auto stem = std::ranges::find(events, object_id_t{500}, &wormedit::ui::compose_bgm_event_view_t::event_id);
+        const auto packed = std::ranges::find(events, object_id_t{502}, &wormedit::ui::compose_bgm_event_view_t::event_id);
         t475_require(stem != events.end());
         t475_require(packed != events.end());
         t475_check(stem->armable_stem == !missing);
@@ -7709,7 +7701,7 @@ TEST_CASE("Oversized owned Compose input batches cancel the active gesture",
 }
 
 namespace {
-void refill_owned_scene_geometry(compose_test_fixture_t& fixture) {
+void refill_owned_scene_geometry(compose_test_fixture_t& fixture, bool bgm_only = false) {
     const auto& chart = fixture.history.document.charts.front();
     const auto& index = *fixture.cache.scene.index.value();
     const auto& interaction = *fixture.cache.frame.interaction_view;
@@ -7728,6 +7720,8 @@ void refill_owned_scene_geometry(compose_test_fixture_t& fixture) {
         .playable_field_width = view.playable_field_right_pixels - view.playable_field_left_pixels,
         .lane_key_bindings_truncated = false};
     compose_projection_detail::populate_compose_sound_labels(projection);
+    compose_projection_detail::build_compose_bgm_view(projection, fixture.cache);
+    if (bgm_only) return;
     compose_projection_detail::build_compose_layout_and_notes_view(projection);
     populate_lane_layout_segments(fixture.flattened, chart,
         index.measures, interaction, false, fixture.flattened.view.compose);
@@ -7823,4 +7817,141 @@ TEST_CASE("Compose layout segment lists exceed the retired storage cutoff", "[sy
     expect_compose_test(view.lane_layout_segments.size() == segment_count && !view.truncated);
     expect_compose_test(view.lane_layout_segments.back().segment_id == object_id_t{12048});
     expect_compose_test(flattened.owned_arena_committed_bytes() == 0);
+}
+
+TEST_CASE("Owned populated Compose BGM waveform and stem views refill without heap allocations",
+          "[sys][compose-bgm][waveform-projection][stem][allocation]") {
+    compose_test_fixture_t bgm(bgm_arena_song(format_family_t::bms));
+    bgm.project();
+    refill_owned_scene_geometry(bgm, true);
+    envelope_projection_fixture_t waveform;
+    waveform.project();
+    channel_projection_fixture_t stems;
+    const bmson_waveform_projection_context_t context{stems.flattened, stems.history,
+        stems.workspace, &stems.interaction, stems.cache,
+        retained_sources_for(stems.history.document, stems.project_sources),
+        {stems.asset, stems.channel_analysis}, {stems.asset, stems.channel_analysis}, 1,
+        [&](asset_id_t) { return stems.channel_analysis; }};
+    populate_bmson_waveform_projection(context);
+    expect_compose_test(!bgm.flattened.view.compose.bgm_lanes.empty());
+    expect_compose_test(!bgm.flattened.view.compose.bgm_events.empty());
+    expect_compose_test(!waveform.flattened.view.compose.waveform_rows.empty());
+    expect_compose_test(!waveform.flattened.view.compose.waveform_overview_rows.empty());
+    expect_compose_test(!stems.flattened.view.compose.stem_waveforms.empty());
+    expect_compose_test(!stems.flattened.view.compose.stem_waveforms.front().rows.empty());
+    const auto* events = bgm.flattened.view.compose.bgm_events.data();
+    const auto* rows = waveform.flattened.view.compose.waveform_rows.data();
+    const auto* pieces = stems.flattened.view.compose.stem_waveforms.data();
+    const auto before = frame_heap_allocation_snapshot();
+    refill_owned_scene_geometry(bgm, true);
+    const auto available = project_waveform_frame(waveform);
+    populate_bmson_waveform_projection(context);
+    const auto after = frame_heap_allocation_snapshot();
+    check_heap_counter(after.count, before.count);
+    check_heap_counter(after.bytes, before.bytes);
+    expect_compose_test(available);
+    expect_compose_test(bgm.flattened.view.compose.bgm_events.data() == events);
+    expect_compose_test(waveform.flattened.view.compose.waveform_rows.data() == rows);
+    expect_compose_test(stems.flattened.view.compose.stem_waveforms.data() == pieces);
+    const auto event_capacity = bgm.flattened.view.compose.bgm_events.capacity();
+    const auto row_capacity = waveform.flattened.view.compose.waveform_rows.capacity();
+    const auto piece_capacity = stems.flattened.view.compose.stem_waveforms.capacity();
+    bgm.flattened.reset();
+    waveform.flattened.reset();
+    stems.flattened.reset();
+    expect_compose_test(bgm.flattened.view.compose.bgm_events.empty() &&
+        bgm.flattened.view.compose.bgm_events.capacity() == event_capacity);
+    expect_compose_test(waveform.flattened.view.compose.waveform_rows.empty() &&
+        waveform.flattened.view.compose.waveform_rows.capacity() == row_capacity);
+    expect_compose_test(stems.flattened.view.compose.stem_waveforms.empty() &&
+        stems.flattened.view.compose.stem_waveforms.capacity() == piece_capacity);
+}
+
+
+TEST_CASE("Compose BGM event view has no retired storage cutoff", "[sys][compose-bgm]") {
+    constexpr std::size_t event_count = 32769;
+    frontend_workspace_view_t flattened;
+    std::vector<editor_field_bgm_event_geometry_t> events(event_count);
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        events[index].event = object_id_t{index + 1};
+        events[index].source_lane = object_id_t{1};
+        events[index].bounds = {.left = 0, .top = 0, .right = 20, .bottom = 10};
+    }
+    // Exercise the view storage owner directly: scene admission retains its separate
+    // primitive work budget, while projecting an admitted list must not truncate it.
+    compose_projection_detail::build_compose_bgm_events_view(flattened, events, flattened.view.compose);
+    expect_compose_test(flattened.view.compose.bgm_events.size() == event_count);
+    expect_compose_test(flattened.view.compose.bgm_events.back().event_id == object_id_t{event_count});
+    expect_compose_test(!flattened.view.compose.truncated);
+}
+
+
+TEST_CASE("Compose direct sample waveform cache refreshes its source style and viewport",
+          "[sys][waveform-projection][allocation]") {
+    envelope_projection_fixture_t fixture;
+    fixture.flattened.view.compose.viewport_height_pixels = 32;
+    prepare_waveform_sample_points(fixture);
+    fixture.project();
+    const auto& rows = fixture.flattened.view.compose.waveform_rows;
+    expect_compose_test(!rows.empty() && rows.front().sample_point);
+    expect_compose_test(std::abs(rows.front().samples[0] - .8f) < .00001f);
+    const auto builds = fixture.cache.waveform.direct_projection.build_count();
+    const auto before = frame_heap_allocation_snapshot();
+    const auto available = project_waveform_frame(fixture);
+    const auto after = frame_heap_allocation_snapshot();
+    expect_compose_test(available);
+    check_heap_counter(after.count, before.count);
+    check_heap_counter(after.bytes, before.bytes);
+    expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == builds);
+
+    const auto previous_size = rows.size();
+    fixture.flattened.view.compose.viewport_height_pixels = 40;
+    fixture.project();
+    expect_compose_test(rows.size() > previous_size);
+    expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == builds + 1);
+    fixture.style.detail_level = false;
+    fixture.project();
+    expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == builds + 2);
+    fixture.style.detail_level = true;
+    fixture.style.sample_points = false;
+    fixture.project();
+    expect_compose_test(std::ranges::none_of(rows, &wormedit::ui::compose_waveform_row_view_t::sample_point));
+    fixture.style.sample_points = true;
+    fixture.project();
+    expect_compose_test(std::ranges::all_of(rows, &wormedit::ui::compose_waveform_row_view_t::sample_point));
+
+    auto replacement = fixture.analysis;
+    replacement.waveform->key.source = {"replacement:direct-samples", "content:v2"};
+    const audio::audio_block_key_t key{replacement.waveform->key.source, 0};
+    const std::vector<float> pcm(32768, .2f);
+    expect_compose_test(fixture.blocks.store(key, 16384, pcm).has_value());
+    fixture.analysis = std::move(replacement);
+    fixture.project();
+    expect_compose_test(!rows.empty() && rows.front().sample_point);
+    expect_compose_test(std::abs(rows.front().samples[0] - .2f) < .00001f);
+
+    const auto original_stats = fixture.blocks.stats();
+    const auto original_builds = fixture.cache.waveform.direct_projection.build_count();
+    const std::vector<float> replacement_pcm(32768, .4f);
+    expect_compose_test(fixture.blocks.store(key, 16384, replacement_pcm).has_value());
+    auto current_stats = fixture.blocks.stats();
+    expect_compose_test(current_stats.entries == original_stats.entries &&
+        current_stats.cached_frames == original_stats.cached_frames &&
+        current_stats.evictions == original_stats.evictions);
+    fixture.project();
+    expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == original_builds + 1);
+    expect_compose_test(!rows.empty() && rows.front().sample_point);
+    expect_compose_test(std::abs(rows.front().samples[0] - .4f) < .00001f);
+
+    fixture.blocks.clear_source(key.source);
+    const audio::audio_block_key_t unrelated{{"unrelated:direct-samples", "content:v1"}, 0};
+    expect_compose_test(fixture.blocks.store(unrelated, 16384, replacement_pcm).has_value());
+    current_stats = fixture.blocks.stats();
+    expect_compose_test(current_stats.entries == original_stats.entries &&
+        current_stats.cached_frames == original_stats.cached_frames &&
+        current_stats.evictions == original_stats.evictions);
+    fixture.project();
+    expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == original_builds + 2);
+    expect_compose_test(!rows.empty());
+    expect_compose_test(std::abs(rows.front().samples[0] - .4f) > .1f);
 }

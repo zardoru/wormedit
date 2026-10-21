@@ -42,6 +42,7 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
         history.document, projection.inputs.scope.chart_scope.chart), flattened.query_session_generation};
     if (flattened.compose.sound_labels_source != source) {
         flattened.compose.sound_labels.clear();
+        flattened.compose.stem_filenames.clear();
         flattened.compose.sound_labels_source = source;
     }
     auto& visible_sound_ids = flattened.compose.visible_sound_ids;
@@ -49,7 +50,7 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
     for (const auto& endpoint : projection.scene.note_endpoints)
         if (endpoint.sound) visible_sound_ids.push_back(endpoint.sound->value);
     const auto bgm_event_count =
-        std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
+        bgm_events.size();
     for (std::size_t index = 0; index < bgm_event_count; ++index)
         if (bgm_events[index].sound) visible_sound_ids.push_back(bgm_events[index].sound->value);
     std::ranges::sort(visible_sound_ids);
@@ -310,8 +311,8 @@ void build_compose_bgm_events_view(
     const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
     WormUiComposeView& view) {
     const auto event_count =
-        std::min(events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.event, event_count)) {
+        events.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.bgm_events, event_count)) {
         view.truncated = true;
         return;
     }
@@ -320,11 +321,11 @@ void build_compose_bgm_events_view(
         const auto sound = event.sound ? flattened.compose.sound_labels.find(event.sound->value)
                                        : flattened.compose.sound_labels.end();
         append_compose_geometry_row(
-            flattened.compose.bgm.event,
+            flattened.view.compose.bgm_events,
             {.bounds = wormedit::ui::compose_rect_t::from(event.bounds),
-             .event_id = event.event.value,
-             .source_lane_id = event.source_lane.value,
-             .sound_id = event.sound ? event.sound->value : 0,
+             .event_id = event.event,
+             .source_lane_id = event.source_lane,
+             .sound_id = event.sound.value_or(wormedit::resource_id_t{}),
              .has_sound = event.sound.has_value(),
              .bmson_slice = event.bmson_restart.has_value(),
              .bmson_restart = event.bmson_restart.value_or(false),
@@ -355,19 +356,19 @@ void build_compose_bgm_events_view(
 }
 
 auto compose_stem_filename(const compose_scene_projection_context_t& projection,
-                           const wormedit::bgm_source_lane_t& lane) -> const char* {
-    if (!lane.stem_channel)
-        return nullptr;
+                           const wormedit::bgm_source_lane_t& lane) -> std::string_view {
+    if (!lane.stem_channel) return {};
     const auto channel = std::ranges::find(projection.inputs.scope.chart_scope.chart.sound_channels,
                                            *lane.stem_channel, &wormedit::sound_channel_t::id);
-    if (channel == projection.inputs.scope.chart_scope.chart.sound_channels.end())
-        return nullptr;
+    if (channel == projection.inputs.scope.chart_scope.chart.sound_channels.end()) return {};
     const auto* asset = projection.history().document.find_audio_asset(channel->source_clip.source);
-    if (asset == nullptr || !projection.inputs.frame.flattened.arena())
-        return nullptr;
+    if (!asset) return {};
+    auto& filenames = projection.inputs.frame.flattened.compose.stem_filenames;
+    const auto found = filenames.find(asset->id.value);
+    if (found != filenames.end()) return found->second;
     const auto name = asset->source_path.filename().generic_u8string();
-    return arena_string(*projection.inputs.frame.flattened.arena(),
-                        {reinterpret_cast<const char*>(name.data()), name.size()});
+    return filenames.emplace(asset->id.value,
+        std::string{reinterpret_cast<const char*>(name.data()), name.size()}).first->second;
 }
 
 void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t& projection,
@@ -376,14 +377,14 @@ void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t&
     const auto& chart = projection.inputs.scope.chart_scope.chart;
     if (chart.source_family != format_family_t::bmson)
         return;
-    for (auto& lane : projection.inputs.frame.flattened.compose.bgm.lane) {
+    for (auto& lane : projection.inputs.frame.flattened.view.compose.bgm_lanes) {
         const auto source = std::ranges::find(
-            chart.bgm_source_lanes, object_id_t{lane.source_lane_id}, &bgm_source_lane_t::id);
+            chart.bgm_source_lanes, lane.source_lane_id, &bgm_source_lane_t::id);
         if (source == chart.bgm_source_lanes.end() || !source->stem_channel)
             continue;
-        lane.bmson_channel_id = source->stem_channel->value;
+        lane.bmson_channel_id = *source->stem_channel;
         const auto continues =
-            cache.stems.draw_stem_sources.value().channel_continues.find(lane.bmson_channel_id);
+            cache.stems.draw_stem_sources.value().channel_continues.find(lane.bmson_channel_id.value);
         lane.bmson_channel_continues =
             continues != cache.stems.draw_stem_sources.value().channel_continues.end() && continues->second;
     }
@@ -396,8 +397,8 @@ void build_compose_bgm_view(const compose_scene_projection_context_t& projection
     auto& view = projection.inputs.frame.view();
     const auto& bgm_lanes = scene.bgm_lanes;
     const auto bgm_lane_count =
-        std::min(bgm_lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.lane, bgm_lane_count)) {
+        bgm_lanes.size();
+    if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.bgm_lanes, bgm_lane_count)) {
         view.truncated = true;
         return;
     }
@@ -406,16 +407,16 @@ void build_compose_bgm_view(const compose_scene_projection_context_t& projection
         const auto source = std::ranges::find(projection.inputs.scope.chart_scope.chart.bgm_source_lanes,
                                               lane.source_lane, &wormedit::bgm_source_lane_t::id);
         append_compose_geometry_row(
-            flattened.compose.bgm.lane,
+            flattened.view.compose.bgm_lanes,
             {.bounds = wormedit::ui::compose_rect_t::from(lane.bounds),
-             .source_lane_id = lane.source_lane.value,
+             .source_lane_id = lane.source_lane,
              .source_order = lane.source_order,
              .stem = source != projection.inputs.scope.chart_scope.chart.bgm_source_lanes.end() &&
                      source->stem_channel.has_value(),
              .width_pixels = lane.unclipped_right_pixels - lane.unclipped_left_pixels,
              .resize_edge_pixels = lane.unclipped_right_pixels,
              .filename = source == projection.inputs.scope.chart_scope.chart.bgm_source_lanes.end()
-                             ? nullptr
+                             ? std::string_view{}
                              : compose_stem_filename(projection, *source)},
             view.truncated);
     }
@@ -606,16 +607,8 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
 void publish_compose_scene(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     auto& view = projection.inputs.frame.view();
-    view.bgm_lanes = flattened.compose.bgm.lane.data();
-    view.bgm_lane_count = flattened.compose.bgm.lane.size();
-    view.bgm_events = flattened.compose.bgm.event.data();
-    view.bgm_event_count = flattened.compose.bgm.event.size();
     view.bga_events = flattened.compose.bga_event.data();
     view.bga_event_count = flattened.compose.bga_event.size();
-    view.bmson_marker_drafts = flattened.compose.bgm.draft.data();
-    view.bmson_marker_draft_count = flattened.compose.bgm.draft.size();
-    view.bmson_marker_move_preview =
-        flattened.compose.bgm.move ? &*flattened.compose.bgm.move : nullptr;
 }
 
 bool initialize_compose_view_state(
@@ -683,28 +676,22 @@ bool initialize_compose_view_state(
     view.staged_bmson_marker_count = 0;
     view.staged_bmson_marker_playable_lanes = nullptr;
     view.staged_bmson_marker_restarts = nullptr;
-    view.bmson_marker_drafts = nullptr;
-    view.bmson_marker_draft_count = 0;
-    view.bmson_marker_move_preview = nullptr;
-    view.waveform_rows = nullptr;
-    view.waveform_row_count = 0;
-    view.channel_waveform_rows = nullptr;
-    view.channel_waveform_row_count = 0;
-    view.channel_waveform_source_lane_id = 0;
-    view.waveform_overview_rows = nullptr;
-    view.waveform_overview_row_count = 0;
+    view.bmson_marker_drafts.clear();
+    view.bmson_marker_move_preview.reset();
+    view.waveform_rows.clear();
+    view.channel_waveform_rows.clear();
+    view.channel_waveform_source_lane_id = {};
+    view.waveform_overview_rows.clear();
     view.waveform_overview_visible_begin_fraction = 0.0;
     view.waveform_overview_visible_end_fraction = 0.0;
     view.waveform_beat_zero_visible = false;
     view.waveform_beat_zero_fraction = 0.0;
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
-    view.bgm_bar_rows = nullptr;
-    view.bgm_bar_row_count = 0;
+    view.bgm_bar_rows.clear();
     view.bgm_bar_begin_fraction = 0.0;
     view.bgm_bar_end_fraction = 1.0;
-    view.bgm_bar_marks = nullptr;
-    view.bgm_bar_mark_count = 0;
+    view.bgm_bar_marks.clear();
     view.audio_offset_editable = false;
     view.audio_offset_locked = application_state.project.timing_recipe.audio_offset_locked;
     view.waveform_audio_offset_numerator = 0;

@@ -3,10 +3,14 @@
 #include "metadata_audio.h"
 #include "hitsounds.h"
 #include "preview_audio.h"
+#include <array>
+#include <algorithm>
+#include <span>
 #include <cmath>
 #include <optional>
 #include <string_view>
 #include <vector>
+#include <tuple>
 
 namespace wormedit::ui {
 struct compose_rect_t {
@@ -307,80 +311,104 @@ struct compose_cursor_view_t {
 };
 } // namespace wormedit::ui
 
-typedef struct WormUiComposeBgmLaneView {
+namespace wormedit::ui {
+struct compose_bgm_lane_view_t {
     wormedit::ui::compose_rect_t bounds;
-    uint64_t source_lane_id;
-    size_t source_order;
-    bool stem;
-    bool muted;
-    bool solo;
-    bool mix_silent;
-    double width_pixels;
-    double resize_edge_pixels;
-    const char* filename;
-    uint64_t bmson_channel_id;
-    bool bmson_channel_continues;
-} WormUiComposeBgmLaneView;
+    wormedit::object_id_t source_lane_id{};
+    size_t source_order{};
+    bool stem{};
+    bool muted{};
+    bool solo{};
+    bool mix_silent{};
+    double width_pixels{};
+    double resize_edge_pixels{};
+    std::string_view filename{};
+    wormedit::object_id_t bmson_channel_id{};
+    bool bmson_channel_continues{};
+    auto operator==(const compose_bgm_lane_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBgmEventView {
+namespace wormedit::ui {
+struct compose_bgm_event_view_t {
     wormedit::ui::compose_rect_t bounds;
-    uint64_t event_id;
-    uint64_t source_lane_id;
-    uint64_t sound_id;
-    bool has_sound;
-    bool bmson_slice;
-    bool bmson_restart;
-    bool selected;
-    bool has_tail;
-    bool proposal_ghost;
-    bool move_conflict;
-    bool armable_stem; // Valid stem resource, independent of Sounds filtering.
-    const char* sound_label;
-    const char* sound_detail;
-    bool semantic_color_visible;
-    uint8_t semantic_red;
-    uint8_t semantic_green;
-    uint8_t semantic_blue;
-    uint8_t semantic_alpha;
-    float head_top_pixels;
-    float head_bottom_pixels;
-} WormUiComposeBgmEventView;
+    wormedit::object_id_t event_id{};
+    wormedit::object_id_t source_lane_id{};
+    wormedit::resource_id_t sound_id{};
+    bool has_sound{};
+    bool bmson_slice{};
+    bool bmson_restart{};
+    bool selected{};
+    bool has_tail{};
+    bool proposal_ghost{};
+    bool move_conflict{};
+    bool armable_stem{}; // Valid stem resource, independent of Sounds filtering.
+    std::string_view sound_label{};
+    std::string_view sound_detail{};
+    bool semantic_color_visible{};
+    uint8_t semantic_red{};
+    uint8_t semantic_green{};
+    uint8_t semantic_blue{};
+    uint8_t semantic_alpha{};
+    float head_top_pixels{};
+    float head_bottom_pixels{};
+    auto operator==(const compose_bgm_event_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBgmDraftView {
+namespace wormedit::ui {
+struct compose_bgm_draft_view_t {
     wormedit::ui::compose_rect_t bounds;
-    bool restart;
-    bool playable;
-} WormUiComposeBgmDraftView;
+    bool restart{};
+    bool playable{};
+    auto operator==(const compose_bgm_draft_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeWaveformRowView {
-    double y_pixels;
-    float absolute_peak[2];
-    float rms[2];
-    bool sample_point;
-    float samples[2];
-} WormUiComposeWaveformRowView;
+namespace wormedit::ui {
+struct compose_waveform_row_view_t {
+    double y_pixels{};
+    std::array<float, 2> absolute_peak{};
+    std::array<float, 2> rms{};
+    bool sample_point{};
+    std::array<float, 2> samples{};
+    auto operator==(const compose_waveform_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeWaveformOverviewRowView {
-    double audio_fraction;
-    float absolute_peak;
-} WormUiComposeWaveformOverviewRowView;
+namespace wormedit::ui {
+struct compose_waveform_overview_row_view_t {
+    double audio_fraction{};
+    float absolute_peak{};
+    auto operator==(const compose_waveform_overview_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBgmBarMarkView {
-    double audio_fraction;
-    uint32_t measure;
-} WormUiComposeBgmBarMarkView;
+namespace wormedit::ui {
+struct compose_bgm_bar_mark_view_t {
+    double audio_fraction{};
+    uint32_t measure{};
+    auto operator==(const compose_bgm_bar_mark_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // A beat or audio bookmark placed on the BGM bar; the label is owned by the bookmark view.
-typedef struct WormUiComposeBgmBarBookmarkView {
-    double audio_fraction;
-    const char* label;
-    bool audio;
-} WormUiComposeBgmBarBookmarkView;
+namespace wormedit::ui {
+struct compose_bgm_bar_bookmark_view_t {
+    double audio_fraction{};
+    std::string_view label{};
+    bool audio{};
+    auto operator==(const compose_bgm_bar_bookmark_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBgmMovePreviewView {
+namespace wormedit::ui {
+struct compose_bgm_move_preview_view_t {
     wormedit::ui::compose_rect_t bounds;
-    bool valid;
-} WormUiComposeBgmMovePreviewView;
+    bool valid{};
+    auto operator==(const compose_bgm_move_preview_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // A visible palette slot. The application retains stable IDs, names, and
 // colors; the frontend must return the ID rather than a transient index.
@@ -486,36 +514,46 @@ typedef enum WormUiShortcutModifier {
     WORM_UI_SHORTCUT_MODIFIER_META = 1 << 3,
 } WormUiShortcutModifier;
 
-typedef enum WormUiWaveformPieceKind {
-    WORM_UI_WAVEFORM_PIECE_STEM = 0,
-    WORM_UI_WAVEFORM_PIECE_PACKED_EVENT = 2,
-} WormUiWaveformPieceKind;
+namespace wormedit::ui {
+enum class compose_waveform_piece_kind_t { stem = 0, packed_event = 2 };
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeStemWaveformView {
+namespace wormedit::ui {
+struct compose_stem_waveform_view_t {
     /* Stable channel identity, independent of visible ordering and lane position. */
-    uint64_t stem_key;
-    uint64_t source_lane_id;
-    const WormUiComposeWaveformRowView* rows;
-    size_t row_count;
+    uint64_t stem_key{};
+    wormedit::object_id_t source_lane_id{};
+    std::span<const compose_waveform_row_view_t> rows{};
     /* The audio is still decoding or missing: draw a placeholder band instead of a waveform. */
-    bool pending;
-    WormUiWaveformPieceKind piece_kind;
+    bool pending{};
+    compose_waveform_piece_kind_t piece_kind{};
     /* Packed pending bands use event-bounded viewport coordinates. */
-    bool bounded;
-    double begin_y_pixels;
-    double end_y_pixels;
-} WormUiComposeStemWaveformView;
+    bool bounded{};
+    double begin_y_pixels{};
+    double end_y_pixels{};
+    auto operator==(const compose_stem_waveform_view_t& other) const -> bool {
+        return std::tie(stem_key, source_lane_id, pending, piece_kind, bounded,
+                        begin_y_pixels, end_y_pixels) ==
+                   std::tie(other.stem_key, other.source_lane_id, other.pending,
+                            other.piece_kind, other.bounded, other.begin_y_pixels,
+                            other.end_y_pixels) && std::ranges::equal(rows, other.rows);
+    }
+};
+} // namespace wormedit::ui
 
 /* Where a stem's audio is cut: the row of one slice point, drawn in the stem's BGM lane even when
    a note in the field stands for the point. Continue points are green and restarts orange; they
    light up with the point's tile (the note when object_is_note, else the BGM marker). */
-typedef struct WormUiComposeStemCutView {
-    double y_pixels;
-    uint64_t bgm_lane_id;
-    bool restart;
-    bool object_is_note;
-    uint64_t object_id;
-} WormUiComposeStemCutView;
+namespace wormedit::ui {
+struct compose_stem_cut_view_t {
+    double y_pixels{};
+    wormedit::object_id_t bgm_lane_id{};
+    bool restart{};
+    bool object_is_note{};
+    wormedit::object_id_t object_id{};
+    auto operator==(const compose_stem_cut_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef struct WormUiComposeBranchRowView {
     const char* display_text;
@@ -1209,23 +1247,18 @@ typedef struct WormUiComposeView {
     std::vector<wormedit::ui::compose_difference_view_t> differences;
     std::vector<wormedit::ui::compose_hold_view_t> hold_bodies;
     std::vector<wormedit::ui::compose_note_view_t> note_endpoints;
-    const WormUiComposeBgmLaneView* bgm_lanes;
-    size_t bgm_lane_count;
+    std::vector<wormedit::ui::compose_bgm_lane_view_t> bgm_lanes;
     bool bgm_mix_available;
-    const WormUiComposeBgmEventView* bgm_events;
-    size_t bgm_event_count;
-    const WormUiComposeWaveformRowView* waveform_rows;
-    size_t waveform_row_count;
+    std::vector<wormedit::ui::compose_bgm_event_view_t> bgm_events;
+    std::vector<wormedit::ui::compose_waveform_row_view_t> waveform_rows;
+    // Cached canvas passes need presence without copying waveform rows.
+    bool has_waveform_geometry{};
     /* BMSON stems other than the selected one, each drawn in its BGM lane. */
-    const WormUiComposeStemWaveformView* stem_waveforms;
-    size_t stem_waveform_count;
-    const WormUiComposeStemCutView* stem_cuts;
-    size_t stem_cut_count;
-    const WormUiComposeWaveformRowView* channel_waveform_rows;
-    size_t channel_waveform_row_count;
-    uint64_t channel_waveform_source_lane_id;
-    const WormUiComposeWaveformOverviewRowView* waveform_overview_rows;
-    size_t waveform_overview_row_count;
+    std::vector<wormedit::ui::compose_stem_waveform_view_t> stem_waveforms;
+    std::vector<wormedit::ui::compose_stem_cut_view_t> stem_cuts;
+    std::vector<wormedit::ui::compose_waveform_row_view_t> channel_waveform_rows;
+    wormedit::object_id_t channel_waveform_source_lane_id{};
+    std::vector<wormedit::ui::compose_waveform_overview_row_view_t> waveform_overview_rows;
     uint64_t waveform_overview_generation;
     double waveform_overview_visible_begin_fraction;
     double waveform_overview_visible_end_fraction;
@@ -1234,14 +1267,11 @@ typedef struct WormUiComposeView {
     uint64_t waveform_overview_total_frames;
     uint32_t waveform_overview_sample_rate;
     // The BGM bar shows [begin, end] of the song at full row resolution, with measure starts.
-    const WormUiComposeWaveformOverviewRowView* bgm_bar_rows;
-    size_t bgm_bar_row_count;
+    std::vector<wormedit::ui::compose_waveform_overview_row_view_t> bgm_bar_rows;
     double bgm_bar_begin_fraction;
     double bgm_bar_end_fraction;
-    const WormUiComposeBgmBarMarkView* bgm_bar_marks;
-    size_t bgm_bar_mark_count;
-    const WormUiComposeBgmBarBookmarkView* bgm_bar_bookmarks;
-    size_t bgm_bar_bookmark_count;
+    std::vector<wormedit::ui::compose_bgm_bar_mark_view_t> bgm_bar_marks;
+    std::vector<wormedit::ui::compose_bgm_bar_bookmark_view_t> bgm_bar_bookmarks;
     // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
     // available = the song has audio, reserved = the row is laid out (and takes vertical space).
     bool bgm_bar_available;
@@ -1279,9 +1309,8 @@ typedef struct WormUiComposeView {
     uint64_t waveform_proposed_audio_offset_denominator;
     bool waveform_timing_locked;
     bool waveform_analysis_pending;
-    const WormUiComposeBgmDraftView* bmson_marker_drafts;
-    size_t bmson_marker_draft_count;
-    const WormUiComposeBgmMovePreviewView* bmson_marker_move_preview;
+    std::vector<wormedit::ui::compose_bgm_draft_view_t> bmson_marker_drafts;
+    std::optional<wormedit::ui::compose_bgm_move_preview_view_t> bmson_marker_move_preview;
     std::optional<wormedit::ui::compose_cursor_view_t> cursor;
     bool area_selection_preview_visible;
     wormedit::ui::compose_rect_t area_selection_preview_bounds;

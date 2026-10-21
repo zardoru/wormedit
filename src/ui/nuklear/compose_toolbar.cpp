@@ -422,7 +422,7 @@ static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bo
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
     const bool disabled = view.waveform_timing_locked || view.audio_offset_locked || view.waveform_offset_drag_active ||
-                          !view.waveform_overview_row_count || state.inline_offset.inline_offset_open;
+                          !view.waveform_overview_rows.size() || state.inline_offset.inline_offset_open;
     const auto ten_ms = static_cast<std::int64_t>(std::max(1U, view.waveform_overview_sample_rate / 100U));
     if (disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevrons_left, "Nudge audio offset -10 ms"}.render(context))

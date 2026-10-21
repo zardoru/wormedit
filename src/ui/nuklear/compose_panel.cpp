@@ -297,21 +297,21 @@ static bool compose_geometry_note_elements_valid(const WormUiComposeView* view) 
             view->note_endpoints[index].glyph > static_cast<wormedit::lane_glyph_t>(wormedit::ui::last_arrow_glyph))
             return 0;
     }
-    for (size_t index = 0; index < view->bgm_lane_count; ++index) {
+    for (size_t index = 0; index < view->bgm_lanes.size(); ++index) {
         if (!view->bgm_lanes[index].bounds.is_valid() ||
-            view->bgm_lanes[index].source_lane_id == 0)
+            view->bgm_lanes[index].source_lane_id == wormedit::object_id_t{})
             return 0;
     }
-    for (size_t index = 0; index < view->bgm_event_count; ++index) {
+    for (size_t index = 0; index < view->bgm_events.size(); ++index) {
         if (!view->bgm_events[index].bounds.is_valid() ||
-            view->bgm_events[index].event_id == 0 || view->bgm_events[index].source_lane_id == 0)
+            view->bgm_events[index].event_id == wormedit::object_id_t{} || view->bgm_events[index].source_lane_id == wormedit::object_id_t{})
             return 0;
     }
 
     return true;
 }
 
-static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->waveform_row_count; ++index) {
+static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->waveform_rows.size(); ++index) {
         const auto& row = view->waveform_rows[index];
         if (!std::isfinite(row.y_pixels) || row.y_pixels < 0.0 ||
             row.y_pixels > view->viewport_height_pixels) {
@@ -325,7 +325,7 @@ static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* vi
             }
         }
     }
-    for (size_t index = 0; index < view->channel_waveform_row_count; ++index) {
+    for (size_t index = 0; index < view->channel_waveform_rows.size(); ++index) {
         const auto& row = view->channel_waveform_rows[index];
         if (!std::isfinite(row.y_pixels) || row.y_pixels < 0.0 ||
             row.y_pixels > view->viewport_height_pixels)
@@ -341,7 +341,7 @@ static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* vi
     return true;
 }
 
-static bool compose_geometry_bmson_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
+static bool compose_geometry_bmson_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->bmson_marker_drafts.size(); ++index) {
         if (!view->bmson_marker_drafts[index].bounds.is_valid()) {
             return 0;
         }
@@ -531,45 +531,33 @@ static bool compose_waveform_overview_valid(const WormUiComposeView* view) {
              view->waveform_proposed_beat_zero_fraction <= 1.0)) &&
            (!view->waveform_offset_drag_active ||
             view->waveform_proposed_audio_offset_denominator != 0) &&
-           (view->waveform_overview_row_count == 0 ||
+           (view->waveform_overview_rows.size() == 0 ||
             (view->waveform_overview_total_frames != 0 &&
              view->waveform_overview_sample_rate != 0 &&
              view->waveform_audio_offset_denominator != 0));
 }
 
 static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
-    if (view->bgm_bar_row_count > WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY ||
-        view->bgm_bar_mark_count > WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY ||
-        (view->bgm_bar_row_count != 0 && !view->bgm_bar_rows) ||
-        (view->bgm_bar_mark_count != 0 && !view->bgm_bar_marks))
-        return false;
-    if (view->bgm_bar_bookmark_count > WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY ||
-        (view->bgm_bar_bookmark_count != 0 && !view->bgm_bar_bookmarks))
-        return false;
-    if (view->bgm_bar_row_count == 0)
-        return view->bgm_bar_mark_count == 0 && view->bgm_bar_bookmark_count == 0;
+    if (view->bgm_bar_rows.size() == 0)
+        return view->bgm_bar_marks.size() == 0 && view->bgm_bar_bookmarks.size() == 0;
     if (!std::isfinite(view->bgm_bar_begin_fraction) || !std::isfinite(view->bgm_bar_end_fraction) ||
         view->bgm_bar_begin_fraction < 0.0 || view->bgm_bar_end_fraction > 1.0 ||
         view->bgm_bar_begin_fraction >= view->bgm_bar_end_fraction)
         return false;
-    return std::all_of(view->bgm_bar_marks, view->bgm_bar_marks + view->bgm_bar_mark_count,
-                       [](const WormUiComposeBgmBarMarkView& mark) {
+    return std::all_of(view->bgm_bar_marks.begin(), view->bgm_bar_marks.end(),
+                       [](const wormedit::ui::compose_bgm_bar_mark_view_t& mark) {
                            return std::isfinite(mark.audio_fraction);
                        }) &&
-           std::all_of(view->bgm_bar_bookmarks,
-                       view->bgm_bar_bookmarks + view->bgm_bar_bookmark_count,
-                       [](const WormUiComposeBgmBarBookmarkView& bookmark) {
-                           return std::isfinite(bookmark.audio_fraction) && bookmark.label;
+           std::all_of(view->bgm_bar_bookmarks.begin(),
+                       view->bgm_bar_bookmarks.end(),
+                       [](const wormedit::ui::compose_bgm_bar_bookmark_view_t& bookmark) {
+                           return std::isfinite(bookmark.audio_fraction);
                        });
 }
 
 static bool compose_scene_arrays_present(const WormUiComposeView* view) {
-    return (view->bgm_lane_count == 0 || view->bgm_lanes) &&
-           (view->bgm_event_count == 0 || view->bgm_events) &&
-           (view->waveform_row_count == 0 || view->waveform_rows) &&
-           (view->channel_waveform_row_count == 0 ||
-            (view->channel_waveform_rows && view->channel_waveform_source_lane_id != 0 &&
-             view->bgm_lane_count != 0)) &&
+    return (view->channel_waveform_rows.empty() ||
+            (view->channel_waveform_source_lane_id != wormedit::object_id_t{} && !view->bgm_lanes.empty())) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
            (view->branch_choice_count == 0 || view->branch_choices) &&
@@ -589,10 +577,8 @@ static bool compose_validation_check(bool accepted, const char* reason) {
     return accepted;
 }
 
-static bool overview_rows_valid(const WormUiComposeWaveformOverviewRowView* rows,
-                                std::size_t count, std::size_t capacity) {
-    if (count > capacity || (count != 0 && !rows)) return false;
-    for (std::size_t index = 0; index < count; ++index) {
+static bool overview_rows_valid(std::span<const wormedit::ui::compose_waveform_overview_row_view_t> rows) {
+    for (std::size_t index = 0; index < rows.size(); ++index) {
         const auto& row = rows[index];
         if (!std::isfinite(row.audio_fraction) || row.audio_fraction < 0 || row.audio_fraction > 1 ||
             !std::isfinite(row.absolute_peak) || row.absolute_peak < 0 || row.absolute_peak > 1)
@@ -604,12 +590,10 @@ static bool overview_rows_valid(const WormUiComposeWaveformOverviewRowView* rows
 const char* worm_ui_nuklear_compose_overview_error(const WormUiComposeView* view) {
     if (!view) return "missing overview view";
     if (!compose_waveform_overview_valid(view)) return "overview timing metadata";
-    if (!overview_rows_valid(view->waveform_overview_rows, view->waveform_overview_row_count,
-                             WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY))
+    if (!overview_rows_valid(view->waveform_overview_rows))
         return "overview row data";
     if (!compose_bgm_bar_valid(view)) return "overview window/markers";
-    if (!overview_rows_valid(view->bgm_bar_rows, view->bgm_bar_row_count,
-                             WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY))
+    if (!overview_rows_valid(view->bgm_bar_rows))
         return "overview bar row data";
     return nullptr;
 }
@@ -631,17 +615,12 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            compose_validation_check((view->staged_bmson_marker_count == 0 ||
             (view->staged_bmson_marker_playable_lanes != nullptr &&
              view->staged_bmson_marker_restarts != nullptr)), "(view->staged_bmson_marker_count == 0 || (view->staged_bmson_marker_playable_lanes != nullptr && view->staged_bmson_marker_restarts != nullptr))") &&
-           compose_validation_check(view->bmson_marker_draft_count <= view->staged_bmson_marker_count, "view->bmson_marker_draft_count <= view->staged_bmson_marker_count") &&
-           compose_validation_check((view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr), "(view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr)") &&
+           compose_validation_check(view->bmson_marker_drafts.size() <= view->staged_bmson_marker_count, "view->bmson_marker_drafts.size() <= view->staged_bmson_marker_count") &&
            compose_validation_check((view->proposed_grid_lines.size() == 0 || view->waveform_offset_drag_active ||
             view->beat_fit_drag_active), "(view->proposed_grid_lines.size() == 0 || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
            compose_validation_check(((view->timing_preview_rects.size() == 0 && view->timing_preview_markers.size() == 0) ||
             view->waveform_offset_drag_active || view->beat_fit_drag_active), "((view->timing_preview_rects.size() == 0 && view->timing_preview_markers.size() == 0) || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
            compose_validation_check(compose_beat_fit_valid(view), "compose_beat_fit_valid(view)") &&
-           compose_validation_check(view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY, "view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY") &&
-           compose_validation_check(view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY, "view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY") &&
-           compose_validation_check(view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY, "view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY") &&
-           compose_validation_check(view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY, "view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY") &&
            compose_validation_check(view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY, "view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY") &&
            compose_validation_check(view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY, "view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY") &&
            compose_validation_check(view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY, "view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY") &&
@@ -662,7 +641,7 @@ static void render_compose_waveform_overview(const ComposeOverviewContext& overv
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
         const auto center = bounds.y + bounds.h * 0.5f;
         const auto half_height = bounds.h * 0.43f;
-        for (size_t index = 0; index < view.waveform_overview_row_count; ++index) {
+        for (size_t index = 0; index < view.waveform_overview_rows.size(); ++index) {
             const auto& row = view.waveform_overview_rows[index];
             const auto x = bounds.x + static_cast<float>(row.audio_fraction) * bounds.w;
             nk_stroke_line(canvas, x, center - row.absolute_peak * half_height,
@@ -712,7 +691,7 @@ void worm_ui_nuklear_render_compose_minimap(
     action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
     action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
-        view->scene_available && view->waveform_overview_row_count != 0 &&
+        view->scene_available && view->waveform_overview_rows.size() != 0 &&
         bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
     if (available && canvas)
@@ -758,9 +737,9 @@ std::uint32_t bgm_bar_measure_step(double pixels_per_measure, float spacing) {
 
 // Average on-screen width of one measure, from the first and last published marks.
 double bgm_bar_pixels_per_measure(const WormUiComposeView& view, const BgmBarGeometry& geometry) {
-    if (view.bgm_bar_mark_count < 2) return 0.0;
+    if (view.bgm_bar_marks.size() < 2) return 0.0;
     const auto& first = view.bgm_bar_marks[0];
-    const auto& last = view.bgm_bar_marks[view.bgm_bar_mark_count - 1];
+    const auto& last = view.bgm_bar_marks[view.bgm_bar_marks.size() - 1];
     const auto measures = static_cast<double>(last.measure) - first.measure;
     if (measures <= 0.0) return 0.0;
     return (last.audio_fraction - first.audio_fraction) / (geometry.end - geometry.begin) *
@@ -771,9 +750,9 @@ void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const WormUiCompose
                            const BgmBarGeometry& geometry) {
     const auto center = geometry.bounds.y + geometry.bounds.h * 0.5f;
     const auto half_height = geometry.bounds.h * 0.43f;
-    const auto width = std::max(1.0f, geometry.bounds.w / static_cast<float>(view.bgm_bar_row_count));
+    const auto width = std::max(1.0f, geometry.bounds.w / static_cast<float>(view.bgm_bar_rows.size()));
     const auto color = nk_rgba(114, 222, 239, 190);
-    for (size_t index = 0; index < view.bgm_bar_row_count; ++index) {
+    for (size_t index = 0; index < view.bgm_bar_rows.size(); ++index) {
         const auto& row = view.bgm_bar_rows[index];
         const auto x = geometry.x_of(row.audio_fraction);
         nk_stroke_line(canvas, x, center - row.absolute_peak * half_height,
@@ -788,7 +767,7 @@ void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* can
     const auto line_step = bgm_bar_measure_step(per_measure, bgm_bar_line_spacing_pixels);
     const auto label_step = bgm_bar_measure_step(per_measure, bgm_bar_label_spacing_pixels);
     const auto& bounds = geometry.bounds;
-    for (size_t index = 0; index < view.bgm_bar_mark_count; ++index) {
+    for (size_t index = 0; index < view.bgm_bar_marks.size(); ++index) {
         const auto& mark = view.bgm_bar_marks[index];
         if (mark.measure % line_step != 0) continue;
         const auto x = geometry.x_of(mark.audio_fraction);
@@ -812,23 +791,23 @@ void draw_bgm_bar_bookmarks(struct nk_context* context, struct nk_command_buffer
                             const WormUiComposeView& view, const BgmBarGeometry& geometry) {
     const auto& bounds = geometry.bounds;
     const auto* font = context->style.font;
-    for (size_t index = 0; index < view.bgm_bar_bookmark_count; ++index) {
+    for (size_t index = 0; index < view.bgm_bar_bookmarks.size(); ++index) {
         const auto& bookmark = view.bgm_bar_bookmarks[index];
         const auto x = geometry.x_of(bookmark.audio_fraction);
         const auto color = bookmark.audio ? nk_rgb(124, 224, 168) : nk_rgb(255, 198, 92);
         nk_stroke_line(canvas, x, bounds.y, x, bounds.y + bounds.h, 1.0f, nk_rgba(color.r, color.g, color.b, 150));
         nk_fill_triangle(canvas, x, bounds.y + 7.0f, x + 7.0f, bounds.y, x, bounds.y, color);
-        if (!font || bookmark.label[0] == '\0') continue;
+        if (!font || bookmark.label.empty()) continue;
         float limit = bounds.x + bounds.w;
-        for (size_t other = 0; other < view.bgm_bar_bookmark_count; ++other) {
+        for (size_t other = 0; other < view.bgm_bar_bookmarks.size(); ++other) {
             const auto other_x = geometry.x_of(view.bgm_bar_bookmarks[other].audio_fraction);
             if (other_x > x + 1.0f) limit = std::min(limit, other_x);
         }
-        const auto length = static_cast<int>(std::strlen(bookmark.label));
-        const auto width = font->width(font->userdata, font->height, bookmark.label, length);
+        const auto length = static_cast<int>(bookmark.label.size());
+        const auto width = font->width(font->userdata, font->height, bookmark.label.data(), length);
         if (x + 10.0f + width > limit - 2.0f) continue;
         nk_draw_text(canvas, nk_rect(x + 10.0f, bounds.y + bounds.h - font->height - 1.0f, width, font->height),
-                     bookmark.label, length, font, nk_rgba(0, 0, 0, 0), color);
+                     bookmark.label.data(), length, font, nk_rgba(0, 0, 0, 0), color);
     }
 }
 
@@ -944,7 +923,7 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
     action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
     const bool available = view->visible && overview_valid &&
-        view->scene_available && view->bgm_bar_row_count != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
+        view->scene_available && view->bgm_bar_rows.size() != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
     const auto capture_valid = state.waveform_drag.waveform_overview_drag_active &&
         state.waveform_drag.waveform_overview_capture.window_capture &&

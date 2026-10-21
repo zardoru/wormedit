@@ -169,10 +169,16 @@ void project_audio_sources_t::ensure_current(const song_document_t& document) {
         notifications->post(notification_severity_t::warning, notification_source_t::audio,
             std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.");
 }
+void project_audio_sources_t::bindings(const song_document_t& document,
+                                      std::vector<audio::decoded_source_binding_t>& result) {
+    ensure_current(document);
+    sources.bindings(result);
+}
 auto project_audio_sources_t::bindings(const song_document_t& document)
     -> std::vector<audio::decoded_source_binding_t> {
-    ensure_current(document);
-    return sources.bindings();
+    std::vector<audio::decoded_source_binding_t> result;
+    bindings(document, result);
+    return result;
 }
 auto project_audio_sources_t::resolve_hitsounds(const song_document_t& document,
     const chart_document_t& chart, std::optional<object_id_t> object) -> std::vector<audio::hitsound_binding_t> {

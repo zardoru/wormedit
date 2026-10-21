@@ -4269,7 +4269,7 @@ namespace {
 
 struct bgm_draw_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiComposeBgmLaneView, 2> lanes{};
+    std::array<wormedit::ui::compose_bgm_lane_view_t, 2> lanes{};
     float left{}, top{}, lane_x{};
 
     explicit bgm_draw_fixture_t(bool bmson = false, bool stem = false) {
@@ -4289,12 +4289,12 @@ struct bgm_draw_fixture_t {
         view.viewport_width_pixels = viewport->width;
         view.viewport_height_pixels = viewport->height;
         lane_x = viewport->width * 0.6f;
-        lanes[0] = {.bounds = {lane_x, 0, lane_x + 40, viewport->height}, .source_lane_id = 71,
+        lanes[0] = {.bounds = {lane_x, 0, lane_x + 40, viewport->height}, .source_lane_id = wormedit::object_id_t{71},
                     .stem = stem};
         lanes[1] = {.bounds = {lane_x + 44, 0, lane_x + 84, viewport->height},
-                    .source_lane_id = 72};
-        view.bgm_lanes = lanes.data();
-        view.bgm_lane_count = lanes.size();
+                    .source_lane_id = wormedit::object_id_t{72}};
+        view.bgm_lanes.assign(lanes.begin(), lanes.end());
+
         view.draw_source_kind = state.pointer_capture.draw_source_kind = 1;
         view.draw_source_id = state.pointer_capture.draw_source_id = 40;
         state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
@@ -4441,7 +4441,7 @@ namespace {
 
 struct stem_edge_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeBgmLaneView lane{};
+    wormedit::ui::compose_bgm_lane_view_t lane{};
     float left{}, top{}, edge_x{};
 
     stem_edge_fixture_t() {
@@ -4467,10 +4467,10 @@ struct stem_edge_fixture_t {
         view.viewport_width_pixels = viewport->width;
         view.viewport_height_pixels = viewport->height;
         edge_x = viewport->width * 0.6f + 36;
-        lane = {.bounds = {edge_x - 36, 0, edge_x, viewport->height}, .source_lane_id = 44,
+        lane = {.bounds = {edge_x - 36, 0, edge_x, viewport->height}, .source_lane_id = wormedit::object_id_t{44},
                 .stem = true, .width_pixels = 36, .resize_edge_pixels = edge_x};
-        view.bgm_lanes = &lane;
-        view.bgm_lane_count = 1;
+        view.bgm_lanes = {lane};
+
         (void)harness.frame();
     }
     [[nodiscard]] auto point(float x, float y) const -> std::pair<float, float> {
@@ -4482,6 +4482,7 @@ struct stem_edge_fixture_t {
         lane.bounds.right = lane.bounds.left + lane.width_pixels;
         lane.resize_edge_pixels = lane.bounds.right;
         edge_x = static_cast<float>(lane.resize_edge_pixels);
+        harness.view().compose.bgm_lanes = {lane};
     }
     void hover(float x, float y) {
         const auto p = point(x, y);
@@ -4635,10 +4636,10 @@ TEST_CASE("Native selected-note drag sends live BGM targets and can return to th
     const auto viewport = compose_canvas_viewport_for_testing();
     expect_lane_key(viewport.has_value());
     const auto bgm_x = static_cast<double>(view.viewport_width_pixels) * .75;
-    std::array<WormUiComposeBgmLaneView, 1> lanes{{{.bounds = {bgm_x, 0, bgm_x + 36, view.viewport_height_pixels},
-        .source_lane_id = 71}}};
-    view.bgm_lanes = lanes.data();
-    view.bgm_lane_count = 1;
+    std::array<wormedit::ui::compose_bgm_lane_view_t, 1> lanes{{{.bounds = {bgm_x, 0, bgm_x + 36, view.viewport_height_pixels},
+        .source_lane_id = wormedit::object_id_t{71}}}};
+    view.bgm_lanes.assign(lanes.begin(), lanes.end());
+
     view.playable_field_right_pixels = bgm_x;
     (void)fixture.harness.frame();
     (void)fixture.start();
@@ -4743,15 +4744,15 @@ TEST_CASE("Same sound combined clicks route BGM markers and stem cut sources", "
     auto& view = fixture.harness.view().compose;
     const auto x = fixture.notes[0].bounds.left + 200;
     const auto y = fixture.notes[0].bounds.top;
-    WormUiComposeBgmLaneView lane{.bounds = {x - 15, 0, x + 15, view.viewport_height_pixels}, .source_lane_id = 90, .stem = true};
-    WormUiComposeBgmEventView marker{.bounds = {x - 10, y - 5, x + 10, y + 5}, .event_id = 201, .source_lane_id = 90};
-    WormUiComposeStemCutView point{.y_pixels = y, .bgm_lane_id = 90, .object_is_note = true, .object_id = 101};
-    view.bgm_lanes = &lane;
-    view.bgm_lane_count = 1;
-    view.bgm_events = cut ? nullptr : &marker;
-    view.bgm_event_count = cut ? 0 : 1;
-    view.stem_cuts = cut ? &point : nullptr;
-    view.stem_cut_count = cut ? 1 : 0;
+    wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {x - 15, 0, x + 15, view.viewport_height_pixels}, .source_lane_id = wormedit::object_id_t{90}, .stem = true};
+    wormedit::ui::compose_bgm_event_view_t marker{.bounds = {x - 10, y - 5, x + 10, y + 5}, .event_id = wormedit::object_id_t{201}, .source_lane_id = wormedit::object_id_t{90}};
+    wormedit::ui::compose_stem_cut_view_t point{.y_pixels = y, .bgm_lane_id = wormedit::object_id_t{90}, .object_is_note = true, .object_id = wormedit::object_id_t{101}};
+    view.bgm_lanes = {lane};
+
+    view.bgm_events = cut ? std::vector<wormedit::ui::compose_bgm_event_view_t>{} : std::vector{marker};
+
+    view.stem_cuts = cut ? std::vector{point} : std::vector<wormedit::ui::compose_stem_cut_view_t>{};
+
     view.bmson_tools_available = true;
     (void)fixture.harness.frame();
     const auto viewport = compose_canvas_viewport_for_testing();
@@ -4952,7 +4953,7 @@ void configure_empty_overview(nuklear_event_harness_t& harness) {
     compose.visible = true;
     compose.scene_available = true;
     compose.has_bgm_events = true;
-    compose.bgm_bar_row_count = 0;
+
     compose.bgm_bar_reserved = true;
 }
 
@@ -6810,13 +6811,13 @@ TEST_CASE("BGM header mute and solo buttons capture press and release over canva
     nuklear_event_harness_t harness{1600, 900};
     section_import_require(harness.ready());
     auto& view = harness.view().compose;
-    WormUiComposeBgmLaneView lane{};
+    wormedit::ui::compose_bgm_lane_view_t lane{};
     lane.bounds = {300, 0, 372, view.viewport_height_pixels};
-    lane.source_lane_id = 77;
+    lane.source_lane_id = wormedit::object_id_t{77};
     lane.stem = stem;
-    lane.filename = stem ? "音楽stem.wav" : nullptr;
-    view.bgm_lanes = &lane;
-    view.bgm_lane_count = 1;
+    lane.filename = stem ? "音楽stem.wav" : "";
+    view.bgm_lanes = {lane};
+
     view.bgm_mix_available = true;
     view.note_paint_mode_active = true;
     (void)harness.frame();
@@ -6842,13 +6843,13 @@ TEST_CASE("BGM header mute and solo buttons capture press and release over canva
 TEST_CASE("BGM pointer targets use closed head bounds and last nonghost priority",
           "[frontend-state][bgm-geometry]") {
     std::array events{
-        WormUiComposeBgmEventView{.bounds = {20, 100, 60, 400}, .event_id = 1,
+        wormedit::ui::compose_bgm_event_view_t{.bounds = {20, 100, 60, 400}, .event_id = wormedit::object_id_t{1},
             .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206},
-        WormUiComposeBgmEventView{.bounds = {20, 100, 60, 400}, .event_id = 2,
+        wormedit::ui::compose_bgm_event_view_t{.bounds = {20, 100, 60, 400}, .event_id = wormedit::object_id_t{2},
             .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206}};
     WormUiComposeView view{};
-    view.bgm_events = events.data();
-    view.bgm_event_count = events.size();
+    view.bgm_events.assign(events.begin(), events.end());
+
     for (const auto x : {20.0, 60.0})
         for (const auto y : {190.0, 206.0}) expect_draw(compose_bgm_event_at(&view, x, y) == 2);
     expect_draw(compose_bgm_event_at(&view, 40, 300) == 0);
@@ -6856,9 +6857,9 @@ TEST_CASE("BGM pointer targets use closed head bounds and last nonghost priority
     expect_draw(compose_bgm_event_at(&view, 60.001, 198) == 0);
     expect_draw(compose_bgm_event_at(&view, 40, 189.999) == 0);
     expect_draw(compose_bgm_event_at(&view, 40, 206.001) == 0);
-    events.back().proposal_ghost = true;
+    view.bgm_events.back().proposal_ghost = true;
     expect_draw(compose_bgm_event_at(&view, 40, 198) == 1);
-    events.front().has_tail = false;
+    view.bgm_events.front().has_tail = false;
     expect_draw(compose_bgm_event_at(&view, 40, 300) == 1);
     expect_draw(compose_bgm_event_at(&view, std::numeric_limits<double>::quiet_NaN(), 198) == 0);
     expect_draw(compose_bgm_event_at(&view, 40, std::numeric_limits<double>::infinity()) == 0);
@@ -6872,19 +6873,19 @@ TEST_CASE("Double-clicking a BGM stem head arms it outside the playable field",
     auto& view = fixture.harness.view().compose;
     view.note_paint_mode_active = false;
     view.playable_field_right_pixels = fixture.lane_x;
-    WormUiComposeBgmEventView event{};
+    wormedit::ui::compose_bgm_event_view_t event{};
     event.bounds = {fixture.lane_x + 2, 100, fixture.lane_x + 38, 400};
     event.head_top_pixels = 190;
     event.head_bottom_pixels = 206;
     event.has_tail = true;
-    event.event_id = 73;
-    event.source_lane_id = 71;
+    event.event_id = wormedit::object_id_t{73};
+    event.source_lane_id = wormedit::object_id_t{71};
     event.has_sound = true;
-    event.sound_id = 40;
+    event.sound_id = wormedit::resource_id_t{40};
     event.armable_stem = kind != 1;
     event.proposal_ghost = kind == 2;
-    view.bgm_events = &event;
-    view.bgm_event_count = 1;
+    view.bgm_events = {event};
+
     (void)fixture.harness.frame();
     const auto [x, y] = fixture.point(20, kind == 3 ? 300 : 198);
     (void)click_at(fixture.harness, x, y);
@@ -7644,11 +7645,11 @@ TEST_CASE("Production Shift BGM slice click keeps its restart meaning", "[fronte
     auto& v = f.harness.view().compose;
     v.note_paint_mode_active = false;
     v.playable_field_right_pixels = f.lane_x;
-    WormUiComposeBgmEventView event{};
+    wormedit::ui::compose_bgm_event_view_t event{};
     event.bounds = {f.lane_x + 2, 190, f.lane_x + 38, 206};
     event.head_top_pixels = 190; event.head_bottom_pixels = 206;
-    event.event_id = 73; event.source_lane_id = 71; event.bmson_slice = true;
-    v.bgm_events = &event; v.bgm_event_count = 1;
+    event.event_id = wormedit::object_id_t{73}; event.source_lane_id = wormedit::object_id_t{71}; event.bmson_slice = true;
+    v.bgm_events = {event};
     (void)f.harness.frame();
     const auto [x, y] = f.point(20, 198);
     const std::array press{mouse_motion(x, y), mouse_button(true, x, y)};
@@ -7736,11 +7737,11 @@ TEST_CASE("Production Alt BGM press cannot acquire a playable pointer hold",
     bgm_draw_fixture_t f{true, true};
     auto& v = f.harness.view().compose;
     v.note_paint_mode_active = false; v.playable_field_right_pixels = f.lane_x;
-    WormUiComposeBgmEventView event{};
+    wormedit::ui::compose_bgm_event_view_t event{};
     event.bounds = {f.lane_x + 2, 190, f.lane_x + 38, 206};
     event.head_top_pixels = 190; event.head_bottom_pixels = 206;
-    event.event_id = 73; event.source_lane_id = 71; event.bmson_slice = true;
-    v.bgm_events = &event; v.bgm_event_count = 1;
+    event.event_id = wormedit::object_id_t{73}; event.source_lane_id = wormedit::object_id_t{71}; event.bmson_slice = true;
+    v.bgm_events = {event};
     (void)f.harness.frame();
     const auto [x, y] = f.point(20, 198);
     const std::array press{mouse_motion(x, y), mouse_button(true, x, y)};
@@ -7839,9 +7840,9 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
 }
 
 namespace {
-void prepare_navigation_overview(t422_fixture_t& f, WormUiComposeWaveformOverviewRowView& row) {
+void prepare_navigation_overview(t422_fixture_t& f, wormedit::ui::compose_waveform_overview_row_view_t& row) {
     auto& v = f.harness.view().compose;
-    v.bgm_bar_reserved = true; v.bgm_bar_rows = &row; v.bgm_bar_row_count = 1;
+    v.bgm_bar_reserved = true; v.bgm_bar_rows = {row};
     v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
     v.waveform_overview_visible_begin_fraction = 0.1;
     v.waveform_overview_visible_end_fraction = 0.3;
@@ -7859,7 +7860,7 @@ TEST_CASE("Production overview drag synchronizes the fixed edit cursor anchor",
     t422_fixture_t f{t422_song()};
     f.interaction->pixels_per_standard_measure = 1536;
     f.project();
-    WormUiComposeWaveformOverviewRowView row{};
+    wormedit::ui::compose_waveform_overview_row_view_t row{};
     prepare_navigation_overview(f, row);
     const auto cursor = f.interaction->cursor;
     const auto previous_scroll = f.interaction->viewport_scroll_pixels;
@@ -7976,7 +7977,7 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     f.application.services.transport_stop = [&] { ++stops; paused = false; };
     f.application.preferences.minimap_click_moves_paused_playhead = mode == 2;
     f.project();
-    WormUiComposeWaveformOverviewRowView row{};
+    wormedit::ui::compose_waveform_overview_row_view_t row{};
     prepare_navigation_overview(f, row);
     const auto previous = f.interaction->cursor;
     const std::array press{mouse_motion(351, 120), mouse_button(true, 351, 120)};

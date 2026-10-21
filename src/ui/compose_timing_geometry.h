@@ -18,7 +18,7 @@ inline constexpr std::array<double, wormedit::timing_lane_kind_count> compose_ti
     64, 64, 64, 48, 48, 48, 24, 24};
 
 // Pointer targets and slice-point tiles use the head; area selection keeps the full tail.
-inline auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> wormedit::ui::compose_rect_t {
+inline auto compose_bgm_head_bounds(const wormedit::ui::compose_bgm_event_view_t& event) -> wormedit::ui::compose_rect_t {
     auto bounds = event.bounds;
     if (event.has_tail) {
         bounds.top = event.head_top_pixels;

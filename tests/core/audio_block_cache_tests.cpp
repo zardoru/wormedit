@@ -30,6 +30,50 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
     return std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio" / std::string(name);
 }
 
+auto check_revision_insert_and_read(wormedit::audio::decoded_block_cache_t& cache,
+                                    const wormedit::audio::audio_block_key_t& source)
+    -> std::uint64_t {
+    const auto initial = cache.mutation_revision();
+    cache.clear();
+    CHECK(cache.mutation_revision() == initial);
+    REQUIRE(cache.store(source, 2, samples(2, 0.25F)).has_value());
+    const auto inserted = cache.mutation_revision();
+    CHECK(inserted > initial);
+    CHECK(cache.has_block(source));
+    CHECK(cache.mutation_revision() == inserted);
+    return inserted;
+}
+
+auto check_revision_same_size_replacement(wormedit::audio::decoded_block_cache_t& cache,
+                                         const wormedit::audio::audio_block_key_t& source,
+                                         std::uint64_t inserted) -> std::uint64_t {
+    const auto before = cache.stats();
+    REQUIRE(cache.store(source, 2, samples(2, 0.75F)).has_value());
+    const auto replaced = cache.mutation_revision();
+    CHECK(replaced > inserted);
+    CHECK(cache.stats().entries == before.entries);
+    CHECK(cache.stats().cached_frames == before.cached_frames);
+    CHECK(cache.stats().evictions == before.evictions);
+    return replaced;
+}
+
+void check_revision_removals(wormedit::audio::decoded_block_cache_t& cache,
+                            const wormedit::audio::audio_block_key_t& source,
+                            std::uint64_t replaced) {
+    cache.clear_source({"missing", "missing"});
+    CHECK(cache.mutation_revision() == replaced);
+    cache.clear_source(source.source);
+    const auto removed = cache.mutation_revision();
+    CHECK(removed > replaced);
+    REQUIRE(cache.store(source, 2, samples(2, 0.25F)).has_value());
+    const auto restored = cache.mutation_revision();
+    cache.clear();
+    CHECK(cache.mutation_revision() > restored);
+    const auto cleared = cache.mutation_revision();
+    cache.clear();
+    CHECK(cache.mutation_revision() == cleared);
+}
+
 } // namespace
 
 TEST_CASE("decoded block cache enforces exact byte and frame capacity", "[unit][audio][cache]") {
@@ -59,6 +103,15 @@ TEST_CASE("decoded block cache enforces exact byte and frame capacity", "[unit][
     CHECK(state.cached_frames == 2);
     CHECK(state.cached_bytes == 16);
     CHECK(state.rejected_stores == 1);
+}
+
+TEST_CASE("decoded block content revision tracks replacements and removals without read churn",
+          "[unit][audio][cache]") {
+    wormedit::audio::decoded_block_cache_t cache;
+    const auto source = key("asset-a", "source-v1", 0);
+    const auto inserted = check_revision_insert_and_read(cache, source);
+    const auto replaced = check_revision_same_size_replacement(cache, source, inserted);
+    check_revision_removals(cache, source, replaced);
 }
 
 TEST_CASE("decoded block cache applies deterministic global and per-asset LRU eviction",

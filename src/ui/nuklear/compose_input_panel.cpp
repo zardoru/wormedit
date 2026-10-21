@@ -415,7 +415,7 @@ void worm_ui_nuklear_compose_discard_frame_input() {
 }
 
 
-bool compose_point_hits_note(const WormUiComposeView* view, double x, double y) {
+bool compose_point_hits_note(const wormedit::ui::compose_view_t* view, double x, double y) {
     if (!view || !std::isfinite(x) || !std::isfinite(y)) {
         return false;
     }
@@ -441,7 +441,7 @@ bool compose_point_hits_note(const WormUiComposeView* view, double x, double y) 
     return false;
 }
 
-uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y) {
+uint64_t compose_bgm_event_at(const wormedit::ui::compose_view_t* view, double x, double y) {
     if (!view || !std::isfinite(x) || !std::isfinite(y)) {
         return 0;
     }
@@ -456,7 +456,7 @@ uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y)
     return 0;
 }
 
-uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double y) {
+uint64_t compose_sound_object_at(const wormedit::ui::compose_view_t& view, double x, double y) {
     if (!std::isfinite(x) || !std::isfinite(y)) return 0;
     for (size_t i = view.note_endpoints.size(); i-- > 0;) {
         const auto& note = view.note_endpoints[i];
@@ -484,7 +484,7 @@ uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double
     return 0;
 }
 
-uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y) {
+uint64_t compose_bga_event_at(const wormedit::ui::compose_view_t* view, double x, double y) {
     if (!view || !view->bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return 0;
     for (size_t index = 0; index < view->bga_events.size(); ++index) {
         const auto& event = view->bga_events[index];
@@ -500,7 +500,7 @@ uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y)
     return 0;
 }
 
-auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
+auto compose_bga_lane_kind_at(const wormedit::ui::compose_view_t& view, double x, double y)
     -> std::optional<std::uint8_t> {
     if (!view.bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
     for (size_t index = 0; index < std::min<size_t>(view.bga_lane_count, 4); ++index) {
@@ -513,7 +513,7 @@ auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
     return std::nullopt;
 }
 
-bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y) {
+bool compose_point_hits_selected_note(const wormedit::ui::compose_view_t* view, double x, double y) {
     if (!view || !std::isfinite(x) || !std::isfinite(y)) {
         return false;
     }
@@ -574,7 +574,7 @@ static void clear_inactive_compose_panel(wormedit::ui::workspace_action_t* actio
     state.document_context.last_document_revision = 0;
 }
 
-static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
+static void cancel_disabled_compose_paint_modes(const wormedit::ui::compose_view_t* view,
                                                 bool window_focused,
                                                 wormedit::ui::workspace_action_t* action) {
     if ((state.pointer_capture.note_paint_pointer_active || state.pointer_capture.draw_erase_pointer_active) &&
@@ -591,11 +591,11 @@ static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
     }
 }
 
-static void retain_compose_core_gesture_presence(const WormUiComposeView* view, bool active) {
+static void retain_compose_core_gesture_presence(const wormedit::ui::compose_view_t* view, bool active) {
     if (view && active && view->visible) state.input_queue.core_gesture_active = view->editor_gesture_active;
 }
 
-static void sync_armed_resource_context(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+static void sync_armed_resource_context(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                                         bool project_changed, bool chart_changed) {
     if (project_changed) {
         reset_armed_resource(state, compose_resource_reset_reason_t::project_changed);
@@ -603,14 +603,14 @@ static void sync_armed_resource_context(const WormUiComposeView& view, wormedit:
         state.resource_picker.resource_pointer_mode =
             worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-        state.document_context.last_project_id = view.project_id;
-    } else if (chart_changed && state.bga_catalog.armed_from_bga_dock && state.bga_catalog.bga_chart_id != view.chart_id) {
+        state.document_context.last_project_id = view.project_id.value;
+    } else if (chart_changed && state.bga_catalog.armed_from_bga_dock && state.bga_catalog.bga_chart_id != view.chart_id.value) {
         reset_armed_resource(state, compose_resource_reset_reason_t::chart_changed);
         worm_ui_nuklear_pick_draw_source(state, action, 0, 0);
     }
 }
 
-static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
+static void sync_pointer_hold_acceptance(const wormedit::ui::compose_view_t& view) {
     if (!state.pointer_capture.pointer_hold_begin_pending && !state.pointer_capture.pointer_hold_active) return;
     state.pointer_capture.pointer_hold_begin_pending = false;
     state.pointer_capture.pointer_hold_active = view.editor_pointer_hold_active;
@@ -620,14 +620,14 @@ static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
     }
 }
 
-static void stamp_visible_compose_input(const WormUiComposeView* view, wormedit::ui::workspace_action_t& action) {
+static void stamp_visible_compose_input(const wormedit::ui::compose_view_t* view, wormedit::ui::workspace_action_t& action) {
     if (!view || !view->visible) return;
     // Modal occlusion cancels captures; cleanup still belongs to the visible chart.
     wormedit::ui::stamp_compose_input(action, *view, wormedit::ui::compose_project_stamp_t::include);
     action.compose_input_viewport_width_pixels = view->viewport_width_pixels;
 }
 
-void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
+void worm_ui_nuklear_prepare_compose_panel(const wormedit::ui::compose_view_t* view, bool compose_tab_active,
                                            bool window_focused, wormedit::ui::workspace_action_t* action) {
     state.input_queue.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
     retain_compose_core_gesture_presence(view, compose_tab_active);
@@ -643,8 +643,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             cancel_compose_gestures(action);
         }
         if (state.input_queue.cancel_pending) cancel_pending_compose_panel_actions(action);
-        const auto project_changed = state.document_context.last_project_id != view->project_id;
-        const auto chart_changed = project_changed || state.document_context.last_chart_id != view->chart_id;
+        const auto project_changed = state.document_context.last_project_id != view->project_id.value;
+        const auto chart_changed = project_changed || state.document_context.last_chart_id != view->chart_id.value;
         const auto revision_changed = state.document_context.last_document_revision != view->document_revision;
         sync_armed_resource_context(*view, *action, project_changed, chart_changed);
         // A successful chord release refreshes surviving core holds to the new revision.
@@ -666,7 +666,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.input_queue.keyboard_focus = false;
         }
         if (chart_changed || revision_changed) {
-            state.document_context.last_chart_id = view->chart_id;
+            state.document_context.last_chart_id = view->chart_id.value;
             state.document_context.last_document_revision = view->document_revision;
         }
         cancel_disabled_compose_paint_modes(view, window_focused, action);
@@ -677,7 +677,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
     clear_inactive_compose_panel(action);
 }
 
-auto compose_timing_target(const WormUiComposeView& view, double screen_y)
+auto compose_timing_target(const wormedit::ui::compose_view_t& view, double screen_y)
     -> wormedit::ui::timing_target_t {
     return wormedit::ui::timing_target_t{screen_y, view.viewport_height_pixels,
                               view.timing_document_begin_fraction,
@@ -715,7 +715,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
         append_compose_input(&action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, click_x,
                              click_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, existing_object_id,
-                             0, false, clicked_marker->lane, view.chart_id,
+                             0, false, clicked_marker->lane, view.chart_id.value,
                              view.document_revision);
     }
     state.timing_marker.timing_missing_initial_selected = clicked_marker && clicked_marker->fixed_initial &&
@@ -896,7 +896,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
                                  compose_selection_mode(input.pointer_modifiers),
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                                  marker->object_id.value, 0, false, marker->lane,
-                                 input.view->chart_id, input.view->document_revision);
+                                 input.view->chart_id.value, input.view->document_revision);
         }
     }
     // Y-lock: these objects only move vertically, so a drag would have nowhere to go.
@@ -919,7 +919,7 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
 
 static auto bookmark_move_capture_matches(const ComposePointerEventContext& input) -> bool {
     return input.window_focused && input.view->scene_available && !input.view->input_occluded &&
-           input.view->chart_id == state.bookmark_ui.bookmark_move_chart_id &&
+           input.view->chart_id.value == state.bookmark_ui.bookmark_move_chart_id &&
            input.view->document_revision == state.bookmark_ui.bookmark_move_revision &&
            !state.input_queue.action_overflowed;
 }
@@ -965,9 +965,9 @@ static auto update_bookmark_move_capture(const ComposePointerEventContext& input
     return moved || input.view->note_paint_mode_active;
 }
 
-static auto is_beat_bookmark(const WormUiComposeView& view, std::uint64_t id) -> bool {
-    return std::ranges::any_of(std::span(view.beat_bookmarks, view.beat_bookmark_count),
-                               [id](const auto& item) { return item.bookmark_id == id; });
+static auto is_beat_bookmark(const wormedit::ui::compose_view_t& view, std::uint64_t id) -> bool {
+    return std::ranges::any_of(std::span(view.beat_bookmarks),
+                               [id](const auto& item) { return item.bookmark_id == wormedit::object_id_t{id}; });
 }
 
 static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
@@ -988,7 +988,7 @@ static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
     state.bookmark_ui.bookmark_move_candidate_active = true;
     state.bookmark_ui.bookmark_move_active = false;
     state.bookmark_ui.bookmark_move_id = *id;
-    state.bookmark_ui.bookmark_move_chart_id = view.chart_id;
+    state.bookmark_ui.bookmark_move_chart_id = view.chart_id.value;
     state.bookmark_ui.bookmark_move_revision = view.document_revision;
     state.bookmark_ui.bookmark_move_current_y_pixels = input.pointer_started_y;
     state.bookmark_ui.bookmark_move_anchor_screen_y = input.left_clicked_screen_y;
@@ -1098,8 +1098,8 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             stacked->overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
             state.bga_interaction.bga_stack_release_pending = true;
             state.bga_interaction.bga_stack_open = true;
-            state.bga_interaction.bga_stack_project_id = view.project_id;
-            state.bga_interaction.bga_stack_chart_id = view.chart_id;
+            state.bga_interaction.bga_stack_project_id = view.project_id.value;
+            state.bga_interaction.bga_stack_chart_id = view.chart_id.value;
             state.bga_interaction.bga_stack_revision = view.document_revision;
             state.bga_interaction.bga_stack_row = stacked->canvas_row;
             state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(stacked->kind);
@@ -1109,7 +1109,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             input.pointer_x, input.pointer_y, 0, false,
             compose_selection_mode(input.pointer_modifiers),
             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, bga_event_id, 0, false,
-            wormedit::timing_lane_kind_t::bpm, view.chart_id, view.document_revision);
+            wormedit::timing_lane_kind_t::bpm, view.chart_id.value, view.document_revision);
         return true;
     }
     if (state.bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
@@ -1119,7 +1119,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
         append_compose_input(action, bmson_razor_input_kind(), input.pointer_x, input.pointer_y,
                              0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                             view.selected_bmson_bgm_event_id, 0, true);
+                             view.selected_bmson_bgm_event_id.value, 0, true);
         return true;
     }
     const auto event_id = compose_bgm_event_at(&view, input.pointer_x, input.pointer_y);
@@ -1163,8 +1163,8 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                     WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
                 state.bga_interaction.bga_stack_release_pending = true;
                 state.bga_interaction.bga_stack_open = true;
-                state.bga_interaction.bga_stack_project_id = input.view->project_id;
-                state.bga_interaction.bga_stack_chart_id = input.view->chart_id;
+                state.bga_interaction.bga_stack_project_id = input.view->project_id.value;
+                state.bga_interaction.bga_stack_chart_id = input.view->chart_id.value;
                 state.bga_interaction.bga_stack_revision = input.view->document_revision;
                 state.bga_interaction.bga_stack_row = selected->canvas_row;
                 state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(selected->kind);

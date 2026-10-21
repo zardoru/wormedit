@@ -39,8 +39,8 @@ void prepare_overview(nuklear_event_harness_t& harness,
     workspace.project_id.value = 11;
     workspace.document_revision = 5;
     auto& compose = workspace.compose;
-    compose.project_id = 11;
-    compose.chart_id = 7;
+    compose.project_id.value = 11;
+    compose.chart_id.value = 7;
     compose.document_revision = 5;
     compose.scene_available = true;
     compose.bgm_bar_reserved = true;
@@ -50,7 +50,7 @@ void prepare_overview(nuklear_event_harness_t& harness,
     compose.bgm_bar_end_fraction = 0.6;
     compose.waveform_overview_visible_begin_fraction = 0.45;
     compose.waveform_overview_visible_end_fraction = 0.55;
-    compose.selected_audio_asset_id = 12;
+    compose.selected_audio_asset_id.value = 12;
     compose.waveform_overview_total_frames = 480'000;
     compose.waveform_overview_sample_rate = 48'000;
 }
@@ -116,9 +116,9 @@ TEST_CASE("minimap capture matching invalidates project, chart, revision, asset,
     auto& view = harness.view().compose;
     view.document_revision = 0;
     const worm_ui_nuklear_overview_capture_t capture{
-        .chart_id = view.chart_id,
+        .chart_id = view.chart_id.value,
         .revision = view.document_revision,
-        .asset_id = view.selected_audio_asset_id,
+        .asset_id = view.selected_audio_asset_id.value,
         .total_frames = view.waveform_overview_total_frames,
         .sample_rate = view.waveform_overview_sample_rate,
         .left = 20.0,
@@ -129,19 +129,19 @@ TEST_CASE("minimap capture matching invalidates project, chart, revision, asset,
         .project_id = harness.view().project_id.value};
     check_capture_match(capture, harness.view(), 20.0, 500.0, true, "valid revision-zero capture");
     ++harness.view().project_id.value;
-    ++view.project_id;
+    ++view.project_id.value;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "project stamp");
     harness.view().project_id.value = capture.project_id;
-    view.project_id = capture.project_id;
-    view.chart_id += 1;
+    view.project_id.value = capture.project_id;
+    view.chart_id.value += 1;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "chart stamp");
-    view.chart_id = capture.chart_id;
+    view.chart_id.value = capture.chart_id;
     view.document_revision = 1;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "revision stamp");
     view.document_revision = capture.revision;
-    view.selected_audio_asset_id += 1;
+    view.selected_audio_asset_id.value += 1;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "asset stamp");
-    view.selected_audio_asset_id = capture.asset_id;
+    view.selected_audio_asset_id.value = capture.asset_id;
     view.waveform_overview_total_frames += 1;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "total frame count");
     view.waveform_overview_total_frames = capture.total_frames;

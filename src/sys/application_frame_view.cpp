@@ -24,14 +24,15 @@ void build_hover_timing_view(frontend_workspace_view_t& flattened, const documen
     view.hover_timing_source_frame = 0;
     view.hover_timing_total_frames = 0;
     view.hover_timing_sample_rate = 0;
-    view.hover_timing_label[0] = '\0';
+    view.hover_timing_label.clear();
+    std::array<char, 64> timing_label{};
     const auto& hover = cache.waveform.hover_timing;
     if (!hover.valid || !workspace.selected_chart || !cache.timing.marker_timing_index ||
         !cache.scene.cached_measure_index || !view.visible || !view.scene_available ||
-        view.selected_audio_asset_id == 0 || hover.project_id != history.document.id.value ||
+        view.selected_audio_asset_id.value == 0 || hover.project_id != history.document.id.value ||
         hover.chart_id != workspace.selected_chart->value ||
         hover.document_revision != history.document.revision ||
-        hover.audio_asset_id != view.selected_audio_asset_id ||
+        hover.audio_asset_id != view.selected_audio_asset_id.value ||
         !((hover.total_frames == view.waveform_overview_total_frames &&
            hover.sample_rate == view.waveform_overview_sample_rate) ||
           (hover.total_frames == flattened.view.transport_end_frame &&
@@ -42,11 +43,12 @@ void build_hover_timing_view(frontend_workspace_view_t& flattened, const documen
         return;
     if (!format_compose_hover_timing(
             *chart, *cache.scene.cached_measure_index, *cache.timing.marker_timing_index, hover.source_frame,
-            hover.sample_rate, view.hover_timing_label, sizeof(view.hover_timing_label)))
+            hover.sample_rate, timing_label.data(), timing_label.size()))
         return;
     view.hover_timing_source_frame = hover.source_frame;
     view.hover_timing_total_frames = hover.total_frames;
     view.hover_timing_sample_rate = hover.sample_rate;
+    view.hover_timing_label = timing_label.data();
     view.hover_timing_valid = true;
 }
 
@@ -124,7 +126,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
         worm_ui_frontend_keysound_dock_request(&keysound_request);
         wormedit::ui::sound_usage_request_t sound_usage_request{};
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
-        WormUiBookmarkChooserRequest bookmark_request{};
+        wormedit::ui::bookmark_chooser_request_t bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
         const auto bookmark_indices = bookmark_chooser_indices_t::from(
             context.history, context.model, bookmark_request.open, context.compose_scene_cache);

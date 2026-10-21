@@ -85,12 +85,6 @@ void prepare_draw_stem_sources(compose_scene_cache_t& cache,
         std::bind_front(build_draw_stem_sources, std::cref(document), std::cref(chart))));
 }
 
-auto draw_stem_source_name(frontend_workspace_view_t& flattened, std::string_view name) -> const char* {
-    const auto* owned = flattened.arena() ? arena_string(*flattened.arena(), name) : nullptr;
-    if (!owned)
-        flattened.view.compose.truncated = true;
-    return owned ? owned : "";
-}
 
 auto bounded_draw_source_label(const wormedit::resource_entry_t& resource) -> std::string {
     auto identifier = std::to_string(resource.id.value);
@@ -122,21 +116,21 @@ void populate_draw_source_label(frontend_workspace_view_t& flattened, compose_sc
                                 const wormedit::song_document_t& document) {
     auto& view = flattened.view.compose;
     const auto& source = cache.stems.draw_stem_sources.value();
-    const auto& label = source.label.get_or_build(std::pair{view.draw_source_kind, view.draw_source_id},
+    const auto& label = source.label.get_or_build(std::pair{view.draw_source_kind, view.draw_source_id.value},
         [&source, &document, &view] {
             return compose_scene_cache_t::draw_stem_source_data_t::label_t::from(
-                source, document, view.draw_source_kind, view.draw_source_id);
+                source, document, view.draw_source_kind, view.draw_source_id.value);
         });
     view.draw_source_label = view.draw_source_kind == 0 ? ui::no_draw_sound_resource_label
                              : label.is_missing ? "missing source"
-                             : draw_stem_source_name(flattened, label.text);
+                             : label.text;
     view.draw_source_missing = label.is_missing;
 }
 
 // Draw on a BGM lane needs a resource, independently of armed note hitsounds.
 // BMSON lanes use stem and packed-column drawing, which have their own source
 // tooltips.
-void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_document_t& chart) {
+void populate_bgm_draw_hint(wormedit::ui::compose_view_t& view, const wormedit::chart_document_t& chart) {
     if (view.draw_source_kind != 0 || chart.bgm_source_lanes.empty() ||
         chart.source_family == wormedit::format_family_t::bmson)
         return;
@@ -174,7 +168,7 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
     prepare_draw_stem_sources(cache, document, chart);
     auto& view = flattened.view.compose;
     view.draw_source_is_stem = false;
-    view.draw_source_stem_lane_id = 0;
+    view.draw_source_stem_lane_id.value = 0;
     view.draw_source_stem_lane_name = "";
     for (auto& row : view.keysounds) {
         row.stem_source_lane_id = {};
@@ -185,29 +179,29 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
         const auto& lane = chart.bgm_source_lanes[found->second];
         row.stem_source_lane_id = lane.id;
         row.stem_lane_name = lane.name;
-        if (view.draw_source_kind == 1 && view.draw_source_id == row.resource_id.value) {
+        if (view.draw_source_kind == 1 && view.draw_source_id.value == row.resource_id.value) {
             view.draw_source_is_stem = true;
-            view.draw_source_stem_lane_id = row.stem_source_lane_id.value;
+            view.draw_source_stem_lane_id.value = row.stem_source_lane_id.value;
             // The parent draw-source surface keeps its arena lifetime until T-698.
-            view.draw_source_stem_lane_name = draw_stem_source_name(flattened, lane.name);
+            view.draw_source_stem_lane_name = lane.name;
         }
     }
     if (view.draw_source_kind != 1 || view.draw_source_is_stem)
         return;
-    const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(view.draw_source_id);
+    const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(view.draw_source_id.value);
     if (found != cache.stems.draw_stem_sources.value().resource_lanes.end()) {
         const auto& lane = chart.bgm_source_lanes[found->second];
         view.draw_source_is_stem = true;
-        view.draw_source_stem_lane_id = lane.id.value;
-        view.draw_source_stem_lane_name = draw_stem_source_name(flattened, lane.name);
+        view.draw_source_stem_lane_id.value = lane.id.value;
+        view.draw_source_stem_lane_name = lane.name;
         return;
     }
     const auto explicit_source =
-        cache.stems.draw_stem_sources.value().explicit_stem_resources.find(view.draw_source_id);
+        cache.stems.draw_stem_sources.value().explicit_stem_resources.find(view.draw_source_id.value);
     if (explicit_source != cache.stems.draw_stem_sources.value().explicit_stem_resources.end()) {
         view.draw_source_is_stem = true;
         view.draw_source_stem_lane_name =
-            draw_stem_source_name(flattened, document.resources[explicit_source->second].name);
+            document.resources[explicit_source->second].name;
     }
 }
 

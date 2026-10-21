@@ -235,9 +235,9 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     (void)remap_command(registry, {"view.toggle_sounds"}, {});
     wormedit::sys::command_shortcut_text_t menu_shortcuts_5;
     sys::build_menu_commands_view(registry, harness.view(), menu_shortcuts_5, shortcut_primary_modifier_t::meta);
-    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
-    harness.view().compose.lane_key_bindings = &binding;
-    harness.view().compose.lane_key_binding_count = 1;
+    const wormedit::ui::compose_lane_key_binding_t binding{.scancode = SDL_SCANCODE_1, .lane_id = {1}};
+    harness.view().compose.lane_key_bindings = {binding};
+    harness.view().compose.lane_key_bindings.resize(1);
     harness.view().compose.note_paint_mode_active = true;
     (void)harness.frame();
     (void)click_menu(harness, "Help");

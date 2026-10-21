@@ -29,7 +29,7 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     view.transport_available = true;
     view.transport_end_frame = 4'410'000;
     view.transport_sample_rate = 48'000;
-    view.compose.selected_audio_asset_id = 12;
+    view.compose.selected_audio_asset_id.value = 12;
 
     const auto first = hover(harness, 640, 88);
     REQUIRE(first.get().hover_source_frame_valid);
@@ -42,8 +42,7 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
     timing.hover_timing_source_frame = first.get().hover_source_frame;
     timing.hover_timing_total_frames = view.transport_end_frame;
     timing.hover_timing_sample_rate = view.transport_sample_rate;
-    std::snprintf(timing.hover_timing_label, sizeof(timing.hover_timing_label),
-                  "Measure 12 · beat 3 · 1:23.456");
+    timing.hover_timing_label = "Measure 12 · beat 3 · 1:23.456";
     const auto matched = hover(harness, 640, 88);
     CHECK(harness.drawn_text().find("Measure 12 · beat 3 · 1:23.456") != std::string::npos);
     const std::array down{mouse_motion(640, 88), mouse_button(true, 640, 88)};
@@ -71,7 +70,7 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
     compose.bgm_bar_rows = {bar_row};
     compose.bgm_bar_begin_fraction = 0.0;
     compose.bgm_bar_end_fraction = 1.0;
-    compose.selected_audio_asset_id = 5;
+    compose.selected_audio_asset_id.value = 5;
     compose.waveform_overview_total_frames = 480'001;
     compose.waveform_overview_sample_rate = 48'000;
 
@@ -85,8 +84,7 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
     compose.hover_timing_source_frame = first.get().hover_source_frame;
     compose.hover_timing_total_frames = compose.waveform_overview_total_frames;
     compose.hover_timing_sample_rate = compose.waveform_overview_sample_rate;
-    std::snprintf(compose.hover_timing_label, sizeof(compose.hover_timing_label),
-                  "Measure 2 · beat 4 · 0:08.000");
+    compose.hover_timing_label = "Measure 2 · beat 4 · 0:08.000";
     (void)hover(harness, 351, 120);
     CHECK(harness.drawn_text().find("Measure 2 · beat 4 · 0:08.000") != std::string::npos);
 
@@ -94,7 +92,7 @@ TEST_CASE("Overview hover uses the click frame and rejects labels from another a
     (void)hover(harness, 351, 120);
     CHECK(harness.drawn_text().find("Measure 2 · beat 4 · 0:08.000") == std::string::npos);
 
-    compose.selected_audio_asset_id = 0;
+    compose.selected_audio_asset_id.value = 0;
     const auto no_audio = hover(harness, 351, 120);
     CHECK_FALSE(no_audio.get().hover_source_frame_valid);
     CHECK(harness.drawn_text().find("Measure 2 · beat 4 · 0:08.000") == std::string::npos);
@@ -108,7 +106,7 @@ TEST_CASE("Seek bar hover uses Nuklear's padded one-third click position",
     view.transport_available = true;
     view.transport_end_frame = 9'600'000;
     view.transport_sample_rate = 48'000;
-    view.compose.selected_audio_asset_id = 12;
+    view.compose.selected_audio_asset_id.value = 12;
     constexpr float x = 430.0f;
     const auto hovered = hover(harness, x, 88);
     REQUIRE(hovered.get().hover_source_frame_valid);

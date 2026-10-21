@@ -54,7 +54,7 @@ void open_history_with_transport(nuklear_event_harness_t& harness) {
     harness.view().transport_available = true;
     harness.view().transport_end_frame = 4'410'000;
     harness.view().transport_sample_rate = 48'000;
-    harness.view().compose.selected_audio_asset_id = 12;
+    harness.view().compose.selected_audio_asset_id.value = 12;
     REQUIRE(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     CHECK(harness.drawn_text().find("No notifications") != std::string::npos);
 }
@@ -90,7 +90,7 @@ void setup_stale_hidden_history(nuklear_event_harness_t& harness) {
     view.transport_available = true;
     view.transport_end_frame = 4'410'000;
     view.transport_sample_rate = 48'000;
-    view.compose.selected_audio_asset_id = 12;
+    view.compose.selected_audio_asset_id.value = 12;
     (void)harness.frame();
     REQUIRE(worm_ui_frontend_hide_notification_history_for_testing());
 }

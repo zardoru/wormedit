@@ -41,9 +41,9 @@ auto sound_menu_key(nuklear_event_harness_t& harness, SDL_Keycode key, SDL_Scanc
 
 struct sound_menu_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Percussion", .red = 255, .visible = true},
-        {.layer_id = 8, .name = "Locked vocals", .blue = 255, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Percussion", .red = 255, .visible = true},
+        {.layer_id = {8}, .name = "Locked vocals", .blue = 255, .locked = true}}};
     sound_menu_fixture_t() {
         require_sound_menu(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
@@ -56,8 +56,8 @@ struct sound_menu_fixture_t {
         view.area_range_end_row = 9600;
         view.selected_note_count = 2;
         view.selected_bgm_event_count = 1;
-        view.note_menu_layers = layers.data();
-        view.note_menu_layer_count = view.note_menu_layer_total_count = layers.size();
+        view.note_menu_layers.assign(layers.begin(), layers.end());
+        view.note_menu_layers.resize(view.note_menu_layer_total_count = layers.size());
         (void)harness.frame();
         (void)sound_menu_click(harness, 900, 400, SDL_BUTTON_RIGHT);
         (void)harness.frame();
@@ -87,7 +87,7 @@ TEST_CASE("Area menu adds selected sounds to an explicit unlocked layer",
     const auto selected = fixture.click_label("Percussion");
     check_sound_menu(selected.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
     check_sound_menu(selected.get().compose_semantic_layer_id.value == 7);
-    check_sound_menu(selected.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id);
+    check_sound_menu(selected.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id.value);
     check_sound_menu(selected.get().compose_input_document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
 }
@@ -108,7 +108,7 @@ TEST_CASE("Area sound layer picker releases its window request when dismissed",
     fixture.expand();
     const auto dismissed = sound_menu_click(fixture.harness, 100, 650);
     check_sound_menu(dismissed.get().compose_action == WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
-    check_sound_menu(dismissed.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id);
+    check_sound_menu(dismissed.get().compose_input_chart_id.value == fixture.harness.view().compose.chart_id.value);
     check_sound_menu(dismissed.get().compose_input_document_revision == fixture.harness.view().compose.document_revision);
     check_sound_menu(!compose_area_menu_open());
 }

@@ -26,7 +26,7 @@ auto sample_recipe() -> sv_recipe_t {
     return recipe;
 }
 
-void set(WormUiTimingRecipeRationalText& field, const char* numerator, const char* denominator) {
+void set(wormedit::ui::timing_recipe_rational_text_t& field, const char* numerator, const char* denominator) {
     std::snprintf(field.numerator, sizeof(field.numerator), "%s", numerator);
     std::snprintf(field.denominator, sizeof(field.denominator), "%s", denominator);
 }
@@ -35,7 +35,7 @@ void set(WormUiTimingRecipeRationalText& field, const char* numerator, const cha
 
 TEST_CASE("a recipe survives a trip through its form unchanged", "[unit][sys][recipe-form]") {
     const auto recipe = sample_recipe();
-    const auto form = recipe_form_from_recipe(recipe);
+    const auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
     CHECK(std::strcmp(form.value_to.numerator, "-5") == 0);
     CHECK(std::strcmp(form.value_to.denominator, "2") == 0);
     CHECK(std::strcmp(form.fixed_point_count, "5") == 0);
@@ -46,10 +46,10 @@ TEST_CASE("a recipe survives a trip through its form unchanged", "[unit][sys][re
 
 TEST_CASE("form edits change only the curve, values and sampling", "[unit][sys][recipe-form]") {
     const auto recipe = sample_recipe();
-    auto form = recipe_form_from_recipe(recipe);
-    form.curve = WORM_UI_TIMING_RECIPE_CURVE_LINEAR;
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    form.curve = wormedit::sv_recipe_curve_t::linear;
     set(form.value_to, "7", "2");
-    form.sampling_mode = WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE;
+    form.sampling_mode = wormedit::sv_recipe_sampling_mode_t::adaptive;
     set(form.tolerance, "1", "500");
     std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "64");
     const auto edited = recipe_from_form(form, recipe);
@@ -69,8 +69,8 @@ TEST_CASE("form edits change only the curve, values and sampling", "[unit][sys][
 
 TEST_CASE("SPEEDS recipes carry a transition and other outputs drop it", "[unit][sys][recipe-form]") {
     auto recipe = sample_recipe();
-    auto form = recipe_form_from_recipe(recipe);
-    form.output = WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS;
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    form.output = wormedit::sv_recipe_output_t::speeds;
     set(form.transition_duration, "3", "2");
     form.transition_is_seconds = true;
     auto speeds = recipe_from_form(form, recipe);
@@ -78,7 +78,7 @@ TEST_CASE("SPEEDS recipes carry a transition and other outputs drop it", "[unit]
     CHECK(speeds->output == sv_recipe_output_t::speeds);
     CHECK(speeds->transition_duration == rational_t{3, 2});
     CHECK(speeds->transition_is_seconds == true);
-    form.output = WORM_UI_TIMING_RECIPE_OUTPUT_SCROLLS;
+    form.output = wormedit::sv_recipe_output_t::scrolls;
     const auto scrolls = recipe_from_form(form, *speeds);
     REQUIRE(scrolls.has_value());
     CHECK_FALSE(scrolls->transition_duration.has_value());
@@ -87,8 +87,8 @@ TEST_CASE("SPEEDS recipes carry a transition and other outputs drop it", "[unit]
 
 TEST_CASE("a step-rows sampling form switches the fixed extent", "[unit][sys][recipe-form]") {
     const auto recipe = sample_recipe();
-    auto form = recipe_form_from_recipe(recipe);
-    form.fixed_extent = WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS;
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    form.fixed_extent = wormedit::ui::timing_recipe_fixed_extent_t::step_rows;
     std::snprintf(form.fixed_step_rows, sizeof(form.fixed_step_rows), "120");
     const auto edited = recipe_from_form(form, recipe);
     REQUIRE(edited.has_value());
@@ -99,17 +99,17 @@ TEST_CASE("a step-rows sampling form switches the fixed extent", "[unit][sys][re
 TEST_CASE("a malformed form is refused", "[unit][sys][recipe-form]") {
     const auto recipe = sample_recipe();
     for (const auto* bad : {"", "x", "1.5", "99999999999999999999999"}) {
-        auto form = recipe_form_from_recipe(recipe);
+        auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
         set(form.value_from, bad, "1");
         CHECK_FALSE(recipe_from_form(form, recipe).has_value());
     }
-    auto zero_denominator = recipe_form_from_recipe(recipe);
+    auto zero_denominator = wormedit::ui::timing_recipe_form_t::from(recipe);
     set(zero_denominator.shape, "1", "0");
     CHECK_FALSE(recipe_from_form(zero_denominator, recipe).has_value());
-    auto bad_enum = recipe_form_from_recipe(recipe);
-    bad_enum.curve = static_cast<WormUiTimingRecipeCurve>(9);
+    auto bad_enum = wormedit::ui::timing_recipe_form_t::from(recipe);
+    bad_enum.curve = static_cast<wormedit::sv_recipe_curve_t>(9);
     CHECK_FALSE(recipe_from_form(bad_enum, recipe).has_value());
-    auto too_many = recipe_form_from_recipe(recipe);
+    auto too_many = wormedit::ui::timing_recipe_form_t::from(recipe);
     std::snprintf(too_many.fixed_point_count, sizeof(too_many.fixed_point_count), "4294967296");
     CHECK_FALSE(recipe_from_form(too_many, recipe).has_value());
 }
@@ -119,9 +119,9 @@ TEST_CASE("a Lua expression recipe keeps its source and parameters through the f
     auto recipe = sample_recipe();
     recipe.curve = sv_recipe_curve_t::lua_expression;
     recipe.expression_source = "return 1 + t";
-    auto form = recipe_form_from_recipe(recipe);
-    CHECK(form.curve == WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION);
-    form.sampling_mode = WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE;
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    CHECK(form.curve == wormedit::sv_recipe_curve_t::lua_expression);
+    form.sampling_mode = wormedit::sv_recipe_sampling_mode_t::adaptive;
     std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "32");
     const auto edited = recipe_from_form(form, recipe);
     REQUIRE(edited.has_value());
@@ -154,7 +154,7 @@ TEST_CASE("a form preview carries the candidate and the validator's message with
     auto history = form_history();
     const auto& chart = history.document.charts.front();
     const auto& stored = chart.sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
     set(form.value_to, "5", "1");
     const auto preview = recipe_form_preview_t::propose(history.document, chart, stored, form);
     CHECK(preview.diagnostics.empty());
@@ -171,8 +171,8 @@ TEST_CASE("a form preview carries the candidate and the validator's message with
     CHECK(malformed.report()->candidate == stored);
 
     // Well-formed but out of range: the core validator's message, the candidate kept for editing.
-    auto out_of_range = recipe_form_from_recipe(stored);
-    out_of_range.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
+    auto out_of_range = wormedit::ui::timing_recipe_form_t::from(stored);
+    out_of_range.curve = wormedit::sv_recipe_curve_t::exponential;
     set(out_of_range.shape, "99", "1");
     const auto invalid = recipe_form_preview_t::propose(history.document, chart, stored, out_of_range);
     CHECK_FALSE(invalid.diagnostics.empty());
@@ -183,8 +183,8 @@ TEST_CASE("applying a form updates the recipe in one undo step and rejects bad i
           "[unit][sys][recipe-form]") {
     auto history = form_history();
     const auto stored = history.document.charts.front().sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
-    form.curve = WORM_UI_TIMING_RECIPE_CURVE_BUMP;
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
+    form.curve = wormedit::sv_recipe_curve_t::bump;
     bool applied = false;
     CHECK(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, form, applied) ==
           "SV recipe updated.");
@@ -195,12 +195,12 @@ TEST_CASE("applying a form updates the recipe in one undo step and rejects bad i
     CHECK(history.document.charts.front().sv_recipes.front() == stored);
 
     const auto revision = history.document.revision;
-    auto bad = recipe_form_from_recipe(stored);
+    auto bad = wormedit::ui::timing_recipe_form_t::from(stored);
     set(bad.value_from, "", "1");
     CHECK_FALSE(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, bad, applied) == "SV recipe updated.");
     CHECK_FALSE(applied);
-    auto invalid = recipe_form_from_recipe(stored);
-    invalid.sampling_mode = WORM_UI_TIMING_RECIPE_SAMPLING_FIXED;
+    auto invalid = wormedit::ui::timing_recipe_form_t::from(stored);
+    invalid.sampling_mode = wormedit::sv_recipe_sampling_mode_t::fixed;
     std::snprintf(invalid.fixed_point_count, sizeof(invalid.fixed_point_count), "1");  // needs 2..4096
     CHECK_FALSE(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, invalid, applied) == "SV recipe updated.");
     CHECK_FALSE(applied);
@@ -210,7 +210,7 @@ TEST_CASE("applying a form updates the recipe in one undo step and rejects bad i
           "The chart is no longer available.");
     CHECK(history.document.revision == revision);
     // Re-applying what is already stored is unchanged, not an error and not a revision.
-    const auto same = recipe_form_from_recipe(history.document.charts.front().sv_recipes.front());
+    const auto same = wormedit::ui::timing_recipe_form_t::from(history.document.charts.front().sv_recipes.front());
     CHECK(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, same, applied) ==
           "SV recipe is unchanged.");
     CHECK_FALSE(applied);
@@ -221,7 +221,7 @@ TEST_CASE("captured recipe form applies once with revision-only identity",
           "[sys][recipe-form][stamp]") {
     auto history = form_history();
     const auto& chart = history.document.charts.front();
-    auto form = recipe_form_from_recipe(chart.sv_recipes.front());
+    auto form = wormedit::ui::timing_recipe_form_t::from(chart.sv_recipes.front());
     set(form.value_to, "7", "1");
     const auto proposal = recipe_form_preview_t::propose(history.document, chart, chart.sv_recipes.front(), form);
     REQUIRE(proposal.value.has_value());
@@ -246,7 +246,7 @@ TEST_CASE("failed recipe form owns warning diagnostics and retains the stored ca
     auto history = form_history();
     const auto& chart = history.document.charts.front();
     const auto& stored = chart.sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
     set(form.value_to, "x", "1");
     const auto proposal = recipe_form_preview_t::propose(history.document, chart, stored, form);
     REQUIRE_FALSE(proposal.value.has_value());
@@ -263,7 +263,7 @@ TEST_CASE("Rejected recipe form revisions retain the stored candidate and reuse 
     auto history = form_history();
     const auto& chart = history.document.charts.front();
     const auto& stored = chart.sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
     set(form.value_to, "x", "1");
     auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
     const auto* feedback = outcome.diagnostics.data();
@@ -279,7 +279,7 @@ TEST_CASE("A repaired recipe form starts with the current stored recipe",
     auto history = form_history();
     const auto& chart = history.document.charts.front();
     const auto& stored = chart.sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
     set(form.value_to, "9", "1");
     auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
     set(form.value_to, "x", "1");
@@ -298,7 +298,7 @@ TEST_CASE("Recipe form diagnostics still reject before a stale captured stamp",
     auto history = form_history();
     const auto& chart = history.document.charts.front();
     const auto& stored = chart.sv_recipes.front();
-    auto form = recipe_form_from_recipe(stored);
+    auto form = wormedit::ui::timing_recipe_form_t::from(stored);
     set(form.value_to, "x", "1");
     const auto outcome = recipe_form_preview_t::propose(history.document, chart, stored, form);
     ++history.document.revision;

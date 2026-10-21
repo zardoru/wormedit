@@ -43,11 +43,11 @@ auto text_input(const char* text) -> SDL_Event {
 // The system layer selects the double-clicked note and raises this flag one frame later.
 void request_editor(nuklear_event_harness_t& harness, const char* label) {
     auto& view = harness.view().compose;
-    view.project_id = 31;
-    view.chart_id = 7;
+    view.project_id.value = 31;
+    view.chart_id.value = 7;
     view.document_revision = 12;
     view.selected_note_count = 1;
-    view.selected_note_label_note_id = 55;
+    view.selected_note_label_note_id.value = 55;
     view.selected_note_label = label;
     view.focus_note_label_editor = true;
     auto& state = worm_ui_nuklear_compose_state();

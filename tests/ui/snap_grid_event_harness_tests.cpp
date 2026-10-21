@@ -35,9 +35,8 @@ void prepare(nuklear_event_harness_t& harness) {
     require_grid(harness.ready());
     auto& view = harness.view().compose;
     view.area_snap_denominator = 4;
-    view.supported_snap_denominator_count = 5;
     const std::array<std::uint64_t, 5> snaps{4, 8, 16, 7, 12};
-    std::copy(snaps.begin(), snaps.end(), view.supported_snap_denominators);
+    view.supported_snap_denominators.assign(snaps.begin(), snaps.end());
     static_cast<void>(harness.frame());
     const auto target = harness.drawn_text_center("1/4");
     require_grid(target.has_value());
@@ -91,8 +90,8 @@ TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss a
         if (cause == 0) result = press(harness, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
         if (cause == 1) result = mouse(harness, 500, 150, true);
         if (cause == 2) ++harness.view().compose.document_revision;
-        if (cause == 3) ++harness.view().compose.chart_id;
-        if (cause == 4) ++harness.view().compose.project_id;
+        if (cause == 3) ++harness.view().compose.chart_id.value;
+        if (cause == 4) ++harness.view().compose.project_id.value;
         if (cause == 5) harness.view().options.visible = true;
         if (cause == 6) harness.view().compose.paste_active = true;
         if (cause == 7) harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;

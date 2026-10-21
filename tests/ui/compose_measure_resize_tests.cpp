@@ -31,10 +31,10 @@ auto resize_key(SDL_Keycode key) -> SDL_Event {
 
 struct resize_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiComposeMeasureRowView, 2> rows{{
-        {.measure_id = 77, .number = 1, .length_numerator = 1, .length_denominator = 1,
+    std::array<wormedit::ui::compose_measure_row_view_t, 2> rows{{
+        {.measure_index = 77, .number = 1, .length_numerator = 1, .length_denominator = 1,
          .has_meter = true, .meter_numerator = 4, .meter_denominator = 4},
-        {.measure_id = 78, .number = 2, .length_numerator = 1, .length_denominator = 1,
+        {.measure_index = 78, .number = 2, .length_numerator = 1, .length_denominator = 1,
          .has_meter = true, .meter_numerator = 4, .meter_denominator = 4}}};
     std::array<std::uint64_t, 2> ids{77, 78};
     std::array<wormedit::ui::compose_grid_line_view_t, 2> lines{{{.y_pixels = 100, .kind = wormedit::editor_grid_line_kind_t::measure, .measure_number = 1},
@@ -47,7 +47,7 @@ struct resize_fixture_t {
         require_resize(harness.ready());
         auto& v = harness.view().compose;
         v.scene_available = true;
-        v.measure_rows = rows.data(); v.measure_row_ids = ids.data(); v.measure_row_count = rows.size();
+        v.measure_rows.assign(rows.begin(), rows.end()); v.measure_row_ids.assign(ids.begin(), ids.end()); v.measure_rows.resize(rows.size());
         v.grid_lines.assign(lines.data(), lines.data() + lines.size());
         v.pixels_per_standard_measure = 400.0;
         v.area_rows_per_measure = 192; v.area_snap_denominator = 8; v.edit_snap_enabled = true;
@@ -152,6 +152,7 @@ TEST_CASE("Measure resize equality does not wrap 64 bit cross products",
     fixture.rows[0].length_numerator = numerator;
     fixture.rows[0].length_denominator = denominator;
     fixture.rows[0].has_meter = false;
+    fixture.harness.view().compose.measure_rows.assign(fixture.rows.begin(), fixture.rows.end());
     fixture.harness.view().compose.grid_lines[0].y_pixels = 375;
     fixture.harness.view().compose.area_rows_per_measure = denominator;
     fixture.harness.view().compose.pixels_per_standard_measure = 100;

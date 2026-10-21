@@ -282,10 +282,10 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     fixture.application.project.quantize.quantize_editor->preview_enabled = true;
 }
 
-void check_t437_quantize_geometry(const WormUiComposeView& view,
+void check_t437_quantize_geometry(const wormedit::ui::compose_view_t& view,
                                   const editor_interaction_state_t& interaction,
                                   std::uint64_t note_id, std::uint64_t expected_after) {
-    expect_compose_test(view.quantize_preview_row_count == 1);
+    expect_compose_test(view.quantize_preview_rows.size() == 1);
     expect_compose_test(view.quantize_ghosts_drawable && view.quantize_ghosts.size() == 1);
     const auto& report = view.quantize_preview_rows[0];
     const auto& ghost = view.quantize_ghosts[0];
@@ -365,8 +365,7 @@ TEST_CASE("Quantize dispatcher refreshes authored grid geometry without editing 
         quantization_hold_t::both_endpoints, 4, quantization_space_t::authored_measure);
     fixture.project();
     const auto& authored_fourths = fixture.flattened.view.compose;
-    expect_compose_test(authored_fourths.quantize_space ==
-        static_cast<std::uint8_t>(quantization_space_t::authored_measure));
+    expect_compose_test(authored_fourths.quantize_space == quantization_space_t::authored_measure);
     expect_compose_test(authored_fourths.quantize_display_resolution == 960 &&
                         authored_fourths.quantize_resolution_scale == 1);
     expect_compose_test(authored_fourths.quantize_ghosts.size() == 1 &&
@@ -431,8 +430,8 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
                     .allow_resolution_promotion = true}, .preview_enabled = true};
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
-    const auto row = std::ranges::find(std::span(view.quantize_preview_rows, view.quantize_preview_row_count),
-        id.value, &WormUiComposeQuantizeReportRowView::object_id);
+    const auto row = std::ranges::find(std::span(view.quantize_preview_rows),
+        id, &wormedit::ui::compose_quantize_report_row_view_t::object_id);
     const auto ghost = std::ranges::find(std::span(view.quantize_ghosts),
         id, &wormedit::ui::compose_quantize_ghost_view_t::object_id);
     const auto hold_ghost = std::ranges::find(std::span(view.quantize_ghosts),
@@ -440,7 +439,7 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
     expect_compose_test(view.quantize_ghosts_drawable && view.quantize_ghosts.size() == 2);
     expect_compose_test(view.quantize_source_resolution == 960 &&
                         view.quantize_display_resolution == 6720 && view.quantize_resolution_scale == 7);
-    expect_compose_test(row != std::span(view.quantize_preview_rows, view.quantize_preview_row_count).end());
+    expect_compose_test(row != std::span(view.quantize_preview_rows).end());
     expect_compose_test(row->start_before_absolute_row == 1720 && row->start_after_absolute_row == 12720);
     const auto expected_after = compose_project_y(12720.0L / 7.0L,
         view.pixels_per_standard_measure / 960.0, fixture.interaction->viewport_scroll_pixels,
@@ -648,8 +647,8 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
         .y_pixels = pointer_y};
     project_bga_preview(fixture, preview);
     const auto& view = fixture.flattened.view.compose;
-    INFO("preview stamps: input project=" << preview.project_id << " view=" << view.project_id
-         << " input chart=" << preview.chart_id << " view chart=" << view.chart_id
+    INFO("preview stamps: input project=" << preview.project_id << " view=" << view.project_id.value
+         << " input chart=" << preview.chart_id << " view chart=" << view.chart_id.value
          << " input revision=" << preview.document_revision
          << " view revision=" << view.document_revision << " event count="
          << view.bga_events.size() << " lane visible=" << view.bga_lane_visible
@@ -661,7 +660,7 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
              << view.bga_events[0].selected << " kind="
              << static_cast<int>(view.bga_events[0].kind));
     REQUIRE(view.bga_move_preview_valid);
-    CHECK(view.bga_move_preview_event_id == 500);
+    CHECK(view.bga_move_preview_event_id == object_id_t{500});
     const auto source_y = downscroll ? view.viewport_height_pixels - view.bga_move_preview_y_pixels
                                      : view.bga_move_preview_y_pixels;
     const auto preview_row = (state.viewport_scroll_pixels + source_y) *
@@ -1041,7 +1040,7 @@ struct envelope_projection_fixture_t {
         expect_gpu_work(cache.timing.marker_timing_index.has_value());
         auto& view = flattened.view.compose;
         view.visible = view.scene_available = true;
-        view.project_id = history.document.id.value;
+        view.project_id.value = history.document.id.value;
         view.viewport_height_pixels = view.pixels_per_standard_measure = 200;
         interaction.viewport_scroll_pixels = 10;
         for (std::size_t index = 0; index < analysis.waveform->bins.size(); ++index) {
@@ -1219,7 +1218,7 @@ TEST_CASE("Compose envelope chart identity changes recompute actual source timin
     expect_gpu_work(fixture.flattened.view.compose.waveform_rows.front().absolute_peak[0] < peak);
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
-    ++fixture.flattened.view.compose.project_id;
+    ++fixture.flattened.view.compose.project_id.value;
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
 }
@@ -1281,7 +1280,7 @@ struct channel_projection_fixture_t : envelope_projection_fixture_t {
             {.id = object_id_t{74001}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{4},
              .sound_channel_event = object_id_t{73001}}};
         workspace.selected_chart = chart.id;
-        flattened.view.compose.selected_bmson_bgm_event_id = 74000;
+        flattened.view.compose.selected_bmson_bgm_event_id.value = 74000;
         interaction.viewport_scroll_pixels = 0;
     }
     void project_channel() {
@@ -1299,7 +1298,7 @@ TEST_CASE("BMSON channel switches sharing an asset preserve independent timing a
     fixture.project_channel();
     expect_gpu_work(!fixture.cache.waveform.channel_projection.view.value().rows.empty());
     const auto first = fixture.cache.waveform.channel_projection.view.value().rows.front().y_pixels;
-    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id.value = 74001;
     fixture.project_channel();
     expect_gpu_work(std::get<2>(*fixture.cache.waveform.channel_projection.ring.key()).channel == 71001);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projected_rows == 202);
@@ -1319,7 +1318,7 @@ TEST_CASE("BMSON channel switches sharing an asset preserve independent timing a
     expect_gpu_work(fixture.cache.waveform.channel_projection.view.value().rows.front().y_pixels > 140);
 }
 namespace {
-void check_swapped_stem_publication(const WormUiComposeView& view) {
+void check_swapped_stem_publication(const wormedit::ui::compose_view_t& view) {
     REQUIRE(view.stem_waveforms.size() == 1);
     const auto& swapped = view.stem_waveforms.front();
     CHECK(swapped.stem_key == 71000);
@@ -1346,7 +1345,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     CHECK(stem.rows.size() <= fixture.flattened.view.compose.viewport_height_pixels + 2);
 
     // Selecting the other marker swaps which stem is the extra one.
-    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id.value = 74001;
     populate_bmson_waveform_projection(context);
     check_swapped_stem_publication(fixture.flattened.view.compose);
     // The selected channel keeps an entry too, for its field taps and cut lines.
@@ -1368,7 +1367,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
 namespace {
 auto project_stable_stem_keys(channel_projection_fixture_t& fixture, bool pending = false)
     -> std::vector<std::uint64_t> {
-    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 0;
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id.value = 0;
     const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
         fixture.workspace, &fixture.interaction, fixture.cache, retained_sources_for(fixture.history.document, fixture.project_sources),
         {fixture.asset, fixture.channel_analysis}, {std::nullopt, nullptr}, 1,
@@ -1993,15 +1992,15 @@ TEST_CASE("Compose static tile epoch distinguishes reloaded content with identic
     static_style_fixture_t fixture;
     const auto initial=fixture.project();
     const auto first_note=fixture.first_note();
-    const auto project=fixture.flattened.view.compose.project_id;
-    const auto chart=fixture.flattened.view.compose.chart_id;
+    const auto project=fixture.flattened.view.compose.project_id.value;
+    const auto chart=fixture.flattened.view.compose.chart_id.value;
     const auto revision=fixture.flattened.view.compose.document_revision;
     fixture.history.document.charts.front().measures.front().notes.front().position.row=60;
     fixture.cache={}; // Match main's real project-open cache replacement boundary.
     const auto replacement=fixture.project();
     expect_static_style(replacement!=initial);
-    expect_static_style(fixture.flattened.view.compose.project_id==project);
-    expect_static_style(fixture.flattened.view.compose.chart_id==chart);
+    expect_static_style(fixture.flattened.view.compose.project_id.value==project);
+    expect_static_style(fixture.flattened.view.compose.chart_id.value==chart);
     expect_static_style(fixture.flattened.view.compose.document_revision==revision);
     expect_static_style(fixture.first_note()!=first_note);
     expect_static_style(fixture.project()==replacement);
@@ -2150,7 +2149,7 @@ void compare_scalar_bounds(wormedit::ui::compose_rect_t actual, wormedit::ui::co
     expect_static_style(std::abs(actual.right - expected.right) < 1e-8);
     expect_static_style(std::abs(actual.bottom - expected.bottom) < 1e-8);
 }
-void compare_scalar_notes(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+void compare_scalar_notes(const wormedit::ui::compose_view_t& actual, const wormedit::ui::compose_view_t& expected) {
     expect_static_style(actual.note_endpoints.size() == expected.note_endpoints.size());
     for (std::size_t index = 0; index < actual.note_endpoints.size(); ++index) {
         const auto& note = actual.note_endpoints[index];
@@ -2168,7 +2167,7 @@ void compare_scalar_notes(const WormUiComposeView& actual, const WormUiComposeVi
                             std::string_view(fresh.sound_detail));
     }
 }
-void compare_scalar_holds_bgm(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+void compare_scalar_holds_bgm(const wormedit::ui::compose_view_t& actual, const wormedit::ui::compose_view_t& expected) {
     expect_static_style(actual.hold_bodies.size() == expected.hold_bodies.size());
     for (std::size_t index = 0; index < actual.hold_bodies.size(); ++index) {
         compare_scalar_bounds(actual.hold_bodies[index].bounds, expected.hold_bodies[index].bounds);
@@ -2184,7 +2183,7 @@ void compare_scalar_holds_bgm(const WormUiComposeView& actual, const WormUiCompo
                             expected.bgm_events[index].event_id);
     }
 }
-void compare_scalar_grid(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+void compare_scalar_grid(const wormedit::ui::compose_view_t& actual, const wormedit::ui::compose_view_t& expected) {
     expect_static_style(actual.grid_lines.size() == expected.grid_lines.size());
     for (std::size_t index = 0; index < actual.grid_lines.size(); ++index) {
         const auto& line = actual.grid_lines[index];
@@ -2711,15 +2710,15 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     fixture.project();
     const auto& form_view = fixture.flattened.view.compose.recipe_form;
     REQUIRE(form_view.visible);
-    CHECK(form_view.recipe_id == 7001);
+    CHECK(form_view.recipe_id == recipe_id_t{7001});
     CHECK(std::string(form_view.name) == "rise");
-    CHECK(form_view.form.curve == WORM_UI_TIMING_RECIPE_CURVE_LINEAR);
+    CHECK(form_view.form.curve == wormedit::sv_recipe_curve_t::linear);
     CHECK(std::string(form_view.form.value_to.numerator) == "3");
-    CHECK(form_view.status_text == nullptr);
+    CHECK(form_view.status_text.empty());
 
     // A preview replaces that recipe's graph until the selection or the document moves on.
     const auto& chart = fixture.history.document.charts.front();
-    auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
+    auto form = wormedit::ui::timing_recipe_form_t::from(chart.sv_recipes.front());
     std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
     fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
@@ -2727,12 +2726,12 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
     CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
 
-    form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
+    form.curve = wormedit::sv_recipe_curve_t::exponential;
     std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
     fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
-    REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
+    REQUIRE(!fixture.flattened.view.compose.recipe_form.status_text.empty());
     CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
 
     fixture.application.project.timing_recipe.recipe_selected = 0;
@@ -3091,27 +3090,27 @@ TEST_CASE("Compose overview detail identity and cleared cache publish unique gen
 }
 
 namespace {
-void check_static_source_has_no_frame_overlays(const WormUiComposeView& source) {
-    expect_compose_test(!source.status_text && !source.selected_note_label && !source.hover_tooltip);
-    expect_compose_test(source.paste_ghosts.empty() && !source.paste_diagnostic);
-    expect_compose_test(source.resources.empty() && source.resources.size() == 0);
-    expect_compose_test(!source.output_groups && source.output_group_count == 0);
-    expect_compose_test(!source.branch_rows && source.branch_row_count == 0);
-    expect_compose_test(!source.branch_choices && source.branch_choice_count == 0);
-    expect_compose_test(source.branch_diagnostic_count == 0);
-    for (const auto* diagnostic : source.branch_diagnostics) expect_compose_test(!diagnostic);
+void check_static_source_has_no_frame_overlays(const wormedit::ui::compose_view_t& source) {
+    expect_compose_test(source.status_text.empty() && source.selected_note_label.empty() && source.hover_tooltip.empty());
+    expect_compose_test(source.paste_ghosts.empty() && source.paste_diagnostic.empty());
+    expect_compose_test(source.resources.empty());
+    expect_compose_test(source.output_groups.empty());
+    expect_compose_test(source.branch_rows.empty());
+    expect_compose_test(source.branch_choices.empty());
+    expect_compose_test(source.branch_diagnostic_count() == 0);
+    for (const auto& diagnostic : source.branch_diagnostics) expect_compose_test(diagnostic.empty());
 }
-void check_static_source_has_no_frame_markers(const WormUiComposeView& source) {
-    expect_compose_test(!source.beat_bookmarks && source.beat_bookmark_count == 0);
-    expect_compose_test(!source.beat_sections && source.beat_section_count == 0);
-    expect_compose_test(!source.audio_bookmarks && source.audio_bookmark_count == 0);
-    expect_compose_test(!source.audio_sections && source.audio_section_count == 0);
-    expect_compose_test(!source.semantic_layers && source.semantic_layer_count == 0);
-    expect_compose_test(!source.staged_bmson_marker_playable_lanes && !source.staged_bmson_marker_restarts &&
-        source.staged_bmson_marker_count == 0);
-    expect_compose_test(!source.lane_key_bindings && source.lane_key_binding_count == 0);
+void check_static_source_has_no_frame_markers(const wormedit::ui::compose_view_t& source) {
+    expect_compose_test(source.beat_bookmarks.empty());
+    expect_compose_test(source.beat_sections.empty());
+    expect_compose_test(source.audio_bookmarks.empty());
+    expect_compose_test(source.audio_sections.empty());
+    expect_compose_test(source.semantic_layers.empty() && source.semantic_layers.size() == 0);
+    expect_compose_test(source.staged_bmson_marker_playable_lanes.empty() && source.staged_bmson_marker_restarts.empty() &&
+        source.staged_bmson_marker_restarts.size() == 0);
+    expect_compose_test(source.lane_key_bindings.empty() && source.lane_key_bindings.size() == 0);
 }
-void check_static_source_has_no_frame_previews(const WormUiComposeView& source) {
+void check_static_source_has_no_frame_previews(const wormedit::ui::compose_view_t& source) {
     expect_compose_test(source.proposed_grid_lines.empty());
     expect_compose_test(source.timing_preview_rects.empty());
     expect_compose_test(source.timing_preview_markers.empty());
@@ -3131,7 +3130,7 @@ void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     expect_compose_test(fixture.flattened.view.compose.scene_available);
     expect_compose_test(fixture.flattened.view.compose.resources.size() == 1);
-    expect_compose_test(fixture.flattened.view.compose.output_group_count == 1);
+    expect_compose_test(fixture.flattened.view.compose.output_groups.size() == 1);
     expect_compose_test(fixture.flattened.view.compose.static_scene != nullptr);
 }
 void check_static_source_owned_geometry(const frontend_workspace_view_t& storage) {
@@ -3253,7 +3252,7 @@ void compare_geometry_hold(const wormedit::ui::compose_hold_view_t& a, const wor
     expect_compose_test(a.semantic_color_visible == b.semantic_color_visible && a.semantic_red == b.semantic_red &&
         a.semantic_green == b.semantic_green && a.semantic_blue == b.semantic_blue && a.semantic_alpha == b.semantic_alpha);
 }
-void compare_geometry_frames(const WormUiComposeView& a, const WormUiComposeView& b) {
+void compare_geometry_frames(const wormedit::ui::compose_view_t& a, const wormedit::ui::compose_view_t& b) {
     expect_compose_test(a.bands.size() == b.bands.size() && a.lanes.size() == b.lanes.size() && a.differences.size() == b.differences.size());
     expect_compose_test(a.note_endpoints.size() == b.note_endpoints.size() && a.hold_bodies.size() == b.hold_bodies.size());
     for (std::size_t i = 0; i < a.bands.size(); ++i) {
@@ -3583,7 +3582,7 @@ auto bgm_arena_song(format_family_t family) -> song_document_t {
     }
     return song;
 }
-void compare_bgm_arena_views(const WormUiComposeView& a, const WormUiComposeView& b) {
+void compare_bgm_arena_views(const wormedit::ui::compose_view_t& a, const wormedit::ui::compose_view_t& b) {
     expect_compose_test(a.bgm_lanes.size() == b.bgm_lanes.size() && a.bgm_events.size() == b.bgm_events.size());
     for (std::size_t i = 0; i < a.bgm_lanes.size(); ++i) {
         compare_geometry_rect(a.bgm_lanes[i].bounds, b.bgm_lanes[i].bounds);
@@ -3684,10 +3683,10 @@ auto semantic_arena_song(std::size_t count=2) -> song_document_t {
     if(count) chart.measures.front().notes.front().semantic_layers={layer_id_t{101}};
     return song;
 }
-void check_semantic_first(const WormUiComposeView& view) {
-    expect_compose_test(view.semantic_layer_count>0);
+void check_semantic_first(const wormedit::ui::compose_view_t& view) {
+    expect_compose_test(view.semantic_layers.size()>0);
     const auto& row=view.semantic_layers[0];
-    expect_compose_test(row.layer_id==101 && std::strlen(row.name)==81);
+    expect_compose_test(row.layer_id.value==101 && row.name.size()==81);
     expect_compose_test(row.red==99 && row.green==120 && row.blue==140 && row.alpha==255);
     expect_compose_test(row.assigned_note_count==1 && row.visible && row.locked);
 }
@@ -3705,7 +3704,7 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     const auto& view=fixture.flattened.view.compose;
     REQUIRE(view.scene_available);
     check_semantic_first(view);
-    expect_compose_test(view.semantic_layer_count==2 && view.semantic_layer_total_count==2);
+    expect_compose_test(view.semantic_layers.size() == 2 && view.semantic_layer_total_count==2);
     expect_compose_test(view.semantic_layers[0].selected && !view.semantic_layers[1].selected);
     expect_compose_test(view.semantic_layer_target_locked && view.semantic_layer_target_visible);
     expect_compose_test(view.semantic_layer_target_required_filter && !view.semantic_layer_target_excluded_filter);
@@ -3726,78 +3725,73 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     check_semantic_first(moved.view.compose);
     arena.reset();
     project_geometry_arena(fixture,arena);
-    expect_compose_test(std::strcmp(fixture.flattened.view.compose.semantic_layers[0].name,"changed source")==0);
+    expect_compose_test(std::strcmp(fixture.flattened.view.compose.semantic_layers[0].name.c_str(),"changed source")==0);
 }
 TEST_CASE("Compose semantic arena preserves bounded scrolling and empty state",
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t empty(semantic_arena_song(0)); empty.project();
-    expect_compose_test(empty.flattened.view.compose.semantic_layer_count==0);
+    expect_compose_test(empty.flattened.view.compose.semantic_layers.size() == 0);
     expect_compose_test(empty.flattened.view.compose.semantic_layer_total_count==0);
-    expect_compose_test(!empty.flattened.view.compose.semantic_layers_truncated);
+
     compose_test_fixture_t dense(semantic_arena_song(300));
     dense.application.project.semantic_layer.semantic_layer_row_count=1000;
     dense.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     dense.project();
     const auto& view=dense.flattened.view.compose;
-    expect_compose_test(view.semantic_layer_count==WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY);
+    expect_compose_test(view.semantic_layers.size() == wormedit::ui::semantic_layer_window_limit);
     expect_compose_test(view.semantic_layer_total_count==300 && view.semantic_layer_first_row==0);
-    expect_compose_test(!view.semantic_layers_truncated);
+
     dense.application.project.semantic_layer.semantic_layer_first_row=280;
     dense.application.project.semantic_layer.semantic_layer_row_count=18;
     dense.history.document.charts.front().semantic_layers[285].visible=false;
     dense.project();
-    expect_compose_test(view.semantic_layer_first_row==280 && view.semantic_layer_count==18);
-    expect_compose_test(view.semantic_layers[0].layer_id==381 && view.semantic_layers[5].layer_id==386);
+    expect_compose_test(view.semantic_layer_first_row==280 && view.semantic_layers.size() == 18);
+    expect_compose_test(view.semantic_layers[0].layer_id.value==381 && view.semantic_layers[5].layer_id.value==386);
     expect_compose_test(!view.semantic_layers[5].visible);
-    expect_compose_test(view.semantic_layer_target.layer_id==101 && view.semantic_layer_target.locked);
+    expect_compose_test(view.semantic_layer_target.layer_id.value==101 && view.semantic_layer_target.locked);
 }
 TEST_CASE("Compose note menu projects a bounded independent catalog and retires its capture",
           "[sys][compose-semantic-arena][note-menu]") {
     compose_test_fixture_t fixture(semantic_arena_song(30)); fixture.project();
     auto& app=fixture.application;
     const auto& view=fixture.flattened.view.compose;
-    expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
+    expect_compose_test(view.note_menu_layers.size() == 0 && view.note_menu_layers.empty());
     app.project.semantic_layer.semantic_layer_first_row=20;
     app.project.semantic_layer.note_layer_menu_chart=chart_id_t{1};
     app.project.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
     app.project.semantic_layer.note_layer_menu_row_count=1000;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
+    expect_compose_test(view.note_menu_layers.size() == wormedit::ui::note_layer_window_limit);
     expect_compose_test(view.note_menu_layer_total_count==30 && view.note_menu_layer_first_row==0);
-    expect_compose_test(view.note_menu_layers[0].layer_id==101 && view.note_menu_layers[0].locked);
-    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
+    expect_compose_test(view.note_menu_layers[0].layer_id.value==101 && view.note_menu_layers[0].locked);
+    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id.value==121);
     app.project.semantic_layer.note_layer_menu_first_row=16;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_first_row==16 && view.note_menu_layer_count==14);
-    expect_compose_test(view.note_menu_layers[13].layer_id==130);
-    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
+    expect_compose_test(view.note_menu_layer_first_row==16 && view.note_menu_layers.size() == 14);
+    expect_compose_test(view.note_menu_layers[13].layer_id.value==130);
+    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id.value==121);
     app.project.semantic_layer.note_layer_menu_row_count=0;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
+    expect_compose_test(view.note_menu_layers.size() == 0 && view.note_menu_layers.empty());
     app.project.semantic_layer.note_layer_menu_row_count=18;
     ++fixture.history.document.revision;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==0 && app.project.semantic_layer.note_layer_menu_row_count==0);
+    expect_compose_test(view.note_menu_layers.size() == 0 && app.project.semantic_layer.note_layer_menu_row_count==0);
     app.project.semantic_layer.note_layer_menu_revision=fixture.history.document.revision;
     app.project.semantic_layer.note_layer_menu_chart=chart_id_t{2};
     app.project.semantic_layer.note_layer_menu_row_count=18;
     fixture.project();
-    expect_compose_test(view.note_menu_layer_count==0 && app.project.semantic_layer.note_layer_menu_row_count==0);
+    expect_compose_test(view.note_menu_layers.size() == 0 && app.project.semantic_layer.note_layer_menu_row_count==0);
 }
-TEST_CASE("Compose semantic arena exhaustion publishes only complete named rows",
+TEST_CASE("Compose semantic views survive exhausted unrelated frame storage",
           "[sys][compose-semantic-arena]") {
-    bool found=false;
-    for(std::size_t limit=64;limit<=4096;++limit) {
-        compose_test_fixture_t fixture(semantic_arena_song());
-        wormedit::frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
-        project_geometry_arena(fixture,arena);
-        const auto& view=fixture.flattened.view.compose;
-        if(view.semantic_layer_count!=1) continue;
-        expect_compose_test(view.semantic_layers_truncated);
-        check_semantic_first(view); found=true;break;
-    }
-    expect_compose_test(found);
+    compose_test_fixture_t fixture(semantic_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 64});
+    project_geometry_arena(fixture, arena);
+    expect_compose_test(fixture.flattened.view.compose.semantic_layers.size() == 2);
+    check_semantic_first(fixture.flattened.view.compose);
 }
+
 TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames",
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t fixture(semantic_arena_song());
@@ -3811,7 +3805,7 @@ TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames"
         project_geometry_arena(fixture,arena);
         allocations=frame_heap_allocation_snapshot().count-before.count;
         stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
-            fixture.flattened.view.compose.semantic_layer_count==2;
+            fixture.flattened.view.compose.semantic_layers.size() == 2;
     }
     INFO("Semantic narrow fixture remaining projection allocations: " << allocations);
     expect_compose_test(stable);
@@ -3925,7 +3919,7 @@ auto project_waveform_frame(envelope_projection_fixture_t& fixture) -> bool {
         &fixture.analysis, false, true, &fixture.interaction, nullptr,
         &fixture.blocks, &fixture.style);
 }
-void check_empty_frame_waveform(const WormUiComposeView& view) {
+void check_empty_frame_waveform(const wormedit::ui::compose_view_t& view) {
     expect_waveform_arena(view.waveform_rows.empty());
     expect_waveform_arena(view.waveform_overview_rows.empty());
     expect_waveform_arena(view.waveform_overview_generation == 0);
@@ -4064,40 +4058,35 @@ auto marker_arena_song(std::size_t count = 2) -> song_document_t {
 }
 void check_marker_frame_spans(const frontend_workspace_view_t& frame) {
     const auto& view = frame.view.compose;
-    expect_compose_test(view.beat_bookmarks == frame.compose.bookmark.data() && view.beat_bookmark_count == frame.compose.bookmark.size());
-    expect_compose_test(view.audio_bookmarks == frame.compose.audio_marker.bookmark.data() && view.audio_bookmark_count == frame.compose.audio_marker.bookmark.size());
-    expect_compose_test(view.beat_sections == frame.compose.section.data() && view.beat_section_count == frame.compose.section.size());
-    expect_compose_test(view.audio_sections == frame.compose.audio_marker.section.data() && view.audio_section_count == frame.compose.audio_marker.section.size());
-    expect_compose_test(view.beat_bookmark_count <= WORM_UI_COMPOSE_BOOKMARK_CAPACITY);
-    expect_compose_test(view.beat_section_count <= WORM_UI_COMPOSE_SECTION_CAPACITY);
-    expect_compose_test(view.audio_bookmark_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY);
-    expect_compose_test(view.audio_section_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY);
+    expect_compose_test(view.beat_bookmarks.size() == view.audio_bookmarks.size());
+    expect_compose_test(view.beat_sections.size() == view.audio_sections.size());
 }
+
 void check_marker_prefix(const frontend_workspace_view_t& frame, const chart_document_t& chart) {
     check_marker_frame_spans(frame);
-    for (std::size_t index = 0; index < frame.compose.bookmark.size(); ++index) {
-        const auto& row = frame.compose.bookmark[index]; const auto& source = chart.bookmarks[index * 2];
-        expect_compose_test(row.bookmark_id == source.id.value && row.measure_number == 1 && row.row == source.position->row);
+    for (std::size_t index = 0; index < frame.view.compose.beat_bookmarks.size(); ++index) {
+        const auto& row = frame.view.compose.beat_bookmarks[index]; const auto& source = chart.bookmarks[index * 2];
+        expect_compose_test(row.bookmark_id.value == source.id.value && row.measure_number == 1 && row.row == source.position->row);
         expect_compose_test(row.chart_row == source.position->row && std::string_view(row.label) == source.label);
     }
-    for (std::size_t index = 0; index < frame.compose.audio_marker.bookmark.size(); ++index) {
-        const auto& row = frame.compose.audio_marker.bookmark[index]; const auto& source = chart.bookmarks[index * 2 + 1];
-        expect_compose_test(row.bookmark_id == source.id.value && row.audio_milliseconds == *source.audio_milliseconds);
+    for (std::size_t index = 0; index < frame.view.compose.audio_bookmarks.size(); ++index) {
+        const auto& row = frame.view.compose.audio_bookmarks[index]; const auto& source = chart.bookmarks[index * 2 + 1];
+        expect_compose_test(row.bookmark_id.value == source.id.value && row.audio_milliseconds == *source.audio_milliseconds);
         expect_compose_test(std::string_view(row.label) == source.label);
     }
-    for (std::size_t index = 0; index < frame.compose.section.size(); ++index) {
-        const auto& row = frame.compose.section[index]; const auto& source = chart.sections[index * 2];
-        expect_compose_test(row.section_id == source.id.value && std::string_view(row.label) == source.label);
+    for (std::size_t index = 0; index < frame.view.compose.beat_sections.size(); ++index) {
+        const auto& row = frame.view.compose.beat_sections[index]; const auto& source = chart.sections[index * 2];
+        expect_compose_test(row.section_id.value == source.id.value && std::string_view(row.label) == source.label);
         expect_compose_test(row.begin_measure_number == 1 && row.end_measure_number == 1 && row.begin_row == 96 && row.end_row == 480);
         expect_compose_test(row.begin_chart_row == 96 && row.end_chart_row == 480);
     }
-    for (std::size_t index = 0; index < frame.compose.audio_marker.section.size(); ++index) {
-        const auto& row = frame.compose.audio_marker.section[index]; const auto& source = chart.sections[index * 2 + 1];
-        expect_compose_test(row.section_id == source.id.value && std::string_view(row.label) == source.label);
+    for (std::size_t index = 0; index < frame.view.compose.audio_sections.size(); ++index) {
+        const auto& row = frame.view.compose.audio_sections[index]; const auto& source = chart.sections[index * 2 + 1];
+        expect_compose_test(row.section_id.value == source.id.value && std::string_view(row.label) == source.label);
         expect_compose_test(row.begin_audio_milliseconds == 200 && row.end_audio_milliseconds == 1600);
     }
 }
-void check_marker_visible_geometry(const WormUiComposeView& view, bool downscroll, double scroll) {
+void check_marker_visible_geometry(const wormedit::ui::compose_view_t& view, bool downscroll, double scroll) {
     const auto y = [&](double up) { return downscroll ? view.viewport_height_pixels - (up - scroll) : up - scroll; };
     expect_compose_test(view.beat_bookmarks[0].projection_visible && view.audio_bookmarks[0].projection_visible);
     expect_compose_test(view.beat_bookmarks[0].projected_y_pixels == Catch::Approx(y(19.2)));
@@ -4111,13 +4100,7 @@ void check_marker_visible_geometry(const WormUiComposeView& view, bool downscrol
     expect_compose_test(beat.projected_span_bottom_y_pixels == Catch::Approx(std::max(y(19.2), y(96.0))));
     expect_compose_test(!beat.proposed_begin_projection_visible && !beat.proposed_end_projection_visible && !beat.proposed_span_projection_visible);
 }
-void check_marker_text_addresses(const auto& rows, std::uintptr_t begin, std::uintptr_t end) {
-    check_geometry_between(rows, begin, end);
-    for (const auto& row : rows) {
-        const auto address = reinterpret_cast<std::uintptr_t>(row.label);
-        expect_compose_test(address >= begin && address + std::strlen(row.label) + 1 <= end);
-    }
-}
+
 }
 
 TEST_CASE("Compose marker arenas preserve anchors labels source order and projected geometry", "[sys][frame-arena][compose-markers]") {
@@ -4126,10 +4109,10 @@ TEST_CASE("Compose marker arenas preserve anchors labels source order and projec
         fixture.application.preferences.editor_preferences.scroll_directions.fill(direction);
         wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
         project_geometry_arena(fixture, arena);
-        REQUIRE(fixture.flattened.view.compose.beat_bookmark_count == 2);
-        REQUIRE(fixture.flattened.view.compose.audio_bookmark_count == 2);
-        REQUIRE(fixture.flattened.view.compose.beat_section_count == 2);
-        REQUIRE(fixture.flattened.view.compose.audio_section_count == 2);
+        REQUIRE(fixture.flattened.view.compose.beat_bookmarks.size() == 2);
+        REQUIRE(fixture.flattened.view.compose.audio_bookmarks.size() == 2);
+        REQUIRE(fixture.flattened.view.compose.beat_sections.size() == 2);
+        REQUIRE(fixture.flattened.view.compose.audio_sections.size() == 2);
         check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
         check_marker_visible_geometry(fixture.flattened.view.compose, direction == 2, fixture.interaction->viewport_scroll_pixels);
     }
@@ -4143,11 +4126,6 @@ TEST_CASE("Compose marker arrays and strings belong to the supplied arena throug
     project_geometry_arena(fixture, arena);
     const auto end = arena.allocate(1, 1);
     REQUIRE((begin && end));
-    const auto first = reinterpret_cast<std::uintptr_t>(*begin), last = reinterpret_cast<std::uintptr_t>(*end);
-    check_marker_text_addresses(fixture.flattened.compose.bookmark, first, last);
-    check_marker_text_addresses(fixture.flattened.compose.section, first, last);
-    check_marker_text_addresses(fixture.flattened.compose.audio_marker.bookmark, first, last);
-    check_marker_text_addresses(fixture.flattened.compose.audio_marker.section, first, last);
     fixture.history.document.charts.front().bookmarks[0].label.assign(200, 'x');
     fixture.history.document.charts.front().sections[1].label.assign(200, 'y');
     auto moved = std::move(fixture.flattened);
@@ -4175,36 +4153,26 @@ TEST_CASE("Compose marker spans preserve all four caps and empty-array flags", "
     compose_test_fixture_t fixture(marker_arena_song(65));
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
-    expect_compose_test(view.beat_bookmark_count == 64 && view.audio_bookmark_count == 64);
-    expect_compose_test(view.beat_section_count == 64 && view.audio_section_count == 64);
-    expect_compose_test(view.beat_bookmarks_truncated && view.audio_bookmarks_truncated && view.beat_sections_truncated && view.audio_sections_truncated);
+    expect_compose_test(view.beat_bookmarks.size() == 65 && view.audio_bookmarks.size() == 65);
+    expect_compose_test(view.beat_sections.size() == 65 && view.audio_sections.size() == 65);
+
     check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
     compose_test_fixture_t empty(marker_arena_song(0));
     empty.project();
     const auto& none = empty.flattened.view.compose;
     check_marker_frame_spans(empty.flattened);
-    expect_compose_test(none.beat_bookmark_count == 0 && none.audio_bookmark_count == 0 && none.beat_section_count == 0 && none.audio_section_count == 0);
-    expect_compose_test(!none.beat_bookmarks_truncated && !none.audio_bookmarks_truncated && !none.beat_sections_truncated && !none.audio_sections_truncated);
+    expect_compose_test(none.beat_bookmarks.size() == 0 && none.audio_bookmarks.size() == 0 && none.beat_sections.size() == 0 && none.audio_sections.size() == 0);
+
 }
 
-TEST_CASE("Compose marker arena exhaustion publishes complete per-anchor prefixes", "[sys][frame-arena][compose-markers]") {
-    bool beat_prefix = false, audio_prefix = false, section_prefix = false, audio_section_prefix = false;
-    for (std::size_t limit = 128; limit <= 4096; limit += 16) {
-        compose_test_fixture_t fixture(marker_arena_song());
-        wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
-        project_geometry_arena(fixture, arena);
-        const auto& view = fixture.flattened.view.compose;
-        check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
-        if (view.beat_bookmark_count < 2) expect_compose_test(view.beat_bookmarks_truncated);
-        if (view.audio_bookmark_count < 2) expect_compose_test(view.audio_bookmarks_truncated);
-        if (view.beat_section_count < 2) expect_compose_test(view.beat_sections_truncated);
-        if (view.audio_section_count < 2) expect_compose_test(view.audio_sections_truncated);
-        beat_prefix = beat_prefix || view.beat_bookmark_count == 1;
-        audio_prefix = audio_prefix || view.audio_bookmark_count == 1;
-        section_prefix = section_prefix || view.beat_section_count == 1;
-        audio_section_prefix = audio_section_prefix || view.audio_section_count == 1;
-    }
-    expect_compose_test(beat_prefix && audio_prefix && section_prefix && audio_section_prefix);
+TEST_CASE("Compose marker ownership survives exhausted unrelated frame storage", "[sys][frame-arena][compose-markers]") {
+    compose_test_fixture_t fixture(marker_arena_song(65));
+    wormedit::frame_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 64});
+    project_geometry_arena(fixture, arena);
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.beat_bookmarks.size() == 65 && view.audio_bookmarks.size() == 65);
+    expect_compose_test(view.beat_sections.size() == 65 && view.audio_sections.size() == 65);
+    check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
 }
 
 TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cached frames", "[sys][frame-arena][compose-markers]") {
@@ -4225,7 +4193,7 @@ TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cac
         count_allocations = false;
         stable = stable && allocations == remaining && arena.used_bytes() == used &&
             arena.committed_bytes() == committed && fixture.cache.scene.static_source.value().storage == source &&
-            fixture.flattened.view.compose.beat_bookmark_count == 2 && fixture.flattened.view.compose.audio_section_count == 2;
+            fixture.flattened.view.compose.beat_bookmarks.size() == 2 && fixture.flattened.view.compose.audio_sections.size() == 2;
     }
     INFO("Remaining actual projection allocations=" << remaining << ", used=" << used << ", committed=" << committed);
     expect_compose_test(stable);
@@ -4278,8 +4246,12 @@ void check_marker_capacity_validation_order() {
     auto& chart = fixture.history.document.charts.front();
     chart.bookmarks[128].position->measure = measure_id_t{999};
     chart.sections[128].beat_span->end.measure = measure_id_t{999};
-    fixture.project(); // Geometry outside the published cap was already skipped by the original producer.
-    expect_compose_test(fixture.flattened.view.compose.beat_bookmarks_truncated);
+    fixture.flattened.view.compose.visible = true;
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
+        fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
+    expect_compose_test(!fixture.flattened.view.compose.scene_available);
+    expect_marker_projection_error(fixture.flattened, "A beat-anchored bookmark is outside the chart measure geometry.");
+
     chart.bookmarks[128].position.reset();
     ++fixture.history.document.revision;
     fixture.flattened = {};
@@ -4347,13 +4319,13 @@ void check_marker_reused_frame(std::uint32_t direction) {
     fresh.cache = {};
     project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
     expect_compose_test(reused.cache.scene.static_source.value().storage == source && reused.cache.scene.static_projection_reused_frames > 0);
-    const auto& a = reused.flattened.compose; const auto& b = fresh.flattened.compose;
-    compare_marker_bookmarks(a.bookmark, b.bookmark);
-    compare_marker_bookmarks(a.audio_marker.bookmark, b.audio_marker.bookmark);
-    compare_marker_sections(a.section, b.section);
-    compare_marker_sections(a.audio_marker.section, b.audio_marker.section);
-    expect_compose_test(source->view.compose.beat_bookmark_count == 0 && !source->view.compose.beat_bookmarks);
-    expect_compose_test(source->view.compose.audio_section_count == 0 && !source->view.compose.audio_sections);
+    const auto& a = reused.flattened.view.compose; const auto& b = fresh.flattened.view.compose;
+    compare_marker_bookmarks(a.beat_bookmarks, b.beat_bookmarks);
+    compare_marker_bookmarks(a.audio_bookmarks, b.audio_bookmarks);
+    compare_marker_sections(a.beat_sections, b.beat_sections);
+    compare_marker_sections(a.audio_sections, b.audio_sections);
+    expect_compose_test(source->view.compose.beat_bookmarks.size() == 0 && source->view.compose.beat_bookmarks.empty());
+    expect_compose_test(source->view.compose.audio_sections.size() == 0 && source->view.compose.audio_sections.empty());
 }
 }
 TEST_CASE("Compose marker arena views agree across fresh and reused scene windows", "[sys][frame-arena][compose-markers]") {
@@ -4489,7 +4461,7 @@ void check_ten_key_note_commit() {
     fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
-    expect_compose_test(fixture.flattened.view.compose.lane_key_binding_count == 10);
+    expect_compose_test(fixture.flattened.view.compose.lane_key_bindings.size() == 10);
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     for (const auto& binding : profile.input.bindings) {
@@ -4776,8 +4748,7 @@ TEST_CASE("Compose BMS layout picker includes DP5 without free zones",
     fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
-    const auto names = std::span(view.lane_layout_profile_names,
-                                 view.lane_layout_profile_choice_count);
+    const auto names = std::span(view.lane_layout_profile_names);
     CHECK(std::ranges::any_of(names, [](const auto& name) {
         return std::string_view{name} == "BMS DP5 / 10K";
     }));
@@ -4904,7 +4875,7 @@ TEST_CASE("Lane profile switcher uses key roles instead of recognizing the curre
     scratch_song.charts.front().input_profile = make_bms_7k_profile().input;
     compose_test_fixture_t scratch{std::move(scratch_song)};
     scratch.project();
-    expect_compose_test(scratch.flattened.view.compose.lane_profile_choice_count == 0);
+    expect_compose_test(scratch.flattened.view.compose.lane_profile_names.size() == 0);
 
     auto song = compose_test_song();
     song.charts.front().lane_layouts.front().layout = make_osu_mania_profile(7)->layout;
@@ -4914,10 +4885,10 @@ TEST_CASE("Lane profile switcher uses key roles instead of recognizing the curre
     compose_test_fixture_t created{std::move(song)};
     created.project();
     const auto& view = created.flattened.view.compose;
-    expect_compose_test(view.lane_profile_choice_count == 1);
+    expect_compose_test(view.lane_profile_names.size() == 1);
     expect_compose_test(view.lane_profile_current == -1);
     expect_compose_test(std::string_view(view.lane_profile_names[0]) == "osu!mania 7K");
-    const auto ids = std::span(view.lane_layout_profile_ids, view.lane_layout_profile_choice_count);
+    const auto ids = std::span(view.lane_layout_profile_ids);
     expect_compose_test(std::ranges::any_of(ids, [](const auto& id) {
         return std::string_view(id) == "osu-mania-7k";
     }));
@@ -4937,11 +4908,11 @@ TEST_CASE("BGM-only projection offers every initial profile with distinct Specia
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(view.has_bgm_events);
-    expect_compose_test(view.lane_profile_choice_count == 41);
-    expect_compose_test(view.lane_profile_choice_count < WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+    expect_compose_test(view.lane_profile_names.size() == 41);
+    expect_compose_test(view.lane_profile_names.size() < 64);
     expect_compose_test(view.lane_profile_current == -1);
     std::vector<std::string_view> names;
-    for (std::size_t index = 0; index < view.lane_profile_choice_count; ++index)
+    for (std::size_t index = 0; index < view.lane_profile_names.size(); ++index)
         names.emplace_back(view.lane_profile_names[index]);
     for (const auto label : {"osu!mania 12K", "osu!mania 16K",
                              "osu!mania 12K (SpecialStyle)", "osu!mania 16K (SpecialStyle)"})
@@ -5197,7 +5168,7 @@ auto configure_mixed_projection(channel_projection_fixture_t& fixture)
     }
     ++fixture.history.document.revision;
     fixture.workspace.transport.audio_asset.reset();
-    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74000;
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id.value = 74000;
     auto packed_analysis = std::make_shared<audio::waveform_analysis_result_t>(*fixture.channel_analysis);
     packed_analysis->waveform->key.source = packed_source->source;
     return packed_analysis;
@@ -5455,13 +5426,13 @@ void t475_compare_fresh(compose_test_fixture_t& retained) {
     t475_project(fresh);
     const auto& a = retained.flattened.view.compose;
     const auto& b = fresh.flattened.view.compose;
-    t475_check(a.selected_note_label_note_id == b.selected_note_label_note_id);
-    t475_check(std::string_view(a.selected_note_label ? a.selected_note_label : "") ==
-          std::string_view(b.selected_note_label ? b.selected_note_label : ""));
-    t475_check(a.selected_bgm_event_id == b.selected_bgm_event_id);
-    t475_check(a.selected_assigned_resource_id == b.selected_assigned_resource_id);
-    t475_check(a.selected_bmson_note_event_id == b.selected_bmson_note_event_id);
-    t475_check(a.selected_bmson_source_lane_id == b.selected_bmson_source_lane_id);
+    t475_check(a.selected_note_label_note_id.value == b.selected_note_label_note_id.value);
+    t475_check(std::string_view(a.selected_note_label) ==
+          std::string_view(b.selected_note_label));
+    t475_check(a.selected_bgm_event_id.value == b.selected_bgm_event_id.value);
+    t475_check(a.selected_assigned_resource_id.value == b.selected_assigned_resource_id.value);
+    t475_check(a.selected_bmson_note_event_id.value == b.selected_bmson_note_event_id.value);
+    t475_check(a.selected_bmson_source_lane_id.value == b.selected_bmson_source_lane_id.value);
     std::string labels;
     for (std::size_t i = 0; i < std::min(a.note_endpoints.size(), b.note_endpoints.size()); ++i) {
         labels += std::string{"note "} + std::to_string(a.note_endpoints[i].note_id.value) +
@@ -5535,7 +5506,7 @@ TEST_CASE("Dense inspector locations reuse exact source values through selection
     const auto scanned = fixture.cache.scene.selected_source_scanned;
     t475_project(fixture);
     t475_check(fixture.cache.scene.selected_source_scanned == scanned);
-    t475_check(fixture.flattened.view.compose.selected_bgm_event_id == 700);
+    t475_check(fixture.flattened.view.compose.selected_bgm_event_id.value == 700);
     t475_compare_fresh(fixture);
 }
 
@@ -5552,7 +5523,7 @@ TEST_CASE("Dense inspector locations invalidate after label edit delete and undo
     t475_require(dispatch_editor_action(fixture.history, *fixture.interaction,
         delete_editor_selection_action_t{}));
     t475_select_note(fixture, object_id_t{600});
-    t475_check(fixture.flattened.view.compose.selected_note_label_note_id == 0);
+    t475_check(fixture.flattened.view.compose.selected_note_label_note_id.value == 0);
     t475_require(undo_document_command(fixture.history));
     t475_select_note(fixture, object_id_t{600});
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "edited");
@@ -5621,7 +5592,7 @@ TEST_CASE("Dense inspector missing locations recover on insertion and read curre
     const auto scanned = fixture.cache.scene.selected_source_scanned;
     t475_project(fixture);
     t475_check(fixture.cache.scene.selected_source_scanned == scanned);
-    t475_check(fixture.flattened.view.compose.selected_note_label_note_id == 0);
+    t475_check(fixture.flattened.view.compose.selected_note_label_note_id.value == 0);
     auto inserted = fixture.history.document;
     auto& notes = inserted.charts.front().measures.back().notes;
     notes.insert(notes.begin(), {.id = object_id_t{999}, .position = {measure_id_t{2}, 0},
@@ -5633,7 +5604,7 @@ TEST_CASE("Dense inspector missing locations recover on insertion and read curre
         {.chart = chart_id_t{1}, .resource = resource_id_t{901},
          .objects = {{editor_selection_object_kind_t::note, object_id_t{999}}}}));
     t475_project(fixture);
-    t475_check(fixture.flattened.view.compose.selected_assigned_resource_id == 901);
+    t475_check(fixture.flattened.view.compose.selected_assigned_resource_id.value == 901);
     t475_compare_fresh(fixture);
     auto reordered = fixture.history.document;
     std::ranges::reverse(reordered.charts.front().measures.back().notes);
@@ -5657,7 +5628,7 @@ struct packed_projection_fixture_t : channel_projection_fixture_t {
         chart.sound_channels[1].source_clip.end_frame = 1;
         chart.measures[0].bgm_events.push_back({.id = object_id_t{74002},
             .position = {measure_id_t{1}, 480}, .source_lane = object_id_t{3}});
-        flattened.view.compose.selected_bmson_bgm_event_id = 0;
+        flattened.view.compose.selected_bmson_bgm_event_id.value = 0;
         interaction.chart = chart.id;
         interaction.pixels_per_standard_measure = interaction.viewport_height_pixels = 200;
         cache.timing.marker_timing_index = timing_index_t::from(chart).value;
@@ -5865,12 +5836,12 @@ TEST_CASE("BMSON Draw projection keeps duplicate asset stem and packed resource 
     fixture.application.project.compose_gesture.draw_source_id = 101;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
-    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 601);
+    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id.value == 601);
     const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     fixture.application.project.compose_gesture.draw_source_id = 102;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
-    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 0);
+    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id.value == 0);
     t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds);
 }
 TEST_CASE("BMSON Draw resource ownership cache invalidates revision and replacement identity",
@@ -5969,7 +5940,7 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     request.automatic_row_limit = 8;
     project_chip_request(fixture, request);
     const auto& view = fixture.flattened.view.compose;
-    t475_check(view.keysound_projected_primary_resource_id == 179);
+    t475_check(view.keysound_projected_primary_resource_id.value == 179);
     t475_check(view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
     t475_check(view.keysound_primary_display_index == 80);
     t475_check(view.keysound_display_total_count == 81);
@@ -6045,7 +6016,7 @@ TEST_CASE("Tool chip BGA uses resource identity and Layer reveals the off-page t
     t475_project(fixture);
     const auto& view = fixture.flattened.view.compose;
     t475_check(std::string_view(view.draw_source_label) == "501 preview image");
-    t475_check(!view.draw_source_missing && view.draw_source_id != fixture.history.document.resources.front().asset.value);
+    t475_check(!view.draw_source_missing && view.draw_source_id.value != fixture.history.document.resources.front().asset.value);
     t475_check(view.semantic_layer_target_row == 99);
     t475_check(std::string_view(view.semantic_layer_target.name) == "Drums 99");
 }
@@ -6386,7 +6357,7 @@ TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only sele
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(view.selected_bgm_event_count == 1 && view.quantize_preview_moved == 1);
-    expect_compose_test(view.quantize_preview_row_count == 1 && view.quantize_preview_rows[0].bgm);
+    expect_compose_test(view.quantize_preview_rows.size() == 1 && view.quantize_preview_rows[0].bgm);
     expect_compose_test(view.quantize_ghosts.size() == 1 && view.quantize_ghosts[0].has_tail);
     expect_compose_test(view.quantize_ghosts[0].before_head.left >= view.playable_field_right_pixels);
     const auto chart_id = fixture.history.document.charts.front().id.value;
@@ -6643,7 +6614,7 @@ TEST_CASE("Range pause conversion routes once and rejects stale or owned interac
 TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
           "[sys][horizontal-layout][timing-geometry][T563]") {
     using namespace wormedit::ui;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.viewport_height_pixels = 600;
     view.timing_lane_visibility_mask = 0xff;
     view.playable_field_left_pixels = 426;
@@ -6669,7 +6640,7 @@ TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
 namespace {
 void verify_timing_partition(std::uint8_t mask, double right) {
     using namespace wormedit::ui;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.timing_lane_visibility_mask = mask;
     view.playable_field_left_pixels = right + 48;
     view.bga_lane_visible = true;
@@ -6858,7 +6829,7 @@ TEST_CASE("Existing 16K charts offer distinctly named SpecialStyle layouts and p
     compose_test_fixture_t fixture(std::move(song));
     fixture.project();
     auto& view = fixture.flattened.view.compose;
-    expect_compose_test(view.lane_profile_choice_count == 2);
+    expect_compose_test(view.lane_profile_names.size() == 2);
     expect_compose_test(std::string_view(view.lane_profile_names[1]) == "osu!mania 16K (SpecialStyle)");
     const auto& active = fixture.history.document.charts.front().lane_layouts.front();
     expect_compose_test(
@@ -7571,7 +7542,7 @@ TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
         {.y_pixels = 100, .kind = editor_grid_line_kind_t::measure, .measure_number = 1, .measure_id = {10}},
         {.y_pixels = 300, .kind = editor_grid_line_kind_t::measure, .measure_number = 2, .measure_id = {11}},
         {.y_pixels = 400, .kind = editor_grid_line_kind_t::beat}}};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.viewport_height_pixels = 600;
     view.grid_lines.assign(lines.begin(), lines.end());
     editor_area_geometry_snapshot_t hidden;
@@ -7719,8 +7690,7 @@ void refill_owned_scene_geometry(compose_test_fixture_t& fixture, bool bgm_only 
     const compose_projection_detail::compose_scene_projection_context_t projection{
         .inputs = inputs, .index = index, .scene = *fixture.cache.scene.scene_window.scene,
         .field_left_pixels = view.playable_field_left_pixels,
-        .playable_field_width = view.playable_field_right_pixels - view.playable_field_left_pixels,
-        .lane_key_bindings_truncated = false};
+        .playable_field_width = view.playable_field_right_pixels - view.playable_field_left_pixels};
     compose_projection_detail::populate_compose_sound_labels(projection);
     compose_projection_detail::build_compose_bgm_view(projection, fixture.cache);
     if (bgm_only) return;
@@ -7969,7 +7939,7 @@ TEST_CASE("Compose BGA dock owns complete rows and reuses warmed projection stor
     song.resources.push_back({.id = resource_id_t{2}, .name = std::string(80, 'b'),
         .asset = asset_id_t{1}, .roles = {resource_role_t::bga}, .missing = true});
     bga_dock_runtime_t runtime;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     const ui::bga_dock_request_t request{.visible = true, .ids_available = true, .row_limit = 64};
     runtime.project(song, {}, request, view, 1);
     REQUIRE(view.bga_rows.size() == 1);
@@ -8011,4 +7981,72 @@ TEST_CASE("Compose fallback paths retain every candidate without warmed allocati
     history.document.resources.front().missing = false;
     populate_compose_keysound_fallbacks(frame, history, directory->path());
     expect_compose_test(frame.view.compose.keysound_fallbacks.empty());
+}
+
+TEST_CASE("Remaining Compose leaf families refill retained text without warmed allocations",
+          "[sys][compose-remaining][allocation]") {
+    auto song = marker_arena_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers = semantic_arena_song().charts.front().semantic_layers;
+    chart.sv_recipes = recipe_test_song().charts.front().sv_recipes;
+    song.quantization_presets.push_back({.name = std::string(64, 'p'), .divisions = 8});
+    compose_test_fixture_t fixture(std::move(song));
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
+    fixture.project();
+    fixture.application.project.feedback.bms_branch_statement_feedback =
+        application_command_state_t::bms_branch_statement_feedback_t{
+            .chart = chart_id_t{1}, .revision = fixture.history.document.revision,
+            .message = std::string(100, 'f')};
+    auto& app = fixture.application.project.semantic_layer;
+    app.note_layer_menu_chart = chart_id_t{1};
+    app.note_layer_menu_revision = fixture.history.document.revision;
+    app.note_layer_menu_row_count = 18;
+    const auto& stored = fixture.history.document.charts.front();
+    const auto& measures = *fixture.cache.scene.cached_measure_index;
+    const auto refill = [&] {
+        fixture.flattened.reset();
+        auto& view = fixture.flattened.view.compose;
+        view.visible = true;
+        const auto bookmarks = compose_projection_detail::populate_compose_bookmark_storage(
+            fixture.flattened, stored, measures, view);
+        const auto sections = compose_projection_detail::populate_compose_section_storage(
+            fixture.flattened, stored, measures, view);
+        const auto layers = compose_projection_detail::populate_semantic_layer_palette(
+            fixture.flattened, stored, fixture.cache, fixture.history, fixture.application);
+        compose_projection_detail::populate_note_layer_menu(fixture.flattened, stored,
+            fixture.history.document.revision, fixture.application);
+        compose_projection_detail::populate_quantize_preview(fixture.cache, fixture.history.document,
+            stored, fixture.history.document.revision, *fixture.interaction, fixture.application, view);
+        compose_projection_detail::populate_compose_recipe_form(fixture.flattened, stored,
+            fixture.application, view);
+        compose_projection_detail::build_branch_statement_feedback_view(view, fixture.application,
+            stored.id, fixture.history.document.revision);
+        return bookmarks && sections && layers;
+    };
+    expect_compose_test(refill());
+    const auto before = frame_heap_allocation_snapshot();
+    const auto valid = refill();
+    const auto after = frame_heap_allocation_snapshot();
+    check_heap_counter(after.count, before.count);
+    check_heap_counter(after.bytes, before.bytes);
+    expect_compose_test(valid);
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.beat_bookmarks.size() == 2 && view.audio_sections.size() == 2);
+    expect_compose_test(view.semantic_layers.size() == 2 && view.note_menu_layers.size() == 2);
+    expect_compose_test(view.quantize_presets.size() == 1 && view.recipe_form.visible);
+    expect_compose_test(view.measure_rows.front().measure_id == stored.measures.front().id);
+    expect_compose_test(view.branch_diagnostic_count() == 1 && view.branch_diagnostic_at(0) == std::string(100, 'f'));
+}
+
+TEST_CASE("Owned BMS statement projection preserves every retained source byte",
+          "[sys][compose-remaining][bms-branch]") {
+    const bms_control_node_t node{.id = branch_id_t{42}, .kind = bms_control_kind_t::raw_statement,
+        .original_text = std::string{"raw\0tail", 8}, .source_order = 7};
+    std::vector<wormedit::ui::compose_branch_row_view_t> rows{
+        {.has_source_order = true, .source_order = 7, .node_id = branch_id_t{42}, .raw_statement = true}};
+    std::size_t index{};
+    compose_projection_detail::bind_branch_statement_metadata(node, rows, index);
+    expect_compose_test(index == 1);
+    expect_compose_test(rows.front().statement_id == node.id);
+    expect_compose_test(rows.front().statement_text == node.original_text);
 }

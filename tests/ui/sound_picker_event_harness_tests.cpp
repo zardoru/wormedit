@@ -115,7 +115,7 @@ TEST_CASE("Go to sound Escape and context loss leave the armed source unchanged"
             action = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
         }
         if (cause == 2) {
-            ++harness.view().compose.chart_id;
+            ++harness.view().compose.chart_id.value;
             action = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
         }
         if (cause == 3) {
@@ -228,7 +228,7 @@ struct sound_picker_host_fixture_t {
     nk_user_font font{};
     nk_context context{};
     worm_ui_nuklear_compose_state_t compose{};
-    WormUiComposeView view{.project_id = 1, .chart_id = 1, .document_revision = 1};
+    wormedit::ui::compose_view_t view{.project_id = {1}, .chart_id = {1}, .document_revision = 1};
     wormedit::ui::workspace_action_t action{};
 
     sound_picker_host_fixture_t() {

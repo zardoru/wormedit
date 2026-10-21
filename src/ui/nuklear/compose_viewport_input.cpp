@@ -180,8 +180,8 @@ static void append_compose_pinch_inputs(const ComposeViewportInputContext& input
     const auto& view = *input.view;
     if (competing_capture || !input.context || !view.scene_available || view.input_occluded ||
         !input.window_focused || compose_text_owned(input.context) || state.inline_timing.inline_timing_open ||
-        state.dialogs.go_to_measure_open || state.pinch.pinch.project_id != view.project_id ||
-        state.pinch.pinch.chart_id != view.chart_id || !(input.viewport.w > 0) || !(input.viewport.h > 0)) {
+        state.dialogs.go_to_measure_open || state.pinch.pinch.project_id != view.project_id.value ||
+        state.pinch.pinch.chart_id != view.chart_id.value || !(input.viewport.w > 0) || !(input.viewport.h > 0)) {
         state.pinch.pinch = {};
         return;
     }
@@ -460,10 +460,10 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
         input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
         state.waveform_drag.waveform_overview_drag_active = true;
         state.waveform_drag.waveform_overview_capture = {
-            view.chart_id, view.document_revision, view.selected_audio_asset_id,
+            view.chart_id.value, view.document_revision, view.selected_audio_asset_id.value,
             view.waveform_overview_total_frames, view.waveform_overview_sample_rate,
             input.overview.x, input.overview.w, input.window_begin, input.window_end,
-            input.window_capture, view.project_id};
+            input.window_capture, view.project_id.value};
     }
     if (state.waveform_drag.waveform_overview_drag_active &&
         state.waveform_drag.waveform_overview_capture.window_capture != input.window_capture)

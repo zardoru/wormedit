@@ -8,7 +8,7 @@ auto click_hitsound(nuklear_event_harness_t& harness, int x, int y) -> wormedit:
     const auto actions = wormedit::test::click_at(harness, x, y);
     const auto found = std::ranges::find_if(actions, [](const auto& a) { return a.get().compose_hitsound.has_value(); });
     REQUIRE(found != actions.end());
-    CHECK(found->get().compose_input_chart_id.value == harness.view().compose.chart_id);
+    CHECK(found->get().compose_input_chart_id.value == harness.view().compose.chart_id.value);
     return *found->get().compose_hitsound;
 }
 void open_sample_set_menu(nuklear_event_harness_t& harness) {

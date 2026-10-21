@@ -221,12 +221,12 @@ auto command_shortcut_text_t::first_text(std::size_t command_index) const noexce
         ? std::string_view{first_texts_[command_index]} : std::string_view{""};
 }
 
-auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events) -> shortcut_capture_t {
+auto capture_shortcut_batch(std::span<const wormedit::ui::shortcut_event_t> events) -> shortcut_capture_t {
     if (events.size() > ui::shortcut_event_admission_limit)
         return {.cancel = true, .chord = std::nullopt};
     for (const auto& event : events) {
-        if (event.repeat || event.tap_timing_space || key_name(event.hid_usage).empty()) continue;
-        if (event.hid_usage == static_cast<std::uint16_t>(shortcut_key_t::escape) && event.modifiers == 0)
+        if (event.repeat || event.tap_timing_space || key_name(static_cast<std::uint16_t>(event.hid_usage)).empty()) continue;
+        if (event.hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(shortcut_key_t::escape)) && event.modifiers == 0)
             return {.cancel = true, .chord = std::nullopt};
         return {.cancel = false,
                 .chord = shortcut_chord_t{.key = static_cast<shortcut_key_t>(event.hid_usage),

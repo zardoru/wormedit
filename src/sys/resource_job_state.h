@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace wormedit::sys {
 
@@ -42,8 +43,9 @@ struct output_export_confirmation_view_t {
     bool required{};
     std::uint64_t project_id{};
     std::uint64_t document_revision{};
-    const char* message{};
-    const char* detail{};
+    std::string_view message;
+    std::string_view detail;
+    auto operator==(const output_export_confirmation_view_t&) const -> bool = default;
 };
 
 struct resource_copy_t {

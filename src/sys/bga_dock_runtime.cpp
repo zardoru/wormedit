@@ -101,7 +101,7 @@ void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
 bga_dock_runtime_t::bga_dock_runtime_t() : state_(std::make_unique<state_t>()) {}
 bga_dock_runtime_t::~bga_dock_runtime_t() = default;
 void bga_dock_runtime_t::project(const song_document_t& document, const std::filesystem::path& base,
-    const wormedit::ui::bga_dock_request_t& request, WormUiComposeView& view,
+    const wormedit::ui::bga_dock_request_t& request, wormedit::ui::compose_view_t& view,
     std::uint64_t session_generation) {
     auto& state = *state_;
     if (state.project != document.id || state.session_generation != session_generation) {

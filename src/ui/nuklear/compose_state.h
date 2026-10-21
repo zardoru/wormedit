@@ -24,7 +24,7 @@
 #include <vector>
 
 // Historical panel focus does not decide canvas ownership. Actual entry/occlusion does.
-auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
+auto worm_ui_nuklear_compose_canvas_input_available(const wormedit::ui::compose_view_t* view,
     bool window_focused, bool text_owned, bool ime_owned) -> bool;
 
 enum class worm_ui_nuklear_overview_event_t { none, scroll, click };
@@ -85,7 +85,7 @@ auto worm_ui_nuklear_overview_fraction(double x, double left, double width)
 auto worm_ui_nuklear_overview_frame_delta(double x, double anchor, double width,
                                          std::uint64_t total_frames) -> std::int64_t;
 auto worm_ui_nuklear_overview_capture_matches(
-    const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
+    const worm_ui_nuklear_overview_capture_t& capture, const wormedit::ui::compose_view_t& view,
     double left, double width, bool available, bool window_focused) -> bool;
 
 inline auto worm_ui_nuklear_beat_fit_line(const wormedit::ui::compose_grid_line_view_t& line) noexcept -> bool {
@@ -211,10 +211,10 @@ struct nk_color;
 enum class worm_ui_nuklear_compose_color_view_t { normal, snap, layer };
 
 // Transient arrows retain their snap artwork without a semantic layer ring.
-auto compose_note_is_transient(const WormUiComposeView& view,
+auto compose_note_is_transient(const wormedit::ui::compose_view_t& view,
                                const wormedit::ui::compose_note_view_t& note) -> bool;
 auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t color_view,
-    const WormUiComposeView& view, const wormedit::ui::compose_note_view_t& note) -> bool;
+    const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_note_view_t& note) -> bool;
 
 // Pure base fills; kind, hover and preview overrides are applied by the canvas.
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
@@ -379,7 +379,7 @@ struct worm_ui_nuklear_compose_state_t {
 
     struct recipe_editor_t {
         // Edit buffers of the selected SV recipe's form (see compose_recipe_form.cpp).
-        WormUiTimingRecipeForm recipe_edit_form{};
+        wormedit::ui::timing_recipe_form_t recipe_edit_form{};
         std::uint64_t recipe_edit_id{};
         std::uint64_t recipe_edit_revision{};
         bool recipe_edit_dirty{};
@@ -563,7 +563,7 @@ struct worm_ui_nuklear_compose_state_t {
     } hitsound_menu;
 
     struct layer_editor_t {
-        std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> semantic_layer_name{};
+        std::array<char, wormedit::ui::semantic_layer_name_input_bytes> semantic_layer_name{};
         nk_colorf semantic_layer_color{};
         bool semantic_layer_color_editor_visible{};
         bool semantic_layer_name_editor_visible{};
@@ -571,13 +571,13 @@ struct worm_ui_nuklear_compose_state_t {
         // Stamp object id is the captured layer id.
         wormedit::ui::chrome::ContextMenu layers_menu{.title = "Layer actions"};
         bool layers_menu_input_consumed{};
-        WormUiComposeSemanticLayerView layers_menu_layer{};
+        wormedit::ui::compose_semantic_layer_view_t layers_menu_layer{};
         std::string layers_menu_layer_name;
         std::size_t layers_menu_row_index{};
         std::optional<layer_creation_request_t> layer_creation_request;
         std::optional<layer_creation_request_t> layer_creation_context;
         wormedit::ui::chrome::Dialog layer_creation_dialog{};
-        std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> layer_creation_name{};
+        std::array<char, wormedit::ui::semantic_layer_name_input_bytes> layer_creation_name{};
         bool layer_creation_focus_pending{};
         std::size_t layers_panel_total_count{};
         std::uint64_t layers_panel_chart_id{};
@@ -802,7 +802,7 @@ void worm_ui_nuklear_set_stem_lane_width(worm_ui_nuklear_compose_state_t& state,
 void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
     bool restore = true);
 void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
-    const WormUiComposeView& view, bool window_focused);
+    const wormedit::ui::compose_view_t& view, bool window_focused);
 // True when a window position lies over the keysound listbox drawn this frame.
 [[nodiscard]] auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool;
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
@@ -812,21 +812,21 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
 // when it is still listed and not missing, else 0. Lane keys and note paint both ask this
 // instead of reading armed_resource_id themselves.
 [[nodiscard]] auto worm_ui_nuklear_armed_dock_sound(
-    const worm_ui_nuklear_compose_state_t& state, const WormUiComposeView& view) -> std::uint64_t;
+    const worm_ui_nuklear_compose_state_t& state, const wormedit::ui::compose_view_t& view) -> std::uint64_t;
 
 // Stamps the armed Sounds-dock sample on the compose input just appended, so every gesture that
 // can create a note (lane key, paint, Alt-hold, click) captures it the same way at press time.
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
-                                                  const WormUiComposeView& view,
+                                                  const wormedit::ui::compose_view_t& view,
                                                   wormedit::ui::workspace_action_t& action);
 
 void worm_ui_nuklear_reset_compose_state();
 
 [[nodiscard]] auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,
-                                                        const WormUiComposeView& view) -> bool;
+                                                        const wormedit::ui::compose_view_t& view) -> bool;
 void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
-                                          const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+                                          const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                                           bool committed, bool deactivated);
 
 void worm_ui_nuklear_inline_timing_initial_text(const wormedit::ui::timing_view_t& view, char* destination,
@@ -852,10 +852,10 @@ void worm_ui_nuklear_compose_file_dialog_complete(
     -> std::optional<wormedit::ui::file_dialog_result_t>;
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_open() -> bool;
 
-auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)
+auto worm_ui_nuklear_overview_source_fraction(const wormedit::ui::compose_view_t& view)
     -> std::optional<double>;
 
-auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const char* text)
+auto worm_ui_nuklear_compose_measure_number(const wormedit::ui::compose_view_t& view, const char* text)
     -> std::optional<std::uint64_t>;
 
 // Returns true only for the first navigation edge of a Shift range.
@@ -870,4 +870,4 @@ auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
 void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, wormedit::ui::workspace_action_t&, uint8_t kind, uint64_t id);
 
 struct nk_context;
-bool worm_ui_nuklear_compose_context_click(const nk_context*, const WormUiComposeView&);
+bool worm_ui_nuklear_compose_context_click(const nk_context*, const wormedit::ui::compose_view_t&);

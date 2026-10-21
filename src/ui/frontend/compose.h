@@ -1,15 +1,20 @@
 #pragma once
 #include "compose_measure_lane.h"
+#include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
 #include "metadata_audio.h"
 #include "hitsounds.h"
 #include "preview_audio.h"
 #include <array>
+#include <cstddef>
 #include <algorithm>
 #include <span>
 #include <cmath>
 #include <optional>
 #include <string_view>
+#include <string>
+
+namespace wormedit { struct sv_recipe_t; }
 #include <vector>
 #include <tuple>
 
@@ -178,68 +183,59 @@ struct compose_speed_span_view_t {
 };
 } // namespace wormedit::ui
 
-typedef enum WormUiTimingRecipeOutput {
-    WORM_UI_TIMING_RECIPE_OUTPUT_SV = 0,
-    WORM_UI_TIMING_RECIPE_OUTPUT_SCROLLS,
-    WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS,
-} WormUiTimingRecipeOutput;
 
-typedef enum WormUiTimingRecipeCurve {
-    WORM_UI_TIMING_RECIPE_CURVE_CONSTANT = 0,
-    WORM_UI_TIMING_RECIPE_CURVE_LINEAR,
-    WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL,
-    WORM_UI_TIMING_RECIPE_CURVE_BUMP,
-    /* Stored and shown, not editable or evaluable yet (native schema 2, T-189). */
-    WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION,
-} WormUiTimingRecipeCurve;
 
-typedef enum WormUiTimingRecipeSamplingMode {
-    WORM_UI_TIMING_RECIPE_SAMPLING_FIXED = 0,
-    WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE,
-} WormUiTimingRecipeSamplingMode;
 
-typedef enum WormUiTimingRecipeFixedExtent {
-    WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT = 0,
-    WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS,
-} WormUiTimingRecipeFixedExtent;
 
-typedef struct WormUiTimingRecipeRationalText {
-    char numerator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
-    char denominator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
-} WormUiTimingRecipeRationalText;
+namespace wormedit::ui {
+enum class timing_recipe_fixed_extent_t { point_count, step_rows };
 
-typedef struct WormUiTimingRecipeForm {
-    WormUiTimingRecipeOutput output;
-    WormUiTimingRecipeCurve curve;
-    WormUiTimingRecipeSamplingMode sampling_mode;
-    WormUiTimingRecipeFixedExtent fixed_extent;
-    WormUiTimingRecipeRationalText value_from;
-    WormUiTimingRecipeRationalText value_to;
-    WormUiTimingRecipeRationalText shape;
-    WormUiTimingRecipeRationalText bump_start;
-    WormUiTimingRecipeRationalText bump_length;
-    WormUiTimingRecipeRationalText bump_x;
-    WormUiTimingRecipeRationalText bump_y;
-    WormUiTimingRecipeRationalText tolerance;
-    WormUiTimingRecipeRationalText transition_duration;
-    bool transition_is_seconds;
-    char fixed_point_count[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
-    char fixed_step_rows[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
-    char adaptive_max_points[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
-} WormUiTimingRecipeForm;
+struct timing_recipe_rational_text_t {
+    char numerator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES]{};
+    char denominator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES]{};
+    auto operator==(const timing_recipe_rational_text_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
+struct timing_recipe_form_t {
+    wormedit::sv_recipe_output_t output{};
+    wormedit::sv_recipe_curve_t curve{};
+    wormedit::sv_recipe_sampling_mode_t sampling_mode{};
+    wormedit::ui::timing_recipe_fixed_extent_t fixed_extent{};
+    wormedit::ui::timing_recipe_rational_text_t value_from{};
+    wormedit::ui::timing_recipe_rational_text_t value_to{};
+    wormedit::ui::timing_recipe_rational_text_t shape{};
+    wormedit::ui::timing_recipe_rational_text_t bump_start{};
+    wormedit::ui::timing_recipe_rational_text_t bump_length{};
+    wormedit::ui::timing_recipe_rational_text_t bump_x{};
+    wormedit::ui::timing_recipe_rational_text_t bump_y{};
+    wormedit::ui::timing_recipe_rational_text_t tolerance{};
+    wormedit::ui::timing_recipe_rational_text_t transition_duration{};
+    bool transition_is_seconds{};
+    char fixed_point_count[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES]{};
+    char fixed_step_rows[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES]{};
+    char adaptive_max_points[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES]{};
+    auto operator==(const timing_recipe_form_t&) const -> bool = default;
+    [[nodiscard]] static auto from(const wormedit::sv_recipe_t&) -> timing_recipe_form_t;
+};
+} // namespace wormedit::ui
 
 /* The selected SV recipe's editable form, as stored in the document. name and expression_source
    are valid for the frame; expression_source is non-empty only for a Lua expression recipe, whose
    curve cannot be edited yet. status_text carries the last preview or apply diagnostic. */
-typedef struct WormUiComposeRecipeFormView {
-    bool visible;
-    bool enabled;
-    uint64_t recipe_id;
-    const char* name;
-    const char* expression_source;
-    const char* status_text;
-    WormUiTimingRecipeForm form;
-} WormUiComposeRecipeFormView;
+namespace wormedit::ui {
+struct compose_recipe_form_view_t {
+    bool visible{};
+    bool enabled{};
+    wormedit::recipe_id_t recipe_id{};
+    std::string_view name{};
+    std::string_view expression_source{};
+    std::string_view status_text{};
+    wormedit::ui::timing_recipe_form_t form{};
+    auto operator==(const compose_recipe_form_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct compose_difference_view_t {
@@ -413,79 +409,94 @@ struct compose_bgm_move_preview_view_t {
 
 // A visible palette slot. The application retains stable IDs, names, and
 // colors; the frontend must return the ID rather than a transient index.
-typedef struct WormUiComposeSemanticLayerView {
-    uint64_t layer_id;
-    const char* name;
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint8_t alpha;
-    size_t assigned_note_count;
-    bool visible;
-    bool locked;
-    bool selected;
-    size_t assigned_bgm_count;
-    bool assist_tick_enabled;
-} WormUiComposeSemanticLayerView;
+namespace wormedit::ui {
+struct compose_semantic_layer_view_t {
+    wormedit::layer_id_t layer_id{};
+    std::string name;
+    uint8_t red{};
+    uint8_t green{};
+    uint8_t blue{};
+    uint8_t alpha{};
+    size_t assigned_note_count{};
+    bool visible{};
+    bool locked{};
+    bool selected{};
+    size_t assigned_bgm_count{};
+    bool assist_tick_enabled{};
+    auto operator==(const compose_semantic_layer_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBookmarkView {
-    uint64_t bookmark_id;
-    const char* label;
-    uint64_t measure_number;
-    uint64_t row;
-    uint64_t chart_row;
-    bool projection_visible;
-    double projected_y_pixels;
-    bool proposed_projection_visible;
-    double proposed_y_pixels;
-} WormUiComposeBookmarkView;
+namespace wormedit::ui {
+struct compose_bookmark_view_t {
+    wormedit::object_id_t bookmark_id{};
+    std::string label;
+    uint64_t measure_number{};
+    uint64_t row{};
+    uint64_t chart_row{};
+    bool projection_visible{};
+    double projected_y_pixels{};
+    bool proposed_projection_visible{};
+    double proposed_y_pixels{};
+    auto operator==(const compose_bookmark_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeSectionView {
-    uint64_t section_id;
-    const char* label;
-    uint64_t begin_measure_number;
-    uint64_t begin_row;
-    uint64_t end_measure_number;
-    uint64_t end_row;
-    uint64_t begin_chart_row;
-    uint64_t end_chart_row;
-    bool begin_projection_visible;
-    bool end_projection_visible;
-    bool span_projection_visible;
-    double projected_begin_y_pixels;
-    double projected_end_y_pixels;
-    double projected_span_top_y_pixels;
-    double projected_span_bottom_y_pixels;
-    bool proposed_begin_projection_visible;
-    bool proposed_end_projection_visible;
-    bool proposed_span_projection_visible;
-    double proposed_begin_y_pixels;
-    double proposed_end_y_pixels;
-    double proposed_span_top_y_pixels;
-    double proposed_span_bottom_y_pixels;
-} WormUiComposeSectionView;
+namespace wormedit::ui {
+struct compose_section_view_t {
+    wormedit::object_id_t section_id{};
+    std::string label;
+    uint64_t begin_measure_number{};
+    uint64_t begin_row{};
+    uint64_t end_measure_number{};
+    uint64_t end_row{};
+    uint64_t begin_chart_row{};
+    uint64_t end_chart_row{};
+    bool begin_projection_visible{};
+    bool end_projection_visible{};
+    bool span_projection_visible{};
+    double projected_begin_y_pixels{};
+    double projected_end_y_pixels{};
+    double projected_span_top_y_pixels{};
+    double projected_span_bottom_y_pixels{};
+    bool proposed_begin_projection_visible{};
+    bool proposed_end_projection_visible{};
+    bool proposed_span_projection_visible{};
+    double proposed_begin_y_pixels{};
+    double proposed_end_y_pixels{};
+    double proposed_span_top_y_pixels{};
+    double proposed_span_bottom_y_pixels{};
+    auto operator==(const compose_section_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeAudioBookmarkView {
-    uint64_t bookmark_id;
-    const char* label;
-    int64_t audio_milliseconds;
-    bool projection_visible;
-    double projected_y_pixels;
-} WormUiComposeAudioBookmarkView;
+namespace wormedit::ui {
+struct compose_audio_bookmark_view_t {
+    wormedit::object_id_t bookmark_id{};
+    std::string label;
+    int64_t audio_milliseconds{};
+    bool projection_visible{};
+    double projected_y_pixels{};
+    auto operator==(const compose_audio_bookmark_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeAudioSectionView {
-    uint64_t section_id;
-    const char* label;
-    int64_t begin_audio_milliseconds;
-    int64_t end_audio_milliseconds;
-    bool begin_projection_visible;
-    bool end_projection_visible;
-    bool span_projection_visible;
-    double projected_begin_y_pixels;
-    double projected_end_y_pixels;
-    double projected_span_top_y_pixels;
-    double projected_span_bottom_y_pixels;
-} WormUiComposeAudioSectionView;
+namespace wormedit::ui {
+struct compose_audio_section_view_t {
+    wormedit::object_id_t section_id{};
+    std::string label;
+    int64_t begin_audio_milliseconds{};
+    int64_t end_audio_milliseconds{};
+    bool begin_projection_visible{};
+    bool end_projection_visible{};
+    bool span_projection_visible{};
+    double projected_begin_y_pixels{};
+    double projected_end_y_pixels{};
+    double projected_span_top_y_pixels{};
+    double projected_span_bottom_y_pixels{};
+    auto operator==(const compose_audio_section_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiComposeSelectionMode {
     WORM_UI_COMPOSE_SELECTION_REPLACE = 0,
@@ -493,20 +504,26 @@ typedef enum WormUiComposeSelectionMode {
     WORM_UI_COMPOSE_SELECTION_TOGGLE,
 } WormUiComposeSelectionMode;
 
-typedef struct WormUiComposeLaneKeyBinding {
-    uint32_t scancode;
-    uint64_t lane_id;
-} WormUiComposeLaneKeyBinding;
+namespace wormedit::ui {
+struct compose_lane_key_binding_t {
+    uint32_t scancode{};
+    wormedit::lane_id_t lane_id{};
+    auto operator==(const compose_lane_key_binding_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // Shortcut keys cross the frontend boundary as USB HID Keyboard/Keypad
 // usages. Modifier bits match shortcut_modifier_t's actual modifiers.
-typedef struct WormUiShortcutEvent {
-    uint16_t hid_usage;
-    uint8_t modifiers;
-    bool repeat;
-    uint64_t timestamp_ns;
-    bool tap_timing_space;
-} WormUiShortcutEvent;
+namespace wormedit::ui {
+struct shortcut_event_t {
+    wormedit::shortcut_key_t hid_usage{};
+    uint8_t modifiers{};
+    bool repeat{};
+    uint64_t timestamp_ns{};
+    bool tap_timing_space{};
+    auto operator==(const shortcut_event_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiShortcutModifier {
     WORM_UI_SHORTCUT_MODIFIER_SHIFT = 1 << 0,
@@ -556,45 +573,50 @@ struct compose_stem_cut_view_t {
 };
 } // namespace wormedit::ui
 
-typedef struct WormUiComposeBranchRowView {
-    const char* display_text;
-    size_t depth;
-    bool active;
-    bool selected;
-    bool display_text_truncated;
-    bool has_source_order;
-    size_t source_order;
+namespace wormedit::ui {
+struct compose_branch_row_view_t {
+    std::string display_text;
+    size_t depth{};
+    bool active{};
+    bool selected{};
+    bool display_text_truncated{};
+    bool has_source_order{};
+    size_t source_order{};
     /* The control node this row shows. Raw statements are the lines the parser did not understand;
-       choice blocks are #RANDOM/#SWITCH, which carry a WormUiComposeBranchChoiceView by branch_id. */
-    uint64_t node_id;
-    bool raw_statement;
-    bool choice_block;
+       choice blocks are #RANDOM/#SWITCH, which carry a compose_branch_choice_view_t by branch_id. */
+    wormedit::branch_id_t node_id{};
+    bool raw_statement{};
+    bool choice_block{};
     /* Nonzero only for raw statements; identity and full text are borrowed from the retained tree. */
-    uint64_t statement_id;
-    const char* statement_text;
-    size_t statement_text_bytes;
-} WormUiComposeBranchRowView;
+    wormedit::branch_id_t statement_id{};
+    std::string statement_text;
+    auto operator==(const compose_branch_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiComposeBranchKind {
     WORM_UI_COMPOSE_BRANCH_RANDOM = 0,
     WORM_UI_COMPOSE_BRANCH_SWITCH,
 } WormUiComposeBranchKind;
 
-typedef struct WormUiComposeBranchChoiceView {
-    uint64_t branch_id;
-    WormUiComposeBranchKind kind;
-    bool has_source_order;
-    size_t source_order;
-    bool active;
-    bool editable;
-    bool has_selected_value;
-    int64_t selected_value;
-    bool has_previous_value;
-    int64_t previous_value;
-    bool has_next_value;
-    int64_t next_value;
-    bool can_clear;
-} WormUiComposeBranchChoiceView;
+namespace wormedit::ui {
+struct compose_branch_choice_view_t {
+    wormedit::branch_id_t branch_id{};
+    WormUiComposeBranchKind kind{};
+    bool has_source_order{};
+    size_t source_order{};
+    bool active{};
+    bool editable{};
+    bool has_selected_value{};
+    int64_t selected_value{};
+    bool has_previous_value{};
+    int64_t previous_value{};
+    bool has_next_value{};
+    int64_t next_value{};
+    bool can_clear{};
+    auto operator==(const compose_branch_choice_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct compose_timing_marker_view_t {
@@ -721,28 +743,38 @@ struct keysound_dock_request_t {
 };
 } // namespace wormedit::ui
 
-typedef struct WormUiBookmarkChooserRequest {
+namespace wormedit::ui {
+struct bookmark_chooser_request_t {
     size_t first_row{}, row_limit{};
-    bool open;
-    char query[256];
-} WormUiBookmarkChooserRequest;
+    bool open{};
+    char query[256]{};
+    auto operator==(const bookmark_chooser_request_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiBookmarkChooserRowView {
-    uint64_t bookmark_id;
-    uint8_t anchor;
-    const char* position_label;
-    const char* name;
-    const char* display_label;
-    bool navigation_available;
-} WormUiBookmarkChooserRowView;
+namespace wormedit::ui {
+struct bookmark_chooser_row_view_t {
+    wormedit::object_id_t bookmark_id{};
+    uint8_t anchor{};
+    std::string position_label;
+    std::string name;
+    std::string display_label;
+    bool navigation_available{};
+    auto operator==(const bookmark_chooser_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiBookmarkChooserView {
-    uint64_t project_id, chart_id, document_revision;
-    const WormUiBookmarkChooserRowView* rows;
-    size_t row_count, total_count, first_row;
-    bool truncated;
-    const char* query;
-} WormUiBookmarkChooserView;
+namespace wormedit::ui {
+struct bookmark_chooser_view_t {
+    wormedit::song_id_t project_id{};
+    wormedit::chart_id_t chart_id{};
+    uint64_t document_revision{};
+    std::vector<wormedit::ui::bookmark_chooser_row_view_t> rows;
+    size_t total_count{}, first_row{};
+    std::string query;
+    auto operator==(const bookmark_chooser_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 enum {
     WORM_UI_KEYSOUND_LAYER_FILTER_ANY = 0,
@@ -874,59 +906,75 @@ struct compose_keysound_layer_view_t {
 };
 } // namespace wormedit::ui
 
-typedef struct WormUiComposeOutputGroupView {
-    size_t document_index;
-    const char* name;
-    const char* relative_output_path;
-    const char* relative_asset_directory;
-    WormUiExistingFilesChoice existing_files;
-} WormUiComposeOutputGroupView;
+namespace wormedit::ui {
+struct compose_output_group_view_t {
+    size_t document_index{};
+    std::string name;
+    std::string relative_output_path;
+    std::string relative_asset_directory;
+    WormUiExistingFilesChoice existing_files{};
+    auto operator==(const compose_output_group_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeMeasureRowView {
-    uint64_t measure_id;
+namespace wormedit::ui {
+struct compose_measure_row_view_t {
+    uint64_t measure_index{};
     /* The number "go to measure" takes: #000-based for BMS charts, 1-based otherwise. */
-    uint64_t number;
+    uint64_t number{};
     uint64_t length_numerator, length_denominator;
-    bool has_meter;
+    bool has_meter{};
     uint32_t meter_numerator, meter_denominator;
-} WormUiComposeMeasureRowView;
+    wormedit::measure_id_t measure_id{};
+    auto operator==(const compose_measure_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeQuantizePresetView {
-    const char* name;
-    uint64_t divisions;
-    uint8_t space;
-    uint8_t tie;
-    uint8_t holds;
-} WormUiComposeQuantizePresetView;
+namespace wormedit::ui {
+struct compose_quantize_preset_view_t {
+    std::string_view name{};
+    uint64_t divisions{};
+    wormedit::quantization_space_t space{};
+    wormedit::quantization_tie_t tie{};
+    wormedit::quantization_hold_t holds{};
+    auto operator==(const compose_quantize_preset_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeQuantizePositionView {
-    uint64_t measure_id;
-    uint64_t row;
-} WormUiComposeQuantizePositionView;
+namespace wormedit::ui {
+struct compose_quantize_position_view_t {
+    wormedit::measure_id_t measure_id{};
+    uint64_t row{};
+    auto operator==(const compose_quantize_position_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeQuantizeReportRowView {
-    uint64_t object_id;
-    uint64_t lane_id;
-    uint64_t start_before_absolute_row;
-    uint64_t start_after_absolute_row;
-    WormUiComposeQuantizePositionView start_before;
-    WormUiComposeQuantizePositionView start_after;
-    bool has_end_before;
-    bool has_end_after;
-    uint64_t end_before_absolute_row;
-    uint64_t end_after_absolute_row;
-    WormUiComposeQuantizePositionView end_before;
-    WormUiComposeQuantizePositionView end_after;
-    bool moved;
-    bool collision;
-    uint64_t collision_peer_id;
-    bool has_collision_peer;
-    bool selected;
-    bool head_halfway;
-    bool tail_halfway;
-    bool stationary_tail_annotation;
-    bool bgm;
-} WormUiComposeQuantizeReportRowView;
+namespace wormedit::ui {
+struct compose_quantize_report_row_view_t {
+    wormedit::object_id_t object_id{};
+    wormedit::lane_id_t lane_id{};
+    uint64_t start_before_absolute_row{};
+    uint64_t start_after_absolute_row{};
+    wormedit::ui::compose_quantize_position_view_t start_before{};
+    wormedit::ui::compose_quantize_position_view_t start_after{};
+    bool has_end_before{};
+    bool has_end_after{};
+    uint64_t end_before_absolute_row{};
+    uint64_t end_after_absolute_row{};
+    wormedit::ui::compose_quantize_position_view_t end_before{};
+    wormedit::ui::compose_quantize_position_view_t end_after{};
+    bool moved{};
+    bool collision{};
+    wormedit::object_id_t collision_peer_id{};
+    bool has_collision_peer{};
+    bool selected{};
+    bool head_halfway{};
+    bool tail_halfway{};
+    bool stationary_tail_annotation{};
+    bool bgm{};
+    auto operator==(const compose_quantize_report_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 namespace wormedit::ui {
 struct compose_quantize_ghost_view_t {
@@ -955,257 +1003,234 @@ struct compose_quantize_ghost_view_t {
 };
 } // namespace wormedit::ui
 
-// Renderer-neutral field primitives projected into bounded scalar storage.
-// Coordinates are relative to the scene viewport; no chart/core types cross
-// the private frontend boundary.
-typedef struct WormUiComposeView {
+// Renderer-neutral frame view. Sys refills retained storage in place; the frontend
+// reads presentation values and stable identities. Coordinates are viewport pixels.
+namespace wormedit::ui {
+struct compose_view_t {
     wormedit::ui::kind_catalog_view_t<wormedit::timing_lane_kind_t> timing_lanes;
     wormedit::ui::kind_catalog_view_t<wormedit::timing_lane_kind_t> timing_lane_captions;
     wormedit::ui::kind_catalog_view_t<wormedit::note_kind_t> note_palette;
     // A modeless program window owns this frame's content input.
-    bool input_occluded;
-    uint32_t armed_note_kind;
-    uint32_t allowed_note_kind_mask;
+    bool input_occluded{};
+    wormedit::note_kind_t armed_note_kind{};
+    uint32_t allowed_note_kind_mask{};
     bool note_kind_palette_visible, lane_key_legend_visible;
-    wormedit::ui::hitsound_palette_view_t hitsounds;
+    wormedit::ui::hitsound_palette_view_t hitsounds{};
     // Editor preference: whether clicks, placements, and selections play their sound.
-    bool audition_on_click;
-    uint32_t area_band_alpha;
-    bool visible;
-    bool scene_available;
-    bool editor_gesture_active;
-    bool editor_gesture_current;
+    bool audition_on_click{};
+    uint32_t area_band_alpha{};
+    bool visible{};
+    bool scene_available{};
+    bool editor_gesture_active{};
+    bool editor_gesture_current{};
     // Application acknowledgement of an Alt/Option or armed Hold/Roll pointer begin.
-    bool editor_pointer_hold_active;
+    bool editor_pointer_hold_active{};
     // Full chart index presence, independent of viewport and visibility filters.
-    bool has_bgm_events;
+    bool has_bgm_events{};
     // BMS charts only: the BGM source column count and whether the toolbar may change it.
-    uint32_t bgm_column_count;
-    bool bgm_column_count_editable;
+    uint32_t bgm_column_count{};
+    bool bgm_column_count_editable{};
     // Lane profiles the layout at the cursor can switch to (0 = none); the current one is marked.
-    uint8_t lane_profile_choice_count;
-    int8_t lane_profile_current;
-    char lane_profile_names[WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY]
-                           [WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES];
+    std::ptrdiff_t lane_profile_current{};
+    std::vector<std::string> lane_profile_names;
     // Layout profiles can change the lane count; this editor is separate from
     // the same-count profile switch above.
-    uint8_t lane_layout_profile_choice_count;
-    int8_t lane_layout_profile_current;
-    uint32_t lane_layout_edit_measure_number;
-    uint64_t lane_layout_edit_segment_id;
-    bool lane_layout_edit_is_update;
-    bool lane_layout_edit_available;
+    std::ptrdiff_t lane_layout_profile_current{};
+    uint32_t lane_layout_edit_measure_number{};
+    wormedit::object_id_t lane_layout_edit_segment_id{};
+    bool lane_layout_edit_is_update{};
+    bool lane_layout_edit_available{};
     // Removing the cursor measure: `measure_removal_available` is false at a virtual cursor.
     // Nonempty measures confirm first, and `measure_removal_message` explains a blocked removal.
-    bool measure_removal_available;
-    bool measure_removal_has_contents;
-    bool measure_removal_blocked;
-    uint64_t measure_removal_measure_id;
-    char measure_removal_message[WORM_UI_COMPOSE_MEASURE_REMOVAL_MESSAGE_BYTES];
+    bool measure_removal_available{};
+    bool measure_removal_has_contents{};
+    bool measure_removal_blocked{};
+    wormedit::measure_id_t measure_removal_measure_id{};
+    std::string measure_removal_message;
     size_t measure_removal_deleted_notes, measure_removal_deleted_bgm_events;
     size_t measure_removal_deleted_bga_events, measure_removal_shortened_holds;
-    size_t measure_removal_moved_positions;
-    char lane_layout_profile_names[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
-                                  [WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES];
-    char lane_layout_profile_ids[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
-                                [WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES];
+    size_t measure_removal_moved_positions{};
+    std::vector<std::string> lane_layout_profile_names;
+    std::vector<std::string> lane_layout_profile_ids;
     std::vector<wormedit::ui::compose_lane_layout_segment_view_t> lane_layout_segments;
-    bool downscroll;
-    bool bms_measure_labels;
+    bool downscroll{};
+    bool bms_measure_labels{};
     // The active chart came from BMSON, so the Sounds dock offers its BMSON tab.
-    bool bmson_tools_available;
-    uint64_t compose_measure_count;
-    uint32_t selected_bms_measure_number_plus_one;
-    bool truncated;
+    bool bmson_tools_available{};
+    uint64_t compose_measure_count{};
+    uint32_t selected_bms_measure_number_plus_one{};
+    bool truncated{};
     uint8_t draw_source_kind; /* 0 none, 1 sound, 2 BGA */
-    uint64_t draw_source_id;
-    const char* draw_source_label; /* frame-owned, bounded UTF-8; includes resource identity */
-    bool draw_source_missing;
-    bool draw_source_is_stem;
-    uint64_t draw_source_stem_lane_id;
-    const char* draw_source_stem_lane_name;
-    size_t semantic_layer_target_row;
-    bool note_paint_mode_active;
-    bool semantic_layer_paint_mode_active;
-    bool semantic_layer_gesture_active;
-    size_t selected_note_count;
-    uint64_t keyboard_context_note_id; // First selected note, including offscreen multi-selection.
-    bool same_sound_selection_available;
-    bool move_to_bgm_available;
-    char move_to_bgm_shortcut[64];
+    wormedit::resource_id_t draw_source_id{};
+    std::string draw_source_label; /* frame-owned, bounded UTF-8; includes resource identity */
+    bool draw_source_missing{};
+    bool draw_source_is_stem{};
+    wormedit::object_id_t draw_source_stem_lane_id{};
+    std::string draw_source_stem_lane_name;
+    size_t semantic_layer_target_row{};
+    bool note_paint_mode_active{};
+    bool semantic_layer_paint_mode_active{};
+    bool semantic_layer_gesture_active{};
+    size_t selected_note_count{};
+    wormedit::object_id_t keyboard_context_note_id; // First selected note, including offscreen multi-selection.
+    bool same_sound_selection_available{};
+    bool move_to_bgm_available{};
+    std::string move_to_bgm_shortcut;
     // Grids the chart can snap to (the Quantize chips outside it are quantize-only).
-    uint64_t supported_snap_denominators[32];
-    size_t supported_snap_denominator_count;
+    std::vector<uint64_t> supported_snap_denominators;
     // Quantization request currently selected in the inspector.
-    uint64_t quantize_divisions;
-    uint8_t quantize_space;
-    uint8_t quantize_tie;
-    uint8_t quantize_holds;
-    bool quantize_selected_preset_valid;
-    size_t quantize_selected_preset_index;
-    const WormUiComposeQuantizePresetView* quantize_presets;
-    size_t quantize_preset_count;
+    uint64_t quantize_divisions{};
+    wormedit::quantization_space_t quantize_space{};
+    wormedit::quantization_tie_t quantize_tie{};
+    wormedit::quantization_hold_t quantize_holds{};
+    bool quantize_selected_preset_valid{};
+    size_t quantize_selected_preset_index{};
+    std::vector<wormedit::ui::compose_quantize_preset_view_t> quantize_presets;
     /* Measures dock rows in chart order, bounded; `measure_row_ids` lists their IDs for selection. */
-    const WormUiComposeMeasureRowView* measure_rows;
-    const uint64_t* measure_row_ids;
-    size_t measure_row_count;
-    bool measure_rows_truncated;
+    std::vector<wormedit::ui::compose_measure_row_view_t> measure_rows;
+    std::vector<uint64_t> measure_row_ids;
     // Dry-run counts and bounded report for the current request.
     size_t quantize_preview_moved, quantize_preview_unchanged, quantize_preview_blocked;
-    size_t quantize_preview_colliding_objects;
+    size_t quantize_preview_colliding_objects{};
     size_t quantize_preview_halfway_notes, quantize_preview_holds;
-    bool quantize_q_bound;
-    bool quantize_preview_enabled;
-    const WormUiComposeQuantizeReportRowView* quantize_preview_rows;
-    size_t quantize_preview_row_count;
-    size_t quantize_preview_total_rows;
-    bool quantize_preview_rows_truncated;
-    uint64_t quantize_source_resolution;
-    uint64_t quantize_display_resolution;
-    uint64_t quantize_resolution_scale;
-    bool quantize_geometry_valid;
-    bool quantize_preview_drawable;
-    bool quantize_ghosts_drawable;
+    bool quantize_q_bound{};
+    bool quantize_preview_enabled{};
+    std::vector<wormedit::ui::compose_quantize_report_row_view_t> quantize_preview_rows;
+    size_t quantize_preview_total_rows{};
+    bool quantize_preview_rows_truncated{};
+    uint64_t quantize_source_resolution{};
+    uint64_t quantize_display_resolution{};
+    uint64_t quantize_resolution_scale{};
+    bool quantize_geometry_valid{};
+    bool quantize_preview_drawable{};
+    bool quantize_ghosts_drawable{};
     std::vector<wormedit::ui::compose_quantize_ghost_view_t> quantize_ghosts;
-    char quantize_preview_message[96];
+    std::string quantize_preview_message;
     // Report from the most recently applied request, retained across frames.
-    const WormUiComposeQuantizeReportRowView* quantize_applied_rows;
-    size_t quantize_applied_row_count;
-    size_t quantize_applied_total_rows;
-    bool quantize_applied_rows_truncated;
-    size_t selected_object_count;
-    uint64_t selected_assigned_resource_id;
-    uint64_t selected_bgm_event_id;
-    uint64_t selected_bmson_bgm_event_id;
-    uint64_t selected_bmson_note_event_id;
-    uint64_t selected_bmson_source_lane_id;
-    size_t staged_bmson_marker_count;
-    const uint64_t* staged_bmson_marker_playable_lanes;
-    const uint8_t* staged_bmson_marker_restarts;
-    bool beat_marker_navigation_available;
-    bool audio_marker_navigation_available;
-    bool audio_marker_transport_available;
-    const WormUiComposeBookmarkView* beat_bookmarks;
-    size_t beat_bookmark_count;
-    bool beat_bookmarks_truncated;
-    const WormUiComposeSectionView* beat_sections;
-    size_t beat_section_count;
-    bool beat_sections_truncated;
-    bool area_range_available;
-    bool area_range_virtual;
-    bool area_delete_supported;
-    bool transport_loop_selection_available;
-    bool transport_loop_selection_enabled;
-    uint64_t area_range_begin_row;
-    uint64_t area_range_end_row;
-    wormedit::ui::preview_audio_range_view_t preview_audio_range;
-    uint64_t area_canvas_rows;
-    uint64_t area_rows_per_measure;
-    uint64_t area_snap_denominator;
-    wormedit::quantization_space_t area_snap_space;
+    std::vector<wormedit::ui::compose_quantize_report_row_view_t> quantize_applied_rows;
+    size_t quantize_applied_total_rows{};
+    bool quantize_applied_rows_truncated{};
+    size_t selected_object_count{};
+    wormedit::resource_id_t selected_assigned_resource_id{};
+    wormedit::object_id_t selected_bgm_event_id{};
+    wormedit::object_id_t selected_bmson_bgm_event_id{};
+    wormedit::object_id_t selected_bmson_note_event_id{};
+    wormedit::object_id_t selected_bmson_source_lane_id{};
+    std::vector<uint64_t> staged_bmson_marker_playable_lanes;
+    std::vector<uint8_t> staged_bmson_marker_restarts;
+    bool beat_marker_navigation_available{};
+    bool audio_marker_navigation_available{};
+    bool audio_marker_transport_available{};
+    std::vector<wormedit::ui::compose_bookmark_view_t> beat_bookmarks;
+    std::vector<wormedit::ui::compose_section_view_t> beat_sections;
+    bool area_range_available{};
+    bool area_range_virtual{};
+    bool area_delete_supported{};
+    bool transport_loop_selection_available{};
+    bool transport_loop_selection_enabled{};
+    uint64_t area_range_begin_row{};
+    uint64_t area_range_end_row{};
+    wormedit::ui::preview_audio_range_view_t preview_audio_range{};
+    uint64_t area_canvas_rows{};
+    uint64_t area_rows_per_measure{};
+    uint64_t area_snap_denominator{};
+    wormedit::quantization_space_t area_snap_space{};
     // False while pointer edits land on the finest chart row instead of the active grid.
-    bool edit_snap_enabled;
+    bool edit_snap_enabled{};
     /* Y-lock: dragging notes changes lanes only, never rows. */
-    bool y_lock;
-    wormedit::ui::compose_measure_lane_view_t measure_lane;
-    double area_scroll_pixels;
-    bool beat_section_selection_span_available;
-    uint64_t beat_section_selection_begin_measure_number;
-    uint64_t beat_section_selection_begin_row;
-    uint64_t beat_section_selection_end_measure_number;
-    uint64_t beat_section_selection_end_row;
-    const WormUiComposeAudioBookmarkView* audio_bookmarks;
-    size_t audio_bookmark_count;
-    bool audio_bookmarks_truncated;
-    const WormUiComposeAudioSectionView* audio_sections;
-    size_t audio_section_count;
-    bool audio_sections_truncated;
-    bool semantic_layer_assist_available;
-    const WormUiComposeSemanticLayerView* semantic_layers;
-    size_t semantic_layer_count;
-    size_t semantic_layer_total_count;
-    size_t semantic_layer_first_row;
-    const WormUiComposeSemanticLayerView* note_menu_layers;
-    size_t note_menu_layer_count;
-    size_t note_menu_layer_first_row;
-    size_t note_menu_layer_total_count;
-    WormUiComposeSemanticLayerView semantic_layer_target;
-    bool semantic_layer_target_none;
-    size_t semantic_layer_unassigned_note_count;
-    size_t semantic_layer_page;
-    size_t semantic_layer_page_count;
-    bool semantic_layers_truncated;
-    bool semantic_layer_target_locked;
-    bool semantic_layer_target_visible;
-    bool semantic_layer_target_required_filter;
-    bool semantic_layer_target_excluded_filter;
-    bool semantic_layer_solo_active;
-    uint64_t project_id;
-    uint64_t chart_id;
-    uint64_t document_revision;
+    bool y_lock{};
+    wormedit::ui::compose_measure_lane_view_t measure_lane{};
+    double area_scroll_pixels{};
+    bool beat_section_selection_span_available{};
+    uint64_t beat_section_selection_begin_measure_number{};
+    uint64_t beat_section_selection_begin_row{};
+    uint64_t beat_section_selection_end_measure_number{};
+    uint64_t beat_section_selection_end_row{};
+    std::vector<wormedit::ui::compose_audio_bookmark_view_t> audio_bookmarks;
+    std::vector<wormedit::ui::compose_audio_section_view_t> audio_sections;
+    bool semantic_layer_assist_available{};
+    std::vector<wormedit::ui::compose_semantic_layer_view_t> semantic_layers;
+    size_t semantic_layer_total_count{};
+    size_t semantic_layer_first_row{};
+    std::vector<wormedit::ui::compose_semantic_layer_view_t> note_menu_layers;
+    size_t note_menu_layer_first_row{};
+    size_t note_menu_layer_total_count{};
+    wormedit::ui::compose_semantic_layer_view_t semantic_layer_target{};
+    bool semantic_layer_target_none{};
+    size_t semantic_layer_unassigned_note_count{};
+    size_t semantic_layer_page{};
+    size_t semantic_layer_page_count{};
+    bool semantic_layer_target_locked{};
+    bool semantic_layer_target_visible{};
+    bool semantic_layer_target_required_filter{};
+    bool semantic_layer_target_excluded_filter{};
+    bool semantic_layer_solo_active{};
+    wormedit::song_id_t project_id{};
+    wormedit::chart_id_t chart_id{};
+    uint64_t document_revision{};
     // Exact semantic filter changes invalidate retained static field pixels.
-    uint64_t static_scene_style_generation;
+    uint64_t static_scene_style_generation{};
     // Immutable expanded scalar scene; unavailable on truncated/transient windows.
-    const struct WormUiComposeView* static_scene;
-    uint64_t static_scene_source_generation;
-    double static_scene_world_origin_pixels;
-    double static_scene_covered_begin_pixels;
-    double static_scene_covered_end_pixels;
-    size_t static_scene_accounted_bytes;
-    double viewport_width_pixels;
-    double viewport_height_pixels;
-    double bgm_horizontal_scroll_pixels;
-    double bgm_maximum_horizontal_scroll_pixels;
-    double playable_field_left_pixels;
-    double playable_field_right_pixels;
-    double timing_document_begin_fraction;
-    double timing_document_end_fraction;
-    double pixels_per_standard_measure;
-    bool playhead_visible;
-    double playhead_y_pixels;
-    const char* status_text;
-    const char* selected_note_label;
-    uint64_t selected_note_label_note_id;
-    bool focus_note_label_editor;
-    bool bga_lane_visible;
+    const wormedit::ui::compose_view_t* static_scene;
+    uint64_t static_scene_source_generation{};
+    double static_scene_world_origin_pixels{};
+    double static_scene_covered_begin_pixels{};
+    double static_scene_covered_end_pixels{};
+    size_t static_scene_accounted_bytes{};
+    double viewport_width_pixels{};
+    double viewport_height_pixels{};
+    double bgm_horizontal_scroll_pixels{};
+    double bgm_maximum_horizontal_scroll_pixels{};
+    double playable_field_left_pixels{};
+    double playable_field_right_pixels{};
+    double timing_document_begin_fraction{};
+    double timing_document_end_fraction{};
+    double pixels_per_standard_measure{};
+    bool playhead_visible{};
+    double playhead_y_pixels{};
+    std::string_view status_text{};
+    std::string selected_note_label;
+    wormedit::object_id_t selected_note_label_note_id{};
+    bool focus_note_label_editor{};
+    bool bga_lane_visible{};
     std::vector<wormedit::ui::compose_bga_event_view_t> bga_events;
-    wormedit::ui::compose_rect_t bga_lane_bounds;
-    uint8_t bga_revealed_lane_mask;
-    size_t bga_lane_count;
-    wormedit::ui::compose_rect_t bga_lane_rects[4];
-    uint8_t bga_lane_kinds[4];
-    bool bga_move_preview_valid;
-    uint64_t bga_move_preview_event_id;
-    double bga_move_preview_y_pixels;
+    wormedit::ui::compose_rect_t bga_lane_bounds{};
+    uint8_t bga_revealed_lane_mask{};
+    size_t bga_lane_count{};
+    wormedit::ui::compose_rect_t bga_lane_rects[4]{};
+    uint8_t bga_lane_kinds[4]{};
+    bool bga_move_preview_valid{};
+    wormedit::object_id_t bga_move_preview_event_id{};
+    double bga_move_preview_y_pixels{};
     std::vector<wormedit::ui::compose_bga_row_view_t> bga_rows;
     size_t bga_total_matching, bga_first_row;
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
-    bool bga_ids_available;
+    bool bga_ids_available{};
     std::vector<uint64_t> bga_matching_ids;
     std::vector<uint64_t> bga_all_resource_ids;
     std::vector<uint64_t> bga_advance_ids;
     std::string bga_search;
-    bool paint_ghost_visible;
-    wormedit::ui::compose_note_view_t paint_ghost;
-    bool hover_note_visible;
-    uint64_t hover_note_id;
-    const char* hover_tooltip;
-    int64_t hover_timing_source_frame;
-    uint64_t hover_timing_total_frames;
-    uint32_t hover_timing_sample_rate;
-    bool hover_timing_valid;
-    char hover_timing_label[64];
-    bool viewport_autoscroll_active;
-    double viewport_autoscroll_anchor_x_pixels;
-    double viewport_autoscroll_anchor_y_pixels;
-    double viewport_autoscroll_pointer_x_pixels;
-    double viewport_autoscroll_pointer_y_pixels;
-    bool clipboard_copy_available;
-    bool clipboard_paste_available;
-    bool paste_active;
-    bool paste_valid;
+    bool paint_ghost_visible{};
+    wormedit::ui::compose_note_view_t paint_ghost{};
+    bool hover_note_visible{};
+    wormedit::object_id_t hover_note_id{};
+    std::string hover_tooltip;
+    int64_t hover_timing_source_frame{};
+    uint64_t hover_timing_total_frames{};
+    uint32_t hover_timing_sample_rate{};
+    bool hover_timing_valid{};
+    std::string hover_timing_label;
+    bool viewport_autoscroll_active{};
+    double viewport_autoscroll_anchor_x_pixels{};
+    double viewport_autoscroll_anchor_y_pixels{};
+    double viewport_autoscroll_pointer_x_pixels{};
+    double viewport_autoscroll_pointer_y_pixels{};
+    bool clipboard_copy_available{};
+    bool clipboard_paste_available{};
+    bool paste_active{};
+    bool paste_valid{};
     std::vector<wormedit::ui::compose_paste_ghost_view_t> paste_ghosts;
-    const char* paste_diagnostic;
+    std::string_view paste_diagnostic{};
     std::vector<wormedit::ui::compose_band_view_t> bands;
     std::vector<wormedit::ui::compose_lane_view_t> lanes;
     std::vector<wormedit::ui::compose_grid_line_view_t> grid_lines;
@@ -1216,28 +1241,28 @@ typedef struct WormUiComposeView {
     std::vector<wormedit::ui::compose_dead_span_view_t> dead_spans;
     std::vector<wormedit::ui::compose_kiai_span_view_t> kiai_spans;
     std::vector<wormedit::ui::compose_speed_span_view_t> speed_spans;
-    WormUiComposeRecipeFormView recipe_form;
+    wormedit::ui::compose_recipe_form_view_t recipe_form{};
     std::vector<wormedit::ui::compose_recipe_area_view_t> recipe_areas;
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> recipe_graph_points;
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> sv_graph_points;
-    double sv_graph_minimum;
-    double sv_graph_maximum;
+    double sv_graph_minimum{};
+    double sv_graph_maximum{};
     double sv_graph_one_fraction; /* negative when 1.0x is outside the visible range */
     /* Interpolated speed curve; same format as the SV graph, drawn in the speed lane. */
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> speed_graph_points;
-    double speed_graph_one_fraction;
-    uint8_t timing_lane_visibility_mask;
+    double speed_graph_one_fraction{};
+    uint8_t timing_lane_visibility_mask{};
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.
-    bool timing_focus;
-    bool timing_stage_active;
-    bool timing_stage_valid;
-    wormedit::timing_lane_kind_t timing_stage_lane;
-    double timing_stage_y_pixels;
+    bool timing_focus{};
+    bool timing_stage_active{};
+    bool timing_stage_valid{};
+    wormedit::timing_lane_kind_t timing_stage_lane{};
+    double timing_stage_y_pixels{};
     std::vector<wormedit::ui::compose_resource_view_t> resources;
-    uint64_t selected_audio_asset_id;
-    uint64_t selected_visual_asset_id;
-    size_t resource_total_count;
+    wormedit::asset_id_t selected_audio_asset_id{};
+    wormedit::asset_id_t selected_visual_asset_id{};
+    size_t resource_total_count{};
     /* Keysound listbox: every placeable sample, plus the chart layers its masks index. */
     std::vector<wormedit::ui::compose_keysound_row_view_t> keysounds;
     std::vector<wormedit::ui::compose_keysound_row_view_t> keysound_selected_rows;
@@ -1245,47 +1270,45 @@ typedef struct WormUiComposeView {
     std::vector<wormedit::ui::compose_keysound_selection_view_t> keysound_selection_rows;
     std::vector<wormedit::ui::compose_keysound_display_row_view_t> keysound_display_rows;
     /* True when section/filter projection was used, including legitimate empty windows. */
-    bool keysound_section_projection_available;
-    size_t keysound_display_total_count;
-    size_t keysound_display_first_row;
-    bool keysound_display_rows_truncated;
-    bool keysound_primary_display_index_valid;
-    size_t keysound_primary_display_index;
-    uint64_t keysound_projected_primary_resource_id;
-    bool keysound_projected_filters_unrestricted;
+    bool keysound_section_projection_available{};
+    size_t keysound_display_total_count{};
+    size_t keysound_display_first_row{};
+    bool keysound_display_rows_truncated{};
+    bool keysound_primary_display_index_valid{};
+    size_t keysound_primary_display_index{};
+    wormedit::resource_id_t keysound_projected_primary_resource_id{};
+    bool keysound_projected_filters_unrestricted{};
     std::vector<uint64_t> keysound_listed_resource_ids;
     std::vector<wormedit::ui::compose_keysound_advance_row_view_t> keysound_advance_rows;
     std::vector<uint64_t> keysound_all_resource_ids;
     std::vector<wormedit::ui::compose_sound_group_view_t> compose_sound_groups;
-    size_t keysound_total_count;
-    bool keysounds_truncated;
+    size_t keysound_total_count{};
+    bool keysounds_truncated{};
     std::vector<wormedit::ui::compose_keysound_layer_view_t> keysound_layers;
     std::vector<wormedit::ui::compose_keysound_layer_view_t> keysound_filter_layers;
-    size_t keysound_filter_layer_first;
-    size_t keysound_filter_layer_total;
+    size_t keysound_filter_layer_first{};
+    size_t keysound_filter_layer_total{};
     std::string keysound_filter_selected_layer_name;
-    bool keysound_filter_selected_layer_valid;
-    bool keysounds_available;
+    bool keysound_filter_selected_layer_valid{};
+    bool keysounds_available{};
     size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
-    bool keysound_ids_available;
+    bool keysound_ids_available{};
     std::vector<wormedit::ui::compose_sound_slot_row_view_t> sound_slots;
     size_t sound_slot_first_row, sound_slot_total_matching;
-    bool sound_slots_mode;
-    uint16_t sound_slot_selected_number;
-    size_t sound_slot_selected_row;
-    const WormUiComposeOutputGroupView* output_groups;
-    size_t output_group_count;
-    bool output_groups_truncated;
-    bool export_confirmation_required;
-    uint64_t export_confirmation_project_id;
-    uint64_t export_confirmation_revision;
-    const char* export_confirmation_message;
-    const char* export_confirmation_detail;
+    bool sound_slots_mode{};
+    uint16_t sound_slot_selected_number{};
+    size_t sound_slot_selected_row{};
+    std::vector<wormedit::ui::compose_output_group_view_t> output_groups;
+    bool export_confirmation_required{};
+    wormedit::song_id_t export_confirmation_project_id{};
+    uint64_t export_confirmation_revision{};
+    std::string_view export_confirmation_message{};
+    std::string_view export_confirmation_detail{};
     std::vector<wormedit::ui::compose_difference_view_t> differences;
     std::vector<wormedit::ui::compose_hold_view_t> hold_bodies;
     std::vector<wormedit::ui::compose_note_view_t> note_endpoints;
     std::vector<wormedit::ui::compose_bgm_lane_view_t> bgm_lanes;
-    bool bgm_mix_available;
+    bool bgm_mix_available{};
     std::vector<wormedit::ui::compose_bgm_event_view_t> bgm_events;
     std::vector<wormedit::ui::compose_waveform_row_view_t> waveform_rows;
     // Cached canvas passes need presence without copying waveform rows.
@@ -1296,85 +1319,91 @@ typedef struct WormUiComposeView {
     std::vector<wormedit::ui::compose_waveform_row_view_t> channel_waveform_rows;
     wormedit::object_id_t channel_waveform_source_lane_id{};
     std::vector<wormedit::ui::compose_waveform_overview_row_view_t> waveform_overview_rows;
-    uint64_t waveform_overview_generation;
-    double waveform_overview_visible_begin_fraction;
-    double waveform_overview_visible_end_fraction;
-    bool waveform_beat_zero_visible;
-    double waveform_beat_zero_fraction;
-    uint64_t waveform_overview_total_frames;
-    uint32_t waveform_overview_sample_rate;
+    uint64_t waveform_overview_generation{};
+    double waveform_overview_visible_begin_fraction{};
+    double waveform_overview_visible_end_fraction{};
+    bool waveform_beat_zero_visible{};
+    double waveform_beat_zero_fraction{};
+    uint64_t waveform_overview_total_frames{};
+    uint32_t waveform_overview_sample_rate{};
     // The BGM bar shows [begin, end] of the song at full row resolution, with measure starts.
     std::vector<wormedit::ui::compose_waveform_overview_row_view_t> bgm_bar_rows;
-    double bgm_bar_begin_fraction;
-    double bgm_bar_end_fraction;
+    double bgm_bar_begin_fraction{};
+    double bgm_bar_end_fraction{};
     std::vector<wormedit::ui::compose_bgm_bar_mark_view_t> bgm_bar_marks;
     std::vector<wormedit::ui::compose_bgm_bar_bookmark_view_t> bgm_bar_bookmarks;
     // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
     // available = the song has audio, reserved = the row is laid out (and takes vertical space).
-    bool bgm_bar_available;
-    bool bgm_bar_reserved;
-    bool source_playhead_available;
-    uint64_t source_playhead_asset_id;
-    uint64_t source_playhead_frame;
-    uint32_t source_playhead_sample_rate;
-    uint64_t source_playhead_chart_id;
-    uint64_t source_playhead_document_revision;
-    bool audio_offset_editable;
-    bool audio_offset_locked;
-    int64_t waveform_audio_offset_numerator;
-    uint64_t waveform_audio_offset_denominator;
-    bool waveform_offset_drag_active;
-    bool beat_fit_drag_active;
-    bool offset_fit_drag_active;
-    double offset_fit_target_y_pixels;
-    uint64_t beat_fit_chart_row;
-    double beat_fit_anchor_y_pixels;
-    double beat_fit_beat_y_pixels;
-    uint64_t beat_fit_target_sample_frame;
-    double beat_fit_target_y_pixels;
-    int64_t beat_fit_original_bpm_numerator;
-    uint64_t beat_fit_original_bpm_denominator;
-    int64_t beat_fit_proposed_bpm_numerator;
-    uint64_t beat_fit_proposed_bpm_denominator;
-    bool beat_fit_onset_snap_active;
-    bool beat_fit_snap_active;
-    int64_t beat_fit_snap_step_numerator;
-    uint64_t beat_fit_snap_step_denominator;
-    bool waveform_proposed_beat_zero_visible;
-    double waveform_proposed_beat_zero_fraction;
-    int64_t waveform_proposed_audio_offset_numerator;
-    uint64_t waveform_proposed_audio_offset_denominator;
-    bool waveform_timing_locked;
-    bool waveform_analysis_pending;
+    bool bgm_bar_available{};
+    bool bgm_bar_reserved{};
+    bool source_playhead_available{};
+    wormedit::asset_id_t source_playhead_asset_id{};
+    uint64_t source_playhead_frame{};
+    uint32_t source_playhead_sample_rate{};
+    wormedit::chart_id_t source_playhead_chart_id{};
+    uint64_t source_playhead_document_revision{};
+    bool audio_offset_editable{};
+    bool audio_offset_locked{};
+    int64_t waveform_audio_offset_numerator{};
+    uint64_t waveform_audio_offset_denominator{};
+    bool waveform_offset_drag_active{};
+    bool beat_fit_drag_active{};
+    bool offset_fit_drag_active{};
+    double offset_fit_target_y_pixels{};
+    uint64_t beat_fit_chart_row{};
+    double beat_fit_anchor_y_pixels{};
+    double beat_fit_beat_y_pixels{};
+    uint64_t beat_fit_target_sample_frame{};
+    double beat_fit_target_y_pixels{};
+    int64_t beat_fit_original_bpm_numerator{};
+    uint64_t beat_fit_original_bpm_denominator{};
+    int64_t beat_fit_proposed_bpm_numerator{};
+    uint64_t beat_fit_proposed_bpm_denominator{};
+    bool beat_fit_onset_snap_active{};
+    bool beat_fit_snap_active{};
+    int64_t beat_fit_snap_step_numerator{};
+    uint64_t beat_fit_snap_step_denominator{};
+    bool waveform_proposed_beat_zero_visible{};
+    double waveform_proposed_beat_zero_fraction{};
+    int64_t waveform_proposed_audio_offset_numerator{};
+    uint64_t waveform_proposed_audio_offset_denominator{};
+    bool waveform_timing_locked{};
+    bool waveform_analysis_pending{};
     std::vector<wormedit::ui::compose_bgm_draft_view_t> bmson_marker_drafts;
     std::optional<wormedit::ui::compose_bgm_move_preview_view_t> bmson_marker_move_preview;
     std::optional<wormedit::ui::compose_cursor_view_t> cursor;
-    bool area_selection_preview_visible;
-    wormedit::ui::compose_rect_t area_selection_preview_bounds;
-    WormUiComposeSelectionMode area_selection_preview_mode;
-    bool space_range_preview_visible;
-    wormedit::ui::compose_rect_t space_range_preview_bounds;
-    WormUiComposeSelectionMode space_range_preview_mode;
-    double space_range_anchor_y_pixels;
-    double space_range_tail_y_pixels;
-    const WormUiComposeLaneKeyBinding* lane_key_bindings;
-    size_t lane_key_binding_count;
-    bool lane_keys_unbound;
-    bool branch_outline_available;
-    bool branch_rows_truncated;
-    bool branch_choices_truncated;
-    bool branch_display_text_truncated;
-    bool branch_diagnostics_truncated;
-    const WormUiComposeBranchRowView* branch_rows;
-    size_t branch_row_count;
-    const WormUiComposeBranchChoiceView* branch_choices;
-    size_t branch_choice_count;
-    const char* branch_diagnostics[WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY];
-    size_t branch_diagnostic_count;
-    size_t selected_bgm_event_count;
-    size_t semantic_layer_unassigned_bgm_count;
-    WormUiBookmarkChooserView bookmark_chooser;
-    wormedit::ui::sound_picker_view_t sound_picker;
-    size_t move_conflict_count;
-    size_t move_to_bgm_count; // Unique moved-note count, before geometry truncation.
-} WormUiComposeView;
+    bool area_selection_preview_visible{};
+    wormedit::ui::compose_rect_t area_selection_preview_bounds{};
+    WormUiComposeSelectionMode area_selection_preview_mode{};
+    bool space_range_preview_visible{};
+    wormedit::ui::compose_rect_t space_range_preview_bounds{};
+    WormUiComposeSelectionMode space_range_preview_mode{};
+    double space_range_anchor_y_pixels{};
+    double space_range_tail_y_pixels{};
+    std::vector<wormedit::ui::compose_lane_key_binding_t> lane_key_bindings;
+    bool lane_keys_unbound{};
+    bool branch_outline_available{};
+    bool branch_rows_truncated{};
+    bool branch_choices_truncated{};
+    bool branch_display_text_truncated{};
+    bool branch_diagnostics_truncated{};
+    std::vector<wormedit::ui::compose_branch_row_view_t> branch_rows;
+    std::vector<wormedit::ui::compose_branch_choice_view_t> branch_choices;
+    std::vector<std::string> branch_diagnostics;
+    std::string branch_statement_feedback;
+    [[nodiscard]] auto branch_diagnostic_count() const -> size_t {
+        return branch_diagnostics.size() + !branch_statement_feedback.empty();
+    }
+    [[nodiscard]] auto branch_diagnostic_at(size_t index) const -> std::string_view {
+        return index < branch_diagnostics.size() ? std::string_view{branch_diagnostics[index]}
+                                                : std::string_view{branch_statement_feedback};
+    }
+    size_t selected_bgm_event_count{};
+    size_t semantic_layer_unassigned_bgm_count{};
+    wormedit::ui::bookmark_chooser_view_t bookmark_chooser{};
+    wormedit::ui::sound_picker_view_t sound_picker{};
+    size_t move_conflict_count{};
+    size_t move_to_bgm_count{}; // Unique moved-note count, before geometry truncation.
+    void reset();
+};
+} // namespace wormedit::ui

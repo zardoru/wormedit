@@ -10,7 +10,7 @@ public:
     bga_dock_runtime_t();
     ~bga_dock_runtime_t();
     void project(const song_document_t&, const std::filesystem::path&,
-                 const wormedit::ui::bga_dock_request_t&, WormUiComposeView&,
+                 const wormedit::ui::bga_dock_request_t&, wormedit::ui::compose_view_t&,
                  std::uint64_t session_generation = 0);
 private:
     struct state_t;

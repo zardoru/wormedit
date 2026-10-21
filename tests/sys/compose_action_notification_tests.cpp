@@ -793,7 +793,7 @@ TEST_CASE("Compose recipe form preview and edit preserve typed helper outcomes",
         .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}});
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
     action.compose_recipe_id.value = 1;
-    action.compose_recipe_form = recipe_form_from_recipe(recipes.front());
+    action.compose_recipe_form = wormedit::ui::timing_recipe_form_t::from(recipes.front());
     auto expected = notification_severity_t::hint;
     auto source = notification_source_t::input;
     SECTION("valid preview") {

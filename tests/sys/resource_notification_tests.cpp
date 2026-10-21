@@ -670,3 +670,15 @@ TEST_CASE("Music export publishes its chart and automatic asset together", "[uni
     REQUIRE(std::filesystem::is_regular_file(output_directory / "assets" /
                                              fixture.source.filename()));
 }
+
+TEST_CASE("Inactive export confirmation safely populates Compose text views",
+          "[unit][sys][resource-notification]") {
+    runtime::output_group_export_t exports;
+    const auto confirmation = exports.confirmation_view();
+    wormedit::ui::compose_view_t view;
+    view.export_confirmation_message = confirmation.message;
+    view.export_confirmation_detail = confirmation.detail;
+    check_resource_notification(!confirmation.required);
+    check_resource_notification(view.export_confirmation_message.empty());
+    check_resource_notification(view.export_confirmation_detail.empty());
+}

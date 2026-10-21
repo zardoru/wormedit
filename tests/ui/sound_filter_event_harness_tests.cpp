@@ -19,7 +19,7 @@ void require_filter(bool condition, const std::source_location location =
     REQUIRE(condition);
 }
 
-void seed_sound_filter_view(WormUiComposeView& view) {
+void seed_sound_filter_view(wormedit::ui::compose_view_t& view) {
     static const std::array groups{
         wormedit::ui::compose_sound_group_view_t{.group_id = wormedit::sound_group_id_t{80}, .name = "Percussion"},
         wormedit::ui::compose_sound_group_view_t{.group_id = wormedit::sound_group_id_t{81}, .name = "Piano"}};
@@ -39,8 +39,8 @@ void seed_sound_filter_view(WormUiComposeView& view) {
     static const std::array layers{
         wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{501}, .name = "Blue"}};
     view.keysounds_available = true;
-    view.project_id = 31;
-    view.chart_id = 7;
+    view.project_id.value = 31;
+    view.chart_id.value = 7;
     view.keysounds.assign(std::begin(rows), std::end(rows));
     view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();
@@ -121,11 +121,11 @@ TEST_CASE("Sounds group filter updates request before paging without editing the
     check_filter(request.group_filter_ids[0].value == 80);
     check_filter(!request.include_ungrouped);
     check_filter(request.automatic_first_row == 0);
-    view.project_id = 32;
+    view.project_id.value = 32;
     (void)harness.frame();
     worm_ui_frontend_keysound_dock_request(&request);
     check_filter(!request.group_filter_active);
-    view.project_id = 31;
+    view.project_id.value = 31;
     (void)harness.frame();
     worm_ui_frontend_keysound_dock_request(&request);
     check_filter(request.group_filter_active);
@@ -208,7 +208,7 @@ TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
     auto& filters = worm_ui_nuklear_compose_state().keysound_filters.keysound_filters;
     filters.layer_filter_kind = WORM_UI_KEYSOUND_LAYER_FILTER_SPECIFIC;
     filters.layer_filter_id = 999;
-    filters.layer_chart_id = harness.view().compose.chart_id;
+    filters.layer_chart_id = harness.view().compose.chart_id.value;
     harness.view().compose.keysound_filter_selected_layer_valid = false;
     harness.view().compose.keysound_filter_selected_layer_name.clear();
     (void)harness.frame();

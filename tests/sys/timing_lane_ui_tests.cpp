@@ -18,7 +18,7 @@ TEST_CASE("Marker selection and area geometry agree for all timing lane families
     CHECK(compose_timing_marker_selected(interaction, lane.kind, 77));
     const wormedit::ui::compose_timing_marker_view_t marker{.object_id = {77}, .marker_y_pixels = 300,
         .marker_right_fraction = 1, .lane = lane.kind};
-    const WormUiComposeView view{.viewport_height_pixels = 600,
+    const wormedit::ui::compose_view_t view{.viewport_height_pixels = 600,
         .playable_field_left_pixels = 426,
         .timing_markers = {marker}, .timing_lane_visibility_mask = 0xff};
     editor_area_geometry_snapshot_t area;

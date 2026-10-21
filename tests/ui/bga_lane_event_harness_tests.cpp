@@ -223,8 +223,8 @@ void prepare_bga_stack_dismissal_picker(
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.project_id = 3;
-    view.chart_id = 7;
+    view.project_id.value = 3;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -288,15 +288,14 @@ using lane_profile_choices_t = decltype(wormedit::lane_profile_choices());
 auto prepare_initial_profile_picker(nuklear_event_harness_t& harness)
     -> lane_profile_choices_t {
     auto& view = harness.view().compose;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     auto profiles = wormedit::lane_profile_choices();
-    check_bga(profiles.size() <= WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
-    view.lane_profile_choice_count = static_cast<std::uint8_t>(profiles.size());
+    check_bga(!profiles.empty());
+    view.lane_profile_names.resize(profiles.size());
     view.lane_profile_current = -1;
     for (std::size_t index = 0; index < profiles.size(); ++index)
-        std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
-                      "%s", profiles[index].layout.display_name.c_str());
+        view.lane_profile_names[index] = profiles[index].layout.display_name;
     worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     return profiles;
 }
@@ -354,7 +353,7 @@ TEST_CASE("BGA lane click selects an event and drag emits one move on release",
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -397,7 +396,7 @@ TEST_CASE("horizontal BGA drag emits the Layer 2 destination kind once", "[event
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -440,7 +439,7 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -494,8 +493,8 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     compose_state.dock_layout.bga_panel_visible = false;
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.project_id = 3;
-    view.chart_id = 7;
+    view.project_id.value = 3;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -527,8 +526,8 @@ TEST_CASE("dense BGA overlap marker opens a scrollable picker for every event",
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.project_id = 3;
-    view.chart_id = 7;
+    view.project_id.value = 3;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -608,7 +607,7 @@ struct stem_lane_fixture_t {
         view.scene_available = true;
         view.bmson_tools_available = true;
         view.note_paint_mode_active = true;
-        view.chart_id = 7;
+        view.chart_id.value = 7;
         view.document_revision = 11;
         view.viewport_width_pixels = 900;
         view.viewport_height_pixels = 600;
@@ -684,7 +683,7 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
     view.lanes = {lane};
     f.marker.selected = true;
     view.bgm_events = {f.marker};
-    view.selected_bgm_event_id = 501;
+    view.selected_bgm_event_id.value = 501;
     (void)f.harness.frame();
     const auto from = f.at(622, 28);
     const auto to = f.at(125, 300);
@@ -707,9 +706,9 @@ TEST_CASE("Shift lane key routes successive assignment with BGM selected",
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 3};
-    view.lane_key_bindings = &binding;
-    view.lane_key_binding_count = 1;
+    const wormedit::ui::compose_lane_key_binding_t binding{.scancode = SDL_SCANCODE_1, .lane_id = {3}};
+    view.lane_key_bindings = {binding};
+    view.lane_key_bindings.resize(1);
     view.selected_bgm_event_count = 1;
     (void)harness.frame();
     SDL_Event press{};
@@ -732,7 +731,7 @@ TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -818,8 +817,8 @@ struct resizable_stem_lane_fixture_t {
         auto& view = harness.view().compose;
         view.visible = true;
         view.scene_available = true;
-        view.project_id = 123;
-        view.chart_id = 7;
+        view.project_id.value = 123;
+        view.chart_id.value = 7;
         view.document_revision = 11;
         view.viewport_width_pixels = 1200;
         view.viewport_height_pixels = 600;
@@ -1082,7 +1081,7 @@ TEST_CASE("Draw BGA source emits one stroke with the destination kind and no res
     auto& state = worm_ui_nuklear_compose_state();
     (void)harness.frame();
     state.pointer_capture.draw_source_kind = 2;
-    state.pointer_capture.draw_source_id = 91;
+    state.pointer_capture.draw_source_id = {91};
     (void)harness.frame();
     const auto center = rect_center(harness, view.bga_lane_rects[1]);
     const auto frames = click(harness, center.first, center.second);
@@ -1121,9 +1120,9 @@ TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
     stem_lane_fixture_t f;
     auto& state = worm_ui_nuklear_compose_state();
     state.pointer_capture.draw_source_kind = 1;
-    state.pointer_capture.draw_source_id = 81;
+    state.pointer_capture.draw_source_id = {81};
     f.harness.view().compose.draw_source_kind = 1;
-    f.harness.view().compose.draw_source_id = 81;
+    f.harness.view().compose.draw_source_id.value = 81;
     const auto point = f.at(662, 300);
     const auto placed = click(f.harness, point.first, point.second);
     bool matched{};
@@ -1133,7 +1132,7 @@ TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
                        input.resource_role == wormedit::resource_role_t::bgm &&
                        input.lane_id.value == 45 && input.resource_id.value == 81;
     check_bga(matched);
-    f.harness.view().compose.draw_source_stem_lane_id = 44;
+    f.harness.view().compose.draw_source_stem_lane_id.value = 44;
     f.harness.view().compose.draw_source_stem_lane_name = "Voice stem";
     const auto rejected = click(f.harness, point.first, point.second);
     check_bga(!any_input_of(rejected, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
@@ -1163,8 +1162,8 @@ struct dock_stem_fixture_t {
         view.scene_available = true;
         view.bmson_tools_available = true;
         view.note_paint_mode_active = true;
-        view.project_id = 3;
-        view.chart_id = 7;
+        view.project_id.value = 3;
+        view.chart_id.value = 7;
         view.document_revision = 11;
         view.viewport_width_pixels = 900;
         view.viewport_height_pixels = 600;
@@ -1458,7 +1457,7 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
         state.pointer_capture.draw_source_kind = 1;
         state.pointer_capture.draw_source_id = 800'001;
         packed.harness.view().compose.draw_source_kind = 1;
-        packed.harness.view().compose.draw_source_id = 800'001;
+        packed.harness.view().compose.draw_source_id.value = 800'001;
         const auto packed_point = packed.at(662, 300);
         const auto packed_click = click(packed.harness, packed_point.first, packed_point.second);
         const wormedit::ui::compose_input_action_t* packed_input{};
@@ -1478,7 +1477,7 @@ TEST_CASE("Mixed selection starts a BGM drag without a singular inspector event"
     view.note_paint_mode_active = false;
     f.marker.selected = true;
     view.bgm_events = {f.marker};
-    view.selected_bgm_event_id = 0;
+    view.selected_bgm_event_id.value = 0;
     view.selected_bgm_event_count = 2;
     (void)f.harness.frame();
     const auto from = f.at(622, 28);
@@ -1505,7 +1504,7 @@ TEST_CASE("Single ordinary BGM drag sends the destination source lane through re
     view.bgm_events = {f.marker};
     f.lanes[0].stem = false;
     view.bgm_lanes.assign(std::begin(f.lanes), std::end(f.lanes));
-    view.selected_bgm_event_id = 501;
+    view.selected_bgm_event_id.value = 501;
     view.selected_bgm_event_count = 1;
     (void)f.harness.frame();
     const auto from = f.at(622, 28);
@@ -1545,11 +1544,11 @@ TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible prof
     nuklear_event_harness_t harness{1600, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
-    view.lane_profile_choice_count = 1;
+    view.lane_profile_names.resize(1);
     view.lane_profile_current = -1;
-    std::snprintf(view.lane_profile_names[0], sizeof(view.lane_profile_names[0]), "osu!mania 7K");
+    view.lane_profile_names[0] = "osu!mania 7K";
     worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     const auto placeholder = open_initial_profile_picker(harness);
     REQUIRE(placeholder);
@@ -1744,11 +1743,11 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = false;
     state.dock_layout.layers_panel_visible = true;
-    WormUiComposeSemanticLayerView layer{.layer_id=7,.name="Lead",.red=255,
+    wormedit::ui::compose_semantic_layer_view_t layer{.layer_id={7},.name="Lead",.red=255,
         .assigned_note_count=3,.visible=true,.locked=true};
     auto& view=harness.view().compose;
-    view.semantic_layers=&layer;
-    view.semantic_layer_count=view.semantic_layer_total_count=1;
+    view.semantic_layers={layer};
+    view.semantic_layers.resize(view.semantic_layer_total_count=1);
     view.semantic_layer_assist_available=true;
     (void)harness.frame();
     const auto row=harness.drawn_text_center("Lead");
@@ -1761,7 +1760,7 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     check_bga(toggled.front().get().compose_input_document_revision==1);
     check_bga(toggled.front().get().compose_inputs.size()==0);
     check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
-    layer.assist_tick_enabled=true;
+    view.semantic_layers[0].assist_tick_enabled=true;
     (void)harness.frame(std::array{mouse_motion(1176,row->second)});
     check_bga(harness.drawn_text().find("Disable layer assist ticks")!=std::string::npos);
     view.semantic_layer_assist_available=false;

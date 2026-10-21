@@ -51,7 +51,7 @@ void check_clipped_wide_stem_canvas(bool selected) {
         {.y_pixels = 41, .absolute_peak = {1, 1}, .rms = {.5f, .5f}}}};
     wormedit::ui::compose_stem_waveform_view_t stem{.stem_key = 45, .source_lane_id = wormedit::object_id_t{44},
         .rows = rows};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
     view.viewport_width_pixels = 128;
     view.viewport_height_pixels = 128;
@@ -107,7 +107,7 @@ void check_hitsound_note_contrast(bool light) {
     note.semantic_color_visible = true;
     note.semantic_red = note.semantic_green = note.semantic_blue = light ? 240 : 20;
     note.semantic_alpha = 255;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
     view.viewport_width_pixels = view.viewport_height_pixels = 128;
     view.note_endpoints = {note};
@@ -162,7 +162,7 @@ void check_stem_header_golden(double width, bool stem, const char* expected,
     wormedit::ui::compose_bgm_lane_view_t lane{.bounds = {32, 0, 32 + width, 128}, .source_lane_id = wormedit::object_id_t{44},
         .stem = stem, .width_pixels = width, .resize_edge_pixels = 32 + width,
         .filename = filename};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
     view.viewport_width_pixels = 128;
     view.viewport_height_pixels = 128;
@@ -210,7 +210,7 @@ void check_bgm_tail_with_offscreen_head(bool selected) {
         .source_lane_id = wormedit::object_id_t{44}, .sound_id = wormedit::resource_id_t{1}, .has_sound = true, .selected = selected,
         .has_tail = true, .sound_label = "offscreen head", .head_top_pixels = -100,
         .head_bottom_pixels = -90};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
     view.viewport_width_pixels = view.viewport_height_pixels = 128;
     view.playable_field_left_pixels = 42;
@@ -243,7 +243,7 @@ namespace {
 auto fit_overlay_glyphs(bool offset, bool invalid) -> std::vector<SDL_FPoint> {
     field_submission_fixture_t fixture;
     expect_field(fixture.context != nullptr);
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
     view.viewport_width_pixels = 128;
     view.viewport_height_pixels = 128;

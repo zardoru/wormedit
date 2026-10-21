@@ -347,18 +347,11 @@ struct speed_event_t {
 // Parametric SV recipes are authored chart data. Sampled control points are
 // deliberately not part of the document model: they are derived preview/export
 // data and must never be persisted as ordinary scroll/speed events.
-enum class sv_recipe_output_t {
-    sv,
-    scrolls,
-    speeds,
-};
 
 
 
-enum class sv_recipe_sampling_mode_t {
-    fixed,
-    adaptive,
-};
+
+
 
 struct sv_recipe_parameters_t {
     // constant uses value_from; linear/exponential use value_from/value_to;
@@ -913,7 +906,7 @@ enum class quantization_collision_t {
 
 struct quantization_preset_t {
     static constexpr std::size_t maximum_name_bytes = 64;
-    static constexpr std::size_t maximum_count = 256;
+    static constexpr std::size_t maximum_count = maximum_quantization_presets;
 
     std::string name;
     std::uint64_t divisions{};

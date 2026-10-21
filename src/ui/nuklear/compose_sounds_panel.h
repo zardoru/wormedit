@@ -11,6 +11,6 @@ struct nk_context;
 // semantic layers to the selected group; files dropped on the panel are added.
 // Call inside the panel's group; it fills the group's remaining height.
 void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
-                                           const WormUiComposeView* view,
+                                           const wormedit::ui::compose_view_t* view,
                                            wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state);

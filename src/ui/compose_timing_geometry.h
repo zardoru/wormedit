@@ -34,13 +34,13 @@ inline auto compose_timing_width(std::uint8_t mask) -> double {
     return width;
 }
 
-inline auto compose_timing_right(const WormUiComposeView& view) -> double {
+inline auto compose_timing_right(const wormedit::ui::compose_view_t& view) -> double {
     return view.bga_lane_visible ? view.bga_lane_bounds.left : view.playable_field_left_pixels;
 }
 
 // One horizontal partition for projection, picking, markers and span gestures.
 // Narrow surfaces compress the partition proportionally to preserve the field.
-inline auto compose_timing_lane_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
+inline auto compose_timing_lane_extent(const wormedit::ui::compose_view_t& view, wormedit::timing_lane_kind_t lane)
     -> std::optional<std::pair<double, double>> {
     const auto ordinal = static_cast<unsigned>(lane);
     if (ordinal >= compose_timing_lane_widths.size() ||
@@ -56,7 +56,7 @@ inline auto compose_timing_lane_extent(const WormUiComposeView& view, wormedit::
     return std::pair{left, std::min(right, left + compose_timing_lane_widths[ordinal] * scale)};
 }
 
-inline auto compose_timing_lane_at(const WormUiComposeView& view, double x)
+inline auto compose_timing_lane_at(const wormedit::ui::compose_view_t& view, double x)
     -> std::optional<wormedit::timing_lane_kind_t> {
     if (!std::isfinite(x) || x < compose_measure_rail_width || x >= compose_timing_right(view))
         return std::nullopt;
@@ -68,7 +68,7 @@ inline auto compose_timing_lane_at(const WormUiComposeView& view, double x)
     return std::nullopt;
 }
 
-inline auto compose_timing_inner_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
+inline auto compose_timing_inner_extent(const wormedit::ui::compose_view_t& view, wormedit::timing_lane_kind_t lane)
     -> std::optional<std::pair<double, double>> {
     const auto extent = compose_timing_lane_extent(view, lane);
     if (!extent) return std::nullopt;
@@ -76,7 +76,7 @@ inline auto compose_timing_inner_extent(const WormUiComposeView& view, wormedit:
     return std::pair{extent->first + inset, extent->second - inset};
 }
 
-inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
+inline auto compose_timing_marker_bounds(const wormedit::ui::compose_view_t& view,
                                          const wormedit::ui::compose_timing_marker_view_t& marker)
     -> wormedit::ui::compose_rect_t {
     const auto extent = compose_timing_inner_extent(view, marker.lane);
@@ -92,7 +92,7 @@ inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
 // The measure lane is the measure rail made editable: each selectable bar line (every real measure
 // line but the chart's first) has a handle across the rail. Drawing, picking and area selection all
 // use this rectangle; a hidden lane has none.
-inline auto compose_bar_line_bounds(const WormUiComposeView& view, const wormedit::ui::compose_grid_line_view_t& line)
+inline auto compose_bar_line_bounds(const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_grid_line_view_t& line)
     -> std::optional<wormedit::ui::compose_rect_t> {
     if (!view.measure_lane.visible || !line.measure_id || line.measure_number < 2 ||
         !std::isfinite(line.y_pixels))
@@ -101,7 +101,7 @@ inline auto compose_bar_line_bounds(const WormUiComposeView& view, const wormedi
 }
 
 // The bar line whose handle holds the point, if any.
-inline auto compose_bar_line_at(const WormUiComposeView& view, double x, double y)
+inline auto compose_bar_line_at(const wormedit::ui::compose_view_t& view, double x, double y)
     -> const wormedit::ui::compose_grid_line_view_t* {
     for (std::size_t index = 0; index < view.grid_lines.size(); ++index) {
         const auto bounds = compose_bar_line_bounds(view, view.grid_lines[index]);
@@ -112,7 +112,7 @@ inline auto compose_bar_line_at(const WormUiComposeView& view, double x, double 
 }
 
 // A press the measure lane takes for itself: on a bar line, or anywhere in the lane while drawing.
-inline auto is_compose_measure_lane_press(const WormUiComposeView& view, double x, double y) -> bool {
+inline auto is_compose_measure_lane_press(const wormedit::ui::compose_view_t& view, double x, double y) -> bool {
     if (!view.measure_lane.visible || !std::isfinite(x) || x < 0.0 || x >= compose_measure_rail_width)
         return false;
     return view.note_paint_mode_active || compose_bar_line_at(view, x, y) != nullptr;

@@ -1117,7 +1117,7 @@ auto semantic_layer_slot_command(command_context_t& context) -> command_result_t
     const auto palette = wormedit::semantic_layer_palette_window_t::from(
         *chart, app.project.semantic_layer.semantic_layer_target,
         app.project.semantic_layer.semantic_layer_palette_page, false,
-        WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+        wormedit::ui::semantic_layer_shortcut_limit);
     if (!palette || slot > palette->layer_indices.size())
         return compose_action_outcome_t::from(
             "That semantic-layer slot is unavailable.", notification_severity_t::warning,

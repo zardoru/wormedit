@@ -13,6 +13,7 @@
 namespace wormedit {
 
 inline constexpr std::size_t maximum_batch_chart_metadata_charts = 256;
+inline constexpr std::size_t maximum_quantization_presets = 256;
 inline constexpr std::size_t maximum_external_players = 64;
 inline constexpr std::size_t maximum_preference_string_bytes = 4096;
 inline constexpr std::size_t maximum_project_path_bytes = 4096;
@@ -283,6 +284,17 @@ enum class stage_group_t {
     none,
     left,
     right,
+};
+
+enum class sv_recipe_output_t {
+    sv,
+    scrolls,
+    speeds,
+};
+
+enum class sv_recipe_sampling_mode_t {
+    fixed,
+    adaptive,
 };
 
 enum class sv_recipe_curve_t {

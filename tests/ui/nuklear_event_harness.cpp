@@ -65,8 +65,8 @@ void initialize_compose_view(wormedit::ui::workspace_view_t& workspace, int widt
     auto& compose = workspace.compose;
     compose.visible = true;
     compose.scene_available = true;
-    compose.project_id = 1;
-    compose.chart_id = 1;
+    compose.project_id.value = 1;
+    compose.chart_id.value = 1;
     compose.document_revision = 1;
     compose.viewport_width_pixels = static_cast<double>(width);
     compose.viewport_height_pixels = static_cast<double>(height);

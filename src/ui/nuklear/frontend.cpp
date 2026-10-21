@@ -168,7 +168,7 @@ static bool g_compose_escape_has_selection{};
 static void render_notification_frame(const wormedit::ui::notification_view_t& view,
     wormedit::ui::workspace_action_t& action, int width, int height, bool project_modal);
 
-static std::array<WormUiShortcutEvent, wormedit::ui::shortcut_event_admission_limit> g_shortcut_events{};
+static std::array<wormedit::ui::shortcut_event_t, wormedit::ui::shortcut_event_admission_limit> g_shortcut_events{};
 static size_t g_shortcut_event_count{};
 static bool g_tap_timing_visible{};
 static bool g_tap_key_captured{};
@@ -485,7 +485,7 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
     }
 
     g_shortcut_events[g_shortcut_event_count++] = {
-        .hid_usage = hid_usage,
+        .hid_usage = static_cast<wormedit::shortcut_key_t>(hid_usage),
         .modifiers = modifiers,
         .repeat = event->repeat,
         .timestamp_ns = event->timestamp,
@@ -834,7 +834,7 @@ void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request
     request->use_filter = static_cast<wormedit::resource_use_filter_t>(state.bga_catalog.bga_use_filter);
 }
 
-void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request) {
+void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_request_t* request) {
     if (!request) return;
     const auto& chooser = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser;
     *request = {chooser.first_row, chooser.row_limit, chooser.open, {}};
@@ -1129,8 +1129,8 @@ static void consume_layer_creation_request(const wormedit::ui::workspace_view_t&
     if (!request || !compose_dock_input_available() || !view.project_loaded || view.options.visible ||
         view.compose.timing_focus || view.active_tab != WORM_UI_WORKSPACE_TAB_COMPOSE ||
         !view.compose.visible || !view.compose.scene_available || external_project_modal_active(view) ||
-        view.compose.input_occluded || request->project != view.compose.project_id ||
-        request->chart != view.compose.chart_id || request->revision != view.compose.document_revision ||
+        view.compose.input_occluded || request->project != view.compose.project_id.value ||
+        request->chart != view.compose.chart_id.value || request->revision != view.compose.document_revision ||
         action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.compose_inputs.size() != 0 ||
         (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE &&
          action.compose_action != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
@@ -1804,7 +1804,7 @@ static void close_unavailable_inline_offset(const wormedit::ui::workspace_view_t
         view.compose.audio_offset_editable && !view.options.visible && !project_modal_active(view) &&
         (compose.inline_offset.inline_offset_in_inspector ? compose.dock_layout.inspector_visible && !view.compose.timing_focus
                                             : view.compose.timing_focus) &&
-        compose.inline_offset.inline_offset_chart_id == view.compose.chart_id &&
+        compose.inline_offset.inline_offset_chart_id == view.compose.chart_id.value &&
         compose.inline_offset.inline_offset_revision == view.compose.document_revision;
     if (!available || compose.inline_offset.inline_offset_cancel_pending) {
         worm_ui_nuklear_cancel_inline_offset(compose);
@@ -1939,7 +1939,7 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
     }
 }
 
-static bool status_minimap_available(const WormUiComposeView& view) {
+static bool status_minimap_available(const wormedit::ui::compose_view_t& view) {
     // Any song waveform enables the bar, whether or not the chart has BGM events.
     const bool has_audio = view.has_bgm_events || view.bgm_bar_rows.size() != 0 ||
                            view.waveform_overview_rows.size() != 0;
@@ -2521,7 +2521,7 @@ static void render_seek_grip(struct nk_rect bounds, nk_size position, nk_size st
 
 static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& view,
                                         wormedit::ui::workspace_action_t& action, struct nk_rect bounds) {
-    if (view.compose.selected_audio_asset_id == 0 || view.transport_sample_rate == 0 ||
+    if (view.compose.selected_audio_asset_id.value == 0 || view.transport_sample_rate == 0 ||
         view.transport_end_frame == 0 || !nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
         return;
     const auto inset_x = g_context->style.progress.padding.x + g_context->style.progress.border;
@@ -2547,7 +2547,7 @@ static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& vi
         compose.hover_timing_total_frames == view.transport_end_frame &&
         compose.hover_timing_sample_rate == view.transport_sample_rate &&
         wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
-        wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label);
+        wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label.c_str());
 }
 
 static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view,
@@ -3237,14 +3237,14 @@ static void render_tap_timing_tool(const WorkspaceRenderContext& frame) {
         notification_document_gesture_active();
     for (std::size_t index = 0; index < g_shortcut_event_count; ++index) {
         const auto& key = g_shortcut_events[index];
-        if (key.hid_usage == SDL_SCANCODE_ESCAPE && key.modifiers == 0) tap.close_key_pressed = true;
+        if (key.hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_ESCAPE) && key.modifiers == 0) tap.close_key_pressed = true;
     }
     worm_ui_nuklear_render_tap_timing_panel(g_context, tap, frame.action.tap_timing);
     if (!frame.action.tap_timing.close) return;
     std::size_t count = 0;
     for (std::size_t index = 0; index < g_shortcut_event_count; ++index) {
         const auto& key = g_shortcut_events[index];
-        if (key.hid_usage == SDL_SCANCODE_ESCAPE && key.modifiers == 0) continue;
+        if (key.hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_ESCAPE) && key.modifiers == 0) continue;
         g_shortcut_events[count++] = key;
     }
     g_shortcut_event_count = count;
@@ -3317,7 +3317,7 @@ static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* vi
         catalog.keysound_slots_chart != view->selected_chart_id.value)
         catalog.keysound_selected_slot_explicit = false;
     const auto project = view ? view->project_id.value : 0;
-    const auto chart = view ? view->compose.chart_id : 0;
+    const auto chart = view ? view->compose.chart_id.value : 0;
     const auto tab = view ? view->active_tab : WORM_UI_WORKSPACE_TAB_METADATA;
     const bool changed = project != g_context_project || chart != g_context_chart || tab != g_context_tab;
     const bool content = view && ((tab == WORM_UI_WORKSPACE_TAB_SETUP && view->setup.visible) ||

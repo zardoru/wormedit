@@ -48,7 +48,7 @@ auto import_bga_feedback(document_history_t& history, chart_id_t chart_id, std::
     const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding images.");
-    if (paths.empty() || paths.size() > WORM_UI_SOUND_DROP_CAPACITY)
+    if (paths.empty() || paths.size() > wormedit::ui::sound_drop_resource_limit)
         return compose_action_outcome_t::blocked("Invalid image import batch size.");
     auto candidate = wormedit::document_history_t::from(history.document, 1);
     std::unordered_set<std::string> known;
@@ -111,7 +111,7 @@ struct import_bga_action_t {
         -> std::optional<compose_action_outcome_t> {
         const auto& action = context.action;
 
-        if (action.compose_import_paths.size() > WORM_UI_SOUND_DROP_CAPACITY)
+        if (action.compose_import_paths.size() > wormedit::ui::sound_drop_resource_limit)
             return compose_action_outcome_t::blocked("Image import batch is too large.",
                                                      notification_source_t::import_);
         return std::nullopt;

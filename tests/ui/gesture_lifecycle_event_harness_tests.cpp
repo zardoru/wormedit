@@ -49,15 +49,15 @@ struct lifecycle_fixture_t {
     wormedit::ui::compose_speed_span_view_t speed{};
     wormedit::ui::compose_recipe_area_view_t recipe{};
     wormedit::ui::compose_timing_marker_view_t marker{};
-    WormUiComposeLaneKeyBinding binding{};
+    wormedit::ui::compose_lane_key_binding_t binding{};
     wormedit::ui::compose_waveform_overview_row_view_t overview{};
-    std::array<WormUiComposeMeasureRowView, 2> measures{};
+    std::array<wormedit::ui::compose_measure_row_view_t, 2> measures{};
     std::array<std::uint64_t, 2> measure_ids{77, 78};
     std::array<wormedit::ui::compose_grid_line_view_t, 2> measure_lines{};
     wormedit::ui::compose_bgm_lane_view_t lane{};
     wormedit::ui::compose_bgm_event_view_t bgm{};
     wormedit::ui::compose_bga_event_view_t bga{};
-    WormUiComposeBookmarkView bookmark{};
+    wormedit::ui::compose_bookmark_view_t bookmark{};
     wormedit::ui::testing_rect_view_t rect{};
     float x{}, y{};
     SDL_Keymod modifiers{SDL_KMOD_NONE};
@@ -72,7 +72,7 @@ struct lifecycle_fixture_t {
         note.note_id.value = 7; note.bounds = {450, 295, 550, 305};
         note.selected = true;
         binding = {SDL_SCANCODE_2, 2};
-        v.lane_key_bindings = &binding; v.lane_key_binding_count = 1;
+        v.lane_key_bindings = {binding}; v.lane_key_bindings.resize(1);
         configure_notes();
         configure_timing();
         configure_other();
@@ -123,7 +123,7 @@ struct lifecycle_fixture_t {
             beat.chart_row = 480; beat.kind = wormedit::editor_grid_line_kind_t::beat; beat.y_pixels = 300;
             v.waveform_rows = {wave};
             v.grid_lines = {beat};
-            v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+            v.selected_audio_asset_id.value = 6; v.waveform_overview_sample_rate = 44100;
             if (family == lifecycle_family::offset_fit) modifiers = SDL_KMOD_SHIFT;
         }
     }
@@ -191,17 +191,17 @@ struct lifecycle_fixture_t {
         if (family == lifecycle_family::overview || family == lifecycle_family::beat_zero) {
             v.bgm_bar_reserved = true; v.bgm_bar_rows = {overview};
             v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
-            v.selected_audio_asset_id = 12; v.waveform_overview_sample_rate = 48000;
+            v.selected_audio_asset_id.value = 12; v.waveform_overview_sample_rate = 48000;
             v.waveform_overview_total_frames = 480000;
         }
         if (family == lifecycle_family::measure) {
-            measures[0].measure_id = 77; measures[1].measure_id = 78;
+            measures[0].measure_index = 77; measures[1].measure_index = 78;
             for (auto& m : measures) { m.length_numerator = m.length_denominator = 1; }
             measure_lines[0].kind = measure_lines[1].kind = wormedit::editor_grid_line_kind_t::measure;
             measure_lines[0].measure_number = 1; measure_lines[1].measure_number = 2;
             measure_lines[0].y_pixels = 100; measure_lines[1].y_pixels = 500;
-            v.measure_rows = measures.data(); v.measure_row_ids = measure_ids.data();
-            v.measure_row_count = 2; v.grid_lines.assign(measure_lines.data(), measure_lines.data() + 2);
+            v.measure_rows.assign(measures.begin(), measures.end()); v.measure_row_ids.assign(measure_ids.begin(), measure_ids.end());
+            v.measure_rows.resize(2); v.grid_lines.assign(measure_lines.data(), measure_lines.data() + 2);
             v.pixels_per_standard_measure = 400; v.area_snap_denominator = 8; v.edit_snap_enabled = true;
             modifiers = SDL_KMOD_ALT;
         }
@@ -216,13 +216,13 @@ struct lifecycle_fixture_t {
         auto& v = harness.view().compose;
         if (family == lifecycle_family::chip) {
             v.note_paint_mode_active = v.keysounds_available = true;
-            v.draw_source_kind = 1; v.draw_source_id = 77; v.draw_source_label = "Lifecycle source";
+            v.draw_source_kind = 1; v.draw_source_id.value = 77; v.draw_source_label = "Lifecycle source";
         }
         if (family == lifecycle_family::mix) v.bgm_mix_available = true;
         if (family == lifecycle_family::razor) {
             v.selected_object_count = 1;
-            v.selected_bmson_bgm_event_id = 21;
-            v.selected_bmson_source_lane_id = 77;
+            v.selected_bmson_bgm_event_id.value = 21;
+            v.selected_bmson_source_lane_id.value = 77;
         }
     }
     void calibrate_beat_zero() {
@@ -247,9 +247,9 @@ struct lifecycle_fixture_t {
             v.bga_events = {bga}; v.bga_events.resize(1);
         }
         if (family == lifecycle_family::bookmark) {
-            bookmark.bookmark_id = 23; bookmark.label = "Bookmark"; bookmark.measure_number = 1;
+            bookmark.bookmark_id.value = 23; bookmark.label = "Bookmark"; bookmark.measure_number = 1;
             bookmark.projection_visible = true; bookmark.projected_y_pixels = 300;
-            v.beat_bookmarks = &bookmark; v.beat_bookmark_count = 1;
+            v.beat_bookmarks = {bookmark}; v.beat_bookmarks.resize(1);
         }
     }
     void choose_other_pointer() {
@@ -534,16 +534,16 @@ TEST_CASE("Bookmark drag capture cannot continue in another project with equal c
     lifecycle_require(f.active());
     lifecycle_require(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
     auto& view = f.harness.view().compose;
-    const auto captured_chart = view.chart_id;
+    const auto captured_chart = view.chart_id.value;
     const auto captured_revision = view.document_revision;
-    const auto captured_project = view.project_id;
-    if (switches_project) ++view.project_id;
+    const auto captured_project = view.project_id.value;
+    if (switches_project) ++view.project_id.value;
     const auto event = releases_on_switch ? lifecycle_button(f.x, f.y + 50, false)
                                          : lifecycle_motion(f.x, f.y + 50);
     auto released = f.harness.frame(std::span{&event, 1});
-    lifecycle_check(view.chart_id == captured_chart);
+    lifecycle_check(view.chart_id.value == captured_chart);
     lifecycle_check(view.document_revision == captured_revision);
-    lifecycle_check(view.project_id == captured_project + (switches_project ? 1 : 0));
+    lifecycle_check(view.project_id.value == captured_project + (switches_project ? 1 : 0));
     if (switches_project) {
         lifecycle_check(!f.active());
         lifecycle_check(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
@@ -616,7 +616,7 @@ TEST_CASE("Beat-zero continuation rejects changed audio source geometry",
     lifecycle_fixture_t f{lifecycle_family::beat_zero};
     (void)f.begin();
     auto& view = f.harness.view().compose;
-    if (changed == 0) ++view.selected_audio_asset_id;
+    if (changed == 0) ++view.selected_audio_asset_id.value;
     if (changed == 1) ++view.waveform_overview_total_frames;
     if (changed == 2) ++view.waveform_overview_sample_rate;
     const auto release = lifecycle_button(f.x + 30, f.y, false);

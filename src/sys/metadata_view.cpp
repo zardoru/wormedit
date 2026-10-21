@@ -45,12 +45,6 @@ auto metadata_path_text(keyed_cache_t<std::filesystem::path, std::string>& cache
     return cache.get_or_build(path, [&] { return path.generic_string(); });
 }
 
-auto metadata_frame_text(frontend_workspace_view_t& flattened, std::string_view text)
-    -> const char* {
-    auto* arena = flattened.arena();
-    const auto* copied = arena ? arena_string(*arena, text) : nullptr;
-    return copied;
-}
 
 void populate_metadata_music(frontend_workspace_view_t& flattened,
                              const wormedit::document_history_t& history,
@@ -232,23 +226,24 @@ void populate_metadata_output_groups(frontend_workspace_view_t& flattened,
                                      const document_history_t& history,
                                      const workspace_controller_t& workspace) {
     auto& rows = flattened.view.metadata.output_groups;
-    rows.clear();
-    if (!workspace.selected_chart) return;
-    flattened.metadata_projection_cache.output_paths.resize(history.document.output_groups.size());
-    for (std::size_t i = 0; i < history.document.output_groups.size(); ++i) {
-        const auto& group = history.document.output_groups[i];
+    if (!workspace.selected_chart) { rows.clear(); return; }
+    const auto& groups = history.document.output_groups;
+    rows.resize(static_cast<std::size_t>(std::ranges::count_if(groups, [&](const auto& group) {
+        return std::ranges::find(group.charts, *workspace.selected_chart) != group.charts.end();
+    })));
+    flattened.metadata_projection_cache.output_paths.resize(groups.size());
+    std::size_t next{};
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        const auto& group = groups[i];
         if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end()) continue;
-        const auto* name = metadata_frame_text(flattened, group.name);
         const auto& text = metadata_output_path_text(flattened, group, i);
-        const auto* path = metadata_frame_text(flattened, text.path);
-        const auto* assets = metadata_frame_text(flattened, text.asset_directory);
-        if (!name || !path || !assets) {
-            flattened.view.metadata.output_group_text_truncated = true;
-            return;
-        }
-        rows.push_back({.document_index = i, .name = name, .relative_output_path = path,
-                        .relative_asset_directory = assets});
+        auto& row = rows[next++];
+        row.document_index = i;
+        row.name = group.name;
+        row.relative_output_path = text.path;
+        row.relative_asset_directory = text.asset_directory;
     }
+
 }
 } // namespace
 

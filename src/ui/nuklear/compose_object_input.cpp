@@ -93,8 +93,8 @@ static auto update_stem_lane_resize(const ComposePointerEventContext& input) -> 
     const auto resize = *state.stem_lanes.stem_lane_resize;
     const auto [project, chart, lane] = resize.key;
     const auto& view = *input.view;
-    if (!input.window_focused || view.input_occluded || view.project_id != project ||
-        view.chart_id != chart || compose_action_has_cancel(input.action) ||
+    if (!input.window_focused || view.input_occluded || view.project_id.value != project ||
+        view.chart_id.value != chart || compose_action_has_cancel(input.action) ||
         (!input.left_down && !input.left_released)) {
         worm_ui_nuklear_cancel_stem_lane_resize(state);
         return true;
@@ -115,8 +115,8 @@ static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& 
         const auto y = (click.y - input.viewport.y) * input.view->viewport_height_pixels / input.viewport.h;
         if (const auto* lane = stem_lane_resize_edge(input, x, y)) {
             worm_ui_nuklear_cancel_stem_lane_resize(state, false);
-            worm_ui_nuklear_set_stem_lane_width(state, input.view->project_id,
-                input.view->chart_id, lane->source_lane_id.value, 36);
+            worm_ui_nuklear_set_stem_lane_width(state, input.view->project_id.value,
+                input.view->chart_id.value, lane->source_lane_id.value, 36);
             state.stem_lanes.stem_lane_resize_cursor_requested = true;
             state.stem_lanes.stem_lane_resize_hover_lane = lane->source_lane_id.value;
             return true;
@@ -142,7 +142,7 @@ auto process_stem_lane_resize(const ComposePointerEventContext& input,
     const auto* lane = stem_lane_resize_edge(input, input.pointer_started_x, input.pointer_started_y);
     if (!lane) return false;
     state.stem_lanes.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
-        {view.project_id, view.chart_id, lane->source_lane_id.value}, input.pointer_started_x, lane->width_pixels};
+        {view.project_id.value, view.chart_id.value, lane->source_lane_id.value}, input.pointer_started_x, lane->width_pixels};
     return update_stem_lane_resize(input);
 }
 static auto resource_pointer_can_start(const ComposePointerEventContext& input,
@@ -159,7 +159,7 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
            !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active;
 }
 
-static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_t event_id) {
+static bool open_bga_stack_for_event(const wormedit::ui::compose_view_t& view, std::uint64_t event_id) {
     if (event_id == 0) return false;
     const auto events = std::span(view.bga_events);
     const auto target = std::ranges::find(events, wormedit::object_id_t{event_id}, &wormedit::ui::compose_bga_event_view_t::event_id);
@@ -167,15 +167,15 @@ static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_
             WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) return false;
     state.bga_interaction.bga_stack_open = true;
     state.bga_interaction.bga_stack_release_pending = true;
-    state.bga_interaction.bga_stack_project_id = view.project_id;
-    state.bga_interaction.bga_stack_chart_id = view.chart_id;
+    state.bga_interaction.bga_stack_project_id = view.project_id.value;
+    state.bga_interaction.bga_stack_chart_id = view.chart_id.value;
     state.bga_interaction.bga_stack_revision = view.document_revision;
     state.bga_interaction.bga_stack_row = target->canvas_row;
     state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(target->kind);
     return true;
 }
 
-static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, double y,
+static bool prepare_bga_pointer_target(const wormedit::ui::compose_view_t& view, double x, double y,
                                        bool& in_placement_pane, std::uint64_t& target_id) {
     in_placement_pane = view.bga_lane_visible && x >= view.bga_lane_bounds.left &&
         x < view.bga_lane_bounds.right && y >= view.bga_lane_bounds.top &&
@@ -185,7 +185,7 @@ static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, 
 }
 
 static void set_bga_pointer_kind(wormedit::ui::workspace_action_t* action, std::uint8_t role,
-                                 const WormUiComposeView& view, double x, double y) {
+                                 const wormedit::ui::compose_view_t& view, double x, double y) {
     if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->compose_inputs.size() == 0) return;
     auto& output = action->compose_inputs[action->compose_inputs.size() - 1];
     output.bga_lane_kind = static_cast<wormedit::visual_event_kind_t>(compose_bga_lane_kind_at(view, x, y).value_or(255));
@@ -255,7 +255,7 @@ auto selected_bmson_lane_at(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     for (size_t index = 0; index < view.bgm_lanes.size(); ++index) {
         const auto& lane = view.bgm_lanes[index];
-        if (lane.source_lane_id.value == view.selected_bmson_source_lane_id &&
+        if (lane.source_lane_id.value == view.selected_bmson_source_lane_id.value &&
             x >= lane.bounds.left && x < lane.bounds.right &&
             y >= lane.bounds.top && y < lane.bounds.bottom)
             return true;
@@ -270,8 +270,8 @@ static auto bmson_move_lane_at(const ComposePointerEventContext& input,
         const auto& lane = view.bgm_lanes[index];
         if (x >= lane.bounds.left && x < lane.bounds.right &&
             y >= lane.bounds.top && y < lane.bounds.bottom &&
-            (view.selected_bmson_bgm_event_id == 0 ||
-             lane.source_lane_id.value == view.selected_bmson_source_lane_id))
+            (view.selected_bmson_bgm_event_id.value == 0 ||
+             lane.source_lane_id.value == view.selected_bmson_source_lane_id.value))
             return lane.source_lane_id.value;
     }
     return 0;
@@ -311,7 +311,7 @@ static void update_active_bmson_razor(const ComposePointerEventContext& input) {
             append_compose_input(&action, input_kind, input.pointer_x, input.pointer_y, 0, false,
                                  WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 view.selected_bmson_bgm_event_id);
+                                 view.selected_bmson_bgm_event_id.value);
         state.bmson_input.bmson_razor_pointer_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
                input.pointer_inside && selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
@@ -319,7 +319,7 @@ static void update_active_bmson_razor(const ComposePointerEventContext& input) {
         append_compose_input(&action, input_kind, input.pointer_x, input.pointer_y, 0, false,
                              WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                             view.selected_bmson_bgm_event_id);
+                             view.selected_bmson_bgm_event_id.value);
         state.bmson_input.bmson_razor_last_y_pixels = input.pointer_y;
     }
 }
@@ -339,7 +339,7 @@ auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                          input.pointer_started_y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                         input.view->selected_bmson_bgm_event_id, 0, true);
+                         input.view->selected_bmson_bgm_event_id.value, 0, true);
     state.bmson_input.bmson_razor_pointer_active = !state.input_queue.action_overflowed;
     state.bmson_input.bmson_razor_last_y_pixels = input.pointer_started_y;
     return true;
@@ -540,7 +540,7 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
 
 // The BGM source lane under a Draw press. On a BMSON chart only packed (non-stem) columns
 // resolve here; stem lanes keep their own point capture and are never drawn as strokes.
-static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
+static auto bgm_draw_lane_at(const wormedit::ui::compose_view_t& view, double x, double y)
     -> const wormedit::ui::compose_bgm_lane_view_t* {
     for (const auto& lane : std::span(view.bgm_lanes))
         if (!(view.bmson_tools_available && lane.stem) && x >= lane.bounds.left && x < lane.bounds.right &&
@@ -549,9 +549,9 @@ static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
 }
 
 // A sound is the current Draw source and, on BMSON, it is not owned by a stem lane.
-static auto bgm_draw_source_ready(const WormUiComposeView& view) -> bool {
+static auto bgm_draw_source_ready(const wormedit::ui::compose_view_t& view) -> bool {
     return state.pointer_capture.draw_source_kind == 1 && state.pointer_capture.draw_source_id != 0 &&
-           !view.draw_source_stem_lane_id && !view.draw_source_is_stem;
+           !view.draw_source_stem_lane_id.value && !view.draw_source_is_stem;
 }
 
 static void emit_draw_stroke(const ComposePointerEventContext& input,
@@ -632,9 +632,9 @@ bool process_draw_right_pointer(const ComposePointerEventContext& input) {
 
 // Hold and Roll need an explicit end, so their press goes to the click-click hold gesture and
 // never starts a paint stroke (the core rejects the stroke and the UI would keep updating it).
-static auto armed_kind_uses_hold_gesture(const WormUiComposeView& view) -> bool {
-    return view.armed_note_kind == static_cast<uint32_t>(wormedit::note_kind_t::hold) ||
-           view.armed_note_kind == static_cast<uint32_t>(wormedit::note_kind_t::roll);
+static auto armed_kind_uses_hold_gesture(const wormedit::ui::compose_view_t& view) -> bool {
+    return view.armed_note_kind == wormedit::note_kind_t::hold ||
+           view.armed_note_kind == wormedit::note_kind_t::roll;
 }
 
 static void update_draw_left_pointer(const ComposePointerEventContext& input) {
@@ -674,7 +674,7 @@ static bool draw_left_can_start(const ComposePointerEventContext& input) {
         !state.area_selection.area_selection_candidate_active;
 }
 
-static auto bmson_lane_at(const WormUiComposeView& view, double x, double y)
+static auto bmson_lane_at(const wormedit::ui::compose_view_t& view, double x, double y)
     -> const wormedit::ui::compose_bgm_lane_view_t* {
     for (const auto& lane : std::span(view.bgm_lanes))
         if (x >= lane.bounds.left && x < lane.bounds.right &&
@@ -703,8 +703,8 @@ static bool bmson_point_capture_current(const ComposePointerEventContext& input)
     const auto& view = *input.view;
     const auto& capture = *state.bmson_input.bmson_point_capture;
     return input.window_focused && view.scene_available && !view.input_occluded && !view.timing_focus &&
-        view.note_paint_mode_active && capture.project == view.project_id &&
-        capture.chart == view.chart_id && capture.revision == view.document_revision;
+        view.note_paint_mode_active && capture.project == view.project_id.value &&
+        capture.chart == view.chart_id.value && capture.revision == view.document_revision;
 }
 
 static bool bmson_draw_can_start(const ComposePointerEventContext& input) {
@@ -717,7 +717,7 @@ static bool bmson_draw_can_start(const ComposePointerEventContext& input) {
         !(input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_SHIFT);
 }
 
-static bool packed_draw_source_available(const WormUiComposeView& view) {
+static bool packed_draw_source_available(const wormedit::ui::compose_view_t& view) {
     return bgm_draw_source_ready(view);
 }
 
@@ -726,8 +726,8 @@ static void show_packed_draw_source_tip(const ComposePointerEventContext& input)
     const auto* lane = bmson_lane_at(view, input.pointer_x, input.pointer_y);
     if (!view.note_paint_mode_active || view.timing_focus || !view.bmson_tools_available ||
         !input.pointer_inside || !lane || lane->stem || packed_draw_source_available(view)) return;
-    const auto name = view.draw_source_stem_lane_name ? view.draw_source_stem_lane_name : "";
-    wormedit::ui::nuklear::tooltip::text(input.context, (view.draw_source_stem_lane_id || view.draw_source_is_stem) ?
+    const auto name = view.draw_source_stem_lane_name.c_str() ? view.draw_source_stem_lane_name.c_str() : "";
+    wormedit::ui::nuklear::tooltip::text(input.context, (view.draw_source_stem_lane_id.value || view.draw_source_is_stem) ?
         std::string("This source belongs to stem lane ") + name + "." :
         std::string("Pick a keysound source to draw in this packed column."));
 }
@@ -747,7 +747,7 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
     // Packed columns draw as BGM-style strokes; only the missing-source case stops here.
     if (!lane->stem) return !packed_draw_source_available(view);
     state.bmson_input.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
-        view.project_id, view.chart_id, view.document_revision, lane->source_lane_id.value,
+        view.project_id.value, view.chart_id.value, view.document_revision, lane->source_lane_id.value,
         state.pointer_capture.draw_source_id, input.pointer_started_x, input.pointer_started_y,
         (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0, !lane->stem, false};
     if (!input.left_down) finish_bmson_point_capture(input);

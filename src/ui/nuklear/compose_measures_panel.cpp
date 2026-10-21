@@ -14,17 +14,17 @@
 namespace {
 constexpr float row_height = 26.0f;
 
-auto raise(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
+auto raise(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
            WormUiComposeActionKind kind) -> bool {
     return wormedit::ui::raise_compose_action(action, view, kind,
                                               wormedit::ui::compose_project_stamp_t::preserve);
 }
 
-auto ids_of(const WormUiComposeView& view) -> std::span<const std::uint64_t> {
-    return {view.measure_row_ids, view.measure_row_count};
+auto ids_of(const wormedit::ui::compose_view_t& view) -> std::span<const std::uint64_t> {
+    return view.measure_row_ids;
 }
 
-void format_row(const WormUiComposeMeasureRowView& value, char* label, std::size_t size) {
+void format_row(const wormedit::ui::compose_measure_row_view_t& value, char* label, std::size_t size) {
     if (value.has_meter)
         std::snprintf(label, size, "%llu    %u/%u    %llu/%llu", static_cast<unsigned long long>(value.number),
                       value.meter_numerator, value.meter_denominator,
@@ -36,15 +36,15 @@ void format_row(const WormUiComposeMeasureRowView& value, char* label, std::size
                       static_cast<unsigned long long>(value.length_denominator));
 }
 
-void row(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
          worm_ui_nuklear_compose_state_t& state, std::size_t index) {
     nk_layout_row_dynamic(context, row_height, 1);
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) && !view.input_occluded;
     struct nk_rect bounds{};
-    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID || index >= view.measure_row_count) return;
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID || index >= view.measure_rows.size()) return;
     const auto& value = view.measure_rows[index];
-    const auto selected = worm_ui_keysound_is_selected(state.measures_dock.measure_selection, value.measure_id);
+    const auto selected = worm_ui_keysound_is_selected(state.measures_dock.measure_selection, value.measure_index);
     auto* canvas = nk_window_get_canvas(context);
     if (selected || hovered) nk_fill_rect(canvas, bounds, 3, nk_rgb(44, 72, 109));
     char label[96];
@@ -56,12 +56,12 @@ void row(nk_context* context, const WormUiComposeView& view, wormedit::ui::works
     worm_ui_keysound_click(state.measures_dock.measure_selection, ids_of(view), index,
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
     // A plain or Shift click also moves the cursor, so the field follows the list.
-    if (value.measure_id == state.measures_dock.measure_selection.primary &&
+    if (value.measure_index == state.measures_dock.measure_selection.primary &&
         raise(action, view, WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE))
         action.compose_measure_number = value.number;
 }
 
-void meter_controls(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                     worm_ui_nuklear_compose_state_t& state) {
     nk_layout_row_template_begin(context, 27);
     nk_layout_row_template_push_static(context, 38.0f);
@@ -89,7 +89,7 @@ void meter_controls(nk_context* context, const WormUiComposeView& view, wormedit
 }
 } // namespace
 
-void worm_ui_nuklear_render_compose_measures(nk_context* context, const WormUiComposeView* view,
+void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit::ui::compose_view_t* view,
     wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
     nk_layout_row_dynamic(context, 20, 1);
     char title[64];
@@ -108,13 +108,10 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const WormUiCo
     struct nk_list_view list{};
     if (nk_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,
                            static_cast<int>(row_height),
-                           static_cast<int>(std::max<std::size_t>(view->measure_row_count, 1)))) {
-        for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->measure_row_count)); ++index)
+                           static_cast<int>(std::max<std::size_t>(view->measure_rows.size(), 1)))) {
+        for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->measure_rows.size())); ++index)
             row(context, *view, *action, *state, static_cast<std::size_t>(index));
         nk_list_view_end(&list);
     }
-    if (view->measure_rows_truncated) {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, "Only the first measures are listed.", NK_TEXT_LEFT);
-    }
+
 }

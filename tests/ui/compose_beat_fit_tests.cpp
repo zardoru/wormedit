@@ -42,7 +42,7 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     beat.y_pixels = 120;
     v.waveform_rows = {wave};
     v.grid_lines = {beat};
-    v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+    v.selected_audio_asset_id.value = 6; v.waveform_overview_sample_rate = 44100;
     (void)h.frame();
     wormedit::ui::testing_rect_view_t rect{};
     verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
@@ -96,7 +96,7 @@ TEST_CASE("Group beat rail handles start fitting with the same guards as other b
     beat.chart_row = 480; beat.kind = static_cast<wormedit::editor_grid_line_kind_t>(kind); beat.y_pixels = 120;
     v.waveform_rows = {wave};
     v.grid_lines = {beat};
-    v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+    v.selected_audio_asset_id.value = 6; v.waveform_overview_sample_rate = 44100;
     v.waveform_timing_locked = locked;
     (void)h.frame();
     wormedit::ui::testing_rect_view_t rect{};
@@ -184,7 +184,7 @@ TEST_CASE("Span drags retire before a locked stale or occluded release",
     case 0: v.waveform_timing_locked = true; break;
     case 1: v.input_occluded = true; break;
     case 2: ++v.document_revision; ++f.h.view().document_revision; break;
-    case 3: ++v.project_id; ++f.h.view().project_id.value; break;
+    case 3: ++v.project_id.value; ++f.h.view().project_id.value; break;
     }
     const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 25, false)});
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT));
@@ -249,7 +249,7 @@ TEST_CASE("Beat and offset fit share zero movement and source change cancellatio
     beat.chart_row = 480; beat.kind = wormedit::editor_grid_line_kind_t::beat; beat.y_pixels = 120;
     v.waveform_rows = {wave};
     v.grid_lines = {beat};
-    v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+    v.selected_audio_asset_id.value = 6; v.waveform_overview_sample_rate = 44100;
     (void)h.frame();
     wormedit::ui::testing_rect_view_t rect{};
     verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
@@ -267,7 +267,7 @@ TEST_CASE("Beat and offset fit share zero movement and source change cancellatio
     v.beat_fit_target_y_pixels = 120;
     const auto distance = interruption == 0 ? 0.0f : 20.0f;
     switch (interruption) {
-    case 1: ++v.selected_audio_asset_id; break;
+    case 1: ++v.selected_audio_asset_id.value; break;
     case 2: ++v.waveform_overview_sample_rate; break;
     case 3: v.waveform_timing_locked = true; break;
     case 4: v.input_occluded = true; break;
@@ -320,7 +320,7 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
     v.playable_field_left_pixels = 400; v.playable_field_right_pixels = 1000;
     v.bgm_bar_reserved = true; v.bgm_bar_rows = {wave};
     v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
-    v.selected_audio_asset_id = 12; v.waveform_overview_sample_rate = 48000;
+    v.selected_audio_asset_id.value = 12; v.waveform_overview_sample_rate = 48000;
     v.waveform_overview_total_frames = 480000;
     auto& s = worm_ui_nuklear_compose_state();
     s.dock_layout.inspector_visible = s.dock_layout.sounds_panel_visible = s.dock_layout.layers_panel_visible = false;

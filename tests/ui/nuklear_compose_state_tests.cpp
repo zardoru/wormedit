@@ -465,7 +465,7 @@ void check_overview_invalid_dimensions() {
 }
 
 void check_overview_capture_host(const worm_ui_nuklear_overview_capture_t& capture,
-                                 const WormUiComposeView& view) {
+                                 const wormedit::ui::compose_view_t& view) {
     CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, false, true));
     CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, false));
     CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 101.0, true, true));
@@ -473,11 +473,11 @@ void check_overview_capture_host(const worm_ui_nuklear_overview_capture_t& captu
 }
 
 void check_overview_capture_identity(const worm_ui_nuklear_overview_capture_t& capture,
-                                     WormUiComposeView view) {
+                                     wormedit::ui::compose_view_t view) {
     ++view.document_revision;
     CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, true));
     --view.document_revision;
-    ++view.selected_audio_asset_id;
+    ++view.selected_audio_asset_id.value;
     CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, true));
 }
 
@@ -507,11 +507,11 @@ TEST_CASE("Horizontal overview drag remains sample-frame exact and bounded",
 
 TEST_CASE("Overview capture rejects stale source focus availability and resize",
           "[frontend][compose][overview]") {
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.scene_available = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
-    view.selected_audio_asset_id = 19;
+    view.selected_audio_asset_id.value = 19;
     view.waveform_overview_total_frames = 48'000;
     view.waveform_overview_sample_rate = 48'000;
     const worm_ui_nuklear_overview_capture_t capture{7, 11, 19, 48'000, 48'000, 10.0, 100.0};
@@ -522,28 +522,28 @@ TEST_CASE("Overview capture rejects stale source focus availability and resize",
 
 namespace {
 
-auto source_playhead_view() -> WormUiComposeView {
-    WormUiComposeView view{};
-    view.chart_id = 7;
+auto source_playhead_view() -> wormedit::ui::compose_view_t {
+    wormedit::ui::compose_view_t view{};
+    view.chart_id.value = 7;
     view.document_revision = 11;
-    view.selected_audio_asset_id = 19;
+    view.selected_audio_asset_id.value = 19;
     view.waveform_overview_total_frames = 96'000;
     view.waveform_overview_sample_rate = 48'000;
     view.source_playhead_available = true;
-    view.source_playhead_asset_id = 19;
+    view.source_playhead_asset_id.value = 19;
     view.source_playhead_frame = 44'100;
     view.source_playhead_sample_rate = 44'100;
-    view.source_playhead_chart_id = 7;
+    view.source_playhead_chart_id.value = 7;
     view.source_playhead_document_revision = 11;
     return view;
 }
 
 void check_source_playhead_identity_mismatches() {
     auto view = source_playhead_view();
-    ++view.source_playhead_asset_id;
+    ++view.source_playhead_asset_id.value;
     CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
     view = source_playhead_view();
-    ++view.source_playhead_chart_id;
+    ++view.source_playhead_chart_id.value;
     CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
     view = source_playhead_view();
     ++view.source_playhead_document_revision;
@@ -594,7 +594,7 @@ TEST_CASE("Minimap source playhead hides unknown stale and out-of-range position
 
 TEST_CASE("Go to measure parses display labels within the BMS virtual range",
           "[frontend][compose][measure-navigation]") {
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.bms_measure_labels = true;
     CHECK(worm_ui_nuklear_compose_measure_number(view, "000") == 0);
     CHECK(worm_ui_nuklear_compose_measure_number(view, "999") == 999);
@@ -605,7 +605,7 @@ TEST_CASE("Go to measure parses display labels within the BMS virtual range",
 
 TEST_CASE("Go to measure validates authored display numbers and bounded input",
           "[frontend][compose][measure-navigation]") {
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.compose_measure_count = 3;
     CHECK(worm_ui_nuklear_compose_measure_number(view, "1") == 1);
     CHECK(worm_ui_nuklear_compose_measure_number(view, "3") == 3);
@@ -617,7 +617,7 @@ TEST_CASE("Go to measure validates authored display numbers and bounded input",
 #include "ui/nuklear/compose_area_menu.h"
 
 TEST_CASE("Retained area rows project through zoom scroll and reversed field", "[unit][frontend][compose]") {
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.area_rows_per_measure = 192;
     view.pixels_per_standard_measure = 384;
     view.area_scroll_pixels = 100;
@@ -634,8 +634,8 @@ TEST_CASE("Retained area rows project through zoom scroll and reversed field", "
 }
 
 TEST_CASE("Area edge capture restores exact original virtual range and source binding", "[unit][frontend][compose]") {
-    WormUiComposeView view{};
-    view.chart_id = 7;
+    wormedit::ui::compose_view_t view{};
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.area_range_begin_row = 144;
     view.area_range_end_row = 10000;
@@ -662,7 +662,7 @@ TEST_CASE("Area edge capture restores exact original virtual range and source bi
     moved.document_revision = 12;
     CHECK_FALSE(capture.current(moved));
     moved.document_revision = 11;
-    moved.chart_id = 8;
+    moved.chart_id.value = 8;
     CHECK_FALSE(capture.current(moved));
     capture.start(view, true);
     CHECK(capture.begin_edge);
@@ -755,7 +755,7 @@ TEST_CASE("Compose canvas ownership ignores historical inspector focus but defer
     worm_ui_nuklear_reset_compose_state();
     auto& state = worm_ui_nuklear_compose_state();
     state.input_queue.keyboard_focus = false;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.visible = true;
     view.scene_available = true;
     expect_inline(worm_ui_nuklear_compose_canvas_input_available(&view, true, false, false));
@@ -886,10 +886,10 @@ TEST_CASE("Shift navigation range capture starts once and commits on the final S
 }
 
 namespace {
-auto inline_offset_view() -> WormUiComposeView {
-    WormUiComposeView view{};
+auto inline_offset_view() -> wormedit::ui::compose_view_t {
+    wormedit::ui::compose_view_t view{};
     view.audio_offset_editable = true;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 11;
     view.waveform_audio_offset_numerator = 1;
     view.waveform_audio_offset_denominator = 3;
@@ -937,7 +937,7 @@ TEST_CASE("inline audio offset cancels on chart revision lock and explicit Escap
     auto view = inline_offset_view();
     expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
     const int change = GENERATE(0, 1, 2, 3);
-    if (change == 0) ++view.chart_id;
+    if (change == 0) ++view.chart_id.value;
     if (change == 1) ++view.document_revision;
     if (change == 2) view.audio_offset_editable = false;
     if (change == 3) state.inline_offset.inline_offset_cancel_pending = true;
@@ -1261,7 +1261,7 @@ TEST_CASE("Compose transient arrows omit semantic outlines in every color view",
     const auto color_view = GENERATE(View::normal, View::snap, View::layer);
     const auto assigned = GENERATE(false, true);
     const auto transient = GENERATE(0, 1, 2, 3, 4, 5, 6);
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     wormedit::ui::compose_note_view_t note{};
     note.note_id.value = 7;
     note.glyph = wormedit::lane_glyph_t::arrow_left;
@@ -1272,7 +1272,7 @@ TEST_CASE("Compose transient arrows omit semantic outlines in every color view",
     note.paint_erase_preview = transient == 4;
     note.paint_invalid_preview = transient == 5;
     view.hover_note_visible = transient == 6;
-    view.hover_note_id = 7;
+    view.hover_note_id.value = 7;
     CHECK(compose_note_is_transient(view, note) == (transient != 0));
     CHECK(compose_arrow_layer_outline_visible(color_view, view, note) ==
           (color_view == View::layer && assigned && transient == 0));
@@ -1280,18 +1280,15 @@ TEST_CASE("Compose transient arrows omit semantic outlines in every color view",
 
 TEST_CASE("Note layer submenu rejects malformed rows and oversized projections",
           "[unit][frontend-state][compose][note-menu]") {
-    WormUiComposeSemanticLayerView layer{.layer_id = 7, .name = "Lead"};
-    WormUiComposeView view{};
-    view.note_menu_layers = &layer;
-    view.note_menu_layer_count = view.note_menu_layer_total_count = 1;
+    wormedit::ui::compose_semantic_layer_view_t layer{.layer_id = {7}, .name = "Lead"};
+    wormedit::ui::compose_view_t view{};
+    view.note_menu_layers = {layer};
+    view.note_menu_layers.resize(view.note_menu_layer_total_count = 1);
     expect_inline(worm_ui_nuklear_note_layer_window_valid(&view));
-    layer.name = nullptr;
+    view.note_menu_layers[0].layer_id.value = 0;
     expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
-    layer.name = "Lead";
-    layer.layer_id = 0;
-    expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
-    layer.layer_id = 7;
-    view.note_menu_layer_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY + 1;
+    view.note_menu_layers[0].layer_id.value = 7;
+    view.note_menu_layers.resize(wormedit::ui::note_layer_window_limit + 1);
     expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
 }
 
@@ -1374,7 +1371,7 @@ auto stem_lane_resize_cancel_restores_only_captured_key() -> bool {
         worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) == 300;
 }
 
-auto resize_capture_stays_or_cancels_for_view(const WormUiComposeView& view,
+auto resize_capture_stays_or_cancels_for_view(const wormedit::ui::compose_view_t& view,
                                                bool focused) -> bool {
     worm_ui_nuklear_compose_state_t state{};
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
@@ -1383,7 +1380,7 @@ auto resize_capture_stays_or_cancels_for_view(const WormUiComposeView& view,
     state.stem_lanes.stem_lane_resize_cursor_requested = true;
     worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 220);
     worm_ui_nuklear_cancel_stale_stem_lane_resize(state, view, focused);
-    const bool same_key = view.project_id == 1 && view.chart_id == 2 && focused &&
+    const bool same_key = view.project_id.value == 1 && view.chart_id.value == 2 && focused &&
                           !view.input_occluded;
     return state.stem_lanes.stem_lane_resize.has_value() == same_key &&
         state.stem_lanes.stem_lane_resize_cursor_requested == same_key &&
@@ -1391,16 +1388,16 @@ auto resize_capture_stays_or_cancels_for_view(const WormUiComposeView& view,
 }
 
 auto stem_lane_resize_stales_on_view_changes() -> bool {
-    WormUiComposeView view{};
-    view.project_id = 1;
-    view.chart_id = 2;
+    wormedit::ui::compose_view_t view{};
+    view.project_id.value = 1;
+    view.chart_id.value = 2;
     if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
-    view.chart_id = 4;
+    view.chart_id.value = 4;
     if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
-    view.chart_id = 2;
-    view.project_id = 5;
+    view.chart_id.value = 2;
+    view.project_id.value = 5;
     if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
-    view.project_id = 1;
+    view.project_id.value = 1;
     view.input_occluded = true;
     if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
     view.input_occluded = false;

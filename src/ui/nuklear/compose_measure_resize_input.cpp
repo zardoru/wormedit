@@ -27,7 +27,7 @@ struct line_hit_t {
 // Which way time grows on screen. Downscroll projects later rows higher, so y falls as time
 // grows. Taken from the view rather than from a neighboring bar line, which a deep zoom can
 // push off screen.
-auto time_direction(const WormUiComposeView& view) -> double { return view.downscroll ? -1.0 : 1.0; }
+auto time_direction(const wormedit::ui::compose_view_t& view) -> double { return view.downscroll ? -1.0 : 1.0; }
 
 // The measure whose end line lies under the press, if any: end lines are numbered measure + 2.
 auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optional<line_hit_t> {
@@ -36,13 +36,13 @@ auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optio
     std::optional<line_hit_t> best;
     double best_distance = band;
     for (const auto& line : std::span(view.grid_lines)) {
-        if (line.measure_number < 2 || line.measure_number - 2 >= view.measure_row_count) continue;
+        if (line.measure_number < 2 || line.measure_number - 2 >= view.measure_rows.size()) continue;
         const auto distance = std::abs(line.y_pixels - input.pointer_started_y);
         if (distance > best_distance) continue;
         // Moving only the line needs the next measure on the list as well.
-        if (move_line && line.measure_number - 1 >= view.measure_row_count) continue;
+        if (move_line && line.measure_number - 1 >= view.measure_rows.size()) continue;
         const auto row = static_cast<std::size_t>(line.measure_number - 2);
-        best = line_hit_t{view.measure_rows[row].measure_id, row, line.y_pixels, time_direction(view)};
+        best = line_hit_t{view.measure_rows[row].measure_index, row, line.y_pixels, time_direction(view)};
         best_distance = distance;
     }
     return best;
@@ -51,7 +51,7 @@ auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optio
 auto start_allowed(const ComposeBeatFitInput& input) -> bool {
     const auto& view = *input.view;
     constexpr std::uint16_t other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_GUI;
-    return view.scene_available && view.measure_row_count != 0 && view.pixels_per_standard_measure > 0.0 &&
+    return view.scene_available && view.measure_rows.size() != 0 && view.pixels_per_standard_measure > 0.0 &&
            input.window_focused && input.pointer_started_in_view && input.left_down &&
            input.shortcut_event_count == 0 && (input.pointer_modifiers & SDL_KMOD_ALT) != 0 &&
            (input.pointer_modifiers & other_modifiers) == 0 && !state.measure_resize.measure_resize_blocked_until_release;
@@ -68,7 +68,7 @@ void begin(const ComposeBeatFitInput& input, const line_hit_t& hit, bool move_li
     state.measure_resize.measure_resize_active = true;
     state.measure_resize.measure_resize_valid = false;
     state.measure_resize.measure_resize_measure_id = hit.measure_id;
-    state.measure_resize.measure_resize_chart_id = view.chart_id;
+    state.measure_resize.measure_resize_chart_id = view.chart_id.value;
     state.measure_resize.measure_resize_revision = view.document_revision;
     state.measure_resize.measure_resize_old_numerator = row.length_numerator;
     state.measure_resize.measure_resize_old_denominator = row.length_denominator;
@@ -142,7 +142,7 @@ void commit(const ComposeBeatFitInput& input) {
                                                            : WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
     action.compose_second_meter_numerator = state.measure_resize.measure_resize_second_numerator;
     action.compose_second_meter_denominator = state.measure_resize.measure_resize_second_denominator;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_measure_ids = {state.measure_resize.measure_resize_measure_id};
     action.timing_meter_numerator_text = std::to_string(state.measure_resize.measure_resize_numerator);
@@ -152,7 +152,7 @@ void commit(const ComposeBeatFitInput& input) {
 void update_active(const ComposeBeatFitInput& input) {
     const auto& view = *input.view;
     const auto matches = input.window_focused && view.scene_available &&
-                         view.chart_id == state.measure_resize.measure_resize_chart_id &&
+                         view.chart_id.value == state.measure_resize.measure_resize_chart_id &&
                          view.document_revision == state.measure_resize.measure_resize_revision &&
                          view.pixels_per_standard_measure > 0.0;
     if (!matches || (!input.left_down && !input.left_released)) {

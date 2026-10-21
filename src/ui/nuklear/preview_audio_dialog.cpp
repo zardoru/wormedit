@@ -2,21 +2,21 @@
 #include <cstdio>
 
 namespace wormedit::ui {
-void preview_audio_dialog_t::begin(const WormUiComposeView& view) {
+void preview_audio_dialog_t::begin(const wormedit::ui::compose_view_t& view) {
     if (!view.preview_audio_range.available) return;
     *this = {};
     open = true;
-    draft = {.project = view.project_id, .chart = view.chart_id, .revision = view.document_revision,
+    draft = {.project = view.project_id.value, .chart = view.chart_id.value, .revision = view.document_revision,
         .begin_row = view.area_range_begin_row, .end_row = view.area_range_end_row};
     range = view.preview_audio_range;
     duration = std::min(range.end_seconds - range.begin_seconds, 600.0);
     std::snprintf(filename.data(), filename.size(), "%s", "preview.ogg");
 }
 
-void preview_audio_dialog_t::render(nk_context* context, const WormUiComposeView& view,
+void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::compose_view_t& view,
                                    wormedit::ui::workspace_action_t& action) {
     if (!open) return;
-    if (draft.project != view.project_id || draft.chart != view.chart_id || draft.revision != view.document_revision) {
+    if (draft.project != view.project_id.value || draft.chart != view.chart_id.value || draft.revision != view.document_revision) {
         open = false;
         return;
     }

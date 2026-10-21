@@ -16,12 +16,12 @@ namespace {
 
 struct ResourcePanel {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
-auto find_resource(const WormUiComposeView& view, std::uint64_t id)
+auto find_resource(const wormedit::ui::compose_view_t& view, std::uint64_t id)
     -> const wormedit::ui::compose_resource_view_t* {
     for (std::size_t index = 0; index < view.resources.size(); ++index) {
         if (view.resources[index].resource_id.value == id) return &view.resources[index];
@@ -29,29 +29,29 @@ auto find_resource(const WormUiComposeView& view, std::uint64_t id)
     return nullptr;
 }
 
-void update_selection_state(const WormUiComposeView& view,
+void update_selection_state(const wormedit::ui::compose_view_t& view,
                             worm_ui_nuklear_compose_state_t& state) {
-    const auto selected_object_id = view.selected_bgm_event_id != 0
-        ? view.selected_bgm_event_id : view.selected_note_label_note_id;
-    const auto changed = state.resource_picker.resource_selection_chart_id != view.chart_id ||
+    const auto selected_object_id = view.selected_bgm_event_id.value != 0
+        ? view.selected_bgm_event_id.value : view.selected_note_label_note_id.value;
+    const auto changed = state.resource_picker.resource_selection_chart_id != view.chart_id.value ||
         state.resource_picker.resource_selection_object_id != selected_object_id ||
-        state.resource_picker.resource_selection_assigned_id != view.selected_assigned_resource_id;
+        state.resource_picker.resource_selection_assigned_id != view.selected_assigned_resource_id.value;
     if (!changed) return;
-    state.resource_picker.resource_selection_chart_id = view.chart_id;
+    state.resource_picker.resource_selection_chart_id = view.chart_id.value;
     state.resource_picker.resource_selection_object_id = selected_object_id;
-    state.resource_picker.resource_selection_assigned_id = view.selected_assigned_resource_id;
-    if (selected_object_id == 0 || view.selected_assigned_resource_id == 0) return;
+    state.resource_picker.resource_selection_assigned_id = view.selected_assigned_resource_id.value;
+    if (selected_object_id == 0 || view.selected_assigned_resource_id.value == 0) return;
     // The Sounds dock owns the armed sound; painted notes must not re-arm their own sound over
     // the advanced one.
     if (state.keysound_catalog.armed_from_sounds_dock || state.bga_catalog.armed_from_bga_dock) return;
 
-    set_armed_resource(state, view.selected_assigned_resource_id, compose_resource_origin_t::selection);
-    const auto* assigned = find_resource(view, view.selected_assigned_resource_id);
+    set_armed_resource(state, view.selected_assigned_resource_id.value, compose_resource_origin_t::selection);
+    const auto* assigned = find_resource(view, view.selected_assigned_resource_id.value);
     if (assigned) {
-        const auto preferred = view.selected_bgm_event_id != 0
+        const auto preferred = view.selected_bgm_event_id.value != 0
             ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
         if ((assigned->roles & preferred) != 0) {
-            state.resource_picker.resource_filter = view.selected_bgm_event_id != 0
+            state.resource_picker.resource_filter = view.selected_bgm_event_id.value != 0
                 ? worm_ui_nuklear_compose_resource_filter_t::bgm
                 : worm_ui_nuklear_compose_resource_filter_t::sample;
         } else if ((assigned->roles & WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE) != 0) {
@@ -64,33 +64,33 @@ void update_selection_state(const WormUiComposeView& view,
     state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
 }
 
-auto find_export_group(const WormUiComposeView& view,
+auto find_export_group(const wormedit::ui::compose_view_t& view,
                        worm_ui_nuklear_compose_state_t& state)
-    -> const WormUiComposeOutputGroupView* {
-    for (std::size_t index = 0; index < view.output_group_count; ++index) {
+    -> const wormedit::ui::compose_output_group_view_t* {
+    for (std::size_t index = 0; index < view.output_groups.size(); ++index) {
         if (view.output_groups[index].document_index == state.dialogs.export_group_document_index)
             return &view.output_groups[index];
     }
-    if (view.output_group_count == 0) return nullptr;
+    if (view.output_groups.size() == 0) return nullptr;
     state.dialogs.export_group_document_index = view.output_groups[0].document_index;
     return &view.output_groups[0];
 }
 
 void render_export_group_choices(const ResourcePanel& panel) {
     nk_layout_row_dynamic(panel.context, 26, 1);
-    for (std::size_t index = 0; index < panel.view->output_group_count; ++index) {
+    for (std::size_t index = 0; index < panel.view->output_groups.size(); ++index) {
         const auto& candidate = panel.view->output_groups[index];
         int selected = panel.state->dialogs.export_group_document_index == candidate.document_index;
         if (nk_selectable_label(panel.context,
-                candidate.name[0] ? candidate.name : candidate.relative_output_path,
+                candidate.name[0] ? candidate.name.c_str() : candidate.relative_output_path.c_str(),
                 NK_TEXT_LEFT, &selected))
             panel.state->dialogs.export_group_document_index = candidate.document_index;
     }
 }
 
-void stamp_action(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
-    action.compose_input_project_id.value = view.project_id;
-    action.compose_input_chart_id.value = view.chart_id;
+void stamp_action(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
+    action.compose_input_project_id.value = view.project_id.value;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
 }
 
@@ -116,7 +116,7 @@ auto existing_files_label(WormUiExistingFilesChoice policy) -> const char* {
     return "Use saved policy";
 }
 
-void publish_export_action(const ResourcePanel& panel, const WormUiComposeOutputGroupView& selected,
+void publish_export_action(const ResourcePanel& panel, const wormedit::ui::compose_output_group_view_t& selected,
                            WormUiExistingFilesChoice policy) {
     stamp_action(*panel.view, *panel.action);
     panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
@@ -147,9 +147,9 @@ void render_export_dialog(const ResourcePanel& panel) {
         nk_layout_row_dynamic(panel.context, 20, 1);
         nk_label(panel.context, "Output group", NK_TEXT_LEFT);
         // A scrollable list keeps long catalogs from pushing the footer offscreen.
-        if (view.output_group_count != 0) {
+        if (view.output_groups.size() != 0) {
             const auto list_height = std::min({156.0f,
-                34.0f * static_cast<float>(view.output_group_count) + 8.0f,
+                34.0f * static_cast<float>(view.output_groups.size()) + 8.0f,
                 std::max(26.0f, wormedit::ui::nuklear::tooltip::viewport().h - 230.0f)});
             nk_layout_row_dynamic(panel.context, list_height, 1);
             if (nk_group_begin(panel.context, "Export groups", 0)) {
@@ -159,7 +159,7 @@ void render_export_dialog(const ResourcePanel& panel) {
         }
         const auto* selected = find_export_group(view, state);
         chrome::dialog_text(dialog, panel.context,
-            selected ? selected->relative_output_path : "No output group for this chart",
+            selected ? selected->relative_output_path.c_str() : "No output group for this chart",
             chrome::color(chrome::UiColor::text_muted));
         nk_layout_row_dynamic(panel.context, 24, 1);
         nk_labelf(panel.context, NK_TEXT_LEFT, "Saved policy: %s",
@@ -191,12 +191,12 @@ void render_export_confirmation(const ResourcePanel& panel) {
         return;
     }
     if (chrome::dialog_begin(dialog, panel.context, "Confirm export replacement",
-                             panel.view->export_confirmation_message,
+                             panel.view->export_confirmation_message.data(),
                              {.width = 620.0f, .enter_confirms = false})) {
         chrome::dialog_text(dialog, panel.context,
                             "These files already exist. Replace them for this run?",
                             chrome::color(chrome::UiColor::text));
-        chrome::dialog_text(dialog, panel.context, panel.view->export_confirmation_detail,
+        chrome::dialog_text(dialog, panel.context, panel.view->export_confirmation_detail.data(),
                             chrome::color(chrome::UiColor::text_muted));
         chrome::dialog_footer_begin(dialog, panel.context, 2, true);
         if (chrome::dialog_button(dialog, panel.context, "Replace",
@@ -222,7 +222,7 @@ void render_layer_creation(const ResourcePanel& panel) {
     if (!state.layer_editor.layer_creation_context) return;
     const auto& captured = *state.layer_editor.layer_creation_context;
     const auto& view = *panel.view;
-    if (captured.project != view.project_id || captured.chart != view.chart_id ||
+    if (captured.project != view.project_id.value || captured.chart != view.chart_id.value ||
         captured.revision != view.document_revision) {
         state.layer_editor.layer_creation_context.reset();
         return;
@@ -256,30 +256,30 @@ void render_layer_creation(const ResourcePanel& panel) {
 
 } // namespace
 
-void worm_ui_nuklear_open_export_dialog(const WormUiComposeView& view,
+void worm_ui_nuklear_open_export_dialog(const wormedit::ui::compose_view_t& view,
     worm_ui_nuklear_compose_state_t& state) {
     state.dialogs.export_dialog_open = true;
-    state.dialogs.export_dialog_project_id = view.project_id;
-    state.dialogs.export_dialog_chart_id = view.chart_id;
+    state.dialogs.export_dialog_project_id = view.project_id.value;
+    state.dialogs.export_dialog_chart_id = view.chart_id.value;
     state.dialogs.export_dialog_revision = view.document_revision;
     state.dialogs.export_dialog = {};
     (void)find_export_group(view, state);
 }
 
-void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
+void worm_ui_nuklear_open_layer_creation(const wormedit::ui::compose_view_t& view,
     worm_ui_nuklear_compose_state_t& state) {
-    state.layer_editor.layer_creation_context = {view.project_id, view.chart_id, view.document_revision};
+    state.layer_editor.layer_creation_context = {view.project_id.value, view.chart_id.value, view.document_revision};
     state.layer_editor.layer_creation_dialog = {};
     state.layer_editor.layer_creation_focus_pending = true;
     std::string name = "Layer";
     for (std::size_t suffix = 2; std::ranges::any_of(
-            std::span{view.semantic_layers, view.semantic_layer_count},
+            std::span{view.semantic_layers},
             [&](const auto& layer) { return name == layer.name; }); ++suffix)
         name = "Layer " + std::to_string(suffix);
     std::snprintf(state.layer_editor.layer_creation_name.data(), state.layer_editor.layer_creation_name.size(), "%s", name.c_str());
 }
 
-void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
+void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const wormedit::ui::compose_view_t& view,
     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
     ResourcePanel panel{context, &view, &action, &state};
     state.preview_audio.render(context, view, action);
@@ -288,7 +288,7 @@ void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiCom
     render_layer_creation(panel);
 }
 
-void worm_ui_nuklear_render_compose_resources(nk_context* context, const WormUiComposeView* view,
+void worm_ui_nuklear_render_compose_resources(nk_context* context, const wormedit::ui::compose_view_t* view,
     wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     update_selection_state(*view, *state);

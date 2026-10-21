@@ -21,14 +21,14 @@ void require_select_all(bool condition, const std::source_location location =
     REQUIRE(condition);
 }
 
-void seed_sound_rows(WormUiComposeView& view) {
+void seed_sound_rows(wormedit::ui::compose_view_t& view) {
     static const std::array rows{
         wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{5}, .slot = "01", .name = "Kick"},
         wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{9}, .slot = "02", .name = "Snare"}};
     static const std::array<std::uint64_t, 2> ids{5, 9};
     view.keysounds_available = true;
-    view.project_id = 31;
-    view.chart_id = 7;
+    view.project_id.value = 31;
+    view.chart_id.value = 7;
     view.keysounds.assign(std::begin(rows), std::end(rows));
     view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();

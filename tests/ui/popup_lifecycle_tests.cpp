@@ -18,17 +18,17 @@ TEST_CASE("Popup lifecycle compares the complete captured context",
           "[frontend-state][popup-lifecycle]") {
     using wormedit::ui::chrome::PopupContextStamp;
     using wormedit::ui::chrome::popup_context_matches;
-    const PopupContextStamp captured{.project_id = 11, .chart_id = 7, .revision = 90,
-                                     .object_id = 42};
+    const PopupContextStamp captured{.project_id = {11}, .chart_id = {7}, .revision = 90,
+                                     .object_id = {42}};
     check_lifecycle(popup_context_matches(captured, captured));
-    check_lifecycle(!popup_context_matches(captured, {.project_id = 12, .chart_id = 7,
-                                                      .revision = 90, .object_id = 42}));
-    check_lifecycle(!popup_context_matches(captured, {.project_id = 11, .chart_id = 8,
-                                                      .revision = 90, .object_id = 42}));
-    check_lifecycle(!popup_context_matches(captured, {.project_id = 11, .chart_id = 7,
-                                                      .revision = 91, .object_id = 42}));
-    check_lifecycle(!popup_context_matches(captured, {.project_id = 11, .chart_id = 7,
-                                                      .revision = 90, .object_id = 43}));
+    check_lifecycle(!popup_context_matches(captured, {.project_id = {12}, .chart_id = {7},
+                                                      .revision = 90, .object_id = {42}}));
+    check_lifecycle(!popup_context_matches(captured, {.project_id = {11}, .chart_id = {8},
+                                                      .revision = 90, .object_id = {42}}));
+    check_lifecycle(!popup_context_matches(captured, {.project_id = {11}, .chart_id = {7},
+                                                      .revision = 91, .object_id = {42}}));
+    check_lifecycle(!popup_context_matches(captured, {.project_id = {11}, .chart_id = {7},
+                                                      .revision = 90, .object_id = {43}}));
 }
 
 TEST_CASE("Popup lifecycle holds input through edges and releases on a quiet frame",
@@ -95,9 +95,9 @@ TEST_CASE("Retained popups and view stamps remain aggregates with shared queries
     popup.open = false;
     popup.release_pending = true;
     check_lifecycle(popup.owns_input());
-    WormUiComposeView view{};
-    view.project_id = 11;
-    view.chart_id = 7;
+    wormedit::ui::compose_view_t view{};
+    view.project_id.value = 11;
+    view.chart_id.value = 7;
     view.document_revision = 90;
     check_lifecycle(popup_context_matches(PopupContextStamp::from(view, 42), {11, 7, 90, 42}));
     wormedit::ui::setup_view_t setup{};

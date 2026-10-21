@@ -25,7 +25,7 @@ bool edit_text(nk_context* context, char (&buffer)[Size], nk_plugin_filter filte
 }
 
 // "label  n / d": an exact fraction typed as two integers.
-bool rational_field(nk_context* context, const char* label, WormUiTimingRecipeRationalText& text) {
+bool rational_field(nk_context* context, const char* label, wormedit::ui::timing_recipe_rational_text_t& text) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 4);
     nk_layout_row_push(context, 0.34f);
     nk_label(context, label, NK_TEXT_LEFT);
@@ -52,22 +52,22 @@ bool count_field(nk_context* context, const char* label, char* buffer, std::size
     return std::memcmp(before.data(), buffer, std::min(size, before.size())) != 0;
 }
 
-const char* output_label(WormUiTimingRecipeOutput output) {
+const char* output_label(wormedit::sv_recipe_output_t output) {
     switch (output) {
-    case WORM_UI_TIMING_RECIPE_OUTPUT_SV: return "SV";
-    case WORM_UI_TIMING_RECIPE_OUTPUT_SCROLLS: return "Scrolls";
-    case WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS: return "Speeds";
+    case wormedit::sv_recipe_output_t::sv: return "SV";
+    case wormedit::sv_recipe_output_t::scrolls: return "Scrolls";
+    case wormedit::sv_recipe_output_t::speeds: return "Speeds";
     }
     return "SV";
 }
 
-const char* curve_label(WormUiTimingRecipeCurve curve) {
+const char* curve_label(wormedit::sv_recipe_curve_t curve) {
     switch (curve) {
-    case WORM_UI_TIMING_RECIPE_CURVE_CONSTANT: return "Constant";
-    case WORM_UI_TIMING_RECIPE_CURVE_LINEAR: return "Linear";
-    case WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL: return "Exponential";
-    case WORM_UI_TIMING_RECIPE_CURVE_BUMP: return "Bump";
-    case WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION: return "Lua expression";
+    case wormedit::sv_recipe_curve_t::constant: return "Constant";
+    case wormedit::sv_recipe_curve_t::linear: return "Linear";
+    case wormedit::sv_recipe_curve_t::exponential: return "Exponential";
+    case wormedit::sv_recipe_curve_t::bump: return "Bump";
+    case wormedit::sv_recipe_curve_t::lua_expression: return "Lua expression";
     }
     return "Linear";
 }
@@ -84,45 +84,45 @@ bool cycle_button(nk_context* context, const char* label, const char* current, i
     return clicked;
 }
 
-bool curve_values(nk_context* context, WormUiTimingRecipeForm& form) {
+bool curve_values(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
     bool changed = false;
     switch (form.curve) {
-    case WORM_UI_TIMING_RECIPE_CURVE_CONSTANT:
+    case wormedit::sv_recipe_curve_t::constant:
         changed |= rational_field(context, "Value", form.value_from);
         break;
-    case WORM_UI_TIMING_RECIPE_CURVE_LINEAR:
+    case wormedit::sv_recipe_curve_t::linear:
         changed |= rational_field(context, "From", form.value_from);
         changed |= rational_field(context, "To", form.value_to);
         break;
-    case WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL:
+    case wormedit::sv_recipe_curve_t::exponential:
         changed |= rational_field(context, "From", form.value_from);
         changed |= rational_field(context, "To", form.value_to);
         changed |= rational_field(context, "Shape", form.shape);
         break;
-    case WORM_UI_TIMING_RECIPE_CURVE_BUMP:
+    case wormedit::sv_recipe_curve_t::bump:
         changed |= rational_field(context, "Start", form.bump_start);
         changed |= rational_field(context, "Length", form.bump_length);
         changed |= rational_field(context, "Inside", form.bump_x);
         changed |= rational_field(context, "Outside", form.bump_y);
         break;
-    case WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION:
+    case wormedit::sv_recipe_curve_t::lua_expression:
         break;
     }
     return changed;
 }
 
-bool sampling_values(nk_context* context, WormUiTimingRecipeForm& form) {
-    int mode = form.sampling_mode;
+bool sampling_values(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
+    int mode = static_cast<int>(form.sampling_mode);
     bool changed = cycle_button(context, "Sampling",
-                                mode == WORM_UI_TIMING_RECIPE_SAMPLING_FIXED ? "Fixed" : "Adaptive",
+                                form.sampling_mode == wormedit::sv_recipe_sampling_mode_t::fixed ? "Fixed" : "Adaptive",
                                 mode, 2);
-    form.sampling_mode = static_cast<WormUiTimingRecipeSamplingMode>(mode);
-    if (form.sampling_mode == WORM_UI_TIMING_RECIPE_SAMPLING_FIXED) {
-        int extent = form.fixed_extent;
-        const bool points = extent == WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT;
+    form.sampling_mode = static_cast<wormedit::sv_recipe_sampling_mode_t>(mode);
+    if (form.sampling_mode == wormedit::sv_recipe_sampling_mode_t::fixed) {
+        int extent = static_cast<int>(form.fixed_extent);
+        const bool points = form.fixed_extent == wormedit::ui::timing_recipe_fixed_extent_t::point_count;
         changed |= cycle_button(context, "Fixed by", points ? "Point count" : "Step rows", extent, 2);
-        form.fixed_extent = static_cast<WormUiTimingRecipeFixedExtent>(extent);
-        changed |= form.fixed_extent == WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT
+        form.fixed_extent = static_cast<wormedit::ui::timing_recipe_fixed_extent_t>(extent);
+        changed |= form.fixed_extent == wormedit::ui::timing_recipe_fixed_extent_t::point_count
                        ? count_field(context, "Points", form.fixed_point_count, sizeof(form.fixed_point_count))
                        : count_field(context, "Step rows", form.fixed_step_rows, sizeof(form.fixed_step_rows));
         return changed;
@@ -132,8 +132,8 @@ bool sampling_values(nk_context* context, WormUiTimingRecipeForm& form) {
     return changed;
 }
 
-bool transition_values(nk_context* context, WormUiTimingRecipeForm& form) {
-    if (form.output != WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS) return false;
+bool transition_values(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
+    if (form.output != wormedit::sv_recipe_output_t::speeds) return false;
     bool changed = rational_field(context, "Transition", form.transition_duration);
     int seconds = form.transition_is_seconds ? 1 : 0;
     changed |= cycle_button(context, "Unit", seconds != 0 ? "Seconds" : "Beats", seconds, 2);
@@ -143,9 +143,9 @@ bool transition_values(nk_context* context, WormUiTimingRecipeForm& form) {
 
 // Keep the edit buffers on the selected recipe: reload them when the selection changes, and when
 // the document moved on after an apply or while nothing was being edited.
-void synchronize_buffers(const WormUiComposeView& view) {
+void synchronize_buffers(const wormedit::ui::compose_view_t& view) {
     const auto& stored = view.recipe_form;
-    const bool selection_changed = state.recipe_editor.recipe_edit_id != stored.recipe_id;
+    const bool selection_changed = state.recipe_editor.recipe_edit_id != stored.recipe_id.value;
     const bool revision_changed = state.recipe_editor.recipe_edit_revision != view.document_revision;
     if (selection_changed ||
         (revision_changed && (!state.recipe_editor.recipe_edit_dirty || state.recipe_editor.recipe_edit_apply_pending))) {
@@ -153,16 +153,16 @@ void synchronize_buffers(const WormUiComposeView& view) {
         state.recipe_editor.recipe_edit_dirty = false;
         state.recipe_editor.recipe_edit_apply_pending = false;
     }
-    state.recipe_editor.recipe_edit_id = stored.recipe_id;
+    state.recipe_editor.recipe_edit_id = stored.recipe_id.value;
     state.recipe_editor.recipe_edit_revision = view.document_revision;
 }
 
-void queue(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) {
+void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
-    action.compose_recipe_id.value = view.recipe_form.recipe_id;
+    action.compose_recipe_id.value = view.recipe_form.recipe_id.value;
     action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
 }
 
@@ -180,22 +180,22 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     synchronize_buffers(view);
     auto& form = state.recipe_editor.recipe_edit_form;
     nk_layout_row_dynamic(context, 20, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "SV recipe: %s%s", view.recipe_form.name,
+    nk_labelf(context, NK_TEXT_LEFT, "SV recipe: %s%s", view.recipe_form.name.data(),
               view.recipe_form.enabled ? "" : " (off)");
     bool changed = false;
-    int output = form.output;
+    int output = static_cast<int>(form.output);
     changed |= cycle_button(context, "Output", output_label(form.output), output, 3);
-    form.output = static_cast<WormUiTimingRecipeOutput>(output);
-    const bool lua = form.curve == WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION;
+    form.output = static_cast<wormedit::sv_recipe_output_t>(output);
+    const bool lua = form.curve == wormedit::sv_recipe_curve_t::lua_expression;
     if (lua) {
         nk_layout_row_dynamic(context, 20, 1);
         nk_label(context, "Curve: Lua expression (not evaluated yet)", NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 54, 1);
-        nk_label_wrap(context, view.recipe_form.expression_source);
+        nk_label_wrap(context, view.recipe_form.expression_source.data());
     } else {
-        int curve = form.curve;
+        int curve = static_cast<int>(form.curve);
         changed |= cycle_button(context, "Curve", curve_label(form.curve), curve, 4);
-        form.curve = static_cast<WormUiTimingRecipeCurve>(curve);
+        form.curve = static_cast<wormedit::sv_recipe_curve_t>(curve);
         changed |= curve_values(context, form);
     }
     changed |= sampling_values(context, form);
@@ -204,9 +204,9 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
         state.recipe_editor.recipe_edit_dirty = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
     }
-    if (view.recipe_form.status_text) {
+    if (!view.recipe_form.status_text.empty()) {
         nk_layout_row_dynamic(context, 36, 1);
-        nk_label_wrap(context, view.recipe_form.status_text);
+        nk_label_wrap(context, view.recipe_form.status_text.data());
     }
     nk_layout_row_dynamic(context, 24, 2);
     if (nk_button_label(context, "Apply")) {

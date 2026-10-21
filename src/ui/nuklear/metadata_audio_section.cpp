@@ -236,7 +236,7 @@ static void metadata_copy_inspection_button(struct nk_context* context,
 }
 
 static auto external_copy_allowed(const MetadataPanel& panel, const char* source_path,
-                                 const WormUiComposeOutputGroupView* export_group) -> bool {
+                                 const wormedit::ui::compose_output_group_view_t* export_group) -> bool {
     const auto& metadata = *panel.metadata;
     if (!source_path || !source_path[0] || !metadata.project_directory.c_str() ||
         !metadata.project_directory.c_str()[0]) return false;
@@ -249,7 +249,7 @@ static auto external_copy_allowed(const MetadataPanel& panel, const char* source
 
 static void render_external_copy_destination(const MetadataPanel& panel,
                                              const std::filesystem::path& source,
-                                             const WormUiComposeOutputGroupView* export_group) {
+                                             const wormedit::ui::compose_output_group_view_t* export_group) {
     const auto& metadata = *panel.metadata;
     if (metadata.next_import_asset_id.value == 0 || !source.is_absolute()) return;
     const auto directory = export_group
@@ -305,7 +305,7 @@ static void render_external_copy_preview(const MetadataPanel& panel,
 }
 
 static void request_external_copy(const MetadataPanel& panel, const char* source_path,
-                                  const WormUiComposeOutputGroupView* export_group,
+                                  const wormedit::ui::compose_output_group_view_t* export_group,
                                   bool can_copy) {
     const auto& metadata = *panel.metadata;
     auto* action = panel.action;
@@ -335,7 +335,7 @@ static void request_external_copy(const MetadataPanel& panel, const char* source
 static void
 metadata_external_copy_button(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
                               wormedit::ui::workspace_action_t* action, const char* source_path,
-                              const WormUiComposeOutputGroupView* export_group = nullptr) {
+                              const wormedit::ui::compose_output_group_view_t* export_group = nullptr) {
     if (!source_path || !source_path[0] || !metadata->project_directory.c_str() ||
         !metadata->project_directory.c_str()[0] ||
         (export_group && !export_group->relative_asset_directory[0])) return;
@@ -436,20 +436,20 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
 }
 
 static auto find_output_group(const wormedit::ui::metadata_view_t& metadata, std::size_t index)
-    -> const WormUiComposeOutputGroupView* {
+    -> const wormedit::ui::compose_output_group_view_t* {
     for (std::size_t i = 0; i < metadata.output_groups.size(); ++i)
         if (metadata.output_groups[i].document_index == index) return &metadata.output_groups[i];
     return nullptr;
 }
 
 static auto find_dropped_music_group(const wormedit::ui::metadata_view_t& metadata)
-    -> const WormUiComposeOutputGroupView* {
+    -> const wormedit::ui::compose_output_group_view_t* {
     if (metadata.dropped_music_target.destination != WORM_UI_METADATA_DROP_EXPORT) return nullptr;
     return find_output_group(metadata, metadata.dropped_music_target.output_group_index);
 }
 
 static void render_dropped_music_target_directory(
-    const MetadataPanel& panel, const WormUiComposeOutputGroupView* dropped_group) {
+    const MetadataPanel& panel, const wormedit::ui::compose_output_group_view_t* dropped_group) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
     const auto destination = metadata.dropped_music_target.destination;
@@ -483,7 +483,7 @@ static auto dropped_music_is_selected_asset(const wormedit::ui::metadata_view_t&
 }
 
 static void render_dropped_selected_music_copy(
-    const MetadataPanel& panel, const WormUiComposeOutputGroupView* group,
+    const MetadataPanel& panel, const wormedit::ui::compose_output_group_view_t* group,
     const std::filesystem::path& project) {
     const auto& metadata = *panel.metadata;
     const auto destination = metadata.dropped_music_target.destination;
@@ -519,7 +519,7 @@ static void render_dropped_selected_music_copy(
 }
 
 static void render_dropped_music_link(const MetadataPanel& panel,
-                                      const WormUiComposeOutputGroupView* group) {
+                                      const wormedit::ui::compose_output_group_view_t* group) {
     const auto& metadata = *panel.metadata;
     const auto can_link = metadata.has_chart && !metadata.import_copy_pending &&
         std::strlen(metadata.dropped_music_path.c_str()) <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES;
@@ -557,7 +557,7 @@ static void render_dropped_music(const MetadataPanel& panel) {
 }
 
 static auto render_output_group_combo(const MetadataPanel& panel)
-    -> const WormUiComposeOutputGroupView* {
+    -> const wormedit::ui::compose_output_group_view_t* {
     const auto& metadata = *panel.metadata;
     if (metadata.output_groups.size() == 0) return nullptr;
     auto* selected = find_output_group(metadata, state.selected_output_group_index);
@@ -569,13 +569,13 @@ static auto render_output_group_combo(const MetadataPanel& panel)
     nk_layout_row_push(panel.context, 0.28f);
     nk_label(panel.context, "Export format", NK_TEXT_LEFT);
     nk_layout_row_push(panel.context, 0.72f);
-    const auto* label = selected->name[0] ? selected->name : selected->relative_output_path;
+    const auto* label = selected->name[0] ? selected->name.c_str() : selected->relative_output_path.c_str();
     if (wormedit::ui::chrome::safe_combo_begin_label(panel.context, label,
                              nk_vec2(nk_widget_width(panel.context), 180.0f))) {
         nk_layout_row_dynamic(panel.context, 22, 1);
         for (size_t index = 0; index < metadata.output_groups.size(); ++index) {
             const auto& group = metadata.output_groups[index];
-            const auto* group_label = group.name[0] ? group.name : group.relative_output_path;
+            const auto* group_label = group.name[0] ? group.name.c_str() : group.relative_output_path.c_str();
             if (!nk_combo_item_label(panel.context, group_label, NK_TEXT_LEFT)) continue;
             selected = &group;
             state.selected_output_group_index = group.document_index;
@@ -587,23 +587,23 @@ static auto render_output_group_combo(const MetadataPanel& panel)
 }
 
 static void synchronize_output_path_buffer(const wormedit::ui::metadata_view_t& metadata,
-                                          const WormUiComposeOutputGroupView& selected) {
+                                          const wormedit::ui::compose_output_group_view_t& selected) {
     if (state.output_path_buffer_revision == metadata.document_revision &&
         state.output_path_buffer_group_index == selected.document_index &&
-        std::strcmp(state.output_path_source.data(), selected.relative_output_path) == 0) return;
+        std::strcmp(state.output_path_source.data(), selected.relative_output_path.c_str()) == 0) return;
     state.output_path_buffer_revision = metadata.document_revision;
     state.output_path_buffer_group_index = selected.document_index;
     state.output_path_buffer_valid = copy_metadata_text(
-        state.output_path.data(), state.output_path.size(), selected.relative_output_path,
-        std::strlen(selected.relative_output_path));
+        state.output_path.data(), state.output_path.size(), selected.relative_output_path.c_str(),
+        std::strlen(selected.relative_output_path.c_str()));
     state.output_path_buffer_valid = copy_metadata_text(
         state.output_path_source.data(), state.output_path_source.size(),
-        selected.relative_output_path, std::strlen(selected.relative_output_path)) &&
+        selected.relative_output_path.c_str(), std::strlen(selected.relative_output_path.c_str())) &&
         state.output_path_buffer_valid;
 }
 
 static void apply_output_path_action(const MetadataPanel& panel,
-                                     const WormUiComposeOutputGroupView& selected,
+                                     const wormedit::ui::compose_output_group_view_t& selected,
                                      bool changed) {
     const auto& metadata = *panel.metadata;
     auto* action = panel.action;
@@ -616,7 +616,7 @@ static void apply_output_path_action(const MetadataPanel& panel,
 }
 
 static void render_output_path_editor(const MetadataPanel& panel,
-                                     const WormUiComposeOutputGroupView& selected) {
+                                     const wormedit::ui::compose_output_group_view_t& selected) {
     auto* context = panel.context;
     synchronize_output_path_buffer(*panel.metadata, selected);
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
@@ -631,7 +631,7 @@ static void render_output_path_editor(const MetadataPanel& panel,
     if (!state.output_path_buffer_valid) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     const auto changed = state.output_path_buffer_valid &&
-        std::strcmp(state.output_path.data(), selected.relative_output_path) != 0;
+        std::strcmp(state.output_path.data(), selected.relative_output_path.c_str()) != 0;
     const auto apply_enabled = changed && state.output_path[0] != '\0';
     nk_layout_row_template_begin(context, 23);
     nk_layout_row_template_push_dynamic(context);
@@ -647,8 +647,8 @@ static void render_output_path_editor(const MetadataPanel& panel,
     const auto apply = nk_button_label_styled(context, &apply_style, "Apply");
     if (revert && changed)
         (void)copy_metadata_text(state.output_path.data(), state.output_path.size(),
-                                 selected.relative_output_path,
-                                 std::strlen(selected.relative_output_path));
+                                 selected.relative_output_path.c_str(),
+                                 std::strlen(selected.relative_output_path.c_str()));
     if (apply && apply_enabled) apply_output_path_action(panel, selected, changed);
 }
 
@@ -723,7 +723,7 @@ static auto render_project_copy_info(const MetadataPanel& panel) -> std::optiona
 }
 
 static void render_export_copy_info(const MetadataPanel& panel,
-                                    const WormUiComposeOutputGroupView& selected,
+                                    const wormedit::ui::compose_output_group_view_t& selected,
                                     const MusicCopyInfo& info) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
@@ -733,12 +733,12 @@ static void render_export_copy_info(const MetadataPanel& panel,
         return;
     }
     metadata_read_only_path(context, "Output group directory",
-        (info.project / std::filesystem::path{selected.relative_asset_directory}.parent_path())
+        (info.project / std::filesystem::path{selected.relative_asset_directory.c_str()}.parent_path())
             .lexically_normal().generic_string(),
         {WORM_UI_METADATA_DROP_EXPORT, selected.document_index});
     if (!info.has_music) return;
     metadata_read_only_path(context, "Export copy destination",
-        (info.project / selected.relative_asset_directory / info.destination_name)
+        (info.project / selected.relative_asset_directory.c_str() / info.destination_name)
             .lexically_normal().generic_string());
     metadata_copy_inspection_button(context, &metadata, panel.action, true,
                                     selected.document_index);
@@ -755,7 +755,7 @@ static void render_export_copy_info(const MetadataPanel& panel,
 }
 
 static void render_project_and_export_copies(const MetadataPanel& panel,
-                                             const WormUiComposeOutputGroupView* selected) {
+                                             const wormedit::ui::compose_output_group_view_t* selected) {
     const auto info = render_project_copy_info(panel);
     if (!info) return;
     if (!selected) {
@@ -778,7 +778,5 @@ void render_metadata_paths(const MetadataPanel& panel) {
     if (selected) render_output_path_editor(panel, *selected);
     render_dropped_output_path(panel);
     render_project_and_export_copies(panel, selected);
-    if (panel.metadata->output_group_text_truncated)
-        muted_label(context, "Additional output groups exceed the visible limit.");
     nk_tree_pop(context);
 }

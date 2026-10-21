@@ -94,7 +94,7 @@ NK_API struct nk_allocator nk_sdl_allocator(void);
  * ===============================================================
  */
 
-struct WormUiComposeView;
+namespace wormedit::ui { struct compose_view_t; }
 namespace wormedit::ui::nuklear {
 struct compose_canvas_cache_t;
 auto compose_canvas_cache(nk_context*) -> std::unique_ptr<compose_canvas_cache_t>&;
@@ -104,7 +104,7 @@ struct overview_work_t {
     std::size_t texture_bytes{}, geometry_bytes{}, transient_bytes{};
     std::size_t cold_vertices{}, warm_vertices{}, warm_indices{}, warm_draw_calls{};
 };
-auto begin_compose_overview(nk_context*, nk_command_buffer*, const WormUiComposeView&,
+auto begin_compose_overview(nk_context*, nk_command_buffer*, const wormedit::ui::compose_view_t&,
     struct nk_rect, nk_color background, nk_color peak) -> bool;
 void end_compose_overview(nk_context*, nk_command_buffer*, struct nk_rect);
 auto compose_overview_work(nk_context*) -> overview_work_t;

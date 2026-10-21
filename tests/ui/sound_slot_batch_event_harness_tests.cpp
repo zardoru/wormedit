@@ -16,7 +16,7 @@ void stage_batch(nuklear_event_harness_t& harness, const char* reason = "") {
     const std::array<wormedit::ui::sound_slot_import_item_t, 2> items{{
         {"/tmp/sound2.wav", "sound2.wav", {}, "", false},
         {"/tmp/sound10.wav", "sound10.wav", {}, "", false}}};
-    REQUIRE(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
+    REQUIRE(worm_ui_frontend_stage_sound_slot_batch(view.project_id.value, view.chart_id.value,
         view.document_revision, 35, items.data(), items.size(), reason));
     (void)harness.frame();
     (void)harness.frame();  // A dialog fits its content on its second frame.

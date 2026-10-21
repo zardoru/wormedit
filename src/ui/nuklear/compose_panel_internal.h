@@ -11,7 +11,7 @@
 static auto& state = worm_ui_nuklear_compose_state();
 using wormedit::ui::compose_measure_rail_width;
 
-[[nodiscard]] inline auto compose_mode_of(const WormUiComposeView& view)
+[[nodiscard]] inline auto compose_mode_of(const wormedit::ui::compose_view_t& view)
     -> wormedit::ui::compose_mode_t {
     return view.timing_focus ? wormedit::ui::compose_mode_t::timing_focus
                              : wormedit::ui::compose_mode_t::full;
@@ -19,7 +19,7 @@ using wormedit::ui::compose_measure_rail_width;
 
 struct ComposePaintContext {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     struct nk_command_buffer* canvas;
     struct nk_rect viewport;
     struct nk_rect rail;
@@ -28,7 +28,7 @@ struct ComposePaintContext {
 
 struct ComposeToolbarContext {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
 };
 
@@ -38,7 +38,7 @@ void update_compose_pointer_navigation(
 
 struct ComposeInspectorContext {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     const wormedit::ui::timing_view_t* timing_view;
     wormedit::ui::workspace_action_t* action;
 };
@@ -56,7 +56,7 @@ void append_compose_input(
 
 struct ComposeOverviewInput {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     struct nk_rect overview;
     bool available;
@@ -71,7 +71,7 @@ struct ComposeOverviewInput {
 
 struct ComposeOverviewContext {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     struct nk_command_buffer* canvas;
     struct nk_rect bounds;
@@ -79,7 +79,7 @@ struct ComposeOverviewContext {
 
 struct ComposePointerFocusContext {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     struct nk_rect viewport;
     struct nk_rect overview;
@@ -96,7 +96,7 @@ struct ComposePointerFocusState {
 
 struct ComposeViewportInputContext {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     struct nk_rect viewport;
     float input_right;
@@ -114,7 +114,7 @@ struct ComposeViewportCursor {
 
 struct ComposeBeatFitInput {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     struct nk_rect viewport;
     double pointer_y;
@@ -130,7 +130,7 @@ struct ComposeBeatFitInput {
 };
 
 struct ComposeDoubleClickContext {
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     const wormedit::ui::timing_view_t* timing_view;
     wormedit::ui::workspace_action_t* action;
     const worm_ui_nuklear_pointer_click_t* clicks;
@@ -143,7 +143,7 @@ struct ComposeDoubleClickContext {
 
 struct ComposePointerEventContext {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     const wormedit::ui::timing_view_t* timing_view;
     wormedit::ui::workspace_action_t* action;
     struct nk_rect viewport;

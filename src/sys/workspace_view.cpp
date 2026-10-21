@@ -221,7 +221,7 @@ struct workspace_projection_context_t {
     dock_sort_t keysound_sort;
     const wormedit::ui::keysound_dock_request_t& keysound_request;
     wormedit::ui::sound_usage_request_t sound_usage_request;
-    WormUiBookmarkChooserRequest bookmark_chooser_request;
+    wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request;
     keysound_list_cache_t* keysound_cache{};
     bookmark_chooser_indices_t bookmark_indices;
     compose_resource_catalog_cache_t* resource_catalog_cache{};
@@ -411,58 +411,32 @@ void populate_timing_tab(const workspace_projection_context_t& projection, const
                        std::to_string(tab.bookmark_count + tab.section_count));
 
 }
-auto append_compose_output_group(frontend_workspace_view_t& result, frame_arena_t& arena,
-                                 const wormedit::output_group_t& group,
-                                 std::size_t document_index) -> bool {
-    const auto* name = arena_string(arena, group.name);
-    const auto* path = arena_string(arena, group.relative_output_path.generic_string());
-    const auto directory = wormedit::export_asset_directory(group.relative_output_path,
-                                                             group.destination_kind);
-    const auto* assets = arena_string(arena,
-        directory ? directory->generic_string() : std::string{});
-    if (!name || !path || !assets) return false;
-    if (!result.compose.output_group.view.push_back(
-            {.document_index = document_index,
-             .name = name,
-             .relative_output_path = path,
-             .relative_asset_directory = assets,
-             .existing_files = static_cast<WormUiExistingFilesChoice>(group.existing_files)}))
-        return false;
-    result.view.compose.output_group_count = result.compose.output_group.view.size();
-    return true;
-}
-
 void populate_compose_output_groups(const workspace_projection_context_t& projection,
                                     wormedit::chart_id_t chart) {
-    auto& result = projection.result;
-    auto& view = result.view.compose;
+    auto& rows = projection.result.view.compose.output_groups;
     const auto& groups = projection.document.output_groups;
     const bool project = projection.source.active_tab == wormedit::workspace_tab_t::setup;
-    const auto selected_count = std::ranges::count_if(groups, [&](const auto& group) {
-        return project || std::ranges::find(group.charts, chart) != group.charts.end();
-    });
-    const auto count = std::min(static_cast<std::size_t>(selected_count),
-                                std::size_t{WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY});
-    auto* arena = result.arena();
-    result.compose.output_group.view = arena
-        ? arena_array<WormUiComposeOutputGroupView>(*arena, count)
-        : frame_span<WormUiComposeOutputGroupView>{};
-    view.output_groups = result.compose.output_group.view.data();
-    view.output_group_count = 0;
-    view.output_groups_truncated = static_cast<std::size_t>(selected_count) > count;
-    if (result.compose.output_group.view.capacity() != count) {
-        view.output_groups_truncated = true;
-        return;
-    }
-    if (!arena) return;
-    for (std::size_t index = 0; index < groups.size(); ++index) {
-        if (!project && std::ranges::find(groups[index].charts, chart) == groups[index].charts.end()) continue;
-        if (view.output_group_count == count) break;
-        if (!append_compose_output_group(result, *arena, groups[index], index)) {
-            view.output_groups_truncated = true;
-            break;
+    const auto key = std::tuple{&projection.document, document_stamp_t::from(projection.document), chart,
+        projection.result.query_session_generation, project};
+    (void)projection.result.output_group_binding.get_or_build(key, [&] {
+        const auto count = static_cast<std::size_t>(std::ranges::count_if(groups, [&](const auto& group) {
+            return project || std::ranges::find(group.charts, chart) != group.charts.end();
+        }));
+        rows.resize(count);
+        std::size_t next{};
+        for (std::size_t index = 0; index < groups.size(); ++index) {
+            const auto& group = groups[index];
+            if (!project && std::ranges::find(group.charts, chart) == group.charts.end()) continue;
+            auto& row = rows[next++];
+            row.document_index = index;
+            row.name = group.name;
+            row.relative_output_path = group.relative_output_path.generic_string();
+            const auto directory = wormedit::export_asset_directory(group.relative_output_path, group.destination_kind);
+            row.relative_asset_directory = directory ? directory->generic_string() : std::string{};
+            row.existing_files = static_cast<WormUiExistingFilesChoice>(group.existing_files);
         }
-    }
+        return true;
+    });
 }
 
 void populate_compose_resources(const workspace_projection_context_t& projection) {
@@ -625,7 +599,7 @@ void refill_keysound_layers(std::vector<ui::compose_keysound_layer_view_t>& rows
     }
 }
 
-void refill_keysound_metadata(WormUiComposeView& view, const keysound_list_view_t& list) {
+void refill_keysound_metadata(wormedit::ui::compose_view_t& view, const keysound_list_view_t& list) {
     view.keysound_selection_rows.resize(list.selection_rows.size());
     for (std::size_t index = 0; index < list.selection_rows.size(); ++index) {
         const auto& source = list.selection_rows[index];
@@ -651,7 +625,7 @@ void refill_keysound_metadata(WormUiComposeView& view, const keysound_list_view_
     }
 }
 
-void refill_keysound_indices(WormUiComposeView& view, const keysound_list_view_t& list) {
+void refill_keysound_indices(wormedit::ui::compose_view_t& view, const keysound_list_view_t& list) {
     view.keysound_advance_rows.clear();
     for (const auto& row : list.advance_rows)
         view.keysound_advance_rows.push_back({.resource_id = row.resource, .missing = row.missing});
@@ -725,7 +699,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysound_primary_display_index_valid = list.primary_display_index.has_value();
     view.keysound_primary_display_index = list.primary_display_index.value_or(0);
     const auto& request = projection.keysound_request;
-    view.keysound_projected_primary_resource_id = request.primary_resource_id.value;
+    view.keysound_projected_primary_resource_id.value = request.primary_resource_id.value;
     view.keysound_projected_filters_unrestricted = !request.slots_mode &&
         request.automatic_search.empty() && !request.group_filter_active &&
         request.layer_filter_kind == keysound_layer_filter_kind_t::any &&
@@ -751,44 +725,30 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
 void populate_compose_branch_rows(frontend_workspace_view_t& result,
                                   const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
-    const auto count = std::min(outline.rows.size(),
-        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY));
-    view.branch_rows_truncated = outline.rows_truncated || count < outline.rows.size();
-    if (count == 0) return;
-    auto* arena = result.arena();
-    result.compose.branch.row = arena ? arena_array<WormUiComposeBranchRowView>(*arena, count)
-                                     : frame_span<WormUiComposeBranchRowView>{};
-    view.branch_rows = result.compose.branch.row.data();
-    if (result.compose.branch.row.capacity() != count) {
-        view.branch_rows_truncated = true;
-        return;
-    }
-    for (std::size_t index = 0; index < count; ++index) {
+    view.branch_rows_truncated = outline.rows_truncated;
+    view.branch_rows.resize(outline.rows.size());
+    for (std::size_t index = 0; index < outline.rows.size(); ++index) {
         const auto& row = outline.rows[index];
-        const auto* text = arena_string(*arena, row.display_text);
-        if (!text) {
-            view.branch_rows_truncated = true;
-            view.branch_display_text_truncated = true;
-            break;
-        }
-        if (!result.compose.branch.row.push_back({.display_text = text, .depth = row.depth,
-                .active = row.active, .selected = row.selected,
-                .display_text_truncated = row.display_text_truncated,
-                .has_source_order = row.source_order.has_value(),
-                .source_order = row.source_order.value_or(0),
-                .node_id = row.id.value,
-                .raw_statement = row.kind == wormedit::bms_control_kind_t::raw_statement,
-                .choice_block = row.kind == wormedit::bms_control_kind_t::random ||
-                                row.kind == wormedit::bms_control_kind_t::switch_block})) {
-            view.branch_rows_truncated = true;
-            break;
-        }
-        view.branch_row_count = result.compose.branch.row.size();
+        auto& target = view.branch_rows[index];
+        target.display_text = row.display_text;
+        target.depth = row.depth;
+        target.active = row.active;
+        target.selected = row.selected;
+        target.display_text_truncated = row.display_text_truncated;
+        target.has_source_order = row.source_order.has_value();
+        target.source_order = row.source_order.value_or(0);
+        target.node_id.value = row.id.value;
+        target.raw_statement = row.kind == wormedit::bms_control_kind_t::raw_statement;
+        target.choice_block = row.kind == wormedit::bms_control_kind_t::random ||
+                              row.kind == wormedit::bms_control_kind_t::switch_block;
+        target.statement_id.value = 0;
+        target.statement_text.clear();
     }
 }
+
 auto compose_branch_choice_view(const wormedit::workspace_bms_branch_choice_t& choice)
-    -> WormUiComposeBranchChoiceView {
-    return {.branch_id = choice.id.value,
+    -> wormedit::ui::compose_branch_choice_view_t {
+    return {.branch_id = {choice.id.value},
         .kind = choice.kind == wormedit::bms_control_kind_t::switch_block
             ? WORM_UI_COMPOSE_BRANCH_SWITCH : WORM_UI_COMPOSE_BRANCH_RANDOM,
         .has_source_order = choice.source_order.has_value(),
@@ -803,43 +763,20 @@ auto compose_branch_choice_view(const wormedit::workspace_bms_branch_choice_t& c
 void populate_compose_branch_choices(frontend_workspace_view_t& result,
                                      const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
-    const auto count = std::min(outline.choices.size(),
-        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
-    view.branch_choices_truncated = outline.choices_truncated || count < outline.choices.size();
-    if (count == 0) return;
-    auto* arena = result.arena();
-    result.compose.branch.choice = arena ? arena_array<WormUiComposeBranchChoiceView>(*arena, count)
-                                        : frame_span<WormUiComposeBranchChoiceView>{};
-    view.branch_choices = result.compose.branch.choice.data();
-    if (result.compose.branch.choice.capacity() != count) {
-        view.branch_choices_truncated = true;
-        return;
-    }
-    for (std::size_t index = 0; index < count; ++index) {
-        if (!result.compose.branch.choice.push_back(compose_branch_choice_view(outline.choices[index]))) {
-            view.branch_choices_truncated = true;
-            break;
-        }
-        view.branch_choice_count = result.compose.branch.choice.size();
-    }
+    view.branch_choices_truncated = outline.choices_truncated;
+    view.branch_choices.clear();
+    for (const auto& choice : outline.choices)
+        view.branch_choices.push_back(compose_branch_choice_view(choice));
 }
 void populate_compose_branch_diagnostics(
     frontend_workspace_view_t& result, const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
-    const auto count = std::min(outline.diagnostics.size(),
-        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
-    view.branch_diagnostics_truncated = outline.diagnostics_truncated || count < outline.diagnostics.size();
-    if (count == 0) return;
-    auto* arena = result.arena();
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto* text = arena ? arena_string(*arena, outline.diagnostics[index].message) : nullptr;
-        if (!text) {
-            view.branch_diagnostics_truncated = true;
-            break;
-        }
-        view.branch_diagnostics[view.branch_diagnostic_count++] = text;
-    }
+    view.branch_diagnostics_truncated = outline.diagnostics_truncated;
+    view.branch_diagnostics.resize(outline.diagnostics.size());
+    for (std::size_t index = 0; index < outline.diagnostics.size(); ++index)
+        view.branch_diagnostics[index] = outline.diagnostics[index].message;
 }
+
 void populate_compose_branch_outline(frontend_workspace_view_t& result,
                                      const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
@@ -853,36 +790,34 @@ void populate_compose_branch_outline(frontend_workspace_view_t& result,
 void populate_bookmark_chooser(const workspace_projection_context_t& projection, chart_id_t chart) {
     auto& result = projection.result;
     auto& view = result.view.compose.bookmark_chooser;
-    view.project_id = projection.document.id.value;
-    view.chart_id = chart.value;
+    view.project_id.value = projection.document.id.value;
+    view.chart_id.value = chart.value;
     view.document_revision = projection.document.revision;
     const auto& request = projection.bookmark_chooser_request;
-    if (!request.open) return;
-    const auto page = bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
-                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query,
-                                               projection.bookmark_indices);
+    if (!request.open) { view.rows.clear(); return; }
+    const auto key = std::tuple{&projection.document, document_stamp_t::from(projection.document), chart,
+        result.query_session_generation, request.first_row, request.row_limit,
+        std::to_array(request.query), projection.bookmark_indices.bounded_clock &&
+        projection.bookmark_indices.bounded_clock->has_value()};
+    const auto& page = result.bookmark_chooser_cache.get_or_build(key, [&] {
+        return bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
+            std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query,
+            projection.bookmark_indices);
+    });
     view.total_count = page.total_count;
     view.first_row = page.first_row;
-    auto* arena = result.arena();
-    if (!arena) { view.truncated = true; return; }
-    view.query = arena_string(*arena, request.query);
-    result.compose.bookmark_chooser_row = arena_array<WormUiBookmarkChooserRowView>(*arena, page.rows.size());
-    for (const auto& row : page.rows) {
-        WormUiBookmarkChooserRowView item{};
-        item.bookmark_id = row.bookmark_id.value;
+    view.query = request.query;
+    view.rows.resize(page.rows.size());
+    for (std::size_t index = 0; index < page.rows.size(); ++index) {
+        const auto& row = page.rows[index];
+        auto& item = view.rows[index];
+        item.bookmark_id.value = row.bookmark_id.value;
         item.anchor = static_cast<std::uint8_t>(row.anchor);
-        item.position_label = arena_string(*arena, row.position_label);
-        item.name = arena_string(*arena, row.name);
-        item.display_label = arena_string(*arena, row.display_label);
+        item.position_label = row.position_label;
+        item.name = row.name;
+        item.display_label = row.display_label;
         item.navigation_available = row.navigation_available;
-        if (!item.position_label || !item.name || !item.display_label ||
-            !result.compose.bookmark_chooser_row.push_back(item)) {
-            view.truncated = true;
-            break;
-        }
     }
-    view.rows = result.compose.bookmark_chooser_row.data();
-    view.row_count = result.compose.bookmark_chooser_row.size();
 }
 
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
@@ -891,9 +826,9 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                 result.view.compose.visible = true;
                 const auto& outline = tab.bms_branch_outline();
                 auto& compose = result.view.compose;
-                compose.selected_audio_asset_id =
+                compose.selected_audio_asset_id.value =
                     source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
-                compose.selected_visual_asset_id =
+                compose.selected_visual_asset_id.value =
                     source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
                 populate_compose_resources(projection);
                 populate_compose_keysounds(projection, tab.chart);
@@ -1088,61 +1023,8 @@ void frontend_workspace_view_t::reset() {
         view.metadata, view.audio_slices, view.timing, view.player_preview, view.external_player,
         view.compare.charts, view.compare.diagnostics,
         view.playback_rates.entries, view.bms_encodings.entries, view.sound_kinds.entries,
-        view.compose.timing_lanes.entries,
-        view.compose.timing_lane_captions.entries, view.compose.note_palette.entries,
-        view.compose.measure_lane.selected_bar_lines,
-        view.compose.lane_layout_segments,
-        view.compose.quantize_ghosts,
-        view.compose.paste_ghosts,
-        view.compose.bands,
-        view.compose.lanes,
-        view.compose.grid_lines,
-        view.compose.proposed_grid_lines,
-        view.compose.timing_preview_rects,
-        view.compose.timing_preview_markers,
-        view.compose.timing_markers,
-        view.compose.dead_spans,
-        view.compose.kiai_spans,
-        view.compose.speed_spans,
-        view.compose.recipe_areas,
-        view.compose.recipe_graph_points,
-        view.compose.sv_graph_points,
-        view.compose.speed_graph_points,
-        view.compose.differences,
-        view.compose.hold_bodies,
-        view.compose.note_endpoints,
-        view.compose.bgm_lanes,
-        view.compose.bgm_events,
-        view.compose.waveform_rows,
-        view.compose.stem_waveforms,
-        view.compose.stem_cuts,
-        view.compose.channel_waveform_rows,
-        view.compose.waveform_overview_rows,
-        view.compose.bgm_bar_rows,
-        view.compose.bgm_bar_marks,
-        view.compose.bgm_bar_bookmarks,
-        view.compose.bmson_marker_drafts,
-        view.compose.bga_events,
-        view.compose.bga_rows,
-        view.compose.resources,
-        view.compose.keysounds,
-        view.compose.keysound_selected_rows,
-        view.compose.keysound_fallbacks,
-        view.compose.keysound_selection_rows,
-        view.compose.keysound_display_rows,
-        view.compose.keysound_advance_rows,
-        view.compose.compose_sound_groups,
-        view.compose.keysound_layers,
-        view.compose.keysound_filter_layers,
-        view.compose.sound_slots,
-        view.compose.bga_all_resource_ids,
-        view.compose.bga_advance_ids,
-        view.compose.keysound_listed_resource_ids,
-        view.compose.keysound_all_resource_ids,
-        view.compose.bga_matching_ids,
-        view.compose.sound_picker,
-        view.compose.keysound_filter_selected_layer_name,
-        view.compose.bga_search);
+        view.compose);
+    view.compose.reset();
     view.setup.reset();
     view.options.reset();
     view.chart_import.reset();
@@ -1157,53 +1039,9 @@ void frontend_workspace_view_t::reset() {
     view.command_menu_rows.clear();
     view.compare.charts.clear();
     view.compare.diagnostics.clear();
-    view.compose.measure_lane.selected_bar_lines.clear();
-    view.compose.lane_layout_segments.clear();
-    view.compose.quantize_ghosts.clear();
-    view.compose.paste_ghosts.clear();
-    view.compose.bands.clear();
-    view.compose.lanes.clear();
-    view.compose.grid_lines.clear();
-    view.compose.proposed_grid_lines.clear();
-    view.compose.timing_preview_rects.clear();
-    view.compose.timing_preview_markers.clear();
-    view.compose.timing_markers.clear();
-    view.compose.dead_spans.clear();
-    view.compose.kiai_spans.clear();
-    view.compose.speed_spans.clear();
-    view.compose.recipe_areas.clear();
-    view.compose.recipe_graph_points.clear();
-    view.compose.sv_graph_points.clear();
-    view.compose.speed_graph_points.clear();
-    view.compose.differences.clear();
-    view.compose.hold_bodies.clear();
-    view.compose.note_endpoints.clear();
-    view.compose.bgm_lanes.clear();
-    view.compose.bgm_events.clear();
-    view.compose.waveform_rows.clear();
-    view.compose.stem_waveforms.clear();
-    view.compose.stem_cuts.clear();
-    view.compose.channel_waveform_rows.clear();
-    view.compose.waveform_overview_rows.clear();
-    view.compose.bgm_bar_rows.clear();
-    view.compose.bgm_bar_marks.clear();
-    view.compose.bgm_bar_bookmarks.clear();
-    view.compose.bmson_marker_drafts.clear();
-    view.compose.bga_events.clear();
-    view.compose.keysound_filter_selected_layer_name.clear();
-    view.compose.bga_search.clear();
-    view.compose.sound_picker.query.clear();
-    view.compose.sound_picker.total_count = 0;
-    view.compose.sound_picker.ready = false;
 
 }
-
 void frontend_workspace_view_t::rebind_view_pointers() {
-    auto& compose_view = view.compose;
-    compose_view.bookmark_chooser.rows = compose.bookmark_chooser_row.data();
-    compose_view.output_groups = compose.output_group.view.data();
-    compose_view.branch_rows = compose.branch.row.data();
-    compose_view.branch_choices = compose.branch.choice.data();
 
 }
 
@@ -1249,7 +1087,7 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
     const wormedit::ui::keysound_dock_request_t& keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
-                       WormUiBookmarkChooserRequest bookmark_chooser_request,
+                       wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
                        const bookmark_chooser_indices_t& bookmark_indices,
                        compose_resource_catalog_cache_t* resource_catalog_cache) -> frontend_workspace_view_t {
@@ -1265,7 +1103,7 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
     const wormedit::ui::keysound_dock_request_t& keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
-                       WormUiBookmarkChooserRequest bookmark_chooser_request,
+                       wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
                        const bookmark_chooser_indices_t& bookmark_indices,
                        compose_resource_catalog_cache_t* resource_catalog_cache) {
@@ -1317,7 +1155,18 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
         keysound_cache, bookmark_indices, resource_catalog_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
+    if (!view.metadata.visible) view.metadata.output_groups.clear();
     if (!view.compose.visible) {
+        view.compose.beat_bookmarks.clear();
+        view.compose.beat_sections.clear();
+        view.compose.audio_bookmarks.clear();
+        view.compose.audio_sections.clear();
+        view.compose.semantic_layers.clear();
+        view.compose.note_menu_layers.clear();
+        view.compose.branch_rows.clear();
+        view.compose.branch_choices.clear();
+        view.compose.branch_diagnostics.clear();
+
         view.compose.resources.clear();
         view.compose.keysounds.clear();
         view.compose.keysound_selected_rows.clear();
@@ -1354,8 +1203,8 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
     const auto* compose_tab = std::get_if<workspace_compose_view_t>(&source.tab_view);
     const auto selected = source.selected_difficulty ? source.selected_difficulty->id
         : compose_tab ? compose_tab->chart : chart_id_t{};
-    result.view.compose.project_id = document.id.value;
-    result.view.compose.chart_id = selected.value;
+    result.view.compose.project_id.value = document.id.value;
+    result.view.compose.chart_id.value = selected.value;
     result.view.compose.document_revision = document.revision;
     populate_compose_output_groups(projection, selected);
     result.view.audio_slices.sound_kinds.refill(sound_kind_view);
@@ -1390,7 +1239,6 @@ void metadata_view_t::reset() {
     lane_profile_preview_message.clear();
     audio_waveform_columns.clear();
     format_targets.clear();
-    output_groups.clear();
 }
 
 void audio_slices_view_t::reset() {
@@ -1402,3 +1250,152 @@ void audio_slices_view_t::reset() {
 }
 
 } // namespace wormedit::ui
+
+void wormedit::ui::compose_view_t::reset() {
+    wormedit::sys::reset_workspace_storage(*this,
+        timing_lanes.entries,
+        timing_lane_captions.entries, note_palette.entries,
+        measure_lane.selected_bar_lines,
+        lane_layout_segments,
+        quantize_ghosts,
+        paste_ghosts,
+        bands,
+        lanes,
+        grid_lines,
+        proposed_grid_lines,
+        timing_preview_rects,
+        timing_preview_markers,
+        timing_markers,
+        dead_spans,
+        kiai_spans,
+        speed_spans,
+        recipe_areas,
+        recipe_graph_points,
+        sv_graph_points,
+        speed_graph_points,
+        differences,
+        hold_bodies,
+        note_endpoints,
+        bgm_lanes,
+        bgm_events,
+        waveform_rows,
+        stem_waveforms,
+        stem_cuts,
+        channel_waveform_rows,
+        waveform_overview_rows,
+        bgm_bar_rows,
+        bgm_bar_marks,
+        bgm_bar_bookmarks,
+        bmson_marker_drafts,
+        bga_events,
+        bga_rows,
+        resources,
+        keysounds,
+        keysound_selected_rows,
+        keysound_fallbacks,
+        keysound_selection_rows,
+        keysound_display_rows,
+        keysound_advance_rows,
+        compose_sound_groups,
+        keysound_layers,
+        keysound_filter_layers,
+        sound_slots,
+        bga_all_resource_ids,
+        bga_advance_ids,
+        keysound_listed_resource_ids,
+        keysound_all_resource_ids,
+        bga_matching_ids,
+        sound_picker,
+        keysound_filter_selected_layer_name,
+        bga_search,
+        quantize_presets,
+        measure_rows,
+        quantize_preview_rows,
+        quantize_applied_rows,
+        beat_bookmarks,
+        beat_sections,
+        audio_bookmarks,
+        audio_sections,
+        semantic_layers,
+        note_menu_layers,
+        output_groups,
+        lane_key_bindings,
+        branch_rows,
+        branch_choices,
+        supported_snap_denominators,
+        lane_profile_names,
+        lane_layout_profile_names,
+        branch_diagnostics,
+        staged_bmson_marker_restarts,
+        measure_row_ids,
+        staged_bmson_marker_playable_lanes,
+        lane_layout_profile_ids,
+        bookmark_chooser.rows,
+        bookmark_chooser.query,
+        semantic_layer_target.name,
+        draw_source_label,
+        draw_source_stem_lane_name,
+        selected_note_label,
+        hover_tooltip,
+        measure_removal_message, move_to_bgm_shortcut, quantize_preview_message, hover_timing_label,
+        branch_statement_feedback);
+    quantize_presets.clear();
+    measure_rows.clear();
+    measure_row_ids.clear();
+    quantize_preview_rows.clear();
+    quantize_applied_rows.clear();
+    lane_key_bindings.clear();
+    supported_snap_denominators.clear();
+    staged_bmson_marker_playable_lanes.clear();
+    staged_bmson_marker_restarts.clear();
+    measure_lane.selected_bar_lines.clear();
+    lane_layout_segments.clear();
+    quantize_ghosts.clear();
+    paste_ghosts.clear();
+    bands.clear();
+    lanes.clear();
+    grid_lines.clear();
+    proposed_grid_lines.clear();
+    timing_preview_rects.clear();
+    timing_preview_markers.clear();
+    timing_markers.clear();
+    dead_spans.clear();
+    kiai_spans.clear();
+    speed_spans.clear();
+    recipe_areas.clear();
+    recipe_graph_points.clear();
+    sv_graph_points.clear();
+    speed_graph_points.clear();
+    differences.clear();
+    hold_bodies.clear();
+    note_endpoints.clear();
+    bgm_lanes.clear();
+    bgm_events.clear();
+    waveform_rows.clear();
+    stem_waveforms.clear();
+    stem_cuts.clear();
+    channel_waveform_rows.clear();
+    waveform_overview_rows.clear();
+    bgm_bar_rows.clear();
+    bgm_bar_marks.clear();
+    bgm_bar_bookmarks.clear();
+    bmson_marker_drafts.clear();
+    bga_events.clear();
+    keysound_filter_selected_layer_name.clear();
+    bga_search.clear();
+    bookmark_chooser.total_count = 0;
+    bookmark_chooser.first_row = 0;
+    bookmark_chooser.query.clear();
+    branch_statement_feedback.clear();
+    measure_removal_message.clear();
+    move_to_bgm_shortcut.clear();
+    quantize_preview_message.clear();
+    hover_timing_label.clear();
+    draw_source_label.clear();
+    draw_source_stem_lane_name.clear();
+    selected_note_label.clear();
+    hover_tooltip.clear();
+    sound_picker.query.clear();
+    sound_picker.total_count = 0;
+    sound_picker.ready = false;
+}

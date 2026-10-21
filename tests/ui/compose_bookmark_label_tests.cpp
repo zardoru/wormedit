@@ -71,7 +71,7 @@ TEST_CASE("a label near the top edge stays inside the field", "[unit][ui][bookma
 
 TEST_CASE("bookmark hit band spans the full width and stops at its edges",
           "[unit][ui][bookmark-label]") {
-    const std::array lines{bookmark_rename_line_t{.bookmark_id = 4, .y = 100.0}};
+    const std::array lines{bookmark_rename_line_t{.bookmark_id = {4}, .y = 100.0}};
     CHECK(bookmark_double_click_target_at(lines, 0.0, 100.0, 400.0, 18.0) ==
           std::optional<std::uint64_t>{4});
     CHECK(bookmark_double_click_target_at(lines, 10.0, 105.0, 400.0, 18.0) ==
@@ -89,7 +89,7 @@ TEST_CASE("bookmark hit band spans the full width and stops at its edges",
 TEST_CASE("bookmark hover extent and pointer target share line and label boundaries",
           "[unit][ui][bookmark-label]") {
     const auto labelled = GENERATE(false, true);
-    const std::array lines{bookmark_rename_line_t{.bookmark_id = 4, .y = 100.0,
+    const std::array lines{bookmark_rename_line_t{.bookmark_id = {4}, .y = 100.0,
                                                 .labelled = labelled}};
     const auto [top, bottom] = lines.front().hit_extent(compose_bookmark_label_zone_height);
     CHECK((std::pair{top, bottom} == std::pair{labelled ? 82.0 : 94.0, 106.0}));

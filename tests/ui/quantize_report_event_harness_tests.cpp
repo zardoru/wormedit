@@ -8,9 +8,9 @@
 
 namespace {
 
-void seed_selection(WormUiComposeView& view) {
-    view.project_id = 31;
-    view.chart_id = 7;
+void seed_selection(wormedit::ui::compose_view_t& view) {
+    view.project_id.value = 31;
+    view.chart_id.value = 7;
     view.selected_note_count = 1;
 }
 
@@ -33,11 +33,11 @@ TEST_CASE("the quantize Last applied report opens with its moved rows",
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     seed_selection(view);
-    const std::array<WormUiComposeQuantizeReportRowView, 1> rows{{
-        {.object_id = 77, .lane_id = 1, .start_before_absolute_row = 250,
+    const std::array<wormedit::ui::compose_quantize_report_row_view_t, 1> rows{{
+        {.object_id = {77}, .lane_id = {1}, .start_before_absolute_row = 250,
          .start_after_absolute_row = 240, .moved = true, .bgm = bgm}}};
-    view.quantize_applied_rows = rows.data();
-    view.quantize_applied_row_count = view.quantize_applied_total_rows = rows.size();
+    view.quantize_applied_rows.assign(rows.begin(), rows.end());
+    view.quantize_applied_rows.resize(view.quantize_applied_total_rows = rows.size());
     (void)harness.frame();
     // The report sits at the bottom of the quantize section; scroll the inspector to it.
     SDL_Event motion{};
@@ -78,11 +78,11 @@ TEST_CASE("a BGM-only selection enables quantize",
     view.selected_bgm_event_count = 1;
     view.quantize_divisions = 4;
     view.quantize_preview_moved = 1;
-    static const std::array<WormUiComposeQuantizeReportRowView, 1> rows{{
-        {.object_id = 78, .lane_id = 9, .start_before_absolute_row = 250,
+    static const std::array<wormedit::ui::compose_quantize_report_row_view_t, 1> rows{{
+        {.object_id = {78}, .lane_id = {9}, .start_before_absolute_row = 250,
          .start_after_absolute_row = 240, .moved = true, .bgm = true}}};
-    view.quantize_preview_rows = rows.data();
-    view.quantize_preview_row_count = view.quantize_preview_total_rows = rows.size();
+    view.quantize_preview_rows.assign(rows.begin(), rows.end());
+    view.quantize_preview_rows.resize(view.quantize_preview_total_rows = rows.size());
     (void)harness.frame();
     CHECK(harness.drawn_text().find("Quantize (1)") != std::string::npos);
     const auto center = harness.drawn_text_center("Quantize");

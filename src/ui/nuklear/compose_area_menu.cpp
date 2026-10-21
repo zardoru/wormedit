@@ -49,16 +49,16 @@ auto reason_unless(bool enabled, const char* reason) -> const char* {
     return enabled ? nullptr : reason;
 }
 
-void raise_sound_layer_action(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+void raise_sound_layer_action(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                              WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_project_id.value = view.project_id.value;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
 }
 
-void render_sound_layer_entry(nk_context* context, const WormUiComposeView& view,
+void render_sound_layer_entry(nk_context* context, const wormedit::ui::compose_view_t& view,
                               wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, chrome::context_menu_row_height, 1);
     const auto reason = view.selected_note_count + view.selected_bgm_event_count == 0
@@ -71,24 +71,24 @@ void render_sound_layer_entry(nk_context* context, const WormUiComposeView& view
     raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU);
 }
 
-void render_sound_layer_row(nk_context* context, const WormUiComposeView& view,
+void render_sound_layer_row(nk_context* context, const wormedit::ui::compose_view_t& view,
     wormedit::ui::workspace_action_t& action, std::size_t index) {
     if (index < view.note_menu_layer_first_row ||
-        index - view.note_menu_layer_first_row >= view.note_menu_layer_count || !view.note_menu_layers) {
+        index - view.note_menu_layer_first_row >= view.note_menu_layers.size() || view.note_menu_layers.empty()) {
         nk_layout_row_dynamic(context, chrome::context_menu_row_height, 1);
         nk_label(context, "Loading layers…", NK_TEXT_LEFT);
         chrome::context_menu_placeholder(menu);
         return;
     }
     const auto& layer = view.note_menu_layers[index - view.note_menu_layer_first_row];
-    if (!chrome::context_menu_item(menu, context, layer.name,
+    if (!chrome::context_menu_item(menu, context, layer.name.data(),
                                    layer.locked ? "Layer is locked" : nullptr)) return;
     raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER);
-    action.compose_semantic_layer_id.value = layer.layer_id;
+    action.compose_semantic_layer_id.value = layer.layer_id.value;
     consumed = true;
 }
 
-void render_sound_layers(nk_context* context, const WormUiComposeView& view,
+void render_sound_layers(nk_context* context, const wormedit::ui::compose_view_t& view,
                           wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, chrome::context_menu_row_height, 1);
     auto back_style = context->style.contextual_button;
@@ -108,7 +108,7 @@ void render_sound_layers(nk_context* context, const WormUiComposeView& view,
     nk_list_view list{};
     const auto total = std::min<std::size_t>(view.note_menu_layer_total_count, 100'000);
     chrome::context_menu_set_row_count(menu, total);
-    for (std::size_t offset = 0; offset < view.note_menu_layer_count; ++offset)
+    for (std::size_t offset = 0; offset < view.note_menu_layers.size(); ++offset)
         chrome::context_menu_set_row_enabled(menu, view.note_menu_layer_first_row + offset,
                                              !view.note_menu_layers[offset].locked);
     chrome::context_menu_scroll_to_selected(menu, context, "Selected sound layers",
@@ -119,18 +119,18 @@ void render_sound_layers(nk_context* context, const WormUiComposeView& view,
     for (int index = list.begin; index < list.end; ++index)
         render_sound_layer_row(context, view, action, static_cast<std::size_t>(index));
     const auto first = static_cast<std::size_t>(list.begin);
-    const auto requested = std::min<std::size_t>(WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY,
+    const auto requested = std::min<std::size_t>(wormedit::ui::note_layer_window_limit,
                                                 static_cast<std::size_t>(list.end - list.begin));
     nk_list_view_end(&list);
     if (menu.open && total &&
-        (first != view.note_menu_layer_first_row || requested > view.note_menu_layer_count)) {
+        (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size())) {
         raise_sound_layer_action(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
         action.compose_semantic_layer_first_row = first;
         action.compose_semantic_layer_row_count = std::max<std::size_t>(1, requested);
     }
 }
 
-void render_menu(nk_context* context, const WormUiComposeView& view,
+void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
                  wormedit::ui::workspace_action_t& action) {
     if (!menu.open) {
         retire_sound_layer_window(action);
@@ -200,7 +200,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
     chrome::context_menu_end(menu, context);
 }
 
-void update_capture(nk_context* context, const WormUiComposeView& view,
+void update_capture(nk_context* context, const wormedit::ui::compose_view_t& view,
                     wormedit::ui::workspace_action_t& action, struct nk_rect viewport, bool focused) {
     const auto& mouse = context->input.mouse;
     if (!capture.current(view)) {
@@ -231,7 +231,7 @@ void update_capture(nk_context* context, const WormUiComposeView& view,
 }
 } // namespace
 
-struct nk_rect compose_area_band_rect(const WormUiComposeView& view, struct nk_rect viewport) {
+struct nk_rect compose_area_band_rect(const wormedit::ui::compose_view_t& view, struct nk_rect viewport) {
     const auto scale = viewport.h / static_cast<float>(view.viewport_height_pixels);
     const auto a =
         viewport.y + static_cast<float>(compose_area_y(view, view.area_range_begin_row)) * scale;
@@ -278,7 +278,7 @@ void cancel_compose_area_capture(wormedit::ui::workspace_action_t& action) {
     consumed = true;
 }
 
-void process_compose_area_menu(nk_context* context, const WormUiComposeView& view,
+void process_compose_area_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
                                wormedit::ui::workspace_action_t& action, struct nk_rect viewport,
                                double input_right, bool focused) {
     (void)chrome::context_menu_update(menu, context);

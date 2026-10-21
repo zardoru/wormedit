@@ -8,7 +8,7 @@ struct nk_context;
 struct nk_command_buffer;
 struct nk_rect;
 
-inline auto compose_area_y(const WormUiComposeView& view, std::uint64_t row) -> double {
+inline auto compose_area_y(const wormedit::ui::compose_view_t& view, std::uint64_t row) -> double {
     if (view.area_rows_per_measure == 0 || !std::isfinite(view.pixels_per_standard_measure))
         return 0;
     const auto y = static_cast<double>(row) * view.pixels_per_standard_measure /
@@ -22,14 +22,14 @@ struct ComposeAreaCapture {
     bool begin_edge{};
     bool virtual_range{};
     std::uint64_t chart{}, revision{}, begin{}, end{};
-    auto current(const WormUiComposeView& view) const -> bool {
-        return chart == view.chart_id && revision == view.document_revision;
+    auto current(const wormedit::ui::compose_view_t& view) const -> bool {
+        return chart == view.chart_id.value && revision == view.document_revision;
     }
-    void start(const WormUiComposeView& view, bool moving_begin) {
+    void start(const wormedit::ui::compose_view_t& view, bool moving_begin) {
         *this = {true,
                  moving_begin,
                  view.area_range_virtual,
-                 view.chart_id,
+                 view.chart_id.value,
                  view.document_revision,
                  view.area_range_begin_row,
                  view.area_range_end_row};
@@ -44,8 +44,8 @@ struct ComposeAreaCapture {
     }
 };
 
-auto compose_area_band_rect(const WormUiComposeView&, struct nk_rect) -> struct nk_rect;
-void process_compose_area_menu(nk_context*, const WormUiComposeView&, wormedit::ui::workspace_action_t&,
+auto compose_area_band_rect(const wormedit::ui::compose_view_t&, struct nk_rect) -> struct nk_rect;
+void process_compose_area_menu(nk_context*, const wormedit::ui::compose_view_t&, wormedit::ui::workspace_action_t&,
                                struct nk_rect, double input_right, bool focused);
 auto compose_area_pointer_consumed() -> bool;
 auto compose_area_menu_open() -> bool;

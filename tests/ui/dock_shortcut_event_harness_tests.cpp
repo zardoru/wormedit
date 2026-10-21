@@ -115,8 +115,8 @@ TEST_CASE("Queued layer creation is discarded on stale contexts focus loss and m
         require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
         std::vector<SDL_Event> events;
         if (cause == 0) ++harness.view().compose.document_revision;
-        if (cause == 1) ++harness.view().compose.chart_id;
-        if (cause == 2) ++harness.view().compose.project_id;
+        if (cause == 1) ++harness.view().compose.chart_id.value;
+        if (cause == 2) ++harness.view().compose.project_id.value;
         if (cause == 3) harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
         if (cause == 4) harness.view().close_confirmation.visible = true;
         if (cause == 5) harness.view().compose.input_occluded = true;
@@ -168,17 +168,17 @@ TEST_CASE("Creating a layer reveals the appended target beyond the visible layer
     ++view.document_revision;
     view.semantic_layer_total_count = 201;
     view.semantic_layer_target_row = 200;
-    view.semantic_layer_target = {.layer_id = 900, .name = "Layer"};
+    view.semantic_layer_target = {.layer_id = {900}, .name = "Layer"};
     const auto requested = harness.frame();
     check_dock(requested.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
     check_dock(requested.get().compose_semantic_layer_first_row > 180);
     const auto first = requested.get().compose_semantic_layer_first_row;
     view.semantic_layer_first_row = first;
-    view.semantic_layer_count = 201 - first;
-    std::vector<WormUiComposeSemanticLayerView> layers(view.semantic_layer_count);
+    view.semantic_layers.resize(201 - first);
+    std::vector<wormedit::ui::compose_semantic_layer_view_t> layers(view.semantic_layers.size());
     for (std::size_t index = 0; index < layers.size(); ++index)
-        layers[index] = {.layer_id = 900 - index, .name = "Layer"};
-    view.semantic_layers = layers.data();
+        layers[index] = {.layer_id = {900 - index}, .name = "Layer"};
+    view.semantic_layers.assign(layers.begin(), layers.end());
     static_cast<void>(harness.frame());
     check_dock(harness.drawn_text().find("Layer") != std::string::npos);
 }
@@ -255,13 +255,13 @@ TEST_CASE("Export dialog fits a small viewport and submits the saved target poli
           "[frontend-state][event-harness][compose-dialogs]") {
     nuklear_event_harness_t harness{640, 480};
     prepare(harness);
-    WormUiComposeOutputGroupView group{};
+    wormedit::ui::compose_output_group_view_t group{};
     group.document_index = 7;
     group.name = "BMS output";
     group.relative_output_path = "exports/chart.bms";
     group.relative_asset_directory = "exports";
-    harness.view().compose.output_groups = &group;
-    harness.view().compose.output_group_count = 1;
+    harness.view().compose.output_groups = {group};
+    harness.view().compose.output_groups.resize(1);
     auto& state = worm_ui_nuklear_compose_state();
     worm_ui_nuklear_open_export_dialog(harness.view().compose, state);
     static_cast<void>(harness.frame());
@@ -287,8 +287,8 @@ TEST_CASE("Open compose dialogs cancel on context changes and external modals",
         worm_ui_nuklear_open_layer_creation(harness.view().compose, state);
         static_cast<void>(harness.frame());
         if (cause == 0) ++harness.view().compose.document_revision;
-        if (cause == 1) ++harness.view().compose.chart_id;
-        if (cause == 2) ++harness.view().compose.project_id;
+        if (cause == 1) ++harness.view().compose.chart_id.value;
+        if (cause == 2) ++harness.view().compose.project_id.value;
         if (cause == 3) harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
         if (cause == 4) harness.view().close_confirmation.visible = true;
         if (cause == 5) harness.view().compose.input_occluded = true;

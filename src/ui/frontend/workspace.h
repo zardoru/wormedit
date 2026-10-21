@@ -74,8 +74,8 @@ struct compare_view_t {
     bool has_two_difficulties{};
     wormedit::chart_id_t first_chart_id, second_chart_id;
     std::string_view first_difficulty, second_difficulty;
-    const WormUiComposeView* first_pane{};
-    const WormUiComposeView* second_pane{};
+    const wormedit::ui::compose_view_t* first_pane{};
+    const wormedit::ui::compose_view_t* second_pane{};
     std::vector<compare_chart_view_t> charts;
     double scroll_pixels{};
     std::vector<compare_diagnostic_view_t> diagnostics;
@@ -173,7 +173,7 @@ struct workspace_view_t {
     wormedit::ui::setup_view_t setup;
     wormedit::ui::metadata_view_t metadata;
     wormedit::ui::timing_view_t timing;
-    WormUiComposeView compose;
+    wormedit::ui::compose_view_t compose;
     wormedit::ui::audio_slices_view_t audio_slices;
     compare_view_t compare;
     wormedit::ui::player_preview_view_t player_preview;

@@ -21,7 +21,7 @@ auto parse_signed(const char* text) -> std::optional<std::int64_t> {
     return wormedit::parse_integer<std::int64_t>(text);
 }
 
-auto parse_signed_rational(const WormUiTimingRecipeRationalText& text)
+auto parse_signed_rational(const wormedit::ui::timing_recipe_rational_text_t& text)
     -> std::optional<signed_rational_t> {
     const auto numerator = parse_signed(text.numerator);
     const auto denominator = parse_unsigned(text.denominator);
@@ -29,7 +29,7 @@ auto parse_signed_rational(const WormUiTimingRecipeRationalText& text)
     return signed_rational_t{*numerator, *denominator};
 }
 
-auto parse_unsigned_rational(const WormUiTimingRecipeRationalText& text)
+auto parse_unsigned_rational(const wormedit::ui::timing_recipe_rational_text_t& text)
     -> std::optional<rational_t> {
     const auto numerator = parse_unsigned(text.numerator);
     const auto denominator = parse_unsigned(text.denominator);
@@ -37,38 +37,38 @@ auto parse_unsigned_rational(const WormUiTimingRecipeRationalText& text)
     return rational_t{*numerator, *denominator};
 }
 
-void set_text(WormUiTimingRecipeRationalText& target, signed_rational_t value) {
+void set_text(wormedit::ui::timing_recipe_rational_text_t& target, signed_rational_t value) {
     (void)std::snprintf(target.numerator, sizeof(target.numerator), "%lld",
                         static_cast<long long>(value.numerator));
     (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
                         static_cast<unsigned long long>(value.denominator));
 }
 
-void set_text(WormUiTimingRecipeRationalText& target, rational_t value) {
+void set_text(wormedit::ui::timing_recipe_rational_text_t& target, rational_t value) {
     (void)std::snprintf(target.numerator, sizeof(target.numerator), "%llu",
                         static_cast<unsigned long long>(value.numerator));
     (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
                         static_cast<unsigned long long>(value.denominator));
 }
 
-auto form_enums_valid(const WormUiTimingRecipeForm& form) -> bool {
-    return form.output >= WORM_UI_TIMING_RECIPE_OUTPUT_SV &&
-           form.output <= WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS &&
-           form.curve >= WORM_UI_TIMING_RECIPE_CURVE_CONSTANT &&
-           form.curve <= WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION &&
-           form.sampling_mode >= WORM_UI_TIMING_RECIPE_SAMPLING_FIXED &&
-           form.sampling_mode <= WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE &&
-           form.fixed_extent >= WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT &&
-           form.fixed_extent <= WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS;
+auto form_enums_valid(const wormedit::ui::timing_recipe_form_t& form) -> bool {
+    return form.output >= wormedit::sv_recipe_output_t::sv &&
+           form.output <= wormedit::sv_recipe_output_t::speeds &&
+           form.curve >= wormedit::sv_recipe_curve_t::constant &&
+           form.curve <= wormedit::sv_recipe_curve_t::lua_expression &&
+           form.sampling_mode >= wormedit::sv_recipe_sampling_mode_t::fixed &&
+           form.sampling_mode <= wormedit::sv_recipe_sampling_mode_t::adaptive &&
+           form.fixed_extent >= wormedit::ui::timing_recipe_fixed_extent_t::point_count &&
+           form.fixed_extent <= wormedit::ui::timing_recipe_fixed_extent_t::step_rows;
 }
 
-auto set_parameter(signed_rational_t& target, const WormUiTimingRecipeRationalText& source) -> bool {
+auto set_parameter(signed_rational_t& target, const wormedit::ui::timing_recipe_rational_text_t& source) -> bool {
     const auto parsed = parse_signed_rational(source);
     if (parsed) target = *parsed;
     return parsed.has_value();
 }
 
-auto set_curve_parameters(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) -> bool {
+auto set_curve_parameters(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     auto& values = candidate.parameters;
     switch (candidate.curve) {
     case sv_recipe_curve_t::constant:
@@ -89,8 +89,8 @@ auto set_curve_parameters(sv_recipe_t& candidate, const WormUiTimingRecipeForm& 
     return false;
 }
 
-auto set_fixed_sampling(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) -> bool {
-    if (form.fixed_extent == WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT) {
+auto set_fixed_sampling(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
+    if (form.fixed_extent == wormedit::ui::timing_recipe_fixed_extent_t::point_count) {
         const auto count = parse_unsigned(form.fixed_point_count);
         if (!count || *count > std::numeric_limits<std::uint32_t>::max()) return false;
         candidate.sampling.fixed_point_count = static_cast<std::uint32_t>(*count);
@@ -104,7 +104,7 @@ auto set_fixed_sampling(sv_recipe_t& candidate, const WormUiTimingRecipeForm& fo
     return true;
 }
 
-auto set_adaptive_sampling(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) -> bool {
+auto set_adaptive_sampling(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     const auto tolerance = parse_signed_rational(form.tolerance);
     const auto max_points = parse_unsigned(form.adaptive_max_points);
     if (!tolerance || !max_points || *max_points > std::numeric_limits<std::uint32_t>::max())
@@ -116,14 +116,14 @@ auto set_adaptive_sampling(sv_recipe_t& candidate, const WormUiTimingRecipeForm&
     return true;
 }
 
-auto set_sampling(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) -> bool {
+auto set_sampling(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     candidate.sampling.mode = static_cast<sv_recipe_sampling_mode_t>(form.sampling_mode);
     return candidate.sampling.mode == sv_recipe_sampling_mode_t::fixed
                ? set_fixed_sampling(candidate, form)
                : set_adaptive_sampling(candidate, form);
 }
 
-auto set_transition(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) -> bool {
+auto set_transition(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     if (candidate.output != sv_recipe_output_t::speeds) {
         candidate.transition_duration.reset();
         candidate.transition_is_seconds.reset();
@@ -138,33 +138,8 @@ auto set_transition(sv_recipe_t& candidate, const WormUiTimingRecipeForm& form) 
 
 } // namespace
 
-auto recipe_form_from_recipe(const sv_recipe_t& recipe) -> WormUiTimingRecipeForm {
-    WormUiTimingRecipeForm form{};
-    form.output = static_cast<WormUiTimingRecipeOutput>(recipe.output);
-    form.curve = static_cast<WormUiTimingRecipeCurve>(recipe.curve);
-    form.sampling_mode = static_cast<WormUiTimingRecipeSamplingMode>(recipe.sampling.mode);
-    form.fixed_extent = recipe.sampling.fixed_step_rows ? WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS
-                                                        : WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT;
-    set_text(form.value_from, recipe.parameters.value_from);
-    set_text(form.value_to, recipe.parameters.value_to);
-    set_text(form.shape, recipe.parameters.shape);
-    set_text(form.bump_start, recipe.parameters.bump_start);
-    set_text(form.bump_length, recipe.parameters.bump_length);
-    set_text(form.bump_x, recipe.parameters.bump_x);
-    set_text(form.bump_y, recipe.parameters.bump_y);
-    set_text(form.tolerance, recipe.sampling.tolerance);
-    set_text(form.transition_duration, recipe.transition_duration.value_or(rational_t{}));
-    form.transition_is_seconds = recipe.transition_is_seconds.value_or(false);
-    (void)std::snprintf(form.fixed_point_count, sizeof(form.fixed_point_count), "%u",
-                        recipe.sampling.fixed_point_count.value_or(2));
-    (void)std::snprintf(form.fixed_step_rows, sizeof(form.fixed_step_rows), "%llu",
-                        static_cast<unsigned long long>(recipe.sampling.fixed_step_rows.value_or(1)));
-    (void)std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "%u",
-                        recipe.sampling.max_points);
-    return form;
-}
 
-auto recipe_from_form(const WormUiTimingRecipeForm& form, const sv_recipe_t& current)
+auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_recipe_t& current)
     -> std::optional<sv_recipe_t> {
     if (!form_enums_valid(form)) return std::nullopt;
     auto candidate = current;
@@ -178,14 +153,14 @@ auto recipe_from_form(const WormUiTimingRecipeForm& form, const sv_recipe_t& cur
 }
 
 auto recipe_form_preview_t::propose(const song_document_t& document,
-    const chart_document_t& chart, const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
+    const chart_document_t& chart, const sv_recipe_t& recipe, const wormedit::ui::timing_recipe_form_t& form)
     -> recipe_form_outcome_t {
     return revise({}, document, chart, recipe, form);
 }
 
 auto recipe_form_preview_t::revise(recipe_form_outcome_t previous,
     const song_document_t& document, const chart_document_t& chart,
-    const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form) -> recipe_form_outcome_t {
+    const sv_recipe_t& recipe, const wormedit::ui::timing_recipe_form_t& form) -> recipe_form_outcome_t {
     auto candidate = recipe_from_form(form, recipe);
     recipe_form_report_t report{.candidate = candidate ? std::move(*candidate) : recipe};
     previous.diagnostics.clear();
@@ -220,7 +195,7 @@ auto apply_recipe_form(document_history_t& history, const recipe_form_outcome_t&
 }
 
 auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_id_t recipe_id,
-                       const WormUiTimingRecipeForm& form, bool& applied,
+                       const wormedit::ui::timing_recipe_form_t& form, bool& applied,
                        notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
     applied = false;
@@ -248,3 +223,31 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
 }
 
 } // namespace wormedit::sys
+
+auto wormedit::ui::timing_recipe_form_t::from(const wormedit::sv_recipe_t& recipe)
+    -> timing_recipe_form_t {
+    using namespace wormedit::sys;
+    wormedit::ui::timing_recipe_form_t form{};
+    form.output = recipe.output;
+    form.curve = recipe.curve;
+    form.sampling_mode = recipe.sampling.mode;
+    form.fixed_extent = recipe.sampling.fixed_step_rows ? wormedit::ui::timing_recipe_fixed_extent_t::step_rows
+                                                        : wormedit::ui::timing_recipe_fixed_extent_t::point_count;
+    set_text(form.value_from, recipe.parameters.value_from);
+    set_text(form.value_to, recipe.parameters.value_to);
+    set_text(form.shape, recipe.parameters.shape);
+    set_text(form.bump_start, recipe.parameters.bump_start);
+    set_text(form.bump_length, recipe.parameters.bump_length);
+    set_text(form.bump_x, recipe.parameters.bump_x);
+    set_text(form.bump_y, recipe.parameters.bump_y);
+    set_text(form.tolerance, recipe.sampling.tolerance);
+    set_text(form.transition_duration, recipe.transition_duration.value_or(rational_t{}));
+    form.transition_is_seconds = recipe.transition_is_seconds.value_or(false);
+    (void)std::snprintf(form.fixed_point_count, sizeof(form.fixed_point_count), "%u",
+                        recipe.sampling.fixed_point_count.value_or(2));
+    (void)std::snprintf(form.fixed_step_rows, sizeof(form.fixed_step_rows), "%llu",
+                        static_cast<unsigned long long>(recipe.sampling.fixed_step_rows.value_or(1)));
+    (void)std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "%u",
+                        recipe.sampling.max_points);
+    return form;
+}

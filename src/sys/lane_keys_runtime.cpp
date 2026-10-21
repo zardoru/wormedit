@@ -95,7 +95,7 @@ void lane_keys_runtime_t::bind(std::uint16_t usage, bool unbind) {
     view_.preset = ui::lane_key_preset_t::custom;
     rebuild();
 }
-void lane_keys_runtime_t::capture(std::span<const WormUiShortcutEvent> events) {
+void lane_keys_runtime_t::capture(std::span<const wormedit::ui::shortcut_event_t> events) {
     if (!view_.visible || !view_.capturing) return;
     const auto captured = capture_shortcut_batch(events);
     if (captured.cancel) { view_.capturing = false; rebuild(); return; }

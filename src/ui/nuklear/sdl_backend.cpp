@@ -1312,7 +1312,7 @@ static void convert_field_marker(void* canvas, short, short, unsigned short, uns
     // empty commands, but must never overwrite the field's ordering barrier.
     nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
 }
-static auto overview_key(nk_sdl* sdl, nk_command_buffer* canvas, const WormUiComposeView& view,
+static auto overview_key(nk_sdl* sdl, nk_command_buffer* canvas, const wormedit::ui::compose_view_t& view,
                          struct nk_rect bounds, nk_color background, nk_color peak) -> OverviewKey {
     OverviewKey key{.generation = view.waveform_overview_generation,
         .renderer_generation = sdl->overview->renderer_generation};
@@ -1347,7 +1347,7 @@ static auto overview_physical_rect(struct nk_rect logical, float sx, float sy,
         static_cast<int>(right - left), static_cast<int>(bottom - top)};
 }
 static bool prepare_overview_cache(nk_sdl* sdl, nk_command_buffer* canvas,
-                                   const WormUiComposeView& view, OverviewKey key) {
+                                   const wormedit::ui::compose_view_t& view, OverviewKey key) {
     auto& cache = *sdl->overview;
     cache.invalidate();
     if (key.colors[3] != 255 || key.generation == 0 || view.waveform_overview_rows.empty() ||
@@ -1381,7 +1381,7 @@ static bool prepare_overview_cache(nk_sdl* sdl, nk_command_buffer* canvas,
     return true;
 }
 auto begin_compose_overview(nk_context* context, nk_command_buffer* canvas,
-                            const WormUiComposeView& view, struct nk_rect bounds,
+                            const wormedit::ui::compose_view_t& view, struct nk_rect bounds,
                             nk_color background, nk_color peak) -> bool {
     if (!context || !canvas || !context->userdata.ptr || !view.waveform_overview_generation) return false;
     auto* sdl = static_cast<nk_sdl*>(context->userdata.ptr);

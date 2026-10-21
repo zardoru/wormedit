@@ -20,6 +20,6 @@ enum class worm_ui_sound_import_dialog_action_t : std::uint8_t {
     -> worm_ui_sound_import_dialog_action_t;
 
 void worm_ui_nuklear_render_keysound_group_review(
-    nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+    nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
     worm_ui_keysound_group_review_t& state, bool& release_pending,
     int window_width, int window_height);

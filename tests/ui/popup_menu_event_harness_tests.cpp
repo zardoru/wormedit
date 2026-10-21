@@ -83,11 +83,11 @@ void require_popup(bool condition, const std::source_location location =
 }
 
 void seed_note_menu(nuklear_event_harness_t& harness, wormedit::ui::compose_hold_view_t& hold,
-                    std::array<WormUiComposeSemanticLayerView, 2>& layers) {
+                    std::array<wormedit::ui::compose_semantic_layer_view_t, 2>& layers) {
     auto& view = harness.view().compose;
     view.hold_bodies = {hold};
-    view.note_menu_layers = layers.data();
-    view.note_menu_layer_count = layers.size();
+    view.note_menu_layers.assign(layers.begin(), layers.end());
+    view.note_menu_layers.resize(layers.size());
     view.note_menu_layer_total_count = layers.size();
     (void)harness.frame();
 }
@@ -98,9 +98,9 @@ TEST_CASE("Popup menu Escape and outside click release input without replay",
     nuklear_event_harness_t harness{1280, 900};
     require_popup(harness.ready());
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     seed_note_menu(harness, hold, layers);
 
     const auto opened = right_click(harness, 300, 300);
@@ -224,11 +224,11 @@ auto press_context_key(nuklear_event_harness_t& harness, SDL_Keycode key, SDL_Sc
     return action;
 }
 void prepare_keyboard_note(nuklear_event_harness_t& harness, wormedit::ui::compose_hold_view_t& hold,
-                           std::array<WormUiComposeSemanticLayerView, 2>& layers) {
+                           std::array<wormedit::ui::compose_semantic_layer_view_t, 2>& layers) {
     hold.selected = true;
     seed_note_menu(harness, hold, layers);
     harness.view().compose.selected_note_count = 1;
-    harness.view().compose.keyboard_context_note_id = hold.note_id.value;
+    harness.view().compose.keyboard_context_note_id.value = hold.note_id.value;
     worm_ui_nuklear_compose_state().input_queue.keyboard_focus = true;
     (void)harness.frame();
 }
@@ -238,9 +238,9 @@ TEST_CASE("Menu and Shift F10 open selected note context without pointer hover",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     harness.view().compose.selected_note_count = 2;
     harness.view().compose.hold_bodies.clear();
@@ -261,9 +261,9 @@ TEST_CASE("Note Layer submenu supports arrows disabled rows Space and closing ke
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     (void)press_context_key(harness, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
@@ -290,9 +290,9 @@ TEST_CASE("Context invocation rejects IME modals lost focus and stale revisions"
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     harness.view().options.visible = true;
     (void)harness.frame();
@@ -321,9 +321,9 @@ TEST_CASE("Opening project modals retires context menus and keeps closing keys c
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);
     check_popup(compose_note_menu_open());
@@ -346,9 +346,9 @@ TEST_CASE("Context menu row focus clears across project tab and focus changes",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .visible = true},
-        {.layer_id = 9, .name = "Locked", .visible = true, .locked = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .visible = true},
+        {.layer_id = {9}, .name = "Locked", .visible = true, .locked = true}}};
     prepare_keyboard_note(harness, hold, layers);
     namespace chrome = wormedit::ui::chrome;
     chrome::context_menu_focus(chrome::KeyboardContextTarget::layers, 7);
@@ -411,9 +411,9 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t hold{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 1, .name = "First layer", .visible = true},
-        {.layer_id = 2, .name = "Second layer", .visible = true}}};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {1}, .name = "First layer", .visible = true},
+        {.layer_id = {2}, .name = "Second layer", .visible = true}}};
     prepare_keyboard_note(harness, hold, layers);
     auto& view = harness.view().compose;
     view.note_menu_layer_total_count = 200;
@@ -422,14 +422,14 @@ TEST_CASE("Keyboard Layer End loads a distant window and skips its locked last r
     const auto request = press_context_key(harness, SDLK_END, SDL_SCANCODE_END);
     check_popup(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
     const auto first = request.get().compose_semantic_layer_first_row;
-    require_popup(first > WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY && first < 200);
-    std::vector<WormUiComposeSemanticLayerView> window(200 - first);
+    require_popup(first > wormedit::ui::note_layer_window_limit && first < 200);
+    std::vector<wormedit::ui::compose_semantic_layer_view_t> window(200 - first);
     for (std::size_t index = 0; index < window.size(); ++index)
-        window[index] = {.layer_id = first + index + 1, .name = "Distant layer", .visible = true};
+        window[index] = {.layer_id = {first + index + 1}, .name = "Distant layer", .visible = true};
     window.back().locked = true;
-    view.note_menu_layers = window.data();
+    view.note_menu_layers.assign(window.begin(), window.end());
     view.note_menu_layer_first_row = first;
-    view.note_menu_layer_count = window.size();
+    view.note_menu_layers.resize(window.size());
     (void)harness.frame();
     const auto assigned = press_context_key(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_popup(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER);

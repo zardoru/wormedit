@@ -172,8 +172,8 @@ struct compose_static_layout_key_t {
     std::uint8_t bga_mask{}, timing_mask{};
     bool timing_focus{}, downscroll{}, lane_legend{};
     auto operator==(const compose_static_layout_key_t&) const -> bool = default;
-    static auto from(const WormUiComposeView& view) -> compose_static_layout_key_t {
-        return {view.project_id, view.chart_id, view.document_revision, view.viewport_width_pixels,
+    static auto from(const wormedit::ui::compose_view_t& view) -> compose_static_layout_key_t {
+        return {view.project_id.value, view.chart_id.value, view.document_revision, view.viewport_width_pixels,
                 view.pixels_per_standard_measure, view.playable_field_left_pixels,
                 view.playable_field_right_pixels, view.bgm_horizontal_scroll_pixels,
                 view.bga_lane_visible, view.bga_revealed_lane_mask, view.timing_lane_visibility_mask,
@@ -185,7 +185,7 @@ struct compose_static_source_key_t {
     std::uint64_t style{};
     compose_static_layout_key_t layout;
     auto operator==(const compose_static_source_key_t&) const -> bool = default;
-    static auto from(const WormUiComposeView& view, std::size_t rebuild_count,
+    static auto from(const wormedit::ui::compose_view_t& view, std::size_t rebuild_count,
                      std::uint64_t style) -> compose_static_source_key_t {
         return {rebuild_count, style, compose_static_layout_key_t::from(view)};
     }
@@ -352,14 +352,9 @@ struct compose_scene_cache_t {
 
     struct quantize_state_t {
         quantize_preview_cache_t quantize_preview;
-        std::vector<WormUiComposeQuantizePresetView> quantize_preset_views;
-        std::vector<WormUiComposeQuantizeReportRowView> quantize_preview_row_views;
-        std::vector<WormUiComposeQuantizeReportRowView> quantize_applied_row_views;
     } quantize;
 
     struct measure_state_t {
-        std::vector<WormUiComposeMeasureRowView> measure_row_views;
-        std::vector<std::uint64_t> measure_row_ids;
     } measures;
 
     struct timing_state_t {
@@ -882,7 +877,7 @@ struct compose_frame_inputs_t {
     const std::span<const wormedit::local_position_t>& comparison_rows;
     const compose_bga_move_preview_input_t* const& bga_move_preview;
 
-    auto view() const -> WormUiComposeView& {
+    auto view() const -> wormedit::ui::compose_view_t& {
         return flattened.view.compose;
     }
     [[nodiscard]] auto for_output(frontend_workspace_view_t& output) const -> compose_frame_inputs_t {

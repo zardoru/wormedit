@@ -607,7 +607,7 @@ $ scripts/smoke-compose-virtual-x.sh /tmp/t697-compose.png compose tests/fixture
 
 ## T-698 Convert the remaining Compose views and `WormUiComposeView`
 
-- **Status:** ready
+- **Status:** done (2026-10-21)
 - **Outcome:** `compose.h` contains no C structs. The remaining views (semantic layers, bookmarks, sections, audio bookmarks/sections, branch rows and choices, recipe form, bookmark chooser, lane key binding, shortcut event, output group, measure row, quantize preset/position/report) and `WormUiComposeView` itself are C++ types, and the T-672 member sits in a C++ parent.
 - **Read first:** the shared list.
 - **Files owned:** the shared list for `src/ui/frontend/compose.h`, plus `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_panel.cpp` and `compose_inspector.cpp`.
@@ -617,9 +617,252 @@ $ scripts/smoke-compose-virtual-x.sh /tmp/t697-compose.png compose tests/fixture
 - **Verify:** the shared list.
 - **Out of scope:** shortcut profile behavior.
 
+### T-698 inventory and ownership (2026-10-21)
+
+Stale-plan check: all 21 remaining C structs are still declared in `compose.h`.
+The existing wiring is projection in `workspace_view.cpp`, `compose_marker_view.cpp`,
+`compose_selection_view.cpp` and `compose_view.cpp`, consumed by the matching Nuklear
+panels and tested by the existing sys and event-harness cases.
+
+Coordinator-approved supporting ownership for the leaf and root conversion:
+
+- `include/wormedit/core/command_registry.h`
+- `include/wormedit/core/document.h`
+- `include/wormedit/core/vocabulary.h`
+- `src/sys/application.cpp`
+- `src/sys/application_command_dispatch.cpp`
+- `src/sys/application_frame_view.cpp`
+- `src/sys/bga_dock_runtime.cpp`
+- `src/sys/bga_dock_runtime.h`
+- `src/sys/bmson_waveform_view.cpp`
+- `src/sys/compose_actions.cpp`
+- `src/sys/compose_bga_actions.cpp`
+- `src/sys/compose_draw_source_view.cpp`
+- `src/sys/compose_draw_source_view.h`
+- `src/sys/compose_marker_view.cpp`
+- `src/sys/compose_scene_view.cpp`
+- `src/sys/compose_selection_view.cpp`
+- `src/sys/compose_view.cpp`
+- `src/sys/compose_view.h`
+- `src/sys/compose_view_internal.h`
+- `src/sys/compose_waveform_overlays.cpp`
+- `src/sys/lane_keys_runtime.cpp`
+- `src/sys/lane_keys_runtime.h`
+- `src/sys/metadata_view.cpp`
+- `src/sys/recipe_form.cpp`
+- `src/sys/recipe_form.h`
+- `src/sys/shortcut_rows.cpp`
+- `src/sys/shortcut_rows.h`
+- `src/sys/timing_view.cpp`
+- `src/sys/waveform_view.cpp`
+- `src/sys/workspace_view.cpp`
+- `src/sys/workspace_view.h`
+- `src/ui/compose_timing_geometry.h`
+- `src/ui/frontend/actions.h`
+- `src/ui/frontend/common.h`
+- `src/ui/frontend/compose.h`
+- `src/ui/frontend/compose_measure_lane.h`
+- `src/ui/frontend/metadata_audio.h`
+- `src/ui/frontend/runtime.h`
+- `src/ui/frontend/workspace.h`
+- `src/ui/nuklear/bms_branch_panel.cpp`
+- `src/ui/nuklear/bms_branch_panel.h`
+- `src/ui/nuklear/catalog_confirmation.h`
+- `src/ui/nuklear/compose_action_stamp.h`
+- `src/ui/nuklear/compose_area_menu.cpp`
+- `src/ui/nuklear/compose_area_menu.h`
+- `src/ui/nuklear/compose_bga_panel.cpp`
+- `src/ui/nuklear/compose_bga_panel.h`
+- `src/ui/nuklear/compose_bmson_tab.cpp`
+- `src/ui/nuklear/compose_bmson_tab.h`
+- `src/ui/nuklear/compose_bookmark_chooser.cpp`
+- `src/ui/nuklear/compose_bookmark_chooser.h`
+- `src/ui/nuklear/compose_bookmark_rename.cpp`
+- `src/ui/nuklear/compose_bookmark_rename.h`
+- `src/ui/nuklear/compose_canvas.cpp`
+- `src/ui/nuklear/compose_canvas.h`
+- `src/ui/nuklear/compose_drag_capture.h`
+- `src/ui/nuklear/compose_input_internal.h`
+- `src/ui/nuklear/compose_input_panel.cpp`
+- `src/ui/nuklear/compose_input_panel.h`
+- `src/ui/nuklear/compose_inspector.cpp`
+- `src/ui/nuklear/compose_inspector.h`
+- `src/ui/nuklear/compose_keyboard_input.cpp`
+- `src/ui/nuklear/compose_keyboard_input.h`
+- `src/ui/nuklear/compose_layers_panel.cpp`
+- `src/ui/nuklear/compose_layers_panel.h`
+- `src/ui/nuklear/compose_markers.cpp`
+- `src/ui/nuklear/compose_markers.h`
+- `src/ui/nuklear/compose_measure_resize_input.cpp`
+- `src/ui/nuklear/compose_measures_panel.cpp`
+- `src/ui/nuklear/compose_measures_panel.h`
+- `src/ui/nuklear/compose_menu_command.h`
+- `src/ui/nuklear/compose_note_label_inline.cpp`
+- `src/ui/nuklear/compose_note_label_inline.h`
+- `src/ui/nuklear/compose_note_menu.cpp`
+- `src/ui/nuklear/compose_note_menu.h`
+- `src/ui/nuklear/compose_object_input.cpp`
+- `src/ui/nuklear/compose_panel.cpp`
+- `src/ui/nuklear/compose_panel.h`
+- `src/ui/nuklear/compose_panel_internal.h`
+- `src/ui/nuklear/compose_recipe_form.cpp`
+- `src/ui/nuklear/compose_recipe_menu.cpp`
+- `src/ui/nuklear/compose_recipe_menu.h`
+- `src/ui/nuklear/compose_resources.cpp`
+- `src/ui/nuklear/compose_resources.h`
+- `src/ui/nuklear/compose_snap_grid.cpp`
+- `src/ui/nuklear/compose_snap_grid.h`
+- `src/ui/nuklear/compose_sound_picker.cpp`
+- `src/ui/nuklear/compose_sound_picker.h`
+- `src/ui/nuklear/compose_sounds_panel.cpp`
+- `src/ui/nuklear/compose_sounds_panel.h`
+- `src/ui/nuklear/compose_state.cpp`
+- `src/ui/nuklear/compose_state.h`
+- `src/ui/nuklear/compose_timing_input.cpp`
+- `src/ui/nuklear/compose_toolbar.cpp`
+- `src/ui/nuklear/compose_toolbar.h`
+- `src/ui/nuklear/compose_viewport_input.cpp`
+- `src/ui/nuklear/frontend.cpp`
+- `src/ui/nuklear/metadata_audio_section.cpp`
+- `src/ui/nuklear/popup_lifecycle.h`
+- `src/ui/nuklear/preview_audio_dialog.cpp`
+- `src/ui/nuklear/preview_audio_dialog.h`
+- `src/ui/nuklear/sdl_backend.cpp`
+- `src/ui/nuklear/sdl_backend.h`
+- `src/ui/nuklear/sound_import_dialog.cpp`
+- `src/ui/nuklear/sound_import_dialog.h`
+- `src/ui/nuklear/sound_slot_batch.cpp`
+- `src/ui/nuklear/sound_slot_batch.h`
+- `tests/sys/bga_dock_runtime_tests.cpp`
+- `tests/sys/compose_action_notification_tests.cpp`
+- `tests/sys/frame_projection_arena_tests.cpp`
+- `tests/sys/frame_timing_tests.cpp`
+- `tests/sys/minimap_center_tests.cpp`
+- `tests/sys/recipe_form_tests.cpp`
+- `tests/sys/shortcut_rows_tests.cpp`
+- `tests/sys/timing_lane_ui_tests.cpp`
+- `tests/ui/audio_sounds_workflow_event_harness_tests.cpp`
+- `tests/ui/bga_lane_event_harness_tests.cpp`
+- `tests/ui/bmson_tab_event_harness_tests.cpp`
+- `tests/ui/bookmark_chooser_event_harness_tests.cpp`
+- `tests/ui/bookmark_rename_event_harness_tests.cpp`
+- `tests/ui/compose_beat_fit_tests.cpp`
+- `tests/ui/compose_bgm_layer_tests.cpp`
+- `tests/ui/compose_bookmark_label_tests.cpp`
+- `tests/ui/compose_hover_timing_event_harness_tests.cpp`
+- `tests/ui/compose_measure_resize_tests.cpp`
+- `tests/ui/compose_stem_lane_render_tests.cpp`
+- `tests/ui/dock_select_all_event_harness_tests.cpp`
+- `tests/ui/dock_shortcut_event_harness_tests.cpp`
+- `tests/ui/gesture_lifecycle_event_harness_tests.cpp`
+- `tests/ui/hidden_notification_history_event_harness_tests.cpp`
+- `tests/ui/hitsound_palette_event_harness_tests.cpp`
+- `tests/ui/inspector_resource_workflow_tests.cpp`
+- `tests/ui/live_resource_table_event_harness_tests.cpp`
+- `tests/ui/manual_sound_group_event_harness_tests.cpp`
+- `tests/ui/markers_event_harness_tests.cpp`
+- `tests/ui/menu_bar_event_harness_tests.cpp`
+- `tests/ui/minimap_center_event_harness_tests.cpp`
+- `tests/ui/note_label_inline_event_harness_tests.cpp`
+- `tests/ui/nuklear_compose_state_tests.cpp`
+- `tests/ui/nuklear_event_harness.cpp`
+- `tests/ui/nuklear_event_harness_tests.cpp`
+- `tests/ui/nuklear_sdl_backend_tests.cpp`
+- `tests/ui/popup_lifecycle_tests.cpp`
+- `tests/ui/popup_menu_event_harness_tests.cpp`
+- `tests/ui/preview_audio_export_event_harness_tests.cpp`
+- `tests/ui/quantize_report_event_harness_tests.cpp`
+- `tests/ui/selected_sound_layers_menu_tests.cpp`
+- `tests/ui/snap_grid_event_harness_tests.cpp`
+- `tests/ui/sound_filter_event_harness_tests.cpp`
+- `tests/ui/sound_picker_event_harness_tests.cpp`
+- `tests/ui/sound_slot_batch_event_harness_tests.cpp`
+- `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`
+
+Additional supporting ownership: `include/wormedit/core/shortcut_vocabulary.h` and
+`include/wormedit/core/command_registry.h` to share the existing HID enum without importing
+registry/document dependencies; `memory/chart-editor-status/resume.md` for the final handoff.
+`src/sys/bookmark_chooser_view.h/.cpp` may retain chooser query results for warmed projection.
+
+Additional coordinator-approved supporting ownership: `src/sys/resource_job_state.h/.cpp`
+and `tests/sys/resource_notification_tests.cpp`. Real-window QA found that an inactive export
+confirmation returned null C strings; the converted Compose text view requires an empty C++
+text value. Fixing the confirmation owner avoids nullable adapters at its consumers and adds
+an inactive-confirmation regression.
+
+Clang verification supporting extension: `tests/core/interaction_tests.cpp` plus the already-owned
+`src/sys/compose_actions.cpp`. The post-snap-change positional `set_edit_snap_action_t` initializers
+omitted its optional `space` member; use named denominator initializers to retain the existing
+"keep current space" default and satisfy the required Clang warning checks.
+
+### T-698 conversion checkpoints (2026-10-21)
+
+- All 21 remaining C structs, including the parent, are C++ contracts. Root reset now
+  belongs to `compose_view_t`; workspace reset retains that owner and calls its reset.
+  Converted lists own vectors; long marker/layer/branch/output/chooser text refills
+  existing strings by index. Former frontend frame-span publishers are gone.
+- Stable IDs now cross the remaining editable rows and root identity fields. The old
+  Measures `measure_id` actually held a navigation index: that fact is now `measure_index`,
+  with a separate real `measure_id` (empty for virtual measures). Existing meter/navigation
+  action semantics continue to use the explicit navigation index.
+- The existing USB HID enum moved from `command_registry.h` to the pure
+  `core/shortcut_vocabulary.h`; shortcut events use it directly. Recipe output/sampling
+  enums moved from `document.h` to vocabulary, and the recipe form reuses the existing
+  core curve enum. Its factory is `timing_recipe_form_t::from`.
+- Supporting extensions include the core vocabulary/document headers for those moves,
+  the metadata producer/consumer for the nested output-group row (owned by this card since
+  T-692), UI capture/stamp helpers, and tests whose inferred root references were absent
+  from the initial named-type grep. All stay within the view conversion; shortcut profile
+  behavior and edit execution are unchanged.
+- Storage-only caps retired: profiles 64/32, lane bindings 128, bookmarks/sections 64,
+  branch rows/choices 96, diagnostics 4, output groups 32, Measures 4096. Branch projection's
+  upstream work limits remain authoritative. Real windows/input bounds remain named C++
+  constants: semantic palette 256, note menu 18, layer shortcuts 9, layer-name input 128 bytes,
+  sound-drop admission 1295. Quantize's core preset limit remains 256 (one vocabulary fact),
+  and its existing report/render work budgets remain. Recipe numeric and chooser search
+  buffers keep their existing explicit input byte bounds.
+- Four ceremony rows are now 0 and remain present for T-699 to retire. Remaining `_count`
+  fields in already-converted metadata/actions are independent scalar facts/window requests,
+  not pointer/count lists; they now have C++ default member initializers.
+- Added warmed allocation regressions for the remaining leaf family projection and for
+  retained workspace projection with an open chooser, branch rows and output paths. The
+  latter also checks revision/query refresh. Both use the application cache wiring and
+  assert zero warmed allocation count and requested-byte deltas. Uncached standalone
+  fallbacks are not covered by that performance claim.
+- Raw BMS statement rows copy the complete owned source string, including embedded NUL
+  bytes; the redundant byte-count field is gone. A regression preserves all eight bytes
+  of a raw statement containing an embedded NUL.
+
+### T-698 verification and handoff (2026-10-21)
+
+- Final `scripts/gate.sh`: build, **4,390/4,390 tests**, whitespace and complexity across
+  **101 affected translation units** pass. No complexity baseline allowance changed.
+  Receipt: `/tmp/t698-gate4.log`; stage logs: `/tmp/wormedit-gate.tqJOvU`.
+  Final tail: `pass build`, `pass ctest`, `pass whitespace`, `pass complexity`,
+  `100% tests passed out of 4390`, `gate: passed`.
+- `cmake --build --preset linux-clang --parallel 8 -- -k 0` passes after a fresh header
+  rebuild; `ctest --preset linux-clang -j 2 --output-on-failure` passes **4,390/4,390**.
+  Logs: `/tmp/t698-clang-build3.log`, `/tmp/t698-clang-ctest.log`.
+- Explicit `ctest --test-dir build -j 2 -L event-harness --output-on-failure` passes
+  **592/592** (`/tmp/t698-events-final.log`). The gate includes the new warmed leaf/workspace
+  allocation, inactive-confirmation and embedded-NUL statement regressions.
+- Isolated Xvfb Compose capture `/tmp/t698-final.png` was inspected and is pixel-identical
+  to `/tmp/t698-before.png` (**0 changed RGB pixels**, 1280×720). Populated Layers,
+  bookmark chooser, Measures, Metadata and recipe-form captures were inspected in
+  `/tmp/t698-layers.png`, `/tmp/t698-bookmark-chooser.png`, `/tmp/t698-measures.png`,
+  `/tmp/t698-metadata.png` and `/tmp/t698-recipe.png`. The disposable imported BMS tree and
+  selected raw statement render correctly in `/tmp/t698-branch2.png` and
+  `/tmp/t698-branch3.png`; its unresolved branch keeps editing disabled, so this is a
+  rendering check, not evidence of a successful branch edit.
+- Code-style review: the root owns reset and retained lists; shared core vocabulary has
+  one owner; editable IDs are distinct from navigation indices; projection queries live
+  on their view; no edit transaction/lifecycle behavior changed. T-699 owns the remaining
+  dead frontend storage/rebind helpers and deletion of the four zero-valued ratchet rows.
+- Final verbose documentation checks pass **5/5**, showing all four frontend rows at **0**.
+
 ## T-699 Retire the C boundary leftovers
 
-- **Status:** blocked-on T-698 and T-691–T-694
+- **Status:** ready
 - **Outcome:** all four frontend ratchet rows are 0 and their rows are deleted. `common.h` keeps only real bounds and SDL forward declarations. `frame_span` storage for frontend views is gone, along with `rebind_view_pointers` and the side storage in `frontend_workspace_view_t`: what remains is the persistent C++ root view that T-690 introduced, holding only view data. The `ui_codec` naming row and T-653 are retired, and code-style.md's "Frontend boundary" says the migration is finished.
 - **Read first:** this file, `src/sys/workspace_view.h`, `src/sys/application_frame_view.*`, code-style.md ("Frontend boundary", naming table).
 - **Files owned:** `src/ui/frontend/common.h`, `src/ui/frontend.h`, `src/sys/workspace_view.h/.cpp`, `src/sys/application_frame_view.h/.cpp`, `cmake/ceremony_ratchet.txt`, `docs/chart-editor-plan/decisions/code-style.md`, `docs/architecture.md`, T-653's status line in `state-ownership.md`, this card.

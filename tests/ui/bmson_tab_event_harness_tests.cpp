@@ -52,9 +52,9 @@ void click_tab(nuklear_event_harness_t& harness, float x, float y) {
     (void)harness.frame();
 }
 
-void seed_bmson_selection(WormUiComposeView& view, bool bmson) {
-    view.project_id = 31;
-    view.chart_id = 7;
+void seed_bmson_selection(wormedit::ui::compose_view_t& view, bool bmson) {
+    view.project_id.value = 31;
+    view.chart_id.value = 7;
     view.scene_available = true;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
@@ -63,8 +63,8 @@ void seed_bmson_selection(WormUiComposeView& view, bool bmson) {
     view.keysounds_available = true;
     view.bmson_tools_available = bmson;
     view.selected_object_count = 1;
-    view.selected_bmson_bgm_event_id = 5;
-    view.selected_bmson_source_lane_id = 3;
+    view.selected_bmson_bgm_event_id.value = 5;
+    view.selected_bmson_source_lane_id.value = 3;
 }
 
 } // namespace
@@ -130,8 +130,8 @@ TEST_CASE("razor mode is dropped when another tool activates, even with the BMSO
     // The same holds when the selected BGM event goes away.
     harness.view().compose.note_paint_mode_active = false;
     state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
-    harness.view().compose.selected_bmson_bgm_event_id = 0;
-    harness.view().compose.selected_bmson_source_lane_id = 0;
+    harness.view().compose.selected_bmson_bgm_event_id.value = 0;
+    harness.view().compose.selected_bmson_source_lane_id.value = 0;
     harness.view().compose.selected_object_count = 0;
     (void)harness.frame();
     check_tab(state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
@@ -145,9 +145,9 @@ TEST_CASE("BMSON tab content scrolls to its lower actions when the dock is short
     static const std::array<std::uint8_t, 1> restarts{0};
     auto& view = harness.view().compose;
     seed_bmson_selection(view, true);
-    view.staged_bmson_marker_count = 1;
-    view.staged_bmson_marker_playable_lanes = lanes.data();
-    view.staged_bmson_marker_restarts = restarts.data();
+    view.staged_bmson_marker_restarts.resize(1);
+    view.staged_bmson_marker_playable_lanes.assign(lanes.begin(), lanes.end());
+    view.staged_bmson_marker_restarts.assign(restarts.begin(), restarts.end());
     (void)harness.frame();
     const auto tab = harness.drawn_text_center("BMSON");
     require_tab(tab.has_value());

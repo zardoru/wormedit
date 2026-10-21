@@ -11,13 +11,13 @@ namespace {
 
 struct BmsonTab {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
-auto can_move_selected_bmson_bgm(const WormUiComposeView& view) -> bool {
-    return view.scene_available && view.selected_bmson_bgm_event_id != 0;
+auto can_move_selected_bmson_bgm(const wormedit::ui::compose_view_t& view) -> bool {
+    return view.scene_available && view.selected_bmson_bgm_event_id.value != 0;
 }
 
 void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
@@ -31,10 +31,10 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         if (move_clicked && can_move) {
-            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
             action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR;
         } else if (delete_clicked && can_move) {
-            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
             action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
         }
     }
@@ -43,16 +43,16 @@ void render_bmson_object_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_begin(context);
     const auto assign_key_clicked = nk_button_label(context, "BGM to active key lane");
     if (!can_move) nk_widget_disable_end(context);
-    const auto can_assign_to_bgm = view.selected_bmson_note_event_id != 0;
+    const auto can_assign_to_bgm = view.selected_bmson_note_event_id.value != 0;
     if (!can_assign_to_bgm) nk_widget_disable_begin(context);
     const auto assign_bgm_clicked = nk_button_label(context, "Selected tap to BGM");
     if (!can_assign_to_bgm) nk_widget_disable_end(context);
     if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         if (assign_key_clicked && can_move) {
-            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
             action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
         } else if (assign_bgm_clicked && can_assign_to_bgm) {
-            action->compose_bmson_bgm_event_id.value = view.selected_bmson_note_event_id;
+            action->compose_bmson_bgm_event_id.value = view.selected_bmson_note_event_id.value;
             action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
         }
     }
@@ -72,14 +72,14 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if ((insert_continue || insert_restart) && can_move &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
         action->compose_action = insert_restart
             ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Staged BMSON markers: %zu",
-              view.staged_bmson_marker_count);
+              view.staged_bmson_marker_restarts.size());
     nk_layout_row_dynamic(context, 24, 2);
     if (!can_move) nk_widget_disable_begin(context);
     const auto stage_continue = nk_button_label(context, "Stage continue");
@@ -87,7 +87,7 @@ void render_bmson_marker_actions(const BmsonTab& panel, bool can_move) {
     if (!can_move) nk_widget_disable_end(context);
     if ((stage_continue || stage_restart) && can_move &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
+        action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
         action->compose_action = stage_restart
             ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
@@ -101,7 +101,7 @@ void render_bmson_razor_mode(const BmsonTab& panel, bool can_move) {
     nk_layout_row_dynamic(context, 12, 1);
     nk_rule_horizontal(context, wormedit::ui::theme::ui(
                                     wormedit::ui::theme::UiColor::border), false);
-    const auto can_razor = can_move && view.selected_bmson_source_lane_id != 0 &&
+    const auto can_razor = can_move && view.selected_bmson_source_lane_id.value != 0 &&
                            !view.note_paint_mode_active &&
                            !view.semantic_layer_paint_mode_active &&
                            !view.timing_stage_active;
@@ -131,7 +131,7 @@ void render_staged_bmson_actions(const BmsonTab& panel) {
     const auto& view = *panel.view;
     auto* context = panel.context;
     auto* action = panel.action;
-    const auto has_staged = view.staged_bmson_marker_count != 0;
+    const auto has_staged = view.staged_bmson_marker_restarts.size() != 0;
     nk_layout_row_dynamic(context, 24, 2);
     if (!has_staged) nk_widget_disable_begin(context);
     const auto commit_clicked = nk_button_label(context, "Commit staged");
@@ -156,8 +156,8 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
     const auto& view = *inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    const bool enabled = view.scene_available && view.selected_bmson_bgm_event_id != 0 &&
-                         view.selected_bmson_source_lane_id != 0;
+    const bool enabled = view.scene_available && view.selected_bmson_bgm_event_id.value != 0 &&
+                         view.selected_bmson_source_lane_id.value != 0;
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "BMSON slice", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 24, 2);
@@ -169,8 +169,8 @@ void render_selected_bmson_slice_controls(const BmsonTab& inspector) {
         (!restart_clicked && !continue_clicked)) return;
     action->compose_action = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
                                             : WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE;
-    action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id;
-    action->compose_input_chart_id.value = view.chart_id;
+    action->compose_bmson_bgm_event_id.value = view.selected_bmson_bgm_event_id.value;
+    action->compose_input_chart_id.value = view.chart_id.value;
     action->compose_input_document_revision = view.document_revision;
 }
 
@@ -178,14 +178,14 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (view->staged_bmson_marker_count == 0 ||
+    if (view->staged_bmson_marker_restarts.size() == 0 ||
         !nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED))
         return;
     inspector.state->sounds_dock.bmson_audition_index = std::clamp(inspector.state->sounds_dock.bmson_audition_index, 1,
-                                            static_cast<int>(view->staged_bmson_marker_count));
+                                            static_cast<int>(view->staged_bmson_marker_restarts.size()));
     nk_layout_row_dynamic(context, 24, 1);
     nk_property_int(context, "Region", 1, &inspector.state->sounds_dock.bmson_audition_index,
-                    static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
+                    static_cast<int>(view->staged_bmson_marker_restarts.size()), 1, 1.0f);
     const auto selected_index = static_cast<std::size_t>(inspector.state->sounds_dock.bmson_audition_index - 1);
     const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
     nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
@@ -220,7 +220,7 @@ void render_staged_bmson_regions(const BmsonTab& inspector) {
 } // namespace
 
 void worm_ui_nuklear_render_compose_bmson_tab(struct nk_context* context,
-                                              const WormUiComposeView* view,
+                                              const wormedit::ui::compose_view_t* view,
                                               wormedit::ui::workspace_action_t* action,
                                               worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;

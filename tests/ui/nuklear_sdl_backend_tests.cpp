@@ -167,7 +167,7 @@ void overview_frame(backend_fixture_t& backend, std::uint64_t generation,
     std::array<wormedit::ui::compose_waveform_overview_row_view_t, 512> rows{};
     for (std::size_t index = 0; index < rows.size(); ++index)
         rows[index] = {(index + .5) / rows.size(), .1f + .8f * std::abs(std::sin(index * .173f))};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.waveform_overview_rows.assign(rows.begin(), rows.end());
 
     view.waveform_overview_generation = generation;

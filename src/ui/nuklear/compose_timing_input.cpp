@@ -224,11 +224,11 @@ static auto recipe_gesture_blocked(const ComposePointerEventContext& input) -> b
     return kiai_gesture_blocked(input) || state.timing_drag.kiai_drag_active;
 }
 
-static auto recipe_area_extent(const WormUiComposeView& view, const wormedit::ui::compose_recipe_area_view_t& area) {
+static auto recipe_area_extent(const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_recipe_area_view_t& area) {
     return compose_timing_lane_inner_extent(view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
 }
 
-static auto point_in_recipe_lane(const WormUiComposeView& view, double x) -> bool {
+static auto point_in_recipe_lane(const wormedit::ui::compose_view_t& view, double x) -> bool {
     for (const auto lane : {wormedit::timing_lane_kind_t::scroll, wormedit::timing_lane_kind_t::speed}) {
         const auto extent = compose_timing_lane_inner_extent(view, lane);
         if (extent && x >= extent->first && x < extent->second) return true;
@@ -242,7 +242,7 @@ struct recipe_press_t {
     std::uint8_t edge{};
 };
 
-static auto recipe_press_at(const WormUiComposeView& view, double x, double y, double tolerance)
+static auto recipe_press_at(const wormedit::ui::compose_view_t& view, double x, double y, double tolerance)
     -> std::optional<recipe_press_t> {
     std::optional<recipe_press_t> body;
     for (std::size_t index = view.recipe_areas.size(); index-- > 0;) {

@@ -120,7 +120,7 @@ void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t re
 void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
                                        uint64_t* event_id, double* y_pixels);
 void worm_ui_frontend_keysound_dock_request(wormedit::ui::keysound_dock_request_t* request);
-void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
+void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_request_t* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 bool worm_ui_frontend_open_project_export(uint64_t project_id, uint64_t chart_id, uint64_t revision);

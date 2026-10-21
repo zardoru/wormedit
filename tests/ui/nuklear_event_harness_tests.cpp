@@ -81,8 +81,8 @@ TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documen
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.keysound_slots.sound_layer_confirmation_open = true;
-    state.keysound_slots.sound_layer_confirmation_project = view.project_id;
-    state.keysound_slots.sound_layer_confirmation_chart = view.chart_id;
+    state.keysound_slots.sound_layer_confirmation_project = view.project_id.value;
+    state.keysound_slots.sound_layer_confirmation_chart = view.chart_id.value;
     state.keysound_slots.sound_layer_confirmation_revision = view.document_revision;
     state.keysound_slots.sound_layer_confirmation_layer = 7;
     state.keysound_slots.sound_layer_confirmation_resources = {1};
@@ -153,12 +153,12 @@ void check_number_key_placement(bool paint_mode, int selection = 0) {
     constexpr std::array<SDL_Scancode, 10> keys{SDL_SCANCODE_1, SDL_SCANCODE_2,
         SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5, SDL_SCANCODE_6,
         SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0};
-    std::array<WormUiComposeLaneKeyBinding, 10> bindings{};
+    std::array<wormedit::ui::compose_lane_key_binding_t, 10> bindings{};
     for (std::size_t index = 0; index < keys.size(); ++index)
-        bindings[index] = {.scancode = static_cast<std::uint32_t>(keys[index]), .lane_id = index + 1};
+        bindings[index] = {.scancode = static_cast<std::uint32_t>(keys[index]), .lane_id = {index + 1}};
     auto& view = harness.view().compose;
-    view.lane_key_bindings = bindings.data();
-    view.lane_key_binding_count = bindings.size();
+    view.lane_key_bindings.assign(bindings.begin(), bindings.end());
+    view.lane_key_bindings.resize(bindings.size());
     view.note_paint_mode_active = paint_mode;
     view.selected_note_count = selection == 1 ? 1 : 0;
     view.selected_bgm_event_count = selection == 2 ? 1 : 0;
@@ -197,8 +197,8 @@ void check_sound_layer_confirmation_choice(bool overwrite) {
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.keysound_slots.sound_layer_confirmation_open = true;
-    state.keysound_slots.sound_layer_confirmation_project = view.project_id;
-    state.keysound_slots.sound_layer_confirmation_chart = view.chart_id;
+    state.keysound_slots.sound_layer_confirmation_project = view.project_id.value;
+    state.keysound_slots.sound_layer_confirmation_chart = view.chart_id.value;
     state.keysound_slots.sound_layer_confirmation_revision = view.document_revision;
     state.keysound_slots.sound_layer_confirmation_layer = 7;
     state.keysound_slots.sound_layer_confirmation_resources = {1, 2};
@@ -226,7 +226,7 @@ auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapsh
 auto delete_shortcut_has_compose_context(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.shortcut_events.size() == 1 &&
            action.shortcut_events[0].hid_usage ==
-               static_cast<std::uint16_t>(SDL_SCANCODE_DELETE) &&
+               static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(SDL_SCANCODE_DELETE)) &&
            !action.shortcut_events[0].repeat && action.shortcut_window_focused &&
            !action.shortcut_text_entry_active && !action.shortcut_ime_composition_active;
 }
@@ -289,7 +289,7 @@ TEST_CASE("Headless frontend captures Ctrl+S as a registered shortcut",
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
     const auto pressed = harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL);
     REQUIRE(pressed.get().shortcut_events.size() == 1);
-    CHECK(pressed.get().shortcut_events[0].hid_usage == SDL_SCANCODE_S);
+    CHECK(pressed.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
     CHECK(pressed.get().shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_CONTROL);
     CHECK_FALSE(pressed.get().shortcut_events[0].repeat);
 }
@@ -348,7 +348,7 @@ TEST_CASE("Headless frontend routes Alt digit to Compose while Select remains ac
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
     REQUIRE(action.get().shortcut_events.size() == 1);
-    CHECK(action.get().shortcut_events[0].hid_usage == SDL_SCANCODE_2);
+    CHECK(action.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_2));
     CHECK_FALSE(action.get().shortcut_text_entry_active);
     CHECK_FALSE(harness.view().compose.note_paint_mode_active);
 }
@@ -360,13 +360,13 @@ TEST_CASE("Headless frontend routes Alt1 after the Hold shortcut", "[frontend-st
     const auto hold = key_event(SDL_EVENT_KEY_DOWN, SDLK_3, SDL_SCANCODE_3);
     const auto painting = harness.frame(std::span{&hold, 1}, SDL_KMOD_LALT);
     REQUIRE(painting.get().shortcut_events.size() == 1);
-    CHECK(painting.get().shortcut_events[0].hid_usage == SDL_SCANCODE_3);
+    CHECK(painting.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_3));
     harness.view().compose.note_paint_mode_active = true;
     (void)harness.frame();
     const auto select = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
     const auto selecting = harness.frame(std::span{&select, 1}, SDL_KMOD_LALT);
     REQUIRE(selecting.get().shortcut_events.size() == 1);
-    CHECK(selecting.get().shortcut_events[0].hid_usage == SDL_SCANCODE_1);
+    CHECK(selecting.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_1));
     CHECK_FALSE(selecting.get().shortcut_text_entry_active);
 }
 
@@ -801,13 +801,13 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     state.dock_layout.inspector_visible = false;
     state.dock_layout.sounds_panel_visible = false;
     state.dock_layout.layers_panel_visible = true;
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
-        {.layer_id = 9, .name = "Hidden", .blue = 255, .assigned_note_count = 2, .visible = false},
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
+        {.layer_id = {9}, .name = "Hidden", .blue = 255, .assigned_note_count = 2, .visible = false},
     }};
     auto& view = harness.view().compose;
-    view.semantic_layers = layers.data();
-    view.semantic_layer_count = layers.size();
+    view.semantic_layers.assign(layers.begin(), layers.end());
+    view.semantic_layers.resize(layers.size());
     view.semantic_layer_total_count = layers.size();
     (void)harness.frame();
     CHECK(harness.drawn_text().find("3 objects") != std::string::npos);
@@ -884,9 +884,9 @@ void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>&
 
 struct layer_menu_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
-        {.layer_id = 9, .name = "Locked", .blue = 255, .assigned_note_count = 2,
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
+        {.layer_id = {9}, .name = "Locked", .blue = 255, .assigned_note_count = 2,
          .visible = true, .locked = true},
     }};
 
@@ -898,8 +898,8 @@ struct layer_menu_fixture_t {
         state.dock_layout.layers_panel_visible = true;
         state.input_queue.color_view = worm_ui_nuklear_compose_color_view_t::normal;
         auto& view = harness.view().compose;
-        view.semantic_layers = layers.data();
-        view.semantic_layer_count = layers.size();
+        view.semantic_layers.assign(layers.begin(), layers.end());
+        view.semantic_layers.resize(layers.size());
         view.semantic_layer_total_count = layers.size();
         view.selected_note_count = 3;
         (void)harness.frame();
@@ -911,7 +911,7 @@ struct layer_menu_fixture_t {
         REQUIRE(row.has_value());
         const auto clicks = right_click_at(harness, row->first, row->second);
         check_layer_row_action(clicks.front(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
-                               layers[index].layer_id);
+                               layers[index].layer_id.value);
         layers[index].selected = true;
         harness.view().compose.semantic_layer_target = layers[index];
         (void)harness.frame();
@@ -1068,9 +1068,9 @@ TEST_CASE("Layer row Rename editor keeps its captured ID after target and window
     check_layer_menu(state.layer_editor.semantic_layer_name_editor_visible);
     std::snprintf(state.layer_editor.semantic_layer_name.data(), state.layer_editor.semantic_layer_name.size(), "Renamed");
     fixture.harness.view().compose.semantic_layer_target = fixture.layers.back();
-    fixture.harness.view().compose.semantic_layers = &fixture.layers.back();
+    fixture.harness.view().compose.semantic_layers = {fixture.layers.back()};
     fixture.harness.view().compose.semantic_layer_first_row = 1;
-    fixture.harness.view().compose.semantic_layer_count = 1;
+    fixture.harness.view().compose.semantic_layers.resize(1);
     const auto applied = click_at(fixture.harness, 1100, 253);
     check_layer_row_action(applied.front(), WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER, 7);
     check_layer_menu(std::string{applied.front().get().compose_semantic_layer_name} == "Renamed");
@@ -1081,9 +1081,9 @@ namespace {
 struct note_menu_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
     wormedit::ui::compose_hold_view_t note{.bounds = {200, 0, 500, 900}, .note_id = {42}, .lane_id = {1}};
-    std::array<WormUiComposeSemanticLayerView, 2> layers{{
-        {.layer_id = 7, .name = "Lead", .red = 255, .visible = true},
-        {.layer_id = 9, .name = "Locked", .blue = 255, .visible = false, .locked = true},
+    std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
+        {.layer_id = {7}, .name = "Lead", .red = 255, .visible = true},
+        {.layer_id = {9}, .name = "Locked", .blue = 255, .visible = false, .locked = true},
     }};
     note_menu_fixture_t() {
         initialize();
@@ -1094,8 +1094,8 @@ struct note_menu_fixture_t {
         state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
         auto& view = harness.view().compose;
         view.hold_bodies = {note};
-        view.note_menu_layers = layers.data();
-        view.note_menu_layer_count = layers.size();
+        view.note_menu_layers.assign(layers.begin(), layers.end());
+        view.note_menu_layers.resize(layers.size());
         view.note_menu_layer_total_count = layers.size();
         view.selected_note_count = 2;
         (void)harness.frame();
@@ -1241,12 +1241,12 @@ TEST_CASE("Area band menu stays drawn and dismissal returns Compose input",
 TEST_CASE("Note submenu requests a bounded scrolling window independent of hidden Layers dock",
           "[unit][frontend-state][frontend][event-harness]") {
     note_menu_fixture_t fixture;
-    std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY> rows{};
+    std::array<wormedit::ui::compose_semantic_layer_view_t, wormedit::ui::note_layer_window_limit> rows{};
     for (std::size_t index = 0; index < rows.size(); ++index)
-        rows[index] = {.layer_id = index + 1, .name = "Layer", .visible = true};
+        rows[index] = {.layer_id = {index + 1}, .name = "Layer", .visible = true};
     auto& view = fixture.harness.view().compose;
-    view.note_menu_layers = rows.data();
-    view.note_menu_layer_count = rows.size();
+    view.note_menu_layers.assign(rows.begin(), rows.end());
+    view.note_menu_layers.resize(rows.size());
     view.note_menu_layer_total_count = 30;
     view.semantic_layer_first_row = 12;
     view.semantic_layer_total_count = 30;
@@ -1262,7 +1262,7 @@ TEST_CASE("Note submenu requests a bounded scrolling window independent of hidde
     const auto request = fixture.harness.frame();
     check_layer_menu(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
     check_layer_menu(request.get().compose_semantic_layer_first_row > 0);
-    check_layer_menu(request.get().compose_semantic_layer_row_count <= WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
+    check_layer_menu(request.get().compose_semantic_layer_row_count <= wormedit::ui::note_layer_window_limit);
     check_layer_menu(view.semantic_layer_first_row == 12);
 }
 
@@ -1315,12 +1315,12 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
           "[unit][frontend-state][frontend][event-harness]") {
     note_menu_fixture_t fixture;
     fixture.open();
-    ++fixture.harness.view().compose.chart_id;
+    ++fixture.harness.view().compose.chart_id.value;
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
     fixture.open();
-    ++fixture.harness.view().compose.project_id;
+    ++fixture.harness.view().compose.project_id.value;
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
@@ -1497,16 +1497,16 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     const std::array<std::uint64_t, 3> ids{11, 12, 13};
-    const std::array<WormUiComposeMeasureRowView, 3> rows{{
-        {.measure_id = 11, .number = 1, .length_numerator = 1, .length_denominator = 1,
+    const std::array<wormedit::ui::compose_measure_row_view_t, 3> rows{{
+        {.measure_index = 11, .number = 1, .length_numerator = 1, .length_denominator = 1,
          .has_meter = true, .meter_numerator = 4, .meter_denominator = 4},
-        {.measure_id = 12, .number = 2, .length_numerator = 3, .length_denominator = 4,
+        {.measure_index = 12, .number = 2, .length_numerator = 3, .length_denominator = 4,
          .has_meter = true, .meter_numerator = 3, .meter_denominator = 4},
-        {.measure_id = 13, .number = 3, .length_numerator = 1, .length_denominator = 1,
+        {.measure_index = 13, .number = 3, .length_numerator = 1, .length_denominator = 1,
          .has_meter = true, .meter_numerator = 4, .meter_denominator = 4}}};
-    view.measure_rows = rows.data();
-    view.measure_row_ids = ids.data();
-    view.measure_row_count = rows.size();
+    view.measure_rows.assign(rows.begin(), rows.end());
+    view.measure_row_ids.assign(ids.begin(), ids.end());
+    view.measure_rows.resize(rows.size());
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.measures_panel_visible = true;
     state.measures_dock.measure_selection = {};
@@ -1577,8 +1577,8 @@ TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[front
     state.keysound_catalog.keysound_selection.selected = {50};
     state.keysound_catalog.keysound_selection.primary = 50;
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources = {50};
     (void)harness.frame();
@@ -1610,8 +1610,8 @@ TEST_CASE("Sounds dock cancels stale or dismissed BMS renumber confirmations", "
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources = {50};
     ++view.document_revision;
@@ -1621,26 +1621,26 @@ TEST_CASE("Sounds dock cancels stale or dismissed BMS renumber confirmations", "
     check_sound_renumber(!has_sound_renumber_action(frames), "stale revision sends no action");
 
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources = {50};
-    ++view.chart_id;
+    ++view.chart_id.value;
     (void)harness.frame();
     check_sound_renumber(!state.keysound_slots.keysound_renumber_confirmation_open, "stale chart closes popup");
 
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources = {50};
-    ++view.project_id;
+    ++view.project_id.value;
     (void)harness.frame();
     check_sound_renumber(!state.keysound_slots.keysound_renumber_confirmation_open, "stale project closes popup");
 
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources = {50};
     (void)harness.frame();
@@ -1664,8 +1664,8 @@ TEST_CASE("Sounds dock renumber release does not audition the covered row",
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.keysound_slots.keysound_renumber_confirmation_open = true;
-    state.keysound_slots.keysound_renumber_project = view.project_id;
-    state.keysound_slots.keysound_renumber_chart = view.chart_id;
+    state.keysound_slots.keysound_renumber_project = view.project_id.value;
+    state.keysound_slots.keysound_renumber_chart = view.chart_id.value;
     state.keysound_slots.keysound_renumber_revision = view.document_revision;
     state.keysound_slots.keysound_renumber_resources.clear();
     (void)harness.frame();
@@ -1700,8 +1700,8 @@ TEST_CASE("BGA renumber release does not select the covered image",
     state.dock_layout.bga_panel_visible = true;
     (void)harness.frame();
     state.bga_catalog.bga_renumber_confirmation_open = true;
-    state.bga_catalog.bga_renumber_project = view.project_id;
-    state.bga_catalog.bga_renumber_chart = view.chart_id;
+    state.bga_catalog.bga_renumber_project = view.project_id.value;
+    state.bga_catalog.bga_renumber_chart = view.chart_id.value;
     state.bga_catalog.bga_renumber_revision = view.document_revision;
     state.bga_catalog.bga_renumber_resources.clear();
     (void)harness.frame();
@@ -1767,8 +1767,8 @@ TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
     state.dock_layout.bga_panel_visible = true;
     (void)harness.frame();
     state.bga_catalog.bga_renumber_confirmation_open = true;
-    state.bga_catalog.bga_renumber_project = view.project_id;
-    state.bga_catalog.bga_renumber_chart = view.chart_id;
+    state.bga_catalog.bga_renumber_project = view.project_id.value;
+    state.bga_catalog.bga_renumber_chart = view.chart_id.value;
     state.bga_catalog.bga_renumber_revision = view.document_revision;
     state.bga_catalog.bga_renumber_resources.clear();
     (void)harness.frame();
@@ -1807,7 +1807,7 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     view.note_paint_mode_active = true;
     state.resource_picker.armed_resource_id = 40;
     state.pointer_capture.draw_source_kind = 1;
-    state.pointer_capture.draw_source_id = 40;
+    state.pointer_capture.draw_source_id = {40};
     state.keysound_catalog.armed_from_sounds_dock = true;
     state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     (void)harness.frame();
@@ -1830,14 +1830,14 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
 
     // Hold armed: the press is a click for the click-click hold gesture, never a paint stroke,
     // and the click carries the armed sound.
-    view.armed_note_kind = 1;
+    view.armed_note_kind = static_cast<wormedit::note_kind_t>(1);
     (void)harness.frame();
     frames = click_at(harness, 300, 400);
     CHECK(find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
     const auto* hold_click = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_POINTER_CLICK);
     REQUIRE(hold_click != nullptr);
     CHECK(hold_click->resource_id.value == 40);
-    view.armed_note_kind = 0;
+    view.armed_note_kind = static_cast<wormedit::note_kind_t>(0);
     (void)harness.frame();
 
     // Legacy arming does not change the explicit Draw source.
@@ -1866,7 +1866,7 @@ TEST_CASE("Compare fields route wheel input as one shared read-only scroll actio
     workspace.compose.visible = false;
     workspace.audio_slices.visible = false;
     auto& compare = workspace.compare;
-    WormUiComposeView first{}, second{};
+    wormedit::ui::compose_view_t first{}, second{};
     first.viewport_width_pixels = second.viewport_width_pixels = 640;
     first.viewport_height_pixels = second.viewport_height_pixels = 600;
     first.status_text = "First field";
@@ -2003,7 +2003,7 @@ void stage_sound_slot(nuklear_event_harness_t& harness, std::uint16_t slot = 2) 
     state.keysound_catalog.keysound_selected_slot = slot;
     (void)harness.frame();
     require_sound_slots(worm_ui_frontend_stage_sound_slot_file(
-        view.project_id, view.chart_id, view.document_revision, "/tmp/slot-picked.wav", 1));
+        view.project_id.value, view.chart_id.value, view.document_revision, "/tmp/slot-picked.wav", 1));
 }
 auto find_sound_slot_action(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::workspace_action_t* {
@@ -2054,7 +2054,7 @@ TEST_CASE("Empty slot file assignment sends its exact ID once without automatic 
     check_sound_slots(std::string_view{snapshot.get().compose_import_paths[0]} == "/tmp/slot-picked.wav");
     const auto& view = harness.view().compose;
     check_sound_slots(worm_ui_frontend_stage_sound_slot_file(
-        view.project_id, view.chart_id, view.document_revision, "/tmp/one.wav", 2));
+        view.project_id.value, view.chart_id.value, view.document_revision, "/tmp/one.wav", 2));
     check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_feedback.empty());
 }
@@ -2153,7 +2153,7 @@ TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain aut
     check_sound_slots(harness.drawn_text().find("BMS slots") == std::string::npos);
     const auto& view = harness.view().compose;
     check_sound_slots(!worm_ui_frontend_stage_sound_slot_file(
-        view.project_id, view.chart_id, view.document_revision, "/tmp/auto.wav", 1));
+        view.project_id.value, view.chart_id.value, view.document_revision, "/tmp/auto.wav", 1));
 }
 
 namespace {
@@ -2396,12 +2396,12 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     const std::array<wormedit::ui::compose_keysound_row_view_t, 2> rows{{
         {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "kick.wav"},
         {.resource_id = wormedit::resource_id_t{1500}, .slot = "02", .name = "kick2.wav"}}};
-    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
+    const wormedit::ui::compose_lane_key_binding_t binding{.scancode = SDL_SCANCODE_1, .lane_id = {1}};
     view.keysounds.assign(std::begin(rows), std::end(rows));
     view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = true;
-    view.lane_key_bindings = &binding;
-    view.lane_key_binding_count = 1;
+    view.lane_key_bindings = {binding};
+    view.lane_key_bindings.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.sounds_panel_visible = true;
@@ -2448,12 +2448,12 @@ TEST_CASE("Selecting a converted BMSON stem arms lane-key entry without a double
     const auto modifiers = GENERATE(SDL_KMOD_NONE, SDL_KMOD_CTRL, SDL_KMOD_SHIFT);
     const wormedit::ui::compose_keysound_row_view_t row{.resource_id = wormedit::resource_id_t{1400}, .slot = "",
         .name = "converted.wav", .missing = missing, .stem_source_lane_id = wormedit::object_id_t{71}};
-    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_2, .lane_id = 2};
+    const wormedit::ui::compose_lane_key_binding_t binding{.scancode = SDL_SCANCODE_2, .lane_id = {2}};
     view.keysounds = {row};
     view.keysounds.resize(view.keysound_total_count = 1);
     view.keysounds_available = true;
-    view.lane_key_bindings = &binding;
-    view.lane_key_binding_count = 1;
+    view.lane_key_bindings = {binding};
+    view.lane_key_bindings.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.sounds_panel_visible = true;
@@ -2599,7 +2599,7 @@ struct t422_fixture_t {
         harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
         harness.view().project_loaded = true;
         harness.view().project_id.value = history.document.id.value;
-        harness.view().selected_chart_id.value = chart_id_t{1}.value;
+        harness.view().selected_chart_id = chart_id_t{1};
         harness.view().document_revision = history.document.revision;
         harness.view().compose = flattened.view.compose;
         harness.view().compose.visible = true;
@@ -2625,7 +2625,7 @@ auto t422_lane_press(t422_fixture_t& fixture, SDL_Keymod modifiers) -> std::stri
     CAPTURE(down.get().compose_inputs.size(), fixture.harness.view().compose.visible,
             fixture.harness.view().compose.scene_available,
             fixture.harness.view().compose.input_occluded,
-            fixture.harness.view().compose.lane_key_binding_count,
+            fixture.harness.view().compose.lane_key_bindings.size(),
             fixture.harness.view().compose.selected_note_count,
             fixture.harness.view().active_tab, down.get().shortcut_window_focused,
             down.get().shortcut_text_entry_active, down.get().shortcut_ime_composition_active);
@@ -2704,9 +2704,9 @@ void t422_check_native_binding(const t422_fixture_t& fixture) {
     expect_t422(chart.input_profile.profile_id == profile->input.profile_id);
     const auto& view = fixture.flattened.view.compose;
     const auto projected =
-        std::ranges::find_if(std::span{view.lane_key_bindings, view.lane_key_binding_count},
-                             [](const auto& binding) { return binding.lane_id == 2; });
-    expect_t422(projected != std::span{view.lane_key_bindings, view.lane_key_binding_count}.end());
+        std::ranges::find_if(std::span{view.lane_key_bindings},
+                             [](const auto& binding) { return binding.lane_id == wormedit::lane_id_t{2}; });
+    expect_t422(projected != std::span{view.lane_key_bindings}.end());
     expect_t422(projected->scancode == SDL_SCANCODE_2);
 }
 
@@ -3051,23 +3051,23 @@ TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statement
     nuklear_event_harness_t harness{1600, 1000};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeBranchRowView, 5> rows{{
-        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = 1},
-        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = 9,
-         .raw_statement = true, .statement_id = 9},
+    const std::array<wormedit::ui::compose_branch_row_view_t, 5> rows{{
+        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = {1}},
+        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = {9},
+         .raw_statement = true, .statement_id = {9}},
         {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
-         .source_order = 4, .node_id = 2, .choice_block = true},
+         .source_order = 4, .node_id = {2}, .choice_block = true},
         {.display_text = "#IF 1", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 5, .node_id = 3},
-        {.display_text = "#UNKNOWN x", .depth = 3, .active = true, .node_id = 10,
-         .raw_statement = true, .statement_id = 10}}};
-    const std::array<WormUiComposeBranchChoiceView, 1> choices{{
-        {.branch_id = 2, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
+         .source_order = 5, .node_id = {3}},
+        {.display_text = "#UNKNOWN x", .depth = 3, .active = true, .node_id = {10},
+         .raw_statement = true, .statement_id = {10}}}};
+    const std::array<wormedit::ui::compose_branch_choice_view_t, 1> choices{{
+        {.branch_id = {2}, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
          .source_order = 4, .active = true, .editable = true,
          .has_next_value = true, .next_value = 1}}};
     view.branch_outline_available = true;
-    view.branch_rows = rows.data(); view.branch_row_count = rows.size();
-    view.branch_choices = choices.data(); view.branch_choice_count = choices.size();
+    view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
+    view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
     worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     (void)harness.frame();
     (void)harness.frame();
@@ -3117,28 +3117,28 @@ TEST_CASE("BMS branch outline buttons emit create, remove and leaf move actions"
     nuklear_event_harness_t harness{1600, 1000};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    view.chart_id = 7;
+    view.chart_id.value = 7;
     view.document_revision = 21;
-    const std::array<WormUiComposeBranchRowView, 7> rows{{
-        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = 1},
-        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = 9,
-         .raw_statement = true, .statement_id = 9},
+    const std::array<wormedit::ui::compose_branch_row_view_t, 7> rows{{
+        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = {1}},
+        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = {9},
+         .raw_statement = true, .statement_id = {9}},
         {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
-         .source_order = 4, .node_id = 2, .choice_block = true},
+         .source_order = 4, .node_id = {2}, .choice_block = true},
         {.display_text = "#IF group", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 5, .node_id = 3},
+         .source_order = 5, .node_id = {3}},
         {.display_text = "#IF 1", .depth = 3, .active = true, .has_source_order = true,
-         .source_order = 6, .node_id = 4},
+         .source_order = 6, .node_id = {4}},
         {.display_text = "#ELSEIF 2", .depth = 3, .active = false, .has_source_order = true,
-         .source_order = 7, .node_id = 5},
+         .source_order = 7, .node_id = {5}},
         {.display_text = "#ENDIF end", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 8, .node_id = 6}}};
-    const std::array<WormUiComposeBranchChoiceView, 1> choices{{
-        {.branch_id = 2, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
+         .source_order = 8, .node_id = {6}}}};
+    const std::array<wormedit::ui::compose_branch_choice_view_t, 1> choices{{
+        {.branch_id = {2}, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
          .source_order = 4, .active = true, .editable = true, .has_next_value = true, .next_value = 1}}};
     view.branch_outline_available = true;
-    view.branch_rows = rows.data(); view.branch_row_count = rows.size();
-    view.branch_choices = choices.data(); view.branch_choice_count = choices.size();
+    view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
+    view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
     worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
     (void)harness.frame();
     (void)harness.frame();
@@ -3256,7 +3256,7 @@ TEST_CASE("Key presses during a shortcut capture reach the frame's shortcut even
     const std::array<SDL_Event, 1> events{press};
     const auto snapshot = harness.frame(events);
     REQUIRE(snapshot.get().shortcut_events.size() == 1);
-    CHECK(snapshot.get().shortcut_events[0].hid_usage == 0x0e);
+    CHECK(snapshot.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(0x0e));
 }
 
 namespace {
@@ -3438,7 +3438,7 @@ TEST_CASE("Selecting the silent source emits a source payload and keeps Draw act
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.pointer_capture.draw_source_kind = 1;
-    state.pointer_capture.draw_source_id = 40;
+    state.pointer_capture.draw_source_id = {40};
     wormedit::ui::workspace_action_t picked{};
     worm_ui_nuklear_pick_draw_source(state, picked, 0, 0);
     expect_draw(picked.compose_inputs.size() == 1);
@@ -3603,7 +3603,7 @@ auto route_harness_shortcut(const wormedit::ui::workspace_action_t& action,
 
 auto harness_tool_chord(const wormedit::ui::workspace_action_t& action, SDL_Scancode scancode) -> bool {
     return action.shortcut_events.size() == 1 &&
-           action.shortcut_events[0].hid_usage == static_cast<std::uint16_t>(scancode) &&
+           action.shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(scancode)) &&
            action.shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_ALT &&
            !action.shortcut_events[0].repeat && action.shortcut_window_focused &&
            !action.shortcut_text_entry_active && !action.shortcut_ime_composition_active;
@@ -3678,8 +3678,8 @@ auto click_quantize_label(nuklear_event_harness_t& harness, std::string_view lab
 
 void seed_quantize_controls(nuklear_event_harness_t& harness) {
     auto& view = harness.view().compose;
-    view.project_id = 419;
-    view.chart_id = 419;
+    view.project_id.value = 419;
+    view.chart_id.value = 419;
     view.document_revision = 7;
     view.selected_note_count = 3;
     view.quantize_divisions = 4;
@@ -3754,11 +3754,11 @@ void open_quantize_preset_menu(nuklear_event_harness_t& harness) {
 
 void seed_quantize_presets(nuklear_event_harness_t& harness) {
     seed_quantize_controls(harness);
-    static const std::array<WormUiComposeQuantizePresetView, 2> presets{
+    static const std::array<wormedit::ui::compose_quantize_preset_view_t, 2> presets{
         {{.name = "Default", .divisions = 16}, {.name = "Trills", .divisions = 24}}};
     auto& view = harness.view().compose;
-    view.quantize_presets = presets.data();
-    view.quantize_preset_count = presets.size();
+    view.quantize_presets.assign(presets.begin(), presets.end());
+    view.quantize_presets.resize(presets.size());
 }
 
 void check_quantize_preset_action(const wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind,
@@ -3800,7 +3800,7 @@ void check_quantize_ghost_initial_state(nuklear_event_harness_t& harness) {
 }
 
 void check_quantize_ghost_visibility(nuklear_event_harness_t& harness,
-                                    WormUiComposeView& view) {
+                                    wormedit::ui::compose_view_t& view) {
     auto& inspector_state = worm_ui_nuklear_compose_state();
     inspector_state.dock_layout.inspector_visible = false;
     (void)harness.frame();
@@ -3878,7 +3878,7 @@ void check_quantize_ghost_bounds_and_collision(nuklear_event_harness_t& harness,
 }
 
 void check_quantize_ghost_overlay(nuklear_event_harness_t& harness,
-                                  WormUiComposeView& view,
+                                  wormedit::ui::compose_view_t& view,
                                   wormedit::ui::compose_quantize_ghost_view_t& ghost) {
     check_quantize_ghost_initial_state(harness);
     check_quantize_ghost_visibility(harness, view);
@@ -3914,11 +3914,11 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     const auto space = click_quantize_label(harness, "Authored");
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(space.get(), 16, 1, 0);
-    view.quantize_space = 1;
+    view.quantize_space = static_cast<wormedit::quantization_space_t>(1);
     const auto later = click_quantize_label(harness, "Later");
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(later.get(), 16, 1, 1);
-    view.quantize_tie = 1;
+    view.quantize_tie = static_cast<wormedit::quantization_tie_t>(1);
     const auto applied = click_quantize_label(harness, "Quantize");
     CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
     CHECK(applied.get().compose_quantize_divisions == 16);
@@ -4054,20 +4054,20 @@ TEST_CASE("Quantize popups reject stale revision chart and preset identity",
     seed_quantize_presets(harness);
     open_quantize_preset_menu(harness);
     auto& view = harness.view().compose;
-    std::array<WormUiComposeQuantizePresetView, 2> changed{view.quantize_presets[0],
+    std::array<wormedit::ui::compose_quantize_preset_view_t, 2> changed{view.quantize_presets[0],
                                                            view.quantize_presets[1]};
     SECTION("revision") {
         ++view.document_revision;
     }
     SECTION("chart") {
-        ++view.chart_id;
+        ++view.chart_id.value;
     }
     SECTION("preset identity without revision") {
-        view.quantize_preset_count = 0;
+        view.quantize_presets.resize(1);
     }
     SECTION("preset settings without revision") {
         ++changed[0].divisions;
-        view.quantize_presets = changed.data();
+        view.quantize_presets.assign(changed.begin(), changed.end());
     }
     CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK(harness.drawn_text_center("Rename") == std::nullopt);
@@ -4296,7 +4296,7 @@ struct bgm_draw_fixture_t {
         view.bgm_lanes.assign(lanes.begin(), lanes.end());
 
         view.draw_source_kind = state.pointer_capture.draw_source_kind = 1;
-        view.draw_source_id = state.pointer_capture.draw_source_id = 40;
+        view.draw_source_id.value = state.pointer_capture.draw_source_id = {40};
         state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         (void)harness.frame();
     }
@@ -4371,9 +4371,9 @@ TEST_CASE("Draw without a sound source does nothing on a BGM lane",
     bgm_draw_fixture_t f;
     auto& state = worm_ui_nuklear_compose_state();
     state.pointer_capture.draw_source_kind = 0;
-    state.pointer_capture.draw_source_id = 0;
+    state.pointer_capture.draw_source_id = {0};
     f.harness.view().compose.draw_source_kind = 0;
-    f.harness.view().compose.draw_source_id = 0;
+    f.harness.view().compose.draw_source_id.value = 0;
     (void)f.harness.frame();
     const auto frames = bgm_draw_drag(f, 20, 60);
     for (const auto kind : {WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
@@ -4421,11 +4421,11 @@ TEST_CASE("Draw on a BMSON packed column with no usable sound does nothing",
           "[frontend-state][event-harness][draw][bgm-draw][bmson-stem]") {
     bgm_draw_fixture_t f{true, true};
     f.harness.view().compose.draw_source_is_stem = true;
-    f.harness.view().compose.draw_source_stem_lane_id = 71;
+    f.harness.view().compose.draw_source_stem_lane_id.value = 71;
     (void)f.harness.frame();
     const auto stem_source = bgm_draw_drag(f, 60, 60);
     f.harness.view().compose.draw_source_is_stem = false;
-    f.harness.view().compose.draw_source_stem_lane_id = 0;
+    f.harness.view().compose.draw_source_stem_lane_id.value = 0;
     worm_ui_nuklear_compose_state().pointer_capture.draw_source_kind = 0;
     f.harness.view().compose.draw_source_kind = 0;
     (void)f.harness.frame();
@@ -4450,14 +4450,14 @@ struct stem_edge_fixture_t {
         state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
         state.dock_layout.bga_panel_visible = false;
         state.pointer_capture.draw_source_kind = 0;
-        state.pointer_capture.draw_source_id = 0;
+        state.pointer_capture.draw_source_id = {0};
         harness.view().project_id.value = 123;
         auto& view = harness.view().compose;
         view.visible = true;
         view.scene_available = true;
         view.bmson_tools_available = true;
-        view.project_id = 123;
-        view.chart_id = 7;
+        view.project_id.value = 123;
+        view.chart_id.value = 7;
         view.document_revision = 11;
         (void)harness.frame();
         const auto viewport = compose_canvas_viewport_for_testing();
@@ -4572,9 +4572,7 @@ TEST_CASE("Quantize chips outside the chart's snap list explain they are quantiz
     nuklear_event_harness_t harness;
     seed_quantize_controls(harness);
     auto& view = harness.view().compose;
-    view.supported_snap_denominators[0] = 4;
-    view.supported_snap_denominators[1] = 8;
-    view.supported_snap_denominator_count = 2;
+    view.supported_snap_denominators = {4, 8};
     (void)harness.frame();
     const auto center = harness.drawn_text_center("1/16");
     REQUIRE(center.has_value());
@@ -4620,7 +4618,7 @@ TEST_CASE("Note menu exposes the BGM action with its projected shortcut and disa
     note_menu_fixture_t fixture;
     auto& view = fixture.harness.view().compose;
     view.move_to_bgm_available = true;
-    std::snprintf(view.move_to_bgm_shortcut, sizeof(view.move_to_bgm_shortcut), "`");
+    view.move_to_bgm_shortcut = "`";
     (void)right_click_at(fixture.harness, 300, 300);
     const auto center = fixture.harness.drawn_text_center("Move to BGM  `");
     REQUIRE(center);
@@ -4714,7 +4712,7 @@ TEST_CASE("Same sound hover travels with the remappable add shortcut", "[fronten
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().compose_sound_hover_object_id.value == 101);
     expect_lane_key(frame.get().shortcut_events.size() == 1);
-    expect_lane_key(frame.get().shortcut_events[0].hid_usage == static_cast<std::uint16_t>(wormedit::shortcut_key_t::a));
+    expect_lane_key(frame.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(wormedit::shortcut_key_t::a)));
 }
 
 TEST_CASE("Note menu sends same sound scope and stable source ID", "[frontend-state][event-harness][select-same-sound]") {
@@ -4922,7 +4920,7 @@ TEST_CASE("Area menu loops a committed selection and rejects virtual or unavaila
         const auto& action = snapshot.get();
         if (std::string_view{action.menu_command_id} != "transport.loop_selection") continue;
         emitted = true;
-        check_layer_menu(action.compose_input_chart_id.value == view.chart_id);
+        check_layer_menu(action.compose_input_chart_id.value == view.chart_id.value);
         check_layer_menu(action.compose_input_document_revision == view.document_revision);
         check_layer_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     }
@@ -6089,8 +6087,8 @@ TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", 
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    view.project_id = 991;
-    view.chart_id = 77;
+    view.project_id.value = 991;
+    view.chart_id.value = 77;
     view.document_revision = 23;
     view.scene_available = false;
     view.lanes.clear();
@@ -6178,8 +6176,8 @@ TEST_CASE("Area conversion menu offers both pause sides and explicit measure pol
     const auto clicked = click_at(fixture.harness, target->first, target->second);
     const auto emitted = std::ranges::find_if(clicked, [kind](const auto& snapshot) { return snapshot.get().compose_action == kind; });
     REQUIRE(emitted != clicked.end());
-    check_layer_menu(emitted->get().compose_input_project_id.value == view.project_id);
-    check_layer_menu(emitted->get().compose_input_chart_id.value == view.chart_id);
+    check_layer_menu(emitted->get().compose_input_project_id.value == view.project_id.value);
+    check_layer_menu(emitted->get().compose_input_chart_id.value == view.chart_id.value);
     check_layer_menu(emitted->get().compose_input_document_revision == view.document_revision);
 }
 
@@ -6333,10 +6331,10 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     view.compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     view.audio_slices.visible = tab == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
     view.compare.visible = tab == WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
-    const WormUiComposeOutputGroupView group{.document_index = 7, .name = "Project export",
+    const wormedit::ui::compose_output_group_view_t group{.document_index = 7, .name = "Project export",
         .relative_output_path = "exports", .relative_asset_directory = "exports"};
-    view.compose.output_groups = &group;
-    view.compose.output_group_count = 1;
+    view.compose.output_groups = {group};
+    view.compose.output_groups.resize(1);
     view.setup.chart_count = 1;
     (void)harness.frame();
     if (tab == WORM_UI_WORKSPACE_TAB_SETUP) {
@@ -6747,7 +6745,7 @@ TEST_CASE("Double-clicking a stem note arms it without opening its label editor"
         expect_draw(source->resource_id.value == 40);
         expect_draw(!label);
         view.draw_source_kind = 1;
-        view.draw_source_id = 40;
+        view.draw_source_id.value = 40;
         const auto& state = worm_ui_nuklear_compose_state();
         expect_draw(worm_ui_nuklear_armed_dock_sound(state, view) == 40);
         view.draw_source_missing = true;
@@ -6847,7 +6845,7 @@ TEST_CASE("BGM pointer targets use closed head bounds and last nonghost priority
             .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206},
         wormedit::ui::compose_bgm_event_view_t{.bounds = {20, 100, 60, 400}, .event_id = wormedit::object_id_t{2},
             .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206}};
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     view.bgm_events.assign(events.begin(), events.end());
 
     for (const auto x : {20.0, 60.0})
@@ -7007,7 +7005,7 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     const auto& chart = history.document.charts.front();
     const auto index = measure_index_t::from(chart).value();
     auto& view = fixture.harness.view().compose;
-    view.project_id = history.document.id.value; view.chart_id = state.chart.value;
+    view.project_id.value = history.document.id.value; view.chart_id.value = state.chart.value;
     view.document_revision = history.document.revision;
     view.area_range_available = true; view.area_rows_per_measure = 960; view.area_canvas_rows = 9600;
     view.area_range_begin_row = 120; view.area_range_end_row = 960;
@@ -7293,7 +7291,7 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     t422_fixture_t f{placement_stem_song()};
     f.interaction->armed_note_kind = note_kind_t::hold;
     f.application.project.compose_gesture.draw_source_kind = 1;
-    f.application.project.compose_gesture.draw_source_id = 1;
+    f.application.project.compose_gesture.draw_source_id = {1};
     prepare_placement(f);
     auto& ui = worm_ui_nuklear_compose_state();
     ui.resource_picker.armed_resource_id = 1;
@@ -7492,7 +7490,7 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
         .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE, .audio_asset = true,
         .target_index = "02", .name = "new.wav", .source_name = "new.wav"};
     v.keysounds = {row}; v.keysounds.resize(v.keysound_total_count = 1); v.keysounds_available = true;
-    v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
+    v.selected_note_label_note_id.value = 7; v.selected_assigned_resource_id.value = 41;
     v.resources = {resource}; v.resources.resize(v.resource_total_count = 1);
     (void)h.frame();
     auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.sounds_panel_visible = true;
@@ -7501,8 +7499,8 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
     expect_t422(center.has_value());
     (void)click_at(h, center->first, center->second, true);
     expect_t422(s.resource_picker.armed_resource_id == 40 && s.keysound_catalog.armed_from_sounds_dock);
-    ++h.view().project_id.value; ++v.project_id;
-    v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
+    ++h.view().project_id.value; ++v.project_id.value;
+    v.selected_note_label_note_id.value = 7; v.selected_assigned_resource_id.value = 41;
     v.resources = {resource}; v.resources.resize(v.resource_total_count = 1);
     (void)h.frame();
     expect_t422(s.resource_picker.armed_resource_id == 41 && !s.keysound_catalog.armed_from_sounds_dock && !s.bga_catalog.armed_from_bga_dock);
@@ -7522,7 +7520,7 @@ TEST_CASE("Context replacement shares pointer resource-role rejection",
     s.dock_layout.inspector_visible = s.dock_layout.sounds_panel_visible = s.dock_layout.layers_panel_visible = false;
     (void)f.harness.frame();
     // A BGM stem can supply this armed sound through the shared Draw source input.
-    s.pointer_capture.draw_source_kind = 1; s.pointer_capture.draw_source_id = 2;
+    s.pointer_capture.draw_source_kind = 1; s.pointer_capture.draw_source_id = {2};
     const auto p = t422_note_screen_center(f, 101);
     expect_t422(p.has_value());
     (void)right_click_at(f.harness, p->first, p->second);
@@ -7562,7 +7560,7 @@ TEST_CASE("BGA chart switches disarm the complete source even with its dock hidd
     (void)click_at(h, center->first, center->second, true);
     expect_t422(s.resource_picker.armed_resource_id == 1400 && s.bga_catalog.armed_from_bga_dock && s.pointer_capture.draw_source_kind == 2);
     s.dock_layout.bga_panel_visible = false;
-    ++v.chart_id; ++h.view().selected_chart_id.value;
+    ++v.chart_id.value; ++h.view().selected_chart_id.value;
     const auto changed = h.frame();
     expect_t422(s.resource_picker.armed_resource_id == 0 && !s.bga_catalog.armed_from_bga_dock && !s.keysound_catalog.armed_from_sounds_dock);
     expect_t422(s.pointer_capture.draw_source_kind == 0 && s.pointer_capture.draw_source_id == 0);
@@ -7846,7 +7844,7 @@ void prepare_navigation_overview(t422_fixture_t& f, wormedit::ui::compose_wavefo
     v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
     v.waveform_overview_visible_begin_fraction = 0.1;
     v.waveform_overview_visible_end_fraction = 0.3;
-    v.selected_audio_asset_id = 1;
+    v.selected_audio_asset_id.value = 1;
     v.waveform_overview_total_frames = 192000;
     v.waveform_overview_sample_rate = 48000;
     f.cache.waveform.waveform_overview_total_frames = 192000;
@@ -8157,7 +8155,7 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     (void)harness.frame();
     expect_t422(state.bga_catalog.bga_list_valid);
     sound_drop_transaction_t transaction;
-    sound_drop_origin_t origin{.project_id = 1, .chart_id = 1, .revision = 1,
+    sound_drop_origin_t origin{.project_id = {1}, .chart_id = {1}, .revision = 1,
         .tab = WORM_UI_WORKSPACE_TAB_COMPOSE};
     SDL_Event event{};
     event.type = SDL_EVENT_DROP_BEGIN;
@@ -8197,7 +8195,7 @@ TEST_CASE("WAV slot confirmation retains its first file and rejects another stag
     auto& state = worm_ui_nuklear_compose_state();
     expect_t422(state.keysound_slots.keysound_slot_confirmation_open);
     const auto& view = harness.view().compose;
-    expect_t422(!worm_ui_frontend_stage_sound_slot_file_at(view.project_id, view.chart_id,
+    expect_t422(!worm_ui_frontend_stage_sound_slot_file_at(view.project_id.value, view.chart_id.value,
         view.document_revision, 2, 501, "/tmp/replacement-two.wav"));
     (void)harness.frame();
     expect_t422(state.keysound_slots.keysound_slot_confirmation_path == "/tmp/slot-picked.wav");
@@ -8229,10 +8227,10 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
         const auto& item = prepared.items.front();
         const std::array items{wormedit::ui::sound_slot_import_item_t{path.c_str(), item.name.c_str(),
             wormedit::resource_id_t{item.occupied_resource_id}, item.occupied_name.c_str(), item.ambiguous}};
-        expect_t422(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
+        expect_t422(worm_ui_frontend_stage_sound_slot_batch(view.project_id.value, view.chart_id.value,
             view.document_revision, 1, items.data(), items.size(), ""));
     } else {
-        expect_t422(worm_ui_frontend_stage_sound_slot_file_at(view.project_id, view.chart_id,
+        expect_t422(worm_ui_frontend_stage_sound_slot_file_at(view.project_id.value, view.chart_id.value,
             view.document_revision, 1, 1, path.c_str()));
     }
     (void)f.harness.frame();
@@ -8374,7 +8372,7 @@ TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
     (void)click_at(harness, x, y);
     expect_t422(bga ? state.bga_catalog.bga_renumber_confirmation_open : state.keysound_slots.keysound_renumber_confirmation_open);
     if (stale) {
-        ++view.project_id;
+        ++view.project_id.value;
         const auto retired = harness.frame();
         expect_t422(!(bga ? state.bga_catalog.bga_renumber_confirmation_open : state.keysound_slots.keysound_renumber_confirmation_open));
         expect_t422(retired.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
@@ -8388,7 +8386,7 @@ TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
     });
     expect_t422(emitted != frames.end());
     expect_t422(emitted->get().compose_renumber_bga == bga && emitted->get().compose_renumber_all);
-    expect_t422(emitted->get().compose_input_project_id.value == view.project_id);
+    expect_t422(emitted->get().compose_input_project_id.value == view.project_id.value);
 }
 
 TEST_CASE("BGA renumber retains closing release until a quiet frame",
@@ -8426,7 +8424,7 @@ TEST_CASE("Hidden BGA renumber release is serviced without rendering the panel",
     expect_t422(state.bga_catalog.bga_renumber_confirmation_open);
     const auto press = mouse_button(true, state.bga_catalog.bga_list_x + 12, state.bga_catalog.bga_list_y + 12);
     (void)harness.frame(std::span{&press, 1});
-    ++view.chart_id;
+    ++view.chart_id.value;
     (void)harness.frame();
     expect_t422(!state.bga_catalog.bga_renumber_confirmation_open);
     expect_t422(state.bga_catalog.bga_renumber_release_pending);
@@ -8443,8 +8441,8 @@ TEST_CASE("Search popup release guards retire while Compose is hidden",
     nuklear_event_harness_t harness{1600, 1100};
     expect_t422(harness.ready());
     auto& view = harness.view();
-    view.compose.bookmark_chooser.project_id = view.compose.project_id;
-    view.compose.bookmark_chooser.chart_id = view.compose.chart_id;
+    view.compose.bookmark_chooser.project_id.value = view.compose.project_id.value;
+    view.compose.bookmark_chooser.chart_id.value = view.compose.chart_id.value;
     view.compose.bookmark_chooser.document_revision = view.compose.document_revision;
     (void)harness.frame();
     if (sound) expect_t422(worm_ui_frontend_open_sound_picker(1, 1, 1));

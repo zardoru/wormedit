@@ -79,10 +79,10 @@ struct projection_fixture_t {
             .stamp = {.document = {.revision = 5}, .chart = chart.id}}, retained_scene_fixture_t{}));
         flattened.view.compose.visible = true;
         flattened.view.compose.scene_available = true;
-        flattened.view.compose.project_id = 1;
-        flattened.view.compose.chart_id = chart.id.value;
+        flattened.view.compose.project_id.value = 1;
+        flattened.view.compose.chart_id.value = chart.id.value;
         flattened.view.compose.document_revision = cache.stamp().document.revision;
-        flattened.view.compose.selected_audio_asset_id = 12;
+        flattened.view.compose.selected_audio_asset_id.value = 12;
         flattened.view.compose.viewport_height_pixels = 200;
         flattened.view.compose.pixels_per_standard_measure = 200;
     }
@@ -93,7 +93,7 @@ struct projection_fixture_t {
     }
 };
 
-auto midpoint(const WormUiComposeView& view) -> double {
+auto midpoint(const wormedit::ui::compose_view_t& view) -> double {
     return (view.waveform_overview_visible_begin_fraction +
             view.waveform_overview_visible_end_fraction) * 0.5;
 }
@@ -200,7 +200,7 @@ TEST_CASE("active minimap drag freezes projected rows and rejects stale capture 
     check_minimap(fixture.flattened.view.compose.bgm_bar_begin_fraction == Catch::Approx(0.2));
     check_minimap(fixture.flattened.view.compose.bgm_bar_end_fraction == Catch::Approx(0.6));
 
-    fixture.flattened.view.compose.selected_audio_asset_id = 13;
+    fixture.flattened.view.compose.selected_audio_asset_id.value = 13;
     require_minimap(fixture.project());
     check_minimap(!fixture.window_capture.has_value());
     check_minimap(fixture.flattened.view.compose.bgm_bar_begin_fraction != Catch::Approx(0.2));
@@ -208,7 +208,7 @@ TEST_CASE("active minimap drag freezes projected rows and rejects stale capture 
            fixture.flattened.view.compose.bgm_bar_end_fraction) * 0.5 ==
           Catch::Approx(midpoint(fixture.flattened.view.compose)));
 
-    fixture.flattened.view.compose.selected_audio_asset_id = 12;
+    fixture.flattened.view.compose.selected_audio_asset_id.value = 12;
     fixture.window_capture = bgm_bar_window_capture_t{
         .range = {0.2, 0.6}, .project = song_id_t{1}, .chart = chart_id_t{7},
         .document_revision = 5, .asset = asset_id_t{12},

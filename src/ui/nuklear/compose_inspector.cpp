@@ -61,16 +61,16 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
-    if (view->lane_profile_choice_count == 0) return;
+    if (view->lane_profile_names.size() == 0) return;
     if (!nk_tree_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED)) return;
-    std::array<const char*, WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY> names{};
+    static std::vector<const char*> names;
     const auto selecting_initial = view->lane_profile_current < 0;
     const auto offset = selecting_initial ? std::size_t{1} : std::size_t{0};
-    const auto count = std::min<std::size_t>(view->lane_profile_choice_count,
-                                             names.size() - offset);
+    const auto count = view->lane_profile_names.size();
+    names.resize(count + offset);
     if (selecting_initial) names[0] = "Choose a lane profile...";
-    for (std::size_t index = 0; index < view->lane_profile_choice_count; ++index)
-        if (index < count) names[index + offset] = view->lane_profile_names[index];
+    for (std::size_t index = 0; index < view->lane_profile_names.size(); ++index)
+        if (index < count) names[index + offset] = view->lane_profile_names[index].c_str();
     const int current = selecting_initial ? 0 : view->lane_profile_current;
     nk_layout_row_dynamic(context, 26, 1);
     const int selected = wormedit::ui::chrome::safe_combo(
@@ -81,7 +81,7 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
         action->compose_action = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
         action->compose_lane_profile_index = static_cast<uint32_t>(
             selected - (selecting_initial ? 1 : 0));
-        action->compose_input_chart_id.value = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id.value;
         action->compose_input_document_revision = view->document_revision;
     }
     nk_tree_pop(context);
@@ -98,7 +98,7 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
         nk_tree_pop(context);
         return;
     }
-    if (view->lane_layout_profile_choice_count == 0) {
+    if (view->lane_layout_profile_names.size() == 0) {
         nk_layout_row_dynamic(context, 30, 1);
         nk_label_wrap(context, "No built-in layout profiles are available for this chart family.");
         nk_tree_pop(context);
@@ -111,24 +111,25 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
         int selected{};
     };
     static selection_state_t selection;
-    if (selection.chart != view->chart_id || selection.revision != view->document_revision ||
+    if (selection.chart != view->chart_id.value || selection.revision != view->document_revision ||
         selection.measure != view->lane_layout_edit_measure_number) {
-        selection.chart = view->chart_id;
+        selection.chart = view->chart_id.value;
         selection.revision = view->document_revision;
         selection.measure = view->lane_layout_edit_measure_number;
         selection.selected = std::max<int>(view->lane_layout_profile_current, 0);
     }
-    std::array<const char*, WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY> names{};
-    for (std::size_t index = 0; index < view->lane_layout_profile_choice_count; ++index)
-        names[index] = view->lane_layout_profile_names[index];
+    static std::vector<const char*> names;
+    names.resize(view->lane_layout_profile_names.size());
+    for (std::size_t index = 0; index < view->lane_layout_profile_names.size(); ++index)
+        names[index] = view->lane_layout_profile_names[index].c_str();
     nk_layout_row_dynamic(context, 18, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Measure %u · %s", view->lane_layout_edit_measure_number,
               view->lane_layout_edit_is_update ? "Update existing segment" : "Insert new segment");
     nk_layout_row_dynamic(context, 26, 1);
     selection.selected = std::clamp(selection.selected, 0,
-                                    static_cast<int>(view->lane_layout_profile_choice_count) - 1);
+                                    static_cast<int>(view->lane_layout_profile_names.size()) - 1);
     selection.selected = wormedit::ui::chrome::safe_combo(
-        context, names.data(), static_cast<int>(view->lane_layout_profile_choice_count),
+        context, names.data(), static_cast<int>(view->lane_layout_profile_names.size()),
         selection.selected, 24, nk_vec2(220.0f, 180.0f));
     char button[64]{};
     (void)snprintf(button, sizeof(button), "%s layout at measure %u",
@@ -140,7 +141,7 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     if (disabled) nk_widget_disable_end(context);
     if (clicked && !disabled) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
-        action->compose_input_chart_id.value = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id.value;
         action->compose_input_document_revision = view->document_revision;
         action->compose_measure_number = view->lane_layout_edit_measure_number;
         action->compose_lane_layout_profile_id = view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)];
@@ -203,7 +204,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
             return;
         action->compose_note_label = state.note_label.label_search.data();
         action->compose_action = kind;
-        action->compose_input_chart_id.value = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id.value;
         action->compose_input_document_revision = view->document_revision;
     };
     submit("Select", WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL);
@@ -249,7 +250,7 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     }
     if (!apply || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
-    action->compose_input_chart_id.value = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id.value;
     action->compose_input_document_revision = view->document_revision;
     action->timing_meter_numerator_text = state.recipe_editor.meter_numerator.data();
     action->timing_meter_denominator_text = state.recipe_editor.meter_denominator.data();
@@ -279,7 +280,7 @@ void render_measure_removal_summary(const ComposeInspectorContext& inspector) {
     nk_label_wrap(context, text);
     if (view->measure_removal_blocked) {
         nk_layout_row_dynamic(context, 56, 1);
-        nk_label_wrap(context, view->measure_removal_message);
+        nk_label_wrap(context, view->measure_removal_message.c_str());
     }
 }
 
@@ -290,7 +291,7 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     auto& confirmation = measure_removal_confirmation;
     if (!confirmation.open) return;
     const auto stale = !view->measure_removal_available ||
-                       view->measure_removal_measure_id != confirmation.measure ||
+                       view->measure_removal_measure_id.value != confirmation.measure ||
                        view->document_revision != confirmation.revision;
     if (stale) {
         confirmation.open = false;
@@ -308,7 +309,7 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
     if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     confirmation.open = false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
-    action->compose_input_chart_id.value = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id.value;
     action->compose_input_document_revision = view->document_revision;
 }
 
@@ -322,12 +323,12 @@ void render_measure_removal_control(const ComposeInspectorContext& inspector) {
         return;
     if (view->measure_removal_has_contents) {
         measure_removal_confirmation = {.open = true,
-                                        .measure = view->measure_removal_measure_id,
+                                        .measure = view->measure_removal_measure_id.value,
                                         .revision = view->document_revision};
         return;
     }
     emit_compose_menu_command(*action, *view, "measures.remove_empty");
-    action->compose_input_chart_id.value = view->chart_id;
+    action->compose_input_chart_id.value = view->chart_id.value;
     action->compose_input_document_revision = view->document_revision;
 }
 
@@ -366,7 +367,7 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
             action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
             return;
         action->compose_action = kind;
-        action->compose_input_chart_id.value = view->chart_id;
+        action->compose_input_chart_id.value = view->chart_id.value;
         action->compose_input_document_revision = view->document_revision;
     };
     entry("Mirror lanes", WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR);
@@ -411,15 +412,15 @@ struct QuantizeMenuPreset {
 };
 std::vector<QuantizeMenuPreset> quantize_menu_presets;
 
-void sync_quantize_grid_text(const WormUiComposeView& view) {
+void sync_quantize_grid_text(const wormedit::ui::compose_view_t& view) {
     const auto owner_changed =
-        quantize_grid_project_id != view.project_id || quantize_grid_chart_id != view.chart_id;
+        quantize_grid_project_id != view.project_id.value || quantize_grid_chart_id != view.chart_id.value;
     if (owner_changed ||
         (!quantize_grid_editing && quantize_grid_projected_value != view.quantize_divisions)) {
         if (owner_changed)
             quantize_grid_editing = false;
-        quantize_grid_project_id = view.project_id;
-        quantize_grid_chart_id = view.chart_id;
+        quantize_grid_project_id = view.project_id.value;
+        quantize_grid_chart_id = view.chart_id.value;
         quantize_grid_projected_value = view.quantize_divisions;
         std::snprintf(quantize_grid_text.data(), quantize_grid_text.size(), "%llu",
                       static_cast<unsigned long long>(view.quantize_divisions));
@@ -446,7 +447,7 @@ void set_quantize_action(const ComposeInspectorContext& inspector, WormUiCompose
     if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action->compose_action = kind;
-    action->compose_input_chart_id.value = inspector.view->chart_id;
+    action->compose_input_chart_id.value = inspector.view->chart_id.value;
     action->compose_input_document_revision = inspector.view->document_revision;
     action->compose_quantize_divisions = divisions;
     action->compose_quantize_space = static_cast<wormedit::quantization_space_t>(space);
@@ -459,12 +460,12 @@ void set_quantize_action(const ComposeInspectorContext& inspector, WormUiCompose
 void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
     quantize_popup = kind;
     quantize_menu_presets.clear();
-    const auto count = std::min(i.view->quantize_preset_count,
-                                static_cast<std::size_t>(WORM_UI_COMPOSE_QUANTIZE_PRESET_CAPACITY));
-    for (std::size_t index = 0; index < count && i.view->quantize_presets; ++index) {
+    const auto count = std::min(i.view->quantize_presets.size(),
+                                static_cast<std::size_t>(wormedit::maximum_quantization_presets));
+    for (std::size_t index = 0; index < count; ++index) {
         const auto& preset = i.view->quantize_presets[index];
-        quantize_menu_presets.push_back({preset.name ? preset.name : "", preset.divisions,
-                                         preset.space, preset.tie, preset.holds});
+        quantize_menu_presets.push_back({std::string{preset.name}, preset.divisions,
+                                         static_cast<uint8_t>(preset.space), static_cast<uint8_t>(preset.tie), static_cast<uint8_t>(preset.holds)});
     }
     wormedit::ui::chrome::context_menu_open(quantize_menu, i.context->input.mouse.pos,
                                             wormedit::ui::chrome::PopupContextStamp::from(*i.view, quantize_menu_preset));
@@ -485,14 +486,12 @@ auto quantize_segments(nk_context* c, const char* const* labels, int count, int 
     }
     return result;
 }
-auto snap_supported(const WormUiComposeView& v, std::uint64_t denominator) -> bool {
-    return std::find(v.supported_snap_denominators,
-                     v.supported_snap_denominators + v.supported_snap_denominator_count,
-                     denominator) != v.supported_snap_denominators + v.supported_snap_denominator_count;
+auto snap_supported(const wormedit::ui::compose_view_t& v, std::uint64_t denominator) -> bool {
+    return std::ranges::find(v.supported_snap_denominators, denominator) != v.supported_snap_denominators.end();
 }
 
 // Chips outside the chart's snap list set only the quantize target; say so on hover.
-void quantize_grid_tooltip(nk_context* c, const WormUiComposeView& v, struct nk_rect grid,
+void quantize_grid_tooltip(nk_context* c, const wormedit::ui::compose_view_t& v, struct nk_rect grid,
                            const std::uint64_t* values, const char* const* labels, int count,
                            int columns) {
     if (compose_quantize_owns_input()) return;
@@ -529,7 +528,7 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
     if (grid.chosen >= 0) {
         quantize_grid_invalid = quantize_grid_editing = false;
         set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS, values[grid.chosen],
-                            v.quantize_space, v.quantize_tie, v.quantize_holds);
+                            static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie), static_cast<uint8_t>(v.quantize_holds));
     }
     if (wormedit::ui::chrome::ChipGrid{nullptr, 0, -1, 1, "custom…"}.render(c).add) {
         quantize_grid_projected_value = 0;
@@ -564,42 +563,43 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_label(c, "Space", NK_TEXT_LEFT);
-    const auto space = quantize_segments(c, spaces, 2, v.quantize_space, st);
+    const auto space = quantize_segments(c, spaces, 2, static_cast<uint8_t>(v.quantize_space), st);
     quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Halfway objects · %zu in selection",
               v.quantize_preview_halfway_notes);
     const auto tie =
-        quantize_segments(c, ties, 3, v.quantize_tie, tt, v.quantize_preview_halfway_notes == 0);
+        quantize_segments(c, ties, 3, static_cast<uint8_t>(v.quantize_tie), tt, v.quantize_preview_halfway_notes == 0);
     quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Hold tails · %zu %s in selection", v.quantize_preview_holds,
               v.quantize_preview_holds == 1 ? "hold" : "holds");
-    const auto hold = quantize_segments(c, holds, 2, v.quantize_holds, ht);
-    if (space != v.quantize_space || tie != v.quantize_tie || hold != v.quantize_holds)
+    const auto hold = quantize_segments(c, holds, 2, static_cast<uint8_t>(v.quantize_holds), ht);
+    if (space != static_cast<uint8_t>(v.quantize_space) || tie != static_cast<uint8_t>(v.quantize_tie) || hold != static_cast<uint8_t>(v.quantize_holds))
         set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS, v.quantize_divisions,
                             space, tie, hold);
 }
-auto quantize_preset_name_is_unique(const WormUiComposeView& v, const char* name) -> bool {
+auto quantize_preset_name_is_unique(const wormedit::ui::compose_view_t& v, const char* name) -> bool {
     if (!name || !name[0])
         return false;
-    for (std::size_t x = 0; x < v.quantize_preset_count; ++x) {
+    for (std::size_t x = 0; x < v.quantize_presets.size(); ++x) {
         if (quantize_rename && x == quantize_menu_preset)
             continue;
-        if (v.quantize_presets && v.quantize_presets[x].name &&
-            std::strcmp(v.quantize_presets[x].name, name) == 0)
+        if (!v.quantize_presets[x].name.empty() &&
+            v.quantize_presets[x].name == name)
             return false;
     }
-    return quantize_rename || v.quantize_preset_count < WORM_UI_COMPOSE_QUANTIZE_PRESET_CAPACITY;
+    return quantize_rename || v.quantize_presets.size() < wormedit::maximum_quantization_presets;
 }
 void render_quantize_preset_picker(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
-    const auto count = std::min(v.quantize_preset_count,
-                                static_cast<std::size_t>(WORM_UI_COMPOSE_QUANTIZE_PRESET_CAPACITY));
-    std::array<const char*, WORM_UI_COMPOSE_QUANTIZE_PRESET_CAPACITY> labels{};
+    const auto count = std::min(v.quantize_presets.size(),
+                                static_cast<std::size_t>(wormedit::maximum_quantization_presets));
+    static std::vector<const char*> labels;
+    labels.resize(count);
     for (std::size_t x = 0; x < count; ++x)
-        labels[x] = v.quantize_presets && v.quantize_presets[x].name ? v.quantize_presets[x].name
+        labels[x] = !v.quantize_presets[x].name.empty() ? v.quantize_presets[x].name.data()
                                                                      : "(unnamed)";
     quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
@@ -616,7 +616,7 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
             .render(c);
     if (result.chosen >= 0)
         set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET, v.quantize_divisions,
-                            v.quantize_space, v.quantize_tie, v.quantize_holds, true,
+                            static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie), static_cast<uint8_t>(v.quantize_holds), true,
                             result.chosen);
     if (result.add) {
         quantize_rename = false;
@@ -654,7 +654,7 @@ void render_quantize_custom_popup(const ComposeInspectorContext& i) {
         if (divisions) {
             quantize_grid_editing = false;
             set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS, *divisions,
-                                v.quantize_space, v.quantize_tie, v.quantize_holds);
+                                static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie), static_cast<uint8_t>(v.quantize_holds));
             wormedit::ui::chrome::context_menu_close(quantize_menu, c);
         }
     }
@@ -681,8 +681,8 @@ void render_quantize_name_popup(const ComposeInspectorContext& i) {
         set_quantize_action(i,
                             quantize_rename ? WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET
                                             : WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
-                            v.quantize_divisions, v.quantize_space, v.quantize_tie,
-                            v.quantize_holds, quantize_rename, quantize_menu_preset);
+                            v.quantize_divisions, static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie),
+                            static_cast<uint8_t>(v.quantize_holds), quantize_rename, quantize_menu_preset);
         i.action->compose_quantize_preset_name = quantize_preset_name.data();
     }
 }
@@ -703,12 +703,12 @@ void render_quantize_preset_actions(const ComposeInspectorContext& i) {
             quantize_popup = QuantizePopup::name;
             quantize_menu.shared_keyboard_navigation = false;
             std::snprintf(quantize_preset_name.data(), quantize_preset_name.size(), "%s",
-                          v.quantize_presets[quantize_menu_preset].name);
+                          v.quantize_presets[quantize_menu_preset].name.data());
         }
         if (wormedit::ui::chrome::context_menu_item(quantize_menu, c, "Delete"))
             set_quantize_action(i, WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
-                                v.quantize_divisions, v.quantize_space, v.quantize_tie,
-                                v.quantize_holds, true, quantize_menu_preset);
+                                v.quantize_divisions, static_cast<uint8_t>(v.quantize_space), static_cast<uint8_t>(v.quantize_tie),
+                                static_cast<uint8_t>(v.quantize_holds), true, quantize_menu_preset);
     }
     wormedit::ui::chrome::context_menu_end(quantize_menu, c);
 }
@@ -728,27 +728,27 @@ void quantize_report_label(nk_context* context, const char* label) {
 }
 
 void render_quantize_report_row(nk_context* context,
-                                const WormUiComposeQuantizeReportRowView& row) {
+                                const wormedit::ui::compose_quantize_report_row_view_t& row) {
     std::array<char, 192> label{};
     if (row.has_collision_peer) {
         std::snprintf(label.data(), label.size(), "%s %llu · lane %llu · %s, collision with %llu",
                       row.bgm ? "BGM" : "Note",
-                      static_cast<unsigned long long>(row.object_id),
-                      static_cast<unsigned long long>(row.lane_id),
+                      static_cast<unsigned long long>(row.object_id.value),
+                      static_cast<unsigned long long>(row.lane_id.value),
                       row.moved ? "moved" : "unchanged",
-                      static_cast<unsigned long long>(row.collision_peer_id));
+                      static_cast<unsigned long long>(row.collision_peer_id.value));
     } else {
         std::snprintf(label.data(), label.size(), "%s %llu · lane %llu · %s%s",
                       row.bgm ? "BGM" : "Note",
-                      static_cast<unsigned long long>(row.object_id),
-                      static_cast<unsigned long long>(row.lane_id),
+                      static_cast<unsigned long long>(row.object_id.value),
+                      static_cast<unsigned long long>(row.lane_id.value),
                       row.moved ? "moved" : "unchanged", row.collision ? " · collision" : "");
     }
     quantize_report_label(context, label.data());
     std::snprintf(label.data(), label.size(), "Start m%llu:r%llu -> m%llu:r%llu",
-                  static_cast<unsigned long long>(row.start_before.measure_id),
+                  static_cast<unsigned long long>(row.start_before.measure_id.value),
                   static_cast<unsigned long long>(row.start_before.row),
-                  static_cast<unsigned long long>(row.start_after.measure_id),
+                  static_cast<unsigned long long>(row.start_after.measure_id.value),
                   static_cast<unsigned long long>(row.start_after.row));
     quantize_report_label(context, label.data());
     std::snprintf(label.data(), label.size(), "Absolute row %llu -> %llu",
@@ -757,9 +757,9 @@ void render_quantize_report_row(nk_context* context,
     quantize_report_label(context, label.data());
     if (row.has_end_before && row.has_end_after) {
         std::snprintf(label.data(), label.size(), "Hold end m%llu:r%llu -> m%llu:r%llu",
-                      static_cast<unsigned long long>(row.end_before.measure_id),
+                      static_cast<unsigned long long>(row.end_before.measure_id.value),
                       static_cast<unsigned long long>(row.end_before.row),
-                      static_cast<unsigned long long>(row.end_after.measure_id),
+                      static_cast<unsigned long long>(row.end_after.measure_id.value),
                       static_cast<unsigned long long>(row.end_after.row));
         quantize_report_label(context, label.data());
     }
@@ -768,7 +768,7 @@ void render_quantize_report_row(nk_context* context,
 // Nuklear keys a tree's open state by its call site, so the two report trees must pass distinct
 // ids; sharing one made the applied report follow the collapsed preview tree and look empty.
 void render_quantize_report_rows(nk_context* context, const char* title, int tree_id,
-                                 const WormUiComposeQuantizeReportRowView* rows, std::size_t count,
+                                 const wormedit::ui::compose_quantize_report_row_view_t* rows, std::size_t count,
                                  std::size_t total, bool truncated,
                                  nk_collapse_states initial = NK_MINIMIZED) {
     if (!nk_tree_push_id(context, NK_TREE_TAB, title, initial, tree_id))
@@ -778,7 +778,7 @@ void render_quantize_report_rows(nk_context* context, const char* title, int tre
         nk_labelf(context, NK_TEXT_LEFT, "%zu rows shown of %zu", count, total);
     }
     const auto visible_count =
-        std::min(count, static_cast<std::size_t>(WORM_UI_COMPOSE_QUANTIZE_REPORT_CAPACITY));
+        count;
     for (std::size_t index = 0; rows && index < visible_count; ++index)
         render_quantize_report_row(context, rows[index]);
     nk_tree_pop(context);
@@ -811,23 +811,23 @@ auto compose_quantize_section_visible() -> bool {
     return quantize_section_visible_this_frame;
 }
 
-static auto quantize_presets_match(const WormUiComposeView& view) -> bool {
-    if (view.quantize_preset_count != quantize_menu_presets.size())
+static auto quantize_presets_match(const wormedit::ui::compose_view_t& view) -> bool {
+    if (view.quantize_presets.size() != quantize_menu_presets.size())
         return false;
-    for (std::size_t index = 0; index < view.quantize_preset_count; ++index) {
-        if (!view.quantize_presets)
+    for (std::size_t index = 0; index < view.quantize_presets.size(); ++index) {
+        if (view.quantize_presets.empty())
             return false;
         const auto& preset = view.quantize_presets[index];
         const auto& expected = quantize_menu_presets[index];
-        if (expected.name != (preset.name ? preset.name : "") ||
-            expected.divisions != preset.divisions || expected.space != preset.space ||
-            expected.tie != preset.tie || expected.holds != preset.holds)
+        if (expected.name != (std::string{preset.name}) ||
+            expected.divisions != preset.divisions || expected.space != static_cast<uint8_t>(preset.space) ||
+            expected.tie != static_cast<uint8_t>(preset.tie) || expected.holds != static_cast<uint8_t>(preset.holds))
             return false;
     }
     return true;
 }
 
-void prepare_compose_quantize_input(nk_context* context, const WormUiComposeView& view,
+void prepare_compose_quantize_input(nk_context* context, const wormedit::ui::compose_view_t& view,
                                     bool inspector_visible, bool window_focused) {
     quantize_menu.opened_this_frame = false;
     (void)wormedit::ui::chrome::popup_update_release_pending(context,
@@ -851,8 +851,8 @@ void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
     if (changed && !compose_quantize_owns_input() &&
         inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW,
-            inspector.view->quantize_divisions, inspector.view->quantize_space,
-            inspector.view->quantize_tie, inspector.view->quantize_holds);
+            inspector.view->quantize_divisions, static_cast<uint8_t>(inspector.view->quantize_space),
+            static_cast<uint8_t>(inspector.view->quantize_tie), static_cast<uint8_t>(inspector.view->quantize_holds));
 }
 
 void render_quantize_action_row(const ComposeInspectorContext& inspector) {
@@ -876,12 +876,12 @@ void render_quantize_action_row(const ComposeInspectorContext& inspector) {
     if (!enabled && !popup_owns_input && wormedit::ui::chrome::button_hovered(context, bounds))
         wormedit::ui::nuklear::tooltip::text(
             context, view->quantize_preview_blocked
-                         ? view->quantize_preview_message
+                         ? view->quantize_preview_message.c_str()
                          : "Select notes or BGM that would move and finish editing a valid grid.");
     if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
-                            view->quantize_divisions, view->quantize_space, view->quantize_tie,
-                            view->quantize_holds, view->quantize_selected_preset_valid,
+                            view->quantize_divisions, static_cast<uint8_t>(view->quantize_space), static_cast<uint8_t>(view->quantize_tie),
+                            static_cast<uint8_t>(view->quantize_holds), view->quantize_selected_preset_valid,
                             view->quantize_selected_preset_index);
 }
 
@@ -910,7 +910,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         nk_labelf(context, NK_TEXT_LEFT, "Blocked: %zu issue(s), %zu colliding objects",
                   view->quantize_preview_blocked, view->quantize_preview_colliding_objects);
         nk_layout_row_dynamic(context, 32, 1);
-        nk_label_wrap(context, view->quantize_preview_message);
+        nk_label_wrap(context, view->quantize_preview_message.c_str());
     } else {
         nk_layout_row_dynamic(context, 18, 1);
         nk_labelf(context, NK_TEXT_LEFT, "%zu would move, %zu unchanged, %zu colliding",
@@ -927,14 +927,14 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     render_quantize_action_row(inspector);
     render_quantize_preset_actions(inspector);
     if (view->quantize_preview_enabled)
-        render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
-                                view->quantize_preview_row_count, view->quantize_preview_total_rows,
+        render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows.data(),
+                                view->quantize_preview_rows.size(), view->quantize_preview_total_rows,
                                 view->quantize_preview_rows_truncated);
     // Only after an apply that moved rows; an empty heading says nothing, and it opens expanded so
     // the moved rows are visible without another click.
-    if (view->quantize_applied_row_count != 0)
-        render_quantize_report_rows(context, "Last applied report", 1, view->quantize_applied_rows,
-                                    view->quantize_applied_row_count,
+    if (view->quantize_applied_rows.size() != 0)
+        render_quantize_report_rows(context, "Last applied report", 1, view->quantize_applied_rows.data(),
+                                    view->quantize_applied_rows.size(),
                                     view->quantize_applied_total_rows,
                                     view->quantize_applied_rows_truncated, NK_MAXIMIZED);
     const auto section_bounds = nk_widget_bounds(context);

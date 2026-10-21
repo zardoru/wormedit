@@ -1328,7 +1328,7 @@ auto open_compose_note_layer_menu_action_t::perform(compose_action_context_t& co
     app.project.semantic_layer.note_layer_menu_chart = context.state.chart;
     app.project.semantic_layer.note_layer_menu_revision = context.environment.document.history.document.revision;
     app.project.semantic_layer.note_layer_menu_first_row = 0;
-    app.project.semantic_layer.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
+    app.project.semantic_layer.note_layer_menu_row_count = wormedit::ui::note_layer_window_limit;
     return compose_action_outcome_t::from({}, notification_severity_t::hint);
 }
 
@@ -1361,7 +1361,7 @@ auto open_compose_sound_layer_menu_action_t::perform(compose_action_context_t& c
     app.project.semantic_layer.note_layer_menu_chart = context.state.chart;
     app.project.semantic_layer.note_layer_menu_revision = context.environment.document.history.document.revision;
     app.project.semantic_layer.note_layer_menu_first_row = 0;
-    app.project.semantic_layer.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
+    app.project.semantic_layer.note_layer_menu_row_count = wormedit::ui::note_layer_window_limit;
     return compose_action_outcome_t::from({}, notification_severity_t::hint);
 }
 
@@ -1388,7 +1388,7 @@ auto set_compose_note_layer_menu_window_action_t::perform(compose_action_context
     const auto& action = context.action;
     app.project.semantic_layer.note_layer_menu_first_row = action.compose_semantic_layer_first_row;
     app.project.semantic_layer.note_layer_menu_row_count = std::clamp<std::size_t>(
-        action.compose_semantic_layer_row_count, 1, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
+        action.compose_semantic_layer_row_count, 1, wormedit::ui::note_layer_window_limit);
     return compose_action_outcome_t::from({}, notification_severity_t::hint);
 }
 
@@ -1464,7 +1464,7 @@ auto set_semantic_layer_window_action_t::perform(compose_action_context_t& conte
     application_state.project.semantic_layer.semantic_layer_first_row = action.compose_semantic_layer_first_row;
     application_state.project.semantic_layer.semantic_layer_row_count =
         std::clamp<std::size_t>(action.compose_semantic_layer_row_count, 1,
-                                WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY);
+                                wormedit::ui::semantic_layer_window_limit);
     return compose_action_outcome_t::from({}, notification_severity_t::hint);
 }
 
@@ -1538,7 +1538,7 @@ auto step_semantic_layer_palette_action_t::perform(compose_action_context_t& con
     const auto palette = wormedit::semantic_layer_palette_window_t::from(
         *chart, application_state.project.semantic_layer.semantic_layer_target,
         application_state.project.semantic_layer.semantic_layer_palette_page, false,
-        WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+        wormedit::ui::semantic_layer_shortcut_limit);
     if (!palette)
         return compose_action_outcome_t::blocked(
             "Semantic-layer palette navigation exceeded its bounded limit.",
@@ -2941,7 +2941,7 @@ auto set_compose_edit_snap_action_t::perform(compose_action_context_t& context) 
     -> compose_action_outcome_t {
     auto result =
         wormedit::dispatch_editor_action(context.environment.document.history, context.state,
-                                         wormedit::set_edit_snap_action_t{divisions});
+                                         wormedit::set_edit_snap_action_t{.denominator = divisions});
     if (!result.accepted)
         return compose_action_outcome_t::from(std::move(result), "Editing grid was unchanged.");
     context.environment.editor.commands.project.compose_view.requested_snap_denominators.insert_or_assign(

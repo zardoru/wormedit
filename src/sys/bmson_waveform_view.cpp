@@ -18,7 +18,7 @@ namespace {
 
 auto projection_ready(const bmson_waveform_projection_context_t& context) -> bool {
     return context.flattened.view.compose.visible &&
-           context.flattened.view.compose.selected_bmson_bgm_event_id != 0 &&
+           context.flattened.view.compose.selected_bmson_bgm_event_id.value != 0 &&
            context.flattened.view.compose.scene_available && context.workspace.selected_chart &&
            context.interaction_state != nullptr && context.cache.timing.marker_timing_index;
 }
@@ -298,7 +298,7 @@ auto visible_stems(const bmson_waveform_projection_context_t& context, const cha
 }
 
 // Cache-owned projection rows remain stable while the frame borrows them.
-void publish_stem(WormUiComposeView& view, const sound_channel_t& channel,
+void publish_stem(wormedit::ui::compose_view_t& view, const sound_channel_t& channel,
                   const compose_scene_cache_t::stem_waveform_cache_t& entry) {
     if (entry.pending) {
         if (!entry.is_selected && entry.source_lane != 0)
@@ -337,9 +337,9 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
         cache.stems.stem_waveforms.clear();
         return;
     }
-    const auto selected = view.selected_bmson_bgm_event_id != 0
+    const auto selected = view.selected_bmson_bgm_event_id.value != 0
         ? selected_bmson_waveform_source(cache, *chart, context.history.document.revision,
-              object_id_t{view.selected_bmson_bgm_event_id}) : std::nullopt;
+              object_id_t{view.selected_bmson_bgm_event_id.value}) : std::nullopt;
     const auto visible = visible_stems(context, *chart);
     cache.stems.stem_waveforms.reserve(visible.size() + (selected ? 1 : 0));
     std::erase_if(cache.stems.stem_waveforms, [&](const auto& entry) {
@@ -561,7 +561,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
         (void)prepare_compose_display_row_table(context.cache,
             {context.interaction_state->viewport_scroll_pixels, compose.viewport_height_pixels,
              compose.pixels_per_standard_measure},
-            {compose.project_id, context.cache.stamp().chart.value, context.history.document.revision});
+            {compose.project_id.value, context.cache.stamp().chart.value, context.history.document.revision});
     }
     populate_stem_waveforms(context);
     populate_packed_waveforms(context);
@@ -580,7 +580,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
 
     const auto selection = selected_bmson_waveform_source(
         cache, *chart, history.document.revision,
-        wormedit::object_id_t{flattened.view.compose.selected_bmson_bgm_event_id});
+        wormedit::object_id_t{flattened.view.compose.selected_bmson_bgm_event_id.value});
     const auto channel = selection ? std::ranges::find(chart->sound_channels, selection->channel,
                                                        &wormedit::sound_channel_t::id)
                                    : chart->sound_channels.end();

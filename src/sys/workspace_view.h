@@ -1,5 +1,6 @@
 #pragma once
 #include "sys/compose_source_key.h"
+#include <wormedit/core/semantic_layer_editor.h>
 #include "sys/bookmark_chooser_view.h"
 #include "sys/compose_dead_spans.h"
 #include "sys/compose_sv_graph.h"
@@ -104,7 +105,7 @@ struct frontend_workspace_view_t {
     }
     wormedit::ui::workspace_view_t view{};
     std::vector<projection_feedback_t> projection_feedback;
-    // Refresh pointers into inline storage after from returns or this object moves.
+    // Temporary no-op retained for existing callers; removed by T-699.
     void rebind_view_pointers();
 
     std::size_t summary_size{};
@@ -112,19 +113,9 @@ struct frontend_workspace_view_t {
     void reset();
 
     struct {
-        std::string hover_tooltip;
-        std::string selected_note_label;
-        frame_span<WormUiBookmarkChooserRowView> bookmark_chooser_row;
-        frame_span<WormUiComposeBookmarkView> bookmark;
-        frame_span<WormUiComposeSectionView> section;
-        struct {
-            frame_span<WormUiComposeAudioBookmarkView> bookmark;
-            frame_span<WormUiComposeAudioSectionView> section;
-        } audio_marker;
         struct {
             std::vector<wormedit::exact_chart_row_t> row;
         } grid;
-        std::vector<std::string> recipe_form_text;
         std::vector<std::string> recipe_area_labels;
         std::vector<std::string> dead_span_labels;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
@@ -134,21 +125,8 @@ struct frontend_workspace_view_t {
         std::unordered_map<std::uint64_t, std::string> stem_filenames;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;
-        struct {
-            frame_span<WormUiComposeSemanticLayerView> view;
-            frame_span<WormUiComposeSemanticLayerView> note_menu;
-        } semantic_layer;
-        struct {
-            frame_span<WormUiComposeBranchRowView> row;
-            frame_span<WormUiComposeBranchChoiceView> choice;
-        } branch;
         keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, std::string, std::uint16_t,
             std::size_t, std::size_t, resource_use_filter_t>, sound_slots_view_t> sound_slots_cache;
-        struct {
-            frame_span<WormUiComposeOutputGroupView> view;
-        } output_group;
-        std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
-            lane_key{};
         std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
         struct {
             std::vector<dead_span_band_t> dead_bands;
@@ -157,6 +135,14 @@ struct frontend_workspace_view_t {
             recipe_graph_t recipe_graph;
         } timing_geometry;
     } compose;
+    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, chart_id_t,
+        std::uint64_t, std::size_t, std::size_t, std::array<char, 256>, bool>,
+        bookmark_chooser_view_t> bookmark_chooser_cache;
+    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, chart_id_t,
+        std::uint64_t, bool>, bool> output_group_binding;
+    using semantic_window_cache_t = keyed_cache_t<std::tuple<const chart_document_t*, chart_id_t,
+        std::uint64_t, std::uint64_t, std::size_t, std::size_t>, std::optional<semantic_layer_palette_window_t>>;
+    semantic_window_cache_t semantic_window_cache, note_layer_window_cache;
     wormedit::ui::keysound_dock_request_t keysound_request;
     std::uint64_t query_session_generation{};
     keyed_cache_t<std::tuple<document_stamp_t, chart_id_t, std::uint64_t>,
@@ -175,7 +161,7 @@ struct frontend_workspace_view_t {
                                    frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
                                    const wormedit::ui::keysound_dock_request_t& keysound_request = {},
                                    wormedit::ui::sound_usage_request_t sound_usage_request = {},
-                                   WormUiBookmarkChooserRequest bookmark_chooser_request = {},
+                                   wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request = {},
                                    keysound_list_cache_t* keysound_cache = nullptr,
                                    const bookmark_chooser_indices_t& bookmark_indices = {},
                                    compose_resource_catalog_cache_t* resource_catalog_cache = nullptr) -> frontend_workspace_view_t;
@@ -187,7 +173,7 @@ struct frontend_workspace_view_t {
                                    frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
                                    const wormedit::ui::keysound_dock_request_t& keysound_request = {},
                                    wormedit::ui::sound_usage_request_t sound_usage_request = {},
-                                   WormUiBookmarkChooserRequest bookmark_chooser_request = {},
+                                   wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request = {},
                                    keysound_list_cache_t* keysound_cache = nullptr,
                                    const bookmark_chooser_indices_t& bookmark_indices = {},
                                    compose_resource_catalog_cache_t* resource_catalog_cache = nullptr);

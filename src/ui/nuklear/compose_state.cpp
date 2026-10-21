@@ -79,15 +79,15 @@ auto next_ordered_resource(std::span<const std::uint64_t> ids,
 }
 }
 
-auto compose_note_is_transient(const WormUiComposeView& view,
+auto compose_note_is_transient(const wormedit::ui::compose_view_t& view,
                                const wormedit::ui::compose_note_view_t& note) -> bool {
     return note.proposal_ghost || note.proposal_origin || note.paint_preview ||
         note.paint_erase_preview || note.paint_invalid_preview ||
-        (view.hover_note_visible && note.note_id.value == view.hover_note_id);
+        (view.hover_note_visible && note.note_id.value == view.hover_note_id.value);
 }
 
 auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t color_view,
-    const WormUiComposeView& view, const wormedit::ui::compose_note_view_t& note) -> bool {
+    const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_note_view_t& note) -> bool {
     return color_view == worm_ui_nuklear_compose_color_view_t::layer &&
            note.semantic_color_visible && !compose_note_is_transient(view, note);
 }
@@ -123,7 +123,7 @@ auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
         .coarse_steps = true};
 }
 
-auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
+auto worm_ui_nuklear_compose_canvas_input_available(const wormedit::ui::compose_view_t* view,
     bool window_focused, bool text_owned, bool ime_owned) -> bool {
     return view && view->visible && view->scene_available && window_focused &&
         !view->input_occluded && !text_owned && !ime_owned;
@@ -392,9 +392,9 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
 }
 
 auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& state,
-                                      const WormUiComposeView& view) -> std::uint64_t {
+                                      const wormedit::ui::compose_view_t& view) -> std::uint64_t {
     if (state.resource_picker.armed_resource_id == 0 || !state.keysound_catalog.armed_from_sounds_dock) return 0;
-    if (view.draw_source_kind == 1 && view.draw_source_id == state.resource_picker.armed_resource_id)
+    if (view.draw_source_kind == 1 && view.draw_source_id.value == state.resource_picker.armed_resource_id)
         return view.draw_source_missing ? 0 : state.resource_picker.armed_resource_id;
     for (std::size_t index = 0; index < view.keysounds.size(); ++index) {
         const auto& row = view.keysounds[index];
@@ -404,7 +404,7 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
 }
 
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
-                                                  const WormUiComposeView& view,
+                                                  const wormedit::ui::compose_view_t& view,
                                                   wormedit::ui::workspace_action_t& action) {
     if (state.input_queue.action_overflowed || action.compose_inputs.size() == 0) return;
     action.compose_inputs[action.compose_inputs.size() - 1].resource_id.value =
@@ -441,11 +441,11 @@ void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& st
     state.stem_lanes.stem_lane_resize_hover_lane = 0;
 }
 void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
-    const WormUiComposeView& view, bool window_focused) {
+    const wormedit::ui::compose_view_t& view, bool window_focused) {
     if (!window_focused || view.input_occluded ||
         (state.stem_lanes.stem_lane_resize &&
-         (std::get<0>(state.stem_lanes.stem_lane_resize->key) != view.project_id ||
-          std::get<1>(state.stem_lanes.stem_lane_resize->key) != view.chart_id)))
+         (std::get<0>(state.stem_lanes.stem_lane_resize->key) != view.project_id.value ||
+          std::get<1>(state.stem_lanes.stem_lane_resize->key) != view.chart_id.value)))
         worm_ui_nuklear_cancel_stem_lane_resize(state);
 }
 void worm_ui_nuklear_reset_compose_state() {
@@ -454,15 +454,15 @@ void worm_ui_nuklear_reset_compose_state() {
 }
 
 auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,
-                                         const WormUiComposeView& view) -> bool {
-    if (!view.audio_offset_editable || view.input_occluded || !view.chart_id ||
+                                         const wormedit::ui::compose_view_t& view) -> bool {
+    if (!view.audio_offset_editable || view.input_occluded || !view.chart_id.value ||
         !view.waveform_audio_offset_denominator ||
         state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open) return false;
     state.inline_offset.inline_offset_open = true;
     state.inline_offset.inline_offset_focus_pending = true;
     state.inline_offset.inline_offset_cancel_pending = false;
     state.inline_offset.inline_offset_input_consumed = true;
-    state.inline_offset.inline_offset_chart_id = view.chart_id;
+    state.inline_offset.inline_offset_chart_id = view.chart_id.value;
     state.inline_offset.inline_offset_revision = view.document_revision;
     state.inline_offset.inline_offset_error.fill(0);
     std::snprintf(state.inline_offset.inline_offset_text.data(), state.inline_offset.inline_offset_text.size(), "%lld/%llu",
@@ -479,11 +479,11 @@ void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state
 }
 
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
-    const WormUiComposeView& view, wormedit::ui::workspace_action_t& action, bool committed, bool deactivated) {
+    const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action, bool committed, bool deactivated) {
     if (!state.inline_offset.inline_offset_open) return;
     state.inline_offset.inline_offset_input_consumed = true;
     if (state.inline_offset.inline_offset_cancel_pending || !view.audio_offset_editable ||
-        state.inline_offset.inline_offset_chart_id != view.chart_id || state.inline_offset.inline_offset_revision != view.document_revision) {
+        state.inline_offset.inline_offset_chart_id != view.chart_id.value || state.inline_offset.inline_offset_revision != view.document_revision) {
         worm_ui_nuklear_cancel_inline_offset(state);
         return;
     }
@@ -662,23 +662,23 @@ auto worm_ui_nuklear_overview_frame_delta(double x, double anchor, double width,
 }
 
 auto worm_ui_nuklear_overview_capture_matches(
-    const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
+    const worm_ui_nuklear_overview_capture_t& capture, const wormedit::ui::compose_view_t& view,
     double left, double width, bool available, bool window_focused) -> bool {
     return available && window_focused && view.scene_available &&
-        view.project_id == capture.project_id && view.chart_id == capture.chart_id &&
+        view.project_id.value == capture.project_id && view.chart_id.value == capture.chart_id &&
         view.document_revision == capture.revision &&
-        view.selected_audio_asset_id == capture.asset_id &&
+        view.selected_audio_asset_id.value == capture.asset_id &&
         view.waveform_overview_total_frames == capture.total_frames &&
         view.waveform_overview_sample_rate == capture.sample_rate &&
         left == capture.left && width == capture.width && width > 0.0 &&
         capture.total_frames != 0 && capture.sample_rate != 0;
 }
 
-auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)
+auto worm_ui_nuklear_overview_source_fraction(const wormedit::ui::compose_view_t& view)
     -> std::optional<double> {
-    if (!view.source_playhead_available || view.source_playhead_asset_id == 0 ||
-        view.source_playhead_asset_id != view.selected_audio_asset_id ||
-        view.source_playhead_chart_id != view.chart_id ||
+    if (!view.source_playhead_available || view.source_playhead_asset_id.value == 0 ||
+        view.source_playhead_asset_id.value != view.selected_audio_asset_id.value ||
+        view.source_playhead_chart_id.value != view.chart_id.value ||
         view.source_playhead_document_revision != view.document_revision ||
         view.source_playhead_sample_rate == 0 || view.waveform_overview_sample_rate == 0 ||
         view.waveform_overview_total_frames == 0)
@@ -691,7 +691,7 @@ auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)
     return std::min(static_cast<double>(fraction), std::nextafter(1.0, 0.0));
 }
 
-auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const char* text)
+auto worm_ui_nuklear_compose_measure_number(const wormedit::ui::compose_view_t& view, const char* text)
     -> std::optional<std::uint64_t> {
     if (!text || !text[0]) return std::nullopt;
     std::size_t length = 0;
@@ -772,7 +772,7 @@ void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
         .resource_id = {id}};
 }
 
-bool worm_ui_nuklear_compose_context_click(const nk_context* context, const WormUiComposeView& view) {
+bool worm_ui_nuklear_compose_context_click(const nk_context* context, const wormedit::ui::compose_view_t& view) {
     if (!view.note_paint_mode_active)
         return nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
     const auto& mouse = context->input.mouse;

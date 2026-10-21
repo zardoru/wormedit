@@ -8,7 +8,7 @@
 namespace wormedit::ui {
 
 // The measure lane: the measure rail shown as a lane of selectable bar lines (grid lines with a
-// measure_id). Sys fills it in place on WormUiComposeView each frame; the frontend reads it there.
+// measure_id). Sys fills it in place on compose_view_t each frame; the frontend reads it there.
 struct compose_measure_lane_view_t {
     bool visible{};
     // What moving a bar line does to the content after it.

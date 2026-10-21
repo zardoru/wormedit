@@ -37,6 +37,6 @@ void worm_ui_nuklear_bookmark_chooser_release_delivered(
 
 // Returns true while the chooser owns keyboard or pointer input.
 [[nodiscard]] auto worm_ui_nuklear_render_compose_bookmark_chooser(
-    nk_context* context, const WormUiBookmarkChooserView& view,
+    nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
     wormedit::ui::workspace_action_t* action, bool window_focused,
     bookmark_chooser_state_t* state) -> bool;

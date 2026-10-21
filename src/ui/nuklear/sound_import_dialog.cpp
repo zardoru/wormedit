@@ -300,13 +300,13 @@ auto& group_review_dialog() {
     return dialog;
 }
 
-auto group_review_stale(const WormUiComposeView& view,
+auto group_review_stale(const wormedit::ui::compose_view_t& view,
                         const worm_ui_keysound_group_review_t& state) -> bool {
-    return state.project_id != view.project_id || state.chart_id != view.chart_id ||
+    return state.project_id != view.project_id.value || state.chart_id != view.chart_id.value ||
            state.document_revision != view.document_revision;
 }
 
-void render_manual_group_contents(nk_context* context, const WormUiComposeView& view,
+void render_manual_group_contents(nk_context* context, const wormedit::ui::compose_view_t& view,
                                   worm_ui_keysound_group_review_t& state) {
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
@@ -351,13 +351,13 @@ auto reviewed_assignments(worm_ui_keysound_group_review_t& state)
     return worm_ui_keysound_group_review_confirm(state);
 }
 
-void submit_group_review(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
+void submit_group_review(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                          worm_ui_keysound_group_review_t& state,
                          bool& release_pending) {
     const auto assignments = reviewed_assignments(state);
     if (!assignments.empty()) {
         action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
-        action.compose_input_chart_id.value = view.chart_id;
+        action.compose_input_chart_id.value = view.chart_id.value;
         action.compose_input_document_revision = view.document_revision;
         for (const auto& assignment : assignments) {
             auto payload = wormedit::ui::sound_group_assignment_t{
@@ -377,7 +377,7 @@ void submit_group_review(wormedit::ui::workspace_action_t& action, const WormUiC
     }
 }
 
-void render_group_review_footer(nk_context* context, const WormUiComposeView& view,
+void render_group_review_footer(nk_context* context, const wormedit::ui::compose_view_t& view,
                                 wormedit::ui::workspace_action_t& action,
                                 worm_ui_keysound_group_review_t& state,
                                 bool& release_pending, bool stale) {
@@ -400,7 +400,7 @@ void render_group_review_footer(nk_context* context, const WormUiComposeView& vi
 }
 
 void worm_ui_nuklear_render_keysound_group_review(
-    nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+    nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
     worm_ui_keysound_group_review_t& state, bool& release_pending,
     int window_width, int window_height) {
     namespace chrome = wormedit::ui::chrome;

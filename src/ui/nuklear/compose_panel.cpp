@@ -57,14 +57,14 @@ static bool compose_selection_mode_valid(WormUiComposeSelectionMode mode) {
            mode == WORM_UI_COMPOSE_SELECTION_TOGGLE;
 }
 
-static bool compose_bgm_scroll_valid(const WormUiComposeView* view) {
+static bool compose_bgm_scroll_valid(const wormedit::ui::compose_view_t* view) {
     return std::isfinite(view->bgm_horizontal_scroll_pixels) &&
            std::isfinite(view->bgm_maximum_horizontal_scroll_pixels) &&
            view->bgm_horizontal_scroll_pixels >= 0.0 &&
            view->bgm_maximum_horizontal_scroll_pixels >= view->bgm_horizontal_scroll_pixels;
 }
 
-static bool compose_geometry_dimensions_valid(const WormUiComposeView* view) {
+static bool compose_geometry_dimensions_valid(const wormedit::ui::compose_view_t* view) {
     const auto valid_viewport = std::isfinite(view->viewport_width_pixels) &&
                                 view->viewport_width_pixels > 0.0 &&
                                 view->viewport_width_pixels <= 10000000.0 &&
@@ -91,7 +91,7 @@ static bool compose_geometry_dimensions_valid(const WormUiComposeView* view) {
            compose_bgm_scroll_valid(view);
 }
 
-static bool compose_geometry_overlay_valid(const WormUiComposeView* view) {
+static bool compose_geometry_overlay_valid(const wormedit::ui::compose_view_t* view) {
     const auto stage_valid = !view->timing_stage_active ||
         (std::isfinite(view->timing_stage_y_pixels) && view->timing_stage_y_pixels >= 0.0 &&
          view->timing_stage_y_pixels <= view->viewport_height_pixels &&
@@ -115,42 +115,24 @@ static bool compose_geometry_overlay_valid(const WormUiComposeView* view) {
     return stage_valid && playhead_valid && selection_valid && space_valid;
 }
 
-static bool compose_geometry_counts_valid(const WormUiComposeView* view) {
-    return view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
-           view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY &&
-           view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
-           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY &&
-           view->beat_bookmark_count <= WORM_UI_COMPOSE_BOOKMARK_CAPACITY &&
-           view->beat_section_count <= WORM_UI_COMPOSE_SECTION_CAPACITY &&
-           view->audio_bookmark_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY &&
-           view->audio_section_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY &&
-           view->output_group_count <= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY &&
-           view->resource_total_count >= view->resources.size() &&
+static bool compose_geometry_counts_valid(const wormedit::ui::compose_view_t* view) {
+    return view->resource_total_count >= view->resources.size() &&
            view->semantic_layer_first_row <= view->semantic_layer_total_count &&
-           view->semantic_layer_count <=
+           view->semantic_layers.size() <=
                view->semantic_layer_total_count - view->semantic_layer_first_row;
 
 }
 
-static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
-    return (view->branch_row_count == 0 || view->branch_rows) &&
-           (view->branch_choice_count == 0 || view->branch_choices) &&
-           (view->beat_bookmark_count == 0 || view->beat_bookmarks) &&
-           (view->beat_section_count == 0 || view->beat_sections) &&
-           (view->audio_bookmark_count == 0 || view->audio_bookmarks) &&
-           (view->audio_section_count == 0 || view->audio_sections) &&
-           (view->output_group_count == 0 || view->output_groups);
-}
 
-static bool compose_geometry_scene_elements_valid(const WormUiComposeView* view);
+static bool compose_geometry_scene_elements_valid(const wormedit::ui::compose_view_t* view);
 
-static bool compose_geometry_valid(const WormUiComposeView* view) {
+static bool compose_geometry_valid(const wormedit::ui::compose_view_t* view) {
     return view && compose_geometry_dimensions_valid(view) &&
            compose_geometry_overlay_valid(view) && compose_geometry_counts_valid(view) &&
-           compose_geometry_arrays_valid(view) && compose_geometry_scene_elements_valid(view);
+           compose_geometry_scene_elements_valid(view);
 }
 
-static bool compose_geometry_basic_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->bands.size(); ++index) {
+static bool compose_geometry_basic_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->bands.size(); ++index) {
         if (!view->bands[index].bounds.is_valid())
             return 0;
     }
@@ -162,7 +144,7 @@ static bool compose_geometry_basic_elements_valid(const WormUiComposeView* view)
     return true;
 }
 
-static bool compose_geometry_grid_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->grid_lines.size(); ++index) {
+static bool compose_geometry_grid_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->grid_lines.size(); ++index) {
         if (!std::isfinite(view->grid_lines[index].y_pixels) ||
             std::abs(view->grid_lines[index].y_pixels) > 10000000.0)
             return 0;
@@ -177,7 +159,7 @@ static bool compose_geometry_grid_elements_valid(const WormUiComposeView* view) 
     return true;
 }
 
-static bool compose_dead_spans_valid(const WormUiComposeView* view) {
+static bool compose_dead_spans_valid(const wormedit::ui::compose_view_t* view) {
     for (size_t index = 0; index < view->dead_spans.size(); ++index) {
         const auto& span = view->dead_spans[index];
         if (!span.bounds.is_valid() || (span.kind != wormedit::timing_lane_kind_t::stop &&
@@ -187,7 +169,7 @@ static bool compose_dead_spans_valid(const WormUiComposeView* view) {
     return true;
 }
 
-static bool compose_kiai_and_sv_valid(const WormUiComposeView* view) {
+static bool compose_kiai_and_sv_valid(const wormedit::ui::compose_view_t* view) {
     for (size_t index = 0; index < view->kiai_spans.size(); ++index) {
         const auto& span = view->kiai_spans[index];
         if (!span.bounds.is_valid() || span.head_object_id.value == 0 ||
@@ -201,7 +183,7 @@ static bool compose_kiai_and_sv_valid(const WormUiComposeView* view) {
     return true;
 }
 
-static bool compose_speed_spans_valid(const WormUiComposeView* view) {
+static bool compose_speed_spans_valid(const wormedit::ui::compose_view_t* view) {
     for (size_t index = 0; index < view->speed_spans.size(); ++index) {
         const auto& span = view->speed_spans[index];
         if (!span.bounds.is_valid() || span.object_id.value == 0 ||
@@ -210,7 +192,7 @@ static bool compose_speed_spans_valid(const WormUiComposeView* view) {
     return true;
 }
 
-static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
+static bool compose_recipe_areas_valid(const wormedit::ui::compose_view_t* view) {
     for (size_t index = 0; index < view->recipe_areas.size(); ++index) {
         const auto& area = view->recipe_areas[index];
         if (!area.bounds.is_valid() || area.recipe_id.value == 0 ||
@@ -226,7 +208,7 @@ static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
     return true;
 }
 
-static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {
+static bool compose_geometry_timing_elements_valid(const wormedit::ui::compose_view_t* view) {
     if (!compose_dead_spans_valid(view) || !compose_kiai_and_sv_valid(view) ||
         !compose_recipe_areas_valid(view) || !compose_speed_spans_valid(view)) return 0;
     for (size_t index = 0; index < view->timing_preview_rects.size(); ++index) {
@@ -261,7 +243,7 @@ static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view
     return true;
 }
 
-static bool compose_geometry_resource_elements_valid(const WormUiComposeView* view) {    constexpr std::uint8_t compose_resource_roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE |
+static bool compose_geometry_resource_elements_valid(const wormedit::ui::compose_view_t* view) {    constexpr std::uint8_t compose_resource_roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE |
                                                     WORM_UI_COMPOSE_RESOURCE_ROLE_BGM |
                                                     WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
     for (size_t index = 0; index < view->resources.size(); ++index) {
@@ -271,17 +253,16 @@ static bool compose_geometry_resource_elements_valid(const WormUiComposeView* vi
             return 0;
         }
     }
-    for (size_t index = 0; index < view->output_group_count; ++index) {
+    for (size_t index = 0; index < view->output_groups.size(); ++index) {
         const auto& group = view->output_groups[index];
-        if (!group.name || !group.relative_output_path || !group.relative_asset_directory ||
-            (index != 0 && group.document_index <= view->output_groups[index - 1].document_index))
+        if ((index != 0 && group.document_index <= view->output_groups[index - 1].document_index))
             return 0;
     }
 
     return true;
 }
 
-static bool compose_geometry_note_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->differences.size(); ++index) {
+static bool compose_geometry_note_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->differences.size(); ++index) {
         if (!view->differences[index].bounds.is_valid())
             return 0;
     }
@@ -308,7 +289,7 @@ static bool compose_geometry_note_elements_valid(const WormUiComposeView* view) 
     return true;
 }
 
-static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->waveform_rows.size(); ++index) {
+static bool compose_geometry_waveform_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->waveform_rows.size(); ++index) {
         const auto& row = view->waveform_rows[index];
         if (!std::isfinite(row.y_pixels) || row.y_pixels < 0.0 ||
             row.y_pixels > view->viewport_height_pixels) {
@@ -338,7 +319,7 @@ static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* vi
     return true;
 }
 
-static bool compose_geometry_bmson_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->bmson_marker_drafts.size(); ++index) {
+static bool compose_geometry_bmson_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->bmson_marker_drafts.size(); ++index) {
         if (!view->bmson_marker_drafts[index].bounds.is_valid()) {
             return 0;
         }
@@ -347,9 +328,9 @@ static bool compose_geometry_bmson_elements_valid(const WormUiComposeView* view)
         !view->bmson_marker_move_preview->bounds.is_valid()) {
         return 0;
     }
-    for (size_t index = 0; index < view->semantic_layer_count; ++index) {
-        if (!view->semantic_layers || view->semantic_layers[index].layer_id == 0 ||
-            !view->semantic_layers[index].name) {
+    for (size_t index = 0; index < view->semantic_layers.size(); ++index) {
+        if (view->semantic_layers.empty() || view->semantic_layers[index].layer_id.value == 0 ||
+            false) {
             return 0;
         }
     }
@@ -357,9 +338,9 @@ static bool compose_geometry_bmson_elements_valid(const WormUiComposeView* view)
     return true;
 }
 
-static bool compose_geometry_bookmark_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->beat_bookmark_count; ++index) {
+static bool compose_geometry_bookmark_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->beat_bookmarks.size(); ++index) {
         const auto& bookmark = view->beat_bookmarks[index];
-        if (bookmark.bookmark_id == 0 || !bookmark.label || bookmark.measure_number == 0 ||
+        if (bookmark.bookmark_id.value == 0 || bookmark.measure_number == 0 ||
             (bookmark.projection_visible &&
              (!std::isfinite(bookmark.projected_y_pixels) || bookmark.projected_y_pixels < 0.0 ||
               bookmark.projected_y_pixels > view->viewport_height_pixels)) ||
@@ -373,12 +354,12 @@ static bool compose_geometry_bookmark_elements_valid(const WormUiComposeView* vi
     return true;
 }
 
-static bool compose_geometry_beat_section_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->beat_section_count; ++index) {
+static bool compose_geometry_beat_section_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->beat_sections.size(); ++index) {
         const auto& section = view->beat_sections[index];
         const auto valid_y = [&](bool visible, double y) {
             return !visible || (std::isfinite(y) && y >= 0.0 && y <= view->viewport_height_pixels);
         };
-        if (section.section_id == 0 || !section.label || section.begin_measure_number == 0 ||
+        if (section.section_id.value == 0 || section.begin_measure_number == 0 ||
             section.end_measure_number == 0 ||
             section.begin_measure_number > section.end_measure_number ||
             (section.begin_measure_number == section.end_measure_number &&
@@ -415,18 +396,18 @@ static bool compose_geometry_beat_section_elements_valid(const WormUiComposeView
     return true;
 }
 
-static bool compose_geometry_audio_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->audio_bookmark_count; ++index) {
+static bool compose_geometry_audio_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->audio_bookmarks.size(); ++index) {
         const auto& bookmark = view->audio_bookmarks[index];
-        if (bookmark.bookmark_id == 0 || !bookmark.label ||
+        if (bookmark.bookmark_id.value == 0 ||
             (bookmark.projection_visible &&
              (!std::isfinite(bookmark.projected_y_pixels) || bookmark.projected_y_pixels < 0.0 ||
               bookmark.projected_y_pixels > view->viewport_height_pixels))) {
             return 0;
         }
     }
-    for (size_t index = 0; index < view->audio_section_count; ++index) {
+    for (size_t index = 0; index < view->audio_sections.size(); ++index) {
         const auto& section = view->audio_sections[index];
-        if (section.section_id == 0 || !section.label ||
+        if (section.section_id.value == 0 ||
             section.end_audio_milliseconds <= section.begin_audio_milliseconds ||
             (section.begin_projection_visible &&
              (!std::isfinite(section.projected_begin_y_pixels) ||
@@ -449,20 +430,20 @@ static bool compose_geometry_audio_elements_valid(const WormUiComposeView* view)
     return true;
 }
 
-static bool compose_geometry_hover_valid(const WormUiComposeView* view) {    if (view->hover_note_visible && (!view->hover_tooltip || view->hover_note_id == 0)) {
+static bool compose_geometry_hover_valid(const wormedit::ui::compose_view_t* view) {    if (view->hover_note_visible && (!view->hover_tooltip.c_str() || view->hover_note_id.value == 0)) {
         return 0;
     }
 
     return true;
 }
 
-static bool compose_geometry_branch_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->branch_row_count; ++index) {
-        if (!view->branch_rows[index].display_text || view->branch_rows[index].depth > 512)
+static bool compose_geometry_branch_elements_valid(const wormedit::ui::compose_view_t* view) {    for (size_t index = 0; index < view->branch_rows.size(); ++index) {
+        if (view->branch_rows[index].depth > 512)
             return 0;
     }
-    for (size_t index = 0; index < view->branch_choice_count; ++index) {
+    for (size_t index = 0; index < view->branch_choices.size(); ++index) {
         const auto& choice = view->branch_choices[index];
-        if (choice.branch_id == 0 || choice.kind > WORM_UI_COMPOSE_BRANCH_SWITCH ||
+        if (choice.branch_id.value == 0 || choice.kind > WORM_UI_COMPOSE_BRANCH_SWITCH ||
             (choice.editable && !choice.active) ||
             (choice.can_clear && (!choice.active || !choice.has_selected_value)) ||
             (choice.has_previous_value && choice.has_selected_value &&
@@ -476,11 +457,11 @@ static bool compose_geometry_branch_elements_valid(const WormUiComposeView* view
     return true;
 }
 
-static bool compose_geometry_cursor_valid(const WormUiComposeView* view) {
+static bool compose_geometry_cursor_valid(const wormedit::ui::compose_view_t* view) {
     return !view->cursor || view->cursor->bounds.is_valid();
 }
 
-static bool compose_geometry_scene_elements_valid(const WormUiComposeView* view) {
+static bool compose_geometry_scene_elements_valid(const wormedit::ui::compose_view_t* view) {
     return compose_geometry_basic_elements_valid(view) &&
            compose_geometry_grid_elements_valid(view) &&
            compose_geometry_timing_elements_valid(view) &&
@@ -496,7 +477,7 @@ static bool compose_geometry_scene_elements_valid(const WormUiComposeView* view)
            compose_geometry_cursor_valid(view);
 }
 
-static bool compose_beat_fit_valid(const WormUiComposeView* view) {
+static bool compose_beat_fit_valid(const wormedit::ui::compose_view_t* view) {
     return !view->beat_fit_drag_active ||
            (view->beat_fit_chart_row != 0 && view->waveform_overview_sample_rate != 0 &&
             view->beat_fit_original_bpm_denominator != 0 &&
@@ -510,7 +491,7 @@ static bool compose_beat_fit_valid(const WormUiComposeView* view) {
             view->beat_fit_target_sample_frame < view->waveform_overview_total_frames);
 }
 
-static bool compose_waveform_overview_valid(const WormUiComposeView* view) {
+static bool compose_waveform_overview_valid(const wormedit::ui::compose_view_t* view) {
     return std::isfinite(view->waveform_overview_visible_begin_fraction) &&
            std::isfinite(view->waveform_overview_visible_end_fraction) &&
            view->waveform_overview_visible_begin_fraction >= 0.0 &&
@@ -534,7 +515,7 @@ static bool compose_waveform_overview_valid(const WormUiComposeView* view) {
              view->waveform_audio_offset_denominator != 0));
 }
 
-static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
+static bool compose_bgm_bar_valid(const wormedit::ui::compose_view_t* view) {
     if (view->bgm_bar_rows.size() == 0)
         return view->bgm_bar_marks.size() == 0 && view->bgm_bar_bookmarks.size() == 0;
     if (!std::isfinite(view->bgm_bar_begin_fraction) || !std::isfinite(view->bgm_bar_end_fraction) ||
@@ -552,13 +533,9 @@ static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
                        });
 }
 
-static bool compose_scene_arrays_present(const WormUiComposeView* view) {
+static bool compose_scene_arrays_present(const wormedit::ui::compose_view_t* view) {
     return (view->channel_waveform_rows.empty() ||
-            (view->channel_waveform_source_lane_id != wormedit::object_id_t{} && !view->bgm_lanes.empty())) &&
-           (view->semantic_layer_count == 0 || view->semantic_layers) &&
-           (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
-           (view->branch_choice_count == 0 || view->branch_choices) &&
-           (view->branch_row_count == 0 || view->branch_rows);
+            (view->channel_waveform_source_lane_id != wormedit::object_id_t{} && !view->bgm_lanes.empty()));
 }
 
 static bool compose_validation_check(bool accepted, const char* reason) {
@@ -584,7 +561,7 @@ static bool overview_rows_valid(std::span<const wormedit::ui::compose_waveform_o
     return true;
 }
 
-const char* worm_ui_nuklear_compose_overview_error(const WormUiComposeView* view) {
+const char* worm_ui_nuklear_compose_overview_error(const wormedit::ui::compose_view_t* view) {
     if (!view) return "missing overview view";
     if (!compose_waveform_overview_valid(view)) return "overview timing metadata";
     if (!overview_rows_valid(view->waveform_overview_rows))
@@ -595,34 +572,32 @@ const char* worm_ui_nuklear_compose_overview_error(const WormUiComposeView* view
     return nullptr;
 }
 
-int worm_ui_nuklear_compose_overview_valid(const WormUiComposeView* view) {
+int worm_ui_nuklear_compose_overview_valid(const wormedit::ui::compose_view_t* view) {
     const auto* error = worm_ui_nuklear_compose_overview_error(view);
     return compose_validation_check(error == nullptr, error ? error : "overview");
 }
 
-int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
+int worm_ui_nuklear_compose_view_valid(const wormedit::ui::compose_view_t* view) {
     return compose_validation_check(view, "view") &&
            compose_validation_check(view->hitsounds.values.is_valid(), "hitsound palette values") &&
            compose_validation_check(worm_ui_nuklear_note_layer_window_valid(view), "worm_ui_nuklear_note_layer_window_valid(view)") &&
-           compose_validation_check((view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1), "(view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1)") &&
-           compose_validation_check((view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1), "(view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1)") &&
-           compose_validation_check(((view->selected_bmson_bgm_event_id == 0) ==
-            (view->selected_bmson_source_lane_id == 0)), "((view->selected_bmson_bgm_event_id == 0) == (view->selected_bmson_source_lane_id == 0))") &&
-           compose_validation_check(view->staged_bmson_marker_count <= 256, "view->staged_bmson_marker_count <= 256") &&
-           compose_validation_check((view->staged_bmson_marker_count == 0 ||
-            (view->staged_bmson_marker_playable_lanes != nullptr &&
-             view->staged_bmson_marker_restarts != nullptr)), "(view->staged_bmson_marker_count == 0 || (view->staged_bmson_marker_playable_lanes != nullptr && view->staged_bmson_marker_restarts != nullptr))") &&
-           compose_validation_check(view->bmson_marker_drafts.size() <= view->staged_bmson_marker_count, "view->bmson_marker_drafts.size() <= view->staged_bmson_marker_count") &&
+           compose_validation_check((view->selected_bmson_bgm_event_id.value == 0 || view->selected_object_count == 1), "(view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1)") &&
+           compose_validation_check((view->selected_bmson_note_event_id.value == 0 || view->selected_note_count == 1), "(view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1)") &&
+           compose_validation_check(((view->selected_bmson_bgm_event_id.value == 0) ==
+            (view->selected_bmson_source_lane_id.value == 0)), "((view->selected_bmson_bgm_event_id == 0) == (view->selected_bmson_source_lane_id == 0))") &&
+           compose_validation_check(view->staged_bmson_marker_restarts.size() <= 256, "view->staged_bmson_marker_restarts.size() <= 256") &&
+           compose_validation_check((view->staged_bmson_marker_restarts.size() == 0 ||
+            (!view->staged_bmson_marker_playable_lanes.empty() &&
+             !view->staged_bmson_marker_restarts.empty())), "(view->staged_bmson_marker_restarts.size() == 0 || (!view->staged_bmson_marker_playable_lanes.empty() && !view->staged_bmson_marker_restarts.empty()))") &&
+           compose_validation_check(view->bmson_marker_drafts.size() <= view->staged_bmson_marker_restarts.size(), "view->bmson_marker_drafts.size() <= view->staged_bmson_marker_restarts.size()") &&
            compose_validation_check((view->proposed_grid_lines.size() == 0 || view->waveform_offset_drag_active ||
             view->beat_fit_drag_active), "(view->proposed_grid_lines.size() == 0 || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
            compose_validation_check(((view->timing_preview_rects.size() == 0 && view->timing_preview_markers.size() == 0) ||
             view->waveform_offset_drag_active || view->beat_fit_drag_active), "((view->timing_preview_rects.size() == 0 && view->timing_preview_markers.size() == 0) || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
            compose_validation_check(compose_beat_fit_valid(view), "compose_beat_fit_valid(view)") &&
-           compose_validation_check(view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY, "view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY") &&
-           compose_validation_check(view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY, "view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY") &&
-           compose_validation_check(view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY, "view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY") &&
-           compose_validation_check(view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY, "view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY") &&
-           compose_validation_check(view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY, "view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY") &&
+           compose_validation_check(view->semantic_layers.size() <= wormedit::ui::semantic_layer_window_limit, "view->semantic_layers.size() <= wormedit::ui::semantic_layer_window_limit") &&
+
+
            compose_validation_check(compose_scene_arrays_present(view), "compose_scene_arrays_present(view)") &&
            compose_validation_check(compose_geometry_valid(view), "compose_geometry_valid(view)");
 }
@@ -681,7 +656,7 @@ static void render_compose_waveform_overview(const ComposeOverviewContext& overv
 }
 
 void worm_ui_nuklear_render_compose_minimap(
-    struct nk_context* context, const WormUiComposeView* view,
+    struct nk_context* context, const wormedit::ui::compose_view_t* view,
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
@@ -733,7 +708,7 @@ std::uint32_t bgm_bar_measure_step(double pixels_per_measure, float spacing) {
 }
 
 // Average on-screen width of one measure, from the first and last published marks.
-double bgm_bar_pixels_per_measure(const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+double bgm_bar_pixels_per_measure(const wormedit::ui::compose_view_t& view, const BgmBarGeometry& geometry) {
     if (view.bgm_bar_marks.size() < 2) return 0.0;
     const auto& first = view.bgm_bar_marks[0];
     const auto& last = view.bgm_bar_marks[view.bgm_bar_marks.size() - 1];
@@ -743,7 +718,7 @@ double bgm_bar_pixels_per_measure(const WormUiComposeView& view, const BgmBarGeo
            geometry.bounds.w / measures;
 }
 
-void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const WormUiComposeView& view,
+void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const wormedit::ui::compose_view_t& view,
                            const BgmBarGeometry& geometry) {
     const auto center = geometry.bounds.y + geometry.bounds.h * 0.5f;
     const auto half_height = geometry.bounds.h * 0.43f;
@@ -758,7 +733,7 @@ void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const WormUiCompose
 }
 
 void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* canvas,
-                       const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+                       const wormedit::ui::compose_view_t& view, const BgmBarGeometry& geometry) {
     const auto* font = context->style.font;
     const auto per_measure = bgm_bar_pixels_per_measure(view, geometry);
     const auto line_step = bgm_bar_measure_step(per_measure, bgm_bar_line_spacing_pixels);
@@ -785,7 +760,7 @@ void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* can
 // Flag on the top edge for each bookmark, with its label to the right when the next
 // bookmark leaves room for it.
 void draw_bgm_bar_bookmarks(struct nk_context* context, struct nk_command_buffer* canvas,
-                            const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+                            const wormedit::ui::compose_view_t& view, const BgmBarGeometry& geometry) {
     const auto& bounds = geometry.bounds;
     const auto* font = context->style.font;
     for (size_t index = 0; index < view.bgm_bar_bookmarks.size(); ++index) {
@@ -808,7 +783,7 @@ void draw_bgm_bar_bookmarks(struct nk_context* context, struct nk_command_buffer
     }
 }
 
-void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const WormUiComposeView& view,
+void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const wormedit::ui::compose_view_t& view,
                           const BgmBarGeometry& geometry) {
     const auto& bounds = geometry.bounds;
     const auto clamp_x = [&](double fraction) {
@@ -847,7 +822,7 @@ void append_bgm_bar_input(wormedit::ui::workspace_action_t* action, WormUiCompos
 }
 
 // Wheel zoom centers on the visible field span; Shift+wheel or middle-drag pans the range.
-void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeView& view,
+void process_bgm_bar_view_input(struct nk_context* context, const wormedit::ui::compose_view_t& view,
                                 wormedit::ui::workspace_action_t* action,
                                 const BgmBarGeometry& geometry) {
     static bool middle_dragged = false;
@@ -881,12 +856,12 @@ void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeV
     }
 }
 
-void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeView* view,
+void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::compose_view_t* view,
                               wormedit::ui::workspace_action_t* action, const BgmBarGeometry& geometry) {
     if (!nk_input_is_mouse_hovering_rect(&context->input, geometry.bounds)) return;
     constexpr char instructions[] =
         "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
-    if (view->selected_audio_asset_id == 0 || view->waveform_overview_total_frames == 0 ||
+    if (view->selected_audio_asset_id.value == 0 || view->waveform_overview_total_frames == 0 ||
         view->waveform_overview_sample_rate == 0) {
         return;
     }
@@ -907,13 +882,13 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
         return;
     }
     if (!wormedit::ui::nuklear::tooltip::hovered(context, geometry.bounds)) return;
-    wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label, instructions);
+    wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label.c_str(), instructions);
 }
 
 } // namespace
 
 void worm_ui_nuklear_render_compose_bgm_bar(
-    struct nk_context* context, const WormUiComposeView* view,
+    struct nk_context* context, const wormedit::ui::compose_view_t* view,
     wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
@@ -956,7 +931,7 @@ void worm_ui_nuklear_render_compose_bgm_bar(
 
 struct ComposePanelRenderContext {
     struct nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     const wormedit::ui::timing_view_t* timing_view;
     wormedit::ui::workspace_action_t* action;
     bool window_focused;
@@ -1293,7 +1268,7 @@ static void close_go_to_measure(nk_context* context) {
     nk_popup_close(context);
 }
 
-static void confirm_go_to_measure(const WormUiComposeView& view,
+static void confirm_go_to_measure(const wormedit::ui::compose_view_t& view,
                                   wormedit::ui::workspace_action_t& action, nk_context* context) {
     const auto number = worm_ui_nuklear_compose_measure_number(view,
                                                               state.dialogs.go_to_measure_text.data());
@@ -1307,15 +1282,15 @@ static void confirm_go_to_measure(const WormUiComposeView& view,
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE;
     action.compose_measure_number = *number;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     close_go_to_measure(context);
 }
 
-static void render_go_to_measure(nk_context* context, const WormUiComposeView& view,
+static void render_go_to_measure(nk_context* context, const wormedit::ui::compose_view_t& view,
                                  wormedit::ui::workspace_action_t& action, bool window_focused) {
     if (!state.dialogs.go_to_measure_open) return;
-    if (!window_focused || view.chart_id != state.dialogs.go_to_measure_chart_id ||
+    if (!window_focused || view.chart_id.value != state.dialogs.go_to_measure_chart_id ||
         view.document_revision != state.dialogs.go_to_measure_revision) {
         state.dialogs.go_to_measure_cancel_pending = true;
     }
@@ -1399,7 +1374,7 @@ static void close_hidden_offset_editor(nk_context* context, bool inspector_drawn
     }
 }
 
-static auto compose_dock_layout(nk_context* context, const WormUiComposeView* view)
+static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose_view_t* view)
     -> ComposeDockLayout {
     const auto compose_body_bounds = nk_window_get_content_region(context);
     const auto body_top = nk_widget_position(context).y;
@@ -1449,7 +1424,7 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
 }
 
 static void render_compose_inspector_contents(nk_context* context,
-                                               const WormUiComposeView* view,
+                                               const wormedit::ui::compose_view_t* view,
                                                const wormedit::ui::timing_view_t* timing_view,
                                                wormedit::ui::workspace_action_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
@@ -1472,7 +1447,7 @@ static void render_compose_dock(nk_context* context, struct nk_rect bounds, cons
     }
 }
 
-static void render_compose_side_docks(nk_context* context, const WormUiComposeView* view,
+static void render_compose_side_docks(nk_context* context, const wormedit::ui::compose_view_t* view,
     const wormedit::ui::timing_view_t* timing_view, wormedit::ui::workspace_action_t* action, const ComposeDockLayout& layout) {
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width,
         layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = layout;
@@ -1518,7 +1493,7 @@ static void render_compose_side_docks(nk_context* context, const WormUiComposeVi
     }
 }
 
-void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
+void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const wormedit::ui::compose_view_t* view,
                                           const wormedit::ui::timing_view_t* timing_view,
                                           wormedit::ui::workspace_action_t* action, bool window_focused,
                                           bool ime_composition_active,
@@ -1583,7 +1558,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 
-bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
+bool worm_ui_nuklear_compose_lane_focused(const wormedit::ui::compose_view_t* view, bool compose_tab_active,
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
         view, window_focused, state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open ||

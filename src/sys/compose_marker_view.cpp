@@ -3,8 +3,8 @@
 #include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
-    compose_marker_storage_t<WormUiComposeAudioBookmarkView>& storage,
-    const wormedit::bookmark_t& bookmark, WormUiComposeView&) -> bool {
+    compose_marker_storage_t<wormedit::ui::compose_audio_bookmark_view_t>& storage,
+    const wormedit::bookmark_t& bookmark, wormedit::ui::compose_view_t&) -> bool {
     if (!bookmark.audio_milliseconds || bookmark.position) {
         report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_bookmark,
                                   wormedit::notification_severity_t::error,
@@ -12,12 +12,10 @@ auto populate_compose_audio_bookmark(
                                   bookmark.id.value);
         return false;
     }
-    if (compose_marker_at_capacity(storage))
-        return true;
     append_compose_marker(storage, bookmark.label,
-                          WormUiComposeAudioBookmarkView{
-                              .bookmark_id = bookmark.id.value,
-                              .label = nullptr,
+                          wormedit::ui::compose_audio_bookmark_view_t{
+                              .bookmark_id = {bookmark.id.value},
+                              .label = {},
                               .audio_milliseconds = *bookmark.audio_milliseconds,
                               .projection_visible = false,
                               .projected_y_pixels = 0.0,
@@ -25,10 +23,10 @@ auto populate_compose_audio_bookmark(
     return true;
 }
 
-auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookmarkView>& storage,
+auto populate_compose_beat_bookmark(compose_marker_storage_t<wormedit::ui::compose_bookmark_view_t>& storage,
                                     const wormedit::bookmark_t& bookmark,
                                     const wormedit::measure_index_t& measures,
-                                    WormUiComposeView&) -> bool {
+                                    wormedit::ui::compose_view_t&) -> bool {
     if (!bookmark.position) {
         report_compose_projection(
             storage.flattened, projection_feedback_kind_t::beat_bookmark_position,
@@ -36,8 +34,6 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
             "A beat-anchored bookmark has no valid chart position.", bookmark.id.value);
         return false;
     }
-    if (compose_marker_at_capacity(storage))
-        return true;
     const auto* measure = measures.entry_for(bookmark.position->measure);
     if (!measure || bookmark.position->row >= measure->row_capacity) {
         report_compose_projection(
@@ -47,9 +43,9 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
         return false;
     }
     append_compose_marker(storage, bookmark.label,
-                          WormUiComposeBookmarkView{
-                              .bookmark_id = bookmark.id.value,
-                              .label = nullptr,
+                          wormedit::ui::compose_bookmark_view_t{
+                              .bookmark_id = {bookmark.id.value},
+                              .label = {},
                               .measure_number = static_cast<std::uint64_t>(
                                   measure - measures.entries.data() + 1),
                               .row = bookmark.position->row,
@@ -65,12 +61,9 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
 bool populate_compose_bookmark_storage(frontend_workspace_view_t& flattened,
                                        const wormedit::chart_document_t& chart,
                                        const wormedit::measure_index_t& measures,
-                                       WormUiComposeView& view) {
-    compose_marker_storage_t beat{flattened, flattened.compose.bookmark, view.beat_bookmark_count,
-                                  view.beat_bookmarks_truncated, WORM_UI_COMPOSE_BOOKMARK_CAPACITY};
-    compose_marker_storage_t audio{flattened, flattened.compose.audio_marker.bookmark,
-                                   view.audio_bookmark_count, view.audio_bookmarks_truncated,
-                                   WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY};
+                                       wormedit::ui::compose_view_t& view) {
+    compose_marker_storage_t beat{flattened, flattened.view.compose.beat_bookmarks};
+    compose_marker_storage_t audio{flattened, flattened.view.compose.audio_bookmarks};
     prepare_compose_marker_storage(beat, static_cast<std::size_t>(std::ranges::count(
                                              chart.bookmarks, wormedit::marker_anchor_t::beat,
                                              &wormedit::bookmark_t::anchor)));
@@ -78,8 +71,8 @@ bool populate_compose_bookmark_storage(frontend_workspace_view_t& flattened,
         audio, static_cast<std::size_t>(std::ranges::count(chart.bookmarks,
                                                            wormedit::marker_anchor_t::audio_time,
                                                            &wormedit::bookmark_t::anchor)));
-    view.beat_bookmarks = flattened.compose.bookmark.data();
-    view.audio_bookmarks = flattened.compose.audio_marker.bookmark.data();
+
+
     for (const auto& bookmark : chart.bookmarks) {
         if (bookmark.anchor == wormedit::marker_anchor_t::audio_time) {
             if (!populate_compose_audio_bookmark(audio, bookmark, view))
@@ -93,8 +86,8 @@ bool populate_compose_bookmark_storage(frontend_workspace_view_t& flattened,
 }
 
 auto populate_compose_audio_section(
-    compose_marker_storage_t<WormUiComposeAudioSectionView>& storage,
-    const wormedit::section_t& section, WormUiComposeView&) -> bool {
+    compose_marker_storage_t<wormedit::ui::compose_audio_section_view_t>& storage,
+    const wormedit::section_t& section, wormedit::ui::compose_view_t&) -> bool {
     if (!section.audio_millisecond_span || section.beat_span ||
         section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
         report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_section,
@@ -103,12 +96,10 @@ auto populate_compose_audio_section(
                                   section.id.value);
         return false;
     }
-    if (compose_marker_at_capacity(storage))
-        return true;
     append_compose_marker(storage, section.label,
-                          WormUiComposeAudioSectionView{
-                              .section_id = section.id.value,
-                              .label = nullptr,
+                          wormedit::ui::compose_audio_section_view_t{
+                              .section_id = {section.id.value},
+                              .label = {},
                               .begin_audio_milliseconds = section.audio_millisecond_span->first,
                               .end_audio_milliseconds = section.audio_millisecond_span->second,
                               .begin_projection_visible = false,
@@ -122,10 +113,10 @@ auto populate_compose_audio_section(
     return true;
 }
 
-auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSectionView>& storage,
+auto populate_compose_beat_section(compose_marker_storage_t<wormedit::ui::compose_section_view_t>& storage,
                                    const wormedit::section_t& section,
                                    const wormedit::measure_index_t& measures,
-                                   WormUiComposeView&) -> bool {
+                                   wormedit::ui::compose_view_t&) -> bool {
     if (!section.beat_span) {
         report_compose_projection(
             storage.flattened, projection_feedback_kind_t::beat_section_position,
@@ -133,8 +124,6 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
             "A beat-anchored section has no valid chart span.", section.id.value);
         return false;
     }
-    if (compose_marker_at_capacity(storage))
-        return true;
     const auto* begin_measure = measures.entry_for(section.beat_span->begin.measure);
     const auto* end_measure = measures.entry_for(section.beat_span->end.measure);
     if (!begin_measure || !end_measure ||
@@ -148,9 +137,9 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
     }
     append_compose_marker(
         storage, section.label,
-        WormUiComposeSectionView{
-            .section_id = section.id.value,
-            .label = nullptr,
+        wormedit::ui::compose_section_view_t{
+            .section_id = {section.id.value},
+            .label = {},
             .begin_measure_number = static_cast<std::uint64_t>(
                 begin_measure - measures.entries.data() + 1),
             .begin_row = section.beat_span->begin.row,
@@ -180,20 +169,17 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
 bool populate_compose_section_storage(frontend_workspace_view_t& flattened,
                                       const wormedit::chart_document_t& chart,
                                       const wormedit::measure_index_t& measures,
-                                      WormUiComposeView& view) {
-    compose_marker_storage_t beat{flattened, flattened.compose.section, view.beat_section_count,
-                                  view.beat_sections_truncated, WORM_UI_COMPOSE_SECTION_CAPACITY};
-    compose_marker_storage_t audio{flattened, flattened.compose.audio_marker.section,
-                                   view.audio_section_count, view.audio_sections_truncated,
-                                   WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY};
+                                      wormedit::ui::compose_view_t& view) {
+    compose_marker_storage_t beat{flattened, flattened.view.compose.beat_sections};
+    compose_marker_storage_t audio{flattened, flattened.view.compose.audio_sections};
     prepare_compose_marker_storage(
         beat, static_cast<std::size_t>(std::ranges::count(
                   chart.sections, wormedit::marker_anchor_t::beat, &wormedit::section_t::anchor)));
     prepare_compose_marker_storage(audio, static_cast<std::size_t>(std::ranges::count(
                                               chart.sections, wormedit::marker_anchor_t::audio_time,
                                               &wormedit::section_t::anchor)));
-    view.beat_sections = flattened.compose.section.data();
-    view.audio_sections = flattened.compose.audio_marker.section.data();
+
+
     for (const auto& section : chart.sections) {
         if (section.anchor == wormedit::marker_anchor_t::audio_time) {
             if (!populate_compose_audio_section(audio, section, view))
@@ -209,7 +195,7 @@ bool populate_compose_section_storage(frontend_workspace_view_t& flattened,
 bool populate_compose_bookmark_and_section_storage(frontend_workspace_view_t& flattened,
                                                    const wormedit::chart_document_t& chart,
                                                    const wormedit::measure_index_t& measures,
-                                                   WormUiComposeView& view) {
+                                                   wormedit::ui::compose_view_t& view) {
     return populate_compose_bookmark_storage(flattened, chart, measures, view) &&
            populate_compose_section_storage(flattened, chart, measures, view);
 }
@@ -292,7 +278,7 @@ auto compose_initial_bpm(const wormedit::chart_document_t& chart,
     return initial;
 }
 
-void assign_compose_timing_marker_fractions(WormUiComposeView& view) {
+void assign_compose_timing_marker_fractions(wormedit::ui::compose_view_t& view) {
     std::ranges::sort(view.timing_markers, [](const auto& left, const auto& right) {
         return std::tie(left.lane, left.marker_y_pixels, left.source_order, left.storage_order,
                         left.object_id) < std::tie(right.lane, right.marker_y_pixels,
@@ -353,14 +339,14 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
             return std::nullopt;
         return y;
     };
-    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
-        auto& bookmark = flattened.compose.bookmark[index];
+    for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
+        auto& bookmark = flattened.view.compose.beat_bookmarks[index];
         const auto y = visible_beat_y(bookmark.chart_row);
         bookmark.projection_visible = y.has_value();
         bookmark.projected_y_pixels = y.value_or(0.0);
     }
-    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
-        auto& section = flattened.compose.section[index];
+    for (std::size_t index = 0; index < view.beat_sections.size(); ++index) {
+        auto& section = flattened.view.compose.beat_sections[index];
         const auto begin_y = compose_project_y(section.begin_chart_row, beat_pixels_per_row,
                                                interaction_view.viewport_scroll_pixels,
                                                view.viewport_height_pixels, downscroll);
@@ -387,7 +373,7 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
     }
 }
 
-bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view) {
+bool compose_audio_marker_y_visible(double y, const wormedit::ui::compose_view_t& view) {
     return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
 }
 
@@ -432,7 +418,7 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
 void populate_compose_timing_markers(
     frontend_workspace_view_t& flattened, const wormedit::song_document_t& document,
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
-    const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
+    const wormedit::editor_interaction_view_model_t& interaction_view, wormedit::ui::compose_view_t& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
     const wormedit::timing_lane_pseudonote_outcome_t* timing_stage) {
     view.timing_markers.clear();
@@ -535,7 +521,7 @@ void assign_dead_span_label(std::string& label, const wormedit::sys::dead_span_b
 void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
                                  const compose_scene_cache_t& cache,
                                  const wormedit::editor_interaction_view_model_t& interaction_view,
-                                 WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+                                 wormedit::ui::compose_view_t& view, bool downscroll, double pixels_per_row) {
     view.dead_spans.clear();
 
     if (!cache.timing.dead_spans)
@@ -564,7 +550,7 @@ void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
 void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
-                                  WormUiComposeView& view, bool downscroll, double pixels_per_row,
+                                  wormedit::ui::compose_view_t& view, bool downscroll, double pixels_per_row,
                                   std::uint64_t total_rows, std::uint64_t kiai_selected_head) {
     view.kiai_spans.clear();
     view.sv_graph_points.clear();
@@ -618,7 +604,7 @@ void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
 void populate_compose_recipe_areas(
     frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
-    const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
+    const wormedit::editor_interaction_view_model_t& interaction_view, wormedit::ui::compose_view_t& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
     const recipe_form_outcome_t* preview) {
     view.recipe_areas.clear();
@@ -691,7 +677,7 @@ void populate_compose_recipe_areas(
 void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
-                                  WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+                                  wormedit::ui::compose_view_t& view, bool downscroll, double pixels_per_row) {
     view.speed_spans.clear();
     view.speed_graph_points.clear();
 
@@ -746,29 +732,23 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
         preview.reset();
 }
 
-void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
+void populate_compose_recipe_form(frontend_workspace_view_t&,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
-                                  WormUiComposeView& view) {
-    flattened.compose.recipe_form_text.clear();
+                                  wormedit::ui::compose_view_t& view) {
     view.recipe_form = {};
     const auto recipe = std::ranges::find(chart.sv_recipes,
-                                          wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected},
-                                          &wormedit::sv_recipe_t::id);
-    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end())
-        return;
-    flattened.compose.recipe_form_text.reserve(3);
-    const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
-    const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
-    const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
-            ? std::string_view{} : application_state.project.timing_recipe.recipe_preview->diagnostics.front().message} : std::string{});
+        wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected}, &wormedit::sv_recipe_t::id);
+    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end()) return;
     view.recipe_form.visible = true;
-    view.recipe_form.recipe_id = recipe->id.value;
+    view.recipe_form.recipe_id.value = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;
-    view.recipe_form.name = name.c_str();
-    view.recipe_form.expression_source = source.c_str();
-    view.recipe_form.status_text = status.empty() ? nullptr : status.c_str();
-    view.recipe_form.form = wormedit::sys::recipe_form_from_recipe(*recipe);
+    view.recipe_form.name = recipe->name;
+    view.recipe_form.expression_source = recipe->expression_source;
+    view.recipe_form.status_text = application_state.project.timing_recipe.recipe_preview &&
+        !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
+        ? std::string_view{application_state.project.timing_recipe.recipe_preview->diagnostics.front().message}
+        : std::string_view{};
+    view.recipe_form.form = wormedit::ui::timing_recipe_form_t::from(*recipe);
 }
 } // namespace wormedit::sys::compose_projection_detail

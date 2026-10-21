@@ -88,10 +88,10 @@ void close_with_reason(worm_ui_sound_slot_batch_t& state, const char* reason) {
     state.reason = reason;
 }
 
-auto stale_target(const worm_ui_sound_slot_batch_t& state, const WormUiComposeView& view)
+auto stale_target(const worm_ui_sound_slot_batch_t& state, const wormedit::ui::compose_view_t& view)
     -> bool {
-    return !view.sound_slots_mode || view.project_id != state.project_id ||
-           view.chart_id != state.chart_id || view.document_revision != state.revision;
+    return !view.sound_slots_mode || view.project_id.value != state.project_id ||
+           view.chart_id.value != state.chart_id || view.document_revision != state.revision;
 }
 } // namespace
 
@@ -139,7 +139,7 @@ void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool app
 
 void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
                                             worm_ui_sound_slot_batch_t& state,
-                                            const WormUiComposeView& view,
+                                            const wormedit::ui::compose_view_t& view,
                                             wormedit::ui::workspace_action_t& action,
                                             int window_width, int window_height) {
     if (!state.open) return;

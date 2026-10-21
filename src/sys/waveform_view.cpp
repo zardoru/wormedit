@@ -266,7 +266,7 @@ auto envelope_style(const audio::aligned_waveform_style_t* playback,
             .detail_level = window->frames_per_pixel < 256};
 }
 void orient_compose_waveform_rows(std::vector<wormedit::ui::compose_waveform_row_view_t>& rows,
-                                  const WormUiComposeView& view) {
+                                  const wormedit::ui::compose_view_t& view) {
     for (auto& row : rows)
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
 }
@@ -312,7 +312,7 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
                                 const audio::waveform_t& waveform, bgm_bar_range_t range) {
     auto& view = flattened.view.compose;
     auto& out = view.bgm_bar_bookmarks;
-    const auto add = [&](double fraction, const char* label, bool audio) {
+    const auto add = [&](double fraction, std::string_view label, bool audio) {
         if (std::isfinite(fraction) && fraction >= range.begin && fraction <= range.end)
             (void)out.push_back({fraction, label, audio});
     };
@@ -320,7 +320,7 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
         return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
     };
     if (cache.timing.marker_timing_index) {
-        for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+        for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
             const auto& bookmark = view.beat_bookmarks[index];
             const auto time = cache.timing.marker_timing_index->query_seconds(bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
@@ -329,7 +329,7 @@ void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const comp
                 bookmark.label, false);
         }
     }
-    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+    for (std::size_t index = 0; index < view.audio_bookmarks.size(); ++index) {
         const auto& bookmark = view.audio_bookmarks[index];
         add(frames_to_fraction(static_cast<long double>(bookmark.audio_milliseconds) / 1000.0L),
             bookmark.label, true);
@@ -343,17 +343,17 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
     const auto minimum_span = bgm_bar_minimum_span(waveform.total_frames);
     const auto& projection_view = flattened.view.compose;
     const bool keep_capture = window_capture && *window_capture &&
-        bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id},
+        bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id.value},
             chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
-            asset_id_t{projection_view.selected_audio_asset_id}, waveform.total_frames,
+            asset_id_t{projection_view.selected_audio_asset_id.value}, waveform.total_frames,
             waveform.sample_rate);
     if (window_capture && *window_capture && !keep_capture) window_capture->reset();
     const bool keep_pan = pan_override && *pan_override &&
         bgm_bar_pan_override_matches(**pan_override,
             projection_view.waveform_overview_visible_begin_fraction,
             projection_view.waveform_overview_visible_end_fraction,
-            song_id_t{projection_view.project_id}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
-            asset_id_t{projection_view.selected_audio_asset_id});
+            song_id_t{projection_view.project_id.value}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
+            asset_id_t{projection_view.selected_audio_asset_id.value});
     if (pan_override && *pan_override && !keep_pan) pan_override->reset();
     const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
         : keep_pan ? bgm_bar_fit((*pan_override)->range, minimum_span)
@@ -463,7 +463,7 @@ auto populate_compose_waveform_projection(
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
         .maximum_rows = audio::maximum_aligned_waveform_rows};
     (void)prepare_compose_display_row_table(cache,
-        request, {compose.project_id, cache.stamp().chart.value, cache.stamp().document.revision});
+        request, {compose.project_id.value, cache.stamp().chart.value, cache.stamp().document.revision});
     const auto window = audio::aligned_waveform_window(waveform, *cache.timing.marker_timing_index, request);
     const auto* selected_waveform = &waveform;
     if (window && detail_analysis && detail_analysis->waveform &&
@@ -477,7 +477,7 @@ auto populate_compose_waveform_projection(
         const envelope_projection_context_t projection{cache.waveform.waveform_envelope_ring, waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.stamp().document.revision,
-            compose.project_id, cache.stamp().chart.value, cache.waveform.waveform_row_table};
+            compose.project_id.value, cache.stamp().chart.value, cache.waveform.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, compose.waveform_rows);
     } else {
         cache.waveform.waveform_envelope_ring.invalidate();

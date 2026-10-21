@@ -27,20 +27,34 @@ struct branch_statement_editor_state_t {
     std::uint64_t selected_node_id{};
     std::array<char, branch_statement_text_capacity> text{};
     bool source_text_too_large{};
+    std::string node_title;
+    std::string diagnostic_label;
+    auto build_node_title(const wormedit::ui::compose_branch_row_view_t& row) -> const std::string& {
+        node_title.assign(row.active ? "" : "(inactive) ");
+        if (row.has_source_order) {
+            char order[32]{};
+            std::snprintf(order, sizeof(order), "#%zu ", row.source_order);
+            node_title.append(order);
+        }
+        node_title.append(row.display_text);
+        if (row.display_text_truncated) node_title.append(" …");
+        return node_title;
+    }
+
 };
 
 void select_branch_statement(branch_statement_editor_state_t& state,
-                             const WormUiComposeBranchRowView& row);
-auto selected_branch_statement(const WormUiComposeView& view, std::uint64_t selected_id)
-    -> const WormUiComposeBranchRowView*;
+                             const wormedit::ui::compose_branch_row_view_t& row);
+auto selected_branch_statement(const wormedit::ui::compose_view_t& view, std::uint64_t selected_id)
+    -> const wormedit::ui::compose_branch_row_view_t*;
 
-auto branch_statement_editor_state(const WormUiComposeView& view)
+auto branch_statement_editor_state(const wormedit::ui::compose_view_t& view)
     -> branch_statement_editor_state_t& {
     static branch_statement_editor_state_t state;
-    if (state.project_id != view.project_id || state.chart_id != view.chart_id) {
+    if (state.project_id != view.project_id.value || state.chart_id != view.chart_id.value) {
         state = {};
-        state.project_id = view.project_id;
-        state.chart_id = view.chart_id;
+        state.project_id = view.project_id.value;
+        state.chart_id = view.chart_id.value;
     }
     if (state.revision != view.document_revision) {
         state.revision = view.document_revision;
@@ -87,7 +101,7 @@ void choice_button(struct nk_context* context, const char* label, bool enabled,
     }
 }
 
-void render_branch_choice(struct nk_context* context, const WormUiComposeBranchChoiceView& choice,
+void render_branch_choice(struct nk_context* context, const wormedit::ui::compose_branch_choice_view_t& choice,
                           wormedit::ui::workspace_action_t* action) {
     char identity[96]{};
     if (choice.has_source_order) {
@@ -123,11 +137,11 @@ void render_branch_choice(struct nk_context* context, const WormUiComposeBranchC
     nk_layout_row_begin(context, NK_DYNAMIC, 24.0f, 3);
     nk_layout_row_push(context, 0.34f);
     choice_button(context, choice.has_previous_value ? previous : "—",
-                  choice.editable && choice.has_previous_value, action, choice.branch_id,
+                  choice.editable && choice.has_previous_value, action, choice.branch_id.value,
                   choice.previous_value);
     nk_layout_row_push(context, 0.34f);
     choice_button(context, choice.has_next_value ? next : "—",
-                  choice.editable && choice.has_next_value, action, choice.branch_id,
+                  choice.editable && choice.has_next_value, action, choice.branch_id.value,
                   choice.next_value);
     nk_layout_row_push(context, 0.32f);
     if (!choice.can_clear) {
@@ -138,15 +152,15 @@ void render_branch_choice(struct nk_context* context, const WormUiComposeBranchC
         nk_widget_disable_end(context);
     }
     if (clear && choice.can_clear) {
-        set_clear_action(action, choice.branch_id);
+        set_clear_action(action, choice.branch_id.value);
     }
     nk_layout_row_end(context);
 }
 
-auto render_branch_row(struct nk_context* context, const WormUiComposeBranchRowView& row,
+auto render_branch_row(struct nk_context* context, const wormedit::ui::compose_branch_row_view_t& row,
                        std::uint64_t selected_statement_id) -> bool {
     std::string label;
-    label.reserve(std::min<size_t>(row.depth, 32) * 2 + 96 + strlen(row.display_text));
+    label.reserve(std::min<size_t>(row.depth, 32) * 2 + 96 + strlen(row.display_text.c_str()));
     label.append(std::min<size_t>(row.depth, 32), ' ');
     label += row.active ? "▶ " : "· ";
     if (row.selected) {
@@ -157,7 +171,7 @@ auto render_branch_row(struct nk_context* context, const WormUiComposeBranchRowV
     if (row.has_source_order) {
         label += "#" + std::to_string(row.source_order) + " ";
     }
-    label += row.display_text;
+    label += row.display_text.c_str();
     if (row.display_text_truncated) {
         label += " …";
     }
@@ -167,11 +181,11 @@ auto render_branch_row(struct nk_context* context, const WormUiComposeBranchRowV
     nk_style_push_color(context, &context->style.text.color, color);
     nk_layout_row_dynamic(context, 18.0f, 1);
     nk_bool selected = row.selected ||
-                               (row.statement_id != 0 && row.statement_id == selected_statement_id)
+                               (row.statement_id.value != 0 && row.statement_id.value == selected_statement_id)
                            ? nk_true
                            : nk_false;
     nk_bool clicked = nk_false;
-    if (row.statement_id != 0)
+    if (row.statement_id.value != 0)
         clicked = nk_selectable_label(context, label.c_str(), NK_TEXT_LEFT, &selected);
     else
         nk_label(context, label.c_str(), NK_TEXT_LEFT);
@@ -180,32 +194,32 @@ auto render_branch_row(struct nk_context* context, const WormUiComposeBranchRowV
 }
 
 void select_branch_statement(branch_statement_editor_state_t& state,
-                             const WormUiComposeBranchRowView& row) {
-    state.selected_statement_id = row.statement_id;
+                             const wormedit::ui::compose_branch_row_view_t& row) {
+    state.selected_statement_id = row.statement_id.value;
     state.text.fill('\0');
-    state.source_text_too_large = row.statement_text_bytes >= state.text.size();
-    if (!state.source_text_too_large && row.statement_text && row.statement_text_bytes != 0) {
-        std::memcpy(state.text.data(), row.statement_text, row.statement_text_bytes);
-        state.text[row.statement_text_bytes] = '\0';
+    state.source_text_too_large = row.statement_text.size() >= state.text.size();
+    if (!state.source_text_too_large && !row.statement_text.empty()) {
+        std::memcpy(state.text.data(), row.statement_text.data(), row.statement_text.size());
+        state.text[row.statement_text.size()] = '\0';
     }
 }
 
-auto selected_branch_statement(const WormUiComposeView& view,
+auto selected_branch_statement(const wormedit::ui::compose_view_t& view,
                                std::uint64_t selected_id)
-    -> const WormUiComposeBranchRowView* {
-    for (std::size_t index = 0; index < view.branch_row_count; ++index) {
+    -> const wormedit::ui::compose_branch_row_view_t* {
+    for (std::size_t index = 0; index < view.branch_rows.size(); ++index) {
         const auto& row = view.branch_rows[index];
-        if (row.statement_id == selected_id && selected_id != 0) return &row;
+        if (row.statement_id.value == selected_id && selected_id != 0) return &row;
     }
     return nullptr;
 }
 
-void set_statement_action(wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
+void set_statement_action(wormedit::ui::workspace_action_t* action, const wormedit::ui::compose_view_t& view,
                           const branch_statement_editor_state_t& state,
                           WormUiComposeActionKind kind, bool include_text) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = kind;
-    action->compose_input_chart_id.value = view.chart_id;
+    action->compose_input_chart_id.value = view.chart_id.value;
     action->compose_input_document_revision = view.document_revision;
     action->compose_branch_statement_id.value = state.selected_statement_id;
     if (include_text) {
@@ -214,7 +228,7 @@ void set_statement_action(wormedit::ui::workspace_action_t* action, const WormUi
 }
 
 void statement_button(struct nk_context* context, const char* label, bool enabled,
-                      wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
+                      wormedit::ui::workspace_action_t* action, const wormedit::ui::compose_view_t& view,
                       const branch_statement_editor_state_t& state,
                       WormUiComposeActionKind kind, bool include_text) {
     if (!enabled) nk_widget_disable_begin(context);
@@ -224,7 +238,7 @@ void statement_button(struct nk_context* context, const char* label, bool enable
         set_statement_action(action, view, state, kind, include_text);
 }
 
-void render_branch_statement_editor(struct nk_context* context, const WormUiComposeView& view,
+void render_branch_statement_editor(struct nk_context* context, const wormedit::ui::compose_view_t& view,
                                     wormedit::ui::workspace_action_t* action,
                                     branch_statement_editor_state_t& state) {
     const auto* selected = selected_branch_statement(view, state.selected_statement_id);
@@ -256,8 +270,8 @@ void render_branch_statement_editor(struct nk_context* context, const WormUiComp
     }
 
     const bool has_text = state.text[0] != '\0';
-    const auto current_text_matches = has_text && std::strlen(state.text.data()) == selected->statement_text_bytes &&
-        std::memcmp(state.text.data(), selected->statement_text, selected->statement_text_bytes) == 0;
+    const auto current_text_matches = has_text && std::strlen(state.text.data()) == selected->statement_text.size() &&
+        std::memcmp(state.text.data(), selected->statement_text.data(), selected->statement_text.size()) == 0;
     const bool edit_enabled = !active && !state.source_text_too_large && has_text &&
                               !current_text_matches;
     const bool insert_enabled = !active && !state.source_text_too_large && has_text;
@@ -277,54 +291,46 @@ void render_branch_statement_editor(struct nk_context* context, const WormUiComp
 
 struct branch_tree_context_t {
     struct nk_context* context;
-    const WormUiComposeView& view;
+    const wormedit::ui::compose_view_t& view;
     wormedit::ui::workspace_action_t* action;
     branch_statement_editor_state_t& state;
 };
 
-auto branch_choice_for(const WormUiComposeView& view, std::uint64_t node_id)
-    -> const WormUiComposeBranchChoiceView* {
-    const auto choices = std::span(view.branch_choices, view.branch_choice_count);
-    const auto found = std::ranges::find(choices, node_id, &WormUiComposeBranchChoiceView::branch_id);
+auto branch_choice_for(const wormedit::ui::compose_view_t& view, std::uint64_t node_id)
+    -> const wormedit::ui::compose_branch_choice_view_t* {
+    const auto choices = std::span(view.branch_choices);
+    const auto found = std::ranges::find(choices, wormedit::branch_id_t{node_id}, &wormedit::ui::compose_branch_choice_view_t::branch_id);
     return found == choices.end() ? nullptr : &*found;
 }
 
 // A control node's children are the control rows that follow it one level deeper. Unparsed
 // statements are not tree nodes; they are listed for the selected node below the tree.
-auto branch_row_has_children(const WormUiComposeView& view, std::size_t index) -> bool {
+auto branch_row_has_children(const wormedit::ui::compose_view_t& view, std::size_t index) -> bool {
     const auto& row = view.branch_rows[index];
     if (row.choice_block) return true;
-    for (auto next = index + 1; next < view.branch_row_count && view.branch_rows[next].depth > row.depth; ++next)
+    for (auto next = index + 1; next < view.branch_rows.size() && view.branch_rows[next].depth > row.depth; ++next)
         if (!view.branch_rows[next].raw_statement) return true;
     return false;
 }
 
-auto branch_node_title(const WormUiComposeBranchRowView& row) -> std::string {
-    std::string title = row.active ? "" : "(inactive) ";
-    if (row.has_source_order) title += "#" + std::to_string(row.source_order) + " ";
-    title += row.display_text;
-    if (row.display_text_truncated) title += " …";
-    return title;
-}
-
 // Pushes one control node; true when it is open and its children should be drawn.
-auto push_branch_node(const branch_tree_context_t& tree, const WormUiComposeBranchRowView& row,
+auto push_branch_node(const branch_tree_context_t& tree, const wormedit::ui::compose_branch_row_view_t& row,
                       bool container) -> bool {
-    const auto title = branch_node_title(row);
-    nk_bool selected = row.node_id == tree.state.selected_node_id ? nk_true : nk_false;
+    const auto& title = tree.state.build_node_title(row);
+    nk_bool selected = row.node_id.value == tree.state.selected_node_id ? nk_true : nk_false;
     nk_layout_row_dynamic(tree.context, 20.0f, 1);
     const auto color = row.active ? nk_rgb(145, 222, 172) : nk_rgb(147, 154, 170);
     nk_style_push_color(tree.context, &tree.context->style.text.color, color);
     auto open = false;
     if (container) {
         open = nk_tree_element_push_hashed(tree.context, NK_TREE_NODE, title.c_str(), NK_MAXIMIZED,
-                                           &selected, reinterpret_cast<const char*>(&row.node_id),
-                                           static_cast<int>(sizeof(row.node_id)), 0) != 0;
+                                           &selected, reinterpret_cast<const char*>(&row.node_id.value),
+                                           static_cast<int>(sizeof(row.node_id.value)), 0) != 0;
     } else {
         (void)nk_selectable_label(tree.context, title.c_str(), NK_TEXT_LEFT, &selected);
     }
     nk_style_pop_color(tree.context);
-    if (selected) tree.state.selected_node_id = row.node_id;
+    if (selected) tree.state.selected_node_id = row.node_id.value;
     return open;
 }
 
@@ -337,7 +343,7 @@ void render_branch_tree(const branch_tree_context_t& tree) {
             open_depths.pop_back();
         }
     };
-    for (std::size_t index = 0; index < view.branch_row_count; ++index) {
+    for (std::size_t index = 0; index < view.branch_rows.size(); ++index) {
         const auto& row = view.branch_rows[index];
         if (row.raw_statement) continue;
         close_to(row.depth);
@@ -345,19 +351,19 @@ void render_branch_tree(const branch_tree_context_t& tree) {
         const auto open = push_branch_node(tree, row, container);
         if (!container) continue;
         if (!open) {
-            while (index + 1 < view.branch_row_count && view.branch_rows[index + 1].depth > row.depth) ++index;
+            while (index + 1 < view.branch_rows.size() && view.branch_rows[index + 1].depth > row.depth) ++index;
             continue;
         }
         open_depths.push_back(row.depth);
-        if (const auto* choice = row.choice_block ? branch_choice_for(view, row.node_id) : nullptr)
+        if (const auto* choice = row.choice_block ? branch_choice_for(view, row.node_id.value) : nullptr)
             render_branch_choice(tree.context, *choice, tree.action);
     }
     close_to(0);
 }
 
-auto selected_node_index(const WormUiComposeView& view, std::uint64_t node_id) -> std::optional<std::size_t> {
-    for (std::size_t index = 0; index < view.branch_row_count; ++index)
-        if (!view.branch_rows[index].raw_statement && view.branch_rows[index].node_id == node_id) return index;
+auto selected_node_index(const wormedit::ui::compose_view_t& view, std::uint64_t node_id) -> std::optional<std::size_t> {
+    for (std::size_t index = 0; index < view.branch_rows.size(); ++index)
+        if (!view.branch_rows[index].raw_statement && view.branch_rows[index].node_id.value == node_id) return index;
     return std::nullopt;
 }
 
@@ -370,7 +376,7 @@ void render_node_statements(const branch_tree_context_t& tree) {
     nk_layout_row_dynamic(tree.context, 18.0f, 1);
     nk_label(tree.context, "Unparsed statements in the selected node", NK_TEXT_LEFT);
     bool any = false;
-    for (auto index = *selected + 1; index < view.branch_row_count && view.branch_rows[index].depth > node.depth; ++index) {
+    for (auto index = *selected + 1; index < view.branch_rows.size() && view.branch_rows[index].depth > node.depth; ++index) {
         const auto& row = view.branch_rows[index];
         if (!row.raw_statement || row.depth != node.depth + 1) continue;
         any = true;
@@ -393,7 +399,7 @@ struct selected_outline_node_t {
     bool has_next_leaf{};
 };
 
-auto outline_parent_index(const WormUiComposeView& view, std::size_t index) -> std::optional<std::size_t> {
+auto outline_parent_index(const wormedit::ui::compose_view_t& view, std::size_t index) -> std::optional<std::size_t> {
     const auto depth = view.branch_rows[index].depth;
     for (auto candidate = index; candidate-- > 0;)
         if (!view.branch_rows[candidate].raw_statement && view.branch_rows[candidate].depth < depth)
@@ -401,7 +407,7 @@ auto outline_parent_index(const WormUiComposeView& view, std::size_t index) -> s
     return std::nullopt;
 }
 
-auto selected_outline_node(const WormUiComposeView& view, std::uint64_t node_id) -> selected_outline_node_t {
+auto selected_outline_node(const wormedit::ui::compose_view_t& view, std::uint64_t node_id) -> selected_outline_node_t {
     selected_outline_node_t result;
     const auto index = selected_node_index(view, node_id);
     if (!index) return result;
@@ -414,18 +420,18 @@ auto selected_outline_node(const WormUiComposeView& view, std::uint64_t node_id)
     for (auto before = *index; before-- > *group + 1;)
         if (!view.branch_rows[before].raw_statement && view.branch_rows[before].depth == row.depth)
             result.has_previous_leaf = true;
-    for (auto after = *index + 1; after < view.branch_row_count && view.branch_rows[after].depth > view.branch_rows[*group].depth; ++after)
+    for (auto after = *index + 1; after < view.branch_rows.size() && view.branch_rows[after].depth > view.branch_rows[*group].depth; ++after)
         if (!view.branch_rows[after].raw_statement && view.branch_rows[after].depth == row.depth)
             result.has_next_leaf = true;
     return result;
 }
 
-void set_block_action(wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
+void set_block_action(wormedit::ui::workspace_action_t* action, const wormedit::ui::compose_view_t& view,
                       WormUiComposeActionKind kind, std::uint64_t node, std::uint64_t statement,
                       std::int64_t value) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_action = kind;
-    action->compose_input_chart_id.value = view.chart_id;
+    action->compose_input_chart_id.value = view.chart_id.value;
     action->compose_input_document_revision = view.document_revision;
     action->compose_branch_id.value = node;
     action->compose_branch_statement_id.value = statement;
@@ -468,32 +474,32 @@ void render_branch_block_buttons(const branch_tree_context_t& tree) {
 
 } // namespace
 
-bool worm_ui_nuklear_bms_branch_panel_visible(const WormUiComposeView* view) {
-    return view && (view->branch_outline_available || view->branch_choice_count != 0 ||
-                    view->branch_row_count != 0 || view->branch_diagnostic_count != 0 ||
+bool worm_ui_nuklear_bms_branch_panel_visible(const wormedit::ui::compose_view_t* view) {
+    return view && (view->branch_outline_available || view->branch_choices.size() != 0 ||
+                    view->branch_rows.size() != 0 || view->branch_diagnostic_count() != 0 ||
                     view->branch_rows_truncated || view->branch_choices_truncated ||
                     view->branch_display_text_truncated || view->branch_diagnostics_truncated);
 }
 
 void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
-                                             const WormUiComposeView* view,
+                                             const wormedit::ui::compose_view_t* view,
                                              wormedit::ui::workspace_action_t* action) {
     if (!context || !view || !action || !worm_ui_nuklear_bms_branch_panel_visible(view)) {
         return;
     }
 
     auto& editor_state = branch_statement_editor_state(*view);
-    if (!selected_node_index(*view, editor_state.selected_node_id) && view->branch_row_count != 0) {
-        const auto first = std::ranges::find_if(std::span(view->branch_rows, view->branch_row_count),
+    if (!selected_node_index(*view, editor_state.selected_node_id) && view->branch_rows.size() != 0) {
+        const auto first = std::ranges::find_if(std::span(view->branch_rows),
                                                 [](const auto& row) { return !row.raw_statement; });
-        editor_state.selected_node_id = first == std::span(view->branch_rows, view->branch_row_count).end()
-                                            ? 0 : first->node_id;
+        editor_state.selected_node_id = first == std::span(view->branch_rows).end()
+                                            ? 0 : first->node_id.value;
     }
     const branch_tree_context_t tree{context, *view, action, editor_state};
     // Choices whose block row was cut by a capacity still get their controls.
-    for (size_t index = 0; index < view->branch_choice_count; ++index) {
+    for (size_t index = 0; index < view->branch_choices.size(); ++index) {
         const auto& choice = view->branch_choices[index];
-        const auto shown = std::ranges::any_of(std::span(view->branch_rows, view->branch_row_count),
+        const auto shown = std::ranges::any_of(std::span(view->branch_rows),
             [&](const auto& row) { return row.choice_block && row.node_id == choice.branch_id; });
         if (!shown) render_branch_choice(context, choice, action);
     }
@@ -507,10 +513,11 @@ void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
         nk_label(context, "Additional branch data was truncated by a configured capacity.",
                  NK_TEXT_LEFT);
     }
-    for (size_t index = 0; index < view->branch_diagnostic_count; ++index) {
-        if (view->branch_diagnostics[index]) {
-            std::string diagnostic{"Branch diagnostic: "};
-            diagnostic.append(view->branch_diagnostics[index]);
+    for (size_t index = 0; index < view->branch_diagnostic_count(); ++index) {
+        if (!view->branch_diagnostic_at(index).empty()) {
+            auto& diagnostic = editor_state.diagnostic_label;
+            diagnostic.assign("Branch diagnostic: ");
+            diagnostic.append(view->branch_diagnostic_at(index));
             nk_layout_row_dynamic(context, 96.0f, 1);
             nk_label_wrap(context, diagnostic.c_str());
         }

@@ -32,23 +32,24 @@ auto text_contains(std::string_view text, std::string_view expected) -> bool {
 }
 
 void prepare_view(nuklear_event_harness_t& harness,
-                  std::array<WormUiBookmarkChooserRowView, 2>& rows) {
+                  std::array<wormedit::ui::bookmark_chooser_row_view_t, 2>& rows) {
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.project_id = 3;
-    view.chart_id = 7;
+    view.project_id = {3};
+    view.chart_id = {7};
     view.document_revision = 11;
-    view.bookmark_chooser = {.project_id = 3, .chart_id = 7,
-        .document_revision = 11, .rows = rows.data(), .row_count = rows.size(),
-        .total_count = rows.size(), .first_row = 0};
-    rows[0] = {.bookmark_id = 80, .anchor = 0,
+
+    rows[0] = {.bookmark_id = {80}, .anchor = 0,
         .position_label = "Measure 001 · row 240", .name = "",
         .display_label = "Measure 001 · row 240 · (unnamed) · #80",
         .navigation_available = true};
-    rows[1] = {.bookmark_id = 81, .anchor = 1,
+    rows[1] = {.bookmark_id = {81}, .anchor = 1,
         .position_label = "Audio 00:00.500", .name = "Bridge",
         .display_label = "Audio 00:00.500 · Bridge · #81",
         .navigation_available = true};
+    view.bookmark_chooser = {.project_id = {3}, .chart_id = {7},
+        .document_revision = 11, .rows = {rows.begin(), rows.end()},
+        .total_count = rows.size(), .first_row = 0};
 }
 
 void open_chooser(nuklear_event_harness_t& harness) {
@@ -85,7 +86,7 @@ auto has_bookmark_action(const wormedit::ui::workspace_action_t& action, std::ui
            action.compose_bookmark_id.value == id;
 }
 void check_opened_rows(const nuklear_event_harness_t& harness,
-                       const std::array<WormUiBookmarkChooserRowView, 2>& rows) {
+                       const std::array<wormedit::ui::bookmark_chooser_row_view_t, 2>& rows) {
     CHECK(text_contains(harness.drawn_text(), "Select a bookmark by position and name"));
     CHECK(text_contains(harness.drawn_text(), rows[0].display_label));
     CHECK(text_contains(harness.drawn_text(), rows[1].display_label));
@@ -98,28 +99,28 @@ void check_selected_action(const workspace_action_snapshot_t& selected, std::uin
     CHECK(selected.get().compose_input_document_revision == revision);
 }
 void prepare_paged_view(nuklear_event_harness_t& harness,
-                        std::array<WormUiBookmarkChooserRowView, 13>& rows,
+                        std::array<wormedit::ui::bookmark_chooser_row_view_t, 13>& rows,
                         std::array<std::string, 13>& labels) {
     for (std::size_t index = 0; index < rows.size(); ++index) {
         labels[index] = "Measure 001 · Entry · #" + std::to_string(100 + index);
-        rows[index] = {.bookmark_id = 100 + index, .anchor = 0,
+        rows[index] = {.bookmark_id = {100 + index}, .anchor = 0,
             .position_label = "Measure 001", .name = "Entry",
             .display_label = labels[index].c_str(), .navigation_available = true};
     }
     auto& view = harness.view().compose;
     view.scene_available = true;
-    view.project_id = 3;
-    view.chart_id = 7;
+    view.project_id = {3};
+    view.chart_id = {7};
     view.document_revision = 11;
-    view.bookmark_chooser = {.project_id = 3, .chart_id = 7, .document_revision = 11,
-        .rows = rows.data(), .row_count = 12, .total_count = rows.size(), .first_row = 0};
+    view.bookmark_chooser = {.project_id = {3}, .chart_id = {7}, .document_revision = 11,
+        .rows = {rows.begin(), rows.begin() + 12}, .total_count = rows.size(), .first_row = 0};
 }
 
 void next_page_control(nuklear_event_harness_t& harness) {
     const auto next = harness.drawn_text_center("Next");
     REQUIRE(next);
     static_cast<void>(click(harness, next->first, next->second));
-    WormUiBookmarkChooserRequest request{};
+    wormedit::ui::bookmark_chooser_request_t request{};
     worm_ui_frontend_bookmark_chooser_request(&request);
     CHECK(request.open);
     CHECK(request.first_row == 12);
@@ -127,12 +128,11 @@ void next_page_control(nuklear_event_harness_t& harness) {
 }
 
 void populate_requested_bookmark_page(nuklear_event_harness_t& harness,
-                                      const std::array<WormUiBookmarkChooserRowView, 13>& rows) {
-    WormUiBookmarkChooserRequest request{};
+                                      const std::array<wormedit::ui::bookmark_chooser_row_view_t, 13>& rows) {
+    wormedit::ui::bookmark_chooser_request_t request{};
     worm_ui_frontend_bookmark_chooser_request(&request);
     auto& view = harness.view().compose.bookmark_chooser;
-    view.rows = rows.data() + request.first_row;
-    view.row_count = 1;
+    view.rows = {rows[request.first_row]};
     view.first_row = request.first_row;
     static_cast<void>(harness.frame());
 }
@@ -142,7 +142,7 @@ TEST_CASE("bookmark chooser mouse selection carries stable identity and context"
           "[frontend-state][event-harness][bookmark-chooser]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
     prepare_view(harness, rows);
     open_chooser(harness);
     check_opened_rows(harness, rows);
@@ -156,7 +156,7 @@ TEST_CASE("bookmark chooser moves by keyboard and Escape cancels without navigat
           "[frontend-state][event-harness][bookmark-chooser]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
     prepare_view(harness, rows);
     open_chooser(harness);
     const auto down = key_event(SDLK_DOWN, SDL_SCANCODE_DOWN, SDL_KMOD_NONE);
@@ -181,7 +181,7 @@ TEST_CASE("bookmark chooser refreshes stale revisions and explains empty charts"
           "[frontend-state][event-harness][bookmark-chooser]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
     prepare_view(harness, rows);
     (void)open_chooser(harness);
     harness.view().compose.document_revision = 12;
@@ -192,8 +192,7 @@ TEST_CASE("bookmark chooser refreshes stale revisions and explains empty charts"
     CHECK(text_contains(harness.drawn_text(), "Select a bookmark by position and name"));
 
     auto& projection = harness.view().compose.bookmark_chooser;
-    projection.rows = nullptr;
-    projection.row_count = 0;
+    projection.rows.clear();
     projection.total_count = 0;
     (void)harness.frame();
     CHECK(text_contains(harness.drawn_text(), "No bookmarks in this chart."));
@@ -203,7 +202,7 @@ TEST_CASE("bookmark chooser requests the next page without hiding later bookmark
           "[frontend-state][event-harness][bookmark-chooser]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 13> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 13> rows{};
     std::array<std::string, 13> labels{};
     prepare_paged_view(harness, rows, labels);
     open_chooser(harness);
@@ -218,7 +217,7 @@ TEST_CASE("bookmark chooser auto focused search requests matches and guards stal
           "[frontend-state][event-harness][bookmark-chooser]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
     prepare_view(harness, rows);
     open_chooser(harness);
     SDL_Event text{};
@@ -226,7 +225,7 @@ TEST_CASE("bookmark chooser auto focused search requests matches and guards stal
     text.text.type = SDL_EVENT_TEXT_INPUT;
     text.text.text = "bridge";
     (void)harness.frame(std::span{&text, 1});
-    WormUiBookmarkChooserRequest request{};
+    wormedit::ui::bookmark_chooser_request_t request{};
     worm_ui_frontend_bookmark_chooser_request(&request);
     CHECK(std::string_view{request.query} == "bridge");
     CHECK(request.first_row == 0);
@@ -237,8 +236,8 @@ TEST_CASE("bookmark chooser auto focused search requests matches and guards stal
     (void)harness.frame(std::span{&release, 1});
     auto& view = harness.view().compose.bookmark_chooser;
     view.query = "bridge";
-    view.rows = rows.data() + 1;
-    view.row_count = view.total_count = 1;
+    view.rows = {rows[1]};
+    view.total_count = 1;
     (void)harness.frame();
     const auto chosen = harness.frame(std::span{&enter, 1});
     check_selected_action(chosen, 81, 7, 11);
@@ -256,7 +255,7 @@ struct chooser_host_fixture_t {
     nk_user_font font{};
     nk_context context{};
     bookmark_chooser_state_t state{};
-    WormUiBookmarkChooserView view{.project_id = 3, .chart_id = 7,
+    wormedit::ui::bookmark_chooser_view_t view{.project_id = {3}, .chart_id = {7},
                                   .document_revision = 11};
     wormedit::ui::workspace_action_t action{};
     bool owned{};
@@ -330,7 +329,7 @@ TEST_CASE("bookmark chooser retains its Enter routing during synthetic IME compo
     // Characterize existing frontend wiring; this does not exercise an OS IME.
     nuklear_event_harness_t harness{1280, 800};
     require_chooser_lifecycle(harness.ready());
-    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
     prepare_view(harness, rows);
     open_chooser(harness);
     SDL_Event editing{};
@@ -349,15 +348,15 @@ TEST_CASE("bookmark chooser context loss cancels without navigation or shortcut 
     for (int cause = 0; cause < 3; ++cause) {
         nuklear_event_harness_t harness{1280, 800};
         require_chooser_lifecycle(harness.ready());
-        std::array<WormUiBookmarkChooserRowView, 2> rows{};
+        std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
         prepare_view(harness, rows);
         open_chooser(harness);
         SDL_Event event{};
         if (cause == 0) {
             event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
         } else {
-            if (cause == 1) ++harness.view().compose.bookmark_chooser.project_id;
-            else ++harness.view().compose.bookmark_chooser.chart_id;
+            if (cause == 1) ++harness.view().compose.bookmark_chooser.project_id.value;
+            else ++harness.view().compose.bookmark_chooser.chart_id.value;
             event = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
         }
         const auto canceled = harness.frame(std::span{&event, 1});

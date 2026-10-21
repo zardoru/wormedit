@@ -13,7 +13,7 @@ struct preview_audio_dialog_t {
     int fade_out_ms{};
     nk_bool replace_existing{};
     chrome::Dialog dialog;
-    void begin(const WormUiComposeView& view);
-    void render(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action);
+    void begin(const wormedit::ui::compose_view_t& view);
+    void render(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action);
 };
 }

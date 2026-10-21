@@ -14,45 +14,45 @@ namespace {
 
 struct bookmark_candidate_t {
     std::uint64_t id{};
-    const char* label{};
+    std::string_view label{};
     double y{};
 };
 
-auto bookmark_by_id(const WormUiComposeView& view, std::uint64_t id)
+auto bookmark_by_id(const wormedit::ui::compose_view_t& view, std::uint64_t id)
     -> bookmark_candidate_t {
-    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+    for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
         const auto& item = view.beat_bookmarks[index];
-        if (item.bookmark_id == id)
+        if (item.bookmark_id.value == id)
             return {id, item.label, item.projected_y_pixels};
     }
-    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+    for (std::size_t index = 0; index < view.audio_bookmarks.size(); ++index) {
         const auto& item = view.audio_bookmarks[index];
-        if (item.bookmark_id == id)
+        if (item.bookmark_id.value == id)
             return {id, item.label, item.projected_y_pixels};
     }
     return {};
 }
 
-auto visible_bookmark_lines(const WormUiComposeView& view)
+auto visible_bookmark_lines(const wormedit::ui::compose_view_t& view)
     -> std::vector<wormedit::ui::bookmark_rename_line_t> {
     std::vector<wormedit::ui::bookmark_rename_line_t> lines;
-    lines.reserve(view.beat_bookmark_count + view.audio_bookmark_count);
-    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+    lines.reserve(view.beat_bookmarks.size() + view.audio_bookmarks.size());
+    for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
         const auto& item = view.beat_bookmarks[index];
         if (item.projection_visible)
-            lines.push_back({item.bookmark_id, item.projected_y_pixels,
-                             item.label != nullptr && item.label[0] != '\0'});
+            lines.push_back({item.bookmark_id.value, item.projected_y_pixels,
+                             !item.label.empty()});
     }
-    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+    for (std::size_t index = 0; index < view.audio_bookmarks.size(); ++index) {
         const auto& item = view.audio_bookmarks[index];
         if (item.projection_visible)
-            lines.push_back({item.bookmark_id, item.projected_y_pixels,
-                             item.label != nullptr && item.label[0] != '\0'});
+            lines.push_back({item.bookmark_id.value, item.projected_y_pixels,
+                             !item.label.empty()});
     }
     return lines;
 }
 
-auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
+auto editor_popup_bounds(nk_context* context, const wormedit::ui::compose_view_t& view,
                          const inline_label_editor_t& editor, struct nk_rect viewport)
     -> struct nk_rect {
     const auto content = nk_window_get_content_region(context);
@@ -101,7 +101,7 @@ void close_pending_popup(nk_context* context, inline_label_editor_t& editor) {
     clear_editor_after_close(editor);
 }
 
-void stage_rename(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
+void stage_rename(wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_view_t& view,
                   const inline_label_editor_t& editor) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
@@ -114,7 +114,7 @@ void stage_rename(wormedit::ui::workspace_action_t& action, const WormUiComposeV
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
     action.compose_bookmark_id.value = editor.bookmark_id;
-    action.compose_input_project_id.value = view.project_id;
+    action.compose_input_project_id.value = view.project_id.value;
     action.compose_input_chart_id.value = editor.chart_id;
     action.compose_input_document_revision = editor.document_revision;
     action.compose_marker_label = editor.label;
@@ -124,19 +124,19 @@ void stage_rename(wormedit::ui::workspace_action_t& action, const WormUiComposeV
 } // namespace
 
 auto begin_compose_bookmark_rename(inline_label_editor_t& editor,
-                                   const WormUiComposeView& view,
+                                   const wormedit::ui::compose_view_t& view,
                                    std::uint64_t bookmark_id) -> bool {
     if (editor.release_pending) return false;
     const auto candidate = bookmark_by_id(view, bookmark_id);
-    if (candidate.id == 0 || !candidate.label) return false;
+    if (candidate.id == 0) return false;
     editor = {};
     editor.active = true;
     editor.focus_pending = true;
-    editor.project_id = view.project_id;
-    editor.chart_id = view.chart_id;
+    editor.project_id = view.project_id.value;
+    editor.chart_id = view.chart_id.value;
     editor.document_revision = view.document_revision;
     editor.bookmark_id = bookmark_id;
-    std::strncpy(editor.label, candidate.label, sizeof(editor.label) - 1);
+    std::strncpy(editor.label, candidate.label.data(), sizeof(editor.label) - 1);
     return true;
 }
 
@@ -145,7 +145,7 @@ void cancel_compose_bookmark_rename(inline_label_editor_t& editor) {
         request_editor_close(editor);
 }
 
-auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double pointer_y)
+auto compose_bookmark_at(const wormedit::ui::compose_view_t& view, double pointer_x, double pointer_y)
     -> std::optional<std::uint64_t> {
     return wormedit::ui::bookmark_double_click_target_at(
         visible_bookmark_lines(view), pointer_x, pointer_y, view.viewport_width_pixels,
@@ -153,22 +153,22 @@ auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double
 }
 
 auto begin_compose_bookmark_rename_at_double_click(inline_label_editor_t& editor,
-                                                  const WormUiComposeView& view,
+                                                  const wormedit::ui::compose_view_t& view,
                                                   double pointer_x, double pointer_y) -> bool {
     const auto id = compose_bookmark_at(view, pointer_x, pointer_y);
     return id && begin_compose_bookmark_rename(editor, view, *id);
 }
 
 auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
-                                        const WormUiComposeView& view,
+                                        const wormedit::ui::compose_view_t& view,
                                         bool window_focused) -> bool {
     return editor.active && window_focused && view.visible && view.scene_available &&
-           !view.input_occluded && view.project_id == editor.project_id &&
-           view.chart_id == editor.chart_id &&
+           !view.input_occluded && view.project_id.value == editor.project_id &&
+           view.chart_id.value == editor.chart_id &&
            view.document_revision == editor.document_revision;
 }
 
-void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView& view,
+void render_compose_bookmark_rename(nk_context* context, const wormedit::ui::compose_view_t& view,
                                     wormedit::ui::workspace_action_t& action,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {

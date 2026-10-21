@@ -71,7 +71,7 @@ struct proposed_grid_context_t {
     const wormedit::editor_field_scene_view_t& source_scene;
     std::pair<std::uint64_t, std::uint64_t> rows;
 
-    auto view() const -> WormUiComposeView& { return flattened.view.compose; }
+    auto view() const -> wormedit::ui::compose_view_t& { return flattened.view.compose; }
     auto preview_rects() -> std::vector<wormedit::ui::compose_timing_preview_rect_view_t>& {
         return view().timing_preview_rects;
     }
@@ -307,8 +307,8 @@ void append_proposed_markers(proposed_grid_context_t& projection) {
 }
 
 void build_proposed_bookmarks_view(proposed_grid_context_t& projection) {
-    for (std::size_t index = 0; index < projection.view().beat_bookmark_count; ++index) {
-        auto& bookmark = projection.flattened.compose.bookmark[index];
+    for (std::size_t index = 0; index < projection.view().beat_bookmarks.size(); ++index) {
+        auto& bookmark = projection.flattened.view.compose.beat_bookmarks[index];
         const auto y = projection.proposed_y(bookmark.chart_row);
         const auto old = projection.old_y(bookmark.chart_row);
         bookmark.proposed_projection_visible = y && std::abs(*y - old) >= 0.5 &&
@@ -318,7 +318,7 @@ void build_proposed_bookmarks_view(proposed_grid_context_t& projection) {
 }
 
 void build_proposed_section_view(proposed_grid_context_t& projection, std::size_t index) {
-    auto& section = projection.flattened.compose.section[index];
+    auto& section = projection.flattened.view.compose.beat_sections[index];
     const auto begin = projection.proposed_y(section.begin_chart_row);
     const auto end = projection.proposed_y(section.end_chart_row);
     const auto old_begin = projection.old_y(section.begin_chart_row);
@@ -339,7 +339,7 @@ void build_proposed_section_view(proposed_grid_context_t& projection, std::size_
 }
 
 void build_proposed_sections_view(proposed_grid_context_t& projection) {
-    for (std::size_t index = 0; index < projection.view().beat_section_count; ++index)
+    for (std::size_t index = 0; index < projection.view().beat_sections.size(); ++index)
         build_proposed_section_view(projection, index);
 }
 
@@ -479,7 +479,7 @@ auto beat_fit_drag_matches(const compose_scene_cache_t& cache,
            cache.timing.beat_fit_drag->stamp.document.is_current(history.document, document_identity_policy_t::revision_only);
 }
 
-void populate_beat_fit_fields(WormUiComposeView& compose, const beat_interval_drag_t& drag) {
+void populate_beat_fit_fields(wormedit::ui::compose_view_t& compose, const beat_interval_drag_t& drag) {
     compose.beat_fit_drag_active = true;
     compose.beat_fit_target_y_pixels = -1.0;
     compose.beat_fit_target_sample_frame = drag.proposed_sample_frame;
@@ -501,7 +501,7 @@ auto make_proposed_beat_chart(const wormedit::chart_document_t& chart,
     return std::optional{std::move(candidate)};
 }
 
-void build_beat_fit_positions_view(WormUiComposeView& compose,
+void build_beat_fit_positions_view(wormedit::ui::compose_view_t& compose,
                                 const compose_scene_cache_t& cache,
                                 const wormedit::chart_document_t& chart,
                                 const editor_interaction_state_t& interaction,

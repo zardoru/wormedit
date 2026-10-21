@@ -131,8 +131,8 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     (void)harness.frame();
     auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
     review.open = true;
-    review.project_id = view.project_id;
-    review.chart_id = view.chart_id;
+    review.project_id = view.project_id.value;
+    review.chart_id = view.chart_id.value;
     review.document_revision = view.document_revision;
     review.candidates = {{.id = 9, .name = "hat01"}, {.id = 4, .name = "hat02"}};
     review.groups = {{.name = "hat", .accepted = true, .member_ids = {9, 4}}};
@@ -195,8 +195,8 @@ TEST_CASE("Group selected sounds dialog has Cancel, Confirm with Enter, and no t
         auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
         review.open = true;
         review.manual = true;
-        review.project_id = view.project_id;
-        review.chart_id = view.chart_id;
+        review.project_id = view.project_id.value;
+        review.chart_id = view.chart_id.value;
         review.document_revision = view.document_revision;
         review.candidates = {{.id = 9, .name = "hat01"}};
         std::snprintf(review.manual_group_name.data(), review.manual_group_name.size(), "%s", "Hats");

@@ -30,23 +30,23 @@ struct NoteMenu {
 } menu;
 
 
-bool current(const WormUiComposeView& view) {
+bool current(const wormedit::ui::compose_view_t& view) {
     return chrome::popup_context_matches(menu.popup.stamp, wormedit::ui::chrome::PopupContextStamp::from(view));
 }
 
-bool raise(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+bool raise(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
-    action.compose_input_project_id.value = view.project_id;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_project_id.value = view.project_id.value;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_note_context_id.value = menu.note;
     action.compose_semantic_layer_id.value = layer;
     return true;
 }
 
-std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
+std::uint64_t note_at(const wormedit::ui::compose_view_t& view, double x, double y) {
     for (std::size_t index = view.note_endpoints.size(); index-- > 0;) {
         const auto& note = view.note_endpoints[index];
         if (note.proposal_ghost || note.paint_preview || !note.note_id.value) continue;
@@ -64,13 +64,13 @@ std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
 }
 
 // The popup has closed without an assignment; tell the application.
-void finish_close(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
+void finish_close(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
     menu.consumed = true;
     if (menu.bgm) return;
     menu.request_close = !raise(view, action, WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
 }
 
-void draw_layer_swatch(nk_context* context, const WormUiComposeSemanticLayerView& layer) {
+void draw_layer_swatch(nk_context* context, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     nk_fill_rect(nk_window_get_canvas(context),
@@ -90,23 +90,23 @@ bool render_layer_submenu_button(nk_context* context) {
     return clicked;
 }
 
-auto layer_disabled_reason(const WormUiComposeView& view,
-                           const WormUiComposeSemanticLayerView& layer) -> const char* {
+auto layer_disabled_reason(const wormedit::ui::compose_view_t& view,
+                           const wormedit::ui::compose_semantic_layer_view_t& layer) -> const char* {
     if (layer.locked) return "Layer is locked";
     if (view.timing_focus || view.semantic_layer_gesture_active)
         return "Finish editing before assigning layers";
     return nullptr;
 }
 
-void render_layer(nk_context* context, const WormUiComposeView& view,
-                   wormedit::ui::workspace_action_t& action, const WormUiComposeSemanticLayerView& layer) {
+void render_layer(nk_context* context, const wormedit::ui::compose_view_t& view,
+                   wormedit::ui::workspace_action_t& action, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     nk_layout_row_begin(context, NK_STATIC, row_height, 2);
     nk_layout_row_push(context, 14);
     draw_layer_swatch(context, layer);
     nk_layout_row_push(context, std::max(1.0f, nk_window_get_content_region(context).w - 24));
     const auto clicked =
-        chrome::context_menu_button(context, layer.name, layer_disabled_reason(view, layer));
-    if (clicked && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id)) {
+        chrome::context_menu_button(context, layer.name.data(), layer_disabled_reason(view, layer));
+    if (clicked && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id.value)) {
         // Inside the layer list group; context_menu_end() closes the popup.
         chrome::context_menu_close(menu.popup);
         menu.consumed = true;
@@ -114,7 +114,7 @@ void render_layer(nk_context* context, const WormUiComposeView& view,
     nk_layout_row_end(context);
 }
 
-void render_layer_row(nk_context* context, const WormUiComposeView& view,
+void render_layer_row(nk_context* context, const wormedit::ui::compose_view_t& view,
                        wormedit::ui::workspace_action_t& action, std::size_t row) {
     if (row == 0) {
         const auto neutral = wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
@@ -124,7 +124,7 @@ void render_layer_row(nk_context* context, const WormUiComposeView& view,
     }
     const auto index = row - 1;
     if (index < view.note_menu_layer_first_row ||
-        index - view.note_menu_layer_first_row >= view.note_menu_layer_count) {
+        index - view.note_menu_layer_first_row >= view.note_menu_layers.size()) {
         nk_layout_row_dynamic(context, row_height, 1);
         nk_label(context, "Loading layers…", NK_TEXT_LEFT);
         chrome::context_menu_placeholder(menu.popup);
@@ -133,11 +133,11 @@ void render_layer_row(nk_context* context, const WormUiComposeView& view,
     render_layer(context, view, action, view.note_menu_layers[index - view.note_menu_layer_first_row]);
 }
 
-void render_submenu(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
+void render_submenu(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (view.note_menu_layer_total_count > 100'000) return;
     chrome::context_menu_set_row_count(menu.popup, view.note_menu_layer_total_count + 1);
     chrome::context_menu_set_row_enabled(menu.popup, 0, true);
-    for (std::size_t index = 0; index < view.note_menu_layer_count; ++index)
+    for (std::size_t index = 0; index < view.note_menu_layers.size(); ++index)
         chrome::context_menu_set_row_enabled(menu.popup, view.note_menu_layer_first_row + index + 1,
             !layer_disabled_reason(view, view.note_menu_layers[index]));
     chrome::context_menu_scroll_to_selected(menu.popup, context, "Note layer rows", row_height,
@@ -150,19 +150,19 @@ void render_submenu(nk_context* context, const WormUiComposeView& view, wormedit
     for (int offset = list.begin; offset < list.end; ++offset)
         render_layer_row(context, view, action, static_cast<std::size_t>(offset));
     const auto first = list.begin > 0 ? static_cast<std::size_t>(list.begin - 1) : 0;
-    const auto requested = std::min<std::size_t>(WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY,
+    const auto requested = std::min<std::size_t>(wormedit::ui::note_layer_window_limit,
                                                std::min(view.note_menu_layer_total_count - std::min(first, view.note_menu_layer_total_count),
                                                    static_cast<std::size_t>(list.end - list.begin)));
     nk_list_view_end(&list);
     if (menu.popup.open && view.note_menu_layer_total_count &&
-        (first != view.note_menu_layer_first_row || requested > view.note_menu_layer_count) &&
+        (first != view.note_menu_layer_first_row || requested > view.note_menu_layers.size()) &&
         raise(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW)) {
         action.compose_semantic_layer_first_row = first;
         action.compose_semantic_layer_row_count = std::max<std::size_t>(1, requested);
     }
 }
 
-void render_expanded(nk_context* context, const WormUiComposeView& view,
+void render_expanded(nk_context* context, const wormedit::ui::compose_view_t& view,
                      wormedit::ui::workspace_action_t& action) {
     const auto region = nk_window_get_content_region(context);
     nk_layout_row_begin(context, NK_STATIC, std::max(row_height, region.h), 2);
@@ -180,12 +180,12 @@ void render_expanded(nk_context* context, const WormUiComposeView& view,
 
 bool bgm_tooltip_pending{};
 
-void render_bgm_action(nk_context* context, const WormUiComposeView& view,
+void render_bgm_action(nk_context* context, const wormedit::ui::compose_view_t& view,
                         wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, row_height, 1);
     char bgm_label[96]{};
     std::snprintf(bgm_label, sizeof(bgm_label), "Move to BGM%s%s", view.move_to_bgm_shortcut[0] ? "  " : "",
-                  view.move_to_bgm_shortcut);
+                  view.move_to_bgm_shortcut.c_str());
     if (chrome::context_menu_button(context, bgm_label,
             view.move_to_bgm_available ? nullptr : "Requires selected playable notes on an editable BMS/BMSON chart")) {
         emit_compose_menu_command(action, view, "edit.move_to_bgm");
@@ -209,21 +209,21 @@ void render_sound_selection(nk_context* context, wormedit::ui::workspace_action_
     }
 }
 
-void render_channel_menu(nk_context* context, const WormUiComposeView& view,
+void render_channel_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
                          wormedit::ui::workspace_action_t& action) {
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     if (!chrome::context_menu_begin(menu.popup, context, wormedit::ui::chrome::PopupContextStamp::from(view),
             nk_vec2(340, chrome::context_menu_height(1)))) return;
     const auto label = menu.stem ? "Pack into columns" : "Make stem";
     if (chrome::context_menu_item(menu.popup, context, label, nullptr)) {
-        request_bmson_lane_mode(action, view.project_id, view.chart_id, view.document_revision,
+        request_bmson_lane_mode(action, view.project_id.value, view.chart_id.value, view.document_revision,
             menu.channel, !menu.stem, menu.continues, false, menu.resource);
         menu.consumed = true;
     }
     chrome::context_menu_end(menu.popup, context);
 }
 
-bool channel_at(const WormUiComposeView& view, double x, double y) {
+bool channel_at(const wormedit::ui::compose_view_t& view, double x, double y) {
     for (const auto& lane : std::span(view.bgm_lanes)) {
         if (x < lane.bounds.left || x > lane.bounds.right) continue;
         if (y <= 18 && lane.stem && lane.bmson_channel_id) {
@@ -251,7 +251,7 @@ bool channel_at(const WormUiComposeView& view, double x, double y) {
     return false;
 }
 
-void render(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
+void render(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action) {
     bgm_tooltip_pending = false;
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
@@ -296,12 +296,12 @@ void render(nk_context* context, const WormUiComposeView& view, wormedit::ui::wo
         wormedit::ui::nuklear::tooltip::text(context, "Requires selected playable notes on an editable BMS chart");
 }
 
-void open_from_keyboard(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+void open_from_keyboard(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                         struct nk_rect viewport) {
     if (view.area_range_available ||
         !chrome::context_menu_take_open_request(chrome::KeyboardContextTarget::compose)) return;
-    menu.note = view.keyboard_context_note_id ? view.keyboard_context_note_id
-        : view.selected_note_count ? view.selected_note_label_note_id : 0;
+    menu.note = view.keyboard_context_note_id.value ? view.keyboard_context_note_id.value
+        : view.selected_note_count ? view.selected_note_label_note_id.value : 0;
     for (const auto& note : std::span(view.note_endpoints))
         if (!menu.note && note.selected && !note.proposal_ghost) menu.note = note.note_id.value;
     for (const auto& hold : std::span(view.hold_bodies))
@@ -315,7 +315,7 @@ void open_from_keyboard(const WormUiComposeView& view, wormedit::ui::workspace_a
     menu.consumed = true;
 }
 
-void open_at_pointer(nk_context* context, const WormUiComposeView& view,
+void open_at_pointer(nk_context* context, const wormedit::ui::compose_view_t& view,
                      wormedit::ui::workspace_action_t& action, struct nk_rect viewport, double right) {
     const auto mouse = context->input.mouse.pos;
     const auto opening = worm_ui_nuklear_compose_context_click(context, view);
@@ -349,7 +349,7 @@ void begin_compose_note_menu_frame() {
 }
 void reset_compose_note_menu() { menu = {}; reset_bmson_lane_mode_confirmation(); }
 
-void prepare_compose_note_menu(const WormUiComposeView* view, bool active, bool focused,
+void prepare_compose_note_menu(const wormedit::ui::compose_view_t* view, bool active, bool focused,
                                wormedit::ui::workspace_action_t* action) {
     if (!active && bmson_lane_mode_confirmation_owns_input()) reset_bmson_lane_mode_confirmation();
     if (!menu.popup.open && menu.popup.close_pending && !menu.bgm) menu.request_close = true;
@@ -367,12 +367,12 @@ void dismiss_compose_note_popup(nk_context* context) {
     chrome::context_menu_retire(menu.popup, context);
 }
 
-void process_compose_note_menu(nk_context* context, const WormUiComposeView& view,
+void process_compose_note_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
                                wormedit::ui::workspace_action_t& action, struct nk_rect viewport,
                                double input_right, bool focused) {
     (void)chrome::context_menu_update(menu.popup, context);
     if (!view.scene_available || !focused || view.input_occluded) {
-        render_bmson_lane_mode_confirmation(context, action, view.project_id, view.chart_id,
+        render_bmson_lane_mode_confirmation(context, action, view.project_id.value, view.chart_id.value,
                                             view.document_revision, false);
         return;
     }
@@ -383,6 +383,6 @@ void process_compose_note_menu(nk_context* context, const WormUiComposeView& vie
     if (menu.bgm) render_channel_menu(context, view, action);
     else render(context, view, action);
     if (!menu.popup.open)
-        render_bmson_lane_mode_confirmation(context, action, view.project_id, view.chart_id,
+        render_bmson_lane_mode_confirmation(context, action, view.project_id.value, view.chart_id.value,
                                             view.document_revision, focused);
 }

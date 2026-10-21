@@ -582,7 +582,7 @@ struct workspace_action_t {
     bool compose_area_begin_edge;
     bool compose_area_clear_requested;
     uint64_t compose_measure_number;
-    uint32_t compose_bgm_column_count;
+    uint32_t compose_bgm_column_count{};
     uint32_t compose_lane_profile_index;
     std::string compose_lane_layout_profile_id;
     int64_t compose_audio_offset_numerator;
@@ -621,7 +621,7 @@ struct workspace_action_t {
     wormedit::layer_id_t compose_semantic_layer_id;
     wormedit::object_id_t compose_note_context_id;
     size_t compose_semantic_layer_first_row;
-    size_t compose_semantic_layer_row_count;
+    size_t compose_semantic_layer_row_count{};
     wormedit::resource_id_t compose_resource_id;
     uint32_t compose_fallback_candidate;
     wormedit::object_id_t compose_bmson_bgm_event_id;
@@ -672,7 +672,7 @@ struct workspace_action_t {
     uint8_t compose_semantic_layer_alpha;
     std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
     std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
-    WormUiTimingRecipeForm compose_recipe_form;
+    wormedit::ui::timing_recipe_form_t compose_recipe_form;
     wormedit::recipe_id_t compose_recipe_id;
     std::string timing_meter_numerator_text;
     std::string timing_meter_denominator_text;
@@ -695,7 +695,7 @@ struct workspace_action_t {
     std::string timing_primary_denominator_text;
     std::string timing_secondary_numerator_text;
     std::string timing_secondary_denominator_text;
-    std::vector<WormUiShortcutEvent> shortcut_events;
+    std::vector<wormedit::ui::shortcut_event_t> shortcut_events;
     bool shortcut_overflowed;
     bool shortcut_window_focused;
     bool shortcut_notification_history_focused;

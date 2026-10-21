@@ -50,23 +50,23 @@ void scroll_inspector(nuklear_event_harness_t& harness, int notches) {
 
 struct markers_fixture_t {
     nuklear_event_harness_t harness{1600, 900};
-    std::array<WormUiComposeBookmarkView, 2> bookmarks{{
-        {.bookmark_id = 21, .label = "drop", .measure_number = 17, .row = 0, .chart_row = 16320},
-        {.bookmark_id = 22, .label = "break", .measure_number = 33, .row = 0, .chart_row = 30720}}};
-    std::array<WormUiComposeSectionView, 1> sections{{
-        {.section_id = 31, .label = "verse", .begin_measure_number = 1, .begin_row = 0,
+    std::array<wormedit::ui::compose_bookmark_view_t, 2> bookmarks{{
+        {.bookmark_id = {21}, .label = "drop", .measure_number = 17, .row = 0, .chart_row = 16320},
+        {.bookmark_id = {22}, .label = "break", .measure_number = 33, .row = 0, .chart_row = 30720}}};
+    std::array<wormedit::ui::compose_section_view_t, 1> sections{{
+        {.section_id = {31}, .label = "verse", .begin_measure_number = 1, .begin_row = 0,
          .end_measure_number = 16, .end_row = 0, .begin_chart_row = 0, .end_chart_row = 15360}}};
 
     markers_fixture_t() {
         REQUIRE(harness.ready());
         auto& view = harness.view().compose;
-        view.project_id = 3;
-        view.chart_id = 7;
+        view.project_id.value = 3;
+        view.chart_id.value = 7;
         view.document_revision = 12;
-        view.beat_bookmarks = bookmarks.data();
-        view.beat_bookmark_count = bookmarks.size();
-        view.beat_sections = sections.data();
-        view.beat_section_count = sections.size();
+        view.beat_bookmarks.assign(bookmarks.begin(), bookmarks.end());
+        view.beat_bookmarks.resize(bookmarks.size());
+        view.beat_sections.assign(sections.begin(), sections.end());
+        view.beat_sections.resize(sections.size());
         view.beat_marker_navigation_available = true;
         (void)harness.frame();
         scroll_inspector(harness, 40);

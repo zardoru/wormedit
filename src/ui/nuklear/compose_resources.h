@@ -6,16 +6,16 @@
 struct nk_context;
 
 void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
-                                              const WormUiComposeView* view,
+                                              const wormedit::ui::compose_view_t* view,
                                               wormedit::ui::workspace_action_t* action,
                                               worm_ui_nuklear_compose_state_t* state);
 
 // Modal surfaces render after the workspace, never inside the inspector window.
-void worm_ui_nuklear_open_export_dialog(const WormUiComposeView& view,
+void worm_ui_nuklear_open_export_dialog(const wormedit::ui::compose_view_t& view,
     worm_ui_nuklear_compose_state_t& state);
-void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
+void worm_ui_nuklear_open_layer_creation(const wormedit::ui::compose_view_t& view,
     worm_ui_nuklear_compose_state_t& state);
-void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
+void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const wormedit::ui::compose_view_t& view,
     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state);
 
 enum class compose_resource_origin_t { selection, sounds, bga };

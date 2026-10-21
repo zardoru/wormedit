@@ -6550,12 +6550,12 @@ TEST_CASE("setting the editing snap accepts only supported grids without touchin
                            ? state.supported_snap_denominators.front()
                            : state.supported_snap_denominators.back();
 
-    const auto set = dispatch_editor_action(history, state, set_edit_snap_action_t{other});
+    const auto set = dispatch_editor_action(history, state, set_edit_snap_action_t{.denominator = other});
     CHECK(set.accepted);
     CHECK(state.active_snap_denominator == other);
     CHECK_FALSE(state.active_snap_was_fallback);
 
-    const auto unsupported = dispatch_editor_action(history, state, set_edit_snap_action_t{7});
+    const auto unsupported = dispatch_editor_action(history, state, set_edit_snap_action_t{.denominator = 7});
     CHECK(unsupported.diagnostics.empty());
     CHECK(state.active_snap_denominator == other);
     CHECK(history.document.revision == revision);
@@ -7719,7 +7719,7 @@ TEST_CASE("virtual cursor action capabilities preserve navigation selection and 
     const std::array<editor_interaction_action_t, 8> actions{
         move_edit_cursor_action_t{}, page_edit_cursor_action_t{},
         select_bms_canvas_measure_action_t{3}, cycle_edit_snap_action_t{},
-        set_edit_snap_action_t{4}, select_editor_notes_action_t{},
+        set_edit_snap_action_t{.denominator = 4}, select_editor_notes_action_t{},
         select_editor_lane_action_t{lane_id_t{2}}, adjust_editor_zoom_action_t{1.25}};
     for (const auto& action : actions) {
         const auto result = dispatch_editor_action(history, state, action);

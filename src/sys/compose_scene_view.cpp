@@ -297,14 +297,14 @@ void build_compose_layout_and_notes_view(const compose_scene_projection_context_
     }
     build_compose_grid_lines_view(projection);
     build_compose_scene_objects_view(projection);
-    view.truncated = view.truncated || projection.lane_key_bindings_truncated ||
+    view.truncated = view.truncated ||
                      band_count != bands.size() || lane_count != lanes.size();
 }
 
 void build_compose_bgm_events_view(
     frontend_workspace_view_t& flattened,
     const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
-    WormUiComposeView& view) {
+    wormedit::ui::compose_view_t& view) {
     const auto event_count =
         events.size();
     if (!prepare_compose_geometry_rows(flattened, flattened.view.compose.bgm_events, event_count)) {
@@ -472,7 +472,7 @@ void build_compose_bga_move_preview_view(const compose_scene_projection_context_
     auto& view = projection.inputs.frame.view();
     view.bga_move_preview_valid = false;
     const auto* input = projection.bga_move_preview;
-    if (!input || input->event_id == 0 || input->project_id != view.project_id ||
+    if (!input || input->event_id == 0 || input->project_id != view.project_id.value ||
         input->chart_id != projection.inputs.scope.chart_scope.chart.id.value ||
         input->document_revision != view.document_revision || !std::isfinite(input->y_pixels))
         return;
@@ -486,7 +486,7 @@ void build_compose_bga_move_preview_view(const compose_scene_projection_context_
     if (!row)
         return;
     view.bga_move_preview_valid = true;
-    view.bga_move_preview_event_id = input->event_id;
+    view.bga_move_preview_event_id.value = input->event_id;
     view.bga_move_preview_y_pixels =
         compose_project_y(*row, projection.inputs.scope.pixels_per_row,
                           projection.inputs.scope.interaction_view.viewport_scroll_pixels,
@@ -632,7 +632,7 @@ bool initialize_compose_view_state(
     const auto notes_editable =
         wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
     view.draw_source_kind = application_state.project.compose_gesture.draw_source_kind;
-    view.draw_source_id = application_state.project.compose_gesture.draw_source_id;
+    view.draw_source_id.value = application_state.project.compose_gesture.draw_source_id;
     view.draw_source_label = ui::no_draw_sound_resource_label;
     view.draw_source_missing = false;
     view.semantic_layer_target_row = 0;
@@ -648,17 +648,17 @@ bool initialize_compose_view_state(
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
     view.timing_focus = application_state.project.compose_view.compose_timing_focus;
     view.selected_note_count = 0;
-    view.keyboard_context_note_id = 0;
+    view.keyboard_context_note_id.value = 0;
     view.move_conflict_count = 0;
     view.selected_bgm_event_count = 0;
-    view.selected_assigned_resource_id = 0;
-    view.selected_bgm_event_id = 0;
-    view.selected_bmson_bgm_event_id = 0;
-    view.selected_bmson_note_event_id = 0;
-    view.selected_bmson_source_lane_id = 0;
-    view.staged_bmson_marker_count = 0;
-    view.staged_bmson_marker_playable_lanes = nullptr;
-    view.staged_bmson_marker_restarts = nullptr;
+    view.selected_assigned_resource_id.value = 0;
+    view.selected_bgm_event_id.value = 0;
+    view.selected_bmson_bgm_event_id.value = 0;
+    view.selected_bmson_note_event_id.value = 0;
+    view.selected_bmson_source_lane_id.value = 0;
+
+    view.staged_bmson_marker_playable_lanes.clear();
+    view.staged_bmson_marker_restarts.clear();
     view.bmson_marker_drafts.clear();
     view.bmson_marker_move_preview.reset();
     view.waveform_rows.clear();
@@ -704,29 +704,25 @@ bool initialize_compose_view_state(
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
     view.audio_marker_transport_available = false;
-    view.beat_bookmarks = flattened.compose.bookmark.data();
-    view.beat_bookmark_count = 0;
-    view.beat_bookmarks_truncated = false;
-    view.beat_sections = flattened.compose.section.data();
-    view.beat_section_count = 0;
-    view.beat_sections_truncated = false;
+
+
+
+
     view.beat_section_selection_span_available = false;
     view.beat_section_selection_begin_measure_number = 0;
     view.beat_section_selection_begin_row = 0;
     view.beat_section_selection_end_measure_number = 0;
     view.beat_section_selection_end_row = 0;
-    view.audio_bookmarks = flattened.compose.audio_marker.bookmark.data();
-    view.audio_bookmark_count = 0;
-    view.audio_bookmarks_truncated = false;
-    view.audio_sections = flattened.compose.audio_marker.section.data();
-    view.audio_section_count = 0;
-    view.audio_sections_truncated = false;
-    view.semantic_layers = flattened.compose.semantic_layer.view.data();
-    view.semantic_layer_count = 0;
+
+
+
+
+
+
     view.semantic_layer_total_count = 0;
     view.semantic_layer_first_row = 0;
-    view.note_menu_layers = nullptr;
-    view.note_menu_layer_count = 0;
+    view.note_menu_layers.clear();
+
     view.note_menu_layer_first_row = 0;
     view.note_menu_layer_total_count = 0;
     view.semantic_layer_target = {};
@@ -735,27 +731,26 @@ bool initialize_compose_view_state(
     view.semantic_layer_unassigned_bgm_count = 0;
     view.semantic_layer_page = 0;
     view.semantic_layer_page_count = 0;
-    view.semantic_layers_truncated = false;
     view.semantic_layer_target_locked = false;
     view.semantic_layer_target_visible = false;
     view.semantic_layer_target_required_filter = false;
     view.semantic_layer_target_excluded_filter = false;
     view.semantic_layer_solo_active = application_state.project.semantic_layer.semantic_layer_solo_active;
-    view.status_text = nullptr;
-    view.selected_note_label = nullptr;
-    view.selected_note_label_note_id = 0;
+    view.status_text = {};
+    view.selected_note_label.clear();
+    view.selected_note_label_note_id.value = 0;
     view.focus_note_label_editor = false;
     view.hover_note_visible = false;
-    view.hover_note_id = 0;
-    view.hover_tooltip = nullptr;
+    view.hover_note_id.value = 0;
+    view.hover_tooltip.clear();
     view.timing_markers.clear();
     view.viewport_autoscroll_active = cache.frame.viewport_autoscroll_active;
     view.viewport_autoscroll_anchor_x_pixels = cache.frame.viewport_autoscroll_anchor_x_pixels;
     view.viewport_autoscroll_anchor_y_pixels = cache.frame.viewport_autoscroll_anchor_y_pixels;
     view.viewport_autoscroll_pointer_x_pixels = cache.frame.viewport_autoscroll_pointer_x_pixels;
     view.viewport_autoscroll_pointer_y_pixels = cache.frame.viewport_autoscroll_pointer_y_pixels;
-    flattened.compose.hover_tooltip.clear();
-    flattened.compose.selected_note_label.clear();
+    view.hover_tooltip.clear();
+    view.selected_note_label.clear();
     return true;
 }
 } // namespace wormedit::sys::compose_projection_detail

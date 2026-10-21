@@ -13,7 +13,7 @@ inline constexpr std::size_t audio_sound_row_limit = 512;
 }
 #include <string_view>
 
-struct WormUiComposeOutputGroupView;
+namespace wormedit::ui { struct compose_output_group_view_t; }
 
 namespace wormedit::ui {
 struct metadata_format_field_view_t {
@@ -22,7 +22,7 @@ struct metadata_format_field_view_t {
     bool first_group_for_family;
     size_t group_index;
     size_t field_index;
-    size_t group_field_count;
+    size_t group_field_count{};
     std::string name;
     std::string value;
     bool has_source_order;
@@ -37,7 +37,7 @@ struct metadata_format_target_view_t {
     format_family_t family;
     bool group_exists;
     size_t group_index;
-    size_t field_count;
+    size_t field_count{};
     auto operator==(const metadata_format_target_view_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
@@ -134,18 +134,17 @@ struct metadata_view_t {
     uint64_t proposed_audio_offset_denominator;
     std::vector<std::string> search_tags;
     std::vector<wormedit::ui::metadata_format_field_view_t> format_fields;
-    size_t format_field_total_count;
+    size_t format_field_total_count{};
     std::vector<wormedit::ui::metadata_format_target_view_t> format_targets;
     std::string project_directory;
     std::string selected_music_source;
     asset_id_t selected_music_asset_id;
     asset_id_t next_import_asset_id;
     bool import_copy_pending;
-    size_t selected_music_resource_count;
-    size_t selected_music_channel_count;
-    std::vector<WormUiComposeOutputGroupView> output_groups;
+    size_t selected_music_resource_count{};
+    size_t selected_music_channel_count{};
+    std::vector<wormedit::ui::compose_output_group_view_t> output_groups;
     // Temporary: T-698 converts the nested Compose row text away from frame-arena storage.
-    bool output_group_text_truncated;
     std::string dropped_music_path;
     wormedit::ui::metadata_drop_target_t dropped_music_target;
     std::string dropped_output_relative_path;
@@ -163,8 +162,8 @@ struct metadata_view_t {
     // present and conflict-free.
     bool channel_map_preview_present;
     bool channel_map_preview_valid;
-    size_t channel_map_preview_affected_note_count;
-    size_t channel_map_preview_conflict_count;
+    size_t channel_map_preview_affected_note_count{};
+    size_t channel_map_preview_conflict_count{};
     std::string channel_map_preview_message;
     bool channel_map_apply_enabled;
     bool channel_map_editable;
@@ -173,9 +172,9 @@ struct metadata_view_t {
     size_t lane_profile_current;
     bool lane_profile_preview_present;
     bool lane_profile_preview_valid;
-    size_t lane_profile_mapped_note_count;
-    size_t lane_profile_dropped_note_count;
-    size_t lane_profile_collision_count;
+    size_t lane_profile_mapped_note_count{};
+    size_t lane_profile_dropped_note_count{};
+    size_t lane_profile_collision_count{};
     std::string lane_profile_preview_message;
     bool lane_profile_apply_enabled;
     std::vector<wormedit::ui::metadata_chart_choice_view_t> chart_choices;
@@ -207,7 +206,7 @@ struct sound_row_view_t {
     std::string source_path;
     // 0 unspecified, 1 stem, 2 keysound, 3 sample (sound_kind_t, effective kind).
     sound_kind_t kind;
-    uint64_t use_count;
+    uint64_t use_count{};
     uint64_t duration_frames;
     uint32_t sample_rate;
     bool missing;
@@ -256,7 +255,7 @@ struct audio_slices_view_t {
     object_id_t selected_channel_id;
     clip_id_t selected_clip_id;
     std::vector<wormedit::ui::sound_usage_row_view_t> usage_rows;
-    size_t usage_total_count;
+    size_t usage_total_count{};
     bool usage_rows_truncated;
     bool usage_valid;
     song_id_t usage_song_id;

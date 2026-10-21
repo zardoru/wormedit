@@ -19,7 +19,7 @@ void check_bga_dock(bool condition, std::source_location source = std::source_lo
 
 auto wait_for_thumbnail(bga_dock_runtime_t& runtime, const song_document_t& document,
                          const std::filesystem::path& base, const ui::bga_dock_request_t& request,
-                         WormUiComposeView& view) -> bool {
+                         wormedit::ui::compose_view_t& view) -> bool {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
     while (std::chrono::steady_clock::now() < deadline) {
         runtime.project(document, base, request, view);
@@ -45,7 +45,7 @@ TEST_CASE("Decoded BGA thumbnails retain warmed source validation and refresh ch
         .resources = {{.id = resource_id_t{2}, .name = std::string(80, 'i'),
                        .asset = asset_id_t{1}, .roles = {resource_role_t::bga}}}};
     bga_dock_runtime_t runtime;
-    WormUiComposeView view{};
+    wormedit::ui::compose_view_t view{};
     const ui::bga_dock_request_t request{.visible = true, .row_limit = 64};
     REQUIRE(wait_for_thumbnail(runtime, document, directory->path(), request, view));
     runtime.project(document, directory->path(), request, view);

@@ -769,11 +769,11 @@ auto bgm_move_enabled(const wormedit::chart_document_t* chart,
         wormedit::sys::compose_move_to_bgm_available(*chart, *state, application);
 }
 
-void attach_bgm_shortcut(WormUiComposeView& view, const wormedit::command_registry_t& registry) {
+void attach_bgm_shortcut(wormedit::ui::compose_view_t& view, const wormedit::command_registry_t& registry) {
     const auto* command = wormedit::find_command(registry, {"edit.move_to_bgm"});
     const auto shortcut = command && !command->current_shortcuts.empty()
         ? wormedit::sys::shortcut_chord_text(command->current_shortcuts.front()) : std::string{};
-    std::snprintf(view.move_to_bgm_shortcut, sizeof(view.move_to_bgm_shortcut), "%s", shortcut.c_str());
+    view.move_to_bgm_shortcut = shortcut;
 }
 
 void refresh_same_sound_command(wormedit::command_registry_t& registry,
@@ -920,9 +920,9 @@ void refresh_application_command_states(
                                    application_state.project.semantic_layer.semantic_layer_palette_chart == chart->id
                                        ? application_state.project.semantic_layer.semantic_layer_palette_page
                                        : 0,
-                                   false, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)
+                                   false, wormedit::ui::semantic_layer_shortcut_limit)
                              : std::nullopt;
-    for (std::size_t index = 0; index < WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY; ++index) {
+    for (std::size_t index = 0; index < wormedit::ui::semantic_layer_shortcut_limit; ++index) {
         const auto* layer = palette && index < palette->layer_indices.size()
                                 ? &chart->semantic_layers[palette->layer_indices[index]]
                                 : nullptr;
@@ -998,7 +998,7 @@ void consume_menu_shortcut(wormedit::ui::workspace_action_t& action,
     std::size_t retained = 0;
     for (std::size_t i = 0; i < action.shortcut_events.size(); ++i) {
         const auto& event = action.shortcut_events[i];
-        if (event.hid_usage == static_cast<std::uint16_t>(chord.key) && event.modifiers == modifiers) continue;
+        if (event.hid_usage == static_cast<wormedit::shortcut_key_t>(static_cast<std::uint16_t>(chord.key)) && event.modifiers == modifiers) continue;
         action.shortcut_events[retained++] = event;
     }
     action.shortcut_events.resize(retained);
@@ -1345,7 +1345,7 @@ auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::option
 
 void build_bga_dock_view(wormedit::sys::bga_dock_runtime_t& runtime,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
-    const std::filesystem::path& base, WormUiComposeView& view, std::uint64_t session_generation) {
+    const std::filesystem::path& base, wormedit::ui::compose_view_t& view, std::uint64_t session_generation) {
     wormedit::ui::bga_dock_request_t request{};
     worm_ui_frontend_bga_dock_request(&request);
     request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
@@ -1986,14 +1986,14 @@ void retain_compose_hover_timing(
     const wormedit::ui::workspace_action_t& action) {
     auto& hover = cache.waveform.hover_timing;
     hover.valid = action.hover_source_frame_valid && view.project_id.value != 0 &&
-        view.selected_chart_id.value != 0 && view.compose.selected_audio_asset_id != 0 &&
+        view.selected_chart_id.value != 0 && view.compose.selected_audio_asset_id.value != 0 &&
         action.hover_source_total_frames != 0 && action.hover_source_sample_rate != 0;
     if (!hover.valid) return;
     hover.source_frame = action.hover_source_frame;
     hover.project_id = view.project_id.value;
     hover.chart_id = view.selected_chart_id.value;
     hover.document_revision = view.document_revision;
-    hover.audio_asset_id = view.compose.selected_audio_asset_id;
+    hover.audio_asset_id = view.compose.selected_audio_asset_id.value;
     hover.total_frames = action.hover_source_total_frames;
     hover.sample_rate = action.hover_source_sample_rate;
 }
@@ -2004,7 +2004,7 @@ void retain_compose_bgm_window_capture(
     application.project.bgm.bgm_bar_window_capture.reset();
     if (!action.minimap_window_capture_active || view.project_id.value == 0 ||
         view.selected_chart_id.value == 0 ||
-        view.compose.selected_audio_asset_id == 0 ||
+        view.compose.selected_audio_asset_id.value == 0 ||
         view.compose.waveform_overview_total_frames == 0 ||
         view.compose.waveform_overview_sample_rate == 0 ||
         !std::isfinite(action.minimap_window_capture_begin_fraction) ||
@@ -2019,7 +2019,7 @@ void retain_compose_bgm_window_capture(
         .project = wormedit::song_id_t{view.project_id.value},
         .chart = wormedit::chart_id_t{view.selected_chart_id.value},
         .document_revision = view.document_revision,
-        .asset = wormedit::asset_id_t{view.compose.selected_audio_asset_id},
+        .asset = wormedit::asset_id_t{view.compose.selected_audio_asset_id.value},
         .total_frames = view.compose.waveform_overview_total_frames,
         .sample_rate = view.compose.waveform_overview_sample_rate};
 }
@@ -4641,7 +4641,7 @@ struct application_t::implementation_t {
         flattened.view.file_jobs.preview = views.project_chart_runtime.preview_view();
         const auto export_confirmation = jobs.export_runtime.confirmation_view();
         flattened.view.compose.export_confirmation_required = export_confirmation.required;
-        flattened.view.compose.export_confirmation_project_id = export_confirmation.project_id;
+        flattened.view.compose.export_confirmation_project_id.value = export_confirmation.project_id;
         flattened.view.compose.export_confirmation_revision = export_confirmation.document_revision;
         flattened.view.compose.export_confirmation_message = export_confirmation.message;
         flattened.view.compose.export_confirmation_detail = export_confirmation.detail;

@@ -8,7 +8,7 @@
 #include <cstring>
 
 namespace {
-void activate(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
+void activate(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
               worm_ui_nuklear_compose_state_t& compose, std::size_t index) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& result = view.sound_picker;
@@ -20,8 +20,8 @@ void activate(const WormUiComposeView& view, wormedit::ui::workspace_action_t& a
     compose.keysound_catalog.keysound_selection.selected = {id};
     compose.keysound_catalog.keysound_selection.primary = compose.keysound_catalog.keysound_selection.anchor = id;
     set_armed_resource(compose, id, compose_resource_origin_t::sounds);
-    action.compose_input_project_id.value = view.project_id;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_input_project_id.value = view.project_id.value;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     worm_ui_nuklear_pick_draw_source(compose, action, 1, id);
     cancel_compose_sound_picker(picker);
@@ -51,7 +51,7 @@ void render_keyboard_hint(nk_context* context) {
     nk_label(context, "choose · Enter arms · Esc cancels", NK_TEXT_LEFT);
 }
 
-void render_results(nk_context* context, const WormUiComposeView& view,
+void render_results(nk_context* context, const wormedit::ui::compose_view_t& view,
                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
@@ -107,7 +107,7 @@ void cancel_compose_sound_picker(sound_picker_state_t& state) {
 auto compose_sound_picker_owns_input(const sound_picker_state_t& state) -> bool {
     return state.owns_input();
 }
-void render_compose_sound_picker(nk_context* context, const WormUiComposeView& view,
+void render_compose_sound_picker(nk_context* context, const wormedit::ui::compose_view_t& view,
     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& compose, bool focused) {
     auto& state = compose.sound_picker_ui.sound_picker;
     if (!context) return;
@@ -116,7 +116,7 @@ void render_compose_sound_picker(nk_context* context, const WormUiComposeView& v
             context, state, wormedit::ui::chrome::PopupReleaseKeys::all);
         return;
     }
-    if (!focused || state.project != view.project_id || state.chart != view.chart_id ||
+    if (!focused || state.project != view.project_id.value || state.chart != view.chart_id.value ||
         state.revision != view.document_revision)
         cancel_compose_sound_picker(state);
     const auto parent = nk_window_get_bounds(context);

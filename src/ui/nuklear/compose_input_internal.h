@@ -15,9 +15,9 @@ bool compose_text_owned(const nk_context* context);
 
 // Razor slicing needs a selected BGM source lane and no competing tool. Input handlers enforce this
 // themselves, so it holds whether or not the BMSON tab that shows the toggle is drawn.
-inline auto bmson_razor_eligible(const WormUiComposeView& view) -> bool {
-    return view.scene_available && view.selected_bmson_bgm_event_id != 0 &&
-           view.selected_bmson_source_lane_id != 0 && !view.note_paint_mode_active &&
+inline auto bmson_razor_eligible(const wormedit::ui::compose_view_t& view) -> bool {
+    return view.scene_available && bool(view.selected_bmson_bgm_event_id) &&
+           bool(view.selected_bmson_source_lane_id) && !view.note_paint_mode_active &&
            !view.semantic_layer_paint_mode_active && !view.timing_stage_active;
 }
 
@@ -31,16 +31,16 @@ bool compose_shortcut_modifier(std::uint16_t modifiers);
 void cancel_offset_fit_drag(wormedit::ui::workspace_action_t* action);
 void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
                            WormUiComposeInputKind kind, double y, bool ctrl_held, bool onset_snap_held = false);
-auto compose_timing_target(const WormUiComposeView& view, double screen_y)
+auto compose_timing_target(const wormedit::ui::compose_view_t& view, double screen_y)
     -> wormedit::ui::timing_target_t;
-bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);
+bool compose_point_hits_note(const wormedit::ui::compose_view_t* view, double x, double y);
 // Starts a note paint stroke at the press position, with the armed Sounds sample if any.
 void append_note_paint_begin(const ComposePointerEventContext& input);
-std::uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y);
-std::uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y);
-auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
+std::uint64_t compose_bgm_event_at(const wormedit::ui::compose_view_t* view, double x, double y);
+std::uint64_t compose_bga_event_at(const wormedit::ui::compose_view_t* view, double x, double y);
+auto compose_bga_lane_kind_at(const wormedit::ui::compose_view_t& view, double x, double y)
     -> std::optional<std::uint8_t>;
-bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y);
+bool compose_point_hits_selected_note(const wormedit::ui::compose_view_t* view, double x, double y);
 WormUiComposeSelectionMode compose_selection_mode(std::uint16_t modifiers);
 
 bool process_draw_right_pointer(const ComposePointerEventContext& input);

@@ -21,11 +21,11 @@ inline auto catalog_confirmation(worm_ui_nuklear_compose_state_t& state, bool bg
         state.keysound_slots.keysound_renumber_project, state.keysound_slots.keysound_renumber_chart, state.keysound_slots.keysound_renumber_revision,
         state.keysound_slots.keysound_renumber_resources};
 }
-inline void open_catalog_confirmation(CatalogConfirmation state, const WormUiComposeView& view,
+inline void open_catalog_confirmation(CatalogConfirmation state, const wormedit::ui::compose_view_t& view,
                                      const std::vector<std::uint64_t>& resources) {
     state.open = true;
-    state.project = view.project_id;
-    state.chart = view.chart_id;
+    state.project = view.project_id.value;
+    state.chart = view.chart_id.value;
     state.revision = view.document_revision;
     state.resources = resources;
 }
@@ -35,7 +35,7 @@ inline void close_catalog_confirmation(CatalogConfirmation state) {
     state.resources.clear();
 }
 // None means still open or cancelled; false/true select the captured subset/all.
-inline auto render_catalog_confirmation(nk_context* context, const WormUiComposeView& view,
+inline auto render_catalog_confirmation(nk_context* context, const wormedit::ui::compose_view_t& view,
                                        CatalogConfirmation state, bool bga) -> std::optional<bool> {
     if (!state.open) return std::nullopt;
     const auto bounds = nk_rect(0, 60, std::min(360.0f, nk_window_get_content_region(context).w), 204);

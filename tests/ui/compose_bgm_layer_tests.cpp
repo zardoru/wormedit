@@ -49,13 +49,13 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined ob
     state.dock_layout.inspector_visible = false;
     state.dock_layout.sounds_panel_visible = false;
     state.dock_layout.layers_panel_visible = true;
-    WormUiComposeSemanticLayerView layer{
-        .layer_id = 7, .name = "Verse", .red = 80,
+    wormedit::ui::compose_semantic_layer_view_t layer{
+        .layer_id = {7}, .name = "Verse", .red = 80,
         .assigned_note_count = 3, .visible = true,
         .assigned_bgm_count = 2};
     auto& view = harness.view().compose;
-    view.semantic_layers = &layer;
-    view.semantic_layer_count = 1;
+    view.semantic_layers = {layer};
+    view.semantic_layers.resize(1);
     view.semantic_layer_total_count = 1;
     view.selected_note_count = 3;
     view.selected_bgm_event_count = 2;
@@ -79,7 +79,7 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     state.dock_layout.sounds_panel_visible = false;
     auto& view = harness.view().compose;
     view.semantic_layer_paint_mode_active = true;
-    view.semantic_layer_target = {.layer_id = 7, .name = "Verse", .visible = true};
+    view.semantic_layer_target = {.layer_id = {7}, .name = "Verse", .visible = true};
     const std::array hover{motion_event(300, 400)};
     const auto pointer = harness.frame(hover);
     REQUIRE(pointer.get().compose_has_pointer_hover);
@@ -121,7 +121,7 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
     auto& view = harness.view().compose;
     view.semantic_layer_paint_mode_active = true;
-    view.semantic_layer_target = {.layer_id = 7, .name = "Verse", .visible = true};
+    view.semantic_layer_target = {.layer_id = {7}, .name = "Verse", .visible = true};
     const std::array hover{motion_event(300, 400)};
     const auto pointer = harness.frame(hover);
     wormedit::ui::compose_bgm_event_view_t bgm{};
@@ -164,10 +164,10 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = false;
     state.dock_layout.layers_panel_visible = true;
-    WormUiComposeSemanticLayerView layer{.layer_id = 7, .name = "Verse", .visible = true};
+    wormedit::ui::compose_semantic_layer_view_t layer{.layer_id = {7}, .name = "Verse", .visible = true};
     auto& view = harness.view().compose;
-    view.semantic_layers = &layer;
-    view.semantic_layer_count = view.semantic_layer_total_count = 1;
+    view.semantic_layers = {layer};
+    view.semantic_layers.resize(view.semantic_layer_total_count = 1);
     view.selected_note_count = 1;
     view.semantic_layer_paint_mode_active = true;
     (void)harness.frame();
@@ -189,7 +189,7 @@ void initialize_chip(nuklear_event_harness_t& harness, uint8_t kind, uint64_t id
     view.note_paint_mode_active = true;
     view.keysounds_available = true;
     view.draw_source_kind = kind;
-    view.draw_source_id = id;
+    view.draw_source_id.value = id;
     view.draw_source_label = label;
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("Draw chip opens a hidden Sounds dock and waits for the exact unrestri
     state.keysound_catalog.keysound_search[0] = 'z';
     state.keysound_filters.keysound_slots_mode = true;
     view.keysound_section_projection_available = true;
-    view.keysound_projected_primary_resource_id = 100;
+    view.keysound_projected_primary_resource_id.value = 100;
     view.keysound_primary_display_index_valid = true;
     view.keysound_primary_display_index = 2;
     check_chip_inputs_empty(click_chip(harness, "0A 音楽.wav"));
@@ -228,7 +228,7 @@ TEST_CASE("Draw chip opens a hidden Sounds dock and waits for the exact unrestri
     check_layer_brush(request.automatic_search.empty() && !request.group_filter_active);
     check_layer_brush(request.include_ungrouped && request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::any);
     check_layer_brush(state.pointer_capture.source_chip_reveal_id == 179 && state.keysound_catalog.keysound_reveal_primary);
-    view.keysound_projected_primary_resource_id = request.primary_resource_id.value;
+    view.keysound_projected_primary_resource_id.value = request.primary_resource_id.value;
     view.keysound_projected_filters_unrestricted = true;
     view.keysound_primary_display_index = 80;
     view.keysound_display_total_count = 81;
@@ -295,7 +295,7 @@ TEST_CASE("Tool chip owns a held click across source change without painting on 
     const auto pressed = harness.frame(std::array{motion_event(source->first, source->second),
         button_event(true, source->first, source->second)});
     check_chip_inputs_empty({pressed});
-    harness.view().compose.draw_source_id = 180;
+    harness.view().compose.draw_source_id.value = 180;
     harness.view().compose.document_revision = 2;
     const auto held = harness.frame(std::array{motion_event(300, 400)});
     check_layer_brush(held.get().compose_inputs.size() == 0);
@@ -313,7 +313,7 @@ TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an
     auto& view = harness.view().compose;
     view.note_paint_mode_active = false;
     view.semantic_layer_paint_mode_active = true;
-    view.semantic_layer_target = {.layer_id = 100, .name = "Drums 99", .visible = true};
+    view.semantic_layer_target = {.layer_id = {100}, .name = "Drums 99", .visible = true};
     view.semantic_layer_target_row = 99;
     view.semantic_layer_total_count = 100;
     check_chip_inputs_empty(click_chip(harness, "Drums 99"));
@@ -340,7 +340,7 @@ TEST_CASE("Tool chip leaves outside canvas presses available and missing source 
     }
     check_layer_brush(began);
     harness.view().compose.draw_source_kind = 1;
-    harness.view().compose.draw_source_id = 179;
+    harness.view().compose.draw_source_id.value = 179;
     harness.view().compose.draw_source_label = "missing source";
     harness.view().compose.draw_source_missing = true;
     check_chip_inputs_empty(click_chip(harness, "missing source"));

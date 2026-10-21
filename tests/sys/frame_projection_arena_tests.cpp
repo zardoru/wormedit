@@ -448,10 +448,10 @@ void check_metadata_text(const wormedit::ui::metadata_view_t& view) {
     check_frame_storage(std::strcmp(view.dropped_music_path.c_str(), "/tmp/a-long-dropped-audio-source.wav") == 0);
     check_frame_storage(std::strcmp(view.dropped_output_relative_path.c_str(), "exports/a-long-dropped-output.bms") == 0);
     check_frame_storage(view.selected_music_asset_id == wormedit::asset_id_t{7});
-    REQUIRE(view.output_groups.size() == 1);
-    check_frame_storage(std::strcmp(view.output_groups[0].name, "Long retained output group name") == 0);
-    check_frame_storage(std::strcmp(view.output_groups[0].relative_output_path, "exports/chart.bms") == 0);
-    check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory,
+    REQUIRE(!view.output_groups.empty());
+    check_frame_storage(std::strcmp(view.output_groups[0].name.c_str(), "Long retained output group name") == 0);
+    check_frame_storage(std::strcmp(view.output_groups[0].relative_output_path.c_str(), "exports/chart.bms") == 0);
+    check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory.c_str(),
                                     "exports/chart.bms/assets") == 0);
     check_frame_storage(view.output_groups[0].document_index == 0);
 }
@@ -487,8 +487,7 @@ TEST_CASE("Metadata scalar text is owned while unconverted output rows preserve 
     check_frame_storage(!failed.view.metadata.project_directory.empty());
     check_frame_storage(!failed.view.metadata.selected_music_source.empty());
     check_frame_storage(!failed.view.metadata.copy_preview_source.empty());
-    check_frame_storage(failed.view.metadata.output_groups.size() == 0);
-    check_frame_storage(failed.view.metadata.output_group_text_truncated);
+    check_frame_storage(failed.view.metadata.output_groups.size() == 1);
     const auto diagnostic = failed.view.metadata.copy_preview_text;
     REQUIRE(!diagnostic.empty());
     tiny.reset();
@@ -501,27 +500,23 @@ TEST_CASE("Metadata scalar text is owned while unconverted output rows preserve 
     frame_arena_t limited({.chunk_bytes = 1024, .maximum_bytes = 1024});
     auto prefix = fixture.project(&limited);
     check_metadata_text(prefix.view.metadata);
-    check_frame_storage(prefix.view.metadata.output_group_text_truncated);
 }
 
 TEST_CASE("Metadata output groups retain selected chart filtering beyond the former capacity",
           "[sys][frame-arena][metadata-text]") {
     metadata_text_fixture_t fixture;
     auto& groups = fixture.history.document.output_groups;
-    groups.resize(WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY, groups.front());
+    groups.resize(32, groups.front());
     groups.front().charts = {wormedit::chart_id_t{2}};
     auto accepted = fixture.project();
-    check_frame_storage(accepted.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1);
+    check_frame_storage(accepted.view.metadata.output_groups.size() == 32 - 1);
     check_frame_storage(accepted.view.metadata.output_groups[0].document_index == 1);
-    check_frame_storage(!accepted.view.metadata.output_group_text_truncated);
     groups.push_back(groups.back());
     auto exact = fixture.project();
-    check_frame_storage(exact.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
-    check_frame_storage(!exact.view.metadata.output_group_text_truncated);
+    check_frame_storage(exact.view.metadata.output_groups.size() == 32);
     groups.push_back(groups.back());
     auto truncated = fixture.project();
-    check_frame_storage(truncated.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1);
-    check_frame_storage(!truncated.view.metadata.output_group_text_truncated);
+    check_frame_storage(truncated.view.metadata.output_groups.size() == 32 + 1);
 }
 
 TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projections",
@@ -542,8 +537,7 @@ TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projectio
         const auto start = frame_heap_allocation_snapshot();
         const auto frame = fixture.project(&arena);
         const auto finish = frame_heap_allocation_snapshot();
-        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            !frame.view.metadata.output_group_text_truncated && frame.view.metadata.output_groups.size() == 1;
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed && frame.view.metadata.output_groups.size() == 1;
         consistent = consistent && finish.count - start.count == allocations;
     }
     check_frame_storage(stable);
@@ -703,11 +697,11 @@ auto project_compose_output_groups(const wormedit::song_document_t& document,
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
     return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena);
 }
-void check_compose_output_group(const WormUiComposeOutputGroupView& group) {
+void check_compose_output_group(const wormedit::ui::compose_output_group_view_t& group) {
     check_frame_storage(group.document_index == 1);
-    check_frame_storage(std::strcmp(group.name, "Independently owned Compose output group") == 0);
-    check_frame_storage(std::strcmp(group.relative_output_path, "exports/chart.bms") == 0);
-    check_frame_storage(std::strcmp(group.relative_asset_directory,
+    check_frame_storage(std::strcmp(group.name.c_str(), "Independently owned Compose output group") == 0);
+    check_frame_storage(std::strcmp(group.relative_output_path.c_str(), "exports/chart.bms") == 0);
+    check_frame_storage(std::strcmp(group.relative_asset_directory.c_str(),
                                     "exports/chart.bms/assets") == 0);
 }
 }
@@ -719,59 +713,54 @@ TEST_CASE("Compose output group arena text retains source-independent moves and 
     document.output_groups.clear();
     auto moved = std::move(frame);
     moved.rebind_view_pointers();
-    REQUIRE(moved.view.compose.output_group_count == 1);
-    check_frame_storage(!moved.view.compose.output_groups_truncated);
+    REQUIRE(moved.view.compose.output_groups.size() == 1);
+
     check_compose_output_group(moved.view.compose.output_groups[0]);
-    check_frame_storage(moved.view.compose.output_groups == moved.compose.output_group.view.data());
+    check_frame_storage(moved.view.compose.output_groups.front().name == "Independently owned Compose output group");
 }
 
 TEST_CASE("Compose output group arena retains count limits and existing path display semantics",
           "[sys][frame-arena][compose-output-group]") {
     auto document = compose_output_group_document();
     const auto selected = document.output_groups[1];
-    document.output_groups.resize(WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1, selected);
+    document.output_groups.resize(32 + 1, selected);
     document.output_groups.insert(document.output_groups.begin() + 2, document.output_groups.front());
     auto exact = project_compose_output_groups(document);
-    check_frame_storage(exact.view.compose.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
-    check_frame_storage(!exact.view.compose.output_groups_truncated);
-    check_frame_storage(exact.view.compose.output_groups[WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1].document_index == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1);
+    check_frame_storage(exact.view.compose.output_groups.size() == 32);
+
+    check_frame_storage(exact.view.compose.output_groups[32 - 1].document_index == 32 + 1);
     document.output_groups.push_back(selected);
     auto truncated = project_compose_output_groups(document);
-    check_frame_storage(truncated.view.compose.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
-    check_frame_storage(truncated.view.compose.output_groups_truncated);
+    check_frame_storage(truncated.view.compose.output_groups.size() == 33);
+
     document.output_groups.resize(2);
     document.output_groups[1].relative_output_path = "/absolute/chart.bms";
     auto absolute = project_compose_output_groups(document);
-    REQUIRE(absolute.view.compose.output_group_count == 1);
-    check_frame_storage(std::strcmp(absolute.view.compose.output_groups[0].relative_output_path,
+    REQUIRE(absolute.view.compose.output_groups.size() == 1);
+    check_frame_storage(std::strcmp(absolute.view.compose.output_groups[0].relative_output_path.c_str(),
                                    "/absolute/chart.bms") == 0);
     check_frame_storage(absolute.view.compose.output_groups[0].relative_asset_directory[0] == '\0');
     document.output_groups[1].charts = {wormedit::chart_id_t{2}};
     auto unmatched = project_compose_output_groups(document);
-    check_frame_storage(unmatched.view.compose.output_group_count == 0);
-    check_frame_storage(!unmatched.view.compose.output_groups_truncated);
+    check_frame_storage(unmatched.view.compose.output_groups.size() == 0);
+
     document.output_groups.clear();
     auto empty = project_compose_output_groups(document);
-    check_frame_storage(empty.view.compose.output_group_count == 0);
-    check_frame_storage(!empty.view.compose.output_groups_truncated);
+    check_frame_storage(empty.view.compose.output_groups.size() == 0);
+
 }
 
-TEST_CASE("Compose output group exhaustion publishes no partial row or fake path",
+TEST_CASE("Compose output groups remain complete with exhausted unrelated frame storage",
           "[sys][frame-arena][compose-output-group]") {
     auto document = compose_output_group_document();
-    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
-    auto failed = project_compose_output_groups(document, &tiny);
-    check_frame_storage(failed.view.compose.output_group_count == 0);
-    check_frame_storage(failed.view.compose.output_groups_truncated);
-    check_frame_storage(failed.view.compose.output_groups == nullptr);
     auto second = document.output_groups[1];
     second.name.assign(4096, 'x');
     document.output_groups.push_back(std::move(second));
-    frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
-    auto prefix = project_compose_output_groups(document, &limited);
-    REQUIRE(prefix.view.compose.output_group_count == 1);
-    check_frame_storage(prefix.view.compose.output_groups_truncated);
-    check_compose_output_group(prefix.view.compose.output_groups[0]);
+    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    const auto frame = project_compose_output_groups(document, &tiny);
+    REQUIRE(frame.view.compose.output_groups.size() == 2);
+    check_compose_output_group(frame.view.compose.output_groups[0]);
+    check_frame_storage(frame.view.compose.output_groups[1].name == std::string(4096, 'x'));
 }
 
 TEST_CASE("Compose output group arena keeps stable storage across 1000 warmed frames",
@@ -793,7 +782,7 @@ TEST_CASE("Compose output group arena keeps stable storage across 1000 warmed fr
         const auto frame = project_compose_output_groups(document, &arena);
         const auto finish = frame_heap_allocation_snapshot();
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            frame.view.compose.output_group_count == 1 && !frame.view.compose.output_groups_truncated;
+            frame.view.compose.output_groups.size() == 1;
         consistent = consistent && finish.count - start.count == allocations;
     }
     INFO("Unconverted catalog/branch and generic path formatting allocations: " << allocations);
@@ -809,16 +798,16 @@ TEST_CASE("Compose output group external arena reset republishes current documen
         auto frame = project_compose_output_groups(document, &arena);
         auto moved = std::move(frame);
         moved.rebind_view_pointers();
-        REQUIRE(moved.view.compose.output_group_count == 1);
+        REQUIRE(moved.view.compose.output_groups.size() == 1);
         check_compose_output_group(moved.view.compose.output_groups[0]);
     }
     arena.reset();
     document.output_groups[1].name = "Updated second frame group";
     auto current = project_compose_output_groups(document, &arena);
-    REQUIRE(current.view.compose.output_group_count == 1);
-    check_frame_storage(std::strcmp(current.view.compose.output_groups[0].name,
+    REQUIRE(current.view.compose.output_groups.size() == 1);
+    check_frame_storage(std::strcmp(current.view.compose.output_groups[0].name.c_str(),
                                    "Updated second frame group") == 0);
-    check_frame_storage(!current.view.compose.output_groups_truncated);
+
 }
 
 namespace {
@@ -965,9 +954,9 @@ auto branch_outline(wormedit::workspace_view_t& model)
     return const_cast<wormedit::workspace_bms_branch_outline_view_t&>(
         std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline());
 }
-void check_branch_choice(const WormUiComposeBranchChoiceView& view,
+void check_branch_choice(const wormedit::ui::compose_branch_choice_view_t& view,
                          const wormedit::workspace_bms_branch_choice_t& source) {
-    check_frame_storage(view.branch_id == source.id.value);
+    check_frame_storage(view.branch_id.value == source.id.value);
     check_frame_storage(view.kind == (source.kind == wormedit::bms_control_kind_t::switch_block
         ? WORM_UI_COMPOSE_BRANCH_SWITCH : WORM_UI_COMPOSE_BRANCH_RANDOM));
     check_frame_storage(view.has_source_order == source.source_order.has_value());
@@ -981,48 +970,36 @@ void check_branch_choice(const WormUiComposeBranchChoiceView& view,
     check_frame_storage(view.next_value == source.next_value.value_or(0));
     check_frame_storage(view.can_clear == source.can_clear);
 }
-void check_branch_row(const WormUiComposeBranchRowView& view,
+void check_branch_row(const wormedit::ui::compose_branch_row_view_t& view,
                       const wormedit::workspace_bms_branch_row_t& source) {
-    REQUIRE(view.display_text);
-    check_frame_storage(std::strcmp(view.display_text, source.display_text.c_str()) == 0);
+    REQUIRE(!view.display_text.empty());
+    check_frame_storage(std::strcmp(view.display_text.c_str(), source.display_text.c_str()) == 0);
     check_frame_storage(view.depth == source.depth && view.active == source.active && view.selected == source.selected);
     check_frame_storage(view.has_source_order == source.source_order.has_value());
     check_frame_storage(view.source_order == source.source_order.value_or(0));
     check_frame_storage(view.display_text_truncated == source.display_text_truncated);
 }
-void check_branch_prefix(const WormUiComposeView& view,
+void check_branch_prefix(const wormedit::ui::compose_view_t& view,
                          const wormedit::workspace_bms_branch_outline_view_t& source) {
-    for (std::size_t index = 0; index < view.branch_row_count; ++index)
+    for (std::size_t index = 0; index < view.branch_rows.size(); ++index)
         check_branch_row(view.branch_rows[index], source.rows[index]);
-    for (std::size_t index = 0; index < view.branch_choice_count; ++index)
+    for (std::size_t index = 0; index < view.branch_choices.size(); ++index)
         check_branch_choice(view.branch_choices[index], source.choices[index]);
-    for (std::size_t index = 0; index < view.branch_diagnostic_count; ++index) {
-        REQUIRE(view.branch_diagnostics[index]);
-        check_frame_storage(std::strcmp(view.branch_diagnostics[index], source.diagnostics[index].message.c_str()) == 0);
+    for (std::size_t index = 0; index < view.branch_diagnostics.size(); ++index) {
+        REQUIRE(!view.branch_diagnostics[index].empty());
+        check_frame_storage(std::strcmp(view.branch_diagnostics[index].c_str(), source.diagnostics[index].message.c_str()) == 0);
     }
 }
-void check_branch_in_arena(const frontend_workspace_view_t& frame, std::uintptr_t begin, std::uintptr_t end) {
-    const auto contains = [&](const void* data, std::size_t bytes) {
-        const auto address = reinterpret_cast<std::uintptr_t>(data);
-        return address >= begin && address + bytes <= end;
-    };
-    const auto& view = frame.view.compose;
-    check_frame_storage(contains(view.branch_rows, view.branch_row_count * sizeof(*view.branch_rows)));
-    check_frame_storage(contains(view.branch_choices, view.branch_choice_count * sizeof(*view.branch_choices)));
-    for (std::size_t index = 0; index < view.branch_row_count; ++index)
-        check_frame_storage(contains(view.branch_rows[index].display_text, std::strlen(view.branch_rows[index].display_text) + 1));
-    for (std::size_t index = 0; index < view.branch_diagnostic_count; ++index)
-        check_frame_storage(contains(view.branch_diagnostics[index], std::strlen(view.branch_diagnostics[index]) + 1));
-}
+
 }
 
 TEST_CASE("Compose branch arena preserves source values independently through move", "[sys][frame-arena][compose-branch]") {
     auto model = branch_arena_model();
     const auto expected = branch_outline(model);
     auto frame = project_branch_arena(model);
-    REQUIRE(frame.view.compose.branch_row_count == 3);
-    REQUIRE(frame.view.compose.branch_choice_count == 3);
-    REQUIRE(frame.view.compose.branch_diagnostic_count == 2);
+    REQUIRE(frame.view.compose.branch_rows.size() == 3);
+    REQUIRE(frame.view.compose.branch_choices.size() == 3);
+    REQUIRE(frame.view.compose.branch_diagnostics.size() == 2);
     check_frame_storage(frame.view.compose.branch_outline_available);
     branch_outline(model).rows[0].display_text.assign(256, 'x');
     branch_outline(model).diagnostics[0].message.assign(256, 'y');
@@ -1040,9 +1017,6 @@ TEST_CASE("Compose branch spans and diagnostic strings belong to supplied arena"
     auto frame = project_branch_arena(model, &arena);
     const auto last = arena.allocate(1, 1);
     REQUIRE((first && last));
-    check_branch_in_arena(frame, reinterpret_cast<std::uintptr_t>(*first), reinterpret_cast<std::uintptr_t>(*last));
-    check_frame_storage(frame.view.compose.branch_rows == frame.compose.branch.row.data());
-    check_frame_storage(frame.view.compose.branch_choices == frame.compose.branch.choice.data());
     frame = {};
     arena.reset();
     auto& outline = branch_outline(model);
@@ -1058,12 +1032,12 @@ TEST_CASE("Compose branch caps retain document order and existing truncation fla
     outline.display_text_truncated = true;
     outline.diagnostics.resize(5, {.message = "extra diagnostic"});
     const auto frame = project_branch_arena(model);
-    REQUIRE(frame.view.compose.branch_row_count == 96);
-    REQUIRE(frame.view.compose.branch_choice_count == 96);
-    REQUIRE(frame.view.compose.branch_diagnostic_count == 4);
+    REQUIRE(frame.view.compose.branch_rows.size() == 97);
+    REQUIRE(frame.view.compose.branch_choices.size() == 97);
+    REQUIRE(frame.view.compose.branch_diagnostics.size() == 5);
     check_branch_prefix(frame.view.compose, outline);
-    check_frame_storage(frame.view.compose.branch_rows_truncated && frame.view.compose.branch_choices_truncated);
-    check_frame_storage(frame.view.compose.branch_display_text_truncated && frame.view.compose.branch_diagnostics_truncated);
+    check_frame_storage(!frame.view.compose.branch_rows_truncated && !frame.view.compose.branch_choices_truncated);
+    check_frame_storage(frame.view.compose.branch_display_text_truncated && !frame.view.compose.branch_diagnostics_truncated);
     check_frame_storage(outline.rows.size() == 97 && outline.choices.size() == 97 && outline.diagnostics.size() == 5);
 }
 
@@ -1077,31 +1051,22 @@ TEST_CASE("Compose empty branch outlines preserve availability and source flags"
         outline.display_text_truncated = marked; outline.diagnostics_truncated = marked;
         const auto frame = project_branch_arena(model);
         const auto& view = frame.view.compose;
-        check_frame_storage(view.branch_row_count == 0 && view.branch_choice_count == 0 && view.branch_diagnostic_count == 0);
-        check_frame_storage(view.branch_rows == nullptr && view.branch_choices == nullptr);
+        check_frame_storage(view.branch_rows.size() == 0 && view.branch_choices.size() == 0 && view.branch_diagnostics.size() == 0);
+        check_frame_storage(view.branch_rows.empty() && view.branch_choices.empty());
         check_frame_storage(view.branch_outline_available == marked && view.branch_rows_truncated == marked);
         check_frame_storage(view.branch_choices_truncated == marked && view.branch_display_text_truncated == marked && view.branch_diagnostics_truncated == marked);
     }
 }
 
-TEST_CASE("Compose branch storage exhaustion retains complete row and diagnostic prefixes", "[sys][frame-arena][compose-branch]") {
+TEST_CASE("Compose branch rows remain complete with exhausted unrelated frame storage", "[sys][frame-arena][compose-branch]") {
     const auto model = branch_arena_model();
-    const auto& source = std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline();
-    bool row_prefix = false, diagnostic_prefix = false, zero_choice = false;
-    for (std::size_t limit = 32; limit <= 1400; limit += 8) {
-        frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
-        const auto frame = project_branch_arena(model, &arena);
-        const auto& view = frame.view.compose;
-        check_branch_prefix(view, source);
-        if (view.branch_row_count != 3) check_frame_storage(view.branch_rows_truncated);
-        if (view.branch_choice_count != 3) check_frame_storage(view.branch_choices_truncated);
-        if (view.branch_diagnostic_count != 2) check_frame_storage(view.branch_diagnostics_truncated);
-        row_prefix = row_prefix || (view.branch_row_count == 1 && view.branch_display_text_truncated);
-        diagnostic_prefix = diagnostic_prefix || view.branch_diagnostic_count == 1;
-        zero_choice = zero_choice || view.branch_choice_count == 0;
-    }
-    check_frame_storage(row_prefix && diagnostic_prefix && zero_choice);
-    check_frame_storage(source.rows[0].display_text == std::string(128, 'a'));
+    frame_arena_t arena({.chunk_bytes = 8, .maximum_bytes = 8});
+    const auto frame = project_branch_arena(model, &arena);
+    check_branch_prefix(frame.view.compose,
+        std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline());
+    check_frame_storage(frame.view.compose.branch_rows.size() == 3);
+    check_frame_storage(frame.view.compose.branch_choices.size() == 3);
+    check_frame_storage(frame.view.compose.branch_diagnostics.size() == 2);
 }
 
 TEST_CASE("Warmed Compose branch projection remains stable for 1000 arena resets", "[sys][frame-arena][compose-branch]") {
@@ -1124,8 +1089,8 @@ TEST_CASE("Warmed Compose branch projection remains stable for 1000 arena resets
         refill();
         stable = stable && frame_heap_allocation_snapshot().count - start.count == remaining &&
             arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            frame.view.compose.branch_row_count == 3 && frame.view.compose.branch_choice_count == 3 &&
-            frame.view.compose.branch_diagnostic_count == 2 && !frame.view.compose.branch_rows_truncated;
+            frame.view.compose.branch_rows.size() == 3 && frame.view.compose.branch_choices.size() == 3 &&
+            frame.view.compose.branch_diagnostics.size() == 2 && !frame.view.compose.branch_rows_truncated;
     }
     INFO("Remaining actual flatten allocations=" << remaining << ", used=" << used << ", committed=" << committed);
     check_frame_storage(stable);
@@ -1295,17 +1260,17 @@ TEST_CASE("Bookmark chooser rows and text survive document mutation and projecti
           "[sys][frame-arena][bookmark]") {
     auto document = bookmark_arena_document();
     auto frame = project_bookmark_arena(document);
-    REQUIRE(frame.view.compose.bookmark_chooser.row_count == 1);
+    REQUIRE(frame.view.compose.bookmark_chooser.rows.size() == 1);
     document.charts.clear();
     auto moved = std::move(frame);
     moved.rebind_view_pointers();
     const auto& view = moved.view.compose.bookmark_chooser;
-    check_frame_storage(view.project_id == 1);
-    check_frame_storage(view.chart_id == 2);
+    check_frame_storage(view.project_id.value == 1);
+    check_frame_storage(view.chart_id.value == 2);
     check_frame_storage(view.document_revision == 7);
-    check_frame_storage(view.rows[0].bookmark_id == 101);
-    check_frame_storage(std::strcmp(view.rows[0].name, "Original name") == 0);
-    check_frame_storage(std::strstr(view.rows[0].display_label, "Original name") != nullptr);
+    check_frame_storage(view.rows[0].bookmark_id.value == 101);
+    check_frame_storage(std::strcmp(view.rows[0].name.c_str(), "Original name") == 0);
+    check_frame_storage(std::strstr(view.rows[0].display_label.c_str(), "Original name") != nullptr);
 }
 
 TEST_CASE("Bookmark chooser arena exhaustion publishes a consistent bounded page",
@@ -1316,8 +1281,7 @@ TEST_CASE("Bookmark chooser arena exhaustion publishes a consistent bounded page
     frame.rebind_view_pointers();
     const auto& view = frame.view.compose.bookmark_chooser;
     CHECK(view.total_count == 1);
-    CHECK(view.truncated);
-    CHECK(view.row_count == 0);
+    CHECK(view.rows.size() == 1);
 }
 
 TEST_CASE("Go to sound frame searches beyond dock filters and owns moved display labels",
@@ -1358,10 +1322,10 @@ TEST_CASE("Project export catalog includes groups outside the selected Compose d
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::setup;
     auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, nullptr);
-    REQUIRE(frame.view.compose.output_group_count == document.output_groups.size());
+    REQUIRE(frame.view.compose.output_groups.size() == document.output_groups.size());
     check_frame_storage(frame.view.compose.output_groups[0].document_index == 0);
     check_frame_storage(frame.view.compose.output_groups[1].document_index == 1);
-    check_frame_storage(!frame.view.compose.output_groups_truncated);
+
 }
 
 TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sys][catalog-wiring]") {
@@ -1443,7 +1407,7 @@ TEST_CASE("Workspace output families preserve SM SSC presentation and D9 exclusi
 }
 
 namespace {
-void check_timing_catalog_entry(const WormUiComposeView& view, std::size_t index) {
+void check_timing_catalog_entry(const wormedit::ui::compose_view_t& view, std::size_t index) {
     const auto& expected = wormedit::timing_lanes[index];
     check_frame_storage(view.timing_lanes.entries[index].id == expected.kind);
     check_frame_storage(std::string_view{view.timing_lanes.entries[index].label} == expected.label);
@@ -1766,4 +1730,36 @@ TEST_CASE("Compose sound families retain populated row storage without warmed al
     const auto slots_after = frame_heap_allocation_snapshot();
     check_frame_storage(slots_after.count == slots_before.count);
     check_frame_storage(slots_after.bytes == slots_before.bytes);
+}
+
+TEST_CASE("Remaining workspace Compose rows retain allocations and refresh request identity",
+          "[sys][compose-remaining][allocation]") {
+    auto document = bookmark_arena_document();
+    auto model = branch_arena_model();
+    std::get<wormedit::workspace_compose_view_t>(model.tab_view).chart = wormedit::chart_id_t{2};
+    document.output_groups.push_back({.name = std::string(100, 'g'),
+        .charts = {wormedit::chart_id_t{2}}, .relative_output_path = "exports/a-long-output-directory/chart.bms"});
+    wormedit::ui::bookmark_chooser_request_t request{.row_limit = 12, .open = true};
+    frontend_workspace_view_t frame;
+    keysound_list_cache_t keysounds;
+    compose_resource_catalog_cache_t resources;
+    const auto refill = [&] {
+        frame.refill(model, document, "ready", {}, false, nullptr, dock_sort_t::natural_name,
+            {}, {}, request, &keysounds, {}, &resources);
+    };
+    refill();
+    const auto before = frame_heap_allocation_snapshot();
+    refill();
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count && after.bytes == before.bytes);
+    check_frame_storage(frame.view.compose.branch_rows.size() == 3);
+    check_frame_storage(frame.view.compose.output_groups.size() == 1);
+    check_frame_storage(frame.view.compose.bookmark_chooser.rows.size() == 1);
+    document.charts.front().bookmarks.front().label = "Updated bookmark";
+    ++document.revision;
+    refill();
+    check_frame_storage(frame.view.compose.bookmark_chooser.rows.front().name == "Updated bookmark");
+    std::snprintf(request.query, sizeof(request.query), "no matching bookmark");
+    refill();
+    check_frame_storage(frame.view.compose.bookmark_chooser.rows.empty());
 }

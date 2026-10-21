@@ -39,8 +39,8 @@ auto command(std::string id, std::vector<shortcut_chord_t> shortcuts) -> command
 }
 
 auto event(std::uint16_t usage, shortcut_modifiers_t modifiers, bool repeat = false,
-           bool tap_timing_space = false) -> WormUiShortcutEvent {
-    return {.hid_usage = usage, .modifiers = modifiers, .repeat = repeat, .timestamp_ns = 0,
+           bool tap_timing_space = false) -> wormedit::ui::shortcut_event_t {
+    return {.hid_usage = static_cast<wormedit::shortcut_key_t>(usage), .modifiers = modifiers, .repeat = repeat, .timestamp_ns = 0,
             .tap_timing_space = tap_timing_space};
 }
 
@@ -110,7 +110,7 @@ TEST_CASE("projection flags every command in a conflicting pair", "[sys][shortcu
 }
 
 TEST_CASE("capture takes the first usable press and ignores repeats", "[sys][shortcut-rows]") {
-    const std::array<WormUiShortcutEvent, 2> batch{event(letter_k_usage, 0, true),
+    const std::array<wormedit::ui::shortcut_event_t, 2> batch{event(letter_k_usage, 0, true),
                                                    event(letter_s_usage, control_modifier())};
     const auto captured = capture_shortcut_batch(batch);
     REQUIRE(captured.chord.has_value());
@@ -120,7 +120,7 @@ TEST_CASE("capture takes the first usable press and ignores repeats", "[sys][sho
 }
 
 TEST_CASE("capture ignores modifier-only events, tap-timing presses and unknown usages", "[sys][shortcut-rows]") {
-    const std::array<WormUiShortcutEvent, 3> batch{event(left_control_usage, control_modifier()),
+    const std::array<wormedit::ui::shortcut_event_t, 3> batch{event(left_control_usage, control_modifier()),
                                                    event(letter_k_usage, 0, false, true),
                                                    event(0x01, 0)};
     const auto captured = capture_shortcut_batch(batch);
@@ -129,14 +129,14 @@ TEST_CASE("capture ignores modifier-only events, tap-timing presses and unknown 
 }
 
 TEST_CASE("capture of an empty batch captures nothing", "[sys][shortcut-rows]") {
-    const auto captured = capture_shortcut_batch(std::span<const WormUiShortcutEvent>{});
+    const auto captured = capture_shortcut_batch(std::span<const wormedit::ui::shortcut_event_t>{});
     CHECK_FALSE(captured.chord.has_value());
     CHECK_FALSE(captured.cancel);
 }
 
 TEST_CASE("capture admits the shortcut limit and cancels the complete oversized batch",
           "[sys][shortcut-rows][input-admission]") {
-    std::vector<WormUiShortcutEvent> events(ui::shortcut_event_admission_limit,
+    std::vector<wormedit::ui::shortcut_event_t> events(ui::shortcut_event_admission_limit,
         event(letter_s_usage, control_modifier()));
     const auto admitted = capture_shortcut_batch(events);
     REQUIRE(admitted.chord.has_value());
@@ -148,12 +148,12 @@ TEST_CASE("capture admits the shortcut limit and cancels the complete oversized 
 }
 
 TEST_CASE("Escape without modifiers cancels a capture, and modified Escape is a chord", "[sys][shortcut-rows]") {
-    const std::array<WormUiShortcutEvent, 1> plain{event(static_cast<std::uint16_t>(shortcut_key_t::escape), 0)};
+    const std::array<wormedit::ui::shortcut_event_t, 1> plain{event(static_cast<std::uint16_t>(shortcut_key_t::escape), 0)};
     const auto canceled = capture_shortcut_batch(plain);
     CHECK(canceled.cancel);
     CHECK_FALSE(canceled.chord.has_value());
 
-    const std::array<WormUiShortcutEvent, 1> modified{
+    const std::array<wormedit::ui::shortcut_event_t, 1> modified{
         event(static_cast<std::uint16_t>(shortcut_key_t::escape), control_modifier())};
     const auto chord = capture_shortcut_batch(modified);
     CHECK_FALSE(chord.cancel);
@@ -192,7 +192,7 @@ TEST_CASE("navigation keys have legends", "[sys][shortcut-rows]") {
 }
 
 TEST_CASE("capture accepts a punctuation key press", "[sys][shortcut-rows]") {
-    const std::array<WormUiShortcutEvent, 1> batch{event(0x36, primary_modifier() & 0)};
+    const std::array<wormedit::ui::shortcut_event_t, 1> batch{event(0x36, primary_modifier() & 0)};
     const auto captured = capture_shortcut_batch(batch);
     REQUIRE(captured.chord.has_value());
     CHECK(captured.chord->key == static_cast<shortcut_key_t>(0x36));

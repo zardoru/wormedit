@@ -26,7 +26,7 @@ constexpr float row_height = 38.0f;
 
 struct LayersPanel {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
@@ -67,9 +67,9 @@ constexpr LayerMenuEntry layer_menu_entries[]{
     {"Delete + unlink", WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS, true, true},
 };
 
-auto captured_layer(const LayersPanel& panel) -> const WormUiComposeSemanticLayerView* {
+auto captured_layer(const LayersPanel& panel) -> const wormedit::ui::compose_semantic_layer_view_t* {
     auto& state = *panel.state;
-    if (state.layer_editor.layers_menu_layer.layer_id == 0) return nullptr;
+    if (state.layer_editor.layers_menu_layer.layer_id.value == 0) return nullptr;
     state.layer_editor.layers_menu_layer.name = state.layer_editor.layers_menu_layer_name.c_str();
     return &state.layer_editor.layers_menu_layer;
 }
@@ -81,13 +81,13 @@ auto layer_capture_current(const LayersPanel& panel) -> bool {
 }
 
 void draw_layer_row_text(const LayersPanel& panel,
-                         const WormUiComposeSemanticLayerView& layer,
+                         const wormedit::ui::compose_semantic_layer_view_t& layer,
                          struct nk_rect bounds) {
     auto* context = panel.context;
     auto* canvas = nk_window_get_canvas(context);
     const auto text_color = color(layer.selected ? UiColor::selected_text : UiColor::text);
     char label[256];
-    std::snprintf(label, sizeof(label), "%s", layer.name);
+    std::snprintf(label, sizeof(label), "%s", layer.name.data());
     nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 3,
                                  std::max(1.0f, bounds.w - 24), 15), label,
                  static_cast<int>(std::strlen(label)), context->style.font,
@@ -99,32 +99,32 @@ void draw_layer_row_text(const LayersPanel& panel,
                  nk_rgba(0, 0, 0, 0), color(UiColor::text_muted));
 }
 
-void open_layer_menu(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+void open_layer_menu(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                       std::size_t index, struct nk_rect bounds) {
     auto* context = panel.context;
-    if (layer.layer_id == 0 || layer_menu_blocks_row_input(panel) ||
+    if (layer.layer_id.value == 0 || layer_menu_blocks_row_input(panel) ||
         panel.view->input_occluded || !panel.view->scene_available ||
         wormedit::ui::chrome::popup_panel(context)) return;
-    const bool keyboard_open = layer.layer_id == wormedit::ui::chrome::context_menu_focused_object() &&
+    const bool keyboard_open = layer.layer_id.value == wormedit::ui::chrome::context_menu_focused_object() &&
         wormedit::ui::chrome::context_menu_take_open_request(wormedit::ui::chrome::KeyboardContextTarget::layers);
     const bool pointer_open = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
         nk_input_is_mouse_hovering_rect(&context->input, bounds);
     if (!keyboard_open && !pointer_open) return;
-    if (!raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id)) return;
+    if (!raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id.value)) return;
     auto& state = *panel.state;
     wormedit::ui::chrome::context_menu_open(
         state.layer_editor.layers_menu, keyboard_open ? nk_vec2(bounds.x, bounds.y + bounds.h) : context->input.mouse.pos,
-        {panel.view->project_id, panel.view->chart_id, panel.view->document_revision,
-         layer.layer_id}, keyboard_open);
+        {panel.view->project_id.value, panel.view->chart_id.value, panel.view->document_revision,
+         layer.layer_id.value}, keyboard_open);
     state.layer_editor.layers_menu_input_consumed = true;
     state.layer_editor.layers_menu_layer = layer;
-    state.layer_editor.layers_menu_layer_name = layer.name;
+    state.layer_editor.layers_menu_layer_name = layer.name.data();
     state.layer_editor.layers_menu_row_index = index;
     state.layer_editor.semantic_layer_name_editor_visible = false;
     state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
-auto layer_entry_reason(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+auto layer_entry_reason(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                         const LayerMenuEntry& entry) -> const char* {
     if (!panel.view->scene_available) return "Open a Compose chart";
     if (entry.needs_idle && panel.view->semantic_layer_gesture_active)
@@ -152,12 +152,12 @@ auto raise_captured(const LayersPanel& panel, WormUiComposeActionKind kind) -> b
     return true;
 }
 
-void start_layer_editor(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+void start_layer_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                          WormUiComposeActionKind kind) {
     auto& state = *panel.state;
     if (kind == WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER) {
         state.layer_editor.semantic_layer_name.fill('\0');
-        std::snprintf(state.layer_editor.semantic_layer_name.data(), state.layer_editor.semantic_layer_name.size(), "%s", layer.name);
+        std::snprintf(state.layer_editor.semantic_layer_name.data(), state.layer_editor.semantic_layer_name.size(), "%s", layer.name.data());
         state.layer_editor.semantic_layer_name_editor_visible = true;
         state.layer_editor.semantic_layer_name_focus_pending = true;
     } else {
@@ -167,19 +167,19 @@ void start_layer_editor(const LayersPanel& panel, const WormUiComposeSemanticLay
     }
 }
 
-auto layer_entry_label(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+auto layer_entry_label(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                        const LayerMenuEntry& entry) -> const char* {
     if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY)
         return layer.visible ? "Hide" : "Show";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK)
         return layer.locked ? "Unlock" : "Lock";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO &&
-        panel.view->semantic_layer_target.layer_id == layer.layer_id &&
+        panel.view->semantic_layer_target.layer_id.value == layer.layer_id.value &&
         panel.view->semantic_layer_solo_active) return "Solo: On";
     return entry.label;
 }
 
-void render_layer_menu_entry(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+void render_layer_menu_entry(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                              const LayerMenuEntry& entry) {
     if (!wormedit::ui::chrome::context_menu_item(panel.state->layer_editor.layers_menu, panel.context,
                                                  layer_entry_label(panel, layer, entry),
@@ -217,12 +217,12 @@ void close_layer_editors(worm_ui_nuklear_compose_state_t& state) {
     state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
-auto layer_editor_allowed(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer)
+auto layer_editor_allowed(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer)
     -> bool {
     return panel.view->scene_available && !layer.locked && !panel.view->semantic_layer_gesture_active;
 }
 
-void render_layer_name_editor(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer) {
+void render_layer_name_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
     nk_layout_row_dynamic(context, 20, 1);
@@ -247,7 +247,7 @@ void render_layer_name_editor(const LayersPanel& panel, const WormUiComposeSeman
 }
 
 
-void render_layer_color_editor(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer) {
+void render_layer_color_editor(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer) {
     auto* context = panel.context;
     auto& state = *panel.state;
     nk_layout_row_dynamic(context, 20, 1);
@@ -293,12 +293,12 @@ void render_header(const LayersPanel& panel) {
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::plus, "Add layer"}
             .render(context) && panel.view->scene_available)
         panel.state->layer_editor.layer_creation_request = {
-            panel.view->project_id, panel.view->chart_id, panel.view->document_revision};
+            panel.view->project_id.value, panel.view->chart_id.value, panel.view->document_revision};
     if (!panel.view->scene_available) nk_widget_disable_end(context);
     nk_layout_row_end(context);
 }
 
-void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+void render_row_name(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                       std::size_t index) {
     auto* context = panel.context;
     const auto hovered = nk_widget_is_hovered(context);
@@ -308,7 +308,7 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     if (clicked) {
         panel.state->input_queue.keyboard_focus = false;
-        wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::layers, layer.layer_id);
+        wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::layers, layer.layer_id.value);
     }
     open_layer_menu(panel, layer, index, bounds);
     auto* canvas = nk_window_get_canvas(context);
@@ -321,18 +321,18 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
                               : !panel.view->semantic_layer_paint_mode_active &&
                                     (panel.view->selected_note_count || panel.view->selected_bgm_event_count)
                                ? "Assign selected notes and BGM events to this layer"
-                               : layer.name);
-    if (clicked && panel.view->scene_available && layer.layer_id == 0) {
+                               : layer.name.data());
+    if (clicked && panel.view->scene_available && layer.layer_id.value == 0) {
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER);
     } else if (clicked && panel.view->scene_available)
         (void)raise(panel, (panel.view->selected_note_count ||
                             panel.view->selected_bgm_event_count) && !layer.locked &&
                             !panel.view->semantic_layer_paint_mode_active
                               ? WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER
-                              : WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id);
+                              : WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id.value);
 }
 
-void render_row(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
+void render_row(const LayersPanel& panel, const wormedit::ui::compose_semantic_layer_view_t& layer,
                 std::size_t index) {
     auto* context = panel.context;
     nk_layout_row_template_begin(context, row_height);
@@ -348,22 +348,22 @@ void render_row(const LayersPanel& panel, const WormUiComposeSemanticLayerView& 
     if (!panel.view->semantic_layer_assist_available) nk_widget_disable_begin(context);
     if (IconButton{Glyph::audio_lines, layer.assist_tick_enabled ? "Disable layer assist ticks"
                        : "Enable layer assist ticks", layer.assist_tick_enabled}.render(context))
-        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK, layer.layer_id);
+        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK, layer.layer_id.value);
     if (!panel.view->semantic_layer_assist_available) nk_widget_disable_end(context);
     if (IconButton{layer.visible ? Glyph::eye : Glyph::eye_off,
                    layer.visible ? "Hide layer" : "Show layer"}.render(context))
-        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, layer.layer_id);
+        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, layer.layer_id.value);
     if (IconButton{layer.locked ? Glyph::lock : Glyph::lock_open,
                    layer.locked ? "Unlock layer" : "Lock layer"}.render(context))
-        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, layer.layer_id);
+        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, layer.layer_id.value);
     if (row_input_blocked) nk_widget_disable_end(context);
 }
 
 void render_no_layer_row(const LayersPanel& panel) {
     const auto neutral = wormedit::ui::theme::compose(
         wormedit::ui::theme::ComposeColor::semantic_layer_none);
-    const WormUiComposeSemanticLayerView layer{
-        .layer_id = 0, .name = "No layer", .red = neutral.r, .green = neutral.g,
+    const wormedit::ui::compose_semantic_layer_view_t layer{
+        .layer_id = {0}, .name = "No layer", .red = neutral.r, .green = neutral.g,
         .blue = neutral.b, .alpha = neutral.a,
         .assigned_note_count = panel.view->semantic_layer_unassigned_note_count,
         .visible = true, .locked = false, .selected = panel.view->semantic_layer_target_none,
@@ -376,7 +376,7 @@ void render_list_row(const LayersPanel& panel, int index) {
     if (index == 0) { render_no_layer_row(panel); return; }
     const auto offset = static_cast<std::size_t>(index - 1);
     if (offset < panel.view->semantic_layer_first_row ||
-        offset - panel.view->semantic_layer_first_row >= panel.view->semantic_layer_count) {
+        offset - panel.view->semantic_layer_first_row >= panel.view->semantic_layers.size()) {
         nk_layout_row_dynamic(panel.context, row_height, 1);
         nk_label(panel.context, "", NK_TEXT_LEFT);
         return;
@@ -397,7 +397,7 @@ void render_list(const LayersPanel& panel, float height) {
     const auto end = static_cast<std::size_t>(std::max(0, std::min(list.end, total) - 1));
     const auto count = std::max<std::size_t>(1, end - first);
     if (!panel.state->layer_editor.layers_menu.open && panel.view->semantic_layer_total_count &&
-        (first != panel.view->semantic_layer_first_row || count != panel.view->semantic_layer_count) &&
+        (first != panel.view->semantic_layer_first_row || count != panel.view->semantic_layers.size()) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) {
         panel.action->compose_semantic_layer_first_row = first;
         panel.action->compose_semantic_layer_row_count = count;
@@ -409,11 +409,11 @@ void reveal_added_layer(const LayersPanel& panel) {
     auto& state = *panel.state;
     const auto& view = *panel.view;
     if (view.semantic_layer_total_count > state.layer_editor.layers_panel_total_count &&
-        view.semantic_layer_target.layer_id &&
+        view.semantic_layer_target.layer_id.value &&
         view.semantic_layer_target_row >= state.layer_editor.layers_panel_total_count) {
-        state.pointer_capture.layer_chip_reveal_id = view.semantic_layer_target.layer_id;
-        state.pointer_capture.chip_reveal_project = view.project_id;
-        state.pointer_capture.chip_reveal_chart = view.chart_id;
+        state.pointer_capture.layer_chip_reveal_id = view.semantic_layer_target.layer_id.value;
+        state.pointer_capture.chip_reveal_project = view.project_id.value;
+        state.pointer_capture.chip_reveal_chart = view.chart_id.value;
     }
     state.layer_editor.layers_panel_total_count = view.semantic_layer_total_count;
 }
@@ -425,15 +425,15 @@ void worm_ui_nuklear_dismiss_layer_popup(struct nk_context* context) {
 }
 
 void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
-                                           const WormUiComposeView* view,
+                                           const wormedit::ui::compose_view_t* view,
                                            wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
-    if (state->layer_editor.layers_panel_chart_id != view->chart_id ||
-        state->layer_editor.layers_panel_project_id != view->project_id) {
+    if (state->layer_editor.layers_panel_chart_id != view->chart_id.value ||
+        state->layer_editor.layers_panel_project_id != view->project_id.value) {
         state->layer_editor.layers_panel_total_count = view->semantic_layer_total_count;
-        state->layer_editor.layers_panel_project_id = view->project_id;
-        state->layer_editor.layers_panel_chart_id = view->chart_id;
+        state->layer_editor.layers_panel_project_id = view->project_id.value;
+        state->layer_editor.layers_panel_chart_id = view->chart_id.value;
         nk_group_set_scroll(context, "Compose layer list", 0, 0);
     }
     // Before rows: they open the menu, and the opening press must survive to its first begin.
@@ -443,8 +443,8 @@ void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
     render_header(panel);
     render_layer_editors(panel);
     if (state->pointer_capture.layer_chip_reveal_id &&
-        state->pointer_capture.chip_reveal_project == view->project_id && state->pointer_capture.chip_reveal_chart == view->chart_id &&
-        state->pointer_capture.layer_chip_reveal_id == view->semantic_layer_target.layer_id) {
+        state->pointer_capture.chip_reveal_project == view->project_id.value && state->pointer_capture.chip_reveal_chart == view->chart_id.value &&
+        state->pointer_capture.layer_chip_reveal_id == view->semantic_layer_target.layer_id.value) {
         nk_group_set_scroll(context, "Compose layer list", 0,
             static_cast<nk_uint>((view->semantic_layer_target_row + 1) *
                 (row_height + context->style.window.spacing.y)));

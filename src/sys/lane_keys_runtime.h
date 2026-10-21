@@ -15,7 +15,7 @@ class lane_keys_runtime_t {
     // A changed layout closes a captured dialog before a draft can reach preferences.
     void refresh(const song_document_t&);
     [[nodiscard]] auto dispatch(const ui::lane_keys_action_t&, program_preferences_runtime_t&) -> bool;
-    void capture(std::span<const WormUiShortcutEvent>);
+    void capture(std::span<const wormedit::ui::shortcut_event_t>);
     [[nodiscard]] auto status() const -> const std::string& { return status_; }
   private:
     ui::lane_keys_view_t view_;

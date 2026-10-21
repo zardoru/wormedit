@@ -27,7 +27,7 @@ static auto compose_inspector_icon(bool visible) -> Glyph {
 }
 
 static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
-                                         const WormUiComposeView* view, double delta_pixels) {
+                                         const wormedit::ui::compose_view_t* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
         action->compose_viewport_inputs.size() >= wormedit::ui::compose_viewport_input_admission_limit ||
         view->bgm_maximum_horizontal_scroll_pixels <= 0.0) return;
@@ -41,21 +41,21 @@ static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* actio
     };
 }
 
-static void update_compose_note_label_cache(const WormUiComposeView* view) {
-    if (state.note_label.label_project_id == view->project_id && state.note_label.label_chart_id == view->chart_id &&
+static void update_compose_note_label_cache(const wormedit::ui::compose_view_t* view) {
+    if (state.note_label.label_project_id == view->project_id.value && state.note_label.label_chart_id == view->chart_id.value &&
         state.note_label.label_document_revision == view->document_revision &&
-        state.note_label.label_note_id == view->selected_note_label_note_id)
+        state.note_label.label_note_id == view->selected_note_label_note_id.value)
         return;
     state.note_label.note_label.fill('\0');
-    if (view->selected_note_label && view->selected_note_label_note_id != 0) {
-        const auto length = std::min(strlen(view->selected_note_label), state.note_label.note_label.size() - 1);
-        memcpy(state.note_label.note_label.data(), view->selected_note_label, length);
+    if (view->selected_note_label.c_str() && view->selected_note_label_note_id.value != 0) {
+        const auto length = std::min(strlen(view->selected_note_label.c_str()), state.note_label.note_label.size() - 1);
+        memcpy(state.note_label.note_label.data(), view->selected_note_label.c_str(), length);
         state.note_label.note_label[length] = '\0';
     }
-    state.note_label.label_project_id = view->project_id;
-    state.note_label.label_chart_id = view->chart_id;
+    state.note_label.label_project_id = view->project_id.value;
+    state.note_label.label_chart_id = view->chart_id.value;
     state.note_label.label_document_revision = view->document_revision;
-    state.note_label.label_note_id = view->selected_note_label_note_id;
+    state.note_label.label_note_id = view->selected_note_label_note_id.value;
 }
 
 // Shows or hides the song bar under the seek bar; unavailable while the song has no audio.
@@ -128,7 +128,7 @@ static void render_layer_tool(const ComposeToolbarContext& toolbar, bool paint_d
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
-    const bool disabled = view->semantic_layer_target.layer_id == 0 ||
+    const bool disabled = view->semantic_layer_target.layer_id.value == 0 ||
         !view->semantic_layer_target.visible || view->semantic_layer_target.locked;
     if (disabled && !paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::layers,
@@ -277,11 +277,11 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
 
 static void reset_bgm_column_count_draft(
                                          worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& draft,
-                                         const WormUiComposeView& view,
+                                         const wormedit::ui::compose_view_t& view,
                                          bool clear_ownership = true) {
     const auto was_owned = draft.input_owned;
     const auto release_pending = draft.release_pending;
-    draft.chart_id = view.chart_id;
+    draft.chart_id = view.chart_id.value;
     draft.revision = view.document_revision;
     draft.text.fill('\0');
     const auto converted = std::to_chars(draft.text.data(),
@@ -299,11 +299,11 @@ static void reset_bgm_column_count_draft(
     }
 }
 
-static auto bgm_column_count_draft(const WormUiComposeView& view)
+static auto bgm_column_count_draft(const wormedit::ui::compose_view_t& view)
     -> worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& {
     auto& draft = state.inline_offset.bgm_column_count_edit;
     if (!draft.initialized || !view.bgm_column_count_editable ||
-        draft.chart_id != view.chart_id || draft.revision != view.document_revision)
+        draft.chart_id != view.chart_id.value || draft.revision != view.document_revision)
         reset_bgm_column_count_draft(draft, view);
     else if (draft.commit_pending)
         reset_bgm_column_count_draft(draft, view, false);
@@ -325,7 +325,7 @@ static auto request_bgm_column_count(const ComposeToolbarContext& toolbar, uint3
     if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
     action->compose_bgm_column_count = count;
-    action->compose_input_chart_id.value = toolbar.view->chart_id;
+    action->compose_input_chart_id.value = toolbar.view->chart_id.value;
     action->compose_input_document_revision = toolbar.view->document_revision;
     bgm_column_count_draft(*toolbar.view).commit_pending = true;
     return true;
@@ -352,7 +352,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     const bool deactivated = (flags & NK_EDIT_DEACTIVATED) != 0;
     const bool committed = (flags & NK_EDIT_COMMITED) != 0;
     (void)worm_ui_nuklear_update_bgm_column_count_input_owner(
-        state, view->chart_id, view->document_revision, editable, field_clicked,
+        state, view->chart_id.value, view->document_revision, editable, field_clicked,
         edit_active, committed || deactivated);
     if (editable && !draft.commit_pending &&
         (committed || deactivated)) {
@@ -367,16 +367,16 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
 }
 
 static void request_toolbar_offset_nudge(wormedit::ui::workspace_action_t* action,
-                                         const WormUiComposeView* view, std::int64_t frames) {
+                                         const wormedit::ui::compose_view_t* view, std::int64_t frames) {
     if (action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
     action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
-    action->audio_offset_drag_chart_id = wormedit::chart_id_t{view->chart_id};
+    action->audio_offset_drag_chart_id = wormedit::chart_id_t{view->chart_id.value};
     action->audio_offset_drag_document_revision = view->document_revision;
     action->audio_offset_drag_sample_rate = view->waveform_overview_sample_rate;
     action->audio_offset_drag_delta_frames = frames;
 }
 
-static void render_offset_value(nk_context* context, const WormUiComposeView& view) {
+static void render_offset_value(nk_context* context, const wormedit::ui::compose_view_t& view) {
     if (!(view.waveform_offset_drag_active ? view.waveform_proposed_audio_offset_denominator
                                           : view.waveform_audio_offset_denominator)) {
         nk_label(context, "Unavailable", NK_TEXT_CENTERED);
@@ -465,7 +465,7 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
     const bool locked = toolbar.view->audio_offset_locked;
     if (nk_button_label(context, "")) {
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
-        toolbar.action->compose_input_chart_id.value = toolbar.view->chart_id;
+        toolbar.action->compose_input_chart_id.value = toolbar.view->chart_id.value;
         toolbar.action->compose_input_document_revision = toolbar.view->document_revision;
     }
     auto* canvas = nk_window_get_canvas(context);
@@ -520,13 +520,13 @@ auto note_palette_icon(std::uint32_t kind) -> Glyph {
     return Glyph::square;
 }
 
-auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> bool {
+auto note_palette_kind_allowed(const wormedit::ui::compose_view_t& view, uint32_t kind) -> bool {
     return (view.allowed_note_kind_mask & (1U << kind)) != 0;
 }
 
 } // namespace
 
-bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
+bool compose_note_palette_has_buttons(const wormedit::ui::compose_view_t& view) {
     if (view.hitsounds.visible) return true;
     if (!view.note_kind_palette_visible) return false;
     for (std::size_t index = 0; index < view.note_palette.entries.size(); ++index)
@@ -541,8 +541,8 @@ void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_fiel
                    std::optional<int> value = {}) {
     auto& action = *toolbar.action;
     action.compose_hitsound = {.field = field, .value = value};
-    action.compose_input_project_id.value = toolbar.view->project_id;
-    action.compose_input_chart_id.value = toolbar.view->chart_id;
+    action.compose_input_project_id.value = toolbar.view->project_id.value;
+    action.compose_input_chart_id.value = toolbar.view->chart_id.value;
     action.compose_input_document_revision = toolbar.view->document_revision;
 }
 
@@ -652,7 +652,7 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
         nk_layout_row_static(toolbar.context, 30, 30, 1);
         if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label.data(),
                 toolbar.view->note_paint_mode_active &&
-                    toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
+                    toolbar.view->armed_note_kind == static_cast<wormedit::note_kind_t>(kind)}.render(toolbar.context) &&
             toolbar.action->compose_inputs.size() < wormedit::ui::compose_input_admission_limit) {
             toolbar.action->compose_inputs.emplace_back() = {
                 .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = static_cast<wormedit::note_kind_t>(kind)};

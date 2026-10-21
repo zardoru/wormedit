@@ -33,14 +33,14 @@ auto compose_surface_height(int window_height, const wormedit::ui::workspace_vie
                                   (view.compose.bgm_bar_reserved ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
                                   recovery_height : 80.0f;
     const auto& compose = view.compose;
-    const auto rows_shown = std::min<std::size_t>(compose.branch_row_count, 4);
-    const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count, 2);
+    const auto rows_shown = std::min<std::size_t>(compose.branch_rows.size(), 4);
+    const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count(), 2);
     const bool branch_status_shown =
         compose.branch_rows_truncated || compose.branch_display_text_truncated ||
-        compose.branch_diagnostics_truncated || compose.branch_row_count > rows_shown ||
-        compose.branch_diagnostic_count > diagnostics_shown;
-    const bool branch_visible = compose.branch_outline_available || compose.branch_row_count != 0 ||
-                                compose.branch_diagnostic_count != 0 || branch_status_shown;
+        compose.branch_diagnostics_truncated || compose.branch_rows.size() > rows_shown ||
+        compose.branch_diagnostic_count() > diagnostics_shown;
+    const bool branch_visible = compose.branch_outline_available || compose.branch_rows.size() != 0 ||
+                                compose.branch_diagnostic_count() != 0 || branch_status_shown;
     const auto branch_height = branch_visible
                                    ? 23.0f + static_cast<float>(rows_shown + diagnostics_shown +
                                                                 (branch_status_shown ? 1 : 0)) *

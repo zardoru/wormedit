@@ -58,7 +58,7 @@ void scroll_inspector(nuklear_event_harness_t& harness, float delta, int count) 
     for (int index = 0; index < count; ++index) (void)harness.frame(std::span{&wheel, 1});
 }
 
-void set_resource_fixture(WormUiComposeView& view,
+void set_resource_fixture(wormedit::ui::compose_view_t& view,
                           const wormedit::ui::compose_resource_view_t* resources, std::size_t resource_count) {
     view.resources.assign(resources, resources + resource_count);
     view.resources.resize(resource_count);

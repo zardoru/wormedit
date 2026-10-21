@@ -16,14 +16,14 @@ void set_status(bookmark_chooser_state_t& state, const char* message) {
 }
 
 auto current_row(const bookmark_chooser_state_t& state,
-                 const WormUiBookmarkChooserView& view) -> const WormUiBookmarkChooserRowView* {
+                 const wormedit::ui::bookmark_chooser_view_t& view) -> const wormedit::ui::bookmark_chooser_row_view_t* {
     if (state.selected_row < view.first_row) return nullptr;
     const auto index = state.selected_row - view.first_row;
-    if (index >= view.row_count) return nullptr;
+    if (index >= view.rows.size()) return nullptr;
     return &view.rows[index];
 }
 
-auto activate_row(const WormUiBookmarkChooserView& view, const WormUiBookmarkChooserRowView& row,
+auto activate_row(const wormedit::ui::bookmark_chooser_view_t& view, const wormedit::ui::bookmark_chooser_row_view_t& row,
                   wormedit::ui::workspace_action_t& action, nk_context* context,
                   bookmark_chooser_state_t& state) -> bool {
     if (!row.navigation_available || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
@@ -31,15 +31,15 @@ auto activate_row(const WormUiBookmarkChooserView& view, const WormUiBookmarkCho
         return false;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK;
-    action.compose_bookmark_id.value = row.bookmark_id;
-    action.compose_input_project_id.value = view.project_id;
-    action.compose_input_chart_id.value = view.chart_id;
+    action.compose_bookmark_id.value = row.bookmark_id.value;
+    action.compose_input_project_id.value = view.project_id.value;
+    action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;
 }
 
-void move_selection(bookmark_chooser_state_t& state, const WormUiBookmarkChooserView& view,
+void move_selection(bookmark_chooser_state_t& state, const wormedit::ui::bookmark_chooser_view_t& view,
                     int delta) {
     if (view.total_count == 0) return;
     const auto current = std::min(state.selected_row, view.total_count - 1);
@@ -48,7 +48,7 @@ void move_selection(bookmark_chooser_state_t& state, const WormUiBookmarkChooser
     state.first_row = (state.selected_row / page_size) * page_size;
 }
 
-void handle_keyboard(nk_context* context, const WormUiBookmarkChooserView& view,
+void handle_keyboard(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                      wormedit::ui::workspace_action_t& action,
                      bookmark_chooser_state_t& state) {
     if (nk_input_is_key_pressed(&context->input, NK_KEY_UP)) {
@@ -61,7 +61,7 @@ void handle_keyboard(nk_context* context, const WormUiBookmarkChooserView& view,
     }
 }
 
-void render_page_controls(nk_context* context, const WormUiBookmarkChooserView& view,
+void render_page_controls(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                           bookmark_chooser_state_t& state) {
     nk_layout_row_dynamic(context, 25, 3);
     if (nk_button_label(context, "Previous") && state.first_row > 0) {
@@ -71,7 +71,7 @@ void render_page_controls(nk_context* context, const WormUiBookmarkChooserView& 
     char page[64]{};
     std::snprintf(page, sizeof(page), "%zu-%zu of %zu",
         view.total_count == 0 ? 0 : state.first_row + 1,
-        std::min(view.total_count, state.first_row + view.row_count), view.total_count);
+        std::min(view.total_count, state.first_row + view.rows.size()), view.total_count);
     nk_label(context, page, NK_TEXT_ALIGN_CENTERED | NK_TEXT_ALIGN_MIDDLE);
     if (nk_button_label(context, "Next") && state.first_row + page_size < view.total_count) {
         state.first_row += page_size;
@@ -79,29 +79,29 @@ void render_page_controls(nk_context* context, const WormUiBookmarkChooserView& 
     }
 }
 
-void render_rows(nk_context* context, const WormUiBookmarkChooserView& view,
+void render_rows(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                  wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
     if (view.total_count == 0) {
         nk_layout_row_dynamic(context, 30, 1);
         nk_label(context, state.query[0] ? "No matching bookmarks." : "No bookmarks in this chart.", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
         return;
     }
-    if (!view.rows || view.row_count == 0 || view.first_row != state.first_row) {
+    if (view.rows.empty() || view.rows.size() == 0 || view.first_row != state.first_row) {
         nk_layout_row_dynamic(context, 30, 1);
         nk_label(context, "Loading bookmarks…", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
         return;
     }
-    for (std::size_t index = 0; index < view.row_count; ++index) {
+    for (std::size_t index = 0; index < view.rows.size(); ++index) {
         const auto& row = view.rows[index];
         const auto global_index = view.first_row + index;
         nk_layout_row_dynamic(context, 27, 1);
         if (!row.navigation_available) nk_widget_disable_begin(context);
         nk_bool selected = global_index == state.selected_row;
         if (nk_selectable_label(context,
-                row.display_label ? row.display_label : "(unnamed bookmark)",
+                row.display_label.c_str() ? row.display_label.c_str() : "(unnamed bookmark)",
                 NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE, &selected)) {
             state.selected_row = global_index;
-            state.selected_bookmark_id = row.bookmark_id;
+            state.selected_bookmark_id = row.bookmark_id.value;
             static_cast<void>(activate_row(view, row, action, context, state));
         }
         if (!row.navigation_available) nk_widget_disable_end(context);
@@ -109,7 +109,7 @@ void render_rows(nk_context* context, const WormUiBookmarkChooserView& view,
     render_page_controls(context, view, state);
 }
 
-auto render_search(nk_context* context, const WormUiBookmarkChooserView& view,
+auto render_search(nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
                    bookmark_chooser_state_t& state) -> bool {
     nk_layout_row_dynamic(context, 28, 1);
     const auto previous_query = state.query;
@@ -121,8 +121,7 @@ auto render_search(nk_context* context, const WormUiBookmarkChooserView& view,
         state.selected_row = 0;
         state.status.fill('\0');
     }
-    return !view.query ? state.query[0] == '\0'
-        : std::strcmp(view.query, state.query.data()) == 0;
+    return view.query == state.query.data();
 }
 
 } // namespace
@@ -169,7 +168,7 @@ void worm_ui_nuklear_bookmark_chooser_release_delivered(nk_context* context,
 }
 
 auto worm_ui_nuklear_render_compose_bookmark_chooser(
-    nk_context* context, const WormUiBookmarkChooserView& view,
+    nk_context* context, const wormedit::ui::bookmark_chooser_view_t& view,
     wormedit::ui::workspace_action_t* action, bool window_focused,
     bookmark_chooser_state_t* state) -> bool {
     if (!context || !action || !state) return false;
@@ -177,8 +176,8 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         return wormedit::ui::chrome::release_retained_popup(
             context, *state, wormedit::ui::chrome::PopupReleaseKeys::all);
     }
-    if (state->open && (!window_focused || state->project_id != view.project_id ||
-        state->chart_id != view.chart_id)) {
+    if (state->open && (!window_focused || state->project_id != view.project_id.value ||
+        state->chart_id != view.chart_id.value)) {
         worm_ui_nuklear_bookmark_chooser_cancel(context, *state);
     }
     const auto parent = nk_window_get_bounds(context);

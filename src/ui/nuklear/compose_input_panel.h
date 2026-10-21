@@ -21,7 +21,7 @@ auto process_compose_timing_marker_pointer(const ComposePointerEventContext& inp
 void process_compose_pointer_actions(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed);
 
-uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double y);
+uint64_t compose_sound_object_at(const wormedit::ui::compose_view_t& view, double x, double y);
 
 auto handle_same_sound_pointer(const ComposePointerEventContext& input) -> bool;
 

@@ -342,8 +342,8 @@ auto runtime::output_group_export_t::confirmation_view() const
     return {.required = true,
             .project_id = confirmation_->request.document.id.value,
             .document_revision = confirmation_->request.document.revision,
-            .message = confirmation_->message.c_str(),
-            .detail = confirmation_->detail.c_str()};
+            .message = confirmation_->message,
+            .detail = confirmation_->detail};
 }
 
 void runtime::output_group_export_t::shutdown() {

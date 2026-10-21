@@ -44,7 +44,7 @@ constexpr float chip_size = 8.0f;
 
 struct SoundsPanel {
     nk_context* context;
-    const WormUiComposeView* view;
+    const wormedit::ui::compose_view_t* view;
     wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
@@ -92,7 +92,7 @@ void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uin
                        std::uint64_t occupied_resource, std::string_view path) {
     auto& state = *panel.state;
     if (!state.keysound_filters.keysound_slots_mode || !panel.view->sound_slots_mode ||
-        panel.view->project_id != project || panel.view->chart_id != chart ||
+        panel.view->project_id.value != project || panel.view->chart_id.value != chart ||
         panel.view->document_revision != revision || slot == 0 || slot > 1295) {
         state.keysound_slots.keysound_slot_feedback = "The WAV slot target changed; choose the file again.";
         return;
@@ -124,7 +124,7 @@ void process_pending_slot_file(const SoundsPanel& panel) {
 
 // ---- Selection state kept in step with the document ----
 
-auto find_row(const WormUiComposeView& view, std::uint64_t id)
+auto find_row(const wormedit::ui::compose_view_t& view, std::uint64_t id)
     -> const wormedit::ui::compose_keysound_row_view_t* {
     for (std::size_t index = 0; index < view.keysounds.size(); ++index)
         if (view.keysounds[index].resource_id.value == id) return &view.keysounds[index];
@@ -134,7 +134,7 @@ auto find_row(const WormUiComposeView& view, std::uint64_t id)
     return nullptr;
 }
 
-auto find_selection_row(const WormUiComposeView& view, std::uint64_t id)
+auto find_selection_row(const wormedit::ui::compose_view_t& view, std::uint64_t id)
     -> const wormedit::ui::compose_keysound_selection_view_t* {
     for (std::size_t index = 0; index < view.keysound_selection_rows.size(); ++index)
         if (view.keysound_selection_rows[index].resource_id.value == id)
@@ -142,13 +142,13 @@ auto find_selection_row(const WormUiComposeView& view, std::uint64_t id)
     return nullptr;
 }
 
-auto selected_group_id(const WormUiComposeView& view, std::uint64_t id) -> std::uint64_t {
+auto selected_group_id(const wormedit::ui::compose_view_t& view, std::uint64_t id) -> std::uint64_t {
     if (const auto* selected = find_selection_row(view, id)) return selected->group_id.value;
     const auto* row = find_row(view, id);
     return row ? row->sound_group_id.value : 0;
 }
 
-auto selected_conflict_mask(const WormUiComposeView& view, std::uint64_t id) -> std::uint64_t {
+auto selected_conflict_mask(const wormedit::ui::compose_view_t& view, std::uint64_t id) -> std::uint64_t {
     if (const auto* selected = find_selection_row(view, id))
         return selected->note_layer_conflict_mask;
     const auto* row = find_row(view, id);
@@ -166,29 +166,29 @@ void prune_filter_ids(std::vector<std::uint64_t>& ids,
 void sync_filter_state(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto& view = *panel.view;
-    if (state.keysound_filters.keysound_filter_project_id != view.project_id) {
+    if (state.keysound_filters.keysound_filter_project_id != view.project_id.value) {
         if (state.keysound_filters.keysound_filter_project_id != 0) {
             state.keysound_filters.keysound_filters.search = state.keysound_catalog.keysound_search;
             state.keysound_filters.keysound_filter_states_by_project[state.keysound_filters.keysound_filter_project_id] =
                 state.keysound_filters.keysound_filters;
         }
-        const auto saved = state.keysound_filters.keysound_filter_states_by_project.find(view.project_id);
+        const auto saved = state.keysound_filters.keysound_filter_states_by_project.find(view.project_id.value);
         state.keysound_filters.keysound_filters = saved == state.keysound_filters.keysound_filter_states_by_project.end()
             ? worm_ui_keysound_filter_state_t{} : saved->second;
         state.keysound_catalog.keysound_search = state.keysound_filters.keysound_filters.search;
         state.keysound_filters.keysound_filter_layer_first = 0;
-        state.keysound_filters.keysound_filter_project_id = view.project_id;
+        state.keysound_filters.keysound_filter_project_id = view.project_id.value;
         state.keysound_filters.keysound_filter_chart_id = 0;
     }
     state.keysound_filters.keysound_filters.search = state.keysound_catalog.keysound_search;
-    if (state.keysound_filters.keysound_filter_chart_id != view.chart_id) {
-        if (state.keysound_filters.keysound_filters.layer_chart_id != view.chart_id) {
+    if (state.keysound_filters.keysound_filter_chart_id != view.chart_id.value) {
+        if (state.keysound_filters.keysound_filters.layer_chart_id != view.chart_id.value) {
             state.keysound_filters.keysound_filters.layer_filter_kind = WORM_UI_KEYSOUND_LAYER_FILTER_ANY;
             state.keysound_filters.keysound_filters.layer_filter_id = 0;
-            state.keysound_filters.keysound_filters.layer_chart_id = view.chart_id;
+            state.keysound_filters.keysound_filters.layer_chart_id = view.chart_id.value;
             state.keysound_filters.keysound_filter_layer_first = 0;
         }
-        state.keysound_filters.keysound_filter_chart_id = view.chart_id;
+        state.keysound_filters.keysound_filter_chart_id = view.chart_id.value;
     }
     prune_filter_ids(state.keysound_filters.keysound_filters.group_ids, view.compose_sound_groups);
     prune_filter_ids(state.keysound_filters.keysound_filters.collapsed_group_ids, view.compose_sound_groups);
@@ -198,17 +198,17 @@ void sync_filter_state(const SoundsPanel& panel) {
             state.keysound_filters.keysound_filters.layer_filter_kind = WORM_UI_KEYSOUND_LAYER_FILTER_ANY;
             state.keysound_filters.keysound_filters.layer_filter_id = 0;
     }
-    state.keysound_filters.keysound_filter_states_by_project[view.project_id] = state.keysound_filters.keysound_filters;
+    state.keysound_filters.keysound_filter_states_by_project[view.project_id.value] = state.keysound_filters.keysound_filters;
     prepare_pending_group_review(panel);
 }
 
 void sync_with_document(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto& view = *panel.view;
-    if (state.keysound_catalog.keysound_project_id != view.project_id || state.keysound_catalog.keysound_chart_id != view.chart_id) {
+    if (state.keysound_catalog.keysound_project_id != view.project_id.value || state.keysound_catalog.keysound_chart_id != view.chart_id.value) {
         worm_ui_keysound_clear(state.keysound_catalog.keysound_selection);
-        state.keysound_catalog.keysound_project_id = view.project_id;
-        state.keysound_catalog.keysound_chart_id = view.chart_id;
+        state.keysound_catalog.keysound_project_id = view.project_id.value;
+        state.keysound_catalog.keysound_chart_id = view.chart_id.value;
         state.keysound_catalog.keysound_revision = view.document_revision;
         return;
     }
@@ -252,9 +252,9 @@ void reset_sound_slots(worm_ui_nuklear_compose_state_t& state, std::uint64_t pro
 void sync_sound_slots(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto& view = *panel.view;
-    if (state.keysound_catalog.keysound_slots_project != view.project_id ||
-        state.keysound_catalog.keysound_slots_chart != view.chart_id) {
-        reset_sound_slots(state, view.project_id, view.chart_id, view.document_revision);
+    if (state.keysound_catalog.keysound_slots_project != view.project_id.value ||
+        state.keysound_catalog.keysound_slots_chart != view.chart_id.value) {
+        reset_sound_slots(state, view.project_id.value, view.chart_id.value, view.document_revision);
     }
     if (state.keysound_catalog.keysound_slots_revision != view.document_revision) {
         if (state.keysound_slots.keysound_pending_file || state.keysound_slots.keysound_slot_confirmation_open) {
@@ -268,7 +268,7 @@ void sync_sound_slots(const SoundsPanel& panel) {
         state.keysound_slots.keysound_pending_path.clear();
     }
     if (!view.keysound_ids_available && state.keysound_filters.keysound_slots_mode)
-        reset_sound_slots(state, view.project_id, view.chart_id, view.document_revision);
+        reset_sound_slots(state, view.project_id.value, view.chart_id.value, view.document_revision);
 }
 
 void collect_shown_and_masks(const SoundsPanel& panel) {
@@ -513,8 +513,8 @@ void open_manual_group_review(const SoundsPanel& panel) {
     review.manual = true;
     review.open_pending = true;
     review.keep_ids_together = true;
-    review.project_id = panel.view->project_id;
-    review.chart_id = panel.view->chart_id;
+    review.project_id = panel.view->project_id.value;
+    review.chart_id = panel.view->chart_id.value;
     review.document_revision = panel.view->document_revision;
     std::snprintf(review.manual_group_name.data(), review.manual_group_name.size(), "%s",
                   "New group");
@@ -524,8 +524,8 @@ void open_suggested_group_review(const SoundsPanel& panel) {
     auto& review = panel.state->keysound_catalog.keysound_group_review;
     wormedit::ui::chrome::popup_arm_release(panel.state->keysound_catalog.keysound_group_menu.release_pending);
     review = {};
-    review.project_id = panel.view->project_id;
-    review.chart_id = panel.view->chart_id;
+    review.project_id = panel.view->project_id.value;
+    review.chart_id = panel.view->chart_id.value;
     review.document_revision = panel.view->document_revision;
     review.open_pending = true;
     review.keep_ids_together = true;
@@ -546,7 +546,7 @@ void prepare_pending_group_review(const SoundsPanel& panel) {
                                 .name = group.name.c_str()});
         }
         worm_ui_keysound_group_review_suggest(review, candidates, existing,
-            panel.view->project_id, panel.view->chart_id, panel.view->document_revision);
+            panel.view->project_id.value, panel.view->chart_id.value, panel.view->document_revision);
         review.open = false;
         review.open_pending = true;
         review.keep_ids_together = true;
@@ -611,8 +611,8 @@ void render_sound_slot_confirmation(const SoundsPanel& panel) {
     const auto bounds = nk_rect(0, 60,
         std::min(360.0f, nk_window_get_content_region(context).w), 180);
     if (!panel.view->sound_slots_mode ||
-        state.keysound_slots.keysound_slot_confirmation_project != panel.view->project_id ||
-        state.keysound_slots.keysound_slot_confirmation_chart != panel.view->chart_id ||
+        state.keysound_slots.keysound_slot_confirmation_project != panel.view->project_id.value ||
+        state.keysound_slots.keysound_slot_confirmation_chart != panel.view->chart_id.value ||
         state.keysound_slots.keysound_slot_confirmation_revision != panel.view->document_revision) {
         state.keysound_slots.keysound_slot_feedback = "The WAV slot changed; choose the file again.";
         close_sound_slot_confirmation(panel);
@@ -976,8 +976,8 @@ void assign_sound_layer(const SoundsPanel& panel, std::size_t index) {
     }
     auto& state = *panel.state;
     state.keysound_slots.sound_layer_confirmation_open = true;
-    state.keysound_slots.sound_layer_confirmation_project = panel.view->project_id;
-    state.keysound_slots.sound_layer_confirmation_chart = panel.view->chart_id;
+    state.keysound_slots.sound_layer_confirmation_project = panel.view->project_id.value;
+    state.keysound_slots.sound_layer_confirmation_chart = panel.view->chart_id.value;
     state.keysound_slots.sound_layer_confirmation_revision = panel.view->document_revision;
     state.keysound_slots.sound_layer_confirmation_layer = layer.layer_id.value;
     state.keysound_slots.sound_layer_confirmation_resources = state.keysound_catalog.keysound_selection.selected;
@@ -1000,8 +1000,8 @@ void render_sound_layer_confirmation(const SoundsPanel& panel) {
     auto* context = panel.context;
     const auto region = nk_window_get_content_region(context);
     const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204);
-    if (state.keysound_slots.sound_layer_confirmation_project != view.project_id ||
-        state.keysound_slots.sound_layer_confirmation_chart != view.chart_id ||
+    if (state.keysound_slots.sound_layer_confirmation_project != view.project_id.value ||
+        state.keysound_slots.sound_layer_confirmation_chart != view.chart_id.value ||
         state.keysound_slots.sound_layer_confirmation_revision != view.document_revision) {
         state.keysound_slots.sound_layer_confirmation_open = false;
         wormedit::ui::chrome::dismiss_popup(context, "Sound note layers", bounds);
@@ -1144,7 +1144,7 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const wormedit::u
     }
 }
 
-auto find_fallback(const WormUiComposeView& view, std::uint64_t resource)
+auto find_fallback(const wormedit::ui::compose_view_t& view, std::uint64_t resource)
     -> const wormedit::ui::keysound_fallback_view_t* {
     for (std::size_t index = 0; index < view.keysound_fallbacks.size(); ++index)
         if (view.keysound_fallbacks[index].resource_id.value == resource) return &view.keysound_fallbacks[index];
@@ -1152,7 +1152,7 @@ auto find_fallback(const WormUiComposeView& view, std::uint64_t resource)
 }
 
 // "File missing. Found nearby: x.ogg" or the ambiguous list; the context menu relinks.
-auto fallback_text(const WormUiComposeView& view, const wormedit::ui::compose_keysound_row_view_t& row)
+auto fallback_text(const wormedit::ui::compose_view_t& view, const wormedit::ui::compose_keysound_row_view_t& row)
     -> std::string {
     const auto* fallback = find_fallback(view, row.resource_id.value);
     if (!fallback) return {};
@@ -1255,7 +1255,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
         nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, bounds)) {
         const auto& view = *panel.view;
         panel.state->bmson_input.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
-            view.project_id, view.chart_id, view.document_revision, row->stem_source_lane_id.value,
+            view.project_id.value, view.chart_id.value, view.document_revision, row->stem_source_lane_id.value,
             row->resource_id.value, 0, 0, true, false, true};
     }
     const bool keyboard_open = id == panel.state->keysound_catalog.keysound_selection.primary &&
@@ -1274,7 +1274,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
         }
         wormedit::ui::chrome::context_menu_open(
             state.keysound_catalog.keysound_group_menu, keyboard_open ? nk_vec2(bounds.x, bounds.y + bounds.h) : context->input.mouse.pos,
-            {panel.view->project_id, panel.view->chart_id, panel.view->document_revision, id}, keyboard_open);
+            {panel.view->project_id.value, panel.view->chart_id.value, panel.view->document_revision, id}, keyboard_open);
         wormedit::ui::chrome::popup_arm_release(state.keysound_catalog.keysound_group_menu.release_pending);
     }
     render_row_actions(panel, *row);
@@ -1300,7 +1300,7 @@ void toggle_collapsed_group(const SoundsPanel& panel, std::uint64_t group_id) {
         if (std::ranges::find(collapsed, group_id) == collapsed.end()) collapsed.push_back(group_id);
         else std::erase(collapsed, group_id);
     }
-    state.keysound_filters.keysound_filter_states_by_project[panel.view->project_id] = state.keysound_filters.keysound_filters;
+    state.keysound_filters.keysound_filter_states_by_project[panel.view->project_id.value] = state.keysound_filters.keysound_filters;
 }
 
 void render_group_header(const SoundsPanel& panel,
@@ -1358,10 +1358,10 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
         auto& action = *panel.action;
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) break;
         action.compose_action = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
-        action.compose_input_project_id.value = panel.view->project_id;
+        action.compose_input_project_id.value = panel.view->project_id.value;
         action.compose_resource_id.value = menu.stamp.object_id;
         action.compose_fallback_candidate = static_cast<std::uint32_t>(index);
-        action.compose_input_chart_id.value = panel.view->chart_id;
+        action.compose_input_chart_id.value = panel.view->chart_id.value;
         action.compose_input_document_revision = panel.view->document_revision;
     }
     if (chrome::context_menu_item(menu, context, "Select same sound (whole chart)")) {
@@ -1382,7 +1382,7 @@ auto chip_sound_reveal_ready(const SoundsPanel& panel) -> bool {
     const auto& state = *panel.state;
     const auto& view = *panel.view;
     return state.pointer_capture.source_chip_reveal_kind != 1 ||
-        (view.keysound_projected_primary_resource_id == state.pointer_capture.source_chip_reveal_id &&
+        (view.keysound_projected_primary_resource_id.value == state.pointer_capture.source_chip_reveal_id &&
          view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
 }
 
@@ -1390,8 +1390,8 @@ void restore_chip_sound_selection(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto& view = *panel.view;
     if (state.pointer_capture.source_chip_reveal_kind != 1) return;
-    if (state.pointer_capture.chip_reveal_project != view.project_id || state.pointer_capture.chip_reveal_chart != view.chart_id ||
-        view.draw_source_kind != 1 || view.draw_source_id != state.pointer_capture.source_chip_reveal_id || view.draw_source_missing) {
+    if (state.pointer_capture.chip_reveal_project != view.project_id.value || state.pointer_capture.chip_reveal_chart != view.chart_id.value ||
+        view.draw_source_kind != 1 || view.draw_source_id.value != state.pointer_capture.source_chip_reveal_id || view.draw_source_missing) {
         state.pointer_capture.source_chip_reveal_kind = 0;
         state.pointer_capture.source_chip_reveal_id = 0;
         state.keysound_catalog.keysound_reveal_primary = false;
@@ -1402,8 +1402,8 @@ void restore_chip_sound_selection(const SoundsPanel& panel) {
     state.keysound_catalog.keysound_search.fill(0);
     state.keysound_filters.keysound_filters = {};
     state.keysound_filters.keysound_filters.include_ungrouped = true;
-    state.keysound_filters.keysound_filters.layer_chart_id = view.chart_id;
-    state.keysound_filters.keysound_filter_states_by_project[view.project_id] = state.keysound_filters.keysound_filters;
+    state.keysound_filters.keysound_filters.layer_chart_id = view.chart_id.value;
+    state.keysound_filters.keysound_filter_states_by_project[view.project_id.value] = state.keysound_filters.keysound_filters;
     state.keysound_catalog.keysound_reveal_primary = true;
 }
 
@@ -1542,7 +1542,7 @@ static void render_sounds_dock_tabs(const SoundsPanel& panel) {
 }
 
 void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
-                                           const WormUiComposeView* view,
+                                           const wormedit::ui::compose_view_t* view,
                                            wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;

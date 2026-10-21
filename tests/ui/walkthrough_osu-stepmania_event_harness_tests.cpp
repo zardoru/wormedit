@@ -460,7 +460,7 @@ TEST_CASE("Osu StepMania walkthrough Save copies linked song audio and repeat Sa
     const auto save_key = key(SDLK_S, SDL_SCANCODE_S);
     const auto action = flow.harness.frame({&save_key, 1}, SDL_KMOD_CTRL);
     expect(action.get().shortcut_events.size() == 1);
-    expect(action.get().shortcut_events[0].hid_usage == SDL_SCANCODE_S);
+    expect(action.get().shortcut_events[0].hid_usage == static_cast<wormedit::shortcut_key_t>(SDL_SCANCODE_S));
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t runtime{scheduler};
     const auto destination = directory.path / "song.wormedit";

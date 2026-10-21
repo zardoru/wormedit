@@ -11,6 +11,7 @@
 #include <optional>
 
 namespace wormedit {
+enum class project_setting_field_t { default_snap, audio_directory, visual_directory };
 inline constexpr std::uint32_t maximum_default_lane_count = 10;
 
 inline constexpr std::size_t maximum_batch_chart_metadata_charts = 256;

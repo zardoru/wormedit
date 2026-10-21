@@ -1844,6 +1844,8 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     collect_song_assets(work);
     validate_song_resources(work);
     validate_song_sound_groups(song, diagnostics);
+    if (!song.settings.is_valid())
+        diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Project settings contain invalid values."));
     for (const auto& chart : song.charts) {
         const auto first_diagnostic = diagnostics.size();
         validate_chart(chart, work.resource_ids, work.resource_assets, work.audio_asset_ids,

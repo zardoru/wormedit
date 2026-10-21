@@ -47,6 +47,10 @@ There are two paths in and one way to change the document.
   and reports that retain partial work on failure return that report directly. Shared
   `failure_code_t` names failures while domain owners retain their lifecycle phases *(T-633)*.
 
+Document-only metadata edits may set publication options on `document_edit_effect_t`.
+The shared finisher passes them to commit; project settings preserve existing imported-source
+flags without enabling passthrough for sources that were already edited *(T-263)*.
+
 Accepted audition requests travel on those outcomes to the shared finisher, which submits them
 to the project-owned `compose_auditions_t`. Its input scope delivers the last object request,
 then the last draft request, after the entire input batch. Its catalog scope delivers the

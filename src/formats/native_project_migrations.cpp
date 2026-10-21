@@ -236,7 +236,12 @@ auto migrate_v8_to_v9(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 8> released_migrations{{
+auto migrate_v9_to_v10(nlohmann::json& document) -> std::string {
+    if (!document.contains("project_settings")) document["project_settings"] = nlohmann::json::object();
+    return {};
+}
+
+constexpr std::array<migration_t, 9> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -245,6 +250,7 @@ constexpr std::array<migration_t, 8> released_migrations{{
     {6, &migrate_v6_to_v7},
     {7, &migrate_v7_to_v8},
     {8, &migrate_v8_to_v9},
+    {9, &migrate_v9_to_v10},
 }};
 
 } // namespace

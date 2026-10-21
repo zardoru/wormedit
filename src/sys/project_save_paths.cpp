@@ -46,7 +46,8 @@ struct project_save_assets_t {
     std::filesystem::path directory;
     std::stop_token stop;
 
-    auto copy_path(asset_id_t id, std::filesystem::path& path) -> bool {
+    auto copy_path(asset_id_t id, std::filesystem::path& path,
+                   std::string_view asset_directory = default_project_asset_directory) -> bool {
         if (path.empty()) return false;
         const auto source = resolved_asset_path(path, directory);
         const auto relative = source.lexically_relative(directory);
@@ -60,7 +61,7 @@ struct project_save_assets_t {
         }
         const auto copied = create_project_asset_copy(
             {.project_directory = directory, .source_path = source, .asset = id,
-             .reuse_identical_files = true}, stop);
+             .reuse_identical_files = true, .relative_directory = asset_directory}, stop);
         if (!copied) {
             report.copy_errors.push_back({copied.error().code,
                 "Could not copy " + source.string() + ": " + copied.error().message});
@@ -75,8 +76,10 @@ struct project_save_assets_t {
 
     auto copy_assets(song_document_t& document) -> bool {
         bool changed = false;
-        for (auto& asset : document.audio_assets) changed |= copy_path(asset.id, asset.source_path);
-        for (auto& asset : document.visual_assets) changed |= copy_path(asset.id, asset.source_path);
+        for (auto& asset : document.audio_assets)
+            changed |= copy_path(asset.id, asset.source_path, document.settings.audio_directory());
+        for (auto& asset : document.visual_assets)
+            changed |= copy_path(asset.id, asset.source_path, document.settings.visual_directory());
         for (auto& asset : document.midi_assets) changed |= copy_path(asset.id, asset.source_path);
         for (auto& recipe : document.generator_recipes)
             changed |= copy_path(asset_id_t{recipe.id.value}, recipe.source_path);

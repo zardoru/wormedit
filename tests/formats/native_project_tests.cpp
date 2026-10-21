@@ -485,7 +485,7 @@ auto explicit_stem_round_trip_is_lossless() -> bool {
     if (!written.value) return false;
     const auto json = nlohmann::json::parse(*written.value);
     const auto& lanes = json["document"]["charts"][0]["bgm_source_lanes"];
-    if (json["document"]["schema_version"] != 9 || lanes.size() != 3 ||
+    if (json["document"]["schema_version"] != wormedit::current_document_schema_version || lanes.size() != 3 ||
         !lanes[0].contains("stem_channel") || lanes[1].contains("stem_channel") ||
         !lanes[2].contains("stem_channel"))
         return false;
@@ -607,7 +607,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
     const auto written = wormedit::write_native_project(song);
     require_bmson_condition(written.value.has_value());
     auto root = nlohmann::json::parse(*written.value);
-    check_bmson_condition(root["document"]["schema_version"] == 9);
+    check_bmson_condition(root["document"]["schema_version"] == wormedit::current_document_schema_version);
     require_bmson_condition(root["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]
                                 .is_object());
     const auto parsed = wormedit::parse_native_project(root.dump());
@@ -626,7 +626,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
     legacy["document"]["charts"][0]["measures"][0]["bgm_events"][0].erase("end");
     const auto upgraded = wormedit::parse_native_project(legacy.dump());
     require_bmson_condition(upgraded.value.has_value());
-    check_bmson_condition(upgraded.value->schema_version == 9);
+    check_bmson_condition(upgraded.value->schema_version == wormedit::current_document_schema_version);
     check_bmson_condition(!upgraded.value->charts.front().measures.front().bgm_events.front().end);
 
     auto legacy_with_end = root;
@@ -871,7 +871,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     auto unsupported_document_json = nlohmann::json::parse(*written.value);
-    unsupported_document_json["document"]["schema_version"] = 10;
+    unsupported_document_json["document"]["schema_version"] = wormedit::current_document_schema_version + 1;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
     CHECK_FALSE(unsupported_document.value.has_value());
@@ -1032,13 +1032,13 @@ auto legacy_project_bytes() -> std::string {
 TEST_CASE("native project migrations: the current schema passes through the default table",
           "[unit][format][native-project][migration]") {
     CHECK(internal::default_migrations().front().from_version == 1);
-    CHECK(internal::default_migrations().back().from_version == 8);
+    CHECK(internal::default_migrations().back().from_version == wormedit::current_document_schema_version - 1);
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.value.has_value());
     auto document = nlohmann::json::parse(*written.value).at("document");
-    REQUIRE(document.at("schema_version") == 9);
+    REQUIRE(document.at("schema_version") == wormedit::current_document_schema_version);
     const auto before = document;
-    const auto outcome = internal::migrate_document(document, 9, internal::default_migrations());
+    const auto outcome = internal::migrate_document(document, wormedit::current_document_schema_version, internal::default_migrations());
     CHECK(outcome.value() == internal::migration_phase_t::unchanged);
     CHECK(document == before);
 }
@@ -1058,7 +1058,7 @@ TEST_CASE("native schema 6 output groups migrate to Ask existing-files policy",
     const auto parsed = wormedit::parse_native_project(root.dump());
     INFO((parsed.diagnostics.empty() ? "no diagnostic" : parsed.diagnostics.front().message));
     REQUIRE(parsed.value.has_value());
-    REQUIRE(parsed.value->schema_version == 9);
+    REQUIRE(parsed.value->schema_version == wormedit::current_document_schema_version);
     REQUIRE_FALSE(parsed.value->output_groups.empty());
     CHECK(parsed.value->output_groups.front().existing_files ==
           wormedit::existing_files_policy_t::ask);
@@ -1066,7 +1066,7 @@ TEST_CASE("native schema 6 output groups migrate to Ask existing-files policy",
 
 namespace {
 void check_migrated_stepmania_profiles(const wormedit::song_document_t& song) {
-    REQUIRE(song.schema_version == 9);
+    REQUIRE(song.schema_version == wormedit::current_document_schema_version);
     REQUIRE(song.output_groups.size() == 4);
     CHECK(song.output_groups[0].stepmania->file_profile == wormedit::stepmania_profile_t::sm);
     CHECK(song.output_groups[1].stepmania->file_profile == wormedit::stepmania_profile_t::sm);
@@ -1233,7 +1233,7 @@ TEST_CASE("native project migrations: schema 1 documents gain current default fi
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
-    CHECK(parsed.value->schema_version == 9);
+    CHECK(parsed.value->schema_version == wormedit::current_document_schema_version);
     CHECK(parsed.value->charts.front().sv_recipes.front().expression_source.empty());
     const auto rewritten = wormedit::write_native_project(*parsed.value);
     REQUIRE(rewritten.value.has_value());
@@ -1266,7 +1266,7 @@ TEST_CASE("native project schema 2 migration adds an empty preset list",
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
-    CHECK(parsed.value->schema_version == 9);
+    CHECK(parsed.value->schema_version == wormedit::current_document_schema_version);
     CHECK(parsed.value->quantization_presets.empty());
 }
 
@@ -1277,7 +1277,7 @@ TEST_CASE("native project upgrades schema 2 in-memory documents without losing p
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.value.has_value());
     const auto root = nlohmann::json::parse(*written.value);
-    CHECK(root["document"]["schema_version"] == 9);
+    CHECK(root["document"]["schema_version"] == wormedit::current_document_schema_version);
     const auto parsed = wormedit::parse_native_project(*written.value);
     REQUIRE(parsed.value.has_value());
     CHECK(parsed.value->quantization_presets == song.quantization_presets);
@@ -1709,4 +1709,36 @@ auto has_warning_native_codec_outcomes() -> bool {
 } // namespace
 TEST_CASE("native-codec outcomes retain warning severity independently of payload presence", "[core][native-project][results]") {
     CHECK(has_warning_native_codec_outcomes());
+}
+
+TEST_CASE("Native project settings round trip without application player settings", "[formats][native_project][project-settings]") {
+    auto song = rich_bmson_song();
+    song.settings = {.default_snap = 12, .audio_asset_directory = "media/audio",
+        .visual_asset_directory = "media/images"};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.value);
+    CHECK(written.value->find("preferred_external_player") == std::string::npos);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->settings == song.settings);
+}
+TEST_CASE("Native schema nine migrates to inherited project settings", "[formats][native_project][project-settings]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.value);
+    auto legacy = nlohmann::json::parse(*written.value);
+    legacy["document"]["schema_version"] = 9;
+    legacy["document"].erase("project_settings");
+    const auto migrated = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(migrated.value);
+    CHECK(migrated.value->schema_version == wormedit::current_document_schema_version);
+    CHECK(migrated.value->settings == wormedit::project_settings_t{});
+}
+TEST_CASE("Native project settings reject invalid snap and unsafe asset directories", "[formats][native_project][project-settings]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.value);
+    auto json = nlohmann::json::parse(*written.value);
+    json["document"]["project_settings"]["default_snap"] = 4294967296ULL;
+    CHECK_FALSE(wormedit::parse_native_project(json.dump()).value);
+    json["document"]["project_settings"] = {{"audio_asset_directory", "../outside"}};
+    CHECK_FALSE(wormedit::parse_native_project(json.dump()).value);
 }

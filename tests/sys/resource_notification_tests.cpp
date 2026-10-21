@@ -249,6 +249,7 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
           "[unit][sys][resource-notification][metadata-completion-stamp]") {
     const auto replace_project = GENERATE(false, true);
     resource_notification_fixture_t fixture;
+    fixture.history.document.settings.audio_asset_directory = "media/audio";
     fixture.source = fixture.root / "source.ogg";
     std::filesystem::copy_file(std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" / "audio" / "keysound-c4.ogg",
                                fixture.source);
@@ -258,11 +259,14 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
         fixture.project, fixture.scheduler, false, false);
     require_resource_notification(fixture.assets.import_pending());
     if (replace_project) fixture.history.document.id = song_id_t{2};
-    else ++fixture.history.document.revision;
+    else {
+        ++fixture.history.document.revision;
+        fixture.history.document.settings.audio_asset_directory = "later/audio";
+    }
     const auto message = fixture.wait_for_import();
     require_resource_notification(message.has_value());
     test::check_stale_action_message(*message, "Metadata audio copy linking");
-    check_resource_notification(!std::filesystem::exists(fixture.project / "assets" / "1-source.ogg"));
+    check_resource_notification(!std::filesystem::exists(fixture.project / "media/audio/source.ogg"));
     check_resource_notification(std::filesystem::exists(fixture.source));
     check_resource_notification(fixture.history.document.audio_assets.empty());
     check_resource_notification(fixture.history.undo.empty());

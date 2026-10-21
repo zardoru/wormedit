@@ -552,6 +552,8 @@ auto stage_pending_assets(const conversion_publication_options_t& options, const
         if (options.stop.stop_requested()) return "Export cancelled while copying assets.";
         if (!copy.source_path.is_absolute()) copy.source_path = copy.project_directory / copy.source_path;
         copy.project_directory = staging;
+        // Export staging is rooted beside its chart, independently of project asset folders.
+        copy.relative_directory = "assets";
         const auto copied = create_project_asset_copy(copy, options.stop);
         if (!copied) return copied.error().message;
         if (options.progress) ++options.progress->completed;

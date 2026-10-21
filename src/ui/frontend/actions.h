@@ -485,6 +485,7 @@ struct workspace_action_t {
     song_id_t close_project_id;
     uint64_t close_revision;
     wormedit::ui::project_chart_action_t project_chart;
+    wormedit::ui::project_settings_action_t project_settings;
     wormedit::ui::project_output_group_action_t project_output_group;
     wormedit::ui::chart_import_action_t chart_import;
     wormedit::ui::tap_timing_action_t tap_timing;

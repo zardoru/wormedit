@@ -273,6 +273,7 @@ struct document_command_options_t {
     // Metadata-only commands may preserve existing retained-source flags.
     // This never enables passthrough for a document that was already edited.
     bool preserve_retained_source_flags{false};
+    auto operator==(const document_command_options_t&) const -> bool = default;
 };
 
 // Domain operations share execution state; chart identity, limits and completion belong
@@ -283,6 +284,7 @@ enum class command_noop_policy_t { reject, accept_without_diagnostics };
 struct document_edit_effect_t {
     bool changed{};
     std::string command_label;
+    document_command_options_t options{};
     auto operator==(const document_edit_effect_t&) const -> bool = default;
 };
 

@@ -6,6 +6,8 @@
 
 #include <wormedit/core/timing.h>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/project_settings.h>
+#include <wormedit/core/preferences.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/conversion.h>
 
@@ -16,6 +18,20 @@
 #include <sstream>
 
 namespace wormedit::sys {
+auto apply_project_settings_ui_action(document_history_t& history,
+    const ui::project_settings_action_t& action) -> document_command_result_t {
+    auto candidate = history.document.settings;
+    const auto text = action.use_program_default ? std::nullopt : std::optional{action.text};
+    switch (action.field) {
+    case project_setting_field_t::default_snap:
+        candidate.default_snap = action.use_program_default ? std::nullopt : std::optional{action.integer}; break;
+    case project_setting_field_t::audio_directory: candidate.audio_asset_directory = text; break;
+    case project_setting_field_t::visual_directory: candidate.visual_asset_directory = text; break;
+    default: return document_command_transaction_t::rejection(history.document.revision,
+        diagnostic_code_t::invalid_id, "Unknown project setting.");
+    }
+    return apply_project_settings_command(history, {.project = action.project, .revision = action.revision}, std::move(candidate));
+}
 namespace {
 constexpr std::size_t maximum_project_display_text_bytes = 4096;
 
@@ -428,6 +444,19 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
 }
 
 } // namespace wormedit::sys
+
+void wormedit::ui::project_settings_view_t::refill(const song_document_t& document,
+                                                 const program_preferences_t& preferences) {
+    const auto& settings = document.settings;
+    const auto effective = settings.effective(preferences);
+    snap_overridden = settings.default_snap.has_value();
+    audio_overridden = settings.audio_asset_directory.has_value();
+    visual_overridden = settings.visual_asset_directory.has_value();
+    default_snap = effective.default_snap.value;
+    program_default_snap = preferences.editor.default_snap;
+    audio_directory = effective.audio_asset_directory.value;
+    visual_directory = effective.visual_asset_directory.value;
+}
 
 void wormedit::ui::setup_view_t::refill(sys::project_chart_runtime_t& runtime,
                                       const song_document_t& document) {

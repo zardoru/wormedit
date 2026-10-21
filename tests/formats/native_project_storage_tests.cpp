@@ -889,7 +889,7 @@ TEST_CASE("schema-4 autosave preserves quantization presets through recovery",
     REQUIRE(saved.value.status == wormedit::native_project_autosave_status_t::published);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
     REQUIRE(parsed.value);
-    CHECK(parsed.value->song.schema_version == 9);
+    CHECK(parsed.value->song.schema_version == wormedit::current_document_schema_version);
     CHECK(parsed.value->song.quantization_presets == song.quantization_presets);
 }
 
@@ -900,11 +900,11 @@ TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown v
     REQUIRE(wormedit::create_native_project_recovery_file(
                 recovery_path, valid_song(2), {.session_sequence = 1}).value);
     auto envelope = nlohmann::json::parse(read_text(recovery_path));
-    for (const auto schema : std::array<std::uint64_t, 9>{0, 1, 2, 3, 4, 5, 6, 7, 8}) {
+    for (std::uint64_t schema = 0; schema <= wormedit::current_document_schema_version + 1; ++schema) {
         INFO(schema);
         envelope["schema_version"] = schema;
         const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
-        CHECK(parsed.value.has_value() == (schema >= 1 && schema <= 8));
+        CHECK(parsed.value.has_value() == (schema >= 1 && schema <= wormedit::current_document_schema_version));
     }
 }
 
@@ -927,7 +927,7 @@ TEST_CASE("schema 6 autosave recovery preserves a BGM tail",
     const auto recovered =
         wormedit::parse_native_project_recovery_snapshot(read_text(path));
     REQUIRE(recovered.value);
-    REQUIRE(recovered.value->song.schema_version == 9);
+    REQUIRE(recovered.value->song.schema_version == wormedit::current_document_schema_version);
     CHECK(recovered.value->song.charts.front().measures.front().bgm_events.front().end ==
           wormedit::local_position_t{wormedit::measure_id_t{1}, 1});
 }

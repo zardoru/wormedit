@@ -20,6 +20,8 @@
 
 namespace wormedit { struct default_lane_keys_t; }
 namespace wormedit::sys {
+[[nodiscard]] auto apply_project_settings_ui_action(document_history_t&,
+    const ui::project_settings_action_t&) -> document_command_result_t;
 
 struct project_chart_row_view_t {
     chart_id_t chart;

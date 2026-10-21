@@ -1,6 +1,19 @@
 # Status: resume checklist
 
-## Active queue (2026-10-20)
+## Active queue (2026-10-21)
+
+Completed **T-263** (2026-10-21): native schema 10 carries optional new-chart snap and
+audio/visual copy folders. Project controls show inherited defaults and commit stamped,
+undoable edits; future copies honor the folders while existing files stay in place.
+The shared finisher preserves imported-source flags for these document-only edits.
+Recovery uses the shared schema ceiling; export staging keeps its own conventional layout.
+External player configuration and selection remain application settings, per the owner’s
+scope correction. GATE passes **4,443/4,443**, build, whitespace and **23-TU** complexity;
+focused settings **72 assertions / 9 cases**, frontend **11 / 1**, copying **26 / 1** and
+cleanup **14 / 1** pass. Isolated native persistence, folder Undo/Redo and new-chart **1/8**
+with program default **1/4** are verified. All four owner-requested cards—**T-256**,
+**T-257**, **T-258**, **T-263**—are complete in separate commits; no sequential follow-up
+is active.
 
 Completed **T-258** (2026-10-21): Input hosts lane-count defaults (number row, DFJK and
 custom physical keys) alongside existing shortcut remapping; new/imported charts consume explicit
@@ -10,7 +23,7 @@ preference cache. Native typing exposed phantom SDL shortcut edges; the shared a
 inactive releases while retaining repeat and modifier-release behavior. GATE passes
 **4,433/4,433**, build, whitespace and **21-TU** complexity; focused core/Options/UI/keyboard
 checks and isolated native Apply, DFJK creation and menu routing pass. Reviewed UI test allowance
-**68 → 60**. Next owner-requested card, in a separate commit: **T-263**.
+**68 → 60**. The following owner-requested **T-263** is complete above.
 
 Completed **T-257** (2026-10-21): Appearance exposes interface themes, automatic/100–200%
 scale, frame timing and reduced motion. Invalid themes retain the prior palette; waveform

@@ -453,3 +453,21 @@ TEST_CASE("export asset copy accepts an output group directory path", "[unit][co
         std::filesystem::path{"assets/kick.wav"});
     CHECK(read_text(copied->absolute_path) == "source data");
 }
+
+TEST_CASE("project asset copies plan inspect and discard a custom relative directory", "[core][resources][project-settings]") {
+    temporary_directory_t directory;
+    const auto source = directory.path / "song.wav";
+    write_text(source, "audio bytes");
+    const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
+        .source_path = source, .asset = wormedit::asset_id_t{12}, .relative_directory = "media/audio"};
+    const auto copied = wormedit::create_project_asset_copy(request);
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
+    CHECK(copied->relative_path == "media/audio/song.wav");
+    CHECK(read_text(copied->absolute_path) == "audio bytes");
+    const auto inspected = wormedit::inspect_project_asset_file(request);
+    require_copy_status(inspected, wormedit::project_asset_copy_phase_t::reused);
+    CHECK(inspected->absolute_path == copied->absolute_path);
+    CHECK(wormedit::discard_unlinked_project_asset_copy(request, *copied));
+    CHECK_FALSE(std::filesystem::exists(copied->absolute_path));
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
+}

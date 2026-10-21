@@ -46,6 +46,8 @@ struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
 };
 
 struct project_panel_state_t {
+    std::optional<std::uint64_t> settings_revision;
+    std::array<char, wormedit::maximum_project_path_bytes + 1> audio_directory{}, visual_directory{};
     project_metadata_popup_t metadata_popup;
     std::vector<std::uint64_t> delete_selection;
     project_chart_selection_t selection;
@@ -1326,6 +1328,72 @@ void worm_ui_nuklear_retire_setup_popups(nk_context* context) {
     wormedit::ui::chrome::context_menu_retire(project_state.group_menu, context);
 }
 
+namespace {
+void emit_project_setting(const wormedit::ui::setup_view_t& view,
+                          wormedit::ui::workspace_action_t& action, wormedit::project_setting_field_t field,
+                          bool use_default, std::uint32_t integer = 0, std::string_view text = {}) {
+    if (action.project_settings.requested) return;
+    action.project_settings = {.requested = true, .project = view.song_id,
+        .revision = view.document_revision, .session_generation = view.session_generation,
+        .field = field, .use_program_default = use_default, .integer = integer, .text = std::string{text}};
+}
+auto project_default_toggle(nk_context* context, const char* label, bool overridden) -> bool {
+    nk_layout_row_dynamic(context, 25, 1);
+    nk_bool use_default = !overridden;
+    return nk_checkbox_label(context, label, &use_default) != 0;
+}
+void render_project_snap(nk_context* context, const wormedit::ui::setup_view_t& view,
+                         wormedit::ui::workspace_action_t& action) {
+    const auto& settings = view.settings;
+    if (project_default_toggle(context, "Use program default for new-chart snap", settings.snap_overridden))
+        emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap,
+            settings.snap_overridden, settings.default_snap);
+    if (!settings.snap_overridden) nk_widget_disable_begin(context);
+    int snap = static_cast<int>(settings.default_snap);
+    nk_layout_row_dynamic(context, 28, 1);
+    nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
+    if (settings.snap_overridden && snap != static_cast<int>(settings.default_snap))
+        emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap, false, static_cast<std::uint32_t>(snap));
+    if (!settings.snap_overridden) nk_widget_disable_end(context);
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Program default: 1/%u", settings.program_default_snap);
+}
+void render_project_directory(nk_context* context, const wormedit::ui::setup_view_t& view,
+                              wormedit::ui::workspace_action_t& action, bool visual) {
+    const auto& settings = view.settings;
+    const bool overridden = visual ? settings.visual_overridden : settings.audio_overridden;
+    const auto field = visual ? wormedit::project_setting_field_t::visual_directory : wormedit::project_setting_field_t::audio_directory;
+    auto& buffer = visual ? project_state.visual_directory : project_state.audio_directory;
+    if (project_default_toggle(context, visual ? "Use program default for visual assets" : "Use program default for audio assets", overridden))
+        emit_project_setting(view, action, field, overridden, 0, buffer.data());
+    if (!overridden) nk_widget_disable_begin(context);
+    constexpr float ratios[]{0.8f, 0.2f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, ratios);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
+    if (nk_button_label(context, visual ? "Set visual folder" : "Set audio folder") && overridden)
+        emit_project_setting(view, action, field, false, 0, buffer.data());
+    if (!overridden) nk_widget_disable_end(context);
+}
+void render_project_settings(nk_context* context, const wormedit::ui::setup_view_t& view,
+                             wormedit::ui::workspace_action_t& action) {
+    if (!nk_tree_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
+    if (project_state.settings_revision != view.document_revision) {
+        std::snprintf(project_state.audio_directory.data(), project_state.audio_directory.size(), "%.*s",
+            static_cast<int>(view.settings.audio_directory.size()), view.settings.audio_directory.empty() ? "" : view.settings.audio_directory.data());
+        std::snprintf(project_state.visual_directory.data(), project_state.visual_directory.size(), "%.*s",
+            static_cast<int>(view.settings.visual_directory.size()), view.settings.visual_directory.empty() ? "" : view.settings.visual_directory.data());
+        project_state.settings_revision = view.document_revision;
+    }
+    nk_layout_row_dynamic(context, 32, 1);
+    nk_label_wrap(context, "Overrides are saved with this project and can be undone. Asset folders apply to future copies; existing files stay in place.");
+    render_project_snap(context, view, action);
+    render_project_directory(context, view, action, false);
+    render_project_directory(context, view, action, true);
+    nk_tree_pop(context);
+}
+}
+
 void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
                                         const wormedit::ui::setup_view_t* view,
                                         wormedit::ui::workspace_action_t* action) {
@@ -1337,6 +1405,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
               view->audio_asset_count, view->visual_asset_count);
     render_project_charts(context, *view, *action);
     render_output_groups(context, *view, *action);
+    render_project_settings(context, *view, *action);
 }
 
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const wormedit::ui::setup_view_t& view,

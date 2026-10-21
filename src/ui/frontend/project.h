@@ -13,6 +13,7 @@
 
 namespace wormedit {
 struct song_document_t;
+struct program_preferences_t;
 enum class diagnostic_severity_t;
 namespace sys {
 struct chart_import_session_t;
@@ -307,6 +308,21 @@ struct project_output_group_action_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+struct project_settings_view_t {
+    bool snap_overridden{}, audio_overridden{}, visual_overridden{};
+    std::uint32_t default_snap{}, program_default_snap{};
+    std::string_view audio_directory, visual_directory;
+    void refill(const wormedit::song_document_t&, const wormedit::program_preferences_t&);
+};
+struct project_settings_action_t {
+    bool requested{};
+    wormedit::song_id_t project;
+    std::uint64_t revision{}, session_generation{};
+    wormedit::project_setting_field_t field{};
+    bool use_program_default{};
+    std::uint32_t integer{};
+    std::string text;
+};
 struct setup_view_t {
     kind_catalog_view_t<wormedit::format_family_t> output_families;
     bool visible{};
@@ -317,6 +333,7 @@ struct setup_view_t {
     std::vector<project_output_suggestion_view_t> output_suggestions;
     wormedit::chart_id_t selected_chart_id;
     std::size_t chart_count{}, audio_asset_count{}, visual_asset_count{};
+    project_settings_view_t settings;
 
     void reset() {
         auto families = std::move(output_families);

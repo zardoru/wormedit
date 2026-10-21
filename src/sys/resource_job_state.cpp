@@ -148,7 +148,8 @@ auto runtime::resource_copy_t::copy_file(const resource_copy_request_t& request,
                                        stop)
             : create_project_asset_copy({.project_directory = request.project_directory,
                                          .source_path = request.target.source_path,
-                                         .asset = request.target.asset},
+                                         .asset = request.target.asset,
+                                         .relative_directory = request.relative_directory},
                                         stop);
     return resource_copy_job_t::work_outcome_t{std::in_place, std::move(copied)};
 }

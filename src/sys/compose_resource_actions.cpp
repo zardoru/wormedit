@@ -215,7 +215,9 @@ auto copy_compose_resource_action_t::validate(compose_action_context_t& context)
             "The selected resource asset is no longer available.", notification_source_t::import_);
     const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
     const bool exporting = action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
-    if (!exporting && !source.is_absolute() && source.parent_path() == "assets" &&
+    const auto asset_directory = audio != nullptr ? history.document.settings.audio_directory()
+                                                 : history.document.settings.visual_directory();
+    if (!exporting && !source.is_absolute() && source.parent_path() == asset_directory &&
         source.filename().string().starts_with(std::to_string(id.value) + "-"))
         return compose_action_outcome_t::from(
             "Resource source is already in the project assets directory.",
@@ -247,6 +249,9 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
     using namespace wormedit;
     const auto source =
         plan.export_copy ? notification_source_t::export_ : notification_source_t::import_;
+    const auto& document = context.environment.document.history.document;
+    const auto directory = document.find_audio_asset(plan.asset) ? document.settings.audio_directory()
+                                                               : document.settings.visual_directory();
     auto started = context.environment.resources->jobs.copy.start(
         {.target = {.asset = plan.asset,
                     .document =
@@ -254,7 +259,7 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
                     .source_path = plan.source,
                     .output_path = plan.output,
                     .export_copy = plan.export_copy},
-         .project_directory = context.environment.resources->asset_base});
+         .project_directory = context.environment.resources->asset_base, .relative_directory = directory});
     if (!started) {
         if (started.error().code == failure_code_t::invalid_request)
             return compose_action_outcome_t::blocked(started.error().message, source);

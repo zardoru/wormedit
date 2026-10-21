@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/project_settings.h>
 
 #include <wormedit/core/diagnostic.h>
 #include <wormedit/core/result.h>
@@ -916,11 +917,13 @@ struct quantization_preset_t {
     auto operator==(const quantization_preset_t&) const -> bool = default;
 };
 
+inline constexpr std::uint32_t current_document_schema_version = 10;
 struct song_document_t {
-    std::uint32_t schema_version{9};
+    std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;
+    project_settings_t settings;
     std::vector<audio_asset_t> audio_assets;
     std::vector<visual_asset_t> visual_assets;
     std::vector<resource_entry_t> resources;

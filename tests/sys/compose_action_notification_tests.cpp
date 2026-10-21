@@ -656,6 +656,7 @@ TEST_CASE("Compose NONE area-clear request retains its quiet controller behavior
 }
 
 TEST_CASE("Compose resource dispatcher retains exactly one start and terminal notification", "[compose-action-notifications]") {
+    const bool visual = GENERATE(false, true);
     const auto directory = std::filesystem::temp_directory_path() /
         ("wormedit-compose-resource-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     struct cleanup_t {
@@ -667,7 +668,10 @@ TEST_CASE("Compose resource dispatcher retains exactly one start and terminal no
     std::filesystem::create_directories(fixture.asset_base);
     const auto source = directory / "source.wav";
     std::ofstream{source} << "actual resource copy bytes";
-    fixture.history.document.audio_assets.push_back({.id = asset_id_t{1}, .source_path = source});
+    fixture.history.document.settings.audio_asset_directory = "media/audio";
+    fixture.history.document.settings.visual_asset_directory = "media/images";
+    if (visual) fixture.history.document.visual_assets.push_back({.id = asset_id_t{1}, .source_path = source});
+    else fixture.history.document.audio_assets.push_back({.id = asset_id_t{1}, .source_path = source});
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT);
     action.compose_resource_asset_id.value = 1;
     require_action(fixture.dispatch(action) == "Resource copy started in the background.");
@@ -687,7 +691,10 @@ TEST_CASE("Compose resource dispatcher retains exactly one start and terminal no
     check_action(entries.front().count == 1);
     check_action(entries.back().count == 1);
     check_action(fixture.history.undo.size() == 1);
-    check_action(std::filesystem::is_regular_file(fixture.asset_base / fixture.history.document.audio_assets.front().source_path));
+    const auto copied_path = visual ? fixture.history.document.visual_assets.front().source_path
+                                   : fixture.history.document.audio_assets.front().source_path;
+    check_action(copied_path == (visual ? "media/images/source.wav" : "media/audio/source.wav"));
+    check_action(std::filesystem::is_regular_file(fixture.asset_base / copied_path));
 }
 
 TEST_CASE("Compose workspace boundary publishes branch validation without mutation", "[compose-action-notifications]") {

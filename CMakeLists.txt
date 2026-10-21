@@ -116,6 +116,7 @@ add_library(wormedit_core
     src/core/shortcut_profile_storage.cpp
     src/core/atomic_file_storage.cpp
     src/core/preferences.cpp
+    src/core/project_settings.cpp
     src/core/lane_keys.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp

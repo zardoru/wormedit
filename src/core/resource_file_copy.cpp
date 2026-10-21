@@ -530,6 +530,7 @@ auto plan_project_asset_copies(std::span<const project_asset_copy_request_t> req
         if (!selected)
             return std::unexpected(std::move(selected.error()));
         auto copy = request;
+        copy.relative_directory = relative_directory;
         copy.planned_filename = *selected;
         reserved.insert(*selected);
         planned.push_back(std::move(copy));
@@ -618,10 +619,10 @@ static auto find_identical_project_copy(const project_asset_copy_request_t& requ
                                         std::stop_token stop)
     -> std::optional<project_asset_copy_receipt_t> {
     namespace fs = std::filesystem;
-    if (!is_existing_copy_directory_safe(request.project_directory, "assets")) return std::nullopt;
+    if (!is_existing_copy_directory_safe(request.project_directory, request.relative_directory)) return std::nullopt;
     std::error_code error;
     std::vector<fs::path> candidates;
-    auto iterator = fs::directory_iterator(request.project_directory / "assets", error);
+    auto iterator = fs::directory_iterator(request.project_directory / request.relative_directory, error);
     for (; !error && iterator != fs::directory_iterator{}; iterator.increment(error)) {
         const auto status = iterator->symlink_status(error);
         if (!error && fs::is_regular_file(status) &&
@@ -644,7 +645,7 @@ static auto find_identical_project_copy(const project_asset_copy_request_t& requ
 auto create_project_asset_copy(const project_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
     auto planned = request.planned_filename.empty()
-                       ? plan_project_asset_copies(std::span{&request, std::size_t{1}}, "assets", stop)
+                       ? plan_project_asset_copies(std::span{&request, std::size_t{1}}, request.relative_directory, stop)
                        : result_t<std::vector<project_asset_copy_request_t>, error_t<failure_code_t>>{
                              std::vector<project_asset_copy_request_t>{request}};
     if (!planned) {
@@ -657,22 +658,22 @@ auto create_project_asset_copy(const project_asset_copy_request_t& request, std:
     }
     const auto& selected = planned->front();
     if (request.reuse_identical_files) {
-        auto inspected = copy_resource_file_to_relative_directory(selected, "assets", stop, true);
+        auto inspected = copy_resource_file_to_relative_directory(selected, request.relative_directory, stop, true);
         if (inspected || inspected.error().code != failure_code_t::not_found)
             return inspected;
         if (auto identical = find_identical_project_copy(request, stop)) return std::move(*identical);
     }
-    return copy_resource_file_to_relative_directory(selected, "assets", stop);
+    return copy_resource_file_to_relative_directory(selected, request.relative_directory, stop);
 }
 
 auto inspect_project_asset_file(const project_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
     if (!request.planned_filename.empty())
-        return copy_resource_file_to_relative_directory(request, "assets", stop, true);
-    auto planned = plan_project_asset_copies(std::span{&request, std::size_t{1}}, "assets", stop);
+        return copy_resource_file_to_relative_directory(request, request.relative_directory, stop, true);
+    auto planned = plan_project_asset_copies(std::span{&request, std::size_t{1}}, request.relative_directory, stop);
     if (!planned)
         return std::unexpected(std::move(planned.error()));
-    return copy_resource_file_to_relative_directory(planned->front(), "assets", stop, true);
+    return copy_resource_file_to_relative_directory(planned->front(), request.relative_directory, stop, true);
 }
 
 auto export_asset_directory(const std::filesystem::path& relative_output_path)
@@ -753,7 +754,7 @@ auto inspect_export_asset_file(const export_asset_copy_request_t& request, std::
 
 auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,
                                          const project_asset_copy_receipt_t& copy) -> bool {
-    return discard_unlinked_copy(request, "assets", copy);
+    return discard_unlinked_copy(request, request.relative_directory, copy);
 }
 
 auto discard_unlinked_export_asset_copy(const export_asset_copy_request_t& request,

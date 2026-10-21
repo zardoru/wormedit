@@ -41,6 +41,7 @@ struct pending_metadata_asset_import_t {
     wormedit::asset_id_t asset;
     std::filesystem::path source_path;
     std::filesystem::path output_path;
+    std::filesystem::path project_asset_directory;
     bool export_copy{};
     bool allocate_bms_identifier{};
 };
@@ -274,7 +275,7 @@ auto process_pending_metadata_asset_import(
         const wormedit::project_asset_copy_request_t copy_request{
             .project_directory = asset_base,
             .source_path = request.source_path,
-            .asset = request.asset};
+            .asset = request.asset, .relative_directory = request.project_asset_directory};
         const bool discarded = request.export_copy
                                    ? wormedit::discard_unlinked_export_asset_copy(
                                          {.project_directory = asset_base,
@@ -454,7 +455,8 @@ auto metadata_asset_t::start_copy_preview(
         }
     }
     const project_asset_copy_request_t request{
-        .project_directory = asset_base, .source_path = source_path, .asset = asset};
+        .project_directory = asset_base, .source_path = source_path, .asset = asset,
+        .relative_directory = history.document.settings.audio_directory()};
     const auto started = runtime.job.request(
         [&request, &output_path, &action] {
             return metadata_copy_inspection_request_t{.copy = request,
@@ -545,7 +547,8 @@ auto metadata_asset_t::start_import_copy(
     }
     task_graph_t graph{1};
     const project_asset_copy_request_t copy_request{
-        .project_directory = asset_base, .source_path = normalized_source, .asset = *reserved};
+        .project_directory = asset_base, .source_path = normalized_source, .asset = *reserved,
+        .relative_directory = history.document.settings.audio_directory()};
     const auto added = graph.create_task({}, [copy_request, output_path,
                                            export_copy](std::span<const task_outcome_t>,
                                                         std::stop_token stop) {
@@ -567,6 +570,7 @@ auto metadata_asset_t::start_import_copy(
         .asset = *reserved,
         .source_path = normalized_source,
         .output_path = output_path,
+        .project_asset_directory = copy_request.relative_directory,
         .export_copy = export_copy,
         .allocate_bms_identifier = chart->source_family == format_family_t::bms};
     return finish(export_copy ? "Export audio copy and import started in the background."

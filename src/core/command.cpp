@@ -320,7 +320,7 @@ auto document_command_transaction_t::finish_execution(attempt_t<document_edit_ef
     }
     const auto changed = staged.value->changed;
     auto result =
-        changed ? commit(std::move(staged.value->command_label)) : finish_without_commit();
+        changed ? commit(std::move(staged.value->command_label), staged.value->options) : finish_without_commit();
     result.diagnostics.insert(result.diagnostics.begin(), staged.diagnostics.begin(),
                               staged.diagnostics.end());
     if (!changed && noop_policy == command_noop_policy_t::accept_without_diagnostics &&

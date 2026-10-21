@@ -478,10 +478,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 9 (older documents migrate on
+// the envelope is still version 1; older document schemas migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 9;
+constexpr std::uint32_t native_project_schema_version = current_document_schema_version;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     return text_util::path_utf8(path);
@@ -775,11 +775,29 @@ void from_json(const json& value, chart_document_t& chart) {
     value.at("active_branch_selection").get_to(chart.active_branch_selection);
 }
 
+void to_json(json& value, const project_settings_t& settings) {
+    value = json::object();
+    if (settings.default_snap) value["default_snap"] = *settings.default_snap;
+    if (settings.audio_asset_directory) value["audio_asset_directory"] = *settings.audio_asset_directory;
+    if (settings.visual_asset_directory) value["visual_asset_directory"] = *settings.visual_asset_directory;
+}
+void from_json(const json& value, project_settings_t& settings) {
+    if (!value.is_object()) throw std::invalid_argument("Project settings must be an object.");
+    settings = {};
+    if (value.contains("default_snap") && !value["default_snap"].is_null())
+        settings.default_snap = strict_unsigned<std::uint32_t>(value.at("default_snap"));
+    if (value.contains("audio_asset_directory") && !value["audio_asset_directory"].is_null())
+        settings.audio_asset_directory = value["audio_asset_directory"].get<std::string>();
+    if (value.contains("visual_asset_directory") && !value["visual_asset_directory"].is_null())
+        settings.visual_asset_directory = value["visual_asset_directory"].get<std::string>();
+}
+
 void to_json(json& value, const song_document_t& song) {
     value = json{{"schema_version", song.schema_version},
                  {"id", song.id},
                  {"revision", song.revision},
                  {"metadata", song.metadata},
+                 {"project_settings", song.settings},
                  {"audio_assets", song.audio_assets},
                  {"visual_assets", song.visual_assets},
                  {"resources", song.resources},
@@ -797,6 +815,7 @@ void from_json(const json& value, song_document_t& song) {
     value.at("id").get_to(song.id);
     value.at("revision").get_to(song.revision);
     value.at("metadata").get_to(song.metadata);
+    song.settings = value.value("project_settings", project_settings_t{});
     value.at("audio_assets").get_to(song.audio_assets);
     value.at("visual_assets").get_to(song.visual_assets);
     value.at("resources").get_to(song.resources);

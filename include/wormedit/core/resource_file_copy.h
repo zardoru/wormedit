@@ -10,9 +10,11 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
+inline constexpr std::string_view default_project_asset_directory = "assets";
 
 enum class project_asset_copy_phase_t { copied, reused };
 
@@ -32,6 +34,7 @@ struct project_asset_copy_request_t {
     std::function<bool(const std::filesystem::path&)> validate_temporary{};
     // Automatic saves may reuse any byte-identical regular file in assets/.
     bool reuse_identical_files{};
+    std::filesystem::path relative_directory{default_project_asset_directory};
 };
 
 // Selects stable filenames without writing. Every request must target the same

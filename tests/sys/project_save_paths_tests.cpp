@@ -392,3 +392,23 @@ TEST_CASE("project Save As copies assets from the previous project into the new 
     check_save(fixture.read(other_project / relative) == "song bytes");
     check_save(std::filesystem::exists(fixture.project / reopened.audio_assets.front().source_path));
 }
+
+TEST_CASE("Project save applies separate asset directory overrides only to future copies", "[sys][project-save][project-settings]") {
+    project_save_fixture_t fixture;
+    fixture.document.settings.audio_asset_directory = "media/audio";
+    fixture.document.settings.visual_asset_directory = "media/images";
+    fixture.write(fixture.root / "cover.png", "image bytes");
+    fixture.write(fixture.project / "local.wav", "local bytes");
+    fixture.document.visual_assets.push_back({.id = asset_id_t{8}, .source_path = "cover.png"});
+    fixture.document.audio_assets.push_back({.id = asset_id_t{9}, .source_path = fixture.project / "local.wav"});
+    const auto saved = fixture.save();
+    require_save(saved.storage.value);
+    check_save(saved.copy_errors.empty());
+    const auto reopened = fixture.reopen();
+    check_save(reopened.settings == fixture.document.settings);
+    check_save(reopened.audio_assets[0].source_path == "media/audio/music.ogg");
+    check_save(reopened.visual_assets[0].source_path == "media/images/cover.png");
+    check_save(reopened.audio_assets[1].source_path == "local.wav");
+    check_save(fixture.read(fixture.project / reopened.audio_assets[0].source_path) == "song bytes");
+    check_save(fixture.read(fixture.project / reopened.visual_assets[0].source_path) == "image bytes");
+}

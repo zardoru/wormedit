@@ -267,8 +267,34 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
 
 ## T-263 Add a project settings store and page
 
-- **Status:** ready
-- **Outcome:** the native project document carries a typed `project_settings_t` (export policies including the current StepMania policy, project asset directories, preferred external player id, and explicit overrides of program defaults such as default snap for new charts in this project); the Project tab shows them in a "Project settings" section with "Use program default" toggles; editing them is undoable and marks the project dirty.
+- **Status:** done (2026-10-21)
+- **Implementation audit (2026-10-21):** T-725 already moved StepMania policy to each
+  export target. That owner supersedes historical step 3 below; this card preserves it.
+  Project settings control future asset copies and new-chart snap, with explicit
+  program-default inheritance. Existing asset files are not moved.
+- **Owner scope correction (2026-10-21):** player configuration and selection are application
+  settings in Options. The historical preferred-player requirement is removed from this card;
+  native projects contain no player settings or identities.
+- **Supporting ownership (2026-10-21):** also owned: `src/sys/application.cpp`,
+  `include/wormedit/core/command.h`, `src/core/command.cpp`, `docs/architecture.md`
+  (publication options in the shared finisher preserve imported-source flags),
+  `src/sys/project_view.h`,
+  `include/wormedit/core/vocabulary.h`, `include/wormedit/core/resource_file_copy.h`,
+  `src/core/resource_file_copy.cpp`, `src/sys/project_save_paths.cpp`,
+  `src/sys/metadata_asset_runtime.cpp`, `src/ui/frontend/project.h`,
+  `src/ui/frontend/actions.h`,
+  new `tests/ui/project_settings_event_harness_tests.cpp`,
+  `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`,
+  `tests/formats/native_project_storage_tests.cpp` (current-version expectations),
+  `src/formats/native_project_storage.cpp` (shared schema ceiling),
+  `src/formats/conversion_publication_storage.cpp` (private export staging layout),
+  `src/sys/resource_job_state.h`, `src/sys/resource_job_state.cpp`,
+  `src/sys/compose_resource_actions.cpp`, `tests/sys/compose_action_notification_tests.cpp`
+  (Sounds/BGA background copies),
+  `tests/sys/resource_notification_tests.cpp` (captured-folder cleanup after a stale import),
+  `memory/chart-editor-status/resume.md`. These connect document settings to copy planning,
+  effective defaults and the actual application/frontend owners.
+- **Outcome:** the native project document carries a typed `project_settings_t` (project asset directories and explicit overrides of program defaults such as default snap for new charts in this project); the Project tab shows them in a "Project settings" section with "Use program default" toggles; editing them is undoable and marks the project dirty. StepMania policies remain on each export target (T-725); external players remain application settings.
 - **Read first:** the scope rule above, `include/wormedit/core/document.h` (song aggregate), `src/sys/main.cpp` (where `stepmania_export_policy` lives today), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `include/wormedit/core/preferences.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/project_settings.h`, new `src/core/project_settings.cpp`, new `tests/core/project_settings_tests.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/sys/main.cpp` (move the StepMania policy state into the document), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
@@ -277,7 +303,20 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
   3. Move the StepMania export policy from application state into the document (default = current program behavior).
   4. Project tab section; each overridable field shows the program default greyed when not overridden.
   5. Tests: resolution order, migration, undo, dirty flag.
-- **Invariants:** no per-user values (device, theme, shortcuts, window layout) in the project; no project values in `preferences.json`.
+- **Invariants:** no per-user values (device, theme, shortcuts, external players, window layout) in the project; no project values in `preferences.json`.
 - **Reject/failure behavior:** invalid values reject the edit.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|native_project'`.
+- **Verify:** GATE **4,443/4,443**, build, whitespace and **23-TU** complexity pass
+  (`/tmp/t263-gate-verified.log`, `/tmp/wormedit-gate.DkUmDH`,
+  `/tmp/wormedit-complexity.twtbwkfx`). Focused settings **72 assertions / 9 cases**,
+  frontend settings **11 / 1**, audio/visual copying **26 / 1**, and stale-import cleanup
+  **14 / 1** pass. Recovery/autosave and export walkthroughs were rerun after fixing the
+  recovery schema ceiling and explicitly rooting private export staging beside its chart.
+  Native isolated Xvfb verifies disabled inheritance, editable overrides, saved schema 10,
+  folder Undo/Redo and a newly created chart using **1/8** while the program default stays
+  **1/4** (`/tmp/t263-project-expanded.png`, `/tmp/t263-project-overrides.png`,
+  `/tmp/t263-project-undo.png`, `/tmp/t263-new-chart-snap.png`,
+  `/tmp/t263-native-project.json`, `/tmp/t263-native-workflow.log`). Project settings preserve
+  imported-source flags through publication options on the shared finisher. No complexity
+  allowances were raised; two new tests were shortened using existing assertions and
+  separate round-trip/migration cases.
 - **Out of scope:** program options UI (T-254).

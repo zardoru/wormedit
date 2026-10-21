@@ -30,6 +30,7 @@ struct resource_copy_identity_t {
 struct resource_copy_request_t {
     resource_copy_identity_t target;
     std::filesystem::path project_directory;
+    std::filesystem::path relative_directory{default_project_asset_directory};
     auto operator==(const resource_copy_request_t&) const -> bool = default;
 };
 using resource_copy_job_t =

@@ -262,9 +262,10 @@ template <typename Kind>
 void remember_created_chart_snap(application_command_state_t& state, bool handled,
                                  Kind kind,
                                  std::optional<wormedit::chart_id_t> previous,
-                                 std::optional<wormedit::chart_id_t> selected) {
+                                 std::optional<wormedit::chart_id_t> selected,
+                                 const wormedit::project_settings_t& settings) {
     if (handled && kind == WORM_UI_PROJECT_CHART_NEW && selected && selected != previous) {
-        remember_snap_denominator(state, *selected, state.preferences.editor_preferences.default_snap);
+        remember_snap_denominator(state, *selected, settings.snap_for(state.preferences.editor_preferences.default_snap).value);
     }
 }
 
@@ -1917,7 +1918,7 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     if (!error.empty()) return wormedit::sys::reject_application_command(notifications, error,
                                                                        severity_t::error, source_t::document);
     remember_snap_denominator(application_command_state, *created.payload.chart,
-        application_command_state.preferences.editor_preferences.default_snap);
+        history.document.settings.snap_for(application_command_state.preferences.editor_preferences.default_snap).value);
     notifications.post(severity_t::success, source_t::document, "New chart created.");
     return wormedit::dispatch_outcome_t{.value = true};
 }
@@ -2424,7 +2425,7 @@ struct application_t::implementation_t {
             return;
         for (const auto& chart : session.history.document.charts)
             remember_snap_denominator(commands, chart.id,
-                                      commands.preferences.editor_preferences.default_snap);
+                session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
         const auto selected = wormedit::apply_workspace_action(
             session.workspace, session.history.document,
             wormedit::workspace_select_asset_action_t{
@@ -3500,6 +3501,22 @@ struct application_t::implementation_t {
                                                   commands, &platform.notification_sink);
     }
 
+    bool dispatch_project_settings_action(const ui::project_settings_action_t& action) {
+        if (!action.requested) return false;
+        if (action.session_generation != views.project_chart_runtime.session_generation) {
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::document,
+                stale_action_message("Project settings"));
+            return true;
+        }
+        auto outcome = compose_action_outcome_t::from(
+            wormedit::sys::apply_project_settings_ui_action(session.history, action),
+            {.success = "Project settings updated.", .unchanged = "Project settings unchanged.",
+             .rebind_failure = "Project settings changed, but workspace rebinding failed.",
+             .source = notification_source_t::document});
+        (void)finish_compose_action(document_inputs(), platform.notification_sink, std::move(outcome));
+        return true;
+    }
+
     bool dispatch_project_chart_action(const wormedit::ui::workspace_action_t& frame_action, bool handled) {
         auto& runtime = views.project_chart_runtime;
         auto& history = session.history;
@@ -3581,7 +3598,7 @@ struct application_t::implementation_t {
         if (replace_project_session(std::move(*document), true, true, false, {}, {})) {
             for (const auto& chart : session.history.document.charts)
                 remember_snap_denominator(commands, chart.id,
-                                          commands.preferences.editor_preferences.default_snap);
+                    session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
             session.project_identity.fresh_blank_project = true;
             post_project_feedback(wormedit::notification_severity_t::success,
                                   wormedit::notification_source_t::document,
@@ -4659,6 +4676,8 @@ struct application_t::implementation_t {
                                      !session.project_identity.active_project_path.empty());
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
         flattened.view.setup.refill(views.project_chart_runtime, session.history.document);
+        if (flattened.view.setup.visible)
+            flattened.view.setup.settings.refill(session.history.document, preferences.program_preferences.preferences);
         build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,
                            command_registry, flattened.view);
         publish_tap_assist();
@@ -4725,9 +4744,10 @@ struct application_t::implementation_t {
             dispatch_chart_import_action(action);
         const auto previous_selected_chart = session.workspace.selected_chart;
         const bool project_handled =
+            (!shortcut_handled && !external_handled && dispatch_project_settings_action(action.project_settings)) ||
             dispatch_project_chart_action(action, shortcut_handled || external_handled);
         remember_created_chart_snap(commands, project_handled, action.project_chart.kind,
-                                    previous_selected_chart, session.workspace.selected_chart);
+                                    previous_selected_chart, session.workspace.selected_chart, session.history.document.settings);
         apply_compare_scroll_action(views.compare_scene_cache, action);
         dispatch_workspace_frame_action(action, project_handled, selected_waveform_sample_rate,
                                         viewport_height);

@@ -1051,28 +1051,25 @@ void populate_compose_selected_objects_and_drafts(
         application_state.project.compose_gesture.bmson_marker_draft.reset();
         application_state.project.compose_gesture.bmson_razor_stroke.reset();
     }
-    populate_compose_staged_draft(flattened, application_state, view);
+    populate_compose_staged_draft(application_state, view);
 
     populate_compose_selected_bgm(chart, retained_state, view, cache);
     populate_compose_selected_note(flattened, chart, retained_state, view, cache);
 }
 
-void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
-                                   application_command_state_t& application_state,
+void populate_compose_staged_draft(application_command_state_t& application_state,
                                    wormedit::ui::compose_view_t& view) {
     if (!application_state.project.compose_gesture.bmson_marker_draft) return;
-    view.staged_bmson_marker_restarts.resize(application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size());
-    flattened.compose.bmson_draft_playable_lane.clear();
-    flattened.compose.bmson_draft_restart.clear();
-    flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_restarts.size());
-    flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_restarts.size());
-    for (const auto& marker : application_state.project.compose_gesture.bmson_marker_draft->payload.markers) {
-        flattened.compose.bmson_draft_playable_lane.push_back(
+    const auto& markers = application_state.project.compose_gesture.bmson_marker_draft->payload.markers;
+    view.staged_bmson_marker_playable_lanes.clear();
+    view.staged_bmson_marker_restarts.clear();
+    view.staged_bmson_marker_playable_lanes.reserve(markers.size());
+    view.staged_bmson_marker_restarts.reserve(markers.size());
+    for (const auto& marker : markers) {
+        view.staged_bmson_marker_playable_lanes.push_back(
             marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
-        flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);
+        view.staged_bmson_marker_restarts.push_back(marker.restart ? 1 : 0);
     }
-    view.staged_bmson_marker_playable_lanes.assign(flattened.compose.bmson_draft_playable_lane.begin(), flattened.compose.bmson_draft_playable_lane.end());
-    view.staged_bmson_marker_restarts.assign(flattened.compose.bmson_draft_restart.begin(), flattened.compose.bmson_draft_restart.end());
 }
 
 
@@ -1509,9 +1506,8 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
 
 auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> std::size_t {
     const auto& data = storage.compose;
-    // The independently owned arena's committed chunks include all span storage.
-    // Count those chunks once, separately from the remaining heap containers.
-    std::size_t bytes = sizeof(storage) + storage.owned_arena_committed_bytes() +
+    // Count retained projection storage, including its independently owned lists.
+    std::size_t bytes = sizeof(storage) +
         compose_vector_bytes(storage.view.compose.timing_markers) + compose_vector_bytes(data.timing_marker_labels);
     bytes += compose_vector_bytes(storage.view.compose.bands) +
         compose_vector_bytes(storage.view.compose.lanes) +

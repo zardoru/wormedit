@@ -1,6 +1,6 @@
 #pragma once
 
-// Frontend C ABI umbrella. Surface declarations retain their original order.
+// Backend-neutral C++ presentation views and action payloads.
 #include "frontend/actions.h"
 #include "frontend/common.h"
 #include "frontend/compose.h"

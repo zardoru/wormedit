@@ -32,7 +32,6 @@ struct application_frame_projection_context_t {
     const workspace_view_t& model;
     document_history_t& history;
     workspace_controller_t& workspace;
-    frame_arena_t* frame_arena{};
     const native_project_recovery_controller_t& recovery_controller;
     bool recovery_scan_configured{};
     std::uint64_t project_session_generation{};

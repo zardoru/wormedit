@@ -69,7 +69,7 @@ it in new code even before the card lands.
 | `build_` | computes a derived index or cache from existing data |
 | `<x>_view_t::from` | a read-only view of the document for the frontend, when the view is its own C++ type (never `project_`, which means the song project) |
 | `view.refill(…)` | refills a view kept across frames in place (`clear()`, then push), keeping its containers' capacity; the per-frame form of a frontend view, never `from` plus assignment (owner, 2026-10-20; see "Frontend boundary") |
-| `build_<x>_view` | the same as `<x>_view_t::from`, only when the view is a `WormUi*` C struct not yet migrated (see "Frontend boundary") or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
+| `build_<x>_view` | computes a derived projection into an existing C++ view or builds a plain container (`std::vector`, `std::array`); construction and queries belonging to a view type use its members |
 | `create_` / `open_` | has side effects (files, sessions, OS resources) |
 | `plan_` / `prepare_` | computes a proposal; changes nothing |
 | `validate_` | checks and returns diagnostics; changes nothing |
@@ -78,7 +78,6 @@ it in new code even before the card lands.
 | `is_` / `has_` / `can_` | yes/no checks (comparators keep `*_less`, `*_equal`) |
 | `scope.x()` | inside a scoped owner (a transaction, a staged editor), the unqualified accessor is that scope's own object: `transaction.document()` is the document of the transaction. Only the exception is qualified (`source_chart(id)` for the committed version) |
 | `owner.<x>_for(key)` | find-or-add accessor |
-| `ui_codec<WormUiX>::from` / `::into` | the `WormUi*` C-struct surfaces still in place (owner, 2026-10-16; see "Frontend boundary" for the migration away from C structs): `from(core value…)` builds the ABI struct; `into(abi, …)` turns it into a core value (a result when parsing can fail). One specialization per ABI type, in sys next to its users, like `std::hash`/`std::formatter`: neither the flat C struct nor the core type changes. No `<x>_from_ui`/`<x>_to_ui`/`<x>_from_form` free names. Core-to-core construction stays `T::from` *(T-653)* |
 
 - Names must not lie: `folded_name` must fold; `fold` is reserved for real Unicode case folding
   (ASCII-only lowercasing is `ascii_lowercase`).
@@ -178,8 +177,8 @@ it in new code even before the card lands.
   remaining legitimate count. A migration too large for that may go gradually only if a ratchet
   row can detect the old form: new code cannot add it, and the count only falls. A migration no
   regex can detect is not ready to be gradual; sharpen the old form's definition or schedule a
-  closing card. The "Frontend boundary" migration below has its rows
-  and a closing lane.
+  closing card. The frontend boundary migration completed in
+  [T-690–T-699](../tasks/frontend-cxx-views.md); its temporary rows are retired.
 
 ## Tests (owner, 2026-10-15)
 
@@ -203,9 +202,11 @@ it in new code even before the card lands.
   out of core (`cmake/check_ui_boundary.cmake`). That seam is what keeps a migration to another
   frontend possible. C layout is not required for it: no consumer outside the C++ build reads the
   `WormUi*` structs, and the planned alternative backends (ImGui, Clay) would be C++ adapters.
-- **Boundary types may be plain C++:** `std::span`, `std::string_view`, `enum class`, strong IDs
-  and owned containers, in headers that include no backend. They still carry only presentation data
-  and action payloads, never core document types.
+- **Boundary types are C++:** `std::span`, `std::string_view`, `enum class`, strong IDs
+  and owned containers, in headers that include no backend. They carry only presentation data
+  and action payloads, never core document types. The [T-690–T-699 migration](../tasks/frontend-cxx-views.md)
+  is complete (2026-10-21): all frontend view/action structs are C++ types, and its four temporary
+  ceremony rows and codec naming convention are retired.
 - **What may cross:** core *vocabulary* (enums such as `note_kind_t` or `visual_event_kind_t`,
   strong IDs, `rational_t`, and small pure queries over them such as `editor_bga_lane_index`) may be
   used on both sides; reuse it instead of a parallel raw integer. Documents, history, indices and
@@ -215,19 +216,10 @@ it in new code even before the card lands.
 - **Editable views carry identity.** A frontend view of an object the user can select or edit
   carries that object's stable ID. Display numbers and vector positions are presentation, never
   identity; retain the ID through projection and use it in actions and selections.
-- **Migrate under a ratchet, closed by a lane** (owner, 2026-10-17; ratchet and closing lane
-  [T-690–T-699](../tasks/frontend-cxx-views.md) added 2026-10-18). The lane converts every
-  remaining surface; until a surface's card lands, other changes follow this rule. A change that adds a view surface or action payload writes it in C++
-  types. A change that substantially reworks an existing `WormUi*` surface may convert that surface
-  when the conversion is contained in the files it already owns; record it on the card. Do not
-  convert surfaces a change does not otherwise touch, and do not break an in-flight card's promise
-  of an unchanged layout. Four `cmake/ceremony_ratchet.txt` rows hold the old form's count so it
-  only falls: C view structs (`typedef struct WormUi`), fixed capacities
-  (`WORM_UI_*_CAPACITY`), pointer-plus-count fields in `src/ui/frontend`, and `ui_codec`
-  specializations. A conversion lowers the rows it touches in the same commit.
-- **What a conversion removes:** fixed capacities and their truncation paths, the frame-storage
-  flattening that keeps pointer-plus-count arrays alive, raw integer kinds and IDs, and that
-  surface's `ui_codec` specialization once the frontend can read the view type directly.
+- **Storage follows its owner.** Views own their variable-length lists and text, or borrow
+  spans/text whose producer guarantees the frame lifetime. Keep real input, format and render
+  budgets named at their owner; do not reintroduce storage capacities, pointer/count plumbing
+  or a frontend frame arena. Sys projection caches and geometry scratch stay in sys.
 - **Frame views persist and refill in place** (owner, 2026-10-20). The application owns one root
   frontend view and keeps it across frames; each frame calls `view.refill(context)`, and nested
   producers take their view by reference. Do not build a fresh view per frame with `from` and
@@ -237,12 +229,11 @@ it in new code even before the card lands.
   [frontend C++ views lane](../tasks/frontend-cxx-views.md)). `from` stays right for views built
   once, such as a dialog snapshot.
 - **Worked example (T-672):** `compose_measure_lane_view_t` in `src/ui/frontend/compose_measure_lane.h`
-  is a C++ member of the C struct `WormUiComposeView`, so the surface converts without touching
-  frame ownership. It uses core vocabulary (`bar_line_time_t`, `measure_id_t` from
+  is a C++ member of `compose_view_t`; both live in the persistent workspace root. It uses core vocabulary (`bar_line_time_t`, `measure_id_t` from
   `core/vocabulary.h`), owns its list instead of a pointer and count into side storage, and puts
   its query on the type (`view.measure_lane.is_selected(id)`). Sys refills it in place while
-  building the view. A member with an owned container makes the enclosing struct non-trivially
-  copyable; check that nothing copies that view per frame.
+  building the view. Owned containers make the enclosing view non-trivially copyable; check that nothing copies it
+  per frame.
 - **If a non-C++ frontend ever becomes real,** give it its own C or serialized layer outside the
   C++ seam, shaped by that frontend's needs. Do not pre-build one without a consumer.
 
@@ -268,4 +259,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the frontend boundary? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")? 17. A migration left half done with no ratchet row holding the old form's count? 18. Snap step or divisibility math outside `snap.h`, or a bare denominator where a `snap_grid_t` belongs?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types (see "Frontend boundary")? 17. A migration left half done with no ratchet row holding the old form's count? 18. Snap step or divisibility math outside `snap.h`, or a bare denominator where a `snap_grid_t` belongs?

@@ -129,6 +129,7 @@ every edit gets it.
 | Paste | `edit.paste` enters through `begin_compose_paste`; `application_command_state_t::paste_session_t` in `src/sys/compose_view.h` retains the preview. `chart_paste_proposal_t` in `include/wormedit/core/chart_clipboard.h` proposes, revises and applies; `paste_geometry` in `src/sys/compose_view.cpp` derives ghosts from its report. |
 | The measure lane | The measure rail made editable: `compose_bar_line_bounds` in `src/ui/compose_timing_geometry.h` is the one handle rectangle for drawing, picking and area selection, derived from grid lines that carry `measure_id`. Placing a bar line is `split_measure_action_t`; deleting merges through `remove_bar_lines`; pasting splits through `add_bar_lines`. |
 | A row move | `stage_shift_selection` in `include/wormedit/core/time_shift.h` is the one executor for moving objects and bar lines by chart rows (step moves, shift from cursor, bar-line moves with or without time propagation). The drag gesture keeps its own lane and collision planning and runs its row component through it inside its commit; bar-line geometry itself is `move_bar_lines` in `measure_editor.h`. |
+| Frontend frame data | `ui::workspace_view_t` in `src/ui/frontend/workspace.h` owns C++ presentation data, including `compose_view_t`. The application retains main/Compare `sys::frontend_workspace_view_t` projection owners and calls `refill` in `src/sys/application_frame_view.cpp`; their live query caches and geometry scratch stay in sys. Views retain list/text capacity, with no frontend arena, pointer rebinding or C ABI codec. |
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).
@@ -170,7 +171,7 @@ T-661 and compiler warnings from T-669 should enforce closed enums and table siz
    `src/core/interaction_selection.cpp`, plus row-range and projected-area collection where the
    object participates.
 3. Project the same ID into the view and use it from hit testing and emitted actions. The measure
-   path uses `WormUiComposeGridLineView::measure_id` and `append_area_bar_line_geometry`.
+   path uses `ui::compose_grid_line_view_t::measure_id` and `append_area_bar_line_geometry`.
 4. Cover direct selection, scoped area selection and unavailable/hidden cases in core, sys and
    event-harness tests.
 

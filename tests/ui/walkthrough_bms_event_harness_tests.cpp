@@ -113,7 +113,7 @@ struct walkthrough_t {
         require_step(source.value);
         wormedit::ui::keysound_dock_request_t dock{};
         worm_ui_frontend_keysound_dock_request(&dock);
-        flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready", {}, false, nullptr, dock_sort_t::natural_name, dock);
+        flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready", {}, false, dock_sort_t::natural_name, dock);
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *workspace.value, cache, 1600, 1000,
                               interaction, application, nullptr);

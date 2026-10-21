@@ -209,23 +209,7 @@ void append_compose_geometry_row(std::vector<T>& rows, const T& row, bool&) {
     rows.push_back(row);
 }
 
-template <class T>
-auto prepare_compose_geometry_rows(frontend_workspace_view_t& flattened, frame_span<T>& rows,
-                                   std::size_t count) -> bool {
-    if (count == 0) {
-        rows = {};
-        return true;
-    }
-    auto* arena = flattened.arena();
-    rows = arena ? arena_array<T>(*arena, count) : frame_span<T>{};
-    return rows.capacity() == count;
-}
 
-template <class T>
-void append_compose_geometry_row(frame_span<T>& rows, const T& row, bool& truncated) {
-    if (!rows.push_back(row))
-        truncated = true;
-}
 
 void build_compose_scene_objects_view(const compose_scene_projection_context_t& projection);
 
@@ -720,8 +704,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                       wormedit::ui::compose_view_t& view, double pixels_per_row,
                                       bool downscroll);
 
-void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
-                                   application_command_state_t& application_state,
+void populate_compose_staged_draft(application_command_state_t& application_state,
                                    wormedit::ui::compose_view_t& view);
 
 void populate_compose_selected_bgm(
@@ -740,9 +723,6 @@ void populate_compose_selected_objects_and_drafts(
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::ui::compose_view_t& view, compose_scene_cache_t& cache);
 
-void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
-                                   application_command_state_t& application_state,
-                                   wormedit::ui::compose_view_t& view);
 
 template <typename Event>
 auto is_selected_source_location_current(const wormedit::chart_document_t& chart,
@@ -885,11 +865,6 @@ auto scalar_display_lane_number(const auto& record,
     return 0;
 }
 
-template <class T>
-auto prepare_scalar_geometry_output(frontend_workspace_view_t& flattened, frame_span<T>& output,
-                                    std::size_t count) -> bool {
-    return prepare_compose_geometry_rows(flattened, output, count);
-}
 
 template <class T>
 auto prepare_scalar_geometry_output(frontend_workspace_view_t&, std::vector<T>& output,
@@ -899,10 +874,6 @@ auto prepare_scalar_geometry_output(frontend_workspace_view_t&, std::vector<T>& 
     return true;
 }
 
-template <class T>
-auto append_scalar_geometry_output(frame_span<T>& output, const T& record) -> bool {
-    return output.push_back(record);
-}
 
 template <class T>
 auto append_scalar_geometry_output(std::vector<T>& output, const T& record) -> bool {

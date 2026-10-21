@@ -133,7 +133,6 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
         flattened.refill(
             context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
-                              context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
             keysound_request, sound_usage_request, bookmark_request,
             &context.compose_scene_cache.keysound_list_cache, bookmark_indices,

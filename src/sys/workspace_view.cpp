@@ -2,10 +2,8 @@
 #include "sys/workspace_view.h"
 #include "sys/catalog_view.h"
 #include <charconv>
-#include <tuple>
-#include <cstdarg>
 #include <cstdio>
-#include <cstring>
+#include <tuple>
 
 #include "sys/compose_resource_presenter.h"
 #include "sys/sound_list_view.h"
@@ -28,53 +26,6 @@
 #include <vector>
 
 namespace wormedit::sys {
-auto frontend_workspace_view_t::arena() noexcept -> frame_arena_t* {
-    if (arena_) return arena_;
-    if (!owned_arena_) {
-        try {
-            owned_arena_ = std::make_shared<frame_arena_t>(arena_options_t{
-                .chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
-        } catch (const std::bad_alloc&) {
-            return nullptr;
-        }
-    }
-    return owned_arena_.get();
-}
-
-
-auto arena_string(frame_arena_t& arena, std::string_view value) noexcept -> const char* {
-    if (value.size() == std::numeric_limits<std::size_t>::max()) return nullptr;
-    const auto allocation = arena.allocate(value.size() + 1, alignof(char));
-    if (!allocation) return nullptr;
-    auto* text = static_cast<char*>(*allocation);
-    if (!value.empty()) std::memcpy(text, value.data(), value.size());
-    text[value.size()] = '\0';
-    return text;
-}
-
-auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept -> const char* {
-    if (!format) return nullptr;
-    std::va_list arguments;
-    va_start(arguments, format);
-    std::va_list sizing;
-    va_copy(sizing, arguments);
-    const auto length = std::vsnprintf(nullptr, 0, format, sizing);
-    va_end(sizing);
-    if (length < 0) {
-        va_end(arguments);
-        return nullptr;
-    }
-    const auto allocation = arena.allocate(static_cast<std::size_t>(length) + 1, alignof(char));
-    if (!allocation) {
-        va_end(arguments);
-        return nullptr;
-    }
-    auto* text = static_cast<char*>(*allocation);
-    const auto written = std::vsnprintf(text, static_cast<std::size_t>(length) + 1,
-                                         format, arguments);
-    va_end(arguments);
-    return written == length ? text : nullptr;
-}
 namespace {
 
 static_assert(static_cast<unsigned>(workspace_tab_t::setup) == WORM_UI_WORKSPACE_TAB_SETUP);
@@ -1013,7 +964,6 @@ void reset_workspace_storage(View& view, Containers&... containers) {
 } // namespace
 
 void frontend_workspace_view_t::reset() {
-    if (!arena_ && owned_arena_) owned_arena_->reset();
     projection_feedback.clear();
     summary_size = 0;
     reset_workspace_storage(view,
@@ -1039,10 +989,6 @@ void frontend_workspace_view_t::reset() {
     view.command_menu_rows.clear();
     view.compare.charts.clear();
     view.compare.diagnostics.clear();
-
-}
-void frontend_workspace_view_t::rebind_view_pointers() {
-
 }
 
 } // namespace wormedit::sys
@@ -1085,14 +1031,14 @@ namespace wormedit::sys {
 auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
-                       bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
+                       bool recovery_scan_configured, dock_sort_t keysound_sort,
     const wormedit::ui::keysound_dock_request_t& keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
                        wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
                        const bookmark_chooser_indices_t& bookmark_indices,
                        compose_resource_catalog_cache_t* resource_catalog_cache) -> frontend_workspace_view_t {
-    frontend_workspace_view_t result(arena);
-    result.refill(source, document, status, recovery, recovery_scan_configured, arena,
+    frontend_workspace_view_t result{};
+    result.refill(source, document, status, recovery, recovery_scan_configured,
                   keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
                   keysound_cache, bookmark_indices, resource_catalog_cache);
     return result;
@@ -1101,13 +1047,12 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
 void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
-                       bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
+                       bool recovery_scan_configured, dock_sort_t keysound_sort,
     const wormedit::ui::keysound_dock_request_t& keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
                        wormedit::ui::bookmark_chooser_request_t bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
                        const bookmark_chooser_indices_t& bookmark_indices,
                        compose_resource_catalog_cache_t* resource_catalog_cache) {
-    arena_ = arena;
     reset();
     auto& result = *this;
     result.view.project_title = document.metadata.title.c_str();
@@ -1209,7 +1154,6 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
     populate_compose_output_groups(projection, selected);
     result.view.audio_slices.sound_kinds.refill(sound_kind_view);
     view.summary_lines.resize(summary_size);
-    rebind_view_pointers();
 }
 
 } // namespace wormedit::sys

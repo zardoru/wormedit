@@ -2146,11 +2146,9 @@ struct application_t::implementation_t {
         runtime::timing_edit_t timing_edit{};
         compose_scene_cache_t compose_scene_cache{};
         compare_scene_cache_t compare_scene_cache{};
-        frame_arena_t frame_projection_arena{
-            {.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024}};
-        frontend_workspace_view_t workspace_frame{&frame_projection_arena};
-        frontend_workspace_view_t compare_first_frame{&frame_projection_arena};
-        frontend_workspace_view_t compare_second_frame{&frame_projection_arena};
+        frontend_workspace_view_t workspace_frame{};
+        frontend_workspace_view_t compare_first_frame{};
+        frontend_workspace_view_t compare_second_frame{};
         player_preview_presenter_t player_preview_presenter{};
         std::optional<editor_interaction_state_t> compose_interaction_state{};
         viewport_input_controller_t compose_viewport_input{};
@@ -4442,7 +4440,6 @@ struct application_t::implementation_t {
                                                platform.notification_sink);
         begin_notification_frame(views.pending_notification, now);
         wormedit::sys::frame_timing().begin_frame();
-        views.frame_projection_arena.reset();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
     }
 
@@ -4596,7 +4593,6 @@ struct application_t::implementation_t {
             .model = model,
             .history = session.history,
             .workspace = session.workspace,
-            .frame_arena = &views.frame_projection_arena,
             .recovery_controller = session.recovery_controller,
             .recovery_scan_configured = session.recovery_scan_configured,
             .project_session_generation = views.project_chart_runtime.session_generation,

@@ -862,7 +862,7 @@ omitted its optional `space` member; use named denominator initializers to retai
 
 ## T-699 Retire the C boundary leftovers
 
-- **Status:** ready
+- **Status:** done (2026-10-21)
 - **Outcome:** all four frontend ratchet rows are 0 and their rows are deleted. `common.h` keeps only real bounds and SDL forward declarations. `frame_span` storage for frontend views is gone, along with `rebind_view_pointers` and the side storage in `frontend_workspace_view_t`: what remains is the persistent C++ root view that T-690 introduced, holding only view data. The `ui_codec` naming row and T-653 are retired, and code-style.md's "Frontend boundary" says the migration is finished.
 - **Read first:** this file, `src/sys/workspace_view.h`, `src/sys/application_frame_view.*`, code-style.md ("Frontend boundary", naming table).
 - **Files owned:** `src/ui/frontend/common.h`, `src/ui/frontend.h`, `src/sys/workspace_view.h/.cpp`, `src/sys/application_frame_view.h/.cpp`, `cmake/ceremony_ratchet.txt`, `docs/chart-editor-plan/decisions/code-style.md`, `docs/architecture.md`, T-653's status line in `state-ownership.md`, this card.
@@ -875,9 +875,81 @@ omitted its optional `space` member; use named denominator initializers to retai
 - **Verify:** GATE; `ctest --test-dir build -R '^documentation\.'`; the coordinator's Xvfb smoke of every workspace tab.
 - **Out of scope:** replacing Nuklear (the Nuklear audit decides that).
 
+### T-699 inventory and supporting ownership (2026-10-21)
+
+- All four frontend ceremony rows read 0 at `c9fab1d`. `frame_span` occurs only in
+  `workspace_view.h` and uninstantiated compatibility overloads in `compose_view_internal.h`.
+  Its array/string/format helpers have only the old helper tests as consumers; no live
+  frontend projection publishes arena-backed storage. The generic arena remains in
+  `src/core/arena.cpp`, with storyboard preview consumers in `player_preview_presenter.cpp`
+  and the core storyboard evaluator; its core tests remain.
+- The sys workspace wrapper still owns live revision/query caches, retained label owners
+  and geometry scratch. It cannot be folded into the backend-neutral presentation root
+  without moving document/index/cache state across that boundary. Keep those live owners;
+  remove only obsolete arena ownership, API arguments, rebinding and dead overloads.
+- Four unused common-header buffers are dead: lane-profile name 48, layout-profile name 64,
+  layout-profile ID 64 and measure-removal message 192 bytes. All other common bounds have
+  live input, renderer, viewport, format/admission or layout consumers and remain.
+- Coordinator-approved supporting ownership: `src/sys/application.cpp` for the application
+  arena/constructor/reset/context plumbing; `src/sys/compose_view_internal.h` for dead span
+  overloads; `src/sys/compose_view.cpp` for obsolete arena accounting;
+  `src/sys/compose_draw_source_view.cpp` for its stale arena-lifetime comment;
+  `tests/sys/frame_projection_arena_tests.cpp`, `tests/sys/frame_timing_tests.cpp`,
+  `tests/sys/application_commands_tests.cpp`, `tests/sys/minimap_center_tests.cpp`,
+  `tests/ui/nuklear_event_harness_tests.cpp`,
+  `tests/ui/walkthrough_bms_event_harness_tests.cpp` and
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp` for removed API/caller fixture
+  plumbing and obsolete helper assertions; `memory/chart-editor-status/resume.md` for handoff.
+  Inventory uses compiler-resolved calls to adapt the removed API parameter, not textual renaming.
+
+The final side-storage review also removes the two BMSON draft lane/restart intermediate
+vectors: projection refills the already-owned Compose lists directly, retaining their capacities
+and values. Existing draft/event tests cover that path; no new test duplicates the loop.
+
+Test review boundary: the three retired cases tested only the deleted sys array/string/format
+helpers; core arena tests remain. The other projection cases retain their content, move/copy,
+cache-refresh and allocation assertions. Their independent core arena/reset probes remain as
+historical lifetime checks; no frontend view accepts or owns those arenas now. No general test
+value claim is made for these conservatively retained cases.
+
+### T-699 completion and verification (2026-10-21)
+
+- Removed frontend-only `frame_span`, array/string/format allocation helpers, lazy/shared
+  arena ownership, application main/Compare arena plumbing, no-op pointer rebinding and
+  unused scalar-span overloads. Removed obsolete arena accounting and the two intermediate
+  BMSON draft vectors. The persistent C++ presentation root and live sys projection caches,
+  scratch and borrowed-text owners remain; there is no frontend arena or pointer rebinding.
+- Deleted the four zero-valued frontend ceremony rows, their stale comment and four unused
+  buffer-size macros. `common.h` retains only live bounds/layout constants and SDL forward
+  declarations. The frontend umbrella and architecture now describe the C++ boundary;
+  code-style.md retires codec naming and declares the migration complete. T-653 is superseded.
+- Final `scripts/gate.sh` passes build, **4,387/4,387 tests**, whitespace and complexity
+  across **8 changed translation units**. The count decreases by exactly the three retired
+  helper-only tests. Existing warmed allocation and BMSON draft/event cases remain green.
+  No complexity baseline allowance changed. Receipt `/tmp/t699-gate1.log`, stage logs
+  `/tmp/wormedit-gate.0jBR8H`, complexity logs `/tmp/wormedit-complexity.jdsjfk3h`.
+  Tail: `pass build`, `pass ctest`, `pass whitespace`, `pass complexity`,
+  `100% tests passed out of 4387`, `gate: passed`.
+- Isolated Xvfb real-window captures were inspected for Project, Metadata, Compose,
+  Audio Slices and Compare/Validate: `/tmp/t699-project.png`, `/tmp/t699-metadata.png`,
+  `/tmp/t699-compose.png`, `/tmp/t699-audio.png`, `/tmp/t699-compare.png`.
+  `/tmp/t699-compare-populated.png` verifies both retained Compare pane owners with two
+  difficulties. Storyboard remains deliberately disabled (`/tmp/t699-storyboard-disabled.png`);
+  the retired Timing tab remains unavailable and F3 opens Compose timing focus
+  (`/tmp/t699-timing-focus.png`). Logs `/tmp/t699-tabs-smoke.log` and
+  `/tmp/t699-compare-populated-smoke.log`.
+- Final standard Compose capture `/tmp/t699-final.png` is pixel-identical to
+  `/tmp/t698-final.png` (**0 changed RGB pixels**, 1280×720); log `/tmp/t699-final-smoke.log`.
+  No frame-time improvement is claimed; retained warmed allocation regressions protect the
+  existing budget.
+- Final documentation checks pass **5/5** (`/tmp/t699-documentation-final.log`), and
+  `git diff --check` is clean. Code-style review found no new helper/result vocabulary,
+  parser, edit runner or lifecycle plumbing; live storage remains with its existing owner.
+  T-750 is ready for the separately measured incremental-build work.
+
 ## T-750 Reduce incremental rebuild time after the frontend migration
 
-- **Status:** blocked-on T-699
+- **Status:** ready
 - **Outcome:** Representative frontend header edits recompile fewer translation units and complete faster from an already built checkout, with reproducible before/after measurements. Reduce median rebuild latency beyond observed timing variation for at least two header-edit cases; preserve no-op and implementation-edit latency within that variation.
 - **Read first:** this file, `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, this card; exact frontend contract headers, sys cache/runtime headers, implementation files, consuming tests and any measurement script must be inventoried and coordinator-recorded before edits. Start from the post-T-699 owners of the current `src/ui/frontend/compose.h`, `src/sys/compose_view.h` and `src/sys/workspace_view.h`.

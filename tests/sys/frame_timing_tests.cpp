@@ -20,6 +20,7 @@
 #include "sys/compose_view.h"
 #include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
+#include <wormedit/core/arena.h>
 #include "sys/bga_dock_runtime.h"
 #include "../support/temporary_directory.h"
 #include <fstream>
@@ -761,8 +762,8 @@ void project_follow_frame(document_history_t& history, workspace_controller_t& w
             application.project.transport.preview_playhead_absolute_row = row;
             const auto model = workspace_view_t::from(workspace, history.document);
             REQUIRE(model.value);
-            auto flattened = frontend_workspace_view_t::from(*model.value, history.document, "", {}, false, {});
-            flattened.rebind_view_pointers();
+            auto flattened = frontend_workspace_view_t::from(*model.value, history.document, "", {}, false);
+
             populate_compose_view(flattened, history, workspace, cache, 1920, 1080,
                                   interaction, application, nullptr);
             REQUIRE(flattened.view.compose.scene_available);
@@ -3120,12 +3121,12 @@ void check_static_source_has_no_frame_previews(const wormedit::ui::compose_view_
     expect_compose_test(source.bmson_marker_drafts.empty());
     expect_compose_test(!source.bmson_marker_move_preview && !source.cursor && !source.static_scene);
 }
-void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit::frame_arena_t& arena) {
+void project_static_source_arena_frame(compose_test_fixture_t& fixture) {
     workspace_view_t model;
     model.active_tab = workspace_tab_t::compose;
     model.tab_view = workspace_compose_view_t{.chart = chart_id_t{1}};
     fixture.flattened =
-        frontend_workspace_view_t::from(model, fixture.history.document, "ready", {}, false, &arena);
+        frontend_workspace_view_t::from(model, fixture.history.document, "ready", {}, false);
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     expect_compose_test(fixture.flattened.view.compose.scene_available);
@@ -3164,7 +3165,7 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
         .filename = "custom-retained-hit.wav"};
     compose_test_fixture_t fixture(std::move(song));
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    project_static_source_arena_frame(fixture, arena);
+    project_static_source_arena_frame(fixture);
     const auto stored = fixture.cache.scene.static_source.value().storage;
     const auto generation = fixture.cache.scene.static_source.build_count();
     check_static_source_owned_geometry(*stored);
@@ -3190,12 +3191,12 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     expect_compose_test(stored->view.compose.timing_markers.front().short_label == timing_label);
     expect_compose_test(stored->view.compose.timing_markers.front().detail == timing_detail);
     fixture.interaction->viewport_scroll_pixels = 0.5;
-    project_static_source_arena_frame(fixture, arena);
+    project_static_source_arena_frame(fixture);
     expect_compose_test(fixture.cache.scene.static_source.value().storage == stored);
     expect_compose_test(fixture.cache.scene.static_source.build_count() == generation);
     check_static_source_owned_geometry(*fixture.cache.scene.static_source.value().storage);
     ++fixture.history.document.revision;
-    project_static_source_arena_frame(fixture, arena);
+    project_static_source_arena_frame(fixture);
     expect_compose_test(fixture.cache.scene.static_source.value().storage != stored);
     expect_compose_test(fixture.cache.scene.static_source.build_count() > generation);
     check_static_source_owned_geometry(*fixture.cache.scene.static_source.value().storage);
@@ -3209,9 +3210,9 @@ auto geometry_arena_song() -> song_document_t {
     hold.end = local_position_t{measure_id_t{1}, 360};
     return song;
 }
-void project_geometry_arena(compose_test_fixture_t& fixture, wormedit::frame_arena_t& arena,
+void project_geometry_arena(compose_test_fixture_t& fixture,
                             int height = 980) {
-    fixture.flattened = frontend_workspace_view_t{&arena};
+    fixture.flattened = frontend_workspace_view_t{};
     fixture.flattened.view.compose.visible = true;
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, height, fixture.interaction, fixture.application, nullptr);
@@ -3275,8 +3276,8 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
     fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t reused_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     wormedit::frame_arena_t fresh_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    project_geometry_arena(reused, reused_arena);
-    project_geometry_arena(fresh, fresh_arena);
+    project_geometry_arena(reused);
+    project_geometry_arena(fresh);
     const auto source = reused.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     for (const bool legend : {false, true}) {
@@ -3287,12 +3288,12 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
         reused_arena.reset();
         fresh_arena.reset();
         fresh.cache = {};
-        project_geometry_arena(reused, reused_arena);
-        project_geometry_arena(fresh, fresh_arena);
+        project_geometry_arena(reused);
+        project_geometry_arena(fresh);
         expect_compose_test(reused.flattened.view.compose.scene_available && fresh.flattened.view.compose.scene_available);
         compare_geometry_frames(reused.flattened.view.compose, fresh.flattened.view.compose);
         reused_arena.reset();
-        project_geometry_arena(reused, reused_arena);
+        project_geometry_arena(reused);
         expect_compose_test(reused.cache.scene.static_projection_reused_frames > 0);
         compare_geometry_frames(reused.flattened.view.compose, fresh.flattened.view.compose);
     }
@@ -3302,11 +3303,10 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
 TEST_CASE("Compose geometry owns storage outside the supplied arena and accounts static chunks",
           "[sys][frame-arena][compose-geometry]") {
     frontend_workspace_view_t untouched;
-    expect_compose_test(untouched.owned_arena_committed_bytes() == 0);
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     const auto begin = arena.allocate(1, alignof(char));
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto end = arena.allocate(1, alignof(char));
     expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
     expect_compose_test(fixture.flattened.view.compose.scene_available && !fixture.flattened.view.compose.truncated);
@@ -3317,12 +3317,10 @@ TEST_CASE("Compose geometry owns storage outside the supplied arena and accounts
     check_owned_geometry_storage(fixture.flattened.view.compose.hold_bodies, first, last);
     check_owned_geometry_storage(fixture.flattened.view.compose.note_endpoints, first, last);
     expect_compose_test(!fixture.flattened.view.compose.hold_bodies.empty() && !fixture.flattened.view.compose.note_endpoints.empty());
-    expect_compose_test(fixture.flattened.owned_arena_committed_bytes() == 0);
     const auto source = fixture.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
-    expect_compose_test(source->owned_arena_committed_bytes() == 0);
     expect_compose_test(source->view.compose.note_endpoints.data() != fixture.flattened.view.compose.note_endpoints.data());
-    expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes >= sizeof(*source) + source->owned_arena_committed_bytes());
+    expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes >= sizeof(*source));
     expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes <= 16 * 1024 * 1024);
 }
 
@@ -3340,7 +3338,7 @@ TEST_CASE("Compose geometry owns complete lists when the frame arena is exhauste
     for (const auto bytes : {8U, 128U}) {
         wormedit::frame_arena_t arena({.chunk_bytes = bytes, .maximum_bytes = bytes});
         fixture.cache = {};
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         const auto& view = fixture.flattened.view.compose;
         expect_compose_test(!view.bands.empty() && !view.lanes.empty());
         expect_compose_test(!view.note_endpoints.empty() && !view.hold_bodies.empty());
@@ -3352,17 +3350,16 @@ TEST_CASE("Warmed Compose geometry arena stays bounded through 1000 actual cache
           "[sys][frame-arena][compose-geometry]") {
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     arena.reset();
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto used = arena.used_bytes();
     const auto committed = arena.committed_bytes();
     const auto source = fixture.cache.scene.static_source.value().storage;
-    const auto static_committed = source->owned_arena_committed_bytes();
     arena.reset();
     allocations = 0;
     count_allocations = true;
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     count_allocations = false;
     const auto remaining_allocations = allocations;
     bool stable = true;
@@ -3371,11 +3368,11 @@ TEST_CASE("Warmed Compose geometry arena stays bounded through 1000 actual cache
         arena.reset();
         allocations = 0;
         count_allocations = true;
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         count_allocations = false;
         consistent = consistent && allocations == remaining_allocations;
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            fixture.cache.scene.static_source.value().storage == source && source->owned_arena_committed_bytes() == static_committed &&
+            fixture.cache.scene.static_source.value().storage == source &&
             !fixture.flattened.view.compose.truncated;
     }
     INFO("Remaining actual Compose projection allocations: " << remaining_allocations);
@@ -3388,7 +3385,7 @@ TEST_CASE("Compose geometry scene budget rejects dense excess without exceeding 
     compose_test_fixture_t fixture(dense_song());
     const auto revision = fixture.history.document.revision;
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
-    project_geometry_arena(fixture, arena, 2000000);
+    project_geometry_arena(fixture, 2000000);
     expect_compose_test(!fixture.flattened.view.compose.scene_available);
     expect_compose_test(!fixture.flattened.projection_feedback.empty());
     expect_compose_test(!fixture.flattened.view.compose.static_scene);
@@ -3402,7 +3399,7 @@ TEST_CASE("Compose projection failure posts once until repaired or revision chan
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
     projection_notification_feedback_t feedback;
     auto identity = projection_identity_t{fixture.history.document.id, fixture.history.document.revision, chart_id_t{1}, 1};
-    project_geometry_arena(fixture, arena, 2000000);
+    project_geometry_arena(fixture, 2000000);
     expect_compose_test(!fixture.flattened.projection_feedback.empty());
     feedback.publish(identity, fixture.flattened.projection_feedback, sink);
     center.drain_inbox(notification_time_t{0});
@@ -3449,8 +3446,8 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
     cached.application.preferences.editor_preferences.scroll_directions.fill(direction);
     fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t arena, reference;
-    project_geometry_arena(cached, arena);
-    project_geometry_arena(fresh, reference);
+    project_geometry_arena(cached);
+    project_geometry_arena(fresh);
     const auto source = cached.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     expect_compose_test(cached.flattened.view.compose.bms_measure_labels == (family == format_family_t::bms));
@@ -3462,8 +3459,8 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
         cached.interaction->viewport_scroll_pixels = scroll;
         fresh.interaction->viewport_scroll_pixels = scroll;
         fresh.cache = {};
-        project_geometry_arena(cached, arena);
-        project_geometry_arena(fresh, reference);
+        project_geometry_arena(cached);
+        project_geometry_arena(fresh);
         compare_grid_frames(cached.flattened, fresh.flattened);
         expect_compose_test(cached.cache.scene.static_source.value().storage == source);
     }
@@ -3471,8 +3468,8 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
     ++cached.history.document.revision;
     ++fresh.history.document.revision;
     arena.reset(); reference.reset(); fresh.cache = {};
-    project_geometry_arena(cached, arena);
-    project_geometry_arena(fresh, reference);
+    project_geometry_arena(cached);
+    project_geometry_arena(fresh);
     expect_compose_test(cached.cache.scene.static_source.value().storage != source);
     compare_grid_frames(cached.flattened, fresh.flattened);
 }
@@ -3482,7 +3479,7 @@ TEST_CASE("Compose paired grid rows own independent retained storage", "[sys][fr
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena;
     const auto begin = arena.allocate(1, alignof(char));
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto end = arena.allocate(1, alignof(char));
     expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
     expect_compose_test(!fixture.flattened.view.compose.grid_lines.empty());
@@ -3506,7 +3503,7 @@ TEST_CASE("Compose paired grid rows own independent retained storage", "[sys][fr
     expect_compose_test(source->view.compose.grid_lines[0].y_pixels == line.y_pixels);
     expect_compose_test(source->compose.grid.row[0] == row);
     expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes >=
-        sizeof(*source) + source->owned_arena_committed_bytes());
+        sizeof(*source));
 }
 
 TEST_CASE("Compose paired grid cached filters preserve fresh BMS and native labels", "[sys][frame-arena][compose-grid]") {
@@ -3519,7 +3516,7 @@ TEST_CASE("Compose grid storage is independent of frame arena capacity", "[sys][
     for (std::size_t limit = 128; limit <= 2048; limit += 32) {
         compose_test_fixture_t fixture(geometry_arena_song());
         wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         check_grid_pairs(fixture.flattened);
         expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
         expect_compose_test(!fixture.flattened.view.compose.grid_lines.empty());
@@ -3530,19 +3527,19 @@ TEST_CASE("Compose grid storage is independent of frame arena capacity", "[sys][
 TEST_CASE("Warmed paired grid rows remain stable through 1000 actual arena resets", "[sys][frame-arena][compose-grid]") {
     compose_test_fixture_t fixture(geometry_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    project_geometry_arena(fixture, arena);
-    arena.reset(); project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
+    arena.reset(); project_geometry_arena(fixture);
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
     const auto source = fixture.cache.scene.static_source.value().storage;
     const auto count = fixture.flattened.view.compose.grid_lines.size();
     arena.reset(); allocations = 0; count_allocations = true;
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     count_allocations = false;
     const auto remaining = allocations;
     bool stable = true;
     for (int iteration = 0; iteration < 1000; ++iteration) {
         arena.reset(); allocations = 0; count_allocations = true;
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         count_allocations = false;
         stable = stable && allocations == remaining && arena.used_bytes() == used &&
             arena.committed_bytes() == committed && fixture.cache.scene.static_source.value().storage == source &&
@@ -3557,7 +3554,7 @@ TEST_CASE("Warmed paired grid rows remain stable through 1000 actual arena reset
 TEST_CASE("Compose paired grid limits remain bounded when scene budget rejects excess", "[sys][frame-arena][compose-grid]") {
     compose_test_fixture_t fixture(dense_song());
     wormedit::frame_arena_t arena;
-    project_geometry_arena(fixture, arena, 2000000);
+    project_geometry_arena(fixture, 2000000);
     expect_compose_test(!fixture.flattened.view.compose.scene_available);
     expect_compose_test(fixture.flattened.view.compose.grid_lines.empty() && fixture.flattened.compose.grid.row.empty());
     check_grid_pairs(fixture.flattened);
@@ -3606,7 +3603,7 @@ void check_bgm_arena_family(format_family_t family) {
         compose_test_fixture_t reused(song), fresh(song);
         wormedit::frame_arena_t a({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
         wormedit::frame_arena_t b({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
-        project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
+        project_geometry_arena(reused); project_geometry_arena(fresh);
         REQUIRE(reused.flattened.view.compose.bgm_lanes.size() > 0);
         REQUIRE(reused.flattened.view.compose.bgm_events.size() > 0);
         compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
@@ -3622,7 +3619,7 @@ void check_bgm_arena_family(format_family_t family) {
             fresh.interaction->selected_objects=reused.interaction->selected_objects;
             reused.interaction->viewport_scroll_pixels=scroll;
             fresh.interaction->viewport_scroll_pixels=scroll;
-            project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
+            project_geometry_arena(reused); project_geometry_arena(fresh);
             compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
             if (reused.flattened.view.compose.bgm_events.size())
                 expect_compose_test(reused.flattened.view.compose.bgm_events[0].selected);
@@ -3644,11 +3641,11 @@ TEST_CASE("Compose BGM arena storage remains stable across 1000 reused frames",
           "[sys][compose-bgm-arena]") {
     compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
-    project_geometry_arena(fixture,arena); arena.reset(); project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture); arena.reset(); project_geometry_arena(fixture);
     const auto used=arena.used_bytes(), committed=arena.committed_bytes();
     bool stable=true;
     for (int i=0;i<1000;++i) {
-        arena.reset(); project_geometry_arena(fixture,arena);
+        arena.reset(); project_geometry_arena(fixture);
         stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
             fixture.flattened.view.compose.bgm_lanes.size()>0 && fixture.flattened.view.compose.bgm_events.size()>0;
     }
@@ -3658,7 +3655,7 @@ TEST_CASE("Compose owned BGM geometry survives exhausted unrelated frame storage
           "[sys][compose-bgm-arena]") {
     compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
     wormedit::frame_arena_t arena({.chunk_bytes=64,.maximum_bytes=64});
-    project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);
     const auto& view=fixture.flattened.view.compose;
     expect_compose_test(!view.bgm_lanes.empty() && !view.bgm_events.empty());
 }
@@ -3666,7 +3663,7 @@ TEST_CASE("Compose BGM primitive budget rejects oversized source projection",
           "[sys][compose-bgm-arena]") {
     compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=16*1024*1024});
-    project_geometry_arena(fixture,arena,2000000);
+    project_geometry_arena(fixture,2000000);
     expect_compose_test(!fixture.flattened.view.compose.scene_available);
     expect_compose_test(!fixture.flattened.view.compose.static_scene);
     expect_compose_test(fixture.flattened.view.compose.bgm_lanes.empty());
@@ -3700,7 +3697,7 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
     fixture.application.project.semantic_layer.excluded_semantic_layer_filters={layer_id_t{102}};
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
-    project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);
     const auto& view=fixture.flattened.view.compose;
     REQUIRE(view.scene_available);
     check_semantic_first(view);
@@ -3712,19 +3709,19 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     arena.reset();
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{102};
     fixture.application.project.compose_gesture.semantic_layer_paint_mode_active=true;
-    project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);
     expect_compose_test(fixture.flattened.view.compose.semantic_layer_target_excluded_filter);
     expect_compose_test(!fixture.flattened.view.compose.semantic_layer_target_locked);
     expect_compose_test(fixture.flattened.view.compose.semantic_layer_paint_mode_active);
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     arena.reset();
-    project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);
     fixture.history.document.charts.front().semantic_layers[0].name="changed source";
     auto moved=std::move(fixture.flattened);
-    moved.rebind_view_pointers();
+
     check_semantic_first(moved.view.compose);
     arena.reset();
-    project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);
     expect_compose_test(std::strcmp(fixture.flattened.view.compose.semantic_layers[0].name.c_str(),"changed source")==0);
 }
 TEST_CASE("Compose semantic arena preserves bounded scrolling and empty state",
@@ -3787,7 +3784,7 @@ TEST_CASE("Compose semantic views survive exhausted unrelated frame storage",
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t fixture(semantic_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 64});
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     expect_compose_test(fixture.flattened.view.compose.semantic_layers.size() == 2);
     check_semantic_first(fixture.flattened.view.compose);
 }
@@ -3796,13 +3793,13 @@ TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames"
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t fixture(semantic_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
-    project_geometry_arena(fixture,arena);arena.reset();project_geometry_arena(fixture,arena);
+    project_geometry_arena(fixture);arena.reset();project_geometry_arena(fixture);
     const auto used=arena.used_bytes(),committed=arena.committed_bytes();bool stable=true;
     std::uint64_t allocations{};
     for(int i=0;i<1000;++i) {
         arena.reset();
         const auto before=frame_heap_allocation_snapshot();
-        project_geometry_arena(fixture,arena);
+        project_geometry_arena(fixture);
         allocations=frame_heap_allocation_snapshot().count-before.count;
         stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
             fixture.flattened.view.compose.semantic_layers.size() == 2;
@@ -3909,9 +3906,9 @@ void expect_waveform_arena(bool value, const std::source_location location = std
     INFO("Waveform arena expectation at " << location.file_name() << ':' << location.line());
     REQUIRE(value);
 }
-void borrow_waveform_frame(envelope_projection_fixture_t& fixture, frame_arena_t& arena) {
+void borrow_waveform_frame(envelope_projection_fixture_t& fixture) {
     auto view = std::move(fixture.flattened.view);
-    fixture.flattened = frontend_workspace_view_t{&arena};
+    fixture.flattened = frontend_workspace_view_t{};
     fixture.flattened.view = std::move(view);
 }
 auto project_waveform_frame(envelope_projection_fixture_t& fixture) -> bool {
@@ -3930,7 +3927,7 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
           "[sys][waveform-arena]") {
     envelope_projection_fixture_t fixture;
     frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
-    borrow_waveform_frame(fixture, arena);
+    borrow_waveform_frame(fixture);
     expect_waveform_arena(project_waveform_frame(fixture));
     compare_cached_envelope_source(fixture);
     const auto* persistent_overview = fixture.cache.waveform.overview.value().rows.data();
@@ -3942,7 +3939,7 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     std::size_t minimum_allocations = std::numeric_limits<std::size_t>::max(), maximum_allocations{};
     for (int index=0; index<1000; ++index) {
         arena.reset();
-        borrow_waveform_frame(fixture, arena);
+        borrow_waveform_frame(fixture);
         allocations = 0; count_allocations = true;
         const bool available = project_waveform_frame(fixture);
         count_allocations = false;
@@ -3971,7 +3968,7 @@ TEST_CASE("Compose owned waveform ignores unrelated arena exhaustion and clears 
           "[sys][waveform-arena]") {
     envelope_projection_fixture_t fixture;
     frame_arena_t arena({.chunk_bytes=64,.maximum_bytes=64});
-    borrow_waveform_frame(fixture, arena);
+    borrow_waveform_frame(fixture);
     expect_waveform_arena(project_waveform_frame(fixture));
     const auto row_capacity = fixture.flattened.view.compose.waveform_rows.capacity();
     const auto overview_capacity = fixture.flattened.view.compose.waveform_overview_rows.capacity();
@@ -4015,7 +4012,7 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
     }
     fixture.flattened.view.compose.viewport_height_pixels = audio::maximum_aligned_waveform_rows;
     frame_arena_t arena;
-    borrow_waveform_frame(fixture, arena); fixture.project();
+    borrow_waveform_frame(fixture); fixture.project();
     const auto& view = fixture.flattened.view.compose;
     const auto reference = audio::aligned_waveform_view_result_t::from(*fixture.analysis.waveform,
         *fixture.cache.timing.marker_timing_index, {.viewport_scroll_pixels=fixture.interaction.viewport_scroll_pixels,
@@ -4108,7 +4105,7 @@ TEST_CASE("Compose marker arenas preserve anchors labels source order and projec
         compose_test_fixture_t fixture(marker_arena_song());
         fixture.application.preferences.editor_preferences.scroll_directions.fill(direction);
         wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         REQUIRE(fixture.flattened.view.compose.beat_bookmarks.size() == 2);
         REQUIRE(fixture.flattened.view.compose.audio_bookmarks.size() == 2);
         REQUIRE(fixture.flattened.view.compose.beat_sections.size() == 2);
@@ -4123,17 +4120,17 @@ TEST_CASE("Compose marker arrays and strings belong to the supplied arena throug
     const auto chart = fixture.history.document.charts.front();
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     const auto begin = arena.allocate(1, 1);
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto end = arena.allocate(1, 1);
     REQUIRE((begin && end));
     fixture.history.document.charts.front().bookmarks[0].label.assign(200, 'x');
     fixture.history.document.charts.front().sections[1].label.assign(200, 'y');
     auto moved = std::move(fixture.flattened);
-    moved.rebind_view_pointers();
+
     check_marker_prefix(moved, chart);
     moved = {}; arena.reset();
     ++fixture.history.document.revision;
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
 }
 
@@ -4145,7 +4142,7 @@ TEST_CASE("Standalone Compose markers retain owned label text across source dest
         fixture.project();
         owned = std::move(fixture.flattened);
     }
-    owned.rebind_view_pointers();
+
     check_marker_prefix(owned, song.charts.front());
 }
 
@@ -4168,7 +4165,7 @@ TEST_CASE("Compose marker spans preserve all four caps and empty-array flags", "
 TEST_CASE("Compose marker ownership survives exhausted unrelated frame storage", "[sys][frame-arena][compose-markers]") {
     compose_test_fixture_t fixture(marker_arena_song(65));
     wormedit::frame_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 64});
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(view.beat_bookmarks.size() == 65 && view.audio_bookmarks.size() == 65);
     expect_compose_test(view.beat_sections.size() == 65 && view.audio_sections.size() == 65);
@@ -4178,18 +4175,18 @@ TEST_CASE("Compose marker ownership survives exhausted unrelated frame storage",
 TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cached frames", "[sys][frame-arena][compose-markers]") {
     compose_test_fixture_t fixture(marker_arena_song());
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    project_geometry_arena(fixture, arena);
-    arena.reset(); project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
+    arena.reset(); project_geometry_arena(fixture);
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
     const auto source = fixture.cache.scene.static_source.value().storage;
     arena.reset(); allocations = 0; count_allocations = true;
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     count_allocations = false;
     const auto remaining = allocations;
     bool stable = true;
     for (int iteration = 0; iteration < 1000; ++iteration) {
         arena.reset(); allocations = 0; count_allocations = true;
-        project_geometry_arena(fixture, arena);
+        project_geometry_arena(fixture);
         count_allocations = false;
         stable = stable && allocations == remaining && arena.used_bytes() == used &&
             arena.committed_bytes() == committed && fixture.cache.scene.static_source.value().storage == source &&
@@ -4235,7 +4232,7 @@ void check_marker_rejection(int kind, std::size_t limit) {
     compose_test_fixture_t fixture(marker_arena_song());
     const auto expected = corrupt_marker_anchor(fixture.history.document.charts.front(), kind);
     wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
-    project_geometry_arena(fixture, arena);
+    project_geometry_arena(fixture);
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(!view.scene_available);
     expect_marker_projection_error(fixture.flattened, expected);
@@ -4310,14 +4307,14 @@ void check_marker_reused_frame(std::uint32_t direction) {
     reused.application.preferences.editor_preferences.scroll_directions.fill(direction);
     fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t arena, reference;
-    project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
+    project_geometry_arena(reused); project_geometry_arena(fresh);
     const auto source = reused.cache.scene.static_source.value().storage;
     REQUIRE(source);
     arena.reset(); reference.reset();
     reused.interaction->viewport_scroll_pixels = 0.5;
     fresh.interaction->viewport_scroll_pixels = 0.5;
     fresh.cache = {};
-    project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
+    project_geometry_arena(reused); project_geometry_arena(fresh);
     expect_compose_test(reused.cache.scene.static_source.value().storage == source && reused.cache.scene.static_projection_reused_frames > 0);
     const auto& a = reused.flattened.view.compose; const auto& b = fresh.flattened.view.compose;
     compare_marker_bookmarks(a.beat_bookmarks, b.beat_bookmarks);
@@ -5388,9 +5385,9 @@ void t475_project(compose_test_fixture_t& fixture) {
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
-    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, nullptr, dock_sort_t::natural_name,
+    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, dock_sort_t::natural_name,
         {}, {}, {}, &fixture.cache.keysound_list_cache);
-    fixture.flattened.rebind_view_pointers();
+
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     std::string diagnostics;
@@ -5899,9 +5896,9 @@ void project_chip_request(compose_test_fixture_t& fixture, wormedit::ui::keysoun
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
-    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, nullptr, dock_sort_t::natural_name,
+    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, dock_sort_t::natural_name,
         request, {}, {}, &fixture.cache.keysound_list_cache);
-    fixture.flattened.rebind_view_pointers();
+
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     t475_require(fixture.flattened.view.compose.scene_available);
@@ -7789,7 +7786,6 @@ TEST_CASE("Compose layout segment lists exceed the retired storage cutoff", "[sy
     populate_lane_layout_segments(flattened, chart, *measures, interaction, false, view);
     expect_compose_test(view.lane_layout_segments.size() == segment_count && !view.truncated);
     expect_compose_test(view.lane_layout_segments.back().segment_id == object_id_t{12048});
-    expect_compose_test(flattened.owned_arena_committed_bytes() == 0);
 }
 
 TEST_CASE("Owned populated Compose BGM waveform and stem views refill without heap allocations",

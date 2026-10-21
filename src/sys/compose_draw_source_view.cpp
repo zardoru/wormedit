@@ -182,7 +182,6 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
         if (view.draw_source_kind == 1 && view.draw_source_id.value == row.resource_id.value) {
             view.draw_source_is_stem = true;
             view.draw_source_stem_lane_id.value = row.stem_source_lane_id.value;
-            // The parent draw-source surface keeps its arena lifetime until T-698.
             view.draw_source_stem_lane_name = lane.name;
         }
     }

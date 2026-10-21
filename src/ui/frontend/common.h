@@ -9,10 +9,6 @@ typedef struct SDL_Renderer SDL_Renderer;
 typedef struct SDL_Window SDL_Window;
 
 #define WORM_UI_WORKSPACE_TAB_COUNT 7
-#define WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES 48
-#define WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES 64
-#define WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES 64
-#define WORM_UI_COMPOSE_MEASURE_REMOVAL_MESSAGE_BYTES 192
 #define WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD 2
 // Window chrome taken by the BGM bar row under the transport seek bar (48 px row + 4 px spacing).
 #define WORM_UI_BGM_BAR_CHROME_HEIGHT 52.0f

@@ -30,6 +30,8 @@ the preset build and **4,370 Clang tests** pass. Ratchets: **46 C structs / 30 c
 See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-697-convert-the-compose-sound-keysound-and-bga-views)
 for ownership and verification requirements.
 
+After T-699, execute [T-750: reduce incremental rebuild time](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-750-reduce-incremental-rebuild-time-after-the-frontend-migration). This series follow-through measures rebuild latency and translation-unit fan-out with existing build artifacts retained, then reduces header/build coupling while preserving behavior and verification coverage.
+
 Completed **T-694** (2026-10-20): action payloads own their text and lists, carry core IDs
 and enums, and no longer borrow frontend staging. Compose/viewport/shortcut admission remains
 16/16/64, including cancellation and shared shortcut-capture rejection. Missing metadata payloads

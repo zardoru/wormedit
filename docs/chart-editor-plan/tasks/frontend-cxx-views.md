@@ -8,6 +8,10 @@ The C ABI stopped being a requirement on 2026-10-17 ([code-style.md, "Frontend b
 
 **Order:** T-690 first, because it proves the recipe on the smallest surfaces. T-691–T-694 can then run in parallel when their sys and UI files don't overlap; coordinate `application_frame_view.*` and `src/ui/nuklear/frontend.cpp`. T-695–T-698 split `compose.h` and run one at a time, because they share `src/sys/compose_view.cpp` and `compose_panel.cpp`. T-699 closes the lane.
 
+**Series follow-through (owner, 2026-10-20):** after T-699, execute T-750 below to reduce build coupling and elapsed incremental rebuild time with existing build artifacts retained. The ownership migration is the foundation; faster ordinary edit/build/test cycles are a separately measured completion goal.
+
+**Playback performance constraint (owner, 2026-10-20):** target weak computers and keep playback responsive. Zero warmed per-frame allocations is a runtime performance requirement, separate from maintainability and build-time metrics. Refactoring must preserve it; evaluate maintenance improvements by how clearly and locally the code meets that requirement. Keep allocation regressions alongside playback/frame-time evidence rather than using allocation counts as proof of maintainability.
+
 ## Conversion recipe (every card)
 
 The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/compose_measure_lane.h`.
@@ -545,3 +549,21 @@ claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
 - **Reject/failure behavior:** a remaining user of a deleted storage type stops the step; record it and keep the type.
 - **Verify:** GATE; `ctest --test-dir build -R '^documentation\.'`; the coordinator's Xvfb smoke of every workspace tab.
 - **Out of scope:** replacing Nuklear (the Nuklear audit decides that).
+
+## T-750 Reduce incremental rebuild time after the frontend migration
+
+- **Status:** blocked-on T-699
+- **Outcome:** Representative frontend header edits recompile fewer translation units and complete faster from an already built checkout, with reproducible before/after measurements. Reduce median rebuild latency beyond observed timing variation for at least two header-edit cases; preserve no-op and implementation-edit latency within that variation.
+- **Read first:** this file, `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, this card; exact frontend contract headers, sys cache/runtime headers, implementation files, consuming tests and any measurement script must be inventoried and coordinator-recorded before edits. Start from the post-T-699 owners of the current `src/ui/frontend/compose.h`, `src/sys/compose_view.h` and `src/sys/workspace_view.h`.
+- **Steps:**
+  1. Stale-plan check: measure the post-T-699 dependency graph and incremental builds before choosing changes; record remaining broad dependencies and repeated compilation of the same production sources across targets.
+  2. Establish a fixed benchmark matrix: no-op build, producer implementation edit, BGM leaf-view header edit, root view header edit and private cache/runtime header edit. Use reproducible reversible content edits in a disposable checkout; retain configured build directories and compiled outputs. Record compiler/configuration, target, job count, compiler-cache policy/hits, compile/link command counts and at least three timings per case. Keep machine load and cache preparation comparable.
+  3. Choose a bounded change from the measured causes: separate domain contracts, narrow includes, move implementation-only cache details to their owners or share identically configured production objects across targets. Record exact file ownership and expected dependency reductions before implementation. Preserve distinct target definitions and instrumentation.
+  4. Implement the selected changes without altering presentation contracts or runtime behavior; rerun the same benchmark matrix and record medians, variation and affected translation units. Adjust or split further measured changes into explicit follow-up cards if acceptance is not met.
+  5. Run verification and publish the baseline/final command transcripts and measurements on this card; advance the series queue only after the measured outcome is achieved.
+- **Invariants:** Identical editor behavior, diagnostics, public frontend semantics, allocation characteristics and supported build configurations. Keep real source dependencies explicit and compiler dependency tracking correct. Tests retain their required compile definitions, allocation hooks and coverage.
+- **Reject/failure behavior:** A cache hit must not conceal a missing dependency. Failed builds, missing tests or unchanged rebuild breadth/timing leave this card incomplete; retain evidence and narrow the next change rather than claiming success from header splits alone.
+- **Verify:** `scripts/gate.sh --jobs 4`; `cmake --preset linux-clang`, `cmake --build --preset linux-clang --parallel 4`, `ctest --preset linux-clang -j 4 --output-on-failure`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; the fixed incremental benchmark matrix above for both application and affected test targets. Include one clean build to verify dependency completeness; evaluate the speed goal using retained-artifact incremental builds.
+- **Target shape:** An implementation-only edit rebuilds its owning object and required links; a domain-view change rebuilds its actual consumers. Shared root edits have a documented, reduced dependency footprint. Ordinary cached builds become measurably faster.
+- **Out of scope:** Runtime feature changes, weakening tests or compiler checks, increasing build parallelism as the claimed improvement, replacing the build system, or adopting PCH/unity builds/PIMPL without evidence that the selected technique addresses the measured cause.

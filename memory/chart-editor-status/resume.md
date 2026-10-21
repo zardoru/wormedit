@@ -8,7 +8,16 @@ GATE passes **4,388/4,388**, build, whitespace and three-TU complexity checks. B
 pixel checks cover resize and 1/1.25/1.5/2×; isolated GPU captures with simulated
 fractional point/pixel dimensions have no unpainted edge bands. See the
 [card](../../docs/chart-editor-plan/tasks/rendering.md#t-251-render-at-native-resolution-instead-of-a-stretched-logical-target)
-for artifacts and display limitations. Owner-requested **T-474** measurement is next.
+for artifacts and display limitations.
+
+Completed **T-474** (2026-10-21) at its measurement stop: Release Kick Your Ass runs
+with 30 seek gestures and ten Play/Stop pairs per rate, at 1× and 0.5× with Keep pitch,
+show no blocked Actions entry over 2 ms. Largest Actions wall/CPU entries are
+**1.543/1.531 ms** and **1.815/1.804 ms**; SDL adapter tests pass **60/60**.
+No audio-thread code change was warranted. The
+[card](../../docs/chart-editor-plan/tasks/live-transport.md#t-474-apply-transport-changes-on-the-audio-thread-instead-of-waiting-for-its-lock)
+records retained call/spike logs, reproduction and dummy-output limits. Both owner-requested
+cards are complete; no sequential follow-up is active.
 
 Completed **T-696** (2026-10-20): all ten BGM, waveform and stem primitive types are
 C++ views; eleven root lists retain capacity and stem rows borrow cached spans. Removed eight

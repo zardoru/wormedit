@@ -26,8 +26,8 @@ The user-requested Clang preset repair explicitly initializes three absent StepM
 the preset build and **4,370 Clang tests** pass. Ratchets: **46 C structs / 30 capacities /
 86 count fields / 0 codecs**; the obsolete speed-graph complexity allowance is removed.
 
-**Next: T-697, Compose sound, keysound and BGA views.** Compose cards T-697–T-698 run sequentially.
-See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-697-convert-the-compose-sound-keysound-and-bga-views)
+**Next: T-698, the remaining Compose views and `WormUiComposeView`.** T-697 is complete (2026-10-21); T-698 is the next sequential conversion.
+See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-698-convert-the-remaining-compose-views-and-wormuicomposeview)
 for ownership and verification requirements.
 
 After T-699, execute [T-750: reduce incremental rebuild time](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-750-reduce-incremental-rebuild-time-after-the-frontend-migration). This series follow-through measures rebuild latency and translation-unit fan-out with existing build artifacts retained, then reduces header/build coupling while preserving behavior and verification coverage.

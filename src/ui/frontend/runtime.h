@@ -112,14 +112,14 @@ typedef enum WormUiFrameRenderPhase {
 uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
 
-void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
+void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request);
 void worm_ui_frontend_sound_usage_request(wormedit::ui::sound_usage_request_t* request);
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request);
 void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t resource_id,
                                               uint64_t channel_id, uint64_t clip_id);
 void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
                                        uint64_t* event_id, double* y_pixels);
-void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
+void worm_ui_frontend_keysound_dock_request(wormedit::ui::keysound_dock_request_t* request);
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);

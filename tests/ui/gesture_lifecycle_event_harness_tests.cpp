@@ -56,7 +56,7 @@ struct lifecycle_fixture_t {
     std::array<wormedit::ui::compose_grid_line_view_t, 2> measure_lines{};
     wormedit::ui::compose_bgm_lane_view_t lane{};
     wormedit::ui::compose_bgm_event_view_t bgm{};
-    WormUiComposeBgaEventView bga{};
+    wormedit::ui::compose_bga_event_view_t bga{};
     WormUiComposeBookmarkView bookmark{};
     wormedit::ui::testing_rect_view_t rect{};
     float x{}, y{};
@@ -242,9 +242,9 @@ struct lifecycle_fixture_t {
         if (family == lifecycle_family::bga) {
             v.bga_lane_visible = true; v.bga_lane_bounds = {350, 0, 400, 900};
             v.bga_lane_count = 1; v.bga_lane_rects[0] = v.bga_lane_bounds;
-            bga.bounds = {350, 295, 400, 305}; bga.event_id = 22; bga.selected = true;
+            bga.bounds = {350, 295, 400, 305}; bga.event_id.value = 22; bga.selected = true;
             bga.name = "BGA"; bga.bmp_id = "01";
-            v.bga_events = &bga; v.bga_event_count = 1;
+            v.bga_events = {bga}; v.bga_events.resize(1);
         }
         if (family == lifecycle_family::bookmark) {
             bookmark.bookmark_id = 23; bookmark.label = "Bookmark"; bookmark.measure_number = 1;

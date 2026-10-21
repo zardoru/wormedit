@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <wormedit/core/resource_vocabulary.h>
 
 #include "sys/audio_fallback.h"
 
@@ -23,7 +24,6 @@
 namespace wormedit::sys {
 
 enum class dock_sort_t : std::uint8_t { natural_name, bms_id };
-enum class resource_use_filter_t : std::uint8_t { all, used, unused, missing };
 [[nodiscard]] inline auto matches_resource_use(resource_use_filter_t filter, std::uint64_t uses, bool missing) -> bool {
     switch (filter) {
     case resource_use_filter_t::used: return uses != 0;
@@ -117,10 +117,12 @@ struct sound_properties_view_t {
 struct keysound_fallback_t {
     resource_id_t resource;
     audio_fallback_t result;
+    std::vector<std::string> candidate_paths;
 };
 [[nodiscard]] auto build_keysound_fallbacks_view(const song_document_t& document,
                                               const std::filesystem::path& asset_base,
-                                              std::size_t limit) -> std::vector<keysound_fallback_t>;
+                                              std::size_t limit, std::uint64_t session_generation = 0)
+    -> std::span<const keysound_fallback_t>;
 
 // Compose keysound dock: every placeable sample (an audio resource with the
 // sample role that is not a stem), in the requested order, with the layers the
@@ -243,19 +245,18 @@ struct keysound_list_view_t {
                                    const keysound_list_request_t& request) -> const keysound_list_view_t&;
 };
 
-enum class keysound_layer_filter_kind_t : std::uint8_t { any, no_layer, specific };
 
 struct keysound_list_request_t {
     std::string_view search;
     resource_use_filter_t use_filter{resource_use_filter_t::all};
-    std::span<const std::uint64_t> selected_resource_ids;
+    std::span<const resource_id_t> selected_resource_ids;
     bool include_selected_metadata{};
-    std::span<const std::uint64_t> group_ids;
+    std::span<const sound_group_id_t> group_ids;
     bool group_filter_active{};
     bool include_ungrouped{true};
     keysound_layer_filter_kind_t layer_filter{keysound_layer_filter_kind_t::any};
     std::uint64_t layer_id{};
-    std::span<const std::uint64_t> collapsed_group_ids;
+    std::span<const sound_group_id_t> collapsed_group_ids;
     bool ungrouped_collapsed{};
     std::size_t first_row{};
     std::size_t row_limit{64};
@@ -269,6 +270,7 @@ struct sound_picker_cache_t;
 
 struct keysound_list_cache_t {
     std::shared_ptr<sound_picker_cache_t> sound_picker;
+    void bind_session(std::uint64_t generation);
     [[nodiscard]] auto projection_build_count() const noexcept -> std::size_t {
         return legacy_.build_count() + requested_.build_count();
     }
@@ -303,14 +305,14 @@ public:
         identity_t identity;
         std::string search;
         resource_use_filter_t use_filter{resource_use_filter_t::all};
-        std::vector<std::uint64_t> selected_resource_ids;
+        std::vector<resource_id_t> selected_resource_ids;
         bool include_selected_metadata{};
-        std::vector<std::uint64_t> group_ids;
+        std::vector<sound_group_id_t> group_ids;
         bool group_filter_active{};
         bool include_ungrouped{true};
         keysound_layer_filter_kind_t layer_filter{keysound_layer_filter_kind_t::any};
         std::uint64_t layer_id{};
-        std::vector<std::uint64_t> collapsed_group_ids;
+        std::vector<sound_group_id_t> collapsed_group_ids;
         bool ungrouped_collapsed{};
         std::size_t first_row{}, row_limit{64};
         std::uint64_t primary_resource_id{};
@@ -324,6 +326,7 @@ public:
     };
 
 private:
+    std::uint64_t session_generation_{};
     [[nodiscard]] auto asset_ids_for(const song_document_t& document)
         -> const std::unordered_set<std::uint64_t>&;
 

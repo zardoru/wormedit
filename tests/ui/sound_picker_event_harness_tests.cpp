@@ -20,9 +20,10 @@ void prepare(nuklear_event_harness_t& harness) {
     auto& view = harness.view().compose;
     view.sound_picker = {};
     view.sound_picker.ready = true;
-    view.sound_picker.rows[0] = {41, "01 · Kick  (#41)", false};
-    view.sound_picker.rows[1] = {42, "02 · Snare  (#42)", false};
-    view.sound_picker.row_count = view.sound_picker.total_count = 2;
+    view.sound_picker.rows.resize(2);
+    view.sound_picker.rows[0] = {wormedit::resource_id_t{41}, "01 · Kick  (#41)", false};
+    view.sound_picker.rows[1] = {wormedit::resource_id_t{42}, "02 · Snare  (#42)", false};
+    view.sound_picker.rows.resize(2); view.sound_picker.total_count = 2;
     static_cast<void>(harness.frame());
     require_picker(worm_ui_frontend_open_sound_picker(1, 1, 1));
     static_cast<void>(harness.frame());
@@ -81,7 +82,7 @@ TEST_CASE("Go to sound typing requests full-catalog search and rejects stale que
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
     type(harness, "snr");
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
     check_picker(request.sound_picker_open);
     check_picker(std::string{request.sound_picker_query} == "snr");
@@ -91,9 +92,9 @@ TEST_CASE("Go to sound typing requests full-catalog search and rejects stale que
     auto release = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
     static_cast<void>(harness.frame(std::span{&release, 1}));
     auto& result = harness.view().compose.sound_picker;
-    std::strcpy(result.query, "snr");
+    result.query = "snr";
     result.rows[0] = result.rows[1];
-    result.row_count = result.total_count = 1;
+    result.rows.resize(1); result.total_count = 1;
     static_cast<void>(harness.frame());
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_source(selected.get(), 42);
@@ -146,7 +147,7 @@ TEST_CASE("Go to sound missing results cannot arm and an empty search explains i
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_picker(selected.get().compose_inputs.size() == 0);
     check_picker(worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
-    view.row_count = view.total_count = 0;
+    view.rows.resize(0); view.total_count = 0;
     static_cast<void>(harness.frame());
     check_picker(harness.drawn_text().find("No matching sounds") != std::string::npos);
 }
@@ -182,11 +183,12 @@ TEST_CASE("Go to sound keyboard keeps later ranked results visible in a short wi
     prepare(harness);
     std::array<std::string, 20> labels;
     auto& results = harness.view().compose.sound_picker;
+    results.rows.resize(labels.size());
     for (std::size_t index = 0; index < labels.size(); ++index) {
         labels[index] = "Sound " + std::to_string(index);
-        results.rows[index] = {100 + index, labels[index].c_str(), false};
+        results.rows[index] = {wormedit::resource_id_t{100 + index}, labels[index].c_str(), false};
     }
-    results.row_count = results.total_count = 20;
+    results.rows.resize(20); results.total_count = 20;
     static_cast<void>(harness.frame());
     for (int index = 0; index < 19; ++index) {
         static_cast<void>(press(harness, SDLK_DOWN, SDL_SCANCODE_DOWN));

@@ -221,7 +221,7 @@ auto keysound_matches_request(const resource_entry_t& resource,
         return false;
     const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
     if (request.group_filter_active) {
-        const auto chosen = std::ranges::find(request.group_ids, group_id);
+        const auto chosen = std::ranges::find(request.group_ids, sound_group_id_t{group_id});
         if ((group_id == 0 && !request.include_ungrouped) ||
             (group_id != 0 && chosen == request.group_ids.end()))
             return false;
@@ -240,7 +240,7 @@ auto keysound_matches_request(const resource_entry_t& resource,
 
 auto group_is_collapsed(const keysound_list_request_t& request, std::uint64_t group_id) -> bool {
     return group_id == 0 ? request.ungrouped_collapsed
-                         : std::ranges::find(request.collapsed_group_ids, group_id) !=
+                         : std::ranges::find(request.collapsed_group_ids, sound_group_id_t{group_id}) !=
                                request.collapsed_group_ids.end();
 }
 
@@ -361,7 +361,7 @@ struct keysound_section_projection_t {
 
 auto section_requested(const keysound_list_request_t& request, std::uint64_t id) -> bool {
     return !request.group_filter_active ||
-           std::ranges::find(request.group_ids, id) != request.group_ids.end();
+           std::ranges::find(request.group_ids, sound_group_id_t{id}) != request.group_ids.end();
 }
 
 void append_section_projection(keysound_list_view_t& list,
@@ -534,6 +534,15 @@ auto keysound_list_view_t::from(const song_document_t& document, const chart_doc
     return assemble_requested_keysounds(document, chart, request, nullptr);
 }
 
+void keysound_list_cache_t::bind_session(std::uint64_t generation) {
+    if (session_generation_ == generation) return;
+    session_generation_ = generation;
+    asset_index_.invalidate();
+    legacy_.invalidate();
+    requested_.invalidate();
+    sound_picker.reset();
+}
+
 auto keysound_list_cache_t::identity_t::from(const song_document_t& document,
                                             const chart_document_t* chart) -> identity_t {
     return {.project_id = document.id.value,
@@ -698,25 +707,38 @@ namespace wormedit::sys {
 
 namespace {
 struct fallback_query_t {
-    document_stamp_t stamp;
+    const song_document_t& document;
     const std::filesystem::path& base;
-    std::vector<resource_id_t>& missing_resources;
+    std::uint64_t session_generation{};
 };
 struct fallback_key_t {
+    const song_document_t* document_identity{};
     document_stamp_t stamp;
     std::filesystem::path base;
+    std::uint64_t session_generation{};
     std::vector<resource_id_t> missing_resources;
     auto operator==(const fallback_key_t&) const -> bool = default;
     auto operator==(const fallback_query_t& query) const -> bool {
-        return stamp == query.stamp && base == query.base && missing_resources == query.missing_resources;
+        auto missing = query.document.resources |
+            std::views::filter([](const resource_entry_t& resource) { return resource.missing; }) |
+            std::views::transform(&resource_entry_t::id);
+        return document_identity == &query.document && stamp.is_current(query.document) &&
+               base == query.base && session_generation == query.session_generation &&
+               std::ranges::equal(missing_resources, missing);
     }
     static auto from(const fallback_query_t& query) -> fallback_key_t {
-        return {query.stamp, query.base, std::move(query.missing_resources)};
+        fallback_key_t key;
+        key.assign(query);
+        return key;
     }
     void assign(const fallback_query_t& query) {
-        stamp = query.stamp;
+        document_identity = &query.document;
+        stamp = document_stamp_t::from(query.document);
         base = query.base;
-        missing_resources = std::move(query.missing_resources);
+        session_generation = query.session_generation;
+        missing_resources.clear();
+        for (const auto& resource : query.document.resources)
+            if (resource.missing) missing_resources.push_back(resource.id);
     }
 };
 
@@ -729,26 +751,26 @@ void build_fallback_entries(const song_document_t& document, const std::filesyst
         if (!asset || !resource.missing) continue;
         auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
         if (result.outcome == audio_fallback_outcome_t::fallback ||
-            result.outcome == audio_fallback_outcome_t::ambiguous)
-            entries.push_back({resource.id, std::move(result)});
+            result.outcome == audio_fallback_outcome_t::ambiguous) {
+            keysound_fallback_t entry{.resource = resource.id, .result = std::move(result)};
+            for (const auto& candidate : entry.result.candidates)
+                entry.candidate_paths.push_back(candidate.generic_string());
+            entries.push_back(std::move(entry));
+        }
     }
 }
 
 } // namespace
 
 auto build_keysound_fallbacks_view(const song_document_t& document,
-                                const std::filesystem::path& asset_base, std::size_t limit)
-    -> std::vector<keysound_fallback_t> {
+                                const std::filesystem::path& asset_base, std::size_t limit,
+                                std::uint64_t session_generation)
+    -> std::span<const keysound_fallback_t> {
     static thread_local keyed_cache_t<fallback_key_t, std::vector<keysound_fallback_t>> cache;
-    std::vector<resource_id_t> missing_resources;
-    for (const auto& resource : document.resources)
-        if (resource.missing) missing_resources.push_back(resource.id);
     const auto& cached = cache.get_or_build(
-        fallback_query_t{document_stamp_t::from(document), asset_base, missing_resources},
+        fallback_query_t{document, asset_base, session_generation},
         std::bind_front(build_fallback_entries, std::cref(document), std::cref(asset_base)));
-    auto entries = cached;
-    if (entries.size() > limit) entries.resize(limit);
-    return entries;
+    return std::span<const keysound_fallback_t>{cached}.first(std::min(limit, cached.size()));
 }
 
 } // namespace wormedit::sys

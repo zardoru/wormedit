@@ -12,10 +12,10 @@ void activate(const WormUiComposeView& view, wormedit::ui::workspace_action_t& a
               worm_ui_nuklear_compose_state_t& compose, std::size_t index) {
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& result = view.sound_picker;
-    if (!result.ready || index >= result.row_count || result.rows[index].missing ||
-        std::strcmp(picker.query.data(), result.query) != 0 ||
+    if (!result.ready || index >= result.rows.size() || result.rows[index].missing ||
+        std::strcmp(picker.query.data(), result.query.c_str()) != 0 ||
         action.compose_inputs.size() >= wormedit::ui::compose_input_admission_limit) return;
-    const auto id = result.rows[index].resource_id;
+    const auto id = result.rows[index].resource_id.value;
     if (!id) return;
     compose.keysound_catalog.keysound_selection.selected = {id};
     compose.keysound_catalog.keysound_selection.primary = compose.keysound_catalog.keysound_selection.anchor = id;
@@ -56,34 +56,34 @@ void render_results(nk_context* context, const WormUiComposeView& view,
     auto& picker = compose.sound_picker_ui.sound_picker;
     const auto& results = view.sound_picker;
     nk_layout_row_dynamic(context, 22, 1);
-    if (!results.ready || std::strcmp(results.query, picker.query.data()) != 0) {
+    if (!results.ready || std::strcmp(results.query.c_str(), picker.query.data()) != 0) {
         nk_label(context, "Searching…", NK_TEXT_LEFT);
         return;
     }
-    if (results.row_count == 0) {
+    if (results.rows.size() == 0) {
         nk_label(context, "No matching sounds.", NK_TEXT_LEFT);
         return;
     }
-    picker.selected = std::min(picker.selected, results.row_count - 1);
+    picker.selected = std::min(picker.selected, results.rows.size() - 1);
     if (nk_input_is_key_pressed(&context->input, NK_KEY_UP) && picker.selected > 0)
         --picker.selected;
     if (nk_input_is_key_pressed(&context->input, NK_KEY_DOWN))
-        picker.selected = std::min(picker.selected + 1, results.row_count - 1);
+        picker.selected = std::min(picker.selected + 1, results.rows.size() - 1);
     if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
         activate(view, action, compose, picker.selected);
     nk_labelf(context, NK_TEXT_LEFT, "%zu matches · result %zu/%zu · type to narrow",
-              results.total_count, picker.selected + 1, results.row_count);
+              results.total_count, picker.selected + 1, results.rows.size());
     // A bounded page keeps keyboard-highlighted rows visible even in small windows.
     const auto available = nk_window_get_content_region(context).h - 125.0f;
     const auto page = static_cast<std::size_t>(std::clamp(available / (27.0f + context->style.window.spacing.y), 1.0f, 10.0f));
     const auto first = picker.selected / page * page;
-    const auto end = std::min(results.row_count, first + page);
+    const auto end = std::min(results.rows.size(), first + page);
     for (auto index = first; index < end; ++index) {
         const auto& row = results.rows[index];
         nk_layout_row_dynamic(context, 27, 1);
         nk_bool selected = picker.selected == index;
         if (row.missing) nk_widget_disable_begin(context);
-        if (nk_selectable_label(context, row.label ? row.label : "(unnamed sound)",
+        if (nk_selectable_label(context, row.label.c_str() ? row.label.c_str() : "(unnamed sound)",
                                 NK_TEXT_LEFT, &selected)) activate(view, action, compose, index);
         if (row.missing) nk_widget_disable_end(context);
     }

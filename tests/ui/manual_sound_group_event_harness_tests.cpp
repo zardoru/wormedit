@@ -79,10 +79,10 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
     auto& view = harness.view().compose;
     view.keysounds_available = true;
     const std::array rows{
-        WormUiComposeKeysoundRowView{.resource_id = 41, .slot = "01", .name = "Kick 1"},
-        WormUiComposeKeysoundRowView{.resource_id = 7, .slot = "02", .name = "Kick 2"}};
-    view.keysounds = rows.data();
-    view.keysound_count = rows.size();
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{41}, .slot = "01", .name = "Kick 1"},
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{7}, .slot = "02", .name = "Kick 2"}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();
     (void)harness.frame();
     auto& review = worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review;
@@ -159,9 +159,9 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
     auto& view = harness.view().compose;
     view.keysounds_available = true;
     const std::array rows{
-        WormUiComposeKeysoundRowView{.resource_id = 41, .slot = "01", .name = "Kick 1"}};
-    view.keysounds = rows.data();
-    view.keysound_count = rows.size();
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{41}, .slot = "01", .name = "Kick 1"}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();
     (void)harness.frame();
     const auto row = harness.drawn_text_center("Kick 1");

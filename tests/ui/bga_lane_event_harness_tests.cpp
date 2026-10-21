@@ -136,7 +136,7 @@ auto rect_center(nuklear_event_harness_t& harness, const wormedit::ui::compose_r
 }
 
 void open_dense_stack_picker(nuklear_event_harness_t& harness,
-                             const WormUiComposeBgaEventView& event) {
+                             const wormedit::ui::compose_bga_event_view_t& event) {
     const auto marker = rect_center(harness, event.bounds);
     (void)click(harness, marker.first, marker.second);
     (void)harness.frame();
@@ -144,10 +144,10 @@ void open_dense_stack_picker(nuklear_event_harness_t& harness,
 }
 
 void record_visible_stacked_events(nuklear_event_harness_t& harness,
-                                   const std::array<WormUiComposeBgaEventView, 50>& events,
+                                   const std::array<wormedit::ui::compose_bga_event_view_t, 50>& events,
                                    std::array<bool, 50>& reachable) {
     for (std::size_t index = 0; index < events.size(); ++index) {
-        const auto prefix = std::string{"#"} + std::to_string(events[index].event_id) +
+        const auto prefix = std::string{"#"} + std::to_string(events[index].event_id.value) +
                             " · BACKGROUND";
         if (drawn_text_center_with_prefix(harness, prefix).has_value()) reachable[index] = true;
     }
@@ -159,7 +159,7 @@ auto all_stacked_events_reachable(const std::array<bool, 50>& reachable) -> bool
 
 auto scroll_picker_through_stacked_events(nuklear_event_harness_t& harness,
                                           float x, float y,
-                                          const std::array<WormUiComposeBgaEventView, 50>& events)
+                                          const std::array<wormedit::ui::compose_bga_event_view_t, 50>& events)
     -> bool {
     std::array<bool, 50> reachable{};
     record_visible_stacked_events(harness, events, reachable);
@@ -172,7 +172,7 @@ auto scroll_picker_through_stacked_events(nuklear_event_harness_t& harness,
 }
 
 void choose_last_stacked_event(nuklear_event_harness_t& harness,
-                               std::array<WormUiComposeBgaEventView, 50>& events) {
+                               std::array<wormedit::ui::compose_bga_event_view_t, 50>& events) {
     const auto first_row = drawn_text_center_with_prefix(harness, "#100 · BACKGROUND");
     REQUIRE(first_row.has_value());
     const auto motion = mouse_motion(first_row->first, first_row->second);
@@ -185,11 +185,11 @@ void choose_last_stacked_event(nuklear_event_harness_t& harness,
     CHECK(has_input(chosen, WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, 149));
     CHECK_FALSE(worm_ui_nuklear_compose_state().bga_interaction.bga_stack_open);
     CHECK_FALSE(harness.drawn_text_center("Choose the event to select or edit").has_value());
-    events.back().selected = true;
+    harness.view().compose.bga_events.back().selected = true;
 }
 
 void drag_last_stacked_event(nuklear_event_harness_t& harness,
-                             const WormUiComposeBgaEventView& event) {
+                             const wormedit::ui::compose_bga_event_view_t& event) {
     (void)harness.frame();
     const auto center = rect_center(harness, event.bounds);
     const auto down = std::array{mouse_motion(center.first, center.second),
@@ -219,7 +219,7 @@ void cancel_bga_move_after_drag(nuklear_event_harness_t& harness, float x, float
 
 void prepare_bga_stack_dismissal_picker(
     nuklear_event_harness_t& harness,
-    std::array<WormUiComposeBgaEventView, 3>& events) {
+    std::array<wormedit::ui::compose_bga_event_view_t, 3>& events) {
     hide_compose_docks();
     auto& view = harness.view().compose;
     view.scene_available = true;
@@ -233,12 +233,12 @@ void prepare_bga_stack_dismissal_picker(
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
     for (std::size_t index = 0; index < events.size(); ++index) {
-        events[index] = {.event_id = 100 + index, .resource_id = 200 + index,
-            .canvas_row = 480, .overlap_count = events.size(), .kind = 0,
+        events[index] = {.event_id = wormedit::object_id_t{100 + index}, .resource_id = wormedit::resource_id_t{200 + index},
+            .canvas_row = 480, .overlap_count = events.size(), .kind = wormedit::visual_event_kind_t::background,
             .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     }
-    view.bga_events = events.data();
-    view.bga_event_count = events.size();
+    view.bga_events.assign(std::begin(events), std::end(events));
+    view.bga_events.resize(events.size());
     (void)harness.frame();
     open_dense_stack_picker(harness, events.front());
 }
@@ -362,20 +362,20 @@ TEST_CASE("BGA lane click selects an event and drag emits one move on release",
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
-    WormUiComposeBgaEventView event{.event_id = 81,
-                                    .resource_id = 91,
-                                    .kind = 0,
+    wormedit::ui::compose_bga_event_view_t event{.event_id = wormedit::object_id_t{81},
+                                    .resource_id = wormedit::resource_id_t{91},
+                                    .kind = wormedit::visual_event_kind_t::background,
                                     .name = "background",
                                     .bmp_id = "01",
                                     .bounds = {42, 0, 90, 600}};
-    view.bga_events = &event;
-    view.bga_event_count = 1;
+    view.bga_events = {event};
+    view.bga_events.resize(1);
     (void)harness.frame();
     const auto center = rect_center(harness, event.bounds);
     const auto selected = click(harness, center.first, center.second);
     CHECK(has_input(selected.back(), WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, 81));
 
-    event.selected = true;
+    view.bga_events.front().selected = true;
     (void)harness.frame();
     const auto updated_center = rect_center(harness, event.bounds);
     const auto down = std::array{mouse_motion(updated_center.first, updated_center.second),
@@ -412,10 +412,10 @@ TEST_CASE("horizontal BGA drag emits the Layer 2 destination kind once", "[event
     view.bga_lane_rects[0] = {42, 0, 90, 600};
     view.bga_lane_rects[1] = {90, 0, 138, 600};
     view.bga_lane_rects[2] = {138, 0, 186, 600};
-    WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 2,
+    wormedit::ui::compose_bga_event_view_t event{.event_id = wormedit::object_id_t{81}, .resource_id = wormedit::resource_id_t{91}, .kind = wormedit::visual_event_kind_t::layer,
         .name = "Layer", .selected = true, .bounds = {90, 100, 138, 120}};
-    view.bga_events = &event;
-    view.bga_event_count = 1;
+    view.bga_events = {event};
+    view.bga_events.resize(1);
     (void)harness.frame();
     const auto start = rect_center(harness, event.bounds);
     const auto finish = canvas_point(harness, 162, 110);
@@ -504,10 +504,10 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     view.keysounds_available = true;
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
-    WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 0,
+    wormedit::ui::compose_bga_event_view_t event{.event_id = wormedit::object_id_t{81}, .resource_id = wormedit::resource_id_t{91}, .kind = wormedit::visual_event_kind_t::background,
         .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
-    view.bga_events = &event;
-    view.bga_event_count = 1;
+    view.bga_events = {event};
+    view.bga_events.resize(1);
     (void)harness.frame();
     wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
@@ -536,14 +536,14 @@ TEST_CASE("dense BGA overlap marker opens a scrollable picker for every event",
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
-    std::array<WormUiComposeBgaEventView, 50> events{};
+    std::array<wormedit::ui::compose_bga_event_view_t, 50> events{};
     for (std::size_t index = 0; index < events.size(); ++index) {
-        events[index] = {.event_id = 100 + index, .resource_id = 200 + index,
-            .canvas_row = 480, .overlap_count = events.size(), .kind = 0,
+        events[index] = {.event_id = wormedit::object_id_t{100 + index}, .resource_id = wormedit::resource_id_t{200 + index},
+            .canvas_row = 480, .overlap_count = events.size(), .kind = wormedit::visual_event_kind_t::background,
             .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     }
-    view.bga_events = events.data();
-    view.bga_event_count = events.size();
+    view.bga_events.assign(std::begin(events), std::end(events));
+    view.bga_events.resize(events.size());
     (void)harness.frame();
     open_dense_stack_picker(harness, events.front());
     choose_last_stacked_event(harness, events);
@@ -572,7 +572,7 @@ TEST_CASE("BGA overlap picker outside dismissal retains canvas input ownership t
           "[frontend-state][event-harness][bga-lane]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiComposeBgaEventView, 3> events{};
+    std::array<wormedit::ui::compose_bga_event_view_t, 3> events{};
     prepare_bga_stack_dismissal_picker(harness, events);
     verify_bga_stack_outside_dismissal(harness);
 }
@@ -581,7 +581,7 @@ TEST_CASE("BGA overlap picker Escape dismisses without reaching canvas input",
           "[frontend-state][event-harness][bga-lane]") {
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
-    std::array<WormUiComposeBgaEventView, 3> events{};
+    std::array<wormedit::ui::compose_bga_event_view_t, 3> events{};
     prepare_bga_stack_dismissal_picker(harness, events);
     verify_bga_stack_escape_dismissal(harness);
 }
@@ -740,11 +740,11 @@ TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
     view.bga_lane_bounds = {42, 0, 90, 600};
-    WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 0, .name = "background",
+    wormedit::ui::compose_bga_event_view_t event{.event_id = wormedit::object_id_t{81}, .resource_id = wormedit::resource_id_t{91}, .kind = wormedit::visual_event_kind_t::background, .name = "background",
                                     .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     event.selected = true;
-    view.bga_events = &event;
-    view.bga_event_count = 1;
+    view.bga_events = {event};
+    view.bga_events.resize(1);
     view.y_lock = true;
     (void)harness.frame();
     const auto center = rect_center(harness, event.bounds);
@@ -1150,8 +1150,8 @@ struct dock_stem_fixture_t {
     };
     wormedit::ui::compose_bgm_event_view_t marker{.bounds = {604, 20, 640, 36}, .event_id = wormedit::object_id_t{501},
         .source_lane_id = wormedit::object_id_t{44}, .bmson_slice = true};
-    WormUiComposeKeysoundRowView source{.resource_id = 81, .slot = "", .name = "Dock stem sample",
-        .stem_source_lane_id = 44, .stem_lane_name = "Voice stem"};
+    wormedit::ui::compose_keysound_row_view_t source{.resource_id = wormedit::resource_id_t{81}, .slot = "", .name = "Dock stem sample",
+        .stem_source_lane_id = wormedit::object_id_t{44}, .stem_lane_name = "Voice stem"};
 
     dock_stem_fixture_t() {
         REQUIRE(harness.ready());
@@ -1175,8 +1175,8 @@ struct dock_stem_fixture_t {
         view.bgm_events = {marker};
 
         view.keysounds_available = true;
-        view.keysounds = &source;
-        view.keysound_count = 1;
+        view.keysounds = {source};
+        view.keysounds.resize(1);
         view.keysound_total_count = 1;
         (void)harness.frame();
     }

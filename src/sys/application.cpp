@@ -1204,11 +1204,11 @@ void refresh_sound_selection_context(const wormedit::ui::workspace_action_t& act
     sound_context.project.sound_selection.sound_selection_revision = action.compose_input_document_revision;
     sound_context.project.sound_selection.sound_selection_hover = action.compose_sound_hover_object_id.value
         ? std::optional{action.compose_sound_hover_object_id} : std::nullopt;
-    WormUiKeysoundDockRequest sound_dock{};
+    wormedit::ui::keysound_dock_request_t sound_dock{};
     worm_ui_frontend_keysound_dock_request(&sound_dock);
     sound_context.project.sound_selection.sound_selection_dock.clear();
-    for (size_t i = 0; i < sound_dock.selected_resource_count; ++i)
-        sound_context.project.sound_selection.sound_selection_dock.push_back(wormedit::resource_id_t{sound_dock.selected_resource_ids[i]});
+    for (size_t i = 0; i < sound_dock.selected_resource_ids.size(); ++i)
+        sound_context.project.sound_selection.sound_selection_dock.push_back(sound_dock.selected_resource_ids[i]);
 }
 
 auto has_fresh_shortcut_key(const wormedit::ui::workspace_action_t& action) -> bool {
@@ -1345,15 +1345,15 @@ auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::option
 
 void build_bga_dock_view(wormedit::sys::bga_dock_runtime_t& runtime,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
-    const std::filesystem::path& base, WormUiComposeView& view) {
-    WormUiBgaDockRequest request{};
+    const std::filesystem::path& base, WormUiComposeView& view, std::uint64_t session_generation) {
+    wormedit::ui::bga_dock_request_t request{};
     worm_ui_frontend_bga_dock_request(&request);
     request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
     const auto chart = workspace.selected_chart
         ? history.document.find_chart(*workspace.selected_chart) : nullptr;
     request.ids_available = chart != nullptr &&
         chart->source_family == wormedit::format_family_t::bms;
-    runtime.project(history.document, base, request, view);
+    runtime.project(history.document, base, request, view, session_generation);
 }
 
 void apply_compare_scroll_action(compare_scene_cache_t& cache,
@@ -1368,7 +1368,8 @@ void apply_compare_scroll_action(compare_scene_cache_t& cache,
 void import_dropped_resources(bool session_loaded, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::vector<wormedit::sys::sound_drop_batch_t>& batches, wormedit::notification_sink_t& notifications) {
-    WormUiKeysoundDockRequest dock{};
+    if (batches.empty()) return;
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     for (const auto& batch : batches) {
         if (!batch.is_success()) {
@@ -1404,7 +1405,7 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
     const bool confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
     if (!request && !confirm) return false;
     std::string feedback;
-    WormUiKeysoundDockRequest dock{};
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     const auto chart = action.compose_input_chart_id;
     if (!dock.slots_mode || action.sound_import_project_id != history.document.id ||
@@ -4687,7 +4688,8 @@ struct application_t::implementation_t {
         flattened.view.pending_bms_encoding_path =
             session.project_identity.pending_import.bms_encoding_path.c_str();
         build_bga_dock_view(views.bga_dock_runtime, session.history, session.workspace,
-                         session.project_identity.asset_base, flattened.view.compose);
+                         session.project_identity.asset_base, flattened.view.compose,
+                         views.project_chart_runtime.session_generation);
     }
 
     void dispatch_preview_audio_export(const wormedit::ui::workspace_action_t& action) {

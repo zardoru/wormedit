@@ -48,10 +48,10 @@ void check_order_exhausted(const worm_ui_nuklear_compose_state_t& state) {
     CHECK(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }
 void check_sound_toggle_preserved(bool current, bool initial) { CHECK(current == initial); }
-void check_bga_request(const WormUiBgaDockRequest& request) {
+void check_bga_request(const wormedit::ui::bga_dock_request_t& request) {
     CHECK(request.visible);
     CHECK(request.sort_by_id);
-    CHECK(std::strcmp(request.search, "a") == 0);
+    CHECK(request.search == "a");
 }
 auto find_resource_place(const std::vector<workspace_action_snapshot_t>& frames)
     -> const wormedit::ui::compose_input_action_t* {
@@ -106,25 +106,25 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     auto& view = harness.view().compose;
     const std::array<std::uint64_t, 3> matching{1700, 1450, 1400};
     const std::array<std::uint64_t, 2> eligible{1700, 1400};
-    const std::array<WormUiComposeBgaRowView, 2> rows{{
-        {.resource_id = 1700, .slot = "02", .name = "alpha.png"},
-        {.resource_id = 1450, .slot = "03", .name = "missing.png", .missing = true}}};
-    const std::array<WormUiComposeResourceView, 3> resources{{
-        {.resource_id = 1400, .asset_id = 14000, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
+    const std::array<wormedit::ui::compose_bga_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{1700}, .slot = "02", .name = "alpha.png"},
+        {.resource_id = wormedit::resource_id_t{1450}, .slot = "03", .name = "missing.png", .missing = true}}};
+    const std::array<wormedit::ui::compose_resource_view_t, 3> resources{{
+        {.resource_id = wormedit::resource_id_t{1400}, .asset_id = wormedit::asset_id_t{14000}, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
          .image_asset = true, .target_index = "01", .name = "zeta.png", .source_name = "zeta.png"},
-        {.resource_id = 1450, .asset_id = 14500, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
+        {.resource_id = wormedit::resource_id_t{1450}, .asset_id = wormedit::asset_id_t{14500}, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
          .image_asset = true, .missing = true, .target_index = "03", .name = "missing.png",
          .source_name = "missing.png"},
-        {.resource_id = 1700, .asset_id = 17000, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
+        {.resource_id = wormedit::resource_id_t{1700}, .asset_id = wormedit::asset_id_t{17000}, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
          .image_asset = true, .target_index = "02", .name = "alpha.png", .source_name = "alpha.png"}}};
-    view.bga_rows = rows.data();
-    view.bga_row_count = rows.size();
+    view.bga_rows.assign(std::begin(rows), std::end(rows));
+    view.bga_rows.resize(rows.size());
     view.bga_total_matching = matching.size();
-    view.bga_matching_ids = matching.data();
-    view.bga_advance_ids = eligible.data();
-    view.bga_advance_count = eligible.size();
-    view.resources = resources.data();
-    view.resource_count = resources.size();
+    view.bga_matching_ids.assign(std::begin(matching), std::end(matching));
+    view.bga_advance_ids.assign(std::begin(eligible), std::end(eligible));
+    view.bga_advance_ids.resize(eligible.size());
+    view.resources.assign(std::begin(resources), std::end(resources));
+    view.resources.resize(resources.size());
     view.resource_total_count = resources.size();
     view.bga_ids_available = true;
     view.bga_search = "";
@@ -158,22 +158,22 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     search_text.text.type = SDL_EVENT_TEXT_INPUT;
     search_text.text.text = "a";
     static_cast<void>(harness.frame(std::span{&search_text, 1}));
-    WormUiBgaDockRequest request{};
+    wormedit::ui::bga_dock_request_t request{};
     worm_ui_frontend_bga_dock_request(&request);
     check_bga_request(request);
 
     const std::array<std::uint64_t, 2> filtered_matching{1400, 1700};
-    const std::array<WormUiComposeBgaRowView, 2> filtered_rows{{
-        {.resource_id = 1400, .slot = "01", .name = "zeta.png"},
-        {.resource_id = 1700, .slot = "02", .name = "alpha.png"}}};
+    const std::array<wormedit::ui::compose_bga_row_view_t, 2> filtered_rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "zeta.png"},
+        {.resource_id = wormedit::resource_id_t{1700}, .slot = "02", .name = "alpha.png"}}};
     const std::array<std::uint64_t, 2> filtered_eligible{1400, 1700};
     view.bga_search = request.search;
-    view.bga_matching_ids = filtered_matching.data();
+    view.bga_matching_ids.assign(std::begin(filtered_matching), std::end(filtered_matching));
     view.bga_total_matching = filtered_matching.size();
-    view.bga_rows = filtered_rows.data();
-    view.bga_row_count = filtered_rows.size();
-    view.bga_advance_ids = filtered_eligible.data();
-    view.bga_advance_count = filtered_eligible.size();
+    view.bga_rows.assign(std::begin(filtered_rows), std::end(filtered_rows));
+    view.bga_rows.resize(filtered_rows.size());
+    view.bga_advance_ids.assign(std::begin(filtered_eligible), std::end(filtered_eligible));
+    view.bga_advance_ids.resize(filtered_eligible.size());
     (void)harness.frame();
 
     // Double-clicking a row selects the Draw source; Draw stays an independent toolbar tool.

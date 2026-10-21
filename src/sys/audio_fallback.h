@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/text_util.h"
+#include <wormedit/core/resource_vocabulary.h>
 
 #include <algorithm>
 #include <array>
@@ -13,12 +14,6 @@
 namespace wormedit::sys {
 
 // How an authored audio path resolves on disk (docs/references/bms-audio-fallback.md).
-enum class audio_fallback_outcome_t {
-    exact,      // the authored path exists as written
-    fallback,   // one other file with the same stem and a .wav/.ogg/.flac extension exists
-    ambiguous,  // several candidates (extensions or case variants); the user must choose
-    missing,    // nothing usable, or the path is unsafe to search
-};
 
 struct audio_fallback_t {
     audio_fallback_outcome_t outcome{audio_fallback_outcome_t::missing};

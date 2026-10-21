@@ -124,9 +124,8 @@ static bool compose_geometry_counts_valid(const WormUiComposeView* view) {
            view->beat_section_count <= WORM_UI_COMPOSE_SECTION_CAPACITY &&
            view->audio_bookmark_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY &&
            view->audio_section_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY &&
-           view->resource_count <= WORM_UI_COMPOSE_RESOURCE_CAPACITY &&
            view->output_group_count <= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY &&
-           view->resource_total_count >= view->resource_count &&
+           view->resource_total_count >= view->resources.size() &&
            view->semantic_layer_first_row <= view->semantic_layer_total_count &&
            view->semantic_layer_count <=
                view->semantic_layer_total_count - view->semantic_layer_first_row;
@@ -140,7 +139,6 @@ static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
            (view->beat_section_count == 0 || view->beat_sections) &&
            (view->audio_bookmark_count == 0 || view->audio_bookmarks) &&
            (view->audio_section_count == 0 || view->audio_sections) &&
-           (view->resource_count == 0 || view->resources) &&
            (view->output_group_count == 0 || view->output_groups);
 }
 
@@ -266,11 +264,10 @@ static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view
 static bool compose_geometry_resource_elements_valid(const WormUiComposeView* view) {    constexpr std::uint8_t compose_resource_roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE |
                                                     WORM_UI_COMPOSE_RESOURCE_ROLE_BGM |
                                                     WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
-    for (size_t index = 0; index < view->resource_count; ++index) {
+    for (size_t index = 0; index < view->resources.size(); ++index) {
         const auto& resource = view->resources[index];
-        if (resource.resource_id == 0 || resource.asset_id == 0 || resource.roles == 0 ||
-            (resource.roles & ~compose_resource_roles) != 0 || !resource.target_index ||
-            !resource.name || !resource.source_name) {
+        if (!resource.resource_id || !resource.asset_id || resource.roles == 0 ||
+            (resource.roles & ~compose_resource_roles) != 0) {
             return 0;
         }
     }

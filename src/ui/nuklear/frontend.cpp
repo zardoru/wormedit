@@ -822,16 +822,16 @@ void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_wavefo
     worm_ui_nuklear_audio_waveform_viewport_request(*request);
 }
 
-void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
+void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
     *request = {};
     request->visible = state.dock_layout.bga_panel_visible && state.bga_catalog.bga_list_valid;
-    std::copy(state.bga_catalog.bga_search.begin(), state.bga_catalog.bga_search.end(), request->search);
+    request->search = state.bga_catalog.bga_search.data();
     request->first_row = state.bga_catalog.bga_first_row;
     request->row_limit = state.bga_catalog.bga_row_limit;
     request->sort_by_id = state.bga_catalog.bga_sort_by_id;
-    request->use_filter = state.bga_catalog.bga_use_filter;
+    request->use_filter = static_cast<wormedit::resource_use_filter_t>(state.bga_catalog.bga_use_filter);
 }
 
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request) {
@@ -844,37 +844,38 @@ void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* req
 double worm_ui_frontend_compose_bgm_lane_width(uint64_t project, uint64_t chart, uint64_t lane) {
     return worm_ui_nuklear_stem_lane_width(worm_ui_nuklear_compose_state(), project, chart, lane);
 }
-void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) {
+void worm_ui_frontend_keysound_dock_request(wormedit::ui::keysound_dock_request_t* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
-    *request = {};
     request->sound_picker_open = state.sound_picker_ui.sound_picker.open;
-    std::copy(state.sound_picker_ui.sound_picker.query.begin(), state.sound_picker_ui.sound_picker.query.end(), request->sound_picker_query);
+    request->sound_picker_query = state.sound_picker_ui.sound_picker.query.data();
     request->sort_by_id = state.keysound_filters.keysound_sort_by_id;
     request->slots_mode = state.keysound_filters.keysound_slots_mode;
     request->selected_slot = state.keysound_catalog.keysound_selected_slot;
     request->selected_slot_explicit = state.keysound_catalog.keysound_selected_slot_explicit;
-    std::copy(state.keysound_catalog.keysound_slots_search.begin(), state.keysound_catalog.keysound_slots_search.end(), request->search);
+    request->search = state.keysound_catalog.keysound_slots_search.data();
     request->first_row = state.keysound_catalog.keysound_slots_first_row;
     request->row_limit = state.keysound_catalog.keysound_slots_row_limit;
-    std::copy(state.keysound_filters.keysound_filters.search.begin(), state.keysound_filters.keysound_filters.search.end(),
-              request->automatic_search);
-    request->use_filter = state.keysound_filters.keysound_filters.use_filter;
+    request->automatic_search = state.keysound_filters.keysound_filters.search.data();
+    request->use_filter = static_cast<wormedit::resource_use_filter_t>(state.keysound_filters.keysound_filters.use_filter);
     request->group_filter_active = state.keysound_filters.keysound_filters.group_filter_active;
-    request->group_filter_ids = state.keysound_filters.keysound_filters.group_ids.data();
-    request->group_filter_count = state.keysound_filters.keysound_filters.group_ids.size();
+    request->group_filter_ids.clear();
+    for (const auto id : state.keysound_filters.keysound_filters.group_ids)
+        request->group_filter_ids.push_back(wormedit::sound_group_id_t{id});
     request->include_ungrouped = state.keysound_filters.keysound_filters.include_ungrouped;
-    request->layer_filter_kind = state.keysound_filters.keysound_filters.layer_filter_kind;
-    request->layer_filter_id = state.keysound_filters.keysound_filters.layer_filter_id;
-    request->collapsed_group_ids = state.keysound_filters.keysound_filters.collapsed_group_ids.data();
-    request->collapsed_group_count = state.keysound_filters.keysound_filters.collapsed_group_ids.size();
+    request->layer_filter_kind = static_cast<wormedit::keysound_layer_filter_kind_t>(state.keysound_filters.keysound_filters.layer_filter_kind);
+    request->layer_filter_id = wormedit::layer_id_t{state.keysound_filters.keysound_filters.layer_filter_id};
+    request->collapsed_group_ids.clear();
+    for (const auto id : state.keysound_filters.keysound_filters.collapsed_group_ids)
+        request->collapsed_group_ids.push_back(wormedit::sound_group_id_t{id});
     request->ungrouped_collapsed = state.keysound_filters.keysound_filters.ungrouped_collapsed;
-    request->selected_resource_ids = state.keysound_catalog.keysound_selection.selected.data();
-    request->selected_resource_count = state.keysound_catalog.keysound_selection.selected.size();
+    request->selected_resource_ids.clear();
+    for (const auto id : state.keysound_catalog.keysound_selection.selected)
+        request->selected_resource_ids.push_back(wormedit::resource_id_t{id});
     request->include_selected_metadata = state.keysound_catalog.keysound_group_review.open_pending;
     request->automatic_first_row = state.keysound_filters.keysound_auto_first_row;
     request->automatic_row_limit = state.keysound_filters.keysound_auto_row_limit;
-    request->primary_resource_id = state.keysound_catalog.keysound_selection.primary;
+    request->primary_resource_id = wormedit::resource_id_t{state.keysound_catalog.keysound_selection.primary};
     request->filter_layer_first_row = state.keysound_filters.keysound_filter_layer_first;
     request->filter_layer_row_limit = 64;
 }

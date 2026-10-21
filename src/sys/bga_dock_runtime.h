@@ -4,13 +4,14 @@
 #include <filesystem>
 #include <memory>
 namespace wormedit::sys {
-// Owns the borrowed rows and thumbnail bytes through the frontend compose call.
+// Owns cached catalog queries and thumbnail bytes borrowed through the frontend call.
 class bga_dock_runtime_t {
 public:
     bga_dock_runtime_t();
     ~bga_dock_runtime_t();
     void project(const song_document_t&, const std::filesystem::path&,
-                 const WormUiBgaDockRequest&, WormUiComposeView&);
+                 const wormedit::ui::bga_dock_request_t&, WormUiComposeView&,
+                 std::uint64_t session_generation = 0);
 private:
     struct state_t;
     std::unique_ptr<state_t> state_;

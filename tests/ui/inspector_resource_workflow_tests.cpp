@@ -59,9 +59,9 @@ void scroll_inspector(nuklear_event_harness_t& harness, float delta, int count) 
 }
 
 void set_resource_fixture(WormUiComposeView& view,
-                          const WormUiComposeResourceView* resources, std::size_t resource_count) {
-    view.resources = resources;
-    view.resource_count = resource_count;
+                          const wormedit::ui::compose_resource_view_t* resources, std::size_t resource_count) {
+    view.resources.assign(resources, resources + resource_count);
+    view.resources.resize(resource_count);
     view.resource_total_count = resource_count;
 }
 
@@ -127,14 +127,14 @@ TEST_CASE("Inspector delegates sample listing and placement to the Sounds dock",
     nuklear_event_harness_t harness{1600, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 1> sounds{{
-        {.resource_id = 40, .slot = "0A", .name = "kick.wav"}}};
-    const std::array<WormUiComposeResourceView, 1> resources{{
-        {.resource_id = 40, .asset_id = 400, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> sounds{{
+        {.resource_id = wormedit::resource_id_t{40}, .slot = "0A", .name = "kick.wav"}}};
+    const std::array<wormedit::ui::compose_resource_view_t, 1> resources{{
+        {.resource_id = wormedit::resource_id_t{40}, .asset_id = wormedit::asset_id_t{400}, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
          .audio_asset = true, .target_index = "0A", .name = "kick.wav",
          .source_name = "kick.wav"}}};
-    view.keysounds = sounds.data();
-    view.keysound_count = view.keysound_total_count = sounds.size();
+    view.keysounds.assign(std::begin(sounds), std::end(sounds));
+    view.keysounds.resize(view.keysound_total_count = sounds.size());
     view.keysounds_available = true;
     view.note_paint_mode_active = true;
     set_resource_fixture(view, resources.data(), resources.size());
@@ -146,14 +146,14 @@ TEST_CASE("Inspector delegates sample listing and placement to the Sounds dock",
 
 TEST_CASE("Compact Compose layout keeps Sounds available and restores optional docks when widened",
           "[frontend-state][event-harness][inspector-resources][compact]") {
-    const std::array<WormUiComposeKeysoundRowView, 1> sounds{{
-        {.resource_id = 40, .slot = "", .name = "kick.wav"}}};
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> sounds{{
+        {.resource_id = wormedit::resource_id_t{40}, .slot = "", .name = "kick.wav"}}};
     {
         nuklear_event_harness_t compact{700, 800};
         REQUIRE(compact.ready());
         auto& view = compact.view().compose;
-        view.keysounds = sounds.data();
-        view.keysound_count = view.keysound_total_count = sounds.size();
+        view.keysounds.assign(std::begin(sounds), std::end(sounds));
+        view.keysounds.resize(view.keysound_total_count = sounds.size());
         view.keysounds_available = true;
         auto& state = worm_ui_nuklear_compose_state();
         state.dock_layout.layers_panel_visible = true;
@@ -168,8 +168,8 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         nuklear_event_harness_t wide{1600, 900};
         REQUIRE(wide.ready());
         auto& view = wide.view().compose;
-        view.keysounds = sounds.data();
-        view.keysound_count = view.keysound_total_count = sounds.size();
+        view.keysounds.assign(std::begin(sounds), std::end(sounds));
+        view.keysounds.resize(view.keysound_total_count = sounds.size());
         view.keysounds_available = true;
         worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible = true;
         (void)wide.frame();

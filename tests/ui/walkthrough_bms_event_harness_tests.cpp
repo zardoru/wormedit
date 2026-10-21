@@ -111,7 +111,7 @@ struct walkthrough_t {
         require_step(rebind_workspace(*workspace.value, history.document).value);
         const auto source = workspace_view_t::from(*workspace.value, history.document);
         require_step(source.value);
-        WormUiKeysoundDockRequest dock{};
+        wormedit::ui::keysound_dock_request_t dock{};
         worm_ui_frontend_keysound_dock_request(&dock);
         flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready", {}, false, nullptr, dock_sort_t::natural_name, dock);
         flattened.view.compose.visible = true;
@@ -200,8 +200,8 @@ void check_imported_slots(walkthrough_t& flow, resource_id_t sound) {
     (void)flow.harness.frame();
     const auto& view = flow.harness.view().compose;
     check_step(view.sound_slots_mode);
-    require_step(view.sound_slot_count > 0);
-    check_step(view.sound_slots[0].resource_id == sound.value);
+    require_step(view.sound_slots.size() > 0);
+    check_step(view.sound_slots[0].resource_id.value == sound.value);
     (void)click_text(flow.harness, "Automatic IDs");
     flow.project();
     (void)flow.harness.frame();
@@ -313,13 +313,13 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     flow.application.project.compose_gesture.note_paint_mode_active = true;
     flow.project();
     auto& view = flow.harness.view().compose;
-    require_step(view.keysound_count == 1);
-    check_step(std::string_view{view.keysounds[0].slot} == "01");
+    require_step(view.keysounds.size() == 1);
+    check_step(std::string_view{view.keysounds[0].slot.c_str()} == "01");
     auto& ui = worm_ui_nuklear_compose_state();
     ui.dock_layout.sounds_panel_visible = true;
     (void)flow.harness.frame();
     // The dock clips long names; the slot cell is part of the same sound row.
-    const auto armed = click_text(flow.harness, view.keysounds[0].slot, true);
+    const auto armed = click_text(flow.harness, view.keysounds[0].slot.c_str(), true);
     for (const auto& snapshot : armed) (void)flow.dispatch(snapshot);
     check_step(ui.resource_picker.armed_resource_id == sound.value);
     const auto motion = test::mouse_motion(400, 400);
@@ -513,7 +513,7 @@ void select_import_slot(walkthrough_t& flow, const char* label) {
     INFO(flow.harness.drawn_text());
     (void)click_text(flow.harness, label);
     refresh_sound_dock(flow);
-    WormUiKeysoundDockRequest dock{};
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     require_step(dock.selected_slot_explicit);
 }
@@ -557,7 +557,7 @@ auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id
 }
 
 auto sound_drop_origin(walkthrough_t& flow) -> sound_drop_origin_t {
-    WormUiKeysoundDockRequest dock{};
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     return {.project_id = flow.history.document.id.value,
         .chart_id = flow.workspace.value->selected_chart->value,

@@ -23,19 +23,19 @@ void require_select_all(bool condition, const std::source_location location =
 
 void seed_sound_rows(WormUiComposeView& view) {
     static const std::array rows{
-        WormUiComposeKeysoundRowView{.resource_id = 5, .slot = "01", .name = "Kick"},
-        WormUiComposeKeysoundRowView{.resource_id = 9, .slot = "02", .name = "Snare"}};
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{5}, .slot = "01", .name = "Kick"},
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{9}, .slot = "02", .name = "Snare"}};
     static const std::array<std::uint64_t, 2> ids{5, 9};
     view.keysounds_available = true;
     view.project_id = 31;
     view.chart_id = 7;
-    view.keysounds = rows.data();
-    view.keysound_count = rows.size();
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();
-    view.keysound_listed_resource_ids = ids.data();
-    view.keysound_listed_resource_count = ids.size();
-    view.keysound_all_resource_ids = ids.data();
-    view.keysound_all_resource_count = ids.size();
+    view.keysound_listed_resource_ids.assign(std::begin(ids), std::end(ids));
+    view.keysound_listed_resource_ids.resize(ids.size());
+    view.keysound_all_resource_ids.assign(std::begin(ids), std::end(ids));
+    view.keysound_all_resource_ids.resize(ids.size());
 }
 
 void hover(nuklear_event_harness_t& harness, float x, float y) {

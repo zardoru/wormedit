@@ -20,6 +20,9 @@
 #include "sys/compose_view.h"
 #include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
+#include "sys/bga_dock_runtime.h"
+#include "../support/temporary_directory.h"
+#include <fstream>
 #include "sys/options_runtime.h"
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
@@ -649,12 +652,12 @@ auto project_bga_preview_row(compose_test_fixture_t& fixture,
          << " input chart=" << preview.chart_id << " view chart=" << view.chart_id
          << " input revision=" << preview.document_revision
          << " view revision=" << view.document_revision << " event count="
-         << view.bga_event_count << " lane visible=" << view.bga_lane_visible
+         << view.bga_events.size() << " lane visible=" << view.bga_lane_visible
          << " selected ids=" << state.selected_objects.size() << " scroll="
          << state.viewport_scroll_pixels << " px/measure=" << state.pixels_per_standard_measure
          << " viewport height=" << state.viewport_height_pixels);
-    if (view.bga_event_count != 0)
-        INFO("first event=" << view.bga_events[0].event_id << " selected="
+    if (view.bga_events.size() != 0)
+        INFO("first event=" << view.bga_events[0].event_id.value << " selected="
              << view.bga_events[0].selected << " kind="
              << static_cast<int>(view.bga_events[0].kind));
     REQUIRE(view.bga_move_preview_valid);
@@ -3091,7 +3094,7 @@ namespace {
 void check_static_source_has_no_frame_overlays(const WormUiComposeView& source) {
     expect_compose_test(!source.status_text && !source.selected_note_label && !source.hover_tooltip);
     expect_compose_test(source.paste_ghosts.empty() && !source.paste_diagnostic);
-    expect_compose_test(!source.resources && source.resource_count == 0);
+    expect_compose_test(source.resources.empty() && source.resources.size() == 0);
     expect_compose_test(!source.output_groups && source.output_group_count == 0);
     expect_compose_test(!source.branch_rows && source.branch_row_count == 0);
     expect_compose_test(!source.branch_choices && source.branch_choice_count == 0);
@@ -3127,7 +3130,7 @@ void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     expect_compose_test(fixture.flattened.view.compose.scene_available);
-    expect_compose_test(fixture.flattened.view.compose.resource_count == 1);
+    expect_compose_test(fixture.flattened.view.compose.resources.size() == 1);
     expect_compose_test(fixture.flattened.view.compose.output_group_count == 1);
     expect_compose_test(fixture.flattened.view.compose.static_scene != nullptr);
 }
@@ -5848,10 +5851,10 @@ auto t463_shared_asset_song() -> song_document_t {
 void t463_check_projected_rows(const compose_test_fixture_t& fixture) {
     const auto& view = fixture.flattened.view.compose;
     for (uint64_t index = 0; index < 3; ++index) {
-        const auto rows = std::span(view.keysounds, view.keysound_count);
-        const auto row = std::ranges::find(rows, 100 + index, &WormUiComposeKeysoundRowView::resource_id);
+        const auto rows = std::span(view.keysounds);
+        const auto row = std::ranges::find(rows, wormedit::resource_id_t{100 + index}, &wormedit::ui::compose_keysound_row_view_t::resource_id);
         t475_require(row != rows.end());
-        t475_check(row->stem_source_lane_id == (index < 2 ? 600 + index : 0));
+        t475_check(row->stem_source_lane_id.value == (index < 2 ? 600 + index : 0));
     }
 }
 }
@@ -5901,11 +5904,10 @@ TEST_CASE("BMSON Draw source names remain frame owned after document edits and f
     proposed.charts.front().bgm_source_lanes[1].name = std::string(256, 'v');
     t475_require(commit_document_command(fixture.history, std::move(proposed), "Rename stem"));
     t475_check(std::string(retained.view.compose.draw_source_stem_lane_name) == original);
-    const auto rows = std::span(retained.view.compose.keysounds,
-                               retained.view.compose.keysound_count);
-    const auto row = std::ranges::find(rows, uint64_t{101}, &WormUiComposeKeysoundRowView::resource_id);
+    const auto rows = std::span(retained.view.compose.keysounds);
+    const auto row = std::ranges::find(rows, wormedit::resource_id_t{uint64_t{101}}, &wormedit::ui::compose_keysound_row_view_t::resource_id);
     t475_require(row != rows.end());
-    t475_check(std::string(row->stem_lane_name) == original);
+    t475_check(std::string(row->stem_lane_name.c_str()) == original);
     t475_project(fixture);
     t475_check(std::string(fixture.flattened.view.compose.draw_source_stem_lane_name) == std::string(256, 'v'));
 }
@@ -5922,7 +5924,7 @@ auto chip_source_song() -> song_document_t {
     song.resources.back().target_identities = {{.family = format_family_t::bms, .identifier = "0A", .namespace_name = "wav"}};
     return song;
 }
-void project_chip_request(compose_test_fixture_t& fixture, WormUiKeysoundDockRequest request) {
+void project_chip_request(compose_test_fixture_t& fixture, wormedit::ui::keysound_dock_request_t request) {
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
@@ -5953,17 +5955,17 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     compose_test_fixture_t fixture(chip_source_song());
     fixture.application.project.compose_gesture.draw_source_kind = 1;
     fixture.application.project.compose_gesture.draw_source_id = 179;
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     request.include_ungrouped = true;
-    request.primary_resource_id = 100;
-    std::snprintf(request.automatic_search, sizeof(request.automatic_search), "not this source");
+    request.primary_resource_id = wormedit::resource_id_t{100};
+    request.automatic_search = "not this source";
     project_chip_request(fixture, request);
     t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "0A 音楽.wav");
     t475_check(!fixture.flattened.view.compose.draw_source_missing);
     t475_check(!fixture.flattened.view.compose.keysound_projected_filters_unrestricted);
     const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
-    request.automatic_search[0] = '\0';
-    request.primary_resource_id = 179;
+    request.automatic_search = {};
+    request.primary_resource_id = wormedit::resource_id_t{179};
     request.automatic_row_limit = 8;
     project_chip_request(fixture, request);
     const auto& view = fixture.flattened.view.compose;
@@ -7723,6 +7725,7 @@ void refill_owned_scene_geometry(compose_test_fixture_t& fixture, bool bgm_only 
     compose_projection_detail::build_compose_bgm_view(projection, fixture.cache);
     if (bgm_only) return;
     compose_projection_detail::build_compose_layout_and_notes_view(projection);
+    compose_projection_detail::build_compose_bga_view(projection);
     populate_lane_layout_segments(fixture.flattened, chart,
         index.measures, interaction, false, fixture.flattened.view.compose);
 }
@@ -7954,4 +7957,58 @@ TEST_CASE("Compose direct sample waveform cache refreshes its source style and v
     expect_compose_test(fixture.cache.waveform.direct_projection.build_count() == original_builds + 2);
     expect_compose_test(!rows.empty());
     expect_compose_test(std::abs(rows.front().samples[0] - .4f) > .1f);
+}
+
+TEST_CASE("Compose BGA dock owns complete rows and reuses warmed projection storage",
+          "[sys][compose-bga][allocation]") {
+    song_document_t song;
+    song.id = song_id_t{7};
+    song.revision = 4;
+    song.visual_assets.push_back({.id = asset_id_t{1}, .kind = asset_kind_t::image,
+        .source_path = "long-retained-image-source-path.png"});
+    song.resources.push_back({.id = resource_id_t{2}, .name = std::string(80, 'b'),
+        .asset = asset_id_t{1}, .roles = {resource_role_t::bga}, .missing = true});
+    bga_dock_runtime_t runtime;
+    WormUiComposeView view{};
+    const ui::bga_dock_request_t request{.visible = true, .ids_available = true, .row_limit = 64};
+    runtime.project(song, {}, request, view, 1);
+    REQUIRE(view.bga_rows.size() == 1);
+    const auto* rows = view.bga_rows.data();
+    const auto before = frame_heap_allocation_snapshot();
+    runtime.project(song, {}, request, view, 1);
+    const auto after = frame_heap_allocation_snapshot();
+    expect_compose_test(after.count == before.count);
+    expect_compose_test(after.bytes == before.bytes);
+    expect_compose_test(view.bga_rows.data() == rows);
+    expect_compose_test(view.bga_rows.front().resource_id == resource_id_t{2});
+    expect_compose_test(view.bga_matching_ids == std::vector<std::uint64_t>{2});
+    song.resources.front().name = "Reopened BGA";
+    runtime.project(song, {}, request, view, 2);
+    song.resources.clear();
+    expect_compose_test(view.bga_rows.front().name == "Reopened BGA");
+}
+
+TEST_CASE("Compose fallback paths retain every candidate without warmed allocations",
+          "[sys][compose-keysound][audio-fallback][allocation]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto stem = std::string(80, 's');
+    std::ofstream(directory->path() / (stem + ".ogg")) << "x";
+    std::ofstream(directory->path() / (stem + ".flac")) << "x";
+    document_history_t history;
+    history.document.audio_assets.push_back({.id = asset_id_t{1}, .source_path = stem + ".wav"});
+    history.document.resources.push_back({.id = resource_id_t{2}, .asset = asset_id_t{1}, .missing = true});
+    frontend_workspace_view_t frame;
+    populate_compose_keysound_fallbacks(frame, history, directory->path());
+    REQUIRE(frame.view.compose.keysound_fallbacks.size() == 1);
+    REQUIRE(frame.view.compose.keysound_fallbacks.front().candidates.size() == 2);
+    const auto before = frame_heap_allocation_snapshot();
+    populate_compose_keysound_fallbacks(frame, history, directory->path());
+    const auto after = frame_heap_allocation_snapshot();
+    expect_compose_test(after.count == before.count);
+    expect_compose_test(after.bytes == before.bytes);
+    expect_compose_test(frame.view.compose.keysound_fallbacks.front().outcome == audio_fallback_outcome_t::ambiguous);
+    history.document.resources.front().missing = false;
+    populate_compose_keysound_fallbacks(frame, history, directory->path());
+    expect_compose_test(frame.view.compose.keysound_fallbacks.empty());
 }

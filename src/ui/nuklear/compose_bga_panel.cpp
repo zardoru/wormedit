@@ -37,10 +37,7 @@ std::unordered_map<std::uint64_t, Texture> textures;
 struct Picker { std::mutex mutex; bool open{}; wormedit::ui::chrome::PopupContextStamp origin; std::vector<std::string> paths; };
 Picker picker;
 auto advance_eligible(const WormUiComposeView& view, std::uint64_t resource_id) -> bool {
-    return view.bga_advance_ids &&
-           std::ranges::find(view.bga_advance_ids,
-                             view.bga_advance_ids + view.bga_advance_count,
-                             resource_id) != view.bga_advance_ids + view.bga_advance_count;
+    return std::ranges::find(view.bga_advance_ids, resource_id) != view.bga_advance_ids.end();
 }
 void SDLCALL picked(void*, const char* const* paths, int) {
     std::lock_guard lock{picker.mutex};
@@ -77,23 +74,23 @@ void import_picked(wormedit::ui::workspace_action_t& action, const WormUiCompose
     if (!raise(action, view, WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)) return;
     action.compose_import_paths = std::move(paths);
 }
-auto thumbnail(const WormUiComposeView& view, const WormUiComposeBgaRowView& row) -> SDL_Texture* {
-    if (!renderer || !row.rgba_pixels || !row.image_width || !row.image_height ||
+auto thumbnail(const WormUiComposeView& view, const wormedit::ui::compose_bga_row_view_t& row) -> SDL_Texture* {
+    if (!renderer || row.rgba_pixels.empty() || !row.image_width || !row.image_height ||
         row.image_width > 32 || row.image_height > 32 ||
-        row.rgba_byte_count != static_cast<std::size_t>(row.image_width) * row.image_height * 4)
+        row.rgba_pixels.size() != static_cast<std::size_t>(row.image_width) * row.image_height * 4)
         return nullptr;
-    if (!textures.contains(row.resource_id) && textures.size() >= 128) {
+    if (!textures.contains(row.resource_id.value) && textures.size() >= 128) {
         if (textures.begin()->second.value) SDL_DestroyTexture(textures.begin()->second.value);
         textures.erase(textures.begin());
     }
-    auto& entry = textures[row.resource_id];
+    auto& entry = textures[row.resource_id.value];
     if (entry.content == row.image_content_id && entry.project == view.project_id) return entry.value;
     if (entry.value) SDL_DestroyTexture(entry.value);
     entry = {};
     entry.value = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
                                      static_cast<int>(row.image_width), static_cast<int>(row.image_height));
     if (!entry.value) return nullptr;
-    if (!SDL_UpdateTexture(entry.value, nullptr, row.rgba_pixels, static_cast<int>(row.image_width * 4))) {
+    if (!SDL_UpdateTexture(entry.value, nullptr, row.rgba_pixels.data(), static_cast<int>(row.image_width * 4))) {
         SDL_DestroyTexture(entry.value); entry.value = nullptr; return nullptr;
     }
     SDL_SetTextureBlendMode(entry.value, SDL_BLENDMODE_BLEND);
@@ -152,7 +149,7 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
     if (DrawnIconButton{icons::trash, "Remove unused BGA resources"}.render(context))
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA);
     if (DrawnIconButton{icons::select_all, "Select every BGA shown"}.render(context))
-        worm_ui_keysound_select_all(state.bga_catalog.bga_selection, {view.bga_matching_ids, view.bga_total_matching});
+        worm_ui_keysound_select_all(state.bga_catalog.bga_selection, view.bga_matching_ids);
     if (IconButton{Glyph::x, "Clear BGA selection"}.render(context)) worm_ui_keysound_clear(state.bga_catalog.bga_selection);
     if (view.bga_ids_available) {
         if (IconButton{Glyph::chevrons_left, state.bga_catalog.bga_sort_by_id ? "Sort by name" : "Sort by BMS ID",
@@ -184,7 +181,7 @@ void renumber_confirmation(nk_context* context, const WormUiComposeView& view,
 constexpr float bga_row_height = 22.0f;
 
 void draw_bga_resource_row(nk_context* context, const WormUiComposeView& view,
-                           const WormUiComposeBgaRowView& value, struct nk_rect bounds,
+                           const wormedit::ui::compose_bga_row_view_t& value, struct nk_rect bounds,
                            bool selected, bool hovered) {
     auto* canvas = nk_window_get_canvas(context);
     if (selected || hovered) nk_fill_rect(canvas, bounds, 3, wormedit::ui::chrome::color(UiColor::selected));
@@ -194,13 +191,13 @@ void draw_bga_resource_row(nk_context* context, const WormUiComposeView& view,
         nk_draw_text(canvas, nk_rect(bounds.x + x, bounds.y + 3, width, bounds.h - 6),
             label, static_cast<int>(std::strlen(label)), context->style.font, clear, tint);
     };
-    text(4, 30, view.bga_ids_available && value.slot ? value.slot : "");
+    text(4, 30, view.bga_ids_available && value.slot.c_str() ? value.slot.c_str() : "");
     const auto image_bounds = nk_rect(bounds.x + 40, bounds.y + 2, 18, 18);
     if (auto* image = thumbnail(view, value)) {
         const auto handle = nk_image_ptr(image);
         nk_draw_image(canvas, image_bounds, &handle, nk_rgb(255, 255, 255));
     } else nk_fill_rect(canvas, image_bounds, 2, nk_rgb(45, 48, 59));
-    text(64, std::max(12.0f, bounds.w - 158), value.name);
+    text(64, std::max(12.0f, bounds.w - 158), value.name.c_str());
     char uses[24];
     std::snprintf(uses, sizeof(uses), "%llu", static_cast<unsigned long long>(value.use_count));
     text(bounds.w - 86, 32, uses);
@@ -209,9 +206,9 @@ void draw_bga_resource_row(nk_context* context, const WormUiComposeView& view,
 
 void select_bga_row(nk_context* context, const WormUiComposeView& view,
                      worm_ui_nuklear_compose_state_t& state, wormedit::ui::workspace_action_t& action,
-                     std::size_t index, const WormUiComposeBgaRowView& value) {
+                     std::size_t index, const wormedit::ui::compose_bga_row_view_t& value) {
     const auto modifiers = SDL_GetModState();
-    worm_ui_keysound_click(state.bga_catalog.bga_selection, {view.bga_matching_ids, view.bga_total_matching}, index,
+    worm_ui_keysound_click(state.bga_catalog.bga_selection, view.bga_matching_ids, index,
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
     if (!nk_input_is_mouse_released(&context->input, NK_BUTTON_DOUBLE) || value.missing ||
         !advance_eligible(view, state.bga_catalog.bga_selection.primary)) return;
@@ -222,7 +219,7 @@ void select_bga_row(nk_context* context, const WormUiComposeView& view,
 
 void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
          wormedit::ui::workspace_action_t& action, std::size_t index) {
-    if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_row_count) return;
+    if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_rows.size()) return;
     const auto& value = view.bga_rows[index - view.bga_first_row];
     const auto width = nk_window_get_content_region(context).w;
     nk_layout_row_begin(context, NK_STATIC, bga_row_height, 2);
@@ -235,9 +232,9 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     const auto widget = nk_widget(&bounds, context);
     if (widget != NK_WIDGET_INVALID) {
         draw_bga_resource_row(context, view, value, bounds,
-            worm_ui_keysound_is_selected(state.bga_catalog.bga_selection, value.resource_id), hovered);
+            worm_ui_keysound_is_selected(state.bga_catalog.bga_selection, value.resource_id.value), hovered);
         if (hovered && available) {
-            const auto tip = std::string{value.source_path ? value.source_path : value.name} + "\n" +
+            const auto tip = std::string{value.source_path.c_str() ? value.source_path.c_str() : value.name.c_str()} + "\n" +
                 std::to_string(value.use_count) + " stored references. " +
                 (value.missing ? "File missing; cannot arm." : "Double-click to arm.");
             wormedit::ui::nuklear::tooltip::text(context, tip);
@@ -251,7 +248,7 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     const bool deleted = DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}.render(context);
     if (!available || value.use_count != 0) nk_widget_disable_end(context);
     if (deleted && available && value.use_count == 0 && raise(action, view, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
-        action.compose_sound_resource_ids = {wormedit::resource_id_t{value.resource_id}};
+        action.compose_sound_resource_ids = {wormedit::resource_id_t{value.resource_id.value}};
     }
     nk_layout_row_end(context);
 }
@@ -267,26 +264,22 @@ void bga_use_filter(nk_context* context, worm_ui_nuklear_compose_state_t& state,
 }
 
 void sync_advance_ids(const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state) {
-    if (view.bga_advance_count && view.bga_advance_ids)
-        state.bga_catalog.bga_advance_ids.assign(view.bga_advance_ids,
-                                     view.bga_advance_ids + view.bga_advance_count);
-    else
-        state.bga_catalog.bga_advance_ids.clear();
+    state.bga_catalog.bga_advance_ids = view.bga_advance_ids;
 }
 
 void reveal_armed_bga(nk_context* context, const WormUiComposeView& view,
                       worm_ui_nuklear_compose_state_t& state) {
     if (!state.bga_catalog.bga_reveal_primary) return;
-    if (!view.bga_search || std::strcmp(view.bga_search, state.bga_catalog.bga_search.data()) != 0) return;
-    const auto matches = std::span(view.bga_matching_ids, view.bga_total_matching);
+    if (std::strcmp(view.bga_search.c_str(), state.bga_catalog.bga_search.data()) != 0) return;
+    const auto matches = std::span(view.bga_matching_ids);
     const auto found = std::ranges::find(matches, state.bga_catalog.bga_selection.primary);
     if (found != matches.end()) {
         const auto index = static_cast<std::size_t>(found - matches.begin());
         const auto y = index * static_cast<std::size_t>(bga_row_height + context->style.window.spacing.y);
         nk_group_set_scroll(context, "Compose BGA list", 0, static_cast<nk_uint>(y));
         if (state.pointer_capture.source_chip_reveal_kind == 2) {
-            if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_row_count) return;
-            if (view.bga_rows[index - view.bga_first_row].resource_id != state.pointer_capture.source_chip_reveal_id) return;
+            if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_rows.size()) return;
+            if (view.bga_rows[index - view.bga_first_row].resource_id.value != state.pointer_capture.source_chip_reveal_id) return;
             state.pointer_capture.source_chip_reveal_kind = 0;
             state.pointer_capture.source_chip_reveal_id = 0;
         }
@@ -325,7 +318,7 @@ static void sync_bga_document(const WormUiComposeView* view,
     }
     if (state->bga_catalog.bga_revision != view->document_revision) {
         state->bga_catalog.bga_revision = view->document_revision;
-        const auto all = std::span(view->bga_all_resource_ids, view->bga_all_resource_count);
+        const auto all = std::span(view->bga_all_resource_ids);
         worm_ui_keysound_prune(state->bga_catalog.bga_selection, all);
         if (state->bga_catalog.armed_from_bga_dock && std::ranges::find(all, state->resource_picker.armed_resource_id) == all.end())
             worm_ui_nuklear_pick_draw_source(*state, *action, 0, 0);
@@ -341,7 +334,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     state->bga_catalog.bga_list_valid = true;
     state->bga_catalog.bga_list_x = bounds.x; state->bga_catalog.bga_list_y = bounds.y;
     state->bga_catalog.bga_list_width = bounds.w; state->bga_catalog.bga_list_height = bounds.h;
-    state->bga_catalog.bga_shown.assign(view->bga_matching_ids, view->bga_matching_ids + view->bga_total_matching);
+    state->bga_catalog.bga_shown = view->bga_matching_ids;
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "BGA", NK_TEXT_LEFT);
     import_picked(*action, *view, *state);
@@ -364,7 +357,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     nk_layout_row_dynamic(context, height, 1);
     reveal_armed_bga(context, *view, *state);
     struct nk_list_view list{};
-    const auto matching = view->bga_search && std::strcmp(view->bga_search, state->bga_catalog.bga_search.data()) == 0;
+    const auto matching = std::strcmp(view->bga_search.c_str(), state->bga_catalog.bga_search.data()) == 0;
     if (nk_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, static_cast<int>(bga_row_height),
                           static_cast<int>(std::max<std::size_t>(view->bga_total_matching, 1)))) {
         state->bga_catalog.bga_first_row = static_cast<std::size_t>(list.begin);
@@ -391,7 +384,7 @@ static bool bga_stack_is_valid(const WormUiComposeView& view,
     const auto current = wormedit::ui::chrome::PopupContextStamp::from(view);
     return view.scene_available && view.bga_lane_visible &&
         wormedit::ui::chrome::popup_context_matches(expected, current) &&
-        std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {
+        std::ranges::any_of(std::span(view.bga_events), [&](const auto& event) {
             return event.canvas_row == state.bga_interaction.bga_stack_row &&
                    wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
                    wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state.bga_interaction.bga_stack_kind)) &&
@@ -399,18 +392,18 @@ static bool bga_stack_is_valid(const WormUiComposeView& view,
         });
 }
 
-static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventView& event,
+static bool draw_bga_stack_row(nk_context* context, const wormedit::ui::compose_bga_event_view_t& event,
                                std::uint64_t chart_id, std::uint64_t revision,
                                wormedit::ui::workspace_action_t& action,
                                worm_ui_nuklear_compose_state_t& state) {
     char label[256];
-    const auto kind = event.kind == static_cast<std::uint8_t>(wormedit::visual_event_kind_t::video)
+    const auto kind = event.kind == wormedit::visual_event_kind_t::video
         ? "VIDEO" : "BACKGROUND";
     std::snprintf(label, sizeof(label), "#%llu · %s · %s · %s",
-        static_cast<unsigned long long>(event.event_id),
+        static_cast<unsigned long long>(event.event_id.value),
         kind,
-        event.bmp_id && event.bmp_id[0] ? event.bmp_id : "No BMP ID",
-        event.name ? event.name : "Missing resource");
+        !event.bmp_id.empty() ? event.bmp_id.data() : "No BMP ID",
+        event.name.data() ? event.name.data() : "Missing resource");
     const auto clicked = nk_button_label(context, label);
     if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return false;
@@ -418,7 +411,7 @@ static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventV
         auto& input = action.compose_inputs.emplace_back();
         input = {};
         input.kind = WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK;
-        input.object_id.value = event.event_id;
+        input.object_id.value = event.event_id.value;
         input.timing_chart_id.value = chart_id;
         input.timing_document_revision = revision;
     }
@@ -457,7 +450,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     nk_label(context, "Choose the event to select or edit", NK_TEXT_LEFT);
     struct nk_list_view list{};
     const auto count = static_cast<int>(std::ranges::count_if(
-        std::span(view->bga_events, view->bga_event_count), [&](const auto& event) {
+        std::span(view->bga_events), [&](const auto& event) {
             return event.canvas_row == state->bga_interaction.bga_stack_row &&
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
                 wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_interaction.bga_stack_kind));
@@ -466,7 +459,7 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     bool selected_event = false;
     if (nk_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
                            std::max(1, count))) {
-        const auto events = std::span(view->bga_events, view->bga_event_count);
+        const auto events = std::span(view->bga_events);
         int row_index = 0;
         for (const auto& event : events) {
             if (event.canvas_row != state->bga_interaction.bga_stack_row ||

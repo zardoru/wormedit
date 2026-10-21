@@ -161,9 +161,8 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
 
 static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_t event_id) {
     if (event_id == 0) return false;
-    const auto events = std::span(view.bga_events, view.bga_event_count);
-    const auto target = std::ranges::find(events, event_id,
-        &WormUiComposeBgaEventView::event_id);
+    const auto events = std::span(view.bga_events);
+    const auto target = std::ranges::find(events, wormedit::object_id_t{event_id}, &wormedit::ui::compose_bga_event_view_t::event_id);
     if (target == events.end() || target->overlap_count <=
             WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) return false;
     state.bga_interaction.bga_stack_open = true;
@@ -172,7 +171,7 @@ static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_
     state.bga_interaction.bga_stack_chart_id = view.chart_id;
     state.bga_interaction.bga_stack_revision = view.document_revision;
     state.bga_interaction.bga_stack_row = target->canvas_row;
-    state.bga_interaction.bga_stack_kind = target->kind;
+    state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(target->kind);
     return true;
 }
 

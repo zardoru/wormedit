@@ -290,12 +290,12 @@ TEST_CASE("BGA drag releases under occlusion cannot submit a move",
     const auto occluded = GENERATE(false, true);
     timing_drag_fixture_t f;
     auto& v = f.h.view().compose;
-    WormUiComposeBgaEventView bga{};
+    wormedit::ui::compose_bga_event_view_t bga{};
     v.bga_lane_visible = true; v.bga_lane_bounds = {450, 0, 500, 600};
     v.bga_lane_count = 1; v.bga_lane_rects[0] = v.bga_lane_bounds;
-    bga.bounds = {450, 195, 500, 205}; bga.event_id = 22; bga.selected = true;
+    bga.bounds = {450, 195, 500, 205}; bga.event_id.value = 22; bga.selected = true;
     bga.name = "BGA"; bga.bmp_id = "01";
-    v.bga_events = &bga; v.bga_event_count = 1;
+    v.bga_events = {bga}; v.bga_events.resize(1);
     (void)f.h.frame();
     wormedit::ui::testing_rect_view_t rect{};
     verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));

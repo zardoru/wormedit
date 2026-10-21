@@ -120,7 +120,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
     static const std::string empty_legacy_feedback;
     {
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
-        WormUiKeysoundDockRequest keysound_request{};
+        auto& keysound_request = flattened.keysound_request;
         worm_ui_frontend_keysound_dock_request(&keysound_request);
         wormedit::ui::sound_usage_request_t sound_usage_request{};
         worm_ui_frontend_sound_usage_request(&sound_usage_request);

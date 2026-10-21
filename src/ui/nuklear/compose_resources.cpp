@@ -22,9 +22,9 @@ struct ResourcePanel {
 };
 
 auto find_resource(const WormUiComposeView& view, std::uint64_t id)
-    -> const WormUiComposeResourceView* {
-    for (std::size_t index = 0; index < view.resource_count; ++index) {
-        if (view.resources[index].resource_id == id) return &view.resources[index];
+    -> const wormedit::ui::compose_resource_view_t* {
+    for (std::size_t index = 0; index < view.resources.size(); ++index) {
+        if (view.resources[index].resource_id.value == id) return &view.resources[index];
     }
     return nullptr;
 }

@@ -1427,10 +1427,10 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
     nuklear_event_harness_t harness{1600, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "kick.wav"},
-        {.resource_id = 1500, .slot = "02", .name = "kick2.wav"}}};
-    view.keysounds = rows.data(); view.keysound_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "kick.wav"},
+        {.resource_id = wormedit::resource_id_t{1500}, .slot = "02", .name = "kick2.wav"}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows)); view.keysounds.resize(rows.size());
     view.keysounds_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -1459,12 +1459,12 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     const std::array<std::uint64_t, 2> ids{1400, 1500};
-    const std::array<WormUiComposeBgaRowView, 2> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "clip.png", .use_count = 2},
-        {.resource_id = 1500, .slot = "02", .name = "missing.png", .missing = true}}};
-    view.bga_rows = rows.data(); view.bga_row_count = rows.size();
-    view.bga_total_matching = ids.size(); view.bga_matching_ids = ids.data(); view.bga_search = "";
-    view.bga_advance_ids = ids.data(); view.bga_advance_count = 1;
+    const std::array<wormedit::ui::compose_bga_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "clip.png", .use_count = 2},
+        {.resource_id = wormedit::resource_id_t{1500}, .slot = "02", .name = "missing.png", .missing = true}}};
+    view.bga_rows.assign(std::begin(rows), std::end(rows)); view.bga_rows.resize(rows.size());
+    view.bga_total_matching = ids.size(); view.bga_matching_ids.assign(std::begin(ids), std::end(ids)); view.bga_search = "";
+    view.bga_advance_ids.assign(std::begin(ids), std::end(ids)); view.bga_advance_ids.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.bga_panel_visible = true;
@@ -1482,7 +1482,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     check_bga_dock(state.pointer_capture.draw_source_kind == 2);
     check_bga_dock(state.pointer_capture.draw_source_id == 1400);
     check_bga_dock(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
-    view.bga_rows = rows.data() + 1; view.bga_row_count = 1; view.bga_first_row = 1;
+    view.bga_rows.assign(rows.begin() + 1, rows.end()); view.bga_rows.resize(1); view.bga_first_row = 1;
     (void)harness.frame();
     check_bga_dock(state.pointer_capture.draw_source_id == 1400);
     check_bga_dock(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
@@ -1561,11 +1561,11 @@ TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[front
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
-        {.resource_id = 40, .slot = "0A", .name = "kick2.wav"},
-        {.resource_id = 50, .slot = "0B", .name = "kick10.wav"}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{40}, .slot = "0A", .name = "kick2.wav"},
+        {.resource_id = wormedit::resource_id_t{50}, .slot = "0B", .name = "kick10.wav"}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = view.keysound_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -1602,10 +1602,10 @@ TEST_CASE("Sounds dock cancels stale or dismissed BMS renumber confirmations", "
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
-        {.resource_id = 50, .slot = "0B", .name = "kick10.wav"}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{50}, .slot = "0B", .name = "kick10.wav"}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = view.keysound_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -1656,10 +1656,10 @@ TEST_CASE("Sounds dock renumber release does not audition the covered row",
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
-        {.resource_id = 50, .slot = "0B", .name = "kick.wav"}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{50}, .slot = "0B", .name = "kick.wav"}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = view.keysound_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -1687,12 +1687,12 @@ TEST_CASE("BGA renumber release does not select the covered image",
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     const std::array<std::uint64_t, 1> ids{80};
-    const std::array<WormUiComposeBgaRowView, 1> rows{{
-        {.resource_id = 80, .slot = "0A", .name = "cover.bmp"}}};
-    view.bga_rows = rows.data();
-    view.bga_row_count = 1;
+    const std::array<wormedit::ui::compose_bga_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{80}, .slot = "0A", .name = "cover.bmp"}}};
+    view.bga_rows.assign(std::begin(rows), std::end(rows));
+    view.bga_rows.resize(1);
     view.bga_total_matching = 1;
-    view.bga_matching_ids = ids.data();
+    view.bga_matching_ids.assign(std::begin(ids), std::end(ids));
     view.bga_search = "";
     view.bga_ids_available = true;
     (void)harness.frame();
@@ -1754,12 +1754,12 @@ TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
     note.sound_detail = "covered.ogg";
     view.note_endpoints = {note};
     const std::array<std::uint64_t, 1> ids{80};
-    const std::array<WormUiComposeBgaRowView, 1> rows{{
-        {.resource_id = 80, .slot = "0A", .name = "cover.bmp"}}};
-    view.bga_rows = rows.data();
-    view.bga_row_count = 1;
+    const std::array<wormedit::ui::compose_bga_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{80}, .slot = "0A", .name = "cover.bmp"}}};
+    view.bga_rows.assign(std::begin(rows), std::end(rows));
+    view.bga_rows.resize(1);
     view.bga_total_matching = 1;
-    view.bga_matching_ids = ids.data();
+    view.bga_matching_ids.assign(std::begin(ids), std::end(ids));
     view.bga_search = "";
     view.bga_ids_available = true;
     (void)harness.frame();
@@ -1793,11 +1793,11 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
-        {.resource_id = 40, .slot = "0A", .name = "kick.wav"},
-        {.resource_id = 50, .slot = "0B", .name = "gone.wav", .missing = true}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{40}, .slot = "0A", .name = "kick.wav"},
+        {.resource_id = wormedit::resource_id_t{50}, .slot = "0B", .name = "gone.wav", .missing = true}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = true;
     (void)harness.frame();
     check_sound_slot_hidden(harness.drawn_text());
@@ -1968,14 +1968,14 @@ TEST_CASE("Compare validation diagnostics jump only when a row is available",
 
 namespace {
 struct sound_slots_fixture_t {
-    std::array<WormUiComposeKeysoundRowView, 2> sounds{{
-        {.resource_id = 501, .slot = "02", .name = "kick.wav"},
-        {.resource_id = 502, .slot = "03", .name = "missing.wav", .missing = true}}};
-    std::array<WormUiComposeSoundSlotRowView, 3> slots{{
-        {.number = 1, .slot = "01", .resource_id = 0, .name = "(empty)"},
-        {.number = 2, .slot = "02", .resource_id = 501, .name = "kick.wav",
+    std::array<wormedit::ui::compose_keysound_row_view_t, 2> sounds{{
+        {.resource_id = wormedit::resource_id_t{501}, .slot = "02", .name = "kick.wav"},
+        {.resource_id = wormedit::resource_id_t{502}, .slot = "03", .name = "missing.wav", .missing = true}}};
+    std::array<wormedit::ui::compose_sound_slot_row_view_t, 3> slots{{
+        {.number = 1, .slot = "01", .resource_id = wormedit::resource_id_t{0}, .name = "(empty)"},
+        {.number = 2, .slot = "02", .resource_id = wormedit::resource_id_t{501}, .name = "kick.wav",
          .use_count = 3, .placeable = true},
-        {.number = 3, .slot = "03", .resource_id = 502, .name = "missing.wav",
+        {.number = 3, .slot = "03", .resource_id = wormedit::resource_id_t{502}, .name = "missing.wav",
          .use_count = 1, .missing = true, .placeable = true}}};
 };
 void require_sound_slots(bool value) { REQUIRE(value); }
@@ -1983,12 +1983,12 @@ void check_sound_slots(bool value) { CHECK(value); }
 void configure_sound_slots(nuklear_event_harness_t& harness, const sound_slots_fixture_t& fixture,
                             bool enabled = true) {
     auto& view = harness.view().compose;
-    view.keysounds = fixture.sounds.data();
-    view.keysound_count = view.keysound_total_count = fixture.sounds.size();
+    view.keysounds.assign(std::begin(fixture.sounds), std::end(fixture.sounds));
+    view.keysounds.resize(view.keysound_total_count = fixture.sounds.size());
     view.keysounds_available = view.keysound_ids_available = true;
     view.keysound_ids_total = 1295;
-    view.sound_slots = fixture.slots.data();
-    view.sound_slot_count = fixture.slots.size();
+    view.sound_slots.assign(std::begin(fixture.slots), std::end(fixture.slots));
+    view.sound_slots.resize(fixture.slots.size());
     view.sound_slot_total_matching = 1295;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -2021,7 +2021,7 @@ TEST_CASE("BMS dock defaults to automatic and switches to its bounded slots view
     const sound_slots_fixture_t fixture;
     configure_sound_slots(harness, fixture, false);
     auto& state = worm_ui_nuklear_compose_state();
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
     check_sound_slots(!request.slots_mode);
     (void)click_at(harness, state.sounds_dock.sound_list_x + 210, state.sounds_dock.sound_list_y + 36);
@@ -2147,7 +2147,7 @@ TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain aut
     harness.view().compose.keysound_ids_available = false;
     harness.view().compose.sound_slots_mode = false;
     (void)harness.frame();
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
     check_sound_slots(!request.slots_mode);
     check_sound_slots(harness.drawn_text().find("BMS slots") == std::string::npos);
@@ -2393,12 +2393,12 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     require_lane_key_sound(harness.ready());
     auto& view = harness.view().compose;
     view.note_paint_mode_active = true;
-    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "kick.wav"},
-        {.resource_id = 1500, .slot = "02", .name = "kick2.wav"}}};
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "kick.wav"},
+        {.resource_id = wormedit::resource_id_t{1500}, .slot = "02", .name = "kick2.wav"}}};
     const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = true;
     view.lane_key_bindings = &binding;
     view.lane_key_binding_count = 1;
@@ -2446,11 +2446,11 @@ TEST_CASE("Selecting a converted BMSON stem arms lane-key entry without a double
     view.note_paint_mode_active = true;
     const auto missing = GENERATE(false, true);
     const auto modifiers = GENERATE(SDL_KMOD_NONE, SDL_KMOD_CTRL, SDL_KMOD_SHIFT);
-    const WormUiComposeKeysoundRowView row{.resource_id = 1400, .slot = "",
-        .name = "converted.wav", .missing = missing, .stem_source_lane_id = 71};
+    const wormedit::ui::compose_keysound_row_view_t row{.resource_id = wormedit::resource_id_t{1400}, .slot = "",
+        .name = "converted.wav", .missing = missing, .stem_source_lane_id = wormedit::object_id_t{71}};
     const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_2, .lane_id = 2};
-    view.keysounds = &row;
-    view.keysound_count = view.keysound_total_count = 1;
+    view.keysounds = {row};
+    view.keysounds.resize(view.keysound_total_count = 1);
     view.keysounds_available = true;
     view.lane_key_bindings = &binding;
     view.lane_key_binding_count = 1;
@@ -3384,10 +3384,10 @@ TEST_CASE("Sound dock row sets the Draw source without activating a brush",
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "kick.wav"}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "kick.wav"}}};
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -3408,13 +3408,13 @@ TEST_CASE("BGA dock row carries its source payload without enabling resource pla
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     const std::array<std::uint64_t, 1> ids{1400};
-    const std::array<WormUiComposeBgaRowView, 1> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "clip.png"}}};
-    view.bga_rows = rows.data();
-    view.bga_row_count = view.bga_total_matching = rows.size();
-    view.bga_matching_ids = ids.data();
-    view.bga_advance_ids = ids.data();
-    view.bga_advance_count = ids.size();
+    const std::array<wormedit::ui::compose_bga_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "clip.png"}}};
+    view.bga_rows.assign(std::begin(rows), std::end(rows));
+    view.bga_rows.resize(view.bga_total_matching = rows.size());
+    view.bga_matching_ids.assign(std::begin(ids), std::end(ids));
+    view.bga_advance_ids.assign(std::begin(ids), std::end(ids));
+    view.bga_advance_ids.resize(ids.size());
     view.bga_search = "";
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
@@ -4788,15 +4788,15 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     t422_fixture_t fixture{std::move(song)};
     auto& ui = worm_ui_nuklear_compose_state();
     ui.dock_layout.sounds_panel_visible = true;
-    const std::array rows{WormUiComposeKeysoundRowView{.resource_id = 1, .slot = "01", .name = "kick"},
-        WormUiComposeKeysoundRowView{.resource_id = 2, .slot = "02", .name = "snare"}};
+    const std::array rows{wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{1}, .slot = "01", .name = "kick"},
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{2}, .slot = "02", .name = "snare"}};
     const std::array<std::uint64_t, 2> resources{1, 2};
     auto& view = fixture.harness.view().compose;
     view.keysounds_available = true;
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
-    view.keysound_listed_resource_ids = view.keysound_all_resource_ids = resources.data();
-    view.keysound_listed_resource_count = view.keysound_all_resource_count = resources.size();
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
+    view.keysound_all_resource_ids.assign(resources.begin(), resources.end());
+    view.keysound_listed_resource_ids = view.keysound_all_resource_ids;
     (void)fixture.harness.frame();
     ui.keysound_catalog.keysound_selection.selected = {2};
     ui.keysound_catalog.keysound_selection.primary = 2;
@@ -4813,9 +4813,9 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().shortcut_events.size() == 1);
     expect_lane_key(frame.get().compose_sound_hover_object_id.value == 0);
-    WormUiKeysoundDockRequest dock{};
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
-    expect_lane_key(dock.selected_resource_count == 1 && dock.selected_resource_ids[0] == 2);
+    expect_lane_key(dock.selected_resource_ids.size() == 1 && dock.selected_resource_ids[0].value == 2);
     fixture.application.project.sound_selection.sound_selection_chart = chart_id_t{frame.get().compose_input_chart_id.value};
     fixture.application.project.sound_selection.sound_selection_revision = frame.get().compose_input_document_revision;
     fixture.application.project.sound_selection.sound_selection_dock = {resource_id_t{dock.selected_resource_ids[0]}};
@@ -6094,16 +6094,16 @@ TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", 
     view.document_revision = 23;
     view.scene_available = false;
     view.lanes.clear();
-    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
-        {.resource_id = 1400, .slot = "01", .name = "missing.wav", .missing = true}}};
-    const std::array<WormUiKeysoundFallbackView, 1> fallbacks{{
-        {.resource_id = 1400, .outcome = 2, .candidate_count = 2,
+    const std::array<wormedit::ui::compose_keysound_row_view_t, 1> rows{{
+        {.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "missing.wav", .missing = true}}};
+    const std::array<wormedit::ui::keysound_fallback_view_t, 1> fallbacks{{
+        {.resource_id = wormedit::resource_id_t{1400}, .outcome = wormedit::audio_fallback_outcome_t::ambiguous,
          .candidates = {"missing.ogg", "missing.flac"}}}};
-    view.keysounds = rows.data();
-    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(view.keysound_total_count = rows.size());
     view.keysounds_available = true;
-    view.keysound_fallbacks = fallbacks.data();
-    view.keysound_fallback_count = fallbacks.size();
+    view.keysound_fallbacks.assign(std::begin(fallbacks), std::end(fallbacks));
+    view.keysound_fallbacks.resize(fallbacks.size());
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.inspector_visible = false;
@@ -7487,13 +7487,13 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
           "[frontend-state][event-harness][resource-arming]") {
     nuklear_event_harness_t h{1600, 900};
     auto& v = h.view().compose;
-    const WormUiComposeKeysoundRowView row{.resource_id = 40, .slot = "01", .name = "arm.wav"};
-    const WormUiComposeResourceView resource{.resource_id = 41, .asset_id = 1,
+    const wormedit::ui::compose_keysound_row_view_t row{.resource_id = wormedit::resource_id_t{40}, .slot = "01", .name = "arm.wav"};
+    const wormedit::ui::compose_resource_view_t resource{.resource_id = wormedit::resource_id_t{41}, .asset_id = wormedit::asset_id_t{1},
         .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE, .audio_asset = true,
         .target_index = "02", .name = "new.wav", .source_name = "new.wav"};
-    v.keysounds = &row; v.keysound_count = v.keysound_total_count = 1; v.keysounds_available = true;
+    v.keysounds = {row}; v.keysounds.resize(v.keysound_total_count = 1); v.keysounds_available = true;
     v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
-    v.resources = &resource; v.resource_count = v.resource_total_count = 1;
+    v.resources = {resource}; v.resources.resize(v.resource_total_count = 1);
     (void)h.frame();
     auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.sounds_panel_visible = true;
     (void)h.frame();
@@ -7503,7 +7503,7 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
     expect_t422(s.resource_picker.armed_resource_id == 40 && s.keysound_catalog.armed_from_sounds_dock);
     ++h.view().project_id.value; ++v.project_id;
     v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
-    v.resources = &resource; v.resource_count = v.resource_total_count = 1;
+    v.resources = {resource}; v.resources.resize(v.resource_total_count = 1);
     (void)h.frame();
     expect_t422(s.resource_picker.armed_resource_id == 41 && !s.keysound_catalog.armed_from_sounds_dock && !s.bga_catalog.armed_from_bga_dock);
 }
@@ -7551,9 +7551,9 @@ TEST_CASE("BGA chart switches disarm the complete source even with its dock hidd
     nuklear_event_harness_t h{1600, 900};
     auto& v = h.view().compose;
     const std::array<std::uint64_t, 1> ids{1400};
-    const WormUiComposeBgaRowView row{.resource_id = 1400, .slot = "01", .name = "switch.png"};
-    v.bga_rows = &row; v.bga_row_count = v.bga_total_matching = 1;
-    v.bga_matching_ids = v.bga_advance_ids = ids.data(); v.bga_advance_count = 1; v.bga_search = "";
+    const wormedit::ui::compose_bga_row_view_t row{.resource_id = wormedit::resource_id_t{1400}, .slot = "01", .name = "switch.png"};
+    v.bga_rows = {row}; v.bga_rows.resize(v.bga_total_matching = 1);
+    v.bga_advance_ids.assign(ids.begin(), ids.end()); v.bga_matching_ids = v.bga_advance_ids; v.bga_advance_ids.resize(1); v.bga_search = "";
     (void)h.frame();
     auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.bga_panel_visible = true;
     (void)h.frame();
@@ -8125,7 +8125,7 @@ TEST_CASE("Production marquee selects a BGA tile through shared projected geomet
     t422_fixture_t f{std::move(song)};
     (void)f.harness.frame();
     const auto& view = f.harness.view().compose;
-    expect_t422(view.bga_event_count == 1);
+    expect_t422(view.bga_events.size() == 1);
     const auto viewport = compose_canvas_viewport_for_testing();
     expect_t422(viewport.has_value());
     const auto bounds = view.bga_events[0].bounds;
@@ -8215,9 +8215,9 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
     song.resources.front().target_identities = {{.family = format_family_t::bms, .identifier = "01", .namespace_name = lowercase_namespace ? "wav" : "WAV"}};
     t422_fixture_t f{std::move(song)};
     sound_slots_fixture_t slots;
-    slots.sounds[0].resource_id = 1;
+    slots.sounds[0].resource_id.value = 1;
     slots.sounds[0].slot = "01";
-    slots.slots[0] = {.number = 1, .slot = "01", .resource_id = 1, .name = "Old slot name", .placeable = true};
+    slots.slots[0] = {.number = 1, .slot = "01", .resource_id = wormedit::resource_id_t{1}, .name = "Old slot name", .placeable = true};
     configure_sound_slots(f.harness, slots);
     const auto path = (std::filesystem::path{WORMEDIT_SOURCE_ROOT} / "tests/fixtures/audio/keysound-g4.ogg").string();
     const auto& view = f.harness.view().compose;

@@ -486,16 +486,16 @@ uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double
 
 uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y) {
     if (!view || !view->bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return 0;
-    for (size_t index = 0; index < view->bga_event_count; ++index) {
+    for (size_t index = 0; index < view->bga_events.size(); ++index) {
         const auto& event = view->bga_events[index];
         if (event.selected && x >= event.bounds.left && x <= event.bounds.right &&
-            y >= event.bounds.top && y <= event.bounds.bottom) return event.event_id;
+            y >= event.bounds.top && y <= event.bounds.bottom) return event.event_id.value;
     }
-    for (size_t index = view->bga_event_count; index-- > 0;) {
+    for (size_t index = view->bga_events.size(); index-- > 0;) {
         const auto& event = view->bga_events[index];
         if (x >= event.bounds.left && x <= event.bounds.right && y >= event.bounds.top &&
             y <= event.bounds.bottom)
-            return event.event_id;
+            return event.event_id.value;
     }
     return 0;
 }
@@ -1093,9 +1093,8 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
         return false;
     if (bga_event_id != 0) {
         const auto stacked = std::ranges::find(
-            std::span(view.bga_events, view.bga_event_count), bga_event_id,
-            &WormUiComposeBgaEventView::event_id);
-        if (stacked != std::span(view.bga_events, view.bga_event_count).end() &&
+            std::span(view.bga_events), wormedit::object_id_t{bga_event_id}, &wormedit::ui::compose_bga_event_view_t::event_id);
+        if (stacked != std::span(view.bga_events).end() &&
             stacked->overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
             state.bga_interaction.bga_stack_release_pending = true;
             state.bga_interaction.bga_stack_open = true;
@@ -1103,7 +1102,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             state.bga_interaction.bga_stack_chart_id = view.chart_id;
             state.bga_interaction.bga_stack_revision = view.document_revision;
             state.bga_interaction.bga_stack_row = stacked->canvas_row;
-            state.bga_interaction.bga_stack_kind = stacked->kind;
+            state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(stacked->kind);
             return true;
         }
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK,
@@ -1158,9 +1157,8 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
     state.bga_interaction.bga_event_move_current_x_pixels = input.pointer_x;
     if (continuation.phase != compose_drag_phase_t::update) {
         if (continuation.phase == compose_drag_phase_t::click) {
-            const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
-            const auto selected = std::ranges::find(events, state.bga_interaction.bga_event_move_object_id,
-                &WormUiComposeBgaEventView::event_id);
+            const auto events = std::span(input.view->bga_events);
+            const auto selected = std::ranges::find(events, wormedit::object_id_t{state.bga_interaction.bga_event_move_object_id}, &wormedit::ui::compose_bga_event_view_t::event_id);
             if (selected != events.end() && selected->overlap_count >
                     WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
                 state.bga_interaction.bga_stack_release_pending = true;
@@ -1169,7 +1167,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 state.bga_interaction.bga_stack_chart_id = input.view->chart_id;
                 state.bga_interaction.bga_stack_revision = input.view->document_revision;
                 state.bga_interaction.bga_stack_row = selected->canvas_row;
-                state.bga_interaction.bga_stack_kind = selected->kind;
+                state.bga_interaction.bga_stack_kind = static_cast<std::uint8_t>(selected->kind);
             }
         }
         if (continuation.phase == compose_drag_phase_t::commit) {
@@ -1206,8 +1204,8 @@ static auto begin_bga_event_move_capture(const ComposePointerEventContext& input
     const auto id = compose_bga_event_at(input.view, input.pointer_started_x,
                                          input.pointer_started_y);
     if (id == 0) return false;
-    const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
-    const auto event = std::ranges::find(events, id, &WormUiComposeBgaEventView::event_id);
+    const auto events = std::span(input.view->bga_events);
+    const auto event = std::ranges::find(events, wormedit::object_id_t{id}, &wormedit::ui::compose_bga_event_view_t::event_id);
     if (event == events.end() || !event->selected)
         return false;
     const auto& press = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos;

@@ -81,8 +81,8 @@ void bga_scene_projection_is_ordered() {
     check_projection(view.bga_lane_bounds.right == view.playable_field_left_pixels);
     check_projection(view.bga_lane_bounds.right - view.bga_lane_bounds.left == 96.0);
     check_projection(view.bga_lane_count == 2);
-    check_projection(view.bga_event_count == 3);
-    for (std::size_t index = 0; index < view.bga_event_count; ++index) {
+    check_projection(view.bga_events.size() == 3);
+    for (std::size_t index = 0; index < view.bga_events.size(); ++index) {
         check_projection(view.bga_events[index].bounds.left >= view.bga_lane_bounds.left);
         check_projection(view.bga_events[index].bounds.right <= view.bga_lane_bounds.right);
     }

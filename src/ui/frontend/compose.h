@@ -1,5 +1,6 @@
 #pragma once
 #include "compose_measure_lane.h"
+#include <wormedit/core/resource_vocabulary.h>
 #include "metadata_audio.h"
 #include "hitsounds.h"
 #include "preview_audio.h"
@@ -621,88 +622,107 @@ typedef enum WormUiComposeResourceRole {
     WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC = 1 << 3,
 } WormUiComposeResourceRole;
 
-typedef struct WormUiComposeResourceView {
-    uint64_t resource_id;
-    uint64_t asset_id;
-    uint8_t roles;
-    bool audio_asset;
-    bool selected_audio_asset;
-    bool image_asset;
-    bool selected_visual_asset;
-    bool missing;
-    const char* target_index;
-    const char* name;
-    const char* source_name;
-    const char* source_path;
-    uint64_t use_count;
-} WormUiComposeResourceView;
+namespace wormedit::ui {
+struct compose_resource_view_t {
+    wormedit::resource_id_t resource_id{};
+    wormedit::asset_id_t asset_id{};
+    uint8_t roles{};
+    bool audio_asset{};
+    bool selected_audio_asset{};
+    bool image_asset{};
+    bool selected_visual_asset{};
+    bool missing{};
+    std::string target_index;
+    std::string name;
+    std::string source_name;
+    std::string source_path;
+    uint64_t use_count{};
+    auto operator==(const compose_resource_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 /* One row of the Compose keysound listbox: a placeable sample of the catalog. */
-typedef struct WormUiComposeBgaRowView {
-    uint64_t resource_id;
-    const char* slot;
-    const char* name;
-    uint64_t use_count;
-    bool missing;
-    bool video;
-    const char* source_path;
-    uint64_t image_content_id;
-    uint32_t image_width, image_height;
-    const uint8_t* rgba_pixels;
-    size_t rgba_byte_count;
-} WormUiComposeBgaRowView;
+namespace wormedit::ui {
+struct compose_bga_row_view_t {
+    wormedit::resource_id_t resource_id{};
+    std::string slot;
+    std::string name;
+    uint64_t use_count{};
+    bool missing{};
+    bool video{};
+    std::string source_path;
+    uint64_t image_content_id{};
+    uint32_t image_width{}, image_height{};
+    std::span<const uint8_t> rgba_pixels;
+    auto operator==(const compose_bga_row_view_t& other) const -> bool {
+        return std::tie(resource_id, slot, name, use_count, missing, video, source_path, image_content_id, image_width, image_height) ==
+               std::tie(other.resource_id, other.slot, other.name, other.use_count, other.missing, other.video, other.source_path, other.image_content_id, other.image_width, other.image_height) &&
+               std::ranges::equal(rgba_pixels, other.rgba_pixels);
+    }
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiBgaDockRequest {
-    bool visible;
-    bool ids_available;
-    char search[64];
-    size_t first_row, row_limit;
-    bool sort_by_id;
-    uint8_t use_filter; /* 0 all, 1 used, 2 unused, 3 missing */
-} WormUiBgaDockRequest;
+namespace wormedit::ui {
+struct bga_dock_request_t {
+    bool visible{};
+    bool ids_available{};
+    std::string_view search;
+    size_t first_row{}, row_limit{};
+    bool sort_by_id{};
+    wormedit::resource_use_filter_t use_filter{};
+    auto operator==(const bga_dock_request_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundPickerRowView {
-    uint64_t resource_id;
-    const char* label;
-    bool missing;
-} WormUiSoundPickerRowView;
-typedef struct WormUiSoundPickerView {
-    char query[96];
-    WormUiSoundPickerRowView rows[20];
-    size_t row_count, total_count;
-    bool ready;
-} WormUiSoundPickerView;
+namespace wormedit::ui {
+struct sound_picker_row_view_t {
+    wormedit::resource_id_t resource_id{};
+    std::string label;
+    bool missing{};
+    auto operator==(const sound_picker_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+namespace wormedit::ui {
+inline constexpr std::size_t sound_picker_query_byte_limit = 95;
+struct sound_picker_view_t {
+    std::string query;
+    std::vector<sound_picker_row_view_t> rows;
+    size_t total_count{};
+    bool ready{};
+    auto operator==(const sound_picker_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiKeysoundDockRequest {
-    bool sound_picker_open;
-    char sound_picker_query[96];
-    bool sort_by_id;
-    bool slots_mode;
-    uint16_t selected_slot;
-    bool selected_slot_explicit;
-    char search[64];
-    size_t first_row, row_limit;
-    char automatic_search[64];
-    bool group_filter_active;
-    const uint64_t* group_filter_ids;
-    size_t group_filter_count;
-    bool include_ungrouped;
-    uint8_t layer_filter_kind; /* 0 any, 1 no layer, 2 specific layer */
-    uint64_t layer_filter_id;
-    const uint64_t* collapsed_group_ids;
-    size_t collapsed_group_count;
-    bool ungrouped_collapsed;
-    const uint64_t* selected_resource_ids;
-    size_t selected_resource_count;
-    bool include_selected_metadata;
-    size_t automatic_first_row, automatic_row_limit;
-    uint64_t primary_resource_id;
-    size_t filter_layer_first_row, filter_layer_row_limit;
-    uint8_t use_filter; /* 0 all, 1 used, 2 unused, 3 missing */
-} WormUiKeysoundDockRequest;
+namespace wormedit::ui {
+struct keysound_dock_request_t {
+    bool sound_picker_open{};
+    std::string_view sound_picker_query;
+    bool sort_by_id{};
+    bool slots_mode{};
+    uint16_t selected_slot{};
+    bool selected_slot_explicit{};
+    std::string_view search;
+    size_t first_row{}, row_limit{};
+    std::string_view automatic_search;
+    bool group_filter_active{};
+    std::vector<wormedit::sound_group_id_t> group_filter_ids;
+    bool include_ungrouped{};
+    wormedit::keysound_layer_filter_kind_t layer_filter_kind{};
+    wormedit::layer_id_t layer_filter_id{};
+    std::vector<wormedit::sound_group_id_t> collapsed_group_ids;
+    bool ungrouped_collapsed{};
+    std::vector<wormedit::resource_id_t> selected_resource_ids;
+    bool include_selected_metadata{};
+    size_t automatic_first_row{}, automatic_row_limit{};
+    wormedit::resource_id_t primary_resource_id{};
+    size_t filter_layer_first_row{}, filter_layer_row_limit{};
+    wormedit::resource_use_filter_t use_filter{};
+    auto operator==(const keysound_dock_request_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef struct WormUiBookmarkChooserRequest {
-    size_t first_row, row_limit;
+    size_t first_row{}, row_limit{};
     bool open;
     char query[256];
 } WormUiBookmarkChooserRequest;
@@ -730,99 +750,129 @@ enum {
     WORM_UI_KEYSOUND_LAYER_FILTER_SPECIFIC = 2,
 };
 
-typedef struct WormUiComposeSoundGroupView {
-    uint64_t group_id;
-    const char* name;
-} WormUiComposeSoundGroupView;
+namespace wormedit::ui {
+struct compose_sound_group_view_t {
+    wormedit::sound_group_id_t group_id{};
+    std::string name;
+    auto operator==(const compose_sound_group_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-#define WORM_UI_KEYSOUND_FALLBACK_CAPACITY 256
-#define WORM_UI_KEYSOUND_FALLBACK_CANDIDATES 6
 
 /* A missing sound's BMS audio fallback outcome (docs/references/bms-audio-fallback.md). */
-typedef struct WormUiKeysoundFallbackView {
-    uint64_t resource_id;
-    uint8_t outcome; /* 1 one fallback file was found, 2 several candidates need a choice */
-    size_t candidate_count;
-    const char* candidates[WORM_UI_KEYSOUND_FALLBACK_CANDIDATES]; /* project-relative paths */
-} WormUiKeysoundFallbackView;
+namespace wormedit::ui {
+struct keysound_fallback_view_t {
+    wormedit::resource_id_t resource_id{};
+    wormedit::audio_fallback_outcome_t outcome{};
+    std::vector<std::string> candidates;
+    auto operator==(const keysound_fallback_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeKeysoundRowView {
-    uint64_t resource_id;
+namespace wormedit::ui {
+struct compose_keysound_row_view_t {
+    wormedit::resource_id_t resource_id{};
     /* BMS #WAV index such as "01", or an empty string. */
-    const char* slot;
-    const char* name;
-    bool missing;
+    std::string slot;
+    std::string name;
+    bool missing{};
     /* Bit i is set when the sound's default layers include keysound_layers[i]. */
-    uint64_t layer_mask;
+    uint64_t layer_mask{};
     /* Bit i means adding keysound_layers[i] conflicts with existing note layers. */
-    uint64_t note_layer_conflict_mask;
-    uint64_t sound_group_id;
-    uint64_t stem_source_lane_id;
-    const char* stem_lane_name;
-    uint64_t use_count;
-    const char* source_path;
-} WormUiComposeKeysoundRowView;
+    uint64_t note_layer_conflict_mask{};
+    wormedit::sound_group_id_t sound_group_id{};
+    wormedit::object_id_t stem_source_lane_id{};
+    std::string stem_lane_name;
+    uint64_t use_count{};
+    std::string source_path;
+    [[nodiscard]] auto status_label(bool armed, bool typed_armed) const -> std::string_view {
+        if (missing) return "missing";
+        if (typed_armed) return stem_source_lane_id ? "armed stem" : "armed note";
+        if (armed) return "armed";
+        return use_count ? "ok" : "unused";
+    }
+    auto operator==(const compose_keysound_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiComposeKeysoundDisplayRowKind {
     WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER = 0,
     WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW = 1,
 } WormUiComposeKeysoundDisplayRowKind;
 
-typedef struct WormUiComposeKeysoundDisplayRowView {
+namespace wormedit::ui {
+struct compose_keysound_display_row_view_t {
     WormUiComposeKeysoundDisplayRowKind kind;
-    uint64_t group_id;
-    const char* group_name;
-    size_t group_sound_count;
-    bool expanded;
-    uint64_t resource_id;
-} WormUiComposeKeysoundDisplayRowView;
+    wormedit::sound_group_id_t group_id{};
+    std::string group_name;
+    size_t group_sound_count{};
+    bool expanded{};
+    wormedit::resource_id_t resource_id{};
+    auto operator==(const compose_keysound_display_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeKeysoundAdvanceRowView {
-    uint64_t resource_id;
-    bool missing;
-} WormUiComposeKeysoundAdvanceRowView;
+namespace wormedit::ui {
+struct compose_keysound_advance_row_view_t {
+    wormedit::resource_id_t resource_id{};
+    bool missing{};
+    auto operator==(const compose_keysound_advance_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeKeysoundSelectionView {
-    uint64_t resource_id;
-    uint64_t group_id;
-    uint64_t layer_mask;
-    uint64_t note_layer_conflict_mask;
-    const char* slot;
-    bool missing;
-} WormUiComposeKeysoundSelectionView;
+namespace wormedit::ui {
+struct compose_keysound_selection_view_t {
+    wormedit::resource_id_t resource_id{};
+    wormedit::sound_group_id_t group_id{};
+    uint64_t layer_mask{};
+    uint64_t note_layer_conflict_mask{};
+    std::string slot;
+    bool missing{};
+    auto operator==(const compose_keysound_selection_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeBgaEventView {
-    uint64_t event_id;
-    uint64_t resource_id;
-    uint64_t canvas_row;
-    size_t overlap_count;
-    uint8_t kind;
-    const char* name;
-    const char* bmp_id;
-    bool missing;
-    bool selected;
+namespace wormedit::ui {
+struct compose_bga_event_view_t {
+    wormedit::object_id_t event_id{};
+    wormedit::resource_id_t resource_id{};
+    uint64_t canvas_row{};
+    size_t overlap_count{};
+    wormedit::visual_event_kind_t kind{};
+    std::string_view name;
+    std::string_view bmp_id;
+    bool missing{};
+    bool selected{};
     wormedit::ui::compose_rect_t bounds;
-} WormUiComposeBgaEventView;
+    auto operator==(const compose_bga_event_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeSoundSlotRowView {
-    uint16_t number;
-    const char* slot;
-    uint64_t resource_id;
-    const char* name;
-    uint64_t use_count;
-    bool missing, placeable;
-    const char* source_path;
-} WormUiComposeSoundSlotRowView;
+namespace wormedit::ui {
+struct compose_sound_slot_row_view_t {
+    uint16_t number{};
+    std::string slot;
+    wormedit::resource_id_t resource_id{};
+    std::string name;
+    uint64_t use_count{};
+    bool missing{}, placeable{};
+    std::string source_path;
+    auto operator==(const compose_sound_slot_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiComposeKeysoundLayerView {
-    uint64_t layer_id;
-    const char* name;
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint8_t alpha;
-    bool locked;
-} WormUiComposeKeysoundLayerView;
+namespace wormedit::ui {
+struct compose_keysound_layer_view_t {
+    wormedit::layer_id_t layer_id{};
+    std::string name;
+    uint8_t red{};
+    uint8_t green{};
+    uint8_t blue{};
+    uint8_t alpha{};
+    bool locked{};
+    auto operator==(const compose_keysound_layer_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef struct WormUiComposeOutputGroupView {
     size_t document_index;
@@ -1118,8 +1168,7 @@ typedef struct WormUiComposeView {
     uint64_t selected_note_label_note_id;
     bool focus_note_label_editor;
     bool bga_lane_visible;
-    const WormUiComposeBgaEventView* bga_events;
-    size_t bga_event_count;
+    std::vector<wormedit::ui::compose_bga_event_view_t> bga_events;
     wormedit::ui::compose_rect_t bga_lane_bounds;
     uint8_t bga_revealed_lane_mask;
     size_t bga_lane_count;
@@ -1128,16 +1177,14 @@ typedef struct WormUiComposeView {
     bool bga_move_preview_valid;
     uint64_t bga_move_preview_event_id;
     double bga_move_preview_y_pixels;
-    const WormUiComposeBgaRowView* bga_rows;
-    size_t bga_row_count, bga_total_matching, bga_first_row;
+    std::vector<wormedit::ui::compose_bga_row_view_t> bga_rows;
+    size_t bga_total_matching, bga_first_row;
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
     bool bga_ids_available;
-    const uint64_t* bga_matching_ids;
-    const uint64_t* bga_all_resource_ids;
-    size_t bga_all_resource_count;
-    const uint64_t* bga_advance_ids;
-    size_t bga_advance_count;
-    const char* bga_search;
+    std::vector<uint64_t> bga_matching_ids;
+    std::vector<uint64_t> bga_all_resource_ids;
+    std::vector<uint64_t> bga_advance_ids;
+    std::string bga_search;
     bool paint_ghost_visible;
     wormedit::ui::compose_note_view_t paint_ghost;
     bool hover_note_visible;
@@ -1187,53 +1234,42 @@ typedef struct WormUiComposeView {
     bool timing_stage_valid;
     wormedit::timing_lane_kind_t timing_stage_lane;
     double timing_stage_y_pixels;
-    const WormUiComposeResourceView* resources;
+    std::vector<wormedit::ui::compose_resource_view_t> resources;
     uint64_t selected_audio_asset_id;
     uint64_t selected_visual_asset_id;
-    size_t resource_count;
     size_t resource_total_count;
-    bool resources_truncated;
     /* Keysound listbox: every placeable sample, plus the chart layers its masks index. */
-    const WormUiComposeKeysoundRowView* keysounds;
-    size_t keysound_count;
-    const WormUiComposeKeysoundRowView* keysound_selected_rows;
-    size_t keysound_selected_row_count;
-    const WormUiKeysoundFallbackView* keysound_fallbacks;
-    size_t keysound_fallback_count;
-    const WormUiComposeKeysoundSelectionView* keysound_selection_rows;
-    size_t keysound_selection_row_count;
-    const WormUiComposeKeysoundDisplayRowView* keysound_display_rows;
+    std::vector<wormedit::ui::compose_keysound_row_view_t> keysounds;
+    std::vector<wormedit::ui::compose_keysound_row_view_t> keysound_selected_rows;
+    std::vector<wormedit::ui::keysound_fallback_view_t> keysound_fallbacks;
+    std::vector<wormedit::ui::compose_keysound_selection_view_t> keysound_selection_rows;
+    std::vector<wormedit::ui::compose_keysound_display_row_view_t> keysound_display_rows;
     /* True when section/filter projection was used, including legitimate empty windows. */
     bool keysound_section_projection_available;
-    size_t keysound_display_row_count, keysound_display_total_count;
+    size_t keysound_display_total_count;
     size_t keysound_display_first_row;
     bool keysound_display_rows_truncated;
     bool keysound_primary_display_index_valid;
     size_t keysound_primary_display_index;
     uint64_t keysound_projected_primary_resource_id;
     bool keysound_projected_filters_unrestricted;
-    const uint64_t* keysound_listed_resource_ids;
-    size_t keysound_listed_resource_count;
-    const WormUiComposeKeysoundAdvanceRowView* keysound_advance_rows;
-    size_t keysound_advance_row_count;
-    const uint64_t* keysound_all_resource_ids;
-    size_t keysound_all_resource_count;
-    const WormUiComposeSoundGroupView* compose_sound_groups;
-    size_t compose_sound_group_count;
+    std::vector<uint64_t> keysound_listed_resource_ids;
+    std::vector<wormedit::ui::compose_keysound_advance_row_view_t> keysound_advance_rows;
+    std::vector<uint64_t> keysound_all_resource_ids;
+    std::vector<wormedit::ui::compose_sound_group_view_t> compose_sound_groups;
     size_t keysound_total_count;
     bool keysounds_truncated;
-    const WormUiComposeKeysoundLayerView* keysound_layers;
-    size_t keysound_layer_count;
-    const WormUiComposeKeysoundLayerView* keysound_filter_layers;
-    size_t keysound_filter_layer_count, keysound_filter_layer_first;
+    std::vector<wormedit::ui::compose_keysound_layer_view_t> keysound_layers;
+    std::vector<wormedit::ui::compose_keysound_layer_view_t> keysound_filter_layers;
+    size_t keysound_filter_layer_first;
     size_t keysound_filter_layer_total;
-    const char* keysound_filter_selected_layer_name;
+    std::string keysound_filter_selected_layer_name;
     bool keysound_filter_selected_layer_valid;
     bool keysounds_available;
     size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
     bool keysound_ids_available;
-    const WormUiComposeSoundSlotRowView* sound_slots;
-    size_t sound_slot_count, sound_slot_first_row, sound_slot_total_matching;
+    std::vector<wormedit::ui::compose_sound_slot_row_view_t> sound_slots;
+    size_t sound_slot_first_row, sound_slot_total_matching;
     bool sound_slots_mode;
     uint16_t sound_slot_selected_number;
     size_t sound_slot_selected_row;
@@ -1338,7 +1374,7 @@ typedef struct WormUiComposeView {
     size_t selected_bgm_event_count;
     size_t semantic_layer_unassigned_bgm_count;
     WormUiBookmarkChooserView bookmark_chooser;
-    WormUiSoundPickerView sound_picker;
+    wormedit::ui::sound_picker_view_t sound_picker;
     size_t move_conflict_count;
     size_t move_to_bgm_count; // Unique moved-note count, before geometry truncation.
 } WormUiComposeView;

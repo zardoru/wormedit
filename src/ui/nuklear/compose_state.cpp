@@ -396,9 +396,9 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
     if (state.resource_picker.armed_resource_id == 0 || !state.keysound_catalog.armed_from_sounds_dock) return 0;
     if (view.draw_source_kind == 1 && view.draw_source_id == state.resource_picker.armed_resource_id)
         return view.draw_source_missing ? 0 : state.resource_picker.armed_resource_id;
-    for (std::size_t index = 0; index < view.keysound_count; ++index) {
+    for (std::size_t index = 0; index < view.keysounds.size(); ++index) {
         const auto& row = view.keysounds[index];
-        if (row.resource_id == state.resource_picker.armed_resource_id) return row.missing ? 0 : row.resource_id;
+        if (row.resource_id.value == state.resource_picker.armed_resource_id) return row.missing ? 0 : row.resource_id.value;
     }
     return 0;
 }

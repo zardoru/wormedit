@@ -499,9 +499,8 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
     auto& flattened = projection.inputs.frame.flattened;
     auto& view = projection.inputs.frame.view();
     const auto& scene = projection.scene;
-    const auto count = std::min(scene.bga_events.size(),
-                                static_cast<std::size_t>(WORM_UI_COMPOSE_BGA_EVENT_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bga_event, count)) {
+    const auto count = scene.bga_events.size();
+    if (!prepare_compose_geometry_rows(flattened, view.bga_events, count)) {
         view.truncated = true;
         return;
     }
@@ -546,12 +545,12 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
                                              ? wormedit::asset_kind_t::video
                                              : wormedit::asset_kind_t::image;
         append_compose_geometry_row(
-            flattened.compose.bga_event,
-            {.event_id = event.event.value,
-             .resource_id = event.resource.value,
+            view.bga_events,
+            {.event_id = event.event,
+             .resource_id = event.resource,
              .canvas_row = event.row,
              .overlap_count = event.overlap_count,
-             .kind = static_cast<std::uint8_t>(event.kind),
+             .kind = event.kind,
              .name = name,
              .bmp_id = bmp_id,
              .missing = resource == document.resources.end() || resource->missing ||
@@ -594,12 +593,6 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
     }
 }
 
-void publish_compose_scene(const compose_scene_projection_context_t& projection) {
-    auto& flattened = projection.inputs.frame.flattened;
-    auto& view = projection.inputs.frame.view();
-    view.bga_events = flattened.compose.bga_event.data();
-    view.bga_event_count = flattened.compose.bga_event.size();
-}
 
 bool initialize_compose_view_state(
     frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,

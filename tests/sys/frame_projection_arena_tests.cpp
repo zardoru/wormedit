@@ -839,7 +839,7 @@ auto compose_resource_document(std::size_t count) -> wormedit::song_document_t {
 }
 auto project_resource_rows(const wormedit::song_document_t& document,
                            frame_arena_t* arena = nullptr,
-                           WormUiKeysoundDockRequest request = {}) -> frontend_workspace_view_t {
+                           wormedit::ui::keysound_dock_request_t request = {}) -> frontend_workspace_view_t {
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::compose;
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
@@ -855,56 +855,19 @@ TEST_CASE("Compose resource arena owns complete rows after source mutation and m
     document.resources.push_back({.id = wormedit::resource_id_t{9},
         .roles = {wormedit::resource_role_t::preview}});
     auto frame = project_resource_rows(document);
-    REQUIRE(frame.view.compose.resource_count == 2);
+    REQUIRE(frame.view.compose.resources.size() == 2);
     check_frame_storage(frame.view.compose.resource_total_count == 2);
     document.resources.clear();
     document.audio_assets.clear();
     auto moved = std::move(frame);
     moved.rebind_view_pointers();
     const auto& row = moved.view.compose.resources[0];
-    check_frame_storage(row.resource_id == 1 && row.asset_id == 1);
+    check_frame_storage(row.resource_id.value == 1 && row.asset_id.value == 1);
     check_frame_storage(row.audio_asset && row.selected_audio_asset && !row.missing);
     check_frame_storage(row.roles == (WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE | WORM_UI_COMPOSE_RESOURCE_ROLE_BGM));
-    check_frame_storage(std::strcmp(row.target_index, "#WAV01") == 0);
-    check_frame_storage(std::strlen(row.name) == 81);
-    check_frame_storage(std::strlen(row.source_name) == 84);
-}
-TEST_CASE("Compose resource arena preserves capacity and degrades storage exhaustion",
-          "[sys][frame-arena][compose-resource]") {
-    auto document = compose_resource_document(129);
-    auto frame = project_resource_rows(document);
-    REQUIRE(frame.view.compose.resource_count == 128);
-    check_frame_storage(frame.view.compose.resource_total_count == 129);
-    check_frame_storage(frame.view.compose.resources_truncated);
-    check_frame_storage(frame.view.compose.resources[127].resource_id == 128);
-    frame_arena_t tiny({.chunk_bytes = 64, .maximum_bytes = 64});
-    auto failed = project_resource_rows(document, &tiny);
-    check_frame_storage(failed.view.compose.resource_count == 0);
-    check_frame_storage(failed.view.compose.resource_total_count == 129);
-    check_frame_storage(failed.view.compose.resources_truncated);
-    check_frame_storage(failed.view.compose.resources == nullptr);
-}
-TEST_CASE("Compose resource arena warmed dense projections retain stable storage",
-          "[sys][frame-arena][compose-resource]") {
-    const auto document = compose_resource_document(128);
-    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 1024 * 1024});
-    (void)project_resource_rows(document, &arena);
-    const auto used = arena.used_bytes();
-    const auto committed = arena.committed_bytes();
-    bool stable = true;
-    std::uint64_t allocations{};
-    for (int iteration = 0; iteration < 1000; ++iteration) {
-        arena.reset();
-        const auto before = frame_heap_allocation_snapshot();
-        const auto frame = project_resource_rows(document, &arena);
-        const auto after = frame_heap_allocation_snapshot();
-        allocations = after.count - before.count;
-        stable = stable && frame.view.compose.resource_count == 128 &&
-            !frame.view.compose.resources_truncated && arena.used_bytes() == used &&
-            arena.committed_bytes() == committed;
-    }
-    INFO("Remaining temporary catalog/path allocations per projection: " << allocations);
-    check_frame_storage(stable);
+    check_frame_storage(std::strcmp(row.target_index.c_str(), "#WAV01") == 0);
+    check_frame_storage(std::strlen(row.name.c_str()) == 81);
+    check_frame_storage(std::strlen(row.source_name.c_str()) == 84);
 }
 TEST_CASE("Compose resource arena preserves fallback labels visual flags and missing assets",
           "[sys][frame-arena][compose-resource]") {
@@ -916,48 +879,27 @@ TEST_CASE("Compose resource arena preserves fallback labels visual flags and mis
     document.resources.push_back({.id = wormedit::resource_id_t{18},
         .asset = wormedit::asset_id_t{8}, .roles = {wormedit::resource_role_t::sample}});
     auto frame = project_resource_rows(document);
-    REQUIRE(frame.view.compose.resource_count == 2);
+    REQUIRE(frame.view.compose.resources.size() == 2);
     const auto& visual = frame.view.compose.resources[0];
     check_frame_storage(visual.image_asset && visual.selected_visual_asset && !visual.audio_asset && !visual.missing);
-    check_frame_storage(std::strcmp(visual.target_index, "#17") == 0);
-    check_frame_storage(std::strcmp(visual.name, "Resource 17") == 0);
-    check_frame_storage(std::strcmp(visual.source_name, "banner.png") == 0);
+    check_frame_storage(std::strcmp(visual.target_index.c_str(), "#17") == 0);
+    check_frame_storage(std::strcmp(visual.name.c_str(), "Resource 17") == 0);
+    check_frame_storage(std::strcmp(visual.source_name.c_str(), "banner.png") == 0);
     const auto& missing = frame.view.compose.resources[1];
     check_frame_storage(missing.missing && !missing.image_asset && !missing.audio_asset);
-    check_frame_storage(std::strcmp(missing.source_name, "") == 0);
-}
-TEST_CASE("Compose resource arena exhaustion publishes only complete string prefixes",
-          "[sys][frame-arena][compose-resource]") {
-    const auto document = compose_resource_document(2);
-    bool found_prefix = false;
-    for (std::size_t limit = 128; limit <= 1024; ++limit) {
-        frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
-        const auto frame = project_resource_rows(document, &arena);
-        if (frame.view.compose.resource_count != 1) continue;
-        REQUIRE(frame.view.compose.resources_truncated);
-        check_frame_storage(frame.view.compose.resource_total_count == 2);
-        const auto& first = frame.view.compose.resources[0];
-        check_frame_storage(first.resource_id == 1 && std::strlen(first.name) == 81);
-        check_frame_storage(std::strcmp(first.target_index, "#WAV01") == 0);
-        check_frame_storage(std::strlen(first.source_name) == 84);
-        found_prefix = true;
-        break;
-    }
-    check_frame_storage(found_prefix);
+    check_frame_storage(std::strcmp(missing.source_name.c_str(), "") == 0);
 }
 TEST_CASE("Compose resource arena empty catalogs do not report truncation",
           "[sys][frame-arena][compose-resource]") {
     wormedit::song_document_t document;
     auto empty = project_resource_rows(document);
-    check_frame_storage(empty.view.compose.resource_count == 0);
+    check_frame_storage(empty.view.compose.resources.size() == 0);
     check_frame_storage(empty.view.compose.resource_total_count == 0);
-    check_frame_storage(!empty.view.compose.resources_truncated);
     document.resources.push_back({.id = wormedit::resource_id_t{9},
         .roles = {wormedit::resource_role_t::preview}});
     auto hidden = project_resource_rows(document);
-    check_frame_storage(hidden.view.compose.resource_count == 0);
+    check_frame_storage(hidden.view.compose.resources.size() == 0);
     check_frame_storage(hidden.view.compose.resource_total_count == 0);
-    check_frame_storage(!hidden.view.compose.resources_truncated);
 }
 TEST_CASE("Compose resource external arena reset republishes updated text",
           "[sys][frame-arena][compose-resource]") {
@@ -967,19 +909,18 @@ TEST_CASE("Compose resource external arena reset republishes updated text",
         auto first = project_resource_rows(document, &arena);
         auto moved = std::move(first);
         moved.rebind_view_pointers();
-        REQUIRE(moved.view.compose.resource_count == 1);
-        check_frame_storage(std::strlen(moved.view.compose.resources[0].name) == 81);
+        REQUIRE(moved.view.compose.resources.size() == 1);
+        check_frame_storage(std::strlen(moved.view.compose.resources[0].name.c_str()) == 81);
     }
     arena.reset();
     document.resources[0].name = "Updated second frame resource label";
     document.audio_assets[0].source_path = "new/path/updated.wav";
     auto second = project_resource_rows(document, &arena);
-    REQUIRE(second.view.compose.resource_count == 1);
-    check_frame_storage(std::strcmp(second.view.compose.resources[0].name,
+    REQUIRE(second.view.compose.resources.size() == 1);
+    check_frame_storage(std::strcmp(second.view.compose.resources[0].name.c_str(),
         "Updated second frame resource label") == 0);
-    check_frame_storage(std::strcmp(second.view.compose.resources[0].source_name,
+    check_frame_storage(std::strcmp(second.view.compose.resources[0].source_name.c_str(),
         "updated.wav") == 0);
-    check_frame_storage(!second.view.compose.resources_truncated);
 }
 
 namespace {
@@ -1198,20 +1139,20 @@ TEST_CASE("Compose sound group choices retain names and stable resource membersh
     document.sound_groups.push_back({.id = wormedit::sound_group_id_t{9}, .name = "Piano"});
     document.resources.front().sound_group = wormedit::sound_group_id_t{9};
     auto frame = project_resource_rows(document);
-    REQUIRE(frame.view.compose.compose_sound_group_count == 1);
-    REQUIRE(frame.view.compose.keysound_count == 2);
+    REQUIRE(frame.view.compose.compose_sound_groups.size() == 1);
+    REQUIRE(frame.view.compose.keysounds.size() == 2);
     document.sound_groups.front().name = "Changed";
     document.resources.front().sound_group.reset();
     auto moved = std::move(frame);
-    check_frame_storage(moved.view.compose.compose_sound_groups[0].group_id == 9);
-    check_frame_storage(std::strcmp(moved.view.compose.compose_sound_groups[0].name, "Piano") == 0);
-    const auto* rows = moved.view.compose.keysounds;
-    const auto grouped = rows[0].resource_id == 1 ? 0 : 1;
-    check_frame_storage(rows[grouped].sound_group_id == 9);
-    check_frame_storage(rows[1 - grouped].sound_group_id == 0);
+    check_frame_storage(moved.view.compose.compose_sound_groups[0].group_id.value == 9);
+    check_frame_storage(std::strcmp(moved.view.compose.compose_sound_groups[0].name.c_str(), "Piano") == 0);
+    const auto& rows = moved.view.compose.keysounds;
+    const auto grouped = rows[0].resource_id.value == 1 ? 0 : 1;
+    check_frame_storage(rows[grouped].sound_group_id.value == 9);
+    check_frame_storage(rows[1 - grouped].sound_group_id.value == 0);
     auto current = project_resource_rows(document);
-    check_frame_storage(current.view.compose.keysounds[grouped].sound_group_id == 0);
-    check_frame_storage(std::strcmp(current.view.compose.compose_sound_groups[0].name, "Changed") == 0);
+    check_frame_storage(current.view.compose.keysounds[grouped].sound_group_id.value == 0);
+    check_frame_storage(std::strcmp(current.view.compose.compose_sound_groups[0].name.c_str(), "Changed") == 0);
 }
 
 TEST_CASE("Windowed sound sections retain arena labels and complete selection orders",
@@ -1228,18 +1169,16 @@ TEST_CASE("Windowed sound sections retain arena labels and complete selection or
             resource.sound_group = wormedit::sound_group_id_t{index < 2 ? 9U : 10U};
     }
     std::array<std::uint64_t, 1> collapsed{9}, selected{1};
-    WormUiKeysoundDockRequest request{};
-    request.collapsed_group_ids = collapsed.data();
-    request.collapsed_group_count = collapsed.size();
-    request.selected_resource_ids = selected.data();
-    request.selected_resource_count = selected.size();
-    request.primary_resource_id = 4;
+    wormedit::ui::keysound_dock_request_t request{};
+    for (const auto id : collapsed) request.collapsed_group_ids.push_back(wormedit::sound_group_id_t{id});
+    for (const auto id : selected) request.selected_resource_ids.push_back(wormedit::resource_id_t{id});
+    request.primary_resource_id = wormedit::resource_id_t{4};
     request.automatic_first_row = 2;
     request.automatic_row_limit = 3;
     auto frame = project_resource_rows(document, nullptr, request);
-    REQUIRE(frame.view.compose.keysound_display_row_count == 3);
-    REQUIRE(frame.view.compose.keysound_count == 1);
-    REQUIRE(frame.view.compose.keysound_selection_row_count == 1);
+    REQUIRE(frame.view.compose.keysound_display_rows.size() == 3);
+    REQUIRE(frame.view.compose.keysounds.size() == 1);
+    REQUIRE(frame.view.compose.keysound_selection_rows.size() == 1);
     document.sound_groups.clear();
     document.resources.clear();
     collapsed[0] = 0;
@@ -1253,68 +1192,24 @@ TEST_CASE("Windowed sound sections retain arena labels and complete selection or
     check_frame_storage(view.keysound_primary_display_index_valid);
     check_frame_storage(view.keysound_primary_display_index == 2);
     check_frame_storage(view.keysound_display_rows[0].kind == WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW);
-    check_frame_storage(view.keysound_display_rows[0].resource_id == 4);
-    check_frame_storage(view.keysound_display_rows[1].group_id == 9);
-    check_frame_storage(std::strcmp(view.keysound_display_rows[1].group_name, "Piano") == 0);
+    check_frame_storage(view.keysound_display_rows[0].resource_id.value == 4);
+    check_frame_storage(view.keysound_display_rows[1].group_id.value == 9);
+    check_frame_storage(std::strcmp(view.keysound_display_rows[1].group_name.c_str(), "Piano") == 0);
     check_frame_storage(!view.keysound_display_rows[1].expanded);
     check_frame_storage(view.keysound_display_rows[1].group_sound_count == 2);
-    check_frame_storage(std::strcmp(view.keysound_display_rows[2].group_name, "Ungrouped") == 0);
-    check_frame_storage(std::strcmp(view.keysounds[0].name, "Sample 4") == 0);
-    check_frame_storage(view.keysound_selected_row_count == 0);
-    check_frame_storage(view.keysound_selection_rows[0].resource_id == 1);
-    check_frame_storage(view.keysound_selection_rows[0].group_id == 9);
-    check_frame_storage(std::strcmp(view.keysound_selection_rows[0].slot, "01") == 0);
-    check_frame_storage(view.keysound_all_resource_count == 5);
-    check_frame_storage(view.keysound_advance_row_count == 5);
-    check_frame_storage(view.keysound_advance_rows[0].resource_id == 3);
-    check_frame_storage(view.keysound_advance_rows[2].resource_id == 1);
-    check_frame_storage(view.keysound_listed_resource_count == 3);
+    check_frame_storage(std::strcmp(view.keysound_display_rows[2].group_name.c_str(), "Ungrouped") == 0);
+    check_frame_storage(std::strcmp(view.keysounds[0].name.c_str(), "Sample 4") == 0);
+    check_frame_storage(view.keysound_selected_rows.size() == 0);
+    check_frame_storage(view.keysound_selection_rows[0].resource_id.value == 1);
+    check_frame_storage(view.keysound_selection_rows[0].group_id.value == 9);
+    check_frame_storage(std::strcmp(view.keysound_selection_rows[0].slot.c_str(), "01") == 0);
+    check_frame_storage(view.keysound_all_resource_ids.size() == 5);
+    check_frame_storage(view.keysound_advance_rows.size() == 5);
+    check_frame_storage(view.keysound_advance_rows[0].resource_id.value == 3);
+    check_frame_storage(view.keysound_advance_rows[2].resource_id.value == 1);
+    check_frame_storage(view.keysound_listed_resource_ids.size() == 3);
     check_frame_storage(view.keysound_listed_resource_ids[0] == 3);
     check_frame_storage(view.keysound_listed_resource_ids[2] == 5);
-}
-
-namespace {
-auto keysound_arrays_are_consistent(const WormUiComposeView& view) -> bool {
-    return (view.keysound_count == 0 || view.keysounds) &&
-           (view.keysound_display_row_count == 0 || view.keysound_display_rows) &&
-           (view.keysound_selected_row_count == 0 || view.keysound_selected_rows) &&
-           (view.keysound_selection_row_count == 0 || view.keysound_selection_rows) &&
-           (view.keysound_filter_layer_count == 0 || view.keysound_filter_layers) &&
-           (view.keysound_advance_row_count == 0 || view.keysound_advance_rows) &&
-           (view.keysound_listed_resource_count == 0 || view.keysound_listed_resource_ids) &&
-           (view.keysound_all_resource_count == 0 || view.keysound_all_resource_ids);
-}
-}
-
-TEST_CASE("Sound section arena exhaustion preserves count and pointer consistency",
-          "[sys][frame-arena][sound-group][sound-filter]") {
-    auto document = compose_resource_document(5);
-    document.charts.push_back({.id = wormedit::chart_id_t{1}});
-    document.charts.front().semantic_layers.push_back(
-        {.id = wormedit::layer_id_t{7}, .name = "Blue"});
-    document.sound_groups = {{.id = wormedit::sound_group_id_t{9}, .name = "Piano"}};
-    for (auto& resource : document.resources)
-        resource.sound_group = wormedit::sound_group_id_t{9};
-    const std::array<std::uint64_t, 5> selected{1, 2, 3, 4, 5};
-    WormUiKeysoundDockRequest request{};
-    request.selected_resource_ids = selected.data();
-    request.selected_resource_count = selected.size();
-    request.include_selected_metadata = true;
-    request.automatic_row_limit = 3;
-    request.filter_layer_row_limit = 64;
-    bool saw_rows = false, saw_truncation = false;
-    for (const auto budget : {64U, 128U, 256U, 512U, 1024U, 2048U, 4096U, 8192U}) {
-        frame_arena_t arena({.chunk_bytes = budget, .maximum_bytes = budget});
-        auto frame = project_resource_rows(document, &arena, request);
-        frame.rebind_view_pointers();
-        INFO("Arena budget " << budget);
-        check_frame_storage(keysound_arrays_are_consistent(frame.view.compose));
-        saw_rows = saw_rows || frame.view.compose.keysound_display_row_count != 0;
-        saw_truncation = saw_truncation || frame.view.compose.keysounds_truncated;
-    }
-    check_frame_storage(saw_rows && saw_truncation);
-    check_frame_storage(document.resources.size() == 5);
-    check_frame_storage(document.resources.front().sound_group == wormedit::sound_group_id_t{9});
 }
 
 TEST_CASE("Audio sound rows reuse query and text storage until the document changes",
@@ -1430,31 +1325,32 @@ TEST_CASE("Go to sound frame searches beyond dock filters and owns moved display
     auto document = compose_resource_document(300);
     document.charts.push_back({.id = wormedit::chart_id_t{1}});
     document.resources.back().name = "Super Snare Roll";
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     request.sound_picker_open = true;
-    std::strcpy(request.sound_picker_query, "SSR");
-    std::strcpy(request.automatic_search, "no dock matches");
+    request.sound_picker_query = "SSR";
+    request.automatic_search = "no dock matches";
     request.automatic_first_row = 100;
     request.automatic_row_limit = 1;
     auto frame = project_resource_rows(document, nullptr, request);
-    check_frame_storage(frame.view.compose.keysound_count == 0);
+    check_frame_storage(frame.view.compose.keysounds.size() == 0);
     check_frame_storage(frame.view.compose.sound_picker.ready);
     check_frame_storage(frame.view.compose.sound_picker.total_count == 1);
-    REQUIRE(frame.view.compose.sound_picker.row_count == 1);
-    check_frame_storage(frame.view.compose.sound_picker.rows[0].resource_id == 300);
+    REQUIRE(frame.view.compose.sound_picker.rows.size() == 1);
+    check_frame_storage(frame.view.compose.sound_picker.rows[0].resource_id.value == 300);
     document.resources.clear();
     auto moved = std::move(frame);
     moved.rebind_view_pointers();
-    check_frame_storage(std::strstr(moved.view.compose.sound_picker.rows[0].label, "Super Snare Roll") != nullptr);
+    check_frame_storage(std::strstr(moved.view.compose.sound_picker.rows[0].label.c_str(), "Super Snare Roll") != nullptr);
     request.sound_picker_open = false;
     auto closed = project_resource_rows(document, nullptr, request);
     check_frame_storage(!closed.view.compose.sound_picker.ready);
-    check_frame_storage(closed.view.compose.sound_picker.row_count == 0);
+    check_frame_storage(closed.view.compose.sound_picker.rows.size() == 0);
     request.sound_picker_open = true;
-    std::fill(std::begin(request.sound_picker_query), std::end(request.sound_picker_query), 'x');
+    const std::string query(96, 'x');
+    request.sound_picker_query = query;
     const auto bounded = project_resource_rows(document, nullptr, request);
     check_frame_storage(bounded.view.compose.sound_picker.ready);
-    check_frame_storage(std::strlen(bounded.view.compose.sound_picker.query) == 95);
+    check_frame_storage(bounded.view.compose.sound_picker.query.size() == 95);
 }
 
 TEST_CASE("Project export catalog includes groups outside the selected Compose difficulty", "[sys][frame-arena][output-groups]") {
@@ -1815,4 +1711,59 @@ TEST_CASE("Output suggestions query long profile identities without copying text
     check_frame_storage(suggestions.empty());
     check_frame_storage(after.count == before.count);
     check_frame_storage(after.bytes == before.bytes);
+}
+
+TEST_CASE("Compose sound families retain populated row storage without warmed allocations",
+          "[sys][compose-resource][sound-group][sound-picker][steady-state]") {
+    auto document = compose_resource_document(129);
+    document.id = wormedit::song_id_t{4};
+    document.revision = 7;
+    document.charts.push_back({.id = wormedit::chart_id_t{1},
+        .source_family = wormedit::format_family_t::bms});
+    document.sound_groups.push_back({.id = wormedit::sound_group_id_t{9},
+                                    .name = std::string(80, 'g')});
+    document.resources.front().sound_group = wormedit::sound_group_id_t{9};
+    document.charts.front().semantic_layers.push_back({.id = wormedit::layer_id_t{3},
+                                                      .name = std::string(80, 'l')});
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
+    wormedit::ui::keysound_dock_request_t request{.sound_picker_open = true,
+        .include_ungrouped = true, .automatic_row_limit = 64};
+    compose_resource_catalog_cache_t resources;
+    keysound_list_cache_t keysounds;
+    frontend_workspace_view_t frame;
+    const std::string status = "ready";
+    auto refill = [&] {
+        frame.refill(model, document, status, {}, false, nullptr,
+            dock_sort_t::natural_name, request, {}, {}, &keysounds, {}, &resources);
+    };
+    refill();
+    REQUIRE(frame.view.compose.resources.size() == 129);
+    check_frame_storage(frame.view.compose.resources.back().resource_id == wormedit::resource_id_t{129});
+    REQUIRE_FALSE(frame.view.compose.keysounds.empty());
+    REQUIRE_FALSE(frame.view.compose.keysound_display_rows.empty());
+    REQUIRE(frame.view.compose.sound_picker.rows.size() == 20);
+    const auto* rows = frame.view.compose.resources.data();
+    const auto before = frame_heap_allocation_snapshot();
+    refill();
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(after.bytes == before.bytes);
+    check_frame_storage(frame.view.compose.resources.data() == rows);
+    document.resources.front().name = "Reopened resource";
+    document.sound_groups.front().name = "Reopened group";
+    ++frame.query_session_generation;
+    refill();
+    check_frame_storage(frame.view.compose.resources.front().name == "Reopened resource");
+    check_frame_storage(frame.view.compose.compose_sound_groups.front().name == "Reopened group");
+    request.slots_mode = true;
+    request.row_limit = 64;
+    refill();
+    REQUIRE(frame.view.compose.sound_slots.size() == 64);
+    const auto slots_before = frame_heap_allocation_snapshot();
+    refill();
+    const auto slots_after = frame_heap_allocation_snapshot();
+    check_frame_storage(slots_after.count == slots_before.count);
+    check_frame_storage(slots_after.bytes == slots_before.bytes);
 }

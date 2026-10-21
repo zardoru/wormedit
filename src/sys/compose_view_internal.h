@@ -294,7 +294,6 @@ void build_compose_marker_draft_view(const compose_scene_projection_context_t& p
 
 void build_compose_marker_previews_view(const compose_scene_projection_context_t& projection);
 
-void publish_compose_scene(const compose_scene_projection_context_t& projection);
 
 bool initialize_compose_view_state(
     frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,

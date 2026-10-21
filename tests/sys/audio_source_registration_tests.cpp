@@ -68,7 +68,7 @@ TEST_CASE("audio fallback keeps an exact file and never searches around it",
     dir.touch("kick.wav");
     dir.touch("kick.ogg");
     const auto result = wormedit::sys::resolve_audio_fallback("kick.wav", dir.path);
-    CHECK(result.outcome == wormedit::sys::audio_fallback_outcome_t::exact);
+    CHECK(result.outcome == wormedit::audio_fallback_outcome_t::exact);
     CHECK(result.chosen == std::filesystem::path{"kick.wav"});
     CHECK(result.candidates.empty());
 }
@@ -78,7 +78,7 @@ TEST_CASE("audio fallback chooses the one other extension, case-insensitively",
     const fallback_dir_t dir{"wormedit-fallback-single"};
     dir.touch("sub/Snare.OGG");
     const auto result = wormedit::sys::resolve_audio_fallback("sub/snare.wav", dir.path);
-    CHECK(result.outcome == wormedit::sys::audio_fallback_outcome_t::fallback);
+    CHECK(result.outcome == wormedit::audio_fallback_outcome_t::fallback);
     CHECK(result.chosen == std::filesystem::path{"sub/Snare.OGG"});
     CHECK(result.candidates.size() == 1);
 }
@@ -91,7 +91,7 @@ TEST_CASE("audio fallback reports every candidate when several match",
     dir.touch("HAT.WAV");
     dir.touch("hat.mp3");
     const auto result = wormedit::sys::resolve_audio_fallback("hat.wave", dir.path);
-    CHECK(result.outcome == wormedit::sys::audio_fallback_outcome_t::ambiguous);
+    CHECK(result.outcome == wormedit::audio_fallback_outcome_t::ambiguous);
     REQUIRE(result.candidates.size() == 3);
     CHECK(result.candidates[0] == std::filesystem::path{"HAT.WAV"});
     CHECK(result.candidates[1] == std::filesystem::path{"hat.ogg"});
@@ -104,12 +104,12 @@ TEST_CASE("audio fallback finds nothing for missing, unsupported or unsafe paths
     dir.touch("other.wav");
     dir.touch("clap.mp3");
     CHECK(wormedit::sys::resolve_audio_fallback("clap.wav", dir.path).outcome ==
-          wormedit::sys::audio_fallback_outcome_t::missing);
+          wormedit::audio_fallback_outcome_t::missing);
     CHECK(wormedit::sys::resolve_audio_fallback("gone.wav", dir.path).outcome ==
-          wormedit::sys::audio_fallback_outcome_t::missing);
+          wormedit::audio_fallback_outcome_t::missing);
     CHECK(wormedit::sys::resolve_audio_fallback("../other.wav", dir.path / "sub").candidates.empty());
     CHECK(wormedit::sys::resolve_audio_fallback("/nowhere/other.wav", dir.path).outcome ==
-          wormedit::sys::audio_fallback_outcome_t::missing);
+          wormedit::audio_fallback_outcome_t::missing);
 }
 
 TEST_CASE("Large keysound inventories register every asset and metronome accent",

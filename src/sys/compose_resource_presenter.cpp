@@ -118,9 +118,10 @@ auto compose_resource_catalog_t::from(compose_resource_catalog_cache_t& cache,
                                    const song_document_t& document,
                                    std::optional<asset_id_t> selected_audio_asset,
                                    std::size_t maximum_entries,
-                                   std::optional<asset_id_t> selected_visual_asset)
+                                   std::optional<asset_id_t> selected_visual_asset,
+                                   std::uint64_t session_generation)
     -> const compose_resource_catalog_t& {
-    const compose_resource_catalog_query_t query{document, maximum_entries};
+    const compose_resource_catalog_query_t query{document, maximum_entries, session_generation};
     auto& catalog = cache.catalog.get_or_build(query, [&] {
         return compose_resource_catalog_t::from(document, std::nullopt, maximum_entries);
     });
@@ -147,12 +148,13 @@ void compose_resource_catalog_key_t::assign(const compose_resource_catalog_query
     document_identity = &query.document;
     stamp = document_stamp_t::from(query.document);
     maximum_entries = query.maximum_entries;
+    session_generation = query.session_generation;
 }
 
 auto compose_resource_catalog_key_t::operator==(const compose_resource_catalog_query_t& query) const
     -> bool {
     return document_identity == &query.document && stamp.is_current(query.document) &&
-           maximum_entries == query.maximum_entries;
+           maximum_entries == query.maximum_entries && session_generation == query.session_generation;
 }
 
 auto find_compose_resource_uses(const chart_document_t& chart, resource_id_t resource)

@@ -62,7 +62,8 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
                            const document_history_t& history,
                            sound_drop_transaction_t& transaction,
                            std::vector<sound_drop_batch_t>& batches) -> bool {
-    WormUiKeysoundDockRequest dock{};
+    if (!is_resource_drop_event(event)) return false;
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     const sound_drop_origin_t origin{
         .project_id = history.document.id.value,

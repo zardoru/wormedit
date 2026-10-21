@@ -24,6 +24,7 @@
 #include <SDL3/SDL_scancode.h>
 
 #include <algorithm>
+#include <limits>
 #include <functional>
 #include <array>
 #include <atomic>
@@ -175,19 +176,20 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
     view.draw_source_is_stem = false;
     view.draw_source_stem_lane_id = 0;
     view.draw_source_stem_lane_name = "";
-    for (auto& row : flattened.compose.keysound.row) {
-        row.stem_source_lane_id = 0;
-        row.stem_lane_name = "";
-        const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(row.resource_id);
+    for (auto& row : view.keysounds) {
+        row.stem_source_lane_id = {};
+        row.stem_lane_name.clear();
+        const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(row.resource_id.value);
         if (found == cache.stems.draw_stem_sources.value().resource_lanes.end())
             continue;
         const auto& lane = chart.bgm_source_lanes[found->second];
-        row.stem_source_lane_id = lane.id.value;
-        row.stem_lane_name = draw_stem_source_name(flattened, lane.name);
-        if (view.draw_source_kind == 1 && view.draw_source_id == row.resource_id) {
+        row.stem_source_lane_id = lane.id;
+        row.stem_lane_name = lane.name;
+        if (view.draw_source_kind == 1 && view.draw_source_id == row.resource_id.value) {
             view.draw_source_is_stem = true;
-            view.draw_source_stem_lane_id = row.stem_source_lane_id;
-            view.draw_source_stem_lane_name = row.stem_lane_name;
+            view.draw_source_stem_lane_id = row.stem_source_lane_id.value;
+            // The parent draw-source surface keeps its arena lifetime until T-698.
+            view.draw_source_stem_lane_name = draw_stem_source_name(flattened, lane.name);
         }
     }
     if (view.draw_source_kind != 1 || view.draw_source_is_stem)
@@ -213,33 +215,20 @@ void populate_compose_keysound_fallbacks(frontend_workspace_view_t& flattened,
                                          const wormedit::document_history_t& history,
                                          const std::filesystem::path& asset_base) {
     auto& view = flattened.view.compose;
-    view.keysound_fallbacks = nullptr;
-    view.keysound_fallback_count = 0;
-    auto* arena = flattened.arena();
-    if (!arena || asset_base.empty())
-        return;
+    if (asset_base.empty()) { view.keysound_fallbacks.clear(); return; }
     const auto found = build_keysound_fallbacks_view(history.document, asset_base,
-                                                  WORM_UI_KEYSOUND_FALLBACK_CAPACITY);
-    if (found.empty())
-        return;
-    auto rows = arena_array<WormUiKeysoundFallbackView>(*arena, found.size());
-    for (const auto& entry : found) {
-        WormUiKeysoundFallbackView row{};
-        row.resource_id = entry.resource.value;
-        row.outcome = entry.result.outcome == audio_fallback_outcome_t::fallback ? 1 : 2;
-        for (const auto& candidate : entry.result.candidates) {
-            if (row.candidate_count == WORM_UI_KEYSOUND_FALLBACK_CANDIDATES)
-                break;
-            const auto* text = arena_string(*arena, candidate.generic_string());
-            if (!text)
-                break;
-            row.candidates[row.candidate_count++] = text;
-        }
-        if (row.candidate_count != 0)
-            (void)rows.push_back(row);
+                                                  std::numeric_limits<std::size_t>::max(),
+                                                  flattened.query_session_generation);
+    view.keysound_fallbacks.resize(found.size());
+    for (std::size_t index = 0; index < found.size(); ++index) {
+        const auto& entry = found[index];
+        auto& row = view.keysound_fallbacks[index];
+        row.resource_id = entry.resource;
+        row.outcome = entry.result.outcome;
+        row.candidates.resize(entry.candidate_paths.size());
+        for (std::size_t candidate = 0; candidate < entry.candidate_paths.size(); ++candidate)
+            row.candidates[candidate] = entry.candidate_paths[candidate];
     }
-    view.keysound_fallbacks = rows.data();
-    view.keysound_fallback_count = rows.size();
 }
 
 } // namespace wormedit::sys

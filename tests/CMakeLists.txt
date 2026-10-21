@@ -764,17 +764,23 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
+            sys/bga_dock_runtime_tests.cpp ../src/sys/bga_dock_runtime.cpp
+            ../src/sys/frame_timing.cpp
             ../src/sys/document_edit_feedback.cpp
             ../src/sys/compose_action_outcome.cpp
             ../src/sys/compose_audition_requests.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
-        target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
-        target_link_libraries(wormedit_bga_actions_tests PRIVATE wormedit::core wormedit::visual_decoder Catch2::Catch2WithMain)
+        target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1
+            $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
+        target_link_libraries(wormedit_bga_actions_tests PRIVATE
+            wormedit::core wormedit::visual_decoder SDL3::SDL3 Catch2::Catch2WithMain)
         catch_discover_tests(wormedit_bga_actions_tests TEST_PREFIX "bga-actions.")
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        ../src/sys/bga_dock_runtime.cpp
+        ../src/sys/bga_list_view.cpp
         ../src/sys/external_player.cpp
         ../src/ui/nuklear/components.cpp
         sys/bga_lane_projection_tests.cpp

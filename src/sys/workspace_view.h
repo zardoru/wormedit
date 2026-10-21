@@ -132,7 +132,6 @@ struct frontend_workspace_view_t {
         std::optional<std::pair<compose_scene_source_key_t, std::uint64_t>> sound_labels_source;
         std::vector<std::uint64_t> visible_sound_ids;
         std::unordered_map<std::uint64_t, std::string> stem_filenames;
-        frame_span<WormUiComposeBgaEventView> bga_event;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;
         struct {
@@ -143,22 +142,8 @@ struct frontend_workspace_view_t {
             frame_span<WormUiComposeBranchRowView> row;
             frame_span<WormUiComposeBranchChoiceView> choice;
         } branch;
-        struct {
-            frame_span<WormUiComposeResourceView> view;
-        } resource;
-        struct {
-            frame_span<WormUiComposeKeysoundRowView> row;
-            frame_span<WormUiComposeKeysoundRowView> selected_row;
-            frame_span<WormUiComposeKeysoundSelectionView> selection_row;
-            frame_span<WormUiComposeKeysoundDisplayRowView> display_row;
-            frame_span<WormUiComposeKeysoundAdvanceRowView> advance_row;
-            frame_span<std::uint64_t> listed_resource_id;
-            frame_span<std::uint64_t> all_resource_id;
-            frame_span<WormUiComposeSoundSlotRowView> slot;
-            frame_span<WormUiComposeKeysoundLayerView> layer;
-            frame_span<WormUiComposeKeysoundLayerView> filter_layer;
-            frame_span<WormUiComposeSoundGroupView> group;
-        } keysound;
+        keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, std::string, std::uint16_t,
+            std::size_t, std::size_t, resource_use_filter_t>, sound_slots_view_t> sound_slots_cache;
         struct {
             frame_span<WormUiComposeOutputGroupView> view;
         } output_group;
@@ -172,6 +157,7 @@ struct frontend_workspace_view_t {
             recipe_graph_t recipe_graph;
         } timing_geometry;
     } compose;
+    wormedit::ui::keysound_dock_request_t keysound_request;
     std::uint64_t query_session_generation{};
     keyed_cache_t<std::tuple<document_stamp_t, chart_id_t, std::uint64_t>,
         std::vector<bmson_channel_resource_binding_t>> sound_lane_modes_cache;
@@ -187,7 +173,7 @@ struct frontend_workspace_view_t {
                                    const native_project_recovery_controller_view_t& recovery,
                                    bool recovery_scan_configured,
                                    frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
-                                   WormUiKeysoundDockRequest keysound_request = {},
+                                   const wormedit::ui::keysound_dock_request_t& keysound_request = {},
                                    wormedit::ui::sound_usage_request_t sound_usage_request = {},
                                    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
                                    keysound_list_cache_t* keysound_cache = nullptr,
@@ -199,7 +185,7 @@ struct frontend_workspace_view_t {
                                    const native_project_recovery_controller_view_t& recovery,
                                    bool recovery_scan_configured,
                                    frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
-                                   WormUiKeysoundDockRequest keysound_request = {},
+                                   const wormedit::ui::keysound_dock_request_t& keysound_request = {},
                                    wormedit::ui::sound_usage_request_t sound_usage_request = {},
                                    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
                                    keysound_list_cache_t* keysound_cache = nullptr,

@@ -89,9 +89,9 @@ auto large_projection_catalog() -> song_document_t {
     return song;
 }
 
-auto full_keysound_request(std::span<const std::uint64_t> selected,
-                           std::span<const std::uint64_t> groups,
-                           std::span<const std::uint64_t> collapsed,
+auto full_keysound_request(std::span<const resource_id_t> selected,
+                           std::span<const sound_group_id_t> groups,
+                           std::span<const sound_group_id_t> collapsed,
                            std::string_view search = "sound") -> keysound_list_request_t {
     return {.search = search, .selected_resource_ids = selected,
         .include_selected_metadata = true, .group_ids = groups,
@@ -133,9 +133,9 @@ auto cached_request_owns_inputs_and_matches_reference() -> bool {
     keysound_list_view_t reference;
     const keysound_list_view_t* first{};
     {
-        const std::array selected{std::uint64_t{7}, std::uint64_t{19}, std::uint64_t{599}};
-        const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
-        const std::array collapsed{std::uint64_t{2}};
+        const std::array selected{resource_id_t{7}, resource_id_t{19}, resource_id_t{599}};
+        const std::array groups{sound_group_id_t{1}, sound_group_id_t{2}};
+        const std::array collapsed{sound_group_id_t{2}};
         const std::string search{"sound"};
         const auto request = full_keysound_request(selected, groups, collapsed, search);
         first = &keysound_list_view_t::from(cache, song, &chart, request);
@@ -143,9 +143,9 @@ auto cached_request_owns_inputs_and_matches_reference() -> bool {
     }
     if (!first || !(*first == reference) || cache.projection_build_count() != 1 ||
         cache.asset_index_build_count() != 1) return false;
-    const std::array selected{std::uint64_t{7}, std::uint64_t{19}, std::uint64_t{599}};
-    const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
-    const std::array collapsed{std::uint64_t{2}};
+    const std::array selected{resource_id_t{7}, resource_id_t{19}, resource_id_t{599}};
+    const std::array groups{sound_group_id_t{1}, sound_group_id_t{2}};
+    const std::array collapsed{sound_group_id_t{2}};
     const std::string search{"sound"};
     const auto repeated = full_keysound_request(selected, groups, collapsed, search);
     const auto& hit = keysound_list_view_t::from(cache, song, &chart, repeated);
@@ -164,9 +164,8 @@ auto cache_keys_include_project_chart_and_revision() -> bool {
     auto song = large_projection_catalog();
     auto& chart = song.charts.front();
     keysound_list_cache_t cache;
-    const std::array groups{std::uint64_t{1}, std::uint64_t{2}, std::uint64_t{3}};
-    const std::array<std::uint64_t, 0> none{};
-    const auto request = full_keysound_request(none, groups, none);
+    const std::array groups{sound_group_id_t{1}, sound_group_id_t{2}, sound_group_id_t{3}};
+    const auto request = full_keysound_request({}, groups, {});
     const auto first = keysound_list_view_t::from(cache, song, &chart, request);
 
     auto alternate_chart = chart;
@@ -196,12 +195,12 @@ auto cache_keys_include_project_chart_and_revision() -> bool {
 
 auto every_full_request_field_invalidates() -> bool {
     using change_t = std::function<void(keysound_list_request_t&)>;
-    const std::array selected{std::uint64_t{7}, std::uint64_t{19}};
-    const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
-    const std::array collapsed{std::uint64_t{2}};
-    const std::array changed_ids{std::uint64_t{8}};
-    const std::array changed_groups{std::uint64_t{3}};
-    const std::array changed_collapsed{std::uint64_t{1}};
+    const std::array selected{resource_id_t{7}, resource_id_t{19}};
+    const std::array groups{sound_group_id_t{1}, sound_group_id_t{2}};
+    const std::array collapsed{sound_group_id_t{2}};
+    const std::array changed_ids{resource_id_t{8}};
+    const std::array changed_groups{sound_group_id_t{3}};
+    const std::array changed_collapsed{sound_group_id_t{1}};
     const std::array<change_t, 17> changes{
         [](auto& request) { request.search = "sound1"; },
         [&](auto& request) { request.selected_resource_ids = changed_ids; },
@@ -437,7 +436,7 @@ TEST_CASE("keysound section projection filters before windowing and advances acr
     }
     chart.sound_layer_defaults = {{.resource = resource_id_t{2}, .layers = {layer_id_t{5}}}};
     chart.id = chart_id_t{7};
-    std::array<std::uint64_t, 1> collapsed_group_ids{10};
+    std::array<sound_group_id_t, 1> collapsed_group_ids{sound_group_id_t{10}};
     const auto page = keysound_list_view_t::from(song, &chart, keysound_list_request_t{
         .search = "wav", .collapsed_group_ids = collapsed_group_ids,
         .first_row = 0, .row_limit = 3});
@@ -453,7 +452,7 @@ TEST_CASE("keysound section projection filters before windowing and advances acr
     check_sound_projection(page.display_first_row == 0);
 
     const auto filtered = keysound_list_view_t::from(song, &chart, keysound_list_request_t{
-        .search = "KI", .group_ids = std::array<std::uint64_t, 1>{20},
+        .search = "KI", .group_ids = std::array{sound_group_id_t{20}},
         .group_filter_active = true, .include_ungrouped = false,
         .layer_filter = keysound_layer_filter_kind_t::specific, .layer_id = 5});
     require_sound_projection(filtered.rows.size() == 1);
@@ -463,7 +462,7 @@ TEST_CASE("keysound section projection filters before windowing and advances acr
         .row_limit = 1, .primary_resource_id = 4});
     check_sound_projection(located.primary_display_index == std::optional<std::size_t>{6});
 
-    const std::array collapsed_groups{std::uint64_t{10}, std::uint64_t{20}};
+    const std::array collapsed_groups{sound_group_id_t{10}, sound_group_id_t{20}};
     const auto collapsed = keysound_list_view_t::from(song, &chart, keysound_list_request_t{
         .collapsed_group_ids = collapsed_groups, .ungrouped_collapsed = true});
     check_sound_projection(collapsed.display_total == 3);
@@ -481,12 +480,12 @@ TEST_CASE("keysound section projection filters before windowing and advances acr
 TEST_CASE("keysound projection keeps row payload bounded for large selections and catalogs",
           "[unit][sys][sounds][sound-groups]") {
     song_document_t song;
-    std::vector<std::uint64_t> selected;
+    std::vector<resource_id_t> selected;
     for (std::uint64_t id = 1; id <= 1200; ++id) {
         song.audio_assets.push_back({.id = asset_id_t{id}, .source_path = "sound.wav"});
         song.resources.push_back({.id = resource_id_t{id}, .name = "sound" + std::to_string(id),
             .asset = asset_id_t{id}, .roles = {resource_role_t::sample}});
-        if (id > 1000) selected.push_back(id);
+        if (id > 1000) selected.push_back(resource_id_t{id});
     }
     const auto list = keysound_list_view_t::from(song, nullptr, keysound_list_request_t{
         .selected_resource_ids = selected, .first_row = 0, .row_limit = 12});
@@ -740,7 +739,7 @@ TEST_CASE("Sounds use and path filters precede virtual windows and retain hidden
                               .roles = {resource_role_t::sample}});
     song.charts.push_back({.sound_channels = {{.source_clip = {.source = asset_id_t{2}},
                                              .events = {{}}}}});
-    const std::array<std::uint64_t, 1> selected{6};
+    const std::array<resource_id_t, 1> selected{resource_id_t{6}};
     keysound_list_cache_t cache;
     keysound_list_request_t request{.search = "ASSETS/2-KICK", .use_filter = resource_use_filter_t::used,
         .selected_resource_ids = selected, .include_selected_metadata = true,

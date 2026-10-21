@@ -513,19 +513,101 @@ claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
 
 ## T-697 Convert the Compose sound, keysound and BGA views
 
-- **Status:** ready
+- **Status:** done (2026-10-21)
 - **Outcome:** the resource, sound picker, keysound row/display/advance/selection/layer, sound group, keysound fallback, sound slot, BGA row/event views and the BGA and keysound dock requests are C++ types.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for those structs, plus `src/ui/nuklear/compose_sounds_panel.cpp` and `src/ui/nuklear/compose_bga_panel.cpp`.
+- **Files owned:** the shared list for those structs, plus `src/ui/nuklear/compose_sounds_panel.cpp` and `src/ui/nuklear/compose_bga_panel.cpp`; the exact inventory and supporting extensions below are part of this ownership.
 - **Steps:** 1. Inventory. 2. Convert one family per checkpoint.
 - **Invariants:** the shared list.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
 - **Out of scope:** sound import and slicing behavior.
 
+### T-697 inventory and ownership (2026-10-20)
+
+- Stale-plan check: all fifteen outcome structs still used legacy C storage.
+- Exact owned projection/consumer/regression files from the inventory: `tests/ui/compose_beat_fit_tests.cpp`, `src/ui/frontend/compose.h`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/ui/frontend/runtime.h`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/sound_filter_event_harness_tests.cpp`, `tests/ui/dock_select_all_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/live_resource_table_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/bga_dock_runtime.h`, `src/ui/nuklear/compose_resources.cpp`, `src/sys/application.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/bga_dock_runtime.cpp`, `src/sys/workspace_view.h`, `src/sys/workspace_view.cpp`, `src/sys/compose_draw_source_view.cpp`, `src/sys/application_frame_view.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/sound_import_staging.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/sound_import_dialog.cpp`.
+- Supporting ownership approved within this card: `tests/sys/bga_dock_runtime_tests.cpp` (decoded-thumbnail allocation and source-path refresh regression), `cmake/complexity_baseline.txt` (remove the retired score-28 row-drawing allowance), `tests/CMakeLists.txt` (link the BGA runtime/list into the existing allocation regression target and enable the production heap hook in the image-enabled BGA test target), `include/wormedit/core/resource_vocabulary.h`, `src/sys/audio_fallback.h` and `tests/sys/audio_source_registration_tests.cpp` (share pure resource-filter/fallback enums across the boundary), `src/sys/resource_drop_router.h/.cpp` (reuse the drop-event admission query before filling owned dock requests), `src/sys/compose_resource_presenter.h/.cpp` (session-aware resource cache), `src/sys/compose_view_internal.h` (retired arena publication declaration), `src/ui/nuklear/compose_sound_picker.cpp` (inferred row consumer), `src/ui/nuklear/compose_panel.cpp` and `compose_state.cpp` (validation/selection), `tests/sys/sound_list_projection_tests.cpp` (fallback cache), `src/sys/compose_scene_view.cpp`, `src/sys/compose_view.cpp`, `src/sys/sound_list_view.h`, `src/sys/sound_list_view.cpp`, for BGA scene publication, converted geometry/identity consumers and cached fallback projection storage. `memory/chart-editor-status/resume.md` advances only after verification.
+- Resource and keysound lists used `frame_span` plus arena text. BGA dock rows/IDs borrowed runtime vectors; scene BGA events used arena storage. Requests borrowed frontend filter/selection buffers. Converted lists belong to the persistent view and refill in place.
+- Storage-only bounds to retire: resource 128, legacy keysound 4096, fallback 256 / six candidate labels and BGA event 32768. Search top-20 matches, viewport row windows, scene/render budgets, the 64-bit layer masks and BMS format capacities remain work/format bounds.
+
+### T-697 implementation and verification (2026-10-21)
+
+- Converted all fifteen structs. Editable rows carry typed resource, asset, event, group,
+  layer and source-lane IDs; resource-use, layer-filter and audio-fallback enums have one
+  backend-neutral owner in `core/resource_vocabulary.h`. Eighteen root lists, picker rows,
+  fallback candidate paths and the dock request's typed ID buffers retain owned storage.
+  Thumbnail bytes still borrow the runtime's immutable image buffers through a span.
+- Producers resize and refill text-bearing rows by index, preserving their string capacities.
+  The application retains the keysound request, and projection takes it by reference. Resource,
+  keysound, picker, slot, BGA and fallback caches refresh on project-session replacement,
+  including equal-ID/revision reopens. Fallback lookup compares missing-resource identities
+  without allocating a temporary list. The legacy parent draw-source text keeps its existing
+  arena lifetime until T-698 converts that surface.
+- Removed resource 128, legacy keysound 4096, fallback 256 / six-candidate and BGA event
+  32768 storage cutoffs, plus the unused layer-capacity macro. Retained the 64-bit layer-mask
+  bound, 95-byte picker query / top-20 search budget, requested viewport windows, BGA's
+  64-row viewport budget, BMS format limits and scene/render budgets. Keysound window flags
+  still describe a real viewport window, rather than storage exhaustion.
+- Allocation regressions cover populated sound/resource/group/layer/picker and slot refills,
+  typed dock request reads, BGA dock rows and long fallback candidate paths. The resource
+  regression reaches row 129; snapshots retain text after source mutation and moves. The frame-timing
+  allocation subset passes **eight cases / 104 assertions**; the resource subset passes
+  **five cases / 37 assertions**. The decoded-thumbnail allocation regression passes
+  **nine assertions**, including real image decoding and pixel refresh after a source-path change. The first allocation checkpoint exposed twenty temporary picker-name
+  copies; using string views in that conditional removes them.
+- The decoded-thumbnail regression first failed both warmed allocation checks: source-path
+  resolution was still repeated for cached images. Thumbnails now retain the catalog build
+  against which their source was validated. Catalog changes (including document revision,
+  project session and asset base) revalidate it; steady frames reuse it. Request assembly and
+  completion remain in the existing image-job owner, with the four-source and 512-thumbnail
+  work/retention budgets preserved. Before/after evidence: `/tmp/t697-decoded-before.log`
+  and `/tmp/t697-decoded-after.log`.
+- Reused the drop router's event-admission query before collecting owned requests, and skip
+  empty drop batches. Import and slicing semantics are unchanged. The row's status-label
+  query now lives on its type; the former score-28 drawing allowance is removed. No complexity
+  allowance or ratchet maximum increased. Ratchets: **21 C structs / 17 capacities /
+  51 count fields / 0 codecs**.
+- Code-style checklist reviewed: retained owners and synchronous request lifetimes are explicit;
+  no new parallel result/transaction plumbing, parser, copied lifecycle shell or unowned
+  adapter. Type references were renamed through Clang-resolved symbols before the conversion.
+- Final `scripts/gate.sh` passes build, **4,386/4,386 tests**, whitespace and complexity across
+  **42 changed translation units** (`/tmp/t697-gate4.log`, `/tmp/wormedit-gate.dHYMnc`).
+  The separate `ctest --test-dir build -j 8 -L event-harness --output-on-failure` run passes
+  **592/592** (`/tmp/t697-events.log`). Documentation checks pass **5/5**, with verbose
+  lowered-row evidence in `/tmp/t697-documentation-final.log`.
+- Isolated Xvfb captures inspected: `/tmp/t697-compose.png` (tracked Compose fixture),
+  `/tmp/t697-docks.png` (two populated sound rows, BGA row and decoded thumbnail, BGA event),
+  `/tmp/t697-picker.png` (Go to sound), and `/tmp/t697-stem.png` (BMSON stem sound row). The tracked Compose capture is pixel-identical
+  to `/tmp/t696-after.png`: **zero changed RGB pixels**. The disposable populated fixture
+  is `/tmp/t697-visual/project.wormedit`; steps are `/tmp/t697-docks-steps.sh`.
+
+Actual final GATE tail:
+
+```text
+gate: 8 job(s), min(8, 16 cores / 1 agent(s)); logs in /tmp/wormedit-gate.dHYMnc
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4386
+gate: passed
+```
+
+Other verification tails:
+
+```text
+$ ctest --test-dir build -j 8 -L event-harness --output-on-failure
+100% tests passed out of 592
+$ ctest --test-dir build -j 8 -R '^documentation\.' -V
+100% tests passed out of 5
+$ scripts/smoke-compose-virtual-x.sh /tmp/t697-compose.png compose tests/fixtures/native/compose-smoke.wormedit
+/tmp/t697-compose.png
+```
+
 ## T-698 Convert the remaining Compose views and `WormUiComposeView`
 
-- **Status:** blocked-on T-697
+- **Status:** ready
 - **Outcome:** `compose.h` contains no C structs. The remaining views (semantic layers, bookmarks, sections, audio bookmarks/sections, branch rows and choices, recipe form, bookmark chooser, lane key binding, shortcut event, output group, measure row, quantize preset/position/report) and `WormUiComposeView` itself are C++ types, and the T-672 member sits in a C++ parent.
 - **Read first:** the shared list.
 - **Files owned:** the shared list for `src/ui/frontend/compose.h`, plus `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_panel.cpp` and `compose_inspector.cpp`.

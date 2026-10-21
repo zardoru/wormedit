@@ -46,7 +46,8 @@ struct compose_resource_catalog_t {
                                   const song_document_t& document,
                                   std::optional<asset_id_t> selected_audio_asset,
                                   std::size_t maximum_entries,
-                                  std::optional<asset_id_t> selected_visual_asset = {})
+                                  std::optional<asset_id_t> selected_visual_asset = {},
+                                  std::uint64_t session_generation = 0)
         -> const compose_resource_catalog_t&;
     void select(std::optional<asset_id_t> audio_asset, std::optional<asset_id_t> visual_asset);
     std::vector<compose_resource_entry_t> entries;
@@ -57,12 +58,14 @@ struct compose_resource_catalog_t {
 struct compose_resource_catalog_query_t {
     const song_document_t& document;
     std::size_t maximum_entries{};
+    std::uint64_t session_generation{};
 };
 
 struct compose_resource_catalog_key_t {
     const song_document_t* document_identity{};
     document_stamp_t stamp;
     std::size_t maximum_entries{};
+    std::uint64_t session_generation{};
 
     [[nodiscard]] static auto from(const compose_resource_catalog_query_t& query)
         -> compose_resource_catalog_key_t;

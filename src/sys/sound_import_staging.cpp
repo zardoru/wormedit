@@ -85,7 +85,7 @@ auto stage_sound_import(const song_document_t& document, const workspace_control
     -> compose_action_outcome_t {
     if (!workspace.selected_chart) return compose_action_outcome_t::blocked(
         "Select a difficulty before adding sounds.", notification_source_t::import_);
-    WormUiKeysoundDockRequest dock{};
+    wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     if (workspace.active_tab == workspace_tab_t::compose && dock.slots_mode && dock.selected_slot_explicit)
         return stage_sound_slot_batch(document, *workspace.selected_chart, dock.selected_slot, paths);

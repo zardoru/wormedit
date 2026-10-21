@@ -1,4 +1,5 @@
 #include "nuklear_event_harness.h"
+#include "sys/frame_timing.h"
 #include "ui/nuklear/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,43 +21,43 @@ void require_filter(bool condition, const std::source_location location =
 
 void seed_sound_filter_view(WormUiComposeView& view) {
     static const std::array groups{
-        WormUiComposeSoundGroupView{.group_id = 80, .name = "Percussion"},
-        WormUiComposeSoundGroupView{.group_id = 81, .name = "Piano"}};
+        wormedit::ui::compose_sound_group_view_t{.group_id = wormedit::sound_group_id_t{80}, .name = "Percussion"},
+        wormedit::ui::compose_sound_group_view_t{.group_id = wormedit::sound_group_id_t{81}, .name = "Piano"}};
     static const std::array rows{
-        WormUiComposeKeysoundRowView{.resource_id = 5, .slot = "01", .name = "Kick",
-                                     .sound_group_id = 80},
-        WormUiComposeKeysoundRowView{.resource_id = 9, .slot = "02", .name = "Snare",
-                                     .sound_group_id = 80}};
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{5}, .slot = "01", .name = "Kick",
+                                     .sound_group_id = wormedit::sound_group_id_t{80}},
+        wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{9}, .slot = "02", .name = "Snare",
+                                     .sound_group_id = wormedit::sound_group_id_t{80}}};
     static const std::array display{
-        WormUiComposeKeysoundDisplayRowView{.kind = WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER,
-            .group_id = 80, .group_name = "Percussion", .group_sound_count = 2, .expanded = true},
-        WormUiComposeKeysoundDisplayRowView{.kind = WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
-            .group_id = 80, .resource_id = 5},
-        WormUiComposeKeysoundDisplayRowView{.kind = WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
-            .group_id = 80, .resource_id = 9}};
+        wormedit::ui::compose_keysound_display_row_view_t{.kind = WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER,
+            .group_id = wormedit::sound_group_id_t{80}, .group_name = "Percussion", .group_sound_count = 2, .expanded = true},
+        wormedit::ui::compose_keysound_display_row_view_t{.kind = WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
+            .group_id = wormedit::sound_group_id_t{80}, .resource_id = wormedit::resource_id_t{5}},
+        wormedit::ui::compose_keysound_display_row_view_t{.kind = WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
+            .group_id = wormedit::sound_group_id_t{80}, .resource_id = wormedit::resource_id_t{9}}};
     static const std::array<std::uint64_t, 2> ids{5, 9};
     static const std::array layers{
-        WormUiComposeKeysoundLayerView{.layer_id = 501, .name = "Blue"}};
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{501}, .name = "Blue"}};
     view.keysounds_available = true;
     view.project_id = 31;
     view.chart_id = 7;
-    view.keysounds = rows.data();
-    view.keysound_count = rows.size();
+    view.keysounds.assign(std::begin(rows), std::end(rows));
+    view.keysounds.resize(rows.size());
     view.keysound_total_count = rows.size();
-    view.keysound_display_rows = display.data();
-    view.keysound_display_row_count = display.size();
+    view.keysound_display_rows.assign(std::begin(display), std::end(display));
+    view.keysound_display_rows.resize(display.size());
     view.keysound_display_total_count = display.size();
     view.keysound_section_projection_available = true;
-    view.keysound_listed_resource_ids = ids.data();
-    view.keysound_listed_resource_count = ids.size();
-    view.keysound_all_resource_ids = ids.data();
-    view.keysound_all_resource_count = ids.size();
-    view.compose_sound_groups = groups.data();
-    view.compose_sound_group_count = groups.size();
-    view.keysound_layers = layers.data();
-    view.keysound_layer_count = layers.size();
-    view.keysound_filter_layers = layers.data();
-    view.keysound_filter_layer_count = layers.size();
+    view.keysound_listed_resource_ids.assign(std::begin(ids), std::end(ids));
+    view.keysound_listed_resource_ids.resize(ids.size());
+    view.keysound_all_resource_ids.assign(std::begin(ids), std::end(ids));
+    view.keysound_all_resource_ids.resize(ids.size());
+    view.compose_sound_groups.assign(std::begin(groups), std::end(groups));
+    view.compose_sound_groups.resize(groups.size());
+    view.keysound_layers.assign(std::begin(layers), std::end(layers));
+    view.keysound_layers.resize(layers.size());
+    view.keysound_filter_layers.assign(std::begin(layers), std::end(layers));
+    view.keysound_filter_layers.resize(layers.size());
     view.keysound_filter_layer_total = layers.size();
     view.keysound_filter_selected_layer_valid = true;
     view.keysound_filter_selected_layer_name = "Blue";
@@ -94,7 +95,7 @@ TEST_CASE("Sounds group filter updates request before paging without editing the
     seed_sound_filter_view(view);
     require_filter(harness.ready());
     (void)harness.frame();
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
     check_filter(!request.group_filter_active);
     check_filter(request.include_ungrouped);
@@ -116,8 +117,8 @@ TEST_CASE("Sounds group filter updates request before paging without editing the
     check_filter(ungrouped_actions[1].get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     worm_ui_frontend_keysound_dock_request(&request);
     check_filter(request.group_filter_active);
-    require_filter(request.group_filter_count == 1);
-    check_filter(request.group_filter_ids[0] == 80);
+    require_filter(request.group_filter_ids.size() == 1);
+    check_filter(request.group_filter_ids[0].value == 80);
     check_filter(!request.include_ungrouped);
     check_filter(request.automatic_first_row == 0);
     view.project_id = 32;
@@ -183,10 +184,10 @@ TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
          << blue_actions[1].get().compose_action << "; layer kind/id: "
          << worm_ui_nuklear_compose_state().keysound_filters.keysound_filters.layer_filter_kind << "/"
          << worm_ui_nuklear_compose_state().keysound_filters.keysound_filters.layer_filter_id);
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
-    check_filter(request.layer_filter_kind == WORM_UI_KEYSOUND_LAYER_FILTER_SPECIFIC);
-    check_filter(request.layer_filter_id == 501);
+    check_filter(request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::specific);
+    check_filter(request.layer_filter_id.value == 501);
     (void)harness.frame();
     layer = harness.drawn_text_center("Blue");
     require_filter(layer.has_value());
@@ -195,7 +196,7 @@ TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
     require_filter(no_layer.has_value());
     (void)click_filter(harness, no_layer->first, no_layer->second);
     worm_ui_frontend_keysound_dock_request(&request);
-    check_filter(request.layer_filter_kind == WORM_UI_KEYSOUND_LAYER_FILTER_NONE);
+    check_filter(request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::no_layer);
     auto clear = harness.drawn_text_center("Clear filters");
     require_filter(clear.has_value());
     (void)click_filter(harness, clear->first, clear->second);
@@ -203,31 +204,31 @@ TEST_CASE("Sounds layer filter offers no layer and Clear filters resets it",
     require_filter(clear.has_value());
     (void)click_filter(harness, clear->first, clear->second);
     worm_ui_frontend_keysound_dock_request(&request);
-    check_filter(request.layer_filter_kind == WORM_UI_KEYSOUND_LAYER_FILTER_ANY);
+    check_filter(request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::any);
     auto& filters = worm_ui_nuklear_compose_state().keysound_filters.keysound_filters;
     filters.layer_filter_kind = WORM_UI_KEYSOUND_LAYER_FILTER_SPECIFIC;
     filters.layer_filter_id = 999;
     filters.layer_chart_id = harness.view().compose.chart_id;
     harness.view().compose.keysound_filter_selected_layer_valid = false;
-    harness.view().compose.keysound_filter_selected_layer_name = nullptr;
+    harness.view().compose.keysound_filter_selected_layer_name.clear();
     (void)harness.frame();
     worm_ui_frontend_keysound_dock_request(&request);
-    check_filter(request.layer_filter_kind == WORM_UI_KEYSOUND_LAYER_FILTER_ANY);
+    check_filter(request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::any);
 }
 
 TEST_CASE("Sounds filter layer paging keeps its release off the sound rows",
           "[frontend-state][event-harness][sound-groups]") {
     static const std::array choices{
-        WormUiComposeKeysoundLayerView{.layer_id = 601, .name = "Layer 1"},
-        WormUiComposeKeysoundLayerView{.layer_id = 602, .name = "Layer 2"},
-        WormUiComposeKeysoundLayerView{.layer_id = 603, .name = "Layer 3"},
-        WormUiComposeKeysoundLayerView{.layer_id = 604, .name = "Layer 4"},
-        WormUiComposeKeysoundLayerView{.layer_id = 605, .name = "Layer 5"}};
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{601}, .name = "Layer 1"},
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{602}, .name = "Layer 2"},
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{603}, .name = "Layer 3"},
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{604}, .name = "Layer 4"},
+        wormedit::ui::compose_keysound_layer_view_t{.layer_id = wormedit::layer_id_t{605}, .name = "Layer 5"}};
     nuklear_event_harness_t harness{1280, 900};
     seed_sound_filter_view(harness.view().compose);
     auto& view = harness.view().compose;
-    view.keysound_filter_layers = choices.data();
-    view.keysound_filter_layer_count = choices.size();
+    view.keysound_filter_layers.assign(std::begin(choices), std::end(choices));
+    view.keysound_filter_layers.resize(choices.size());
     view.keysound_filter_layer_total = choices.size() + 1;
     require_filter(harness.ready());
     (void)harness.frame();
@@ -253,8 +254,30 @@ TEST_CASE("Sounds group headers collapse by stable group ID",
     const auto header = harness.drawn_text_center("v Percussion (2)");
     REQUIRE(header.has_value());
     (void)click_filter(harness, header->first, header->second);
-    WormUiKeysoundDockRequest request{};
+    wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
-    REQUIRE(request.collapsed_group_count == 1);
-    CHECK(request.collapsed_group_ids[0] == 80);
+    REQUIRE(request.collapsed_group_ids.size() == 1);
+    CHECK(request.collapsed_group_ids[0].value == 80);
+}
+
+TEST_CASE("Dock requests retain typed selection and group buffers on warmed reads",
+          "[frontend-state][event-harness][sound-filter][allocation]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.keysound_catalog.keysound_selection.selected = {7, 9};
+    state.keysound_catalog.keysound_selection.primary = 9;
+    state.keysound_filters.keysound_filters.group_ids = {80, 81};
+    state.keysound_filters.keysound_filters.collapsed_group_ids = {81};
+    wormedit::ui::keysound_dock_request_t request;
+    worm_ui_frontend_keysound_dock_request(&request);
+    const auto before = wormedit::sys::frame_heap_allocation_snapshot();
+    worm_ui_frontend_keysound_dock_request(&request);
+    const auto after = wormedit::sys::frame_heap_allocation_snapshot();
+    check_filter(after.count == before.count);
+    check_filter(after.bytes == before.bytes);
+    check_filter(request.selected_resource_ids == std::vector{wormedit::resource_id_t{7}, wormedit::resource_id_t{9}});
+    check_filter(request.primary_resource_id == wormedit::resource_id_t{9});
+    check_filter(request.group_filter_ids == std::vector{wormedit::sound_group_id_t{80}, wormedit::sound_group_id_t{81}});
+    check_filter(request.collapsed_group_ids == std::vector{wormedit::sound_group_id_t{81}});
 }

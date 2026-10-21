@@ -314,18 +314,18 @@ void render_manual_group_contents(nk_context* context, const WormUiComposeView& 
         static_cast<int>(state.manual_group_name.size()), nk_filter_default);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const char* destination = "Create new group";
-    if (state.target_group_id != 0 && view.compose_sound_groups) {
-        const auto* end = view.compose_sound_groups + view.compose_sound_group_count;
-        const auto group = std::ranges::find(view.compose_sound_groups, end,
-            state.target_group_id, &WormUiComposeSoundGroupView::group_id);
-        if (group != end) destination = group->name;
+    if (state.target_group_id != 0) {
+        const auto end = view.compose_sound_groups.end();
+        const auto group = std::ranges::find(view.compose_sound_groups,
+            wormedit::sound_group_id_t{state.target_group_id}, &wormedit::ui::compose_sound_group_view_t::group_id);
+        if (group != end) destination = group->name.c_str();
     }
     if (!wormedit::ui::chrome::safe_combo_begin_label(context, destination, nk_vec2(280, 250))) return;
     nk_layout_row_dynamic(context, 22, 1);
     if (nk_combo_item_label(context, "Create new group", NK_TEXT_LEFT)) state.target_group_id = 0;
-    for (std::size_t index = 0; index < view.compose_sound_group_count; ++index)
-        if (nk_combo_item_label(context, view.compose_sound_groups[index].name, NK_TEXT_LEFT))
-            state.target_group_id = view.compose_sound_groups[index].group_id;
+    for (std::size_t index = 0; index < view.compose_sound_groups.size(); ++index)
+        if (nk_combo_item_label(context, view.compose_sound_groups[index].name.c_str(), NK_TEXT_LEFT))
+            state.target_group_id = view.compose_sound_groups[index].group_id.value;
     wormedit::ui::chrome::safe_combo_end(context);
 }
 

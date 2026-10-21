@@ -491,14 +491,31 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-621 Move subsystem files into folders
 
-- **Status:** Ready
+- **Status:** partial (2026-10-21; exact move and caller inventory recorded)
+- **Owner scheduling (2026-10-21):** the owner explicitly schedules this card now; T-619 and
+  the eligible T-620 scope are complete. No other implementation lane is active.
+- **Done so far:** stale-plan audit confirms 249 flat sys files and 179 flat Nuklear files.
+  The [exact move inventory](../../audits/t621-path-moves.json) records all 428 old/new paths,
+  original file/body hashes, 24 destination folders in execution order, and each consumer.
+- **Remaining:** apply the inventory one destination folder per gated commit; list all move
+  revisions in `.git-blame-ignore-revs`; complete GCC/Clang, event and documentation gates.
+- **Supporting ownership approved (2026-10-21):** all exact old/new paths and consumer paths
+  in the inventory are owned for relocation and include/path updates only, including
+  `cmake/complexity_baseline.txt`, `cmake/edit_execution_allowances.txt`, documentation guards,
+  architecture/current task links and source generators. Preserve every allowance's identity
+  and limit. Historical audit/coordination prose stays historical; actual links follow moves.
+  The inventory itself, this card, and `memory/chart-editor-status/resume.md` are owned for
+  audit/completion evidence. No large-file splits or other semantic edits are included.
 - **Shrink-wrap dependency (2026-10-18):** T-678 removed the unused legacy Chart and Field models. Their deleted paths and the obsolete lowercase-header step are removed from this card; the unrelated interval-index owner remains.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/application.cpp` (about 4,800 lines), `src/sys/compose_actions.cpp` (3,700), `src/ui/nuklear/compose_canvas.cpp` (3,400), `src/sys/compose_view.cpp` (2,700) and `src/sys/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
 - **Findings closed:** FL1–FL5 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: prefix clusters, include paths, CMake source entries. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Folders: move `src/sys` and `src/ui/nuklear` into subsystem folders (FL2), keeping file-name prefixes (FL3). Pure `git mv` plus include and CMake path edits, one commit per folder, each listed in `.git-blame-ignore-revs`. Runs last.
 - **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`.
-- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`. Supporting caller/test/CMake extensions require exact paths and coordinator approval before editing.
+- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`,
+  `docs/audits/t621-path-moves.json`, this card and its exact inventory's source/consumer paths;
+  `memory/chart-editor-status/resume.md` for completion. Supporting path-only scope is approved
+  above; further extensions must be recorded before editing.
 - **Runs after/before:** Runs last, after every earlier card, including T-619 and T-620.
 - **Decisions applied:**
   - D13 — A: In T-612, projections become `build_<x>_view`.

@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/bookmark_chooser_view.h"
+#include "sys/bookmarks/bookmark_chooser_view.h"
 #include "sys/compose_action_outcome.h"
 #include <chrono>
 #include <optional>

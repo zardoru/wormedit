@@ -8,7 +8,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/sound_list_view.h"
 #include "sys/sound_usage_view.h"
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/sound_picker_view.h"
 #include "wormedit/config.h"
 

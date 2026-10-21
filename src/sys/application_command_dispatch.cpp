@@ -9,7 +9,7 @@
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_semantic_layer_commands.h"
 
-#include "sys/bookmark_commands.h"
+#include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_sound_selection.h"

@@ -42,9 +42,9 @@ add_executable(wormedit_core_tests
     ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
-    ../src/sys/bookmark_commands.cpp
+    ../src/sys/bookmarks/bookmark_commands.cpp
     ../src/sys/compose_navigation.cpp
-    ../src/sys/bookmark_rename_commands.cpp
+    ../src/sys/bookmarks/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
     ../src/sys/sound_list_view.cpp
@@ -662,7 +662,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/menu_bar_event_harness_tests.cpp
         ../src/sys/menu_command_view.cpp
         ../src/sys/shortcut_rows.cpp
-        ../src/sys/bookmark_rename_commands.cpp
+        ../src/sys/bookmarks/bookmark_rename_commands.cpp
         ui/compose_bgm_layer_tests.cpp
         ui/sound_usage_event_harness_tests.cpp
         sys/sound_drop_transaction_tests.cpp
@@ -692,15 +692,15 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/application_defaults.cpp
         ../src/sys/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
-        ../src/sys/bookmark_chooser_view.cpp
-        ../src/sys/bookmark_navigation.cpp
+        ../src/sys/bookmarks/bookmark_chooser_view.cpp
+        ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_quantize.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_bgm_bar.cpp
-        ../src/sys/bookmark_commands.cpp
+        ../src/sys/bookmarks/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
         ../src/sys/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
@@ -829,8 +829,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/timing/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_view.cpp
-        ../src/sys/bookmark_chooser_view.cpp
-        ../src/sys/bookmark_navigation.cpp
+        ../src/sys/bookmarks/bookmark_chooser_view.cpp
+        ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/sound_list_view.cpp
         ../src/sys/sound_picker_view.cpp
         ../src/sys/sound_usage_view.cpp
@@ -859,7 +859,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_measure_commands.cpp
             ../src/sys/compose_selection_transform.cpp
             ../src/sys/compose_label_search.cpp
-            ../src/sys/bookmark_rename_commands.cpp
+            ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resource_job_state.cpp
             ../src/sys/preview_audio_export.cpp
             ../src/sys/project_save_paths.cpp
@@ -896,7 +896,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_navigation_input.cpp
             ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
-            ../src/sys/bookmark_commands.cpp
+            ../src/sys/bookmarks/bookmark_commands.cpp
             ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
@@ -932,8 +932,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/sound_usage_view.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_view.cpp
-        ../src/sys/bookmark_chooser_view.cpp
-        ../src/sys/bookmark_navigation.cpp
+        ../src/sys/bookmarks/bookmark_chooser_view.cpp
+        ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/sound_list_view.cpp
         ../src/sys/sound_picker_view.cpp
         ../src/sys/timing/timing_view.cpp

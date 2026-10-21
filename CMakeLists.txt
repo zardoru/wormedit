@@ -483,11 +483,11 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_defaults.cpp
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
-        src/sys/bookmark_commands.cpp
+        src/sys/bookmarks/bookmark_commands.cpp
         src/sys/compose_navigation.cpp
-        src/sys/bookmark_chooser_view.cpp
-        src/sys/bookmark_navigation.cpp
-        src/sys/bookmark_rename_commands.cpp
+        src/sys/bookmarks/bookmark_chooser_view.cpp
+        src/sys/bookmarks/bookmark_navigation.cpp
+        src/sys/bookmarks/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
         src/sys/sound_list_view.cpp

@@ -1,7 +1,7 @@
 #pragma once
 #include "sys/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/metronome.h"

@@ -1,5 +1,5 @@
 #include "sys/compose_navigation.h"
-#include "sys/bookmark_commands.h"
+#include "sys/bookmarks/bookmark_commands.h"
 #include <wormedit/core/snap.h>
 
 #include <wormedit/audio/decoder.h>

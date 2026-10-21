@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/bookmark_commands.h"
+#include "sys/bookmarks/bookmark_commands.h"
 
 namespace wormedit::sys {
 

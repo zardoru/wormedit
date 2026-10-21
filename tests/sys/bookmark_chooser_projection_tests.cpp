@@ -1,4 +1,4 @@
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 #include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>

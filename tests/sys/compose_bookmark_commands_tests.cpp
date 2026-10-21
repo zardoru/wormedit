@@ -1,5 +1,5 @@
 #include "../support/stale_action_assertions.h"
-#include "sys/bookmark_commands.h"
+#include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose_navigation.h"
 #include "sys/application_commands.h"
 #include "sys/compose_playhead_skip.h"

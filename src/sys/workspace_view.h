@@ -1,7 +1,7 @@
 #pragma once
 #include "sys/compose_source_key.h"
 #include <wormedit/core/semantic_layer_editor.h>
-#include "sys/bookmark_chooser_view.h"
+#include "sys/bookmarks/bookmark_chooser_view.h"
 #include "sys/compose_dead_spans.h"
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_recipe_areas.h"

@@ -2,7 +2,7 @@
 #include "sys/compose_actions.h"
 #include <wormedit/core/hitsound_editor.h>
 #include "sys/application_edit_inputs.h"
-#include "sys/bookmark_commands.h"
+#include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose_actions_internal.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"

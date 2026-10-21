@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sys/compose_view.h"
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/interaction_types.h>

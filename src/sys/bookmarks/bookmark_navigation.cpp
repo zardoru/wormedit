@@ -1,4 +1,4 @@
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 #if defined(WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS)
 #include "sys/chart_preview_state.h"
 #endif

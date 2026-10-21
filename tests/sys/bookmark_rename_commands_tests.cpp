@@ -1,5 +1,5 @@
 #include "../support/stale_action_assertions.h"
-#include "sys/bookmark_navigation.h"
+#include "sys/bookmarks/bookmark_navigation.h"
 
 #include <wormedit/core/marker_editor.h>
 

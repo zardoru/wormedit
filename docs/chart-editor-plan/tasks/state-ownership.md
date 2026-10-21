@@ -506,6 +506,11 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
   and limit. Historical audit/coordination prose stays historical; actual links follow moves.
   The inventory itself, this card, and `memory/chart-editor-status/resume.md` are owned for
   audit/completion evidence. No large-file splits or other semantic edits are included.
+- **Compiler prerequisite approved (2026-10-21):** `src/sys/application.cpp` explicitly
+  empty-initializes the audio Options runtime, preserving omitted-member initialization.
+  Clang rejected the earlier initializer under `-Werror`; the fix is isolated in commit
+  `9e83121e59a0929e5d6cabeb7fdb74afa7fa28b6`. GCC application and Clang object builds pass. The inventory
+  retains original hashes and records this reviewed source baseline; move commits stay path-only.
 - **Shrink-wrap dependency (2026-10-18):** T-678 removed the unused legacy Chart and Field models. Their deleted paths and the obsolete lowercase-header step are removed from this card; the unrelated interval-index owner remains.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/application.cpp` (about 4,800 lines), `src/sys/compose_actions.cpp` (3,700), `src/ui/nuklear/compose_canvas.cpp` (3,400), `src/sys/compose_view.cpp` (2,700) and `src/sys/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
 - **Findings closed:** FL1–FL5 (targets; not yet closed).

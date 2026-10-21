@@ -1,4 +1,4 @@
-#include "sys/notification_history_runtime.h"
+#include "sys/notifications/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/frame_timing.h"
 

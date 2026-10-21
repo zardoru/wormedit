@@ -804,7 +804,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/notification_toasts.cpp
         ../src/ui/nuklear/tooltip.cpp
         ../src/ui/nuklear/notification_panel.cpp
-        ../src/sys/notification_history_runtime.cpp
+        ../src/sys/notifications/notification_history_runtime.cpp
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
@@ -920,7 +920,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/project_view.cpp
         ../src/sys/options_runtime.cpp
         ../src/sys/shortcut_rows.cpp
-        ../src/sys/notification_history_runtime.cpp
+        ../src/sys/notifications/notification_history_runtime.cpp
         sys/frame_projection_arena_tests.cpp
         sys/resource_notification_tests.cpp
         ../src/sys/document_edit_feedback.cpp

@@ -4,8 +4,11 @@
     {
       "old": "src/sys/application.cpp",
       "new": "src/sys/app/application.cpp",
-      "sha256": "db87dbe2e8807c3006ee38d20b7d0f505ff53186183260da53a750fdddda875f",
-      "body_sha256": "b64115d9d510534fd6ae04c2c262822b99e51d98254c2240c8e007a036c265ce"
+      "sha256": "9997a37f650a67714260872300a14d0395be3c8af253b4593419148d2fdf76e0",
+      "body_sha256": "ebae3fc2805386ee39c01a6edcae25340e40d6bfd8ed560f5292d9b440f7723c",
+      "initial_sha256": "db87dbe2e8807c3006ee38d20b7d0f505ff53186183260da53a750fdddda875f",
+      "initial_body_sha256": "b64115d9d510534fd6ae04c2c262822b99e51d98254c2240c8e007a036c265ce",
+      "source_base": "9e83121e59a0929e5d6cabeb7fdb74afa7fa28b6"
     },
     {
       "old": "src/sys/application.h",
@@ -7330,5 +7333,12 @@
     "src/ui/nuklear/chrome",
     "src/ui/nuklear/compose",
     "src/ui/nuklear/app"
+  ],
+  "prerequisite_fixes": [
+    {
+      "commit": "9e83121e59a0929e5d6cabeb7fdb74afa7fa28b6",
+      "path": "src/sys/application.cpp",
+      "reason": "Explicit equivalent empty initialization required by the existing Clang missing-field-initializers error; GCC application and Clang object builds passed."
+    }
   ]
 }

@@ -1,5 +1,5 @@
 #include <wormedit/core/timing.h>
-#include "sys/projection_notification_feedback.h"
+#include "sys/notifications/projection_notification_feedback.h"
 #include "sys/compose_label_search.h"
 
 #include <wormedit/core/grid.h>

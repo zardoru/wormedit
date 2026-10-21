@@ -3,7 +3,7 @@
 #include <wormedit/core/catalogs.h>
 #include <wormedit/formats/bms.h>
 #include "sys/frame_timing.h"
-#include "sys/notification_history_runtime.h"
+#include "sys/notifications/notification_history_runtime.h"
 #include "sys/workspace_view.h"
 #include <wormedit/core/arena.h>
 #include <wormedit/core/lane_profiles.h>

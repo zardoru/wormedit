@@ -578,7 +578,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/lane_keys_runtime.cpp
         src/sys/shortcut_rows.cpp
         src/sys/menu_command_view.cpp
-        src/sys/notification_history_runtime.cpp
+        src/sys/notifications/notification_history_runtime.cpp
         src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp

@@ -1,6 +1,6 @@
 #include "sys/workspace_view.h"
 #include "sys/compare_view.h"
-#include "sys/notification_history_runtime.h"
+#include "sys/notifications/notification_history_runtime.h"
 
 #include <algorithm>
 #include <array>

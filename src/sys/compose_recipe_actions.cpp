@@ -1,5 +1,5 @@
 #include "sys/compose_actions_internal.h"
-#include "sys/projection_notification_feedback.h"
+#include "sys/notifications/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
     const auto* chart =

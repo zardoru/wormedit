@@ -60,7 +60,7 @@
 #include "sys/shortcut_rows.h"
 #include "sys/menu_command_view.h"
 #include <set>
-#include "sys/notification_history_runtime.h"
+#include "sys/notifications/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
 #include "sys/project_view.h"
 #include "sys/chart_import_session.h"

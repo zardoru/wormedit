@@ -10,7 +10,7 @@
 
 #include "sys/sound_list_view.h"
 #include "sys/sound_usage_view.h"
-#include "sys/projection_notification_feedback.h"
+#include "sys/notifications/projection_notification_feedback.h"
 #include "ui/frontend/workspace.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

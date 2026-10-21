@@ -3630,18 +3630,10 @@ void worm_ui_frontend_render(int window_width, int window_height) {
     }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {
         const RenderSubphaseScope submit_phase{WORM_UI_FRAME_RENDER_SUBMIT};
-        // Nuklear and SDL input use window-coordinate points, while a high-DPI
-        // renderer targets the larger pixel backbuffer. Keep the renderer's
-        // logical space synchronized after every resize so geometry, clipping,
-        // hit testing, and the cleared background cover the same full window.
-        if (!SDL_SetRenderLogicalPresentation(g_renderer, window_width, window_height,
-                                              SDL_LOGICAL_PRESENTATION_STRETCH)) {
-            // A renderer can reject a new logical presentation after a resize.
-            // Keep presenting the current Nuklear frame instead of leaving the
-            // previous backbuffer (or a blank one) on screen indefinitely.
-            (void)SDL_SetRenderLogicalPresentation(g_renderer, 0, 0,
-                                                   SDL_LOGICAL_PRESENTATION_DISABLED);
-        }
+        // Input and geometry stay in window points; rasterize directly into the
+        // pixel backbuffer, including scaled scissors, after every resize.
+        (void)wormedit::ui::nuklear::set_window_render_coordinates(
+            g_renderer, window_width, window_height);
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);
         g_editor_font.refresh(g_context,

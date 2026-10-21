@@ -96,6 +96,8 @@ NK_API struct nk_allocator nk_sdl_allocator(void);
 
 namespace wormedit::ui { struct compose_view_t; }
 namespace wormedit::ui::nuklear {
+// Keep geometry and pointer input in window points while drawing at backbuffer resolution.
+auto set_window_render_coordinates(SDL_Renderer*, int width, int height) -> bool;
 struct compose_canvas_cache_t;
 auto compose_canvas_cache(nk_context*) -> std::unique_ptr<compose_canvas_cache_t>&;
 struct overview_work_t {

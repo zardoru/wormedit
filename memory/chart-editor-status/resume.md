@@ -2,6 +2,14 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-251** (2026-10-21): the frontend rasterizes window-point geometry directly
+at backbuffer resolution, with SDL-scaled scissors and a logical-presentation fallback.
+GATE passes **4,388/4,388**, build, whitespace and three-TU complexity checks. Backend
+pixel checks cover resize and 1/1.25/1.5/2×; isolated GPU captures with simulated
+fractional point/pixel dimensions have no unpainted edge bands. See the
+[card](../../docs/chart-editor-plan/tasks/rendering.md#t-251-render-at-native-resolution-instead-of-a-stretched-logical-target)
+for artifacts and display limitations. Owner-requested **T-474** measurement is next.
+
 Completed **T-696** (2026-10-20): all ten BGM, waveform and stem primitive types are
 C++ views; eleven root lists retain capacity and stem rows borrow cached spans. Removed eight
 storage-capacity macros and the stem-cut cutoff while preserving audio/scene/render work budgets.

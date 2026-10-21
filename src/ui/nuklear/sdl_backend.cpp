@@ -46,6 +46,21 @@
 #include <new>
 #include <stdexcept>
 
+auto wormedit::ui::nuklear::set_window_render_coordinates(SDL_Renderer* renderer,
+    int width, int height) -> bool {
+    int pixels_w{}, pixels_h{};
+    if (width <= 0 || height <= 0) return false;
+    if (SDL_GetRenderOutputSize(renderer, &pixels_w, &pixels_h) &&
+        pixels_w > 0 && pixels_h > 0 &&
+        SDL_SetRenderLogicalPresentation(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED) &&
+        SDL_SetRenderScale(renderer, static_cast<float>(pixels_w) / width,
+                           static_cast<float>(pixels_h) / height)) return true;
+    // A rejected scale must not leave the previous frame's scale combined with
+    // the fallback presentation. SDL applies both transformations independently.
+    return SDL_SetRenderScale(renderer, 1, 1) &&
+        SDL_SetRenderLogicalPresentation(renderer, width, height, SDL_LOGICAL_PRESENTATION_STRETCH);
+}
+
 class RenderSubphaseScope {
   public:
     explicit RenderSubphaseScope(WormUiFrameRenderPhase phase)
@@ -103,6 +118,8 @@ static auto clamp_clip_to_viewport(SDL_Renderer* renderer, SDL_Rect rect) -> SDL
 }
 
 static bool set_nuklear_clip_rect(SDL_Renderer* renderer, const SDL_Rect* rect) {
+    // SDL converts this point-space rect to pixels using the current render
+    // scale. Scaling it here too would clip fractional/high-DPI draws twice.
     const auto clamped = rect ? clamp_clip_to_viewport(renderer, *rect) : SDL_Rect{};
     const auto result = SDL_SetRenderClipRect(renderer, rect ? &clamped : nullptr);
     if (result) {

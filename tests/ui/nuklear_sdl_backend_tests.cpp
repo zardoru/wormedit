@@ -43,11 +43,11 @@ struct backend_fixture_t {
     SDL_Renderer* renderer{};
     nk_context* context{};
 
-    backend_fixture_t() {
+    explicit backend_fixture_t(int pixels = 128) {
         expect_backend(SDL_Init(SDL_INIT_VIDEO));
         window = SDL_CreateWindow("backend test", 128, 128, SDL_WINDOW_HIDDEN);
         expect_backend(window);
-        surface = SDL_CreateSurface(128, 128, SDL_PIXELFORMAT_RGBA32);
+        surface = SDL_CreateSurface(pixels, pixels, SDL_PIXELFORMAT_RGBA32);
         expect_backend(surface);
         renderer = std::getenv("WORMEDIT_TEST_OPENGL")
             ? SDL_CreateRenderer(window, "opengl") : SDL_CreateSoftwareRenderer(surface);
@@ -204,6 +204,48 @@ auto backend_pixels(const backend_fixture_t& backend) -> std::vector<unsigned ch
     SDL_DestroySurface(surface);
     return pixels;
 }
+}
+TEST_CASE("SDL native window coordinates scale full coverage and scissors after resize", "[ui][sdl-backend]") {
+    for (const int pixels : {128, 160, 192, 256}) {
+        INFO("backbuffer=" << pixels);
+        backend_fixture_t backend{pixels};
+        for (const int points : {64, 128}) {
+            expect_backend(set_window_render_coordinates(backend.renderer, points, points));
+            const auto scale = static_cast<float>(pixels) / points;
+            float sx{}, sy{};
+            expect_backend(SDL_GetRenderScale(backend.renderer, &sx, &sy));
+            expect_backend(sx == scale && sy == scale);
+            int width{}, height{};
+            SDL_RendererLogicalPresentation mode{};
+            expect_backend(SDL_GetRenderLogicalPresentation(backend.renderer, &width, &height, &mode));
+            expect_backend(mode == SDL_LOGICAL_PRESENTATION_DISABLED);
+        }
+        SDL_SetRenderDrawColor(backend.renderer, 255, 0, 255, 255);
+        SDL_RenderClear(backend.renderer);
+        nk_input_begin(backend.context);
+        nk_input_end(backend.context);
+        if (nk_begin(backend.context, "scaled", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR)) {
+            auto* canvas = nk_window_get_canvas(backend.context);
+            nk_push_scissor(canvas, nk_rect(-8192, -8192, 16384, 16384));
+            nk_fill_rect(canvas, nk_rect(0, 0, 128, 128), 0, nk_rgb(20, 25, 30));
+            // Extends beyond the right/bottom edges: the backend clamps in points,
+            // then SDL scales the scissor exactly once to the physical viewport.
+            nk_push_scissor(canvas, nk_rect(64, 80, 80, 80));
+            nk_fill_rect(canvas, nk_rect(0, 0, 128, 128), 0, nk_rgb(240, 40, 50));
+        }
+        nk_end(backend.context);
+        render_sdl_backend(backend.context, NK_ANTI_ALIASING_OFF);
+        const auto image = backend_pixels(backend);
+        expect_backend(image.size() == static_cast<std::size_t>(pixels * pixels * 4));
+        for (int y = 0; y < pixels; ++y) for (int x = 0; x < pixels; ++x) {
+            const bool clipped_fill = x >= pixels / 2 && y >= pixels * 5 / 8;
+            const auto offset = static_cast<std::size_t>((y * pixels + x) * 4);
+            INFO("pixel=" << x << "," << y);
+            expect_backend(image[offset] == (clipped_fill ? 240 : 20));
+            expect_backend(image[offset + 1] == (clipped_fill ? 40 : 25));
+            expect_backend(image[offset + 2] == (clipped_fill ? 50 : 30));
+        }
+    }
 }
 TEST_CASE("SDL overview retained interior preserves pixels and warm uploads", "[ui][sdl-backend]") {
     backend_fixture_t backend;

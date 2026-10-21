@@ -48,7 +48,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE, WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
     WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME, WORM_UI_OPTIONS_FIELD_ACCENT_VOLUME,
     WORM_UI_OPTIONS_FIELD_COUNT_IN, WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
-    WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY
+    WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, WORM_UI_OPTIONS_FIELD_REDUCED_MOTION
 } WormUiOptionsField;
 namespace wormedit::ui {
 struct options_diagnostic_view_t {
@@ -77,6 +77,7 @@ struct options_view_t {
     wormedit::move_collision_policy_t move_collision_policy{};
     bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{};
     bool confirm_unsaved_close{}, keep_pitch{}, frame_timing_overlay{}, snap_colored_grid{};
+    bool reduced_motion{};
     std::uint32_t snap_grid_opacity_percent{}, field_waveform_opacity_percent{};
     bool minimap_click_moves_paused_playhead{};
     std::uint32_t keysound_budget_mib{};

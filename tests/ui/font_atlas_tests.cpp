@@ -9,6 +9,7 @@
 
 namespace {
 using wormedit::ui::nuklear::editor_font_t;
+void check_font_scaling(bool value) { CHECK(value); }
 struct font_fixture_t {
     SDL_Window* window{};
     SDL_Renderer* renderer{};
@@ -146,6 +147,24 @@ TEST_CASE("Missing CJK bundle retains usable Latin fallback", "[font][cjk]") {
     fixture.font.refresh(fixture.context);
     CHECK(fixture.font.glyph_count() == 0);
     CHECK(fixture.font.glyph(0x65e5)->codepoint == '?');
+}
+
+TEST_CASE("Interface scaling increases raster density while retaining logical font metrics", "[font][display-options]") {
+    font_fixture_t fixture;
+    auto& font = fixture.font;
+    const auto* stable = font.handle();
+    const auto width = font_width(font, "Readable Latin");
+    const auto height = font.glyph('A')->y1 - font.glyph('A')->y0;
+    REQUIRE(font.set_raster_scale(1.5f));
+    REQUIRE_FALSE(font.set_raster_scale(1.5f));
+    font.refresh(fixture.context);
+    check_font_scaling(font.handle() == stable);
+    check_font_scaling(font.handle()->height == 15);
+    check_font_scaling(font.glyph('A')->y1 - font.glyph('A')->y0 > height);
+    check_font_scaling(font_width(font, "Readable Latin") == Catch::Approx(width).margin(2));
+    check_font_scaling(font.display_handle()->height == 28);
+    check_font_scaling(!font.set_raster_scale(0));
+    check_font_scaling(!font.set_raster_scale(5));
 }
 
 namespace { void expect_display(bool condition) { REQUIRE(condition); } }

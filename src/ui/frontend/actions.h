@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit::ui {
@@ -731,6 +732,11 @@ int worm_ui_frontend_field_scratch_side(uint8_t stage);
 void worm_ui_frontend_set_snap_colored_grid(bool enabled);
 void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent);
 void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent);
+// Applies accepted program settings; theme errors leave the previous palette untouched.
+std::string worm_ui_frontend_apply_display_settings(std::string_view theme, uint32_t scale_percent,
+                                                  bool timing_overlay);
+bool worm_ui_frontend_set_interface_scale(uint32_t percent);
+bool worm_ui_frontend_is_title_bar_drag_position(float x, float y, int window_width);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
 // Actual in-window chrome height; headless initialization keeps the fallback layout.

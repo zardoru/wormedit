@@ -16,6 +16,8 @@ class editor_font_t {
     static constexpr std::size_t glyph_limit = 4096;
     void initialize(nk_context* context, const std::filesystem::path& directory);
     void refresh(nk_context* context, nk_context* overlay = nullptr);
+    // Metrics remain in logical points; only atlas raster density changes.
+    [[nodiscard]] auto set_raster_scale(float scale) -> bool;
     void reset();
     void observe(std::string_view text);
     [[nodiscard]] auto handle() const -> const nk_user_font* { return &handle_; }
@@ -47,5 +49,6 @@ class editor_font_t {
     bool dirty_{};
     bool warned_{};
     bool limited_{};
+    float raster_scale_{1}, requested_raster_scale_{1};
 };
 }

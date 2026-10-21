@@ -59,6 +59,22 @@ TEST_CASE("Options opening and category switching retain isolated drafts", "[opt
     expect_options(view.changed && view.can_apply && view.autosave_minutes == 12);
 }
 
+TEST_CASE("Appearance reduced motion is an isolated accepted display preference", "[options][display-options]") {
+    temporary_preferences_t temporary;
+    program_preferences_runtime_t program{.path = temporary.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    edit.field = WORM_UI_OPTIONS_FIELD_REDUCED_MOTION;
+    edit.boolean = true;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(wormedit::ui::options_view_t::from(runtime).reduced_motion);
+    expect_options(!program.preferences.display.reduced_motion);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.reduced_motion);
+}
+
 TEST_CASE("Audio Options validate levels and preserve drafts until Apply", "[options][audio-options]") {
     temporary_preferences_t temporary;
     program_preferences_runtime_t program{.path = temporary.directory / "preferences.json"};

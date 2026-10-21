@@ -654,6 +654,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/popup_menu_event_harness_tests.cpp
         ui/project_chart_actions_event_harness_tests.cpp
         ui/audio_options_event_harness_tests.cpp
+        ui/display_options_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
         ../src/sys/menu_command_view.cpp
         ../src/sys/shortcut_rows.cpp

@@ -48,6 +48,7 @@
 #include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/player_preview.h"
 #include "ui/nuklear/setup_panel.h"
+#include "ui/nuklear/interface_scale.h"
 #include "ui/nuklear/setup_state.h"
 #include "ui/nuklear/timing_stage_editor.h"
 #include "ui/nuklear/timing_state.h"
@@ -103,6 +104,7 @@ static bool g_menu_popup_release_pending{};
 static wormedit::ui::nuklear::editor_font_t g_editor_font;
 
 static bool g_frame_timing_visible;
+static wormedit::ui::nuklear::interface_scale_t g_interface_scale;
 static bool g_compose_area_shortcuts_active;
 static bool g_context_invocation_allowed;
 static std::uint64_t g_context_project{}, g_context_chart{}, g_context_revision{};
@@ -387,16 +389,18 @@ static bool frontend_event_window_matches(uint32_t window_id, bool allow_zero = 
 
 static bool frontend_window_size(int* width, int* height) {
     if (g_headless) {
-        if (width) *width = g_headless_width;
-        if (height) *height = g_headless_height;
+        g_last_window_width = g_interface_scale.logical_extent(g_headless_width);
+        g_last_window_height = g_interface_scale.logical_extent(g_headless_height);
+        if (width) *width = g_last_window_width;
+        if (height) *height = g_last_window_height;
         return g_headless_width > 0 && g_headless_height > 0;
     }
     int current_width = 0;
     int current_height = 0;
     if (g_window && SDL_GetWindowSize(g_window, &current_width, &current_height) &&
         current_width > 0 && current_height > 0) {
-        g_last_window_width = current_width;
-        g_last_window_height = current_height;
+        g_last_window_width = g_interface_scale.logical_extent(current_width);
+        g_last_window_height = g_interface_scale.logical_extent(current_height);
     }
     if (g_last_window_width <= 0 || g_last_window_height <= 0) {
         return false;
@@ -619,6 +623,8 @@ static float headless_font_width(nk_handle, float height, const char*, int lengt
 }
 
 static void reset_frontend_session() {
+    g_interface_scale = {};
+    g_frame_timing_visible = false;
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
     worm_ui_nuklear_reset_audio_state();
@@ -815,7 +821,7 @@ wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint3
         (window_id != 0 && (!g_window || window_id != SDL_GetWindowID(g_window))) || !std::isfinite(x) ||
         !std::isfinite(y))
         return {};
-    return worm_ui_nuklear_metadata_drop_target(x, y);
+    return worm_ui_nuklear_metadata_drop_target(g_interface_scale.logical(x), g_interface_scale.logical(y));
 }
 
 void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request) {
@@ -943,6 +949,8 @@ bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, ui
 }
 
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
+    x = g_interface_scale.logical(x);
+    y = g_interface_scale.logical(y);
     if (!g_context || (window_id && (!g_window || SDL_GetWindowID(g_window) != window_id))) return false;
     const auto& state = worm_ui_nuklear_compose_state();
     return state.bga_catalog.bga_list_valid && wormedit::ui::is_point_in_rect({state.bga_catalog.bga_list_x, state.bga_catalog.bga_list_y,
@@ -950,6 +958,8 @@ bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
 }
 
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) {
+    x = g_interface_scale.logical(x);
+    y = g_interface_scale.logical(y);
     if (!g_context ||
         (window_id != 0 && (!g_window || window_id != SDL_GetWindowID(g_window))) || !std::isfinite(x) ||
         !std::isfinite(y))
@@ -1497,6 +1507,8 @@ static bool queue_compose_pinch_event(const SDL_Event& event) {
     }
     float x{}, y{};
     SDL_GetMouseState(&x, &y);
+    x = g_interface_scale.logical(x);
+    y = g_interface_scale.logical(y);
     const auto input_phase = event.type == SDL_EVENT_PINCH_BEGIN ? phase::begin :
         event.type == SDL_EVENT_PINCH_END ? phase::end : phase::update;
     queue_compose_pinch_input(input_phase, event.pinch.scale, x, y);
@@ -1604,11 +1616,35 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
     return nk_sdl_handle_event(g_context, &mutable_event) != 0;
 }
 
+static auto logical_frontend_event(const SDL_Event& native) -> SDL_Event {
+    auto event = native;
+    switch (event.type) {
+    case SDL_EVENT_MOUSE_MOTION:
+        event.motion.x = g_interface_scale.logical(event.motion.x);
+        event.motion.y = g_interface_scale.logical(event.motion.y);
+        event.motion.xrel = g_interface_scale.logical(event.motion.xrel);
+        event.motion.yrel = g_interface_scale.logical(event.motion.yrel);
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        event.button.x = g_interface_scale.logical(event.button.x);
+        event.button.y = g_interface_scale.logical(event.button.y);
+        break;
+    case SDL_EVENT_MOUSE_WHEEL:
+        event.wheel.mouse_x = g_interface_scale.logical(event.wheel.mouse_x);
+        event.wheel.mouse_y = g_interface_scale.logical(event.wheel.mouse_y);
+        break;
+    default: break;
+    }
+    return event;
+}
+
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) return false;
-    if (capture_notification_event(*event)) return true;
-    if (capture_notification_history_event(*event)) return true;
-    return handle_workspace_frontend_event(event);
+    const auto logical = logical_frontend_event(*event);
+    if (capture_notification_event(logical)) return true;
+    if (capture_notification_history_event(logical)) return true;
+    return handle_workspace_frontend_event(&logical);
 }
 
 void worm_ui_frontend_end_input(void) {
@@ -3157,10 +3193,17 @@ static void render_frame_timing_overlay(int width, int height) {
     worm_ui_frame_timing_view(timer);
     const float panel_width = std::min(480.0f, static_cast<float>(width));
     const float panel_height = std::min(720.0f, static_cast<float>(height) - 42.0f);
+    auto bounds = nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height);
+    if (const auto* retained = nk_window_find(g_context, "Frame timing")) {
+        bounds.x = std::clamp(retained->bounds.x, 0.0f, static_cast<float>(width) - panel_width);
+        bounds.y = std::clamp(retained->bounds.y, 42.0f,
+            std::max(42.0f, static_cast<float>(height) - panel_height));
+        nk_window_set_bounds(g_context, "Frame timing", bounds);
+    }
     // Drawn in a diagnostic pass so its GPU work is reported apart from the application's.
     const wormedit::ui::nuklear::diagnostic_window_scope_t diagnostic{g_context};
     if (nk_begin(g_context, "Frame timing",
-                 nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height),
+                 bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
         const auto frame = timer.frame;
         nk_layout_row_dynamic(g_context, 22, 1);
@@ -3627,6 +3670,9 @@ void worm_ui_frontend_render(int window_width, int window_height) {
     apply_stem_resize_cursor(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     if (window_width <= 0 || window_height <= 0) {
         (void)frontend_window_size(&window_width, &window_height);
+    } else {
+        window_width = g_interface_scale.logical_extent(window_width);
+        window_height = g_interface_scale.logical_extent(window_height);
     }
     if (g_headless && g_context) {
         nk_clear(g_context);
@@ -3635,11 +3681,12 @@ void worm_ui_frontend_render(int window_width, int window_height) {
     }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {
         const RenderSubphaseScope submit_phase{WORM_UI_FRAME_RENDER_SUBMIT};
-        // Input and geometry stay in window points; rasterize directly into the
+        // Input and geometry stay in logical points; rasterize directly into the
         // pixel backbuffer, including scaled scissors, after every resize.
         (void)wormedit::ui::nuklear::set_window_render_coordinates(
             g_renderer, window_width, window_height);
-        SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
+        const auto background = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::background);
+        SDL_SetRenderDrawColor(g_renderer, background.r, background.g, background.b, background.a);
         SDL_RenderClear(g_renderer);
         g_editor_font.refresh(g_context,
             g_notification_context_initialized ? &g_notification_context : nullptr);
@@ -3658,6 +3705,52 @@ void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent) {
 
 void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent) {
     wormedit::ui::theme::set_field_waveform_opacity(percent);
+}
+
+bool worm_ui_frontend_set_interface_scale(uint32_t percent) {
+    const auto scale = wormedit::ui::nuklear::interface_scale_t::from(percent);
+    if (!g_context || !scale) return false;
+    if (scale->percent == g_interface_scale.percent) return true;
+    const auto ratio = g_interface_scale.factor() / scale->factor();
+    auto& mouse = g_context->input.mouse;
+    mouse.pos.x *= ratio;
+    mouse.pos.y *= ratio;
+    mouse.prev.x *= ratio;
+    mouse.prev.y *= ratio;
+    for (auto& button : mouse.buttons) {
+        button.clicked_pos.x *= ratio;
+        button.clicked_pos.y *= ratio;
+    }
+    g_interface_scale = *scale;
+    if (!g_headless) static_cast<void>(g_editor_font.set_raster_scale(scale->factor()));
+    return true;
+}
+
+bool worm_ui_frontend_is_title_bar_drag_position(float x, float y, int window_width) {
+    x = g_interface_scale.logical(x);
+    y = g_interface_scale.logical(y);
+    const auto width = g_interface_scale.logical(static_cast<float>(window_width));
+    return !native_menu_active() && y >= 6 && y < 34 &&
+        x >= wormedit::ui::workspace_menu_drag_begin && x < width - 130;
+}
+
+std::string worm_ui_frontend_apply_display_settings(std::string_view theme, uint32_t scale_percent,
+                                                  bool timing_overlay) {
+    if (!g_context || !wormedit::ui::nuklear::interface_scale_t::from(scale_percent))
+        return "Interface scale must be automatic or 100–200%.";
+    auto message = wormedit::ui::theme::reload_interface_theme(theme);
+    if (!message.empty()) return message;
+    static_cast<void>(worm_ui_frontend_set_interface_scale(scale_percent));
+    const auto* font = g_context->style.font;
+    wormedit::ui::chrome::apply_theme(g_context);
+    nk_style_set_font(g_context, font);
+    if (g_notification_context_initialized) {
+        const auto* overlay_font = g_notification_context.style.font;
+        wormedit::ui::chrome::apply_theme(&g_notification_context);
+        nk_style_set_font(&g_notification_context, overlay_font);
+    }
+    g_frame_timing_visible = timing_overlay;
+    return {};
 }
 
 static auto& configured_field_lanes() {

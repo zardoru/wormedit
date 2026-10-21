@@ -245,13 +245,14 @@ void read_field_scheme_overrides(preference_reader_t& reader, const json_t& disp
 void read_display_minimap_layout(preference_reader_t& reader, const json_t& root) {
     auto& values = reader.result.preferences;
     const auto& display = reader.section(root, "display");
-    reader.check_keys(display, {"scratch_positions", "field_scheme", "field_scheme_overrides", "theme", "ui_scale_percent", "frame_timing_overlay", "snap_colored_grid", "snap_grid_opacity_percent", "field_waveform_opacity_percent"});
+    reader.check_keys(display, {"scratch_positions", "field_scheme", "field_scheme_overrides", "theme", "ui_scale_percent", "frame_timing_overlay", "reduced_motion", "snap_colored_grid", "snap_grid_opacity_percent", "field_waveform_opacity_percent"});
     reader.string(display, "field_scheme", values.display.field_scheme);
     read_field_scheme_overrides(reader, display);
     read_scratch_positions(reader, display);
     reader.string(display, "theme", values.display.theme);
     reader.integer(display, "ui_scale_percent", values.display.ui_scale_percent, 0, 200);
     reader.boolean(display, "frame_timing_overlay", values.display.frame_timing_overlay);
+    reader.boolean(display, "reduced_motion", values.display.reduced_motion);
     reader.boolean(display, "snap_colored_grid", values.display.snap_colored_grid);
     reader.integer(display, "snap_grid_opacity_percent", values.display.snap_grid_opacity_percent, 0, 100);
     reader.integer(display, "field_waveform_opacity_percent", values.display.field_waveform_opacity_percent, 0, 100);
@@ -332,7 +333,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
             {"preview_latency_ms", value.audio.preview_latency_ms},
             {"osu_skin_directory", value.audio.osu_skin_directory}}},
         {"display", {{"scratch_positions", value.display.scratch_positions}, {"field_scheme", value.display.field_scheme}, {"field_scheme_overrides", value.display.field_scheme_overrides}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
-            {"frame_timing_overlay", value.display.frame_timing_overlay},
+            {"frame_timing_overlay", value.display.frame_timing_overlay}, {"reduced_motion", value.display.reduced_motion},
             {"snap_colored_grid", value.display.snap_colored_grid},
             {"snap_grid_opacity_percent", value.display.snap_grid_opacity_percent},
             {"field_waveform_opacity_percent", value.display.field_waveform_opacity_percent}}},

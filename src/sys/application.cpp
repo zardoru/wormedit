@@ -3871,7 +3871,29 @@ struct application_t::implementation_t {
         return true;
     }
 
+    auto prepare_display_options(const wormedit::ui::options_action_t& action) -> bool {
+        auto& options = preferences.options_runtime;
+        if (action.kind != WORM_UI_OPTIONS_APPLY || options.category != WORM_UI_OPTIONS_DISPLAY ||
+            !options.visible || action.revision != options.revision || !options.diagnostics.empty()) return true;
+        const auto& display = options.draft.display;
+        auto message = worm_ui_frontend_apply_display_settings(display.theme, display.ui_scale_percent,
+                                                              display.frame_timing_overlay);
+        if (message.empty()) return true;
+        options.status = std::move(message);
+        platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system, options.status);
+        return false;
+    }
+
+    void apply_saved_display_settings() {
+        const auto& display = preferences.program_preferences.preferences.display;
+        const auto message = worm_ui_frontend_apply_display_settings(display.theme, display.ui_scale_percent,
+                                                                    display.frame_timing_overlay);
+        if (!message.empty())
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system, message);
+    }
+
     void dispatch_options_frame_action(const wormedit::ui::options_action_t& action) {
+        if (!prepare_display_options(action)) return;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         refresh_audio_options_request(action);
 #endif
@@ -4036,6 +4058,7 @@ struct application_t::implementation_t {
         initialize_program_preferences(preferences.program_preferences,
                                        preferences.external_player_runtime, commands,
                                        platform.notification_sink);
+        apply_saved_display_settings();
         worm_ui_frontend_select_field_scheme(
             preferences.program_preferences.preferences.display.field_scheme.c_str());
         update_scratch_presentation(preferences.program_preferences.preferences.display, commands);

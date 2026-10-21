@@ -66,6 +66,22 @@ TEST_CASE("Field theme discovery loads all ten bundled schemes and preserves chr
     check_color(compose(ComposeColor::measure_line), nk_rgb(95, 107, 128));
     check_color(compose_key_color(1).note, nk_rgb(226, 232, 240));
 }
+
+TEST_CASE("Interface theme reload publishes waveform roles atomically", "[theme][display-options]") {
+    theme_fixture_t fixture;
+    std::ofstream(fixture.directory / "ui-dark.json") <<
+        R"({"name":"Dark test","roles":{"background":"#112233","waveform_peak":"#445566"}})";
+    load(fixture.directory);
+    REQUIRE(interface_themes().size() == 1);
+    CHECK(interface_themes().front().name == "Dark test");
+    check_color(ui(UiColor::background), nk_rgb(17, 34, 51));
+    check_color(ui(UiColor::waveform_peak), nk_rgb(68, 85, 102));
+    std::ofstream(fixture.directory / "ui-dark.json") <<
+        R"({"roles":{"background":"#abcdef","waveform_peak":"invalid"}})";
+    CHECK_FALSE(reload_interface_theme("ui-dark").empty());
+    check_color(ui(UiColor::background), nk_rgb(17, 34, 51));
+    CHECK_FALSE(reload_interface_theme("../outside").empty());
+}
 TEST_CASE("Semantic palettes alias classes and follow each object class", "[theme][semantic-skins]") {
     theme_fixture_t fixture;
     fixture.write("classes", R"({"version":2,"name":"Classes","lane_classes":{

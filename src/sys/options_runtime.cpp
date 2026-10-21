@@ -194,6 +194,7 @@ auto edit_display(program_preferences_t& p, const wormedit::ui::options_action_t
         p.display.field_waveform_opacity_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(100, a.integer)); return true;
     case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_REDUCED_MOTION: p.display.reduced_motion = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY: p.display.frame_timing_overlay = a.boolean; return true;
     default: return false;
@@ -333,6 +334,7 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .snap_colored_grid = p.display.snap_colored_grid,
+        .reduced_motion = p.display.reduced_motion,
         .snap_grid_opacity_percent = p.display.snap_grid_opacity_percent,
         .field_waveform_opacity_percent = p.display.field_waveform_opacity_percent,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,

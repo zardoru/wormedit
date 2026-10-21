@@ -346,7 +346,7 @@ void render_waveform_column(struct nk_context* context, const wormedit::ui::audi
         {bounds.x, bounds.y, bounds.w, bounds.h},
         {parent_clip.x, parent_clip.y, parent_clip.w, parent_clip.h});
     nk_push_scissor(canvas, nk_rect(overlap.x, overlap.y, overlap.w, overlap.h));
-    nk_fill_rect(canvas, bounds, 2.0f, nk_rgb(22, 25, 33));
+    nk_fill_rect(canvas, bounds, 2.0f, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_background));
     const auto channel_height = bounds.h * 0.5f;
     const auto column_width = bounds.w / static_cast<float>(columns.size());
     const auto displayed_delta = audio.offset_drag_active   ? audio.offset_drag_delta_frames
@@ -361,7 +361,7 @@ void render_waveform_column(struct nk_context* context, const wormedit::ui::audi
         const auto center = bounds.y + channel_height * (static_cast<float>(channel) + 0.5f);
         const auto amplitude = channel_height * 0.42f;
         nk_stroke_line(canvas, bounds.x, center, bounds.x + bounds.w, center, 1.0f,
-                       nk_rgb(57, 63, 77));
+                       wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_guide));
         for (std::size_t index = 0; index < columns.size(); ++index) {
             const auto& column = columns[index];
             const auto x =
@@ -370,14 +370,14 @@ void render_waveform_column(struct nk_context* context, const wormedit::ui::audi
             const auto maximum = std::clamp(column.maximum[channel], -1.0f, 1.0f);
             const auto rms = std::clamp(column.rms[channel], 0.0f, 1.0f);
             nk_stroke_line(canvas, x, center - rms * amplitude, x, center + rms * amplitude,
-                           std::max(1.0f, column_width), nk_rgb(59, 122, 147));
+                           std::max(1.0f, column_width), wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_rms));
             nk_stroke_line(canvas, x, center - maximum * amplitude, x, center - minimum * amplitude,
-                           std::max(1.0f, column_width), nk_rgb(107, 214, 235));
+                           std::max(1.0f, column_width), wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_peak));
         }
     }
     if (audio.offset_drag_active || view->offset_drag_active) {
         nk_stroke_line(canvas, audio.offset_drag_anchor_x, bounds.y, audio.offset_drag_anchor_x,
-                       bounds.y + bounds.h, 1.0f, nk_rgb(255, 213, 99));
+                       bounds.y + bounds.h, 1.0f, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_playhead));
     }
     nk_push_scissor(canvas, parent_clip);
 

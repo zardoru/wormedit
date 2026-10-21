@@ -262,7 +262,51 @@ void field_waveform_opacity_slider(nk_context* context, const wormedit::ui::opti
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
 }
+void interface_theme_picker(nk_context* context, const wormedit::ui::options_view_t& view,
+                            wormedit::ui::options_action_t& action) {
+    std::vector<const char*> names{"Bundled default"}, ids{""};
+    int selected = 0;
+    for (const auto& theme : wormedit::ui::theme::interface_themes()) {
+        ids.push_back(theme.id.c_str());
+        names.push_back(theme.name.c_str());
+        if (view.theme == theme.id) selected = static_cast<int>(ids.size() - 1);
+    }
+    std::string unavailable;
+    if (!view.theme.empty() && selected == 0) {
+        unavailable = "Unavailable: " + std::string{view.theme};
+        names.push_back(unavailable.c_str());
+        ids.push_back(view.theme.data());
+        selected = static_cast<int>(ids.size() - 1);
+    }
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_label(context, "Interface theme", NK_TEXT_LEFT);
+    const auto value = wormedit::ui::chrome::safe_combo(context, names.data(), static_cast<int>(names.size()),
+        selected, 28, nk_vec2(260, 200));
+    if (value == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = WORM_UI_OPTIONS_FIELD_THEME, .text = ids[static_cast<std::size_t>(value)]};
+}
+void interface_scale_picker(nk_context* context, const wormedit::ui::options_view_t& view,
+                            wormedit::ui::options_action_t& action) {
+    std::array<std::uint32_t, 7> values{0, 100, 125, 150, 175, 200, view.ui_scale_percent};
+    const auto custom = std::to_string(view.ui_scale_percent) + "%";
+    const std::array<const char*, 7> names{"Automatic", "100%", "125%", "150%", "175%", "200%", custom.c_str()};
+    const auto found = std::ranges::find(values, view.ui_scale_percent);
+    const auto selected = static_cast<int>(found - values.begin());
+    const auto count = selected == 6 ? 7 : 6;
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_label(context, "UI scale", NK_TEXT_LEFT);
+    const auto value = wormedit::ui::chrome::safe_combo(context, names.data(), count,
+        selected, 28, nk_vec2(180, 220));
+    if (value == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = WORM_UI_OPTIONS_FIELD_SCALE, .integer = values[static_cast<std::size_t>(value)]};
+}
 void appearance_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
+    interface_theme_picker(context, *view, *action);
+    interface_scale_picker(context, *view, *action);
+    edit_toggle(context, *view, *action, "Frame timing overlay", WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY, view->frame_timing_overlay);
+    edit_toggle(context, *view, *action, "Reduced motion", WORM_UI_OPTIONS_FIELD_REDUCED_MOTION, view->reduced_motion);
     field_scheme_picker(context, view, action);
     layout_field_scheme_picker(context, *view, *action);
     const auto& schemes = wormedit::ui::theme::field_schemes();

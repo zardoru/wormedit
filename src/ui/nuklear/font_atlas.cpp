@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <cmath>
 
 namespace wormedit::ui::nuklear {
 namespace {
@@ -90,6 +91,7 @@ void editor_font_t::initialize(nk_context* context, const std::filesystem::path&
 }
 
 void editor_font_t::reset() {
+    raster_scale_ = requested_raster_scale_ = 1;
     baked_ = nullptr;
     handle_ = {};
     display_handle_ = {};
@@ -144,15 +146,24 @@ void editor_font_t::refresh(nk_context* context, nk_context* overlay) {
     if (overlay) nk_style_set_font(overlay, &handle_);
 }
 
+auto editor_font_t::set_raster_scale(float scale) -> bool {
+    if (!std::isfinite(scale) || scale < 1 || scale > 4 || requested_raster_scale_ == scale) return false;
+    requested_raster_scale_ = scale;
+    dirty_ = true;
+    return true;
+}
+
 void editor_font_t::rebuild(nk_context* context) {
     // Queued command fonts reference handle_, never the short-lived baked font.
     auto* atlas = nk_sdl_font_stash_begin(context);
-    auto config = nk_font_config(handle_.height);
+    raster_scale_ = requested_raster_scale_;
+    const auto raster_height = handle_.height * raster_scale_;
+    auto config = nk_font_config(raster_height);
     config.range = latin_ranges;
     config.fallback_glyph = fallback_data_.empty() ? '?' : replacement;
     const auto latin_path = (directory_ / "AdwaitaMono-Regular.ttf").string();
-    baked_ = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), handle_.height, &config);
-    if (!baked_) baked_ = nk_font_atlas_add_default(atlas, handle_.height, &config);
+    baked_ = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), raster_height, &config);
+    if (!baked_) baked_ = nk_font_atlas_add_default(atlas, raster_height, &config);
     ranges_.clear();
     for (const auto rune : codepoints_) {
         if (!ranges_.empty() && ranges_.back() + 1 == rune) {
@@ -169,15 +180,17 @@ void editor_font_t::rebuild(nk_context* context) {
         config.oversample_h = config.oversample_v = 1;
         config.range = ranges_.data();
         nk_font_atlas_add_from_memory(atlas, fallback_data_.data(), fallback_data_.size(),
-                                      handle_.height, &config);
+                                      raster_height, &config);
     }
-    auto display_config = nk_font_config(28.0f);
+    const auto display_height = 28.0f * raster_scale_;
+    auto display_config = nk_font_config(display_height);
     static constexpr nk_rune display_ranges[]{0x20, 0xff, 0x2014, 0x2014, 0};
     display_config.range = display_ranges;
-    auto* display = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), 28.0f, &display_config);
-    if (!display) display = nk_font_atlas_add_default(atlas, 28.0f, &display_config);
+    auto* display = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), display_height, &display_config);
+    if (!display) display = nk_font_atlas_add_default(atlas, display_height, &display_config);
     nk_sdl_font_stash_end(context);
     display_handle_ = display->handle;
+    display_handle_.height = 28;
     glyphs_.clear();
     for (nk_rune index = 0; index < baked_->info.glyph_count; ++index)
         glyphs_.emplace(baked_->glyphs[index].codepoint, &baked_->glyphs[index]);
@@ -201,8 +214,8 @@ auto editor_font_t::width(nk_handle self, float height, const char* text, int le
         const auto* glyph = font.glyph(rune);
         // Newly encountered full-width text has sensible first-frame layout before refresh.
         result += !is_latin(rune) && !font.codepoints_.contains(rune) && font.supported(rune)
-            ? font.glyph(replacement)->xadvance * height / font.handle_.height
-            : glyph->xadvance * height / font.handle_.height;
+            ? font.glyph(replacement)->xadvance * height / (font.handle_.height * font.raster_scale_)
+            : glyph->xadvance * height / (font.handle_.height * font.raster_scale_);
         text += consumed;
         length -= consumed;
     }
@@ -214,7 +227,7 @@ void editor_font_t::query(nk_handle self, float height, nk_user_font_glyph* glyp
     const auto& font = *static_cast<editor_font_t*>(self.ptr);
     (void)next;
     const auto* baked = font.glyph(codepoint);
-    const auto scale = height / font.handle_.height;
+    const auto scale = height / (font.handle_.height * font.raster_scale_);
     glyph->width = (baked->x1 - baked->x0) * scale;
     glyph->height = (baked->y1 - baked->y0) * scale;
     glyph->offset = nk_vec2(baked->x0 * scale, baked->y0 * scale);

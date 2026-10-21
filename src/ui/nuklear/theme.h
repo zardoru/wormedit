@@ -33,6 +33,7 @@ enum class UiColor {
     conflict,
     separator,
     popup,
+    waveform_background, waveform_guide, waveform_rms, waveform_peak, waveform_playhead,
     count
 };
 
@@ -83,6 +84,12 @@ enum class ComposeColor {
 
 // Call once before creating the first frame. WORMEDIT_THEME_DIR overrides the bundled files.
 void load(const std::filesystem::path& bundled_directory);
+struct interface_theme_t {
+    std::string id, name;
+};
+[[nodiscard]] auto interface_themes() -> std::span<const interface_theme_t>;
+// Empty selects the bundled default. Invalid files retain every previous UI color.
+[[nodiscard]] auto reload_interface_theme(std::string_view id) -> std::string;
 auto ui(UiColor color) -> nk_color;
 auto compose(ComposeColor color) -> nk_color;
 auto compose_note_accent(size_t index) -> nk_color;

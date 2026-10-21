@@ -23,7 +23,8 @@ namespace {
 constexpr std::array<std::string_view, static_cast<size_t>(UiColor::count)> ui_names{
     "background",    "surface", "surface_hover", "surface_active", "border",
     "border_hover",  "text",    "text_bright",   "text_muted",     "selected",
-    "selected_text", "accent",  "status",        "conflict",      "separator",     "popup"};
+    "selected_text", "accent",  "status",        "conflict",      "separator",     "popup",
+    "waveform_background", "waveform_guide", "waveform_rms", "waveform_peak", "waveform_playhead"};
 constexpr std::array<std::string_view, static_cast<size_t>(ComposeColor::count)> compose_names{
     "viewport",
     "rail",
@@ -75,7 +76,11 @@ std::array<nk_color, ui_names.size()> ui_colors{
     nk_rgb(18, 19, 26),    nk_rgb(30, 31, 40),    nk_rgb(44, 46, 60),    nk_rgb(58, 60, 75),
     nk_rgb(58, 60, 75),    nk_rgb(134, 180, 255), nk_rgb(206, 210, 223), nk_rgb(245, 246, 250),
     nk_rgb(173, 179, 197), nk_rgb(20, 92, 227),   nk_rgb(255, 255, 255), nk_rgb(201, 211, 94),
-    nk_rgb(139, 146, 169), nk_rgb(248, 116, 89), nk_rgb(44, 46, 60), nk_rgb(30, 31, 40)};
+    nk_rgb(139, 146, 169), nk_rgb(248, 116, 89), nk_rgb(44, 46, 60), nk_rgb(30, 31, 40),
+    nk_rgb(22, 25, 33), nk_rgb(57, 63, 77), nk_rgb(59, 122, 147), nk_rgb(107, 214, 235), nk_rgb(255, 213, 99)};
+const auto builtin_ui_colors = ui_colors;
+std::filesystem::path interface_directory;
+std::vector<interface_theme_t> interface_catalog;
 std::array<nk_color, compose_names.size()> compose_colors{
     nk_rgb(22, 25, 33),          nk_rgb(18, 21, 29),          nk_rgb(58, 67, 83),
     nk_rgb(190, 196, 207),       nk_rgb(22, 31, 42),          nk_rgb(148, 153, 163),
@@ -591,10 +596,46 @@ void load(const std::filesystem::path& bundled_directory) {
     const auto directory = override_directory && *override_directory
                                ? std::filesystem::path(override_directory)
                                : bundled_directory;
-    read_roles(read_document(directory / "ui-dark.json"), ui_names, ui_colors);
+    interface_directory = directory;
+    interface_catalog.clear();
+    std::error_code error;
+    for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+        const auto id = entry.path().stem().string();
+        if (!id.starts_with("ui-") || entry.path().extension() != ".json") continue;
+        const auto document = read_document(entry.path());
+        const auto name = document.contains("name") && document["name"].is_string()
+            ? document["name"].get<std::string>() : id;
+        interface_catalog.push_back({id, name});
+    }
+    std::ranges::sort(interface_catalog, {}, &interface_theme_t::id);
+    static_cast<void>(reload_interface_theme(""));
     load_field_schemes(directory / "field");
     active_id.clear();
     select_field_scheme("wormedit");
+}
+
+auto interface_themes() -> std::span<const interface_theme_t> { return interface_catalog; }
+
+auto reload_interface_theme(std::string_view id) -> std::string {
+    if (id.empty()) id = "ui-dark";
+    if (std::ranges::find(interface_catalog, id, &interface_theme_t::id) == interface_catalog.end())
+        return "Interface theme is unavailable; the previous theme is retained.";
+    const auto path = interface_directory / (std::string{id} + ".json");
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error || size > 1024 * 1024) return "Interface theme could not be read; the previous theme is retained.";
+    const auto document = read_document(path);
+    if (!document.contains("roles") || !document["roles"].is_object())
+        return "Invalid interface theme roles; the previous theme is retained.";
+    auto colors = builtin_ui_colors;
+    const auto& roles = document["roles"];
+    for (std::size_t index = 0; index < ui_names.size(); ++index) {
+        const auto name = std::string{ui_names[index]};
+        if (roles.contains(name) && !resolve(document, roles[name], colors[index]))
+            return "Invalid interface theme color; the previous theme is retained.";
+    }
+    ui_colors = colors;
+    return {};
 }
 
 auto ui(UiColor color) -> nk_color {

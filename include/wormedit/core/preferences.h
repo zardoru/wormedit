@@ -85,6 +85,7 @@ struct display_preferences_t {
     std::string theme; // Empty selects the bundled default; environment override remains independent.
     std::uint32_t ui_scale_percent{}; // 0 = automatic; explicit values are 100..200.
     bool frame_timing_overlay{};
+    bool reduced_motion{};
     std::string field_scheme{"wormedit"};
     std::map<std::string, std::string, std::less<>> field_scheme_overrides;
     // Single/P1 then P2: 0 skin default, 1 chart layout, 2 left, 3 right.

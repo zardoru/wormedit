@@ -1,4 +1,5 @@
 {
+  "name": "Dark",
   "description": "Dark UI palette. Blue is the primary highlight; warm coral and yellow-green split its complement.",
   "scales": {
     "neutral": {
@@ -23,6 +24,8 @@
     }
   },
   "roles": {
+    "waveform_background": "#161921", "waveform_guide": "#393f4d",
+    "waveform_rms": "#3b7a93", "waveform_peak": "#6bd6eb", "waveform_playhead": "#ffd563",
     "background": "$neutral.950",
     "surface": "$neutral.900",
     "surface_hover": "$neutral.800",

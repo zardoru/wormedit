@@ -122,14 +122,37 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-257 Fill the Display page
 
-- **Status:** ready (T-225 completed 2026-10-09; audit current implementation before starting)
+- **Status:** done (2026-10-21)
+- **Implementation audit (2026-10-21):** Appearance already edits field skins and opacity;
+  interface theme/scale/overlay controls and waveform roles are missing. The playhead already
+  uses exact callback-published positions without interpolation; reduced motion preserves that
+  clock contract rather than introducing smoothing to disable it.
+- **Supporting ownership (2026-10-21):** also owned: `src/sys/options_runtime.cpp`,
+  `src/sys/application.cpp`, `src/sys/window.cpp`, `src/ui/frontend/actions.h`, `src/ui/frontend/options_notifications.h`,
+  new `src/ui/nuklear/interface_scale.h`, `src/ui/nuklear/font_atlas.h/.cpp`,
+  `src/ui/nuklear/audio_panel.cpp`, `assets/themes/ui-dark.json`,
+  new `tests/ui/display_options_event_harness_tests.cpp`, `tests/ui/font_atlas_tests.cpp`,
+  `tests/ui/theme_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`,
+  and `memory/chart-editor-status/resume.md`. These wire accepted display settings through the
+  actual font/render/input owners, keep native high-DPI rendering, and verify popup/input alignment.
 - **Outcome:** theme choice from the bundled themes directory (replacing the `WORMEDIT_THEME_DIR` environment variable, which stays as an override), UI scale (auto, 100–200 %), frame-timing overlay toggle, reduced motion (no playhead smoothing), and waveform colors from theme roles.
 - **Read first:** `src/ui/nuklear/theme.cpp` (`load`), `assets/themes/`, `src/ui/nuklear/frontend.cpp` (font and scale setup), `src/sys/frame_timing.cpp`.
 - **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/frontend.cpp` (scale and font rebuild only), `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `tests/core/preferences_tests.cpp`.
 - **Steps:** 1. Theme reload at runtime (re-run `theme::load` and `apply_theme`). 2. UI scale rebuilds the font atlas once.
 - **Invariants:** resize/high-DPI alignment unchanged.
 - **Reject/failure behavior:** an invalid theme file keeps the previous theme with a warning.
-- **Verify:** standard build/test; smoke PNGs at 100 % and 150 %.
+- **Verify:** GATE **4,423/4,423**, build, whitespace and **14-TU** complexity pass
+  (`/tmp/t257-gate-final.log`, `/tmp/wormedit-gate.xsDMcs`,
+  `/tmp/wormedit-complexity.gjtbu485`). Preferences **285 assertions / 32 cases**,
+  Options **368 / 29**, theme **12,505 / 21**, and display/font/input **26 / 3** pass.
+  Isolated Xvfb captures `/tmp/t257-clean-display-{100,150}.png` and
+  `/tmp/t257-clean-project-150-resized.png` inspected; native Apply persists scale,
+  reduced motion and overlay toggles. Reproduce with `/tmp/t257-display-smoke.sh`
+  or `/tmp/t257-display-clean-smoke.sh` and the native Compose smoke fixture.
+  Themes publish atomically, font handles retain logical metrics while raster density
+  changes, and title-bar/drop/pointer coordinates share the scale boundary. The timing
+  overlay retains its movable position within the resized viewport. Reduced motion
+  keeps the existing exact callback clock; no playhead interpolation was introduced.
 - **Out of scope:** a light theme.
 
 ## T-258 Host shortcuts, input, and external players in Options

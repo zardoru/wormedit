@@ -2,13 +2,21 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-257** (2026-10-21): Appearance exposes interface themes, automatic/100–200%
+scale, frame timing and reduced motion. Invalid themes retain the prior palette; waveform
+colors use theme roles. Logical rendering/input/drop/title-bar coordinates share the scale
+boundary, and font density changes without replacing logical handles. GATE passes
+**4,423/4,423**, build, whitespace and **14-TU** complexity. Isolated 100%/150% Options,
+Compose and resized Project views were inspected; native Apply persistence is verified.
+Next owner-requested cards, each a separate commit: **T-258**, then **T-263**.
+
 Completed **T-256** (2026-10-21): Playback & audio exposes device refresh/selection, buffer,
 metronome/accent/audition levels, count-in, rate/pitch defaults and signed display compensation.
 Both outputs reconfigure only after Stop; unavailable devices warn once and use System default.
 Latency leaves schedule/seek/tap positions unchanged. GATE passes **4,418/4,418**, build,
 whitespace and **18-TU** complexity; focused persistence, Options, SDL, PCM and UI checks pass.
 Isolated Xvfb verifies the device menu and saved named dummy-device choice. Next owner-requested
-cards, each a separate commit: **T-257**, **T-258**, then **T-263**.
+cards **T-257**, **T-258**, then **T-263**; T-257 is complete above.
 
 Completed **T-416** (2026-10-21): Project rows show native Open/menu icons only on hover
 or row focus, with stable row spacing. Row-wide context menus keep their captured target;

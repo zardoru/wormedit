@@ -66,16 +66,6 @@ auto directly_in_window(const nk_context* context) -> bool {
            context->current->layout->type == NK_PANEL_WINDOW;
 }
 
-auto clamped_bounds(nk_context* context, struct nk_vec2 anchor, struct nk_vec2 size)
-    -> struct nk_rect {
-    const auto region = nk_window_get_content_region(context);
-    const auto width = std::min(size.x, region.w);
-    const auto height = std::min(size.y, region.h);
-    return nk_rect(std::clamp(anchor.x - region.x, 0.0f, std::max(0.0f, region.w - width)),
-                   std::clamp(anchor.y - region.y, 0.0f, std::max(0.0f, region.h - height)),
-                   width, height);
-}
-
 auto begin_menu_popup(ContextMenu& menu, nk_context* context) -> bool {
     // Menubar menus use menu_padding and no stock border; menu_surface_begin() frames them.
     auto& window = context->style.window;
@@ -259,7 +249,7 @@ auto context_menu_begin(ContextMenu& menu, nk_context* context, PopupContextStam
         context_menu_close(menu, context);
         return false;
     }
-    menu.bounds = clamped_bounds(context, menu.anchor, size);
+    menu.bounds = clamped_popup_bounds(context, menu.anchor, size);
     if (!begin_menu_popup(menu, context)) {
         context_menu_close(menu);
         menu.close_pending = false;

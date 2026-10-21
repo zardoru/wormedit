@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/metadata_limits.h>
+#include <wormedit/core/metadata_rating.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -65,13 +66,6 @@ struct chart_rating_edit_t {
 };
 
 inline constexpr std::size_t metadata_rating_component_max_bytes = 21;
-
-// Parses exact base-10 components without reducing or otherwise changing the
-// signed rational. Numerators are signed 64-bit values; denominators are
-// positive 64-bit values.
-[[nodiscard]] auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
-    -> std::optional<signed_rational_t>;
-
 
 // A null chart selects song-scoped metadata; otherwise the field belongs to
 // that difficulty. Indexes address exact occurrences, preserving duplicates.

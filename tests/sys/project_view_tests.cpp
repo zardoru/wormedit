@@ -518,3 +518,20 @@ TEST_CASE("Conversion preview Cancel retains busy state and discards its result"
     REQUIRE(std::string_view(view.output_groups[0].preview_status) == "Conversion preview cancelled.");
     REQUIRE(history.undo.empty());
 }
+
+TEST_CASE("Selection-bar chart actions route the complete selected IDs atomically", "[project-view][project-selection]") {
+    const auto erase = GENERATE(false, true);
+    auto history = document_history_t::from(project_song());
+    const auto original = history.document.charts.front().id;
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, original)));
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, original)));
+    history = document_history_t::from(history.document);
+    project_chart_runtime_t runtime;
+    ui::project_chart_action_t action{.kind = erase ? WORM_UI_PROJECT_CHART_DELETE : WORM_UI_PROJECT_CHART_DUPLICATE,
+        .document_revision = history.document.revision, .session_generation = runtime.session_generation,
+        .selected_chart_ids = {original, history.document.charts[1].id}};
+    const auto result = apply_project_chart_ui_action(runtime, history, action);
+    expect_project(result.applied);
+    expect_project(history.document.charts.size() == (erase ? 1 : 5));
+    expect_project(history.undo.size() == 1);
+}

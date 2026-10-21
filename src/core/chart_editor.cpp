@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <set>
 #include <typeindex>
 
 namespace wormedit {
@@ -168,6 +169,21 @@ void remove_memberships(song_document_t& document, chart_id_t id) {
     for (auto& group : document.output_groups) std::erase(group.charts, id);
 }
 
+auto check_chart_selection(const document_history_t& history, std::span<const chart_id_t> charts)
+    -> std::optional<document_command_result_t> {
+    std::set<chart_id_t> seen;
+    if (charts.empty())
+        return document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::invalid_id, "chart selection is empty");
+    for (const auto id : charts) {
+        if (auto invalid = check_chart(history, id)) return invalid;
+        if (!seen.insert(id).second)
+            return document_command_transaction_t::rejection(history.document.revision,
+                diagnostic_code_t::invalid_id, "chart selection contains duplicate IDs");
+    }
+    return std::nullopt;
+}
+
 auto commit_empty_chart(document_history_t& history, lane_input_profile_t profile,
     format_family_t source_family, std::uint64_t divisions, signed_rational_t offset)
     -> duplicate_chart_result_t {
@@ -225,33 +241,48 @@ auto apply_add_chart_command(document_history_t& history,
 
 auto apply_duplicate_chart_command(document_history_t& history,
                                    chart_id_t id) -> duplicate_chart_result_t {
-    if (auto invalid = check_chart(history, id)) return {.command = std::move(*invalid)};
+    return apply_duplicate_charts_command(history, std::span{&id, 1});
+}
+
+auto apply_duplicate_charts_command(document_history_t& history,
+    std::span<const chart_id_t> charts) -> duplicate_chart_result_t {
+    if (auto invalid = check_chart_selection(history, charts)) return {.command = std::move(*invalid)};
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
-    auto duplicate = *history.document.find_chart(id);
-    chart_id_remap_t remap{.next = ceiling + 1};
-    visit_chart_ids(duplicate, remap);
-    if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
-    duplicate.metadata.name += " (copy)";
-    const auto new_id = duplicate.id;
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
-    proposed.charts.push_back(std::move(duplicate));
-    auto result = transaction.commit("Duplicate chart");
+    auto next_id = ceiling + 1;
+    std::optional<chart_id_t> first;
+    for (const auto id : charts) {
+        auto duplicate = *history.document.find_chart(id);
+        chart_id_remap_t remap{.next = next_id};
+        visit_chart_ids(duplicate, remap);
+        if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
+        next_id = remap.next;
+        if (!first) first = duplicate.id;
+        duplicate.metadata.name += " (copy)";
+        proposed.charts.push_back(std::move(duplicate));
+    }
+    auto result = transaction.commit(charts.size() == 1 ? "Duplicate chart" : "Duplicate charts");
     const auto applied = result.applied;
-    return {.command = std::move(result), .payload = {.chart = applied ? std::optional{new_id} : std::nullopt}};
+    return {.command = std::move(result), .payload = {.chart = applied ? first : std::nullopt}};
 }
 
 auto apply_delete_chart_command(document_history_t& history,
                                 chart_id_t id) -> document_command_result_t {
-    if (auto invalid = check_chart(history, id)) return std::move(*invalid);
-    if (history.document.charts.size() == 1) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
+    return apply_delete_charts_command(history, std::span{&id, 1});
+}
+
+auto apply_delete_charts_command(document_history_t& history,
+    std::span<const chart_id_t> charts) -> document_command_result_t {
+    if (auto invalid = check_chart_selection(history, charts)) return std::move(*invalid);
+    if (history.document.charts.size() == charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
-    remove_memberships(proposed, id);
-    std::erase_if(proposed.charts, [id](const auto& chart) { return chart.id == id; });
-    return transaction.commit("Delete chart");
+    for (const auto id : charts) remove_memberships(proposed, id);
+    std::erase_if(proposed.charts, [charts](const auto& chart) { return std::ranges::contains(charts, chart.id); });
+    return transaction.commit(charts.size() == 1 ? "Delete chart" : "Delete charts");
 }
 
 auto apply_reorder_chart_command(document_history_t& history,

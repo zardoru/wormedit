@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <array>
 #include <limits>
 #include <source_location>
 
@@ -517,4 +518,53 @@ TEST_CASE("Output membership updates reject one incompatible chart without a par
     expect_chart(history.document.output_groups.front().charts == std::vector{chart_id_t{2}});
     expect_chart(history.document.revision == revision);
     expect_chart(history.undo.size() == undo_size);
+}
+
+TEST_CASE("Selected charts duplicate and delete together with one undo boundary", "[core][chart-editor][project-selection]") {
+    auto history = document_history_t::from(chart_song());
+    require_chart(static_cast<bool>(apply_duplicate_chart_command(history, chart_id_t{2})));
+    require_chart(static_cast<bool>(apply_duplicate_chart_command(history, chart_id_t{2})));
+    history = document_history_t::from(history.document);
+    const std::array selection{history.document.charts[0].id, history.document.charts[1].id};
+    history.document.output_groups.front().charts.assign(selection.begin(), selection.end());
+    const auto before = write_native_project(history.document).value;
+    require_chart(static_cast<bool>(apply_duplicate_charts_command(history, selection)));
+    expect_chart(history.document.charts.size() == 5 && history.undo.size() == 1);
+    expect_chart(duplicate_links_match(history.document.charts[0], history.document.charts[3]));
+    expect_chart(duplicate_links_match(history.document.charts[1], history.document.charts[4]));
+    expect_chart(history.document.charts[3].id != history.document.charts[4].id);
+    require_chart(undo_document_command(history));
+    expect_chart(write_native_project(history.document).value == before);
+    require_chart(static_cast<bool>(apply_delete_charts_command(history, selection)));
+    expect_chart(history.document.charts.size() == 1 && history.undo.size() == 1);
+    expect_chart(history.document.output_groups.front().charts.empty());
+    require_chart(undo_document_command(history));
+    expect_chart(write_native_project(history.document).value == before);
+}
+
+TEST_CASE("Chart selections reject unknown repeated empty and all-chart deletion atomically", "[core][chart-editor][project-selection]") {
+    auto history = document_history_t::from(chart_song());
+    require_chart(static_cast<bool>(apply_duplicate_chart_command(history, chart_id_t{2})));
+    history = document_history_t::from(history.document);
+    const auto before = write_native_project(history.document).value;
+    const auto selection = GENERATE(std::vector<chart_id_t>{},
+        (std::vector{chart_id_t{2}, chart_id_t{2}}), (std::vector{chart_id_t{2}, chart_id_t{999}}));
+    expect_chart(!apply_duplicate_charts_command(history, selection));
+    expect_chart(!apply_delete_charts_command(history, selection));
+    const std::array all{history.document.charts[0].id, history.document.charts[1].id};
+    expect_chart(!apply_delete_charts_command(history, all));
+    expect_chart(history.undo.empty());
+    expect_chart(write_native_project(history.document).value == before);
+}
+
+TEST_CASE("Batch duplication rolls back earlier copies when later IDs are exhausted", "[core][chart-editor][project-selection]") {
+    auto history = document_history_t::from(chart_song());
+    require_chart(static_cast<bool>(apply_duplicate_chart_command(history, chart_id_t{2})));
+    history.document.audio_assets.push_back({.id = asset_id_t{UINT64_MAX - 30}, .source_path = "unused.wav"});
+    history = document_history_t::from(history.document);
+    const auto before = write_native_project(history.document).value;
+    const std::array selection{history.document.charts[0].id, history.document.charts[1].id};
+    expect_chart(!apply_duplicate_charts_command(history, selection));
+    expect_chart(history.undo.empty());
+    expect_chart(write_native_project(history.document).value == before);
 }

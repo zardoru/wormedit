@@ -64,7 +64,8 @@ Charts  1                                                     [ + ]   ← headin
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** no row has a button strip. Hovering a row shows Open and ⋯, and ⋯ or a right-click opens a `ContextMenu` with Open in Compose, Duplicate and Delete…. There are no move items, because reordering is T-417's grip and Alt+↑/↓. A double-click opens the chart. Delete… asks in a `chrome::Dialog`.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp` (`render_chart_actions`, `render_delete_confirmation`), `src/ui/nuklear/context_menu.h`, [dialogs](dialogs.md).
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `src/sys/project_view.h`, `src/sys/project_view.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`, `include/wormedit/core/metadata_rating.h`, `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/context_menu.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, this card and `memory/chart-editor-status/resume.md`.
+- **Supporting ownership (2026-10-21):** selection-bar Duplicate/Delete must apply the entire selection in one transaction; extend the existing commands and reuse their ID remapping/membership rules. Expose the existing exact rating parser through a vocabulary-only header so the popover can show invalid-input feedback without importing document/command types or duplicating parsing. Metadata action payloads stay unchanged. Reuse the existing context-menu bounds calculation through the shared popup header; the keyboard-menu regression must distinguish menu-only controls from the new persistent selection-bar buttons.
 - **Steps:**
   1. Remove `render_chart_actions` and the inline delete confirmation.
   2. Add the hover icons and the menu, using the existing `WORM_UI_PROJECT_CHART_*` actions.
@@ -103,7 +104,7 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-418 Move batch metadata edits into a contextual selection bar
 
-- **Status:** ready (T-415 is done; dependency cleared 2026-10-19)
+- **Status:** done (2026-10-21)
 - **Stale-plan audit (2026-10-19):** The existing selected-chart block already emits the batch
   metadata action and exposes author/rating fields, but it is still an inline form with a duplicate
   selection count and **Clear selection** text. The SelectionBar, popovers, Duplicate/Delete and
@@ -111,7 +112,8 @@ Charts  1                                                     [ + ]   ← headin
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** with one or more charts selected, a bar under the table reads "N selected · [Set author…] [Set rating…] [Duplicate] [Delete…] ✕". Each "Set…" opens a small popover with the existing fields and an Apply button. The inline author and rating form is gone.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp` (`render_project_batch`), `src/ui/nuklear/popup_lifecycle.h`.
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `src/sys/project_view.h`, `src/sys/project_view.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`, `include/wormedit/core/metadata_rating.h`, `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/context_menu.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, this card and `memory/chart-editor-status/resume.md`.
+- **Supporting ownership (2026-10-21):** selection-bar Duplicate/Delete must apply the entire selection in one transaction; extend the existing commands and reuse their ID remapping/membership rules. Expose the existing exact rating parser through a vocabulary-only header so the popover can show invalid-input feedback without importing document/command types or duplicating parsing. Metadata action payloads stay unchanged. Reuse the existing context-menu bounds calculation through the shared popup header; the keyboard-menu regression must distinguish menu-only controls from the new persistent selection-bar buttons.
 - **Steps:**
   1. Replace `render_project_batch` with a `chrome::SelectionBar` (T-436), shown at one selected chart or more.
   2. Build the author popover (text field and Apply) and the rating popover (numerator, denominator, an Unset checkbox and Apply). Both emit `WORM_UI_PROJECT_CHART_BATCH_METADATA` as now.
@@ -119,4 +121,5 @@ Charts  1                                                     [ + ]   ← headin
 - **Invariants:** the batch metadata payload is unchanged.
 - **Reject/failure behavior:** an invalid rating keeps the popover open with the reason shown under the fields.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness`.
+- **Verification (2026-10-21):** `scripts/gate.sh --jobs 8` passes build, **4,395/4,395 tests**, whitespace and complexity across eight changed translation units (`/tmp/t418-gate2.log`, `/tmp/wormedit-gate.EqJZMJ`). The shared popup-bounds helper was renamed with `clang-refactor local-rename` before moving it unchanged to the lifecycle header. Focus waits for the opening click to release before selecting the text field. Core regressions cover linked-ID remapping, complete membership removal, one Undo boundary and rollback when a later copy exhausts IDs. Event regressions cover two-chart author/unset edits, invalid rating feedback, stale/Escape/cancel/clear handling and selected Duplicate/Delete confirmation. Real isolated Xvfb screenshots `/tmp/t418-{bar-one,bar-two,author,rating,narrow}.png` were inspected, including the 800×700 bar; deleting every chart is disabled. No complexity allowance or metadata payload changed.
 - **Out of scope:** the StepMania export policy form below the table.

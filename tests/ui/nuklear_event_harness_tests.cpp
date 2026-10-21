@@ -5671,7 +5671,7 @@ TEST_CASE("Project selection exposes metadata controls below compact chart rows"
     REQUIRE(author);
     (void)click_at(harness, author->first, author->second);
     (void)harness.frame();
-    const auto apply = harness.drawn_text_center("Apply author");
+    const auto apply = harness.drawn_text_center("Apply");
     REQUIRE(apply);
     bool applied = false;
     for (const auto& frame : click_at(harness, apply->first, apply->second)) {
@@ -8905,4 +8905,97 @@ TEST_CASE("Owned shortcut batches retain the admission limit and discard overflo
     const auto output = harness.frame(events);
     CHECK(output.get().shortcut_overflowed == overflow);
     CHECK(output.get().shortcut_events.size() == (overflow ? 0 : wormedit::ui::shortcut_event_admission_limit));
+}
+
+namespace {
+void select_two_project_charts(nuklear_event_harness_t& harness) {
+    click_label(harness, "First chart");
+    const auto second = harness.drawn_text_center("Second chart");
+    REQUIRE(second);
+    for (const bool down : {true, false}) {
+        const std::array events{mouse_motion(second->first, second->second),
+            mouse_button(down, second->first, second->second)};
+        (void)harness.frame(events, SDL_KMOD_SHIFT);
+    }
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("2 selected"));
+}
+}
+
+TEST_CASE("Project selection popovers apply author and unset rating to two charts", "[event-harness][project-selection]") {
+    const auto rating = GENERATE(false, true);
+    chart_reorder_fixture_t f;
+    select_two_project_charts(f.harness);
+    click_label(f.harness, rating ? "Set rating…" : "Set author…");
+    if (rating) click_label(f.harness, "Unset rating");
+    else {
+        SDL_Event text{};
+        text.type = SDL_EVENT_TEXT_INPUT;
+        text.text.text = "Batch Author";
+        (void)f.harness.frame(std::span{&text, 1});
+    }
+    bool applied = false;
+    for (const auto& frame : click_button(f.harness, "Apply")) {
+        const auto& action = frame.get().project_chart;
+        if (action.kind != WORM_UI_PROJECT_CHART_BATCH_METADATA) continue;
+        applied = true;
+        expect_lane_key(action.selected_chart_ids == std::vector{wormedit::chart_id_t{10}, wormedit::chart_id_t{20}});
+        expect_lane_key(action.edit_author == !rating && action.edit_rating == rating);
+        expect_lane_key(rating ? action.unset_rating : action.author == "Batch Author");
+        expect_lane_key(action.document_revision == 53 && action.session_generation == 17);
+    }
+    expect_lane_key(applied);
+    (void)f.harness.frame();
+    expect_lane_key(!f.harness.drawn_text_center("Apply"));
+}
+
+TEST_CASE("Project rating popover explains invalid input and cancels on revision change", "[event-harness][project-selection]") {
+    chart_reorder_fixture_t f;
+    select_two_project_charts(f.harness);
+    click_label(f.harness, "Set rating…");
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.text = "bad";
+    (void)f.harness.frame(std::span{&text, 1});
+    REQUIRE(f.harness.drawn_text().find("Enter an integer numerator") != std::string::npos);
+    for (const auto& frame : click_button(f.harness, "Apply"))
+        expect_lane_key(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)f.harness.frame();
+    expect_lane_key(f.harness.drawn_text_center("Apply").has_value());
+    ++f.harness.view().setup.document_revision;
+    expect_lane_key(f.harness.frame().get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)f.harness.frame();
+    expect_lane_key(!f.harness.drawn_text_center("Apply"));
+    click_label(f.harness, "Set author…");
+    click_label(f.harness, "Cancel");
+    click_label(f.harness, "Set rating…");
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    expect_lane_key(f.harness.frame(std::span{&escape, 1}).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    const auto released = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)f.harness.frame(std::span{&released, 1});
+    (void)f.harness.frame();
+    expect_lane_key(!f.harness.drawn_text_center("Apply"));
+    click_label(f.harness, "×");
+    expect_lane_key(!f.harness.drawn_text_center("Set author…"));
+}
+
+TEST_CASE("Project selection bar duplicates the selection and confirms its deletion", "[event-harness][project-selection]") {
+    const auto erase = GENERATE(false, true);
+    chart_reorder_fixture_t f;
+    select_two_project_charts(f.harness);
+    if (erase) {
+        for (const auto& frame : click_button(f.harness, "Delete…"))
+            expect_lane_key(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+        (void)f.harness.frame();
+        REQUIRE(f.harness.drawn_text_center("2 selected charts"));
+    }
+    bool applied = false;
+    for (const auto& frame : click_button(f.harness, erase ? "Delete" : "Duplicate")) {
+        const auto& action = frame.get().project_chart;
+        if (action.kind == WORM_UI_PROJECT_CHART_NONE) continue;
+        applied = true;
+        expect_lane_key(action.kind == (erase ? WORM_UI_PROJECT_CHART_DELETE : WORM_UI_PROJECT_CHART_DUPLICATE));
+        expect_lane_key(action.selected_chart_ids == std::vector{wormedit::chart_id_t{10}, wormedit::chart_id_t{20}});
+    }
+    expect_lane_key(applied);
 }

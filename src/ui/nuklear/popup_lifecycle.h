@@ -3,6 +3,7 @@
 #include "wormedit/nuklear_config.h"
 #include "ui/frontend.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <initializer_list>
 
@@ -21,6 +22,17 @@ struct PopupContextStamp {
         return {view.song_id.value, view.session_generation, view.document_revision, chart};
     }
 };
+
+// Place a screen-space anchor inside the current window, returning popup-local bounds.
+inline auto clamped_popup_bounds(nk_context* context, struct nk_vec2 anchor, struct nk_vec2 size)
+    -> struct nk_rect {
+    const auto region = nk_window_get_content_region(context);
+    const auto width = std::min(size.x, region.w);
+    const auto height = std::min(size.y, region.h);
+    return nk_rect(std::clamp(anchor.x - region.x, 0.0f, std::max(0.0f, region.w - width)),
+                   std::clamp(anchor.y - region.y, 0.0f, std::max(0.0f, region.h - height)),
+                   width, height);
+}
 
 struct retained_popup_t {
     bool open{};

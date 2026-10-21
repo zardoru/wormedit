@@ -72,6 +72,7 @@ struct project_chart_command_t {
     batch_chart_metadata_action_t metadata;
     chart_id_t target_chart;
     bool insert_after{};
+    std::vector<chart_id_t> selected_charts;
 };
 struct project_chart_command_result_t {
     document_command_result_t command;

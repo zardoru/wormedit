@@ -130,11 +130,15 @@ auto apply_project_chart_command(document_history_t& history,
         return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
-        auto copy = apply_duplicate_chart_command(history, action.chart);
+        auto copy = action.selected_charts.empty()
+            ? apply_duplicate_chart_command(history, action.chart)
+            : apply_duplicate_charts_command(history, action.selected_charts);
         return {.command = std::move(copy.command)};
     }
     if (action.kind == project_chart_command_kind_t::erase)
-        return {.command = apply_delete_chart_command(history, action.chart)};
+        return {.command = action.selected_charts.empty()
+            ? apply_delete_chart_command(history, action.chart)
+            : apply_delete_charts_command(history, action.selected_charts)};
 
     const auto* chart = history.document.find_chart(action.chart);
     if (chart == nullptr)
@@ -188,7 +192,7 @@ auto project_chart_command_t::from(const ui::project_chart_action_t& action,
     -> result_t<project_chart_command_t, std::string> {
     project_chart_command_t command{.expected_revision = action.document_revision,
         .chart = action.chart_id, .target_chart = action.target_chart_id,
-        .insert_after = action.insert_after};
+        .insert_after = action.insert_after, .selected_charts = action.selected_chart_ids};
     switch (action.kind) {
     case WORM_UI_PROJECT_CHART_NEW: command.kind = project_chart_command_kind_t::create; break;
     case WORM_UI_PROJECT_CHART_DUPLICATE: command.kind = project_chart_command_kind_t::duplicate; break;

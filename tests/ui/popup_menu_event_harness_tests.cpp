@@ -397,7 +397,7 @@ TEST_CASE("Project chart keyboard menu opens the focused row and respects Option
     workspace.options.visible = true;
     (void)harness.frame();
     (void)press_context_key(harness, SDLK_F10, SDL_SCANCODE_F10, SDL_KMOD_RSHIFT);
-    check_popup(!harness.drawn_text_center("Duplicate").has_value());
+    check_popup(!harness.drawn_text_center("Move up").has_value());
     workspace.options.visible = false;
     ++workspace.project_id.value;
     ++setup.song_id.value;

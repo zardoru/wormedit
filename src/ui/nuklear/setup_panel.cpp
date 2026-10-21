@@ -1,4 +1,5 @@
 #include <wormedit/core/diagnostic.h>
+#include <wormedit/core/metadata_rating.h>
 #include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/setup_panel.h"
@@ -37,7 +38,16 @@ void project_section_heading(nk_context* context, const char* text) {
     nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
 }
 
+struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
+    wormedit::ui::chrome::PopupContextStamp stamp;
+    std::vector<std::uint64_t> selection;
+    struct nk_rect bounds{};
+    bool focus_pending{};
+};
+
 struct project_panel_state_t {
+    project_metadata_popup_t metadata_popup;
+    std::vector<std::uint64_t> delete_selection;
     project_chart_selection_t selection;
     project_chart_drag_t drag;
     struct nk_vec2 drag_start{};
@@ -181,12 +191,18 @@ void publish_chart_action(const wormedit::ui::setup_view_t& view, wormedit::ui::
     action.project_chart.session_generation = view.session_generation;
 }
 
+void publish_selected_chart_action(const wormedit::ui::setup_view_t& view,
+    wormedit::ui::workspace_action_t& action, WormUiProjectChartActionKind kind,
+    std::span<const std::uint64_t> ids) {
+    if (action.project_chart.kind != WORM_UI_PROJECT_CHART_NONE) return;
+    publish_chart_action(view, action, kind, 0);
+    for (const auto id : ids) action.project_chart.selected_chart_ids.push_back(wormedit::chart_id_t{id});
+}
+
 void publish_batch(const wormedit::ui::setup_view_t& view, wormedit::ui::workspace_action_t& action) {
-    publish_chart_action(view, action, WORM_UI_PROJECT_CHART_BATCH_METADATA, 0);
+    publish_selected_chart_action(view, action, WORM_UI_PROJECT_CHART_BATCH_METADATA,
+                                  project_state.metadata_popup.selection);
     auto& batch = action.project_chart;
-    batch.selected_chart_ids.clear();
-    for (const auto id : project_state.selection.ids)
-        batch.selected_chart_ids.push_back(wormedit::chart_id_t{id});
     batch.edit_author = project_state.edit_author;
     batch.author = project_state.author;
     batch.edit_rating = project_state.edit_rating;
@@ -195,34 +211,101 @@ void publish_batch(const wormedit::ui::setup_view_t& view, wormedit::ui::workspa
     batch.rating_denominator = project_state.rating_denominator;
 }
 
-void render_project_batch(nk_context* context, const wormedit::ui::setup_view_t& view, wormedit::ui::workspace_action_t& action) {
-    if (project_state.selection.ids.empty()) return;
-    if (project_state.selection.ids.size() > wormedit::maximum_batch_chart_metadata_charts) return;
-    nk_layout_row_dynamic(context, 28, 4);
-    nk_labelf(context, NK_TEXT_LEFT, "%zu selected", project_state.selection.ids.size());
-    if (nk_button_label(context, "Set author…")) {
-        project_state.edit_author = !project_state.edit_author;
-        project_state.edit_rating = false;
-    }
-    if (nk_button_label(context, "Set rating…")) {
-        project_state.edit_rating = !project_state.edit_rating;
-        project_state.edit_author = false;
-    }
-    if (nk_button_label(context, "Clear selection")) project_state.selection.ids.clear();
-    if (project_state.edit_author) {
+void open_project_metadata(nk_context* context, const wormedit::ui::setup_view_t& view, bool author) {
+    auto& popup = project_state.metadata_popup;
+    popup.open = true;
+    popup.focus_pending = true;
+    popup.stamp = wormedit::ui::chrome::PopupContextStamp::from(view, 0);
+    popup.selection = project_state.selection.ids;
+    project_state.edit_author = author;
+    project_state.edit_rating = !author;
+    popup.bounds = wormedit::ui::chrome::clamped_popup_bounds(context,
+        nk_vec2(context->input.mouse.pos.x, context->input.mouse.pos.y + 20),
+        nk_vec2(380, author ? 140 : 228));
+}
+
+void render_project_metadata_fields(nk_context* context, const wormedit::ui::setup_view_t& view,
+    wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    auto& state = project_state;
+    auto& popup = state.metadata_popup;
+    const bool quiet = popup_input_is_quiet(context, PopupReleaseKeys::all);
+    bool focus_pending = popup.focus_pending && quiet;
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, state.edit_author ? "Set author" : "Set rating", NK_TEXT_LEFT);
+    if (state.edit_author) {
+        nk_layout_row_dynamic(context, 28, 1);
+        autofocus_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
+            state.author, sizeof(state.author), nk_filter_default, focus_pending);
+    } else {
+        nk_layout_row_dynamic(context, 24, 1);
+        nk_checkbox_label(context, "Unset rating", &state.unset_rating);
+        nk_layout_row_dynamic(context, 20, 2);
+        nk_label(context, "Numerator", NK_TEXT_LEFT);
+        nk_label(context, "Denominator", NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 28, 2);
-        wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-            project_state.author, sizeof(project_state.author), nk_filter_default);
-        if (nk_button_label(context, "Apply author")) publish_batch(view, action);
+        autofocus_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_AUTO_SELECT,
+            state.rating_numerator, sizeof(state.rating_numerator), nk_filter_default, focus_pending);
+        worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+            state.rating_denominator, sizeof(state.rating_denominator), nk_filter_default);
     }
-    if (project_state.edit_rating) {
-        nk_layout_row_dynamic(context, 28, 4);
-        nk_checkbox_label(context, "Unset rating", &project_state.unset_rating);
-        wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-            project_state.rating_numerator, sizeof(project_state.rating_numerator), nk_filter_default);
-        wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-            project_state.rating_denominator, sizeof(project_state.rating_denominator), nk_filter_default);
-        if (nk_button_label(context, "Apply rating")) publish_batch(view, action);
+    if (quiet) popup.focus_pending = false;
+    const bool valid = state.edit_author || state.unset_rating ||
+        wormedit::parse_metadata_rating(state.rating_numerator, state.rating_denominator).has_value();
+    if (!valid) {
+        nk_layout_row_dynamic(context, 32, 1);
+        nk_label_wrap(context, "Enter an integer numerator and a positive denominator.");
+    }
+    nk_layout_row_dynamic(context, 28, 2);
+    if (Button{"Apply", ButtonKind::primary, nullptr, valid}.render(context)) {
+        publish_batch(view, action);
+        popup.cancel();
+    }
+    if (Button{.label = "Cancel"}.render(context)) popup.cancel();
+}
+
+void render_project_metadata_popup(nk_context* context, const wormedit::ui::setup_view_t& view,
+    wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    auto& state = project_state.metadata_popup;
+    if (!state.open && !state.close_pending) return;
+    if (!popup_context_matches(state.stamp, PopupContextStamp::from(view, 0)) ||
+        state.selection != project_state.selection.ids ||
+        popup_dismiss_requested(context, popup_screen_bounds(context, state.bounds), !state.focus_pending))
+        state.cancel();
+    auto popup = begin_retained_popup(context, state, "Project chart metadata",
+        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, state.bounds, retained_popup_begin_failure_t::cancel);
+    if (popup.has_contents() && state.open) render_project_metadata_fields(context, view, action);
+    end_retained_popup(context, state, popup, retained_popup_edit_focus_t::unfocus_on_close,
+                       retained_popup_close_trigger_t::closed_or_pending);
+}
+
+void render_project_batch(nk_context* context, const wormedit::ui::setup_view_t& view,
+    wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    const auto count = project_state.selection.ids.size();
+    if (count == 0) return;
+    const bool metadata_enabled = count <= wormedit::maximum_batch_chart_metadata_charts;
+    const BarAction actions[]{
+        {.label = "Set author…", .enabled = metadata_enabled},
+        {.label = "Set rating…", .enabled = metadata_enabled},
+        {.label = "Duplicate"},
+        {.label = "Delete…", .kind = ButtonKind::destructive, .enabled = count < view.charts.size()},
+        {.label = "×", .tooltip = "Clear chart selection"}};
+    const auto summary = std::to_string(count) + " selected";
+    switch (SelectionBar{summary.c_str(), actions, 5}.render(context)) {
+    case 0: open_project_metadata(context, view, true); break;
+    case 1: open_project_metadata(context, view, false); break;
+    case 2:
+        publish_selected_chart_action(view, action, WORM_UI_PROJECT_CHART_DUPLICATE, project_state.selection.ids);
+        break;
+    case 3:
+        project_state.delete_selection = project_state.selection.ids;
+        project_state.selection.pending_delete_revision = view.document_revision;
+        project_state.delete_dialog = {};
+        break;
+    case 4: project_state.selection.ids.clear(); break;
+    default: break;
     }
 }
 
@@ -266,22 +349,31 @@ void render_delete_confirmation(nk_context* context, const wormedit::ui::setup_v
                                 wormedit::ui::workspace_action_t& action) {
     using namespace wormedit::ui::chrome;
     const auto id = project_state.selection.pending_delete;
-    if (!id) return;
+    const bool batch = !project_state.delete_selection.empty();
+    if (!id && !batch) return;
+    if (project_state.selection.pending_delete_revision != view.document_revision) {
+        project_state.delete_selection.clear();
+        return;
+    }
     const auto row = std::find_if(view.charts.begin(), view.charts.end(),
                                  [id](const auto& item) { return item.chart_id.value == id; });
-    if (row == view.charts.end()) return;
+    if (!batch && row == view.charts.end()) return;
     auto& dialog = project_state.delete_dialog;
     if (dialog_begin(dialog, context, "Delete chart", "Delete chart?")) {
-        dialog_text(dialog, context, row->name.data(), context->style.text.color);
+        const auto summary = batch ? std::to_string(project_state.delete_selection.size()) + " selected charts" : std::string{row->name};
+        dialog_text(dialog, context, summary.c_str(), context->style.text.color);
         dialog_text(dialog, context, "This removes the chart and its notes from the project. You can Undo this change.",
                     context->style.text.color);
         dialog_footer_begin(dialog, context, 2, true);
-        if (dialog_button(dialog, context, "Delete", DialogButtonRole::destructive))
-            publish_chart_action(view, action, WORM_UI_PROJECT_CHART_DELETE, id);
+        if (dialog_button(dialog, context, "Delete", DialogButtonRole::destructive)) {
+            if (batch) publish_selected_chart_action(view, action, WORM_UI_PROJECT_CHART_DELETE, project_state.delete_selection);
+            else publish_chart_action(view, action, WORM_UI_PROJECT_CHART_DELETE, id);
+        }
         (void)dialog_button(dialog, context, "Cancel", DialogButtonRole::secondary);
     }
     if (dialog_end(dialog, context) != DialogResult::none) {
         project_state.selection.pending_delete = 0;
+        project_state.delete_selection.clear();
         project_state.release_pending = true;
     }
 }
@@ -516,6 +608,7 @@ void render_project_charts(nk_context* context, const wormedit::ui::setup_view_t
     finish_chart_drag(context, view, action);
     render_project_batch(context, view, action);
     render_row_menu(context, view, action);
+    render_project_metadata_popup(context, view, action);
 }
 
 
@@ -1147,7 +1240,8 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
 } // namespace
 
 bool worm_ui_nuklear_setup_popup_owns_input() {
-    return project_state.selection.pending_delete != 0 || project_state.release_pending ||
+    return project_state.selection.pending_delete != 0 || !project_state.delete_selection.empty() ||
+        project_state.metadata_popup.owns_input() || project_state.release_pending ||
         project_state.group_editor_open || project_state.group_delete_pending ||
         project_state.membership_chart != 0 ||
         wormedit::ui::chrome::context_menu_owns_input(project_state.row_menu) ||
@@ -1160,12 +1254,15 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const wormedit::ui::
         selection.session_generation == view->session_generation;
     if (!same_session) {
         if (context && project_state.delete_dialog.open) nk_window_close(context, "Delete chart");
+        auto retired_metadata = project_state.metadata_popup;
+        retired_metadata.cancel();
         auto retired_menu = project_state.row_menu;
         auto retired_group_menu = project_state.group_menu;
         auto project_directory = std::move(project_state.project_directory);
         wormedit::ui::chrome::context_menu_abandon(retired_menu);
         wormedit::ui::chrome::context_menu_abandon(retired_group_menu);
         project_state = {};
+        project_state.metadata_popup = std::move(retired_metadata);
         project_state.row_menu = retired_menu;
         project_state.group_menu = retired_group_menu;
         project_state.project_directory = std::move(project_directory);
@@ -1176,6 +1273,13 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const wormedit::ui::
 }
 
 void worm_ui_nuklear_retire_setup_popups(nk_context* context) {
+    auto& popup = project_state.metadata_popup;
+    if (popup.close_pending && !wormedit::ui::chrome::popup_panel(context)) {
+        wormedit::ui::chrome::dismiss_popup(context, "Project chart metadata", popup.bounds);
+        popup.close_pending = false;
+    }
+    if (!popup.open) (void)wormedit::ui::chrome::release_retained_popup(context, popup,
+        wormedit::ui::chrome::PopupReleaseKeys::all);
     wormedit::ui::chrome::context_menu_retire(project_state.row_menu, context);
     wormedit::ui::chrome::context_menu_retire(project_state.group_menu, context);
 }

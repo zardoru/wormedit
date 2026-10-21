@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
+#include <span>
 
 namespace wormedit {
 
@@ -23,6 +24,11 @@ using duplicate_chart_result_t = command_result_with_t<duplicate_chart_payload_t
 
 [[nodiscard]] auto apply_duplicate_chart_command(document_history_t& history, chart_id_t chart) -> duplicate_chart_result_t;
 [[nodiscard]] auto apply_delete_chart_command(document_history_t& history, chart_id_t chart) -> document_command_result_t;
+// Applies the complete distinct selection atomically, with one Undo entry.
+[[nodiscard]] auto apply_duplicate_charts_command(document_history_t& history,
+    std::span<const chart_id_t> charts) -> duplicate_chart_result_t;
+[[nodiscard]] auto apply_delete_charts_command(document_history_t& history,
+    std::span<const chart_id_t> charts) -> document_command_result_t;
 // destination is the chart's zero-based position in the resulting chart vector.
 [[nodiscard]] auto apply_reorder_chart_command(document_history_t& history, chart_id_t chart, std::size_t destination)
     -> document_command_result_t;

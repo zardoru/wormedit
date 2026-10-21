@@ -2,6 +2,13 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-418** (2026-10-21): Project chart selection uses the shared bar with
+author/rating popovers, atomic selected Duplicate/Delete, confirmation and clear. Invalid
+ratings stay open with a reason; stale popovers and Escape publish nothing. GATE passes
+**4,395/4,395**, build, whitespace and eight-TU complexity; isolated wide/narrow captures
+were inspected. See [the card](../../docs/chart-editor-plan/tasks/project-charts.md#t-418-move-batch-metadata-edits-into-a-contextual-selection-bar).
+The next owner-requested card is **T-282**, beatoraja/LR2 BMS export profiles.
+
 Completed **T-251** (2026-10-21): the frontend rasterizes window-point geometry directly
 at backbuffer resolution, with SDL-scaled scissors and a logical-presentation fallback.
 GATE passes **4,388/4,388**, build, whitespace and three-TU complexity checks. Backend

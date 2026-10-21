@@ -1,3 +1,4 @@
+#include "sys/workspace_view.h"
 #include "nuklear_event_harness.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"

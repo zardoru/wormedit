@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "sys/menu_command_view.h"
 #include "ui/workspace_menu.h"
 

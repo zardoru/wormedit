@@ -5,7 +5,7 @@
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_sound_selection.h"
-#include "sys/compose_view.h"
+#include "sys/compose_projection_context.h"
 #include "sys/frame_timing.h"
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"

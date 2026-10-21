@@ -1,3 +1,4 @@
+#include "sys/workspace_view.h"
 #include "sys/bmson_waveform_view.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

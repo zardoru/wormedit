@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "ui/nuklear/sound_import_dialog.h"
 

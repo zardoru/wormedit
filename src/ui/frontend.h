@@ -9,4 +9,4 @@
 #include "frontend/project.h"
 #include "frontend/runtime.h"
 #include "frontend/timing_preview.h"
-#include "frontend/workspace.h"
+// Include frontend/workspace.h explicitly when the full workspace root is needed.

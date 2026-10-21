@@ -1,3 +1,4 @@
+#include "sys/workspace_view.h"
 #include "sys/compare_view.h"
 #include "sys/notification_history_runtime.h"
 

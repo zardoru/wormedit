@@ -26,11 +26,11 @@ The user-requested Clang preset repair explicitly initializes three absent StepM
 the preset build and **4,370 Clang tests** pass. Ratchets: **46 C structs / 30 capacities /
 86 count fields / 0 codecs**; the obsolete speed-graph complexity allowance is removed.
 
-**Next: T-750, reduce incremental rebuild time after the frontend migration.** T-699 is complete (2026-10-21); the frontend migration and its temporary ratchet rows are retired.
+**Frontend lane complete: T-690–T-699 and T-750 (2026-10-21).** Continue with the remaining active queue below.
 See [the conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-750-reduce-incremental-rebuild-time-after-the-frontend-migration)
 for ownership and verification requirements.
 
-After T-699, execute [T-750: reduce incremental rebuild time](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-750-reduce-incremental-rebuild-time-after-the-frontend-migration). This series follow-through measures rebuild latency and translation-unit fan-out with existing build artifacts retained, then reduces header/build coupling while preserving behavior and verification coverage.
+For future frontend/header build changes, reuse [T-750’s fixed benchmark matrix](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-750-reduce-incremental-rebuild-time-after-the-frontend-migration) with retained artifacts; its card records the measured results and reproduction commands.
 
 Completed **T-694** (2026-10-20): action payloads own their text and lists, carry core IDs
 and enums, and no longer borrow frontend staging. Compose/viewport/shortcut admission remains

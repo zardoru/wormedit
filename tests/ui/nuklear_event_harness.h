@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/frontend/workspace.h"
 
 #include "ui/frontend.h"
 #include "ui/nuklear/icon_widget_recording.h"

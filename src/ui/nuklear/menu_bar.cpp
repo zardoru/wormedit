@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "ui/nuklear/menu_bar.h"
 #include "ui/nuklear/chrome.h"
 #include <algorithm>

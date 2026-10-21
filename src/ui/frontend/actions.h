@@ -1,5 +1,8 @@
 #pragma once
-#include "workspace.h"
+#include "workspace_types.h"
+#include "file_jobs.h"
+#include "lane_keys.h"
+#include "options_notifications.h"
 #include "sound_import.h"
 #include <optional>
 #include <span>

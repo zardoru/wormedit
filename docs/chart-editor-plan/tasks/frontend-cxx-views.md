@@ -949,7 +949,7 @@ value claim is made for these conservatively retained cases.
 
 ## T-750 Reduce incremental rebuild time after the frontend migration
 
-- **Status:** ready
+- **Status:** done (2026-10-21)
 - **Outcome:** Representative frontend header edits recompile fewer translation units and complete faster from an already built checkout, with reproducible before/after measurements. Reduce median rebuild latency beyond observed timing variation for at least two header-edit cases; preserve no-op and implementation-edit latency within that variation.
 - **Read first:** this file, `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, this card; exact frontend contract headers, sys cache/runtime headers, implementation files, consuming tests and any measurement script must be inventoried and coordinator-recorded before edits. Start from the post-T-699 owners of the current `src/ui/frontend/compose.h`, `src/sys/compose_view.h` and `src/sys/workspace_view.h`.
@@ -964,3 +964,198 @@ value claim is made for these conservatively retained cases.
 - **Verify:** `scripts/gate.sh --jobs 4`; `cmake --preset linux-clang`, `cmake --build --preset linux-clang --parallel 4`, `ctest --preset linux-clang -j 4 --output-on-failure`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; the fixed incremental benchmark matrix above for both application and affected test targets. Include one clean build to verify dependency completeness; evaluate the speed goal using retained-artifact incremental builds.
 - **Target shape:** An implementation-only edit rebuilds its owning object and required links; a domain-view change rebuilds its actual consumers. Shared root edits have a documented, reduced dependency footprint. Ordinary cached builds become measurably faster.
 - **Out of scope:** Runtime feature changes, weakening tests or compiler checks, increasing build parallelism as the claimed improvement, replacing the build system, or adopting PCH/unity builds/PIMPL without evidence that the selected technique addresses the measured cause.
+
+### T-750 baseline inventory and benchmark ownership (2026-10-21)
+
+Baseline is the completed T-699 commit `7aa6d86`. Dependency files from the retained GCC
+build show `compose.h` and `frontend/workspace.h` each reaching **459 objects / 241 unique
+sources**; `sys/workspace_view.h` reaches **166 / 77**, and `sys/compose_view.h` reaches
+**156 / 72**. Sys production sources have **256 repeated compilations across 110 sources**.
+These counts include distinct target definitions and instrumentation; they are not permission
+to merge unlike object configurations. Raw inventory: `/tmp/t750-dependency-baseline.log`
+and `/tmp/t750-dependencies.json`.
+
+Coordinator-approved measurement ownership: `scripts/benchmark-incremental-build.py` for
+the reproducible retained-artifact runner; this card for commands/results; the resume pointer
+only after completion. The disposable checkout is
+`/home/zardoru/devel/.wormedit-t750-bench`, detached at the baseline. It reuses only pinned
+third-party source directories, not the main checkout's build outputs. Its Ninja Debug GCC
+configuration disables both compiler launchers; benchmark runs set `CCACHE_DISABLE=1` and
+use **4 jobs** throughout. Initial build targets are `wormedit` and
+`wormedit_frame_timing_tests`; the matrix records each target separately.
+
+Fixed matrix (three measured samples per case and target): no-op; producer implementation
+`src/sys/compose_marker_view.cpp`; BGM leaf contract currently in `src/ui/frontend/compose.h`;
+workspace root `src/ui/frontend/workspace.h`; private projection/cache owner
+`src/sys/workspace_view.h`. Reversible global `static_assert` probes change actual source tokens
+without runtime behavior. Preserve configured build directories and compiled outputs between
+samples. Record elapsed time, compile/link command counts, affected objects, load and cache
+policy. Restore original probe files after the matrix. Baseline and final use the same compiler,
+generator, target order, job count and probe policy. One clean build and the required final
+GCC/Clang gates establish dependency completeness independently of timing.
+
+### T-750 measured selection and implementation ownership (2026-10-21)
+
+All 30 baseline measurements are complete in
+`/home/zardoru/devel/.wormedit-t750-baseline/measurements.json`; verbose commands are adjacent.
+The runner is restoring original artifacts outside the timed samples. Application medians:
+no-op **0.053 s**, producer **18.235 s / 1 object**, BGM **203.388 s / 136 objects**,
+root **203.603 s / 136 objects**, private cache **126.420 s / 49 objects**. Test-target
+medians: no-op **0.050 s**, producer **17.612 s / 1 object**, BGM **159.467 s / 65 objects**,
+root **160.628 s / 65 objects**, private cache **146.358 s / 51 objects**. Every edited
+sample links once; no-op samples compile/link nothing. Caching is disabled throughout.
+
+Selected bounded change: separate the full workspace root from action/value contracts, and
+move the existing Compose projection context definitions into their own private header. The
+frontend umbrella will no longer import the full root; actual value/field consumers include it
+explicitly. Command/state consumers need only a declaration of the sys projection owner.
+Projection context bodies remain inline and unchanged, preserving runtime work and ownership.
+Expected reductions: root edits stop rebuilding leaf UI and command consumers with no root
+field/value use; private-owner edits stop rebuilding state/command consumers. The BGM case is
+retained as a control and may keep its existing breadth. No object sharing or target-definition
+change is selected: the app, frame-timing and event-harness builds have materially different
+feature/instrumentation definitions.
+
+Coordinator-approved implementation ownership:
+
+- `src/ui/frontend/workspace_types.h` (new), `src/ui/frontend/workspace.h`,
+  `src/ui/frontend/actions.h`, `src/ui/frontend.h`.
+- `src/sys/workspace_view.h`, `src/sys/compose_view.h`,
+  `src/sys/compose_projection_context.h` (new), `src/sys/compose_view_internal.h`.
+- Root field consumers `src/ui/nuklear/frontend.cpp`, `command_menu.cpp`, `menu_bar.cpp`,
+  `sound_import_runtime.cpp`, `timing_settings_panel.cpp`, and
+  `src/sys/menu_command_view.cpp`, `preferences_runtime.cpp`: direct includes only.
+- Supporting consuming sources/tests that previously relied on the transitive root definition
+  are inventoried from compiler diagnostics and recorded before their include corrections.
+  No presentation value, field order, action, cache key or test instrumentation changes.
+
+Include-completeness extension: `tests/ui/nuklear_options_state_tests.cpp` constructs a
+workspace value, and `tests/ui/nuklear_event_harness.h` owns one as a field. Both need an
+explicit `ui/frontend/workspace.h` include after the umbrella stops importing that definition.
+Their assertions and harness ownership remain unchanged.
+
+Projection include extension: `src/sys/bmson_waveform_view.cpp`, `src/sys/waveform_view.cpp`
+and `src/sys/compare_view.cpp` access the sys workspace owner's fields and now include its
+header directly. `src/sys/compose_waveform_overlays.cpp` uses the moved chart-scope context
+and includes `compose_projection_context.h`. These are definition dependencies, not new state
+or behavior. Compiler errors from the old transitive includes identified the first case;
+inspection found the other same-purpose consumers before their compilation.
+
+Fixture definition-dependency extension (owned sys workspace values):
+
+- `tests/sys/audio_waveform_projection_tests.cpp`
+- `tests/sys/bga_lane_projection_tests.cpp`
+- `tests/sys/minimap_center_tests.cpp`
+- `tests/ui/walkthrough_bms_event_harness_tests.cpp`
+- `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`
+
+Add only `sys/workspace_view.h`; fixture values, assertions and test definitions stay unchanged.
+
+Include extension: `src/sys/compose_draw_source_view.cpp` directly accesses retained sys workspace fields, so it includes `sys/workspace_view.h` explicitly; its function bodies are unchanged.
+
+### T-750 implementation graph checkpoint (2026-10-21)
+
+GCC GATE passes **4,387/4,387**, build, whitespace and changed-source complexity
+(`/tmp/t750-gate1.log`, `/tmp/wormedit-gate.LRA3dg`). The new dependency files show:
+
+| Header | All objects before → after | Unique sources before → after | App objects | Frame-timing objects |
+|---|---:|---:|---:|---:|
+| BGM contract (`frontend/compose.h`) | 459 → 459 | 241 → 241 | 136 → 136 | 65 → 65 |
+| Workspace root (`frontend/workspace.h`) | 459 → 126 | 241 → 89 | 136 → 28 | 65 → 25 |
+| Private owner (`sys/workspace_view.h`) | 166 → 64 | 77 → 36 | 49 → 21 | 51 → 24 |
+
+The broader Compose state header and repeated-production-object counts are unchanged; this
+checkpoint does not claim their optimization. `/tmp/t750-dependency-final.log` and
+`/tmp/t750-dependencies-final.json` retain the measured graph. The root, extracted workspace
+leaf definitions and moved projection context definitions compare verbatim with their baseline
+bodies. No runtime function body, field order or target compile definition changed.
+
+The exact source snapshot applied to the disposable checkout is
+`/home/zardoru/devel/.wormedit-t750-implementation.patch`. The cache-disabled, four-job
+`--clean-first` build of the app and frame-timing targets passed before the final matrix;
+Clang verification and the final matrix also passed, as recorded below.
+
+### T-750 final measurements and acceptance (2026-10-21)
+
+Both runs use GCC 16, Debug, Ninja, four jobs, the same target order and three samples per
+case/target. Compiler launchers are empty and `CCACHE_DISABLE=1`: **zero compiler-cache calls
+or hits**. Build artifacts persist between edits. The independent initial and final clean builds
+are excluded from incremental timings, as are artifact restoration builds. No other agent build
+or test ran during the measured samples; machine loads are retained in each record.
+
+| Case / target | Median seconds before → after | Range before | Range after | Objects before → after |
+|---|---:|---:|---:|---:|
+| no-op / app | 0.053 → 0.053 | 0.053–0.053 | 0.052–0.053 | 0 → 0 |
+| no-op / frame-timing tests | 0.050 → 0.051 | 0.050–0.053 | 0.050–0.051 | 0 → 0 |
+| producer / app | 18.235 → 18.435 | 18.230–18.681 | 18.231–18.752 | 1 → 1 |
+| producer / frame-timing tests | 17.612 → 17.666 | 17.569–18.030 | 17.573–17.809 | 1 → 1 |
+| bgm / app | 203.388 → 198.222 | 202.804–207.083 | 198.077–205.686 | 136 → 136 |
+| bgm / frame-timing tests | 159.467 → 156.431 | 159.407–162.418 | 156.122–157.404 | 65 → 65 |
+| root / app | 203.603 → 72.236 | 203.211–204.143 | 72.084–72.347 | 136 → 28 |
+| root / frame-timing tests | 160.628 → 89.799 | 159.265–161.934 | 89.770–89.919 | 65 → 25 |
+| private / app | 126.420 → 70.784 | 126.197–126.450 | 70.737–70.894 | 49 → 21 |
+| private / frame-timing tests | 146.358 → 88.094 | 146.218–146.518 | 87.896–88.353 | 51 → 24 |
+
+Times are seconds, rounded for display; acceptance uses unrounded JSON values. Object counts
+are compilation invocations for each target, not source-file deduplication across differently
+instrumented executables. Every edited sample links once; no-op samples link nothing. Each
+case's object set is identical across its three repetitions.
+
+- **Acceptance met:** root and private-owner edits rebuild strictly smaller subsets of the
+  baseline objects for both targets. Each final worst-case time is below the corresponding
+  baseline best-case time. App root latency drops **64.5%** and private-owner latency **44.0%**;
+  frame-timing target drops **44.1%** and **39.8%**, respectively.
+- **Controls preserved:** no-op and producer-edit medians show no regression beyond baseline
+  variation. The BGM contract remains broad (**136 app / 65 test objects**); its timing change
+  is not claimed as a dependency-breadth improvement. The broad Compose state header and
+  repeated production compilations remain outside this bounded change.
+- **Runtime preserved:** the moved type/context bodies are verbatim; no data layout, runtime
+  function body, cache key, action, test assertion or target instrumentation definition changed.
+  Projection methods remain inline. Existing warmed allocation regressions pass; no frame-time
+  speedup is claimed from these build measurements.
+
+Full records, configuration, per-sample loads, affected objects and verbose compile/link
+transcripts are in `/home/zardoru/devel/.wormedit-t750-baseline/` and
+`/home/zardoru/devel/.wormedit-t750-final/` (`measurements.json` in each). The exact configure
+argv is `/tmp/t750-configure-command.json`; source snapshot is
+`/home/zardoru/devel/.wormedit-t750-implementation.patch`. Comparison receipt:
+`/tmp/t750-comparison.txt`. Source probes were restored byte-for-byte (SHA-256 checked), and
+both untimed restoration builds passed. Retained configured outputs remain available for review.
+
+Reproduction commands (from the main checkout, after configuring/prebuilding the disposable
+worktree with the recorded configuration; apply the implementation snapshot between runs):
+
+```sh
+python3 scripts/benchmark-incremental-build.py --source /home/zardoru/devel/.wormedit-t750-bench --build /home/zardoru/devel/.wormedit-t750-bench/build --output /home/zardoru/devel/.wormedit-t750-baseline --label baseline-7aa6d86 --jobs 4 --samples 3
+python3 scripts/benchmark-incremental-build.py --source /home/zardoru/devel/.wormedit-t750-bench --build /home/zardoru/devel/.wormedit-t750-bench/build --output /home/zardoru/devel/.wormedit-t750-final --label final-after-root-separation --jobs 4 --samples 3
+```
+
+The runner requires fresh output directories to preserve earlier receipts; use new directory
+names when repeating the experiment. It refuses compiler launchers and a source checkout that
+is not a disposable Git worktree, and requires both targets to be up to date before measuring.
+
+### T-750 final verification and handoff (2026-10-21)
+
+- `scripts/gate.sh --jobs 4`: build, **4,387/4,387 tests**, whitespace and complexity across
+  **18 changed translation units** pass. `/tmp/t750-gate1.log`, `/tmp/wormedit-gate.LRA3dg`.
+  Tail: `pass build`, `pass ctest`, `pass whitespace`, `pass complexity`,
+  `100% tests passed out of 4387`, `gate: passed`.
+- Explicit consuming-source complexity checks for `src/sys/compose_view.cpp` and
+  `src/sys/compose_marker_view.cpp` pass **2/2**, covering the changed internal header as
+  well (`/tmp/t750-header-complexity.log`, `/tmp/wormedit-complexity.bqvmh3f4`). No baseline
+  allowance changed. These checks invoke clang-tidy with the application compilation database.
+- `cmake --preset linux-clang`, `cmake --build --preset linux-clang --parallel 4 -- -k 0`
+  and `ctest --preset linux-clang -j 4 --output-on-failure` pass; **4,387/4,387 Clang tests**.
+  Logs `/tmp/t750-clang-configure.log`, `/tmp/t750-clang-build1.log`, `/tmp/t750-clang-ctest.log`.
+- Independent cache-disabled clean app/affected-test build passes
+  (`/tmp/t750-final-clean-build.log`). Both complete matrix runs and source/artifact restorations
+  pass (`/tmp/t750-baseline-matrix.log`, `/tmp/t750-final-matrix.log`). No missing dependency is
+  hidden by a compiler-cache hit.
+- Isolated Xvfb Compose image `/tmp/t750-final.png` was inspected and is pixel-identical to
+  `/tmp/t699-final.png`: **0 changed RGB pixels**, 1280×720. `/tmp/t750-final-smoke.log`.
+- Final documentation checks pass **5/5** (`/tmp/t750-documentation-final.log`);
+  tracked and new files pass whitespace checks. Code-style review confirms one definition per
+  moved type, explicit complete-type includes at value/field consumers, unchanged inline
+  projection contexts and no new edit/lifecycle/result plumbing.
+- The frontend conversion and its measured build-time follow-through are complete. Resume
+  the remaining active queue; this lane defines no further sequential card after T-750.

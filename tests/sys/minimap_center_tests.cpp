@@ -1,3 +1,4 @@
+#include "sys/workspace_view.h"
 #include "compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/compose_input.h"

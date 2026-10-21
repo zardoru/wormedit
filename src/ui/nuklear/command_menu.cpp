@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "core/text_util.h"
 #include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/chrome.h"

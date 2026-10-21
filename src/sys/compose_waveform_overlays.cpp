@@ -1,3 +1,4 @@
+#include "sys/compose_projection_context.h"
 #include <wormedit/core/rational.h>
 #include "sys/compose_waveform_overlays.h"
 

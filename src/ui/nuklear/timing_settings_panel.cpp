@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "ui/nuklear/timing_settings_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"

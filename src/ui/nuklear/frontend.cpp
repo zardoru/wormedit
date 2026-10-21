@@ -1,3 +1,4 @@
+#include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose_input_queries.h"
 #include "ui/nuklear/compose_gesture_registry.h"
 #include "ui/nuklear/content_layout.h"

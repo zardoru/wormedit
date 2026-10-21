@@ -11,7 +11,7 @@
 #include "sys/sound_list_view.h"
 #include "sys/sound_usage_view.h"
 #include "sys/projection_notification_feedback.h"
-#include "ui/frontend.h"
+#include "ui/frontend/workspace.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>

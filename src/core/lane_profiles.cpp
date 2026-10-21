@@ -1,5 +1,6 @@
 #include "text_util.h"
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/preferences.h>
 
 #include <algorithm>
 #include <array>
@@ -733,6 +734,14 @@ auto make_default_input_profile_for(const lane_layout_t& layout) -> std::optiona
     auto single_stage = layout;
     for (auto& lane : single_stage.lanes) lane.stage = stage_group_t::left;
     return make_number_row_input_profile(single_stage, 0, "number-row-default");
+}
+
+auto lane_key_bindings_t::number_row(std::uint32_t count) -> lane_key_bindings_t {
+    static_assert(maximum_default_lane_count == wormedit::number_row.size());
+    lane_key_bindings_t result;
+    if (count > maximum_default_lane_count) return result;
+    for (const auto key : std::span{wormedit::number_row}.first(count)) result.keys.push_back(physical_key_hid_usage(key));
+    return result;
 }
 
 namespace {

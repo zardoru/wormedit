@@ -11,6 +11,7 @@
 #include <string_view>
 #include <source_location>
 #include <limits>
+#include <utility>
 
 using namespace wormedit::ui::nuklear;
 
@@ -86,7 +87,64 @@ struct backend_fixture_t {
         render_sdl_backend(context, NK_ANTI_ALIASING_ON);
     }
 };
+
+void send_backend_key(backend_fixture_t& backend, SDL_Keycode key, bool down,
+                      SDL_Keymod modifiers = SDL_KMOD_NONE, bool repeat = false) {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+    event.key.windowID = SDL_GetWindowID(backend.window);
+    event.key.key = key;
+    event.key.mod = modifiers;
+    event.key.down = down;
+    event.key.repeat = repeat;
+    expect_backend(nk_sdl_handle_event(backend.context, &event));
+}
 } // namespace
+
+TEST_CASE("SDL ordinary letters never press their inactive editing shortcuts", "[ui][sdl-keyboard]") {
+    backend_fixture_t backend;
+    constexpr std::array<std::pair<SDL_Keycode, nk_keys>, 8> mappings{{
+        {SDLK_A, NK_KEY_TEXT_SELECT_ALL}, {SDLK_Z, NK_KEY_TEXT_UNDO},
+        {SDLK_R, NK_KEY_TEXT_REDO}, {SDLK_C, NK_KEY_COPY}, {SDLK_V, NK_KEY_PASTE},
+        {SDLK_X, NK_KEY_CUT}, {SDLK_B, NK_KEY_TEXT_LINE_START}, {SDLK_E, NK_KEY_TEXT_LINE_END}}};
+    for (const auto& [key, shortcut] : mappings) {
+        nk_input_begin(backend.context);
+        send_backend_key(backend, key, true);
+        send_backend_key(backend, key, false);
+        nk_input_end(backend.context);
+        expect_backend(!nk_input_is_key_pressed(&backend.context->input, shortcut));
+    }
+}
+
+TEST_CASE("SDL editing keys retain repeated down events", "[ui][sdl-keyboard]") {
+    backend_fixture_t backend;
+    nk_input_begin(backend.context);
+    send_backend_key(backend, SDLK_BACKSPACE, true);
+    expect_backend(nk_input_is_key_pressed(&backend.context->input, NK_KEY_BACKSPACE));
+    nk_input_end(backend.context);
+    nk_input_begin(backend.context);
+    send_backend_key(backend, SDLK_BACKSPACE, true, SDL_KMOD_NONE, true);
+    expect_backend(nk_input_is_key_pressed(&backend.context->input, NK_KEY_BACKSPACE));
+    nk_input_end(backend.context);
+}
+
+TEST_CASE("SDL shortcut releases clear their control after modifier changes", "[ui][sdl-keyboard]") {
+    backend_fixture_t backend;
+    constexpr std::array<std::pair<SDL_Keycode, nk_keys>, 3> mappings{{
+        {SDLK_A, NK_KEY_TEXT_SELECT_ALL}, {SDLK_LEFT, NK_KEY_TEXT_WORD_LEFT},
+        {SDLK_RIGHT, NK_KEY_TEXT_WORD_RIGHT}}};
+    for (const auto& [key, shortcut] : mappings) {
+        nk_input_begin(backend.context);
+        send_backend_key(backend, key, true, SDL_KMOD_CTRL);
+        expect_backend(nk_input_is_key_pressed(&backend.context->input, shortcut));
+        nk_input_end(backend.context);
+        nk_input_begin(backend.context);
+        send_backend_key(backend, key, false);
+        expect_backend(!backend.context->input.keyboard.keys[shortcut].down);
+        expect_backend(!nk_input_is_key_pressed(&backend.context->input, shortcut));
+        nk_input_end(backend.context);
+    }
+}
 
 TEST_CASE("SDL backend merges only consecutive compatible nonempty commands", "[ui][sdl-backend]") {
     sdl_draw_batcher_t batches;

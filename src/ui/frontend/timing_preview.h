@@ -16,7 +16,7 @@ inline constexpr std::size_t player_preview_visual_layer_limit = 6;
 inline constexpr std::size_t maximum_preview_notes = 4096;
 inline constexpr std::size_t maximum_preview_storyboard_instances = 27;
 enum class player_preview_visual_diagnostic_t { none, video_frame_late, video_decode_failed };
-enum class external_player_action_kind_t { none, select, save, add, remove, close, open, play_start, play_here, stop };
+enum class external_player_action_kind_t { none, open, play_start, play_here, stop };
 
 struct timing_speed_view_t {
     wormedit::object_id_t object_id{};
@@ -274,27 +274,8 @@ struct external_player_definition_view_t {
     auto operator==(const external_player_definition_view_t&) const -> bool = default;
 };
 
-struct external_player_view_t {
-    bool visible{};
-    uint64_t revision{};
-    std::vector<external_player_definition_view_t> players{};
-    size_t selected{};
-    void reset() {
-        visible = {};
-        revision = {};
-        players.clear();
-        selected = {};
-    }
-};
-
 struct external_player_action_t {
     wormedit::ui::external_player_action_kind_t kind{};
-    size_t selected{};
-    std::string name{};
-    std::string path{};
-    std::string start_arguments{};
-    std::string here_arguments{};
-    std::string stop_arguments{};
     auto operator==(const external_player_action_t&) const -> bool = default;
 };
 

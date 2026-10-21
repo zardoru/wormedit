@@ -2,13 +2,23 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-258** (2026-10-21): Input hosts lane-count defaults (number row, DFJK and
+custom physical keys) alongside existing shortcut remapping; new/imported charts consume explicit
+defaults while native profiles stay intact. External players uses the shared Options draft/Apply
+flow, and its old menu entry redirects there. Removed the standalone editor, payloads and duplicate
+preference cache. Native typing exposed phantom SDL shortcut edges; the shared adapter now ignores
+inactive releases while retaining repeat and modifier-release behavior. GATE passes
+**4,433/4,433**, build, whitespace and **21-TU** complexity; focused core/Options/UI/keyboard
+checks and isolated native Apply, DFJK creation and menu routing pass. Reviewed UI test allowance
+**68 → 60**. Next owner-requested card, in a separate commit: **T-263**.
+
 Completed **T-257** (2026-10-21): Appearance exposes interface themes, automatic/100–200%
 scale, frame timing and reduced motion. Invalid themes retain the prior palette; waveform
 colors use theme roles. Logical rendering/input/drop/title-bar coordinates share the scale
 boundary, and font density changes without replacing logical handles. GATE passes
 **4,423/4,423**, build, whitespace and **14-TU** complexity. Isolated 100%/150% Options,
 Compose and resized Project views were inspected; native Apply persistence is verified.
-Next owner-requested cards, each a separate commit: **T-258**, then **T-263**.
+Following owner-requested cards: **T-258**, then **T-263**; T-258 is complete above.
 
 Completed **T-256** (2026-10-21): Playback & audio exposes device refresh/selection, buffer,
 metronome/accent/audition levels, count-in, rate/pitch defaults and signed display compensation.

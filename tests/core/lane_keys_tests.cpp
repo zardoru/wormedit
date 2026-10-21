@@ -7,10 +7,41 @@
 using namespace wormedit;
 
 namespace {
+void expect_default_keys(bool value) { CHECK(value); }
 void check_lane_key(const input_profile_t& profile, lane_id_t lane, physical_key_t key) {
     const auto binding = std::ranges::find(profile.bindings, lane, &lane_binding_t::lane);
     REQUIRE(binding != profile.bindings.end());
     CHECK(binding->key == key);
+}
+
+TEST_CASE("Default lane keys assign DFJK by display order and leave unmatched layouts alone", "[core][default-lane-keys]") {
+    auto profile = *make_osu_mania_profile(4);
+    std::ranges::reverse(profile.layout.lanes);
+    default_lane_keys_t defaults{.bindings = {{4, lane_key_bindings_t::dfjk()}}};
+    REQUIRE(defaults.is_valid());
+    const auto resolved = defaults.profile_for(profile.layout, profile.input);
+    expect_default_keys(validate_input_profile(profile.layout, resolved).empty());
+    const auto lanes = profile.layout.lanes_in_stage_order();
+    check_lane_key(resolved, lanes[0].id, physical_key_t::key_d);
+    check_lane_key(resolved, lanes[1].id, physical_key_t::key_f);
+    check_lane_key(resolved, lanes[2].id, physical_key_t::key_j);
+    check_lane_key(resolved, lanes[3].id, physical_key_t::key_k);
+    const auto keys = lane_key_bindings_t::from(profile.layout, resolved);
+    expect_default_keys(keys == lane_key_bindings_t::dfjk());
+    const auto other = make_bms_7k_profile();
+    expect_default_keys(defaults.profile_for(other.layout, other.input) == other.input);
+    expect_default_keys(defaults.keys_for(3) == lane_key_bindings_t::number_row(3));
+    defaults.bindings[4].keys[1] = defaults.bindings[4].keys[0];
+    expect_default_keys(defaults.conflicting_key() == physical_key_hid_usage(physical_key_t::key_d));
+    expect_default_keys(!defaults.is_valid());
+}
+
+TEST_CASE("Malformed conflicting default lane keys retain program defaults", "[core][default-lane-keys]") {
+    const auto parsed = preferences_parse_effect_t::from(
+        R"({"default_lane_keys":[{"count":4,"keys":[7,7,13,14]}],"general":{"autosave_minutes":8}})");
+    expect_default_keys(parsed.succeeded && parsed.preferences.general.autosave_minutes == 8);
+    expect_default_keys(parsed.preferences.default_lane_keys.bindings.empty());
+    expect_default_keys(!parsed.warnings.empty());
 }
 }
 

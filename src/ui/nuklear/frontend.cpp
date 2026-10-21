@@ -15,7 +15,6 @@
 #endif
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/sound_import_dialog.h"
-#include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/lane_keys_dialog.h"
 #include "ui/nuklear/tap_timing_panel.h"
@@ -713,7 +712,6 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_save_project_request_id = 0;
     worm_ui_nuklear_reset_sound_import();
     g_notification_escape_captured = false;
-    worm_ui_nuklear_reset_external_player_panel();
     g_compose_area_shortcuts_active = false;
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -748,7 +746,6 @@ void worm_ui_frontend_shutdown(void) {
     g_save_project_request_id = 0;
     reset_compose_note_menu();
     shutdown_notification_context();
-    worm_ui_nuklear_reset_external_player_panel();
     reset_project_dialog();
     g_new_project_wizard = {};
     if (!g_context) {
@@ -3340,16 +3337,12 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
         return;
     }
     if (!frame.view.project_loaded) {
-        worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
-                                                     &frame.action.external_player);
         render_tap_timing_tool(frame);
         return;
     }
     render_frame_timing_overlay(frame.width, frame.height);
     render_tap_timing_tool(frame);
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action);
-    worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
-                                                 &frame.action.external_player);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
                                           &frame.action, frame.width, frame.height);
 }

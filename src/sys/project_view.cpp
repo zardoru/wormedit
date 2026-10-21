@@ -114,7 +114,7 @@ auto reorder_project_chart(document_history_t& history, const project_chart_comm
 } // namespace
 
 auto apply_project_chart_command(document_history_t& history,
-    const project_chart_command_t& action) -> project_chart_command_result_t {
+    const project_chart_command_t& action, const default_lane_keys_t* defaults) -> project_chart_command_result_t {
     if (action.kind == project_chart_command_kind_t::batch_metadata)
         return {.command = apply_batch_chart_metadata_edit(history, action.expected_revision, action.metadata)};
     const auto label = action.kind == project_chart_command_kind_t::reorder
@@ -125,8 +125,8 @@ auto apply_project_chart_command(document_history_t& history,
         return reorder_project_chart(history, action);
     if (action.kind == project_chart_command_kind_t::create) {
         auto created = history.document.charts.empty()
-                           ? apply_new_chart_command(history)
-                           : apply_add_chart_command(history, action.chart);
+                           ? apply_new_chart_command(history, make_bms_7k_profile(), format_family_t::native_project, defaults)
+                           : apply_add_chart_command(history, action.chart, defaults);
         return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
@@ -472,7 +472,7 @@ namespace wormedit::sys {
 
 auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const wormedit::ui::project_chart_action_t& action,
-    std::optional<chart_id_t> active_chart) -> project_chart_ui_result_t {
+    std::optional<chart_id_t> active_chart, const default_lane_keys_t* defaults) -> project_chart_ui_result_t {
     if (action.session_generation != runtime.session_generation)
         return {.status = stale_action_message("Project chart action")};
     const auto command = project_chart_command_t::from(action, active_chart);
@@ -481,7 +481,7 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
             publish_row_error(runtime, action, command.error());
         return {.status = command.error()};
     }
-    auto result = apply_project_chart_command(history, *command);
+    auto result = apply_project_chart_command(history, *command, defaults);
     const auto error = result.command.diagnostics.empty() ? std::string{} : result.command.diagnostics.front().message;
     publish_row_error(runtime, action, error);
     if (!error.empty()) {

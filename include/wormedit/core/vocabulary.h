@@ -11,6 +11,7 @@
 #include <optional>
 
 namespace wormedit {
+inline constexpr std::uint32_t maximum_default_lane_count = 10;
 
 inline constexpr std::size_t maximum_batch_chart_metadata_charts = 256;
 inline constexpr std::size_t maximum_quantization_presets = 256;

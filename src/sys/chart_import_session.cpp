@@ -2,6 +2,7 @@
 #include "sys/metadata_commands.h"
 
 #include "sys/project_open.h"
+#include <wormedit/core/preferences.h>
 
 #include <algorithm>
 
@@ -73,7 +74,8 @@ void chart_import_begin(chart_import_session_t& session) {
 void chart_import_cancel(chart_import_session_t& session) { session = {}; }
 
 void chart_import_load(chart_import_session_t& session, const std::filesystem::path& path,
-                       const song_document_t& target, const std::filesystem::path& target_base) {
+                       const song_document_t& target, const std::filesystem::path& target_base,
+                       const default_lane_keys_t* defaults) {
     session.path_text = path.string();
     session.source.reset();
     session.selected.clear();
@@ -86,6 +88,7 @@ void chart_import_load(chart_import_session_t& session, const std::filesystem::p
     } else if (opened.document->charts.empty()) {
         session.error = "The file contains no charts.";
     } else {
+        if (defaults && !opened.native_project) defaults->apply_to(*opened.document);
         session.source = std::move(opened.document);
         session.source_base = opened.asset_base;
         if (session.source->charts.size() == 1) session.selected.push_back(session.source->charts.front().id);

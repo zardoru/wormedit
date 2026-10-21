@@ -1,4 +1,5 @@
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/preferences.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
 
@@ -218,13 +219,15 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
 } // namespace
 
 auto apply_new_chart_command(document_history_t& history,
-    lane_input_profile_t profile, format_family_t source_family) -> duplicate_chart_result_t {
+    lane_input_profile_t profile, format_family_t source_family,
+    const default_lane_keys_t* defaults) -> duplicate_chart_result_t {
+    if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source_family,
         default_divisions_per_standard_measure, {});
 }
 
 auto apply_add_chart_command(document_history_t& history,
-    chart_id_t template_chart) -> duplicate_chart_result_t {
+    chart_id_t template_chart, const default_lane_keys_t* defaults) -> duplicate_chart_result_t {
     if (auto invalid = check_chart(history, template_chart))
         return {.command = std::move(*invalid)};
     const auto source = history.document.find_chart(template_chart);
@@ -235,6 +238,7 @@ auto apply_add_chart_command(document_history_t& history,
     std::erase_if(profile.input.bindings, [&](const auto& binding) {
         return std::ranges::none_of(profile.layout.lanes, [&](const auto& lane) { return lane.id == binding.lane; });
     });
+    if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source->source_family,
         source->divisions_per_standard_measure, source->beat_zero_audio_offset_seconds);
 }

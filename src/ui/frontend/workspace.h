@@ -84,7 +84,6 @@ struct workspace_view_t {
     wormedit::ui::audio_slices_view_t audio_slices;
     compare_view_t compare;
     wormedit::ui::player_preview_view_t player_preview;
-    struct wormedit::ui::external_player_view_t external_player;
     std::vector<command_menu_row_view_t> command_menu_rows;
     wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t> sound_kinds;
 

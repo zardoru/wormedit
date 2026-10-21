@@ -48,7 +48,9 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_OUTPUT_DEVICE, WORM_UI_OPTIONS_FIELD_BUFFER_FRAMES,
     WORM_UI_OPTIONS_FIELD_METRONOME_VOLUME, WORM_UI_OPTIONS_FIELD_ACCENT_VOLUME,
     WORM_UI_OPTIONS_FIELD_COUNT_IN, WORM_UI_OPTIONS_FIELD_AUDITION_VOLUME,
-    WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, WORM_UI_OPTIONS_FIELD_REDUCED_MOTION
+    WORM_UI_OPTIONS_FIELD_PREVIEW_LATENCY, WORM_UI_OPTIONS_FIELD_REDUCED_MOTION,
+    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY, WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW,
+    WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK
 } WormUiOptionsField;
 namespace wormedit::ui {
 struct options_diagnostic_view_t {
@@ -63,6 +65,10 @@ struct shortcut_row_view_t {
     std::string_view command_id, label, chord;
     bool conflict{};
     auto operator==(const shortcut_row_view_t&) const -> bool = default;
+};
+struct lane_key_choice_view_t {
+    std::uint16_t usage{};
+    std::string label;
 };
 } // namespace wormedit::ui
 namespace wormedit::ui {
@@ -100,6 +106,9 @@ struct options_view_t {
     std::vector<shortcut_row_view_t> shortcut_rows;
     bool shortcut_capturing{};
     std::string_view shortcut_capture_command_id;
+    std::uint32_t default_lane_count{4};
+    std::vector<std::uint16_t> default_lane_bindings;
+    std::vector<lane_key_choice_view_t> lane_key_choices;
 
     void reset() {
         auto lanes = std::move(current_field_layout_lanes);
@@ -107,17 +116,23 @@ struct options_view_t {
         auto retained_diagnostics = std::move(diagnostics);
         auto shortcuts = std::move(shortcut_rows);
         auto devices = std::move(audio_devices);
+        auto bindings = std::move(default_lane_bindings);
+        auto keys = std::move(lane_key_choices);
         *this = {};
         current_field_layout_lanes = std::move(lanes);
         players = std::move(retained_players);
         diagnostics = std::move(retained_diagnostics);
         shortcut_rows = std::move(shortcuts);
         audio_devices = std::move(devices);
+        default_lane_bindings = std::move(bindings);
+        lane_key_choices = std::move(keys);
         current_field_layout_lanes.clear();
         players.clear();
         diagnostics.clear();
         shortcut_rows.clear();
         audio_devices.clear();
+        default_lane_bindings.clear();
+        lane_key_choices.clear();
     }
     void refill(wormedit::sys::options_runtime_t&);
     [[nodiscard]] static auto from(wormedit::sys::options_runtime_t&) -> options_view_t;
@@ -128,7 +143,7 @@ typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
     WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD,
     WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL,
-    WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES
+    WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES, WORM_UI_OPTIONS_SELECT_LANE_COUNT
 } WormUiOptionsActionKind;
 // EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
 namespace wormedit::ui {
@@ -141,6 +156,7 @@ struct options_action_t {
     std::int64_t signed_integer{};
     bool boolean{};
     std::uint32_t player_index{}, family_index{};
+    std::uint32_t lane_count{}, lane_index{};
     std::string shortcut_command_id;
     std::string text;
     auto operator==(const options_action_t&) const -> bool = default;

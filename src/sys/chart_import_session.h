@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+namespace wormedit { struct default_lane_keys_t; }
 namespace wormedit::sys {
 
 // The Project tab's "Import chart…" dialog state: the chart file read into a temporary song,
@@ -36,7 +37,8 @@ void chart_import_cancel(chart_import_session_t& session);
 
 // Reads the chart file and plans the ticked difficulties against the project.
 void chart_import_load(chart_import_session_t& session, const std::filesystem::path& path,
-                       const song_document_t& target, const std::filesystem::path& target_base);
+                       const song_document_t& target, const std::filesystem::path& target_base,
+                       const default_lane_keys_t* defaults = nullptr);
 
 void chart_import_toggle(chart_import_session_t& session, chart_id_t chart,
                          const song_document_t& target, const std::filesystem::path& target_base);

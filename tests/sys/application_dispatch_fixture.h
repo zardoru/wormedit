@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/preferences_runtime.h"
 // Compatibility of existing fixture setup only; no old dispatcher signatures remain in production.
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"

@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+namespace wormedit { struct default_lane_keys_t; }
 namespace wormedit::sys {
 
 struct project_chart_row_view_t {
@@ -80,7 +81,7 @@ struct project_chart_command_result_t {
 };
 // Scalar UI actions are translated by the caller; all mutations remain revision checked.
 [[nodiscard]] auto apply_project_chart_command(document_history_t& history,
-    const project_chart_command_t& action) -> project_chart_command_result_t;
+    const project_chart_command_t& action, const default_lane_keys_t* defaults = nullptr) -> project_chart_command_result_t;
 
 struct output_preview_identity_t {
     async_job_project_identity_t document;
@@ -131,7 +132,8 @@ struct project_chart_ui_result_t {
 
 [[nodiscard]] auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const wormedit::ui::project_chart_action_t& action,
-    std::optional<chart_id_t> active_chart = std::nullopt) -> project_chart_ui_result_t;
+    std::optional<chart_id_t> active_chart = std::nullopt,
+    const default_lane_keys_t* defaults = nullptr) -> project_chart_ui_result_t;
 
 [[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const wormedit::ui::project_output_group_action_t& action,

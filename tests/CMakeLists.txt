@@ -425,6 +425,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/options_runtime.cpp
         ../src/sys/preferences_runtime.cpp
         ../src/sys/platform_shortcut_profile.cpp
+        ../src/sys/shortcut_rows.cpp
     )
     target_include_directories(wormedit_options_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_options_state_tests PRIVATE
@@ -655,6 +656,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/project_chart_actions_event_harness_tests.cpp
         ui/audio_options_event_harness_tests.cpp
         ui/display_options_event_harness_tests.cpp
+        ui/input_options_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
         ../src/sys/menu_command_view.cpp
         ../src/sys/shortcut_rows.cpp
@@ -869,6 +871,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/options_runtime.cpp
             ../src/sys/preferences_runtime.cpp
             ../src/sys/platform_shortcut_profile.cpp
+            ../src/sys/shortcut_rows.cpp
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp

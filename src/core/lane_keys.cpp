@@ -2,6 +2,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include "text_util.h"
 #include <algorithm>
+#include <set>
 
 namespace wormedit {
 namespace {
@@ -79,5 +80,49 @@ auto lane_key_profile_cache_t::resolve(const lane_key_preferences_t& preferences
         resolved_ = profile ? std::move(*profile) : fallback;
     }
     return *resolved_;
+}
+
+auto default_lane_keys_t::conflicting_key() const -> std::optional<std::uint16_t> {
+    for (const auto& [count, entry] : bindings) {
+        std::set<std::uint16_t> used;
+        for (const auto key : entry.keys)
+            if (key && !used.insert(key).second) return key;
+    }
+    return {};
+}
+auto default_lane_keys_t::is_valid() const -> bool {
+    return bindings.size() <= maximum_default_lane_count && !conflicting_key() &&
+        std::ranges::all_of(bindings, [](const auto& entry) {
+            return entry.first > 0 && entry.first <= maximum_default_lane_count &&
+                entry.second.keys.size() == entry.first && entry.second.is_valid();
+        });
+}
+auto default_lane_keys_t::keys_for(std::uint32_t count) const -> const lane_key_bindings_t& {
+    static const auto rows = [] {
+        std::array<lane_key_bindings_t, maximum_default_lane_count + 1> result;
+        for (std::uint32_t index = 1; index < result.size(); ++index) result[index] = lane_key_bindings_t::number_row(index);
+        return result;
+    }();
+    const auto found = bindings.find(count);
+    return found == bindings.end() ? rows[count <= maximum_default_lane_count ? count : 0] : found->second;
+}
+auto lane_key_bindings_t::dfjk() -> lane_key_bindings_t {
+    return {{physical_key_hid_usage(physical_key_t::key_d), physical_key_hid_usage(physical_key_t::key_f),
+             physical_key_hid_usage(physical_key_t::key_j), physical_key_hid_usage(physical_key_t::key_k)}};
+}
+auto default_lane_keys_t::profile_for(const lane_layout_t& layout, const input_profile_t& fallback) const
+    -> input_profile_t {
+    const auto found = bindings.find(static_cast<std::uint32_t>(layout.lanes.size()));
+    if (found == bindings.end()) return fallback;
+    auto result = found->second.profile_for(layout, fallback);
+    if (!result) return fallback;
+    result->profile_id = "program-default-lane-keys";
+    return std::move(*result);
+}
+void default_lane_keys_t::apply_to(song_document_t& document) const {
+    for (auto& chart : document.charts) {
+        if (chart.lane_layouts.size() != 1) continue;
+        chart.input_profile = profile_for(chart.lane_layouts.front().layout, chart.input_profile);
+    }
 }
 } // namespace wormedit

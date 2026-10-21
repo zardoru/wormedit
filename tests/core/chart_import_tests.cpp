@@ -1,6 +1,7 @@
 #include "sys/chart_import_session.h"
 
 #include <wormedit/core/chart_import.h>
+#include <wormedit/core/lane_keys.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
@@ -18,6 +19,7 @@
 using namespace wormedit;
 
 namespace {
+void expect_import_defaults(bool value) { CHECK(value); }
 
 struct scratch_t {
     std::filesystem::path root = std::filesystem::temp_directory_path() /
@@ -298,4 +300,25 @@ TEST_CASE("Chart import rejects exhausted chart IDs without publishing staged re
         history.next_revision == next_revision && history.saved_revision == saved_revision &&
         history.undo.empty() && history.redo.empty() && result.payload.charts.empty();
     CHECK(unchanged);
+}
+
+TEST_CASE("Import defaults apply to chart files while native projects retain their bindings", "[chart-import][default-lane-keys]") {
+    scratch_t scratch;
+    auto target = parse_bms_text(target_bms);
+    const auto source = parse_sm_fixture("keysounds.sm");
+    const auto native = write_native_project(source);
+    REQUIRE(native.value);
+    scratch.write("source/saved.wormedit", *native.value);
+    std::filesystem::copy_file(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania/keysounds.sm",
+        scratch.root / "source/chart.sm");
+    default_lane_keys_t defaults{.bindings = {{4, lane_key_bindings_t::dfjk()}}};
+    sys::chart_import_session_t session;
+    sys::chart_import_begin(session);
+    sys::chart_import_load(session, scratch.root / "source/chart.sm", target, scratch.root / "project", &defaults);
+    REQUIRE(session.source);
+    const auto& imported = session.source->charts.front();
+    expect_import_defaults(lane_key_bindings_t::from(imported.lane_layouts.front().layout, imported.input_profile) == lane_key_bindings_t::dfjk());
+    sys::chart_import_load(session, scratch.root / "source/saved.wormedit", target, scratch.root / "project", &defaults);
+    REQUIRE(session.source);
+    expect_import_defaults(session.source->charts.front().input_profile == source.charts.front().input_profile);
 }

@@ -157,14 +157,53 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-258 Host shortcuts, input, and external players in Options
 
-- **Status:** ready
+- **Status:** done (2026-10-21)
+- **Implementation audit (2026-10-21):** T-59 already renders inside Input; T-703's
+  personal per-layout overrides remain separate from defaults assigned to new/imported charts.
+  External players still renders a standalone dialog and an empty Options page.
+  Unconfigured counts retain parser/template defaults; explicit number-row, DFJK and custom
+  choices apply only to newly constructed profiles. Native profiles remain authored data.
+- **Supporting ownership (2026-10-21):** also owned: `src/core/lane_keys.cpp`,
+  `include/wormedit/core/vocabulary.h` (shared default-binding count limit),
+  `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
+  `src/sys/application.cpp`, `src/sys/options_runtime.h/.cpp`, `src/sys/project_view.h/.cpp`,
+  `src/sys/compose_view.h`, `src/sys/chart_import_session.h/.cpp`,
+  `src/sys/external_player_runtime.h`, `src/sys/workspace_view.cpp`,
+  `src/ui/frontend/options_notifications.h`, `src/ui/frontend/timing_preview.h`,
+  `src/ui/frontend/workspace.h`,
+  `src/ui/nuklear/frontend.cpp`, `tests/core/preferences_tests.cpp`,
+  `src/ui/nuklear/sdl_backend.cpp`, `tests/ui/nuklear_sdl_backend_tests.cpp`
+  (native player-field typing exposed phantom shortcut edges for ordinary letters),
+  `tests/core/lane_keys_tests.cpp`, `tests/core/chart_editor_tests.cpp`,
+  `tests/core/chart_import_tests.cpp`,
+  `tests/sys/application_dispatch_fixture.h` (explicit preference-runtime dependency),
+  `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
+  new `tests/ui/input_options_event_harness_tests.cpp`, `tests/CMakeLists.txt`, and
+  `cmake/complexity_baseline.txt` (reviewed external-player UI test decrease 68 → 60),
+  `memory/chart-editor-status/resume.md`. These connect drafts, chart construction and import
+  publication to one default-binding owner, preserve authored native profiles, and replace
+  the old dialog workflow with the shared Options transaction.
 - **Outcome:** the Input & shortcuts page embeds the shortcut remapping list (T-59) and default lane-key bindings used for new or imported charts (the T-242 number-row default and named alternatives such as DFJK for 4K); the External players page hosts the existing T-214 panel; the old standalone panels open the corresponding Options page instead.
 - **Read first:** `src/ui/nuklear/external_player_panel.cpp`, `docs/chart-editor-plan/tasks/editing-commands.md` (T-59), `docs/chart-editor-plan/tasks/compose-ux.md` (T-242), `include/wormedit/core/lane_profiles.h`.
 - **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/external_player_panel.cpp/.h`, `src/sys/external_player.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`.
 - **Steps:** 1. Move the external player UI into a page (pure move). 2. Default-binding preference per lane count consumed by T-242's `default_input_profile_for`. 3. Embed T-59's list when it exists; until then show a link-style note.
 - **Invariants:** per-chart input profiles already saved in projects are never overwritten by preferences.
 - **Reject/failure behavior:** conflicting default bindings are rejected with the conflicting keys named.
-- **Verify:** standard build/test.
+- **Verify:** GATE **4,433/4,433**, build, whitespace and **21-TU** complexity pass
+  (`/tmp/t258-gate-verified.log`, `/tmp/wormedit-gate.bAuspV`,
+  `/tmp/wormedit-complexity.etgdk7fz`). Focused defaults/import/creation/Undo
+  **31 assertions / 4 cases**, Options **376 / 30**, preferences **285 / 32**,
+  Input/player UI **45 / 3**, and SDL keyboard **61 / 3** pass. The existing player UI
+  test allowance decreases **68 → 60**. Isolated Xvfb captures
+  `/tmp/t258-input-defaults.png`, `/tmp/t258-new-chart-keys.png`,
+  `/tmp/t258-external-applied.png`, and `/tmp/t258-legacy-options.png` inspected.
+  Native Apply persists DFJK and an edited player name/path while retaining argument templates;
+  the new chart's key dialog shows D/F/J/K, and the Playback preferences entry opens Options.
+  Reproduce with `/tmp/t258-options-smoke.sh` or `/tmp/t258-lane-key-proof.sh`, using a
+  temporary copy of the native Compose fixture. Normal typing also exposed a shared SDL adapter
+  defect: redundant inactive shortcut releases could become phantom presses when batched.
+  The adapter now suppresses those releases, preserves held-key repeats and clears modifier
+  cursor routes correctly; direct adapter and multi-frame player-field tests cover the behavior.
 - **Out of scope:** per-chart binding editor (T-262 column).
 
 ## T-259 Add chart management commands

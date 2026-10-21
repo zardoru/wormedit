@@ -5316,17 +5316,17 @@ struct external_player_fixture_t {
         {"Beta", "/usr/bin/beta", "", "", ""}}};
     external_player_fixture_t() {
         REQUIRE(harness.ready());
-        harness.view().external_player = {.visible = true, .revision = 3,
-            .players = {players.begin(), players.end()}, .selected = 0};
+        harness.view().options = {.visible = true, .revision = 3, .category = WORM_UI_OPTIONS_PLAYERS,
+            .changed = true, .can_apply = true, .players = {players.begin(), players.end()}, .selected_player = 0};
         (void)harness.frame();
         (void)harness.frame();
     }
-    // The first non-empty external-player action across the frames of a gesture.
+    // The first Options action across the frames of a gesture.
     static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
-        -> std::optional<wormedit::ui::external_player_action_t> {
+        -> std::optional<wormedit::ui::options_action_t> {
         for (const auto& frame : frames)
-            if (frame.get().external_player.kind != wormedit::ui::external_player_action_kind_t::none)
-                return frame.get().external_player;
+            if (frame.get().options.kind != WORM_UI_OPTIONS_NONE)
+                return frame.get().options;
         return std::nullopt;
     }
     auto click_label(const char* label) {
@@ -5343,40 +5343,38 @@ TEST_CASE("External player preferences dialog keeps every action",
     {
         external_player_fixture_t f;
         const auto& text = f.harness.drawn_text();
-        CHECK(text.find("External player preferences") != std::string::npos);
+        CHECK(text.find("Player or wrapper path") != std::string::npos);
         CHECK(text.find("Templates:") == std::string::npos);
-        const auto saved = external_player_fixture_t::action_of(f.click_label("Save"));
+        const auto saved = external_player_fixture_t::action_of(f.click_label("Apply"));
         REQUIRE(saved);
-        CHECK(saved->kind == wormedit::ui::external_player_action_kind_t::save);
-        CHECK(saved->selected == 0);
-        CHECK(std::string(saved->name) == "Alpha");
-        CHECK(std::string(saved->path) == "/usr/bin/alpha");
-        CHECK(std::string(saved->here_arguments) == "--here <measure>");
+        CHECK(saved->kind == WORM_UI_OPTIONS_APPLY);
+        CHECK(saved->category == WORM_UI_OPTIONS_PLAYERS);
+        CHECK(saved->revision == 3);
     }
     {
         external_player_fixture_t f;
         const auto added = external_player_fixture_t::action_of(f.click_label("Add"));
         REQUIRE(added);
-        CHECK(added->kind == wormedit::ui::external_player_action_kind_t::add);
+        CHECK(added->field == WORM_UI_OPTIONS_FIELD_PLAYER_ADD);
     }
     {
         external_player_fixture_t f;
         const auto removed = external_player_fixture_t::action_of(f.click_label("Remove"));
         REQUIRE(removed);
-        CHECK(removed->kind == wormedit::ui::external_player_action_kind_t::remove);
+        CHECK(removed->field == WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE);
     }
     {
         external_player_fixture_t f;
         const auto closed = external_player_fixture_t::action_of(f.click_label("Close"));
         REQUIRE(closed);
-        CHECK(closed->kind == wormedit::ui::external_player_action_kind_t::close);
+        CHECK(closed->kind == WORM_UI_OPTIONS_CLOSE);
     }
     {
         external_player_fixture_t f;
         const auto selected = external_player_fixture_t::action_of(f.click_label("Beta"));
         REQUIRE(selected);
-        CHECK(selected->kind == wormedit::ui::external_player_action_kind_t::select);
-        CHECK(selected->selected == 1);
+        CHECK(selected->field == WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED);
+        CHECK(selected->player_index == 1);
     }
 }
 

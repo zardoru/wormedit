@@ -13,6 +13,7 @@ struct options_diagnostic_t {
 // Program settings only: no document, workspace, or history references.
 struct options_runtime_t {
     bool visible{};
+    std::uint32_t default_lane_count{4};
     std::uint64_t revision{};
     WormUiOptionsCategory category{WORM_UI_OPTIONS_GENERAL};
     program_preferences_t draft;
@@ -34,6 +35,7 @@ struct options_runtime_t {
     -> std::array<std::optional<bool>, 2>;
 void set_options_field_layout(options_runtime_t&, std::string_view key, std::string_view name);
 void open_options(options_runtime_t&, const program_preferences_t&);
+void open_options_category(options_runtime_t&, const program_preferences_t&, WormUiOptionsCategory);
 // Later registered pages submit typed candidates; only the active category is copied.
 [[nodiscard]] auto edit_options_draft(options_runtime_t&, std::uint64_t revision,
     const program_preferences_t& candidate) -> bool;

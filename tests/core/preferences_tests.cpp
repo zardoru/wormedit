@@ -78,6 +78,7 @@ TEST_CASE("Program preferences round trip every section without project data", "
     values.audio.osu_skin_directory = "/tmp/skin with spaces";
     values.display = {"dark", 150, true};
     values.display.reduced_motion = true;
+    values.default_lane_keys.bindings[4] = lane_key_bindings_t::dfjk();
     values.players.players[0] = {"Player \"one\"", "C:\\Music\\player.exe", "\"<filename>\"", "<measure>", "stop"};
     values.players.selected = 2;
     values.minimap.click_moves_paused_playhead = true;

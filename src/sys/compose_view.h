@@ -667,6 +667,7 @@ struct application_command_state_t {
     }
     struct preferences_t {
         wormedit::lane_key_preferences_t lane_keys;
+        wormedit::default_lane_keys_t default_lane_keys;
         // Editor placement audition is distinct from Sounds-panel preview-on-click.
         wormedit::editor_preferences_t editor_preferences;
         bool minimap_click_moves_paused_playhead{};

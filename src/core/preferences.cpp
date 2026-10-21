@@ -141,6 +141,15 @@ auto editor_json(const editor_preferences_t& value) -> json_t {
         {"audition_on_click", value.audition_on_click}, {"audition_on_playback", value.audition_on_playback},
         {"invert_scroll_wheel", value.invert_scroll_wheel}};
 }
+auto read_lane_bindings(const json_t& value) -> std::optional<lane_key_bindings_t> {
+    if (!value.is_array() || value.size() > maximum_lane_key_bindings) return {};
+    lane_key_bindings_t bindings;
+    for (const auto& key : value) {
+        if (!key.is_number_unsigned() || key.get<std::uint64_t>() > 0xffff) return {};
+        bindings.keys.push_back(key.get<std::uint16_t>());
+    }
+    return bindings.is_valid() ? std::optional{std::move(bindings)} : std::nullopt;
+}
 void read_lane_keys(preference_reader_t& reader, const json_t& root) {
     const auto& section = reader.section(root, "lane_keys");
     if (section.size() > maximum_lane_key_layouts) { reader.warn("Lane keys exceed the 128-layout limit; ignored."); return; }
@@ -148,16 +157,36 @@ void read_lane_keys(preference_reader_t& reader, const json_t& root) {
         if (id.empty() || !is_valid_string(id) || !value.is_array() || value.size() > maximum_lane_key_bindings) {
             reader.warn("Invalid lane-key layout ignored."); continue;
         }
-        lane_key_bindings_t bindings;
-        for (const auto& key : value) {
-            if (!key.is_number_unsigned() || key.get<std::uint64_t>() > 0xffff) {
-                bindings.keys.push_back(0xffff); break;
-            }
-            bindings.keys.push_back(key.get<std::uint16_t>());
-        }
-        if (bindings.is_valid()) reader.result.preferences.lane_keys.layouts.emplace(id, std::move(bindings));
+        auto bindings = read_lane_bindings(value);
+        if (bindings) reader.result.preferences.lane_keys.layouts.emplace(id, std::move(*bindings));
         else reader.warn("Invalid physical lane keys ignored.");
     }
+}
+void read_default_lane_keys(preference_reader_t& reader, const json_t& root) {
+    const auto found = root.find("default_lane_keys");
+    if (found == root.end()) return;
+    if (!found->is_array() || found->size() > maximum_default_lane_count) {
+        reader.warn("Invalid default lane-key preferences ignored."); return;
+    }
+    default_lane_keys_t candidate;
+    for (const auto& item : *found) {
+        if (!item.is_object() || !item.contains("count") || !item["count"].is_number_unsigned() ||
+            item["count"].get<std::uint64_t>() > maximum_default_lane_count || !item.contains("keys")) {
+            reader.warn("Invalid default lane-key preferences ignored."); return;
+        }
+        auto bindings = read_lane_bindings(item["keys"]);
+        if (!bindings || !candidate.bindings.emplace(item["count"].get<std::uint32_t>(), std::move(*bindings)).second) {
+            reader.warn("Invalid default lane-key preferences ignored."); return;
+        }
+    }
+    if (candidate.is_valid()) reader.result.preferences.default_lane_keys = std::move(candidate);
+    else reader.warn("Conflicting or invalid default lane keys ignored.");
+}
+auto default_lane_keys_json(const default_lane_keys_t& value) -> json_t {
+    auto result = json_t::array();
+    for (const auto& [count, keys] : value.bindings)
+        result.push_back({{"count", count}, {"keys", keys.keys}});
+    return result;
 }
 auto lane_keys_json(const lane_key_preferences_t& value) -> json_t {
     auto result = json_t::object();
@@ -324,6 +353,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
             {"shortcut_profile_path", value.general.shortcut_profile_path}}},
         {"editor", editor_json(value.editor)},
         {"lane_keys", lane_keys_json(value.lane_keys)},
+        {"default_lane_keys", default_lane_keys_json(value.default_lane_keys)},
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
             {"keysound_budget_mib", value.audio.keysound_budget_mib},
@@ -405,8 +435,9 @@ auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_par
         if (version != root.end() && (!version->is_number_integer() || *version != 1))
             throw std::runtime_error("Unsupported preferences version.");
         preference_reader_t reader{result};
-        reader.check_keys(root, {"version", "general", "editor", "audio", "display", "players", "minimap", "layout", "lane_keys"});
+        reader.check_keys(root, {"version", "general", "editor", "audio", "display", "players", "minimap", "layout", "lane_keys", "default_lane_keys"});
         read_lane_keys(reader, root);
+        read_default_lane_keys(reader, root);
         read_general(reader, root); read_editor_audio(reader, root);
         read_display_minimap_layout(reader, root); read_players(reader, root);
         if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
@@ -420,7 +451,7 @@ auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_par
 }
 
 auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
-    if (!value.lane_keys.is_valid()) return std::nullopt;
+    if (!value.lane_keys.is_valid() || !value.default_lane_keys.is_valid()) return std::nullopt;
     if (!is_valid_preferences(value)) return std::nullopt;
     try {
         auto bytes = preferences_json(value).dump(2);

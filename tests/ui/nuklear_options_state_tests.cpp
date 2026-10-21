@@ -1,5 +1,6 @@
 #include "ui/frontend/workspace.h"
 #include "sys/options_runtime.h"
+#include <wormedit/core/lane_keys.h>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cstdio>
@@ -40,6 +41,36 @@ struct temporary_preferences_t {
     ~temporary_preferences_t() { std::filesystem::remove_all(directory); }
 };
 }
+TEST_CASE("Default lane key conflicts name the key and reject Apply", "[options][default-lane-keys]") {
+    temporary_preferences_t temporary;
+    program_preferences_runtime_t program{.path = temporary.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options_category(runtime, program.preferences, WORM_UI_OPTIONS_INPUT);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_INPUT);
+    edit.field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK;
+    edit.lane_count = 4;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(program.preferences.default_lane_keys.bindings.empty());
+    edit.revision = runtime.revision;
+    edit.field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY;
+    edit.lane_index = 1;
+    edit.integer = physical_key_hid_usage(physical_key_t::key_d);
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(!runtime.diagnostics.empty());
+    expect_options(runtime.diagnostics.front().message.find("key D ") != std::string::npos);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    edit.revision = runtime.revision;
+    edit.integer = physical_key_hid_usage(physical_key_t::key_f);
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.default_lane_keys.bindings.at(4) == lane_key_bindings_t::dfjk());
+    edit.revision = runtime.revision;
+    edit.field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.default_lane_keys.bindings.at(4) == lane_key_bindings_t::number_row(4));
+}
+
 TEST_CASE("Options opening and category switching retain isolated drafts", "[options]") {
     program_preferences_runtime_t program;
     options_runtime_t r;

@@ -946,6 +946,13 @@ static int handle_sdl_mouse_button(nk_context* ctx, const SDL_Event& event) {
     return 1;
 }
 
+// Nuklear counts every input call as an edge. Inactive releases must not become
+// phantom presses when a normal letter's down/up events share a frame. Preserve
+// repeated down events so held editing keys retain their normal repeat behavior.
+static void input_sdl_key(nk_context* context, nk_keys key, bool down) {
+    if (down || context->input.keyboard.keys[key].down) nk_input_key(context, key, down);
+}
+
 static int handle_sdl_key(nk_context* ctx, nk_sdl* sdl, const SDL_Event& event) {
     int down = event.type == SDL_EVENT_KEY_DOWN;
     int ctrl_down = event.key.mod & SDL_KMOD_CTRL;
@@ -953,127 +960,123 @@ static int handle_sdl_key(nk_context* ctx, nk_sdl* sdl, const SDL_Event& event) 
     switch (event.key.key) {
     case SDLK_LALT:
     case SDLK_RALT:
-        nk_input_key(ctx, NK_KEY_ALT, down);
+        input_sdl_key(ctx, NK_KEY_ALT, down);
         break;
     case SDLK_RSHIFT: /* RSHIFT & LSHIFT share same routine */
     case SDLK_LSHIFT:
-        nk_input_key(ctx, NK_KEY_SHIFT, down);
+        input_sdl_key(ctx, NK_KEY_SHIFT, down);
         break;
     case SDLK_DELETE:
-        nk_input_key(ctx, NK_KEY_DEL, down);
+        input_sdl_key(ctx, NK_KEY_DEL, down);
         break;
     case SDLK_RETURN:
-        nk_input_key(ctx, NK_KEY_ENTER, down);
+        input_sdl_key(ctx, NK_KEY_ENTER, down);
         break;
     case SDLK_TAB:
-        nk_input_key(ctx, NK_KEY_TAB, down);
+        input_sdl_key(ctx, NK_KEY_TAB, down);
         break;
     case SDLK_BACKSPACE:
-        nk_input_key(ctx, NK_KEY_BACKSPACE, down);
+        input_sdl_key(ctx, NK_KEY_BACKSPACE, down);
         break;
     case SDLK_HOME:
-        nk_input_key(ctx, NK_KEY_TEXT_START, down);
-        nk_input_key(ctx, NK_KEY_SCROLL_START, down);
+        input_sdl_key(ctx, NK_KEY_TEXT_START, down);
+        input_sdl_key(ctx, NK_KEY_SCROLL_START, down);
         break;
     case SDLK_END:
-        nk_input_key(ctx, NK_KEY_TEXT_END, down);
-        nk_input_key(ctx, NK_KEY_SCROLL_END, down);
+        input_sdl_key(ctx, NK_KEY_TEXT_END, down);
+        input_sdl_key(ctx, NK_KEY_SCROLL_END, down);
         break;
     case SDLK_PAGEDOWN:
-        nk_input_key(ctx, NK_KEY_SCROLL_DOWN, down);
+        input_sdl_key(ctx, NK_KEY_SCROLL_DOWN, down);
         break;
     case SDLK_PAGEUP:
-        nk_input_key(ctx, NK_KEY_SCROLL_UP, down);
+        input_sdl_key(ctx, NK_KEY_SCROLL_UP, down);
         break;
     case SDLK_F1:
-        nk_input_key(ctx, NK_KEY_F1, down);
+        input_sdl_key(ctx, NK_KEY_F1, down);
         break;
     case SDLK_F2:
-        nk_input_key(ctx, NK_KEY_F2, down);
+        input_sdl_key(ctx, NK_KEY_F2, down);
         break;
     case SDLK_F3:
-        nk_input_key(ctx, NK_KEY_F3, down);
+        input_sdl_key(ctx, NK_KEY_F3, down);
         break;
     case SDLK_F4:
-        nk_input_key(ctx, NK_KEY_F4, down);
+        input_sdl_key(ctx, NK_KEY_F4, down);
         break;
     case SDLK_F5:
-        nk_input_key(ctx, NK_KEY_F5, down);
+        input_sdl_key(ctx, NK_KEY_F5, down);
         break;
     case SDLK_F6:
-        nk_input_key(ctx, NK_KEY_F6, down);
+        input_sdl_key(ctx, NK_KEY_F6, down);
         break;
     case SDLK_F7:
-        nk_input_key(ctx, NK_KEY_F7, down);
+        input_sdl_key(ctx, NK_KEY_F7, down);
         break;
     case SDLK_F8:
-        nk_input_key(ctx, NK_KEY_F8, down);
+        input_sdl_key(ctx, NK_KEY_F8, down);
         break;
     case SDLK_F9:
-        nk_input_key(ctx, NK_KEY_F9, down);
+        input_sdl_key(ctx, NK_KEY_F9, down);
         break;
     case SDLK_F10:
-        nk_input_key(ctx, NK_KEY_F10, down);
+        input_sdl_key(ctx, NK_KEY_F10, down);
         break;
     case SDLK_F11:
-        nk_input_key(ctx, NK_KEY_F11, down);
+        input_sdl_key(ctx, NK_KEY_F11, down);
         break;
     case SDLK_F12:
-        nk_input_key(ctx, NK_KEY_F12, down);
+        input_sdl_key(ctx, NK_KEY_F12, down);
         break;
     case SDLK_A:
-        nk_input_key(ctx, NK_KEY_TEXT_SELECT_ALL, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_TEXT_SELECT_ALL, down && ctrl_down);
         break;
     case SDLK_Z:
-        nk_input_key(ctx, NK_KEY_TEXT_UNDO, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_TEXT_UNDO, down && ctrl_down);
         break;
     case SDLK_R:
-        nk_input_key(ctx, NK_KEY_TEXT_REDO, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_TEXT_REDO, down && ctrl_down);
         break;
     case SDLK_C:
-        nk_input_key(ctx, NK_KEY_COPY, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_COPY, down && ctrl_down);
         break;
     case SDLK_V:
-        nk_input_key(ctx, NK_KEY_PASTE, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_PASTE, down && ctrl_down);
         break;
     case SDLK_X:
-        nk_input_key(ctx, NK_KEY_CUT, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_CUT, down && ctrl_down);
         break;
     case SDLK_B:
-        nk_input_key(ctx, NK_KEY_TEXT_LINE_START, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_TEXT_LINE_START, down && ctrl_down);
         break;
     case SDLK_E:
-        nk_input_key(ctx, NK_KEY_TEXT_LINE_END, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_TEXT_LINE_END, down && ctrl_down);
         break;
     case SDLK_UP:
-        nk_input_key(ctx, NK_KEY_UP, down);
+        input_sdl_key(ctx, NK_KEY_UP, down);
         break;
     case SDLK_DOWN:
-        nk_input_key(ctx, NK_KEY_DOWN, down);
+        input_sdl_key(ctx, NK_KEY_DOWN, down);
         break;
     case SDLK_ESCAPE:
-        nk_input_key(ctx, NK_KEY_TEXT_RESET_MODE, down);
+        input_sdl_key(ctx, NK_KEY_TEXT_RESET_MODE, down);
         break;
     case SDLK_INSERT:
         if (down)
             sdl->insert_toggle = !sdl->insert_toggle;
         if (sdl->insert_toggle) {
-            nk_input_key(ctx, NK_KEY_TEXT_INSERT_MODE, down);
+            input_sdl_key(ctx, NK_KEY_TEXT_INSERT_MODE, down);
         } else {
-            nk_input_key(ctx, NK_KEY_TEXT_REPLACE_MODE, down);
+            input_sdl_key(ctx, NK_KEY_TEXT_REPLACE_MODE, down);
         }
         break;
     case SDLK_LEFT:
-        if (ctrl_down)
-            nk_input_key(ctx, NK_KEY_TEXT_WORD_LEFT, down);
-        else
-            nk_input_key(ctx, NK_KEY_LEFT, down);
+        input_sdl_key(ctx, NK_KEY_TEXT_WORD_LEFT, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_LEFT, down && !ctrl_down);
         break;
     case SDLK_RIGHT:
-        if (ctrl_down)
-            nk_input_key(ctx, NK_KEY_TEXT_WORD_RIGHT, down);
-        else
-            nk_input_key(ctx, NK_KEY_RIGHT, down);
+        input_sdl_key(ctx, NK_KEY_TEXT_WORD_RIGHT, down && ctrl_down);
+        input_sdl_key(ctx, NK_KEY_RIGHT, down && !ctrl_down);
         break;
     default:
         return 0;

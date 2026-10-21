@@ -17,12 +17,15 @@ namespace wormedit {
 
 struct lane_layout_t;
 struct input_profile_t;
+struct song_document_t;
 inline constexpr std::size_t maximum_lane_key_layouts = 128;
 inline constexpr std::size_t maximum_lane_key_bindings = 128;
 
 // USB HID usages in lane display order; zero leaves a lane unbound.
 struct lane_key_bindings_t {
     std::vector<std::uint16_t> keys;
+    [[nodiscard]] static auto number_row(std::uint32_t count) -> lane_key_bindings_t;
+    [[nodiscard]] static auto dfjk() -> lane_key_bindings_t;
     [[nodiscard]] auto is_valid() const -> bool;
     [[nodiscard]] static auto from(const lane_layout_t&, const input_profile_t&) -> lane_key_bindings_t;
     [[nodiscard]] static auto preset(const lane_layout_t&, const input_profile_t&, bool interleaved)
@@ -36,6 +39,16 @@ struct lane_key_preferences_t {
     std::map<std::string, lane_key_bindings_t, std::less<>> layouts;
     [[nodiscard]] auto is_valid() const -> bool;
     auto operator==(const lane_key_preferences_t&) const -> bool = default;
+};
+struct default_lane_keys_t {
+    std::map<std::uint32_t, lane_key_bindings_t> bindings;
+    [[nodiscard]] auto is_valid() const -> bool;
+    [[nodiscard]] auto conflicting_key() const -> std::optional<std::uint16_t>;
+    [[nodiscard]] auto keys_for(std::uint32_t count) const -> const lane_key_bindings_t&;
+    [[nodiscard]] auto profile_for(const lane_layout_t&, const input_profile_t&) const -> input_profile_t;
+    // Construction/import only: never call on a published native project.
+    void apply_to(song_document_t&) const;
+    auto operator==(const default_lane_keys_t&) const -> bool = default;
 };
 
 inline constexpr std::size_t maximum_preferences_bytes = 1024 * 1024;
@@ -126,6 +139,7 @@ struct program_preferences_t {
     [[nodiscard]] static auto with_defaults() -> program_preferences_t;
 
     general_preferences_t general;
+    default_lane_keys_t default_lane_keys;
     editor_preferences_t editor;
     audio_preferences_t audio;
     display_preferences_t display;

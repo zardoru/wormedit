@@ -970,7 +970,7 @@ void frontend_workspace_view_t::reset() {
         view.recent_files, view.menu_commands, view.summary_lines,
         view.recovery_candidates, view.recovery_diagnostics, view.command_menu_rows,
         view.setup, view.options, view.chart_import, view.notifications,
-        view.metadata, view.audio_slices, view.timing, view.player_preview, view.external_player,
+        view.metadata, view.audio_slices, view.timing, view.player_preview,
         view.compare.charts, view.compare.diagnostics,
         view.playback_rates.entries, view.bms_encodings.entries, view.sound_kinds.entries,
         view.compose);
@@ -983,7 +983,6 @@ void frontend_workspace_view_t::reset() {
     view.audio_slices.reset();
     view.timing.reset();
     view.player_preview.reset();
-    view.external_player.reset();
     view.menu_commands.clear();
     view.recent_files.clear();
     view.command_menu_rows.clear();

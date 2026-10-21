@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <string_view>
 #include "ui/nuklear/shortcuts_panel.h"
+#include "ui/nuklear/external_player_panel.h"
 #include "wormedit/nuklear_config.h"
 #include <array>
 #include <algorithm>
@@ -14,19 +15,6 @@ namespace {
 wormedit::ui::chrome::Dialog options_dialog;
 constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_names{
     "General", "Editor", "Playback & audio", "Appearance", "Input & shortcuts", "External players"};
-constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_descriptions{
-    "Autosave, recent files, and confirmation when closing unsaved work.",
-    "Defaults for editing new charts and minimap interaction.",
-    "Playback rate, pitch, and audio preferences.",
-    "Appearance, interface scale, and window layout.",
-    "Keyboard shortcuts and shortcut profiles.",
-    "External player applications and launch arguments."};
-void placeholder(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t*) {
-    nk_layout_row_dynamic(context, 48, 1);
-    nk_label_wrap(context, category_descriptions[view->category]);
-    nk_layout_row_dynamic(context, 48, 1);
-    nk_label_wrap(context, "Changes stay in a draft until Apply. Revert reloads this page's current settings; Restore defaults changes only its draft.");
-}
 void edit_integer(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
     const char* label, WormUiOptionsField field, uint32_t value, int minimum, int maximum) {
     nk_layout_row_dynamic(context, 28, 1);
@@ -323,8 +311,52 @@ void appearance_page(nk_context* context, const wormedit::ui::options_view_t* vi
     nk_layout_row_dynamic(context, 38, 1);
     nk_label_wrap(context, "Layout skins inherit the default. Skins and opacity preview immediately; Apply saves them.");
 }
+void default_lane_key(nk_context* context, const wormedit::ui::options_view_t& view,
+                      wormedit::ui::options_action_t& action, std::size_t index) {
+    std::vector<const char*> labels;
+    int selected = 0;
+    for (const auto& choice : view.lane_key_choices) {
+        if (choice.usage == view.default_lane_bindings[index]) selected = static_cast<int>(labels.size());
+        labels.push_back(choice.label.c_str());
+    }
+    if (labels.empty()) return;
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_labelf(context, NK_TEXT_LEFT, "Lane %zu", index + 1);
+    const auto chosen = wormedit::ui::chrome::safe_combo(context, labels.data(), static_cast<int>(labels.size()),
+        selected, 28, nk_vec2(180, 220));
+    if (chosen == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = WORM_UI_OPTIONS_INPUT,
+        .field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY, .integer = view.lane_key_choices[static_cast<std::size_t>(chosen)].usage,
+        .lane_count = view.default_lane_count, .lane_index = static_cast<std::uint32_t>(index)};
+}
+void default_lane_bindings(nk_context* context, const wormedit::ui::options_view_t& view,
+                           wormedit::ui::options_action_t& action) {
+    if (!nk_tree_push(context, NK_TREE_TAB, "Default lane keys", NK_MINIMIZED)) return;
+    nk_layout_row_dynamic(context, 48, 1);
+    nk_label_wrap(context, "Choose bindings for new and imported charts. Unconfigured counts keep their existing defaults; saved project bindings are preserved.");
+    auto count = static_cast<int>(view.default_lane_count);
+    nk_layout_row_dynamic(context, 28, 1);
+    nk_property_int(context, "Lane count", 1, &count, wormedit::maximum_default_lane_count, 1, 1);
+    if (count != static_cast<int>(view.default_lane_count) && action.kind == WORM_UI_OPTIONS_NONE)
+        action = {.kind = WORM_UI_OPTIONS_SELECT_LANE_COUNT, .revision = view.revision,
+            .category = WORM_UI_OPTIONS_INPUT, .lane_count = static_cast<std::uint32_t>(count)};
+    nk_layout_row_dynamic(context, 28, view.default_lane_count == 4 ? 2 : 1);
+    if (nk_button_label(context, "Number row") && action.kind == WORM_UI_OPTIONS_NONE)
+        action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = WORM_UI_OPTIONS_INPUT,
+            .field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW, .lane_count = view.default_lane_count};
+    if (view.default_lane_count == 4 && nk_button_label(context, "DFJK (4K)") && action.kind == WORM_UI_OPTIONS_NONE)
+        action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = WORM_UI_OPTIONS_INPUT,
+            .field = WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK, .lane_count = 4};
+    for (std::size_t index = 0; index < view.default_lane_bindings.size(); ++index)
+        default_lane_key(context, view, action, index);
+    nk_tree_pop(context);
+}
+void input_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
+    default_lane_bindings(context, *view, *action);
+    wormedit::ui::nuklear::render_shortcuts_page(context, view, action);
+}
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
-    general_page, editor_page, audio_page, appearance_page, wormedit::ui::nuklear::render_shortcuts_page, placeholder};
+    general_page, editor_page, audio_page, appearance_page, input_page, worm_ui_nuklear_render_external_players_page};
 void emit(wormedit::ui::options_action_t& action, const wormedit::ui::options_view_t& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};
@@ -386,6 +418,8 @@ bool worm_ui_nuklear_options_view_valid(const wormedit::ui::options_view_t* view
     constexpr std::size_t maximum_options_layout_lanes = 4096;
     return view->category >= WORM_UI_OPTIONS_GENERAL && view->category < WORM_UI_OPTIONS_CATEGORY_COUNT &&
            view->players.size() <= wormedit::maximum_external_players &&
+           view->default_lane_count > 0 && view->default_lane_count <= wormedit::maximum_default_lane_count &&
+           view->default_lane_bindings.size() <= wormedit::maximum_default_lane_count &&
            view->current_field_layout_lanes.size() <= maximum_options_layout_lanes;
 }
 

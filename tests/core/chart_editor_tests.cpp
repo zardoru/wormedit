@@ -1,5 +1,6 @@
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/preferences.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
@@ -18,6 +19,7 @@ void expect_chart(bool value, std::source_location where = std::source_location:
     INFO("chart check caller line " << where.line());
     CHECK(value);
 }
+
 void require_chart(bool value, std::source_location where = std::source_location::current()) {
     INFO("chart requirement caller line " << where.line());
     REQUIRE(value);
@@ -94,6 +96,22 @@ auto duplicate_links_match(const chart_document_t& source, const chart_document_
         copy.sv_recipes[0].range.end.measure == copy.measures[1].id &&
         copy.sv_recipes[0].id != source.sv_recipes[0].id;
 }
+}
+
+TEST_CASE("New chart defaults keep the template profile unchanged and undo in one step", "[chart-editor][default-lane-keys]") {
+    auto document = chart_song();
+    make_chart_stepmania_compatible(document);
+    auto history = document_history_t::from(document);
+    const auto original = history.document.charts.front().input_profile;
+    default_lane_keys_t defaults{.bindings = {{4, lane_key_bindings_t::dfjk()}}};
+    const auto created = apply_add_chart_command(history, document.charts.front().id, &defaults);
+    require_chart(created.command.applied && created.payload.chart.has_value());
+    const auto& chart = *history.document.find_chart(*created.payload.chart);
+    expect_chart(lane_key_bindings_t::from(chart.lane_layouts.front().layout, chart.input_profile) == lane_key_bindings_t::dfjk());
+    expect_chart(history.document.charts.front().input_profile == original);
+    expect_chart(history.undo.size() == 1);
+    expect_chart(undo_document_command(history));
+    expect_chart(history.document.charts.size() == 1 && history.document.charts.front().input_profile == original);
 }
 
 TEST_CASE("Chart duplicate remaps internal graphs and shares resources", "[unit][core][chart-editor]") {

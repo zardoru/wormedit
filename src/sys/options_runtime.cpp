@@ -1,5 +1,7 @@
 #include "core/text_util.h"
 #include "sys/options_runtime.h"
+#include "sys/shortcut_rows.h"
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
 #include <algorithm>
 #include <iterator>
@@ -29,7 +31,9 @@ void copy_category(program_preferences_t& target, const program_preferences_t& s
     case WORM_UI_OPTIONS_EDITOR: target.editor = source.editor; target.minimap = source.minimap; break;
     case WORM_UI_OPTIONS_AUDIO: target.audio = source.audio; break;
     case WORM_UI_OPTIONS_DISPLAY: target.display = source.display; target.layout = source.layout; break;
-    case WORM_UI_OPTIONS_INPUT: target.general.shortcut_profile_path = source.general.shortcut_profile_path; break;
+    case WORM_UI_OPTIONS_INPUT:
+        target.general.shortcut_profile_path = source.general.shortcut_profile_path;
+        target.default_lane_keys = source.default_lane_keys; break;
     case WORM_UI_OPTIONS_PLAYERS: target.players = source.players; break;
     default: break;
     }
@@ -94,6 +98,10 @@ void refill_options_validation(options_runtime_t& r, bool& changed) {
         break;
     case WORM_UI_OPTIONS_DISPLAY: validate_display(r); break;
     case WORM_UI_OPTIONS_INPUT:
+        if (const auto conflict = r.draft.default_lane_keys.conflicting_key())
+            r.diagnostics.push_back({WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY,
+                "Default lane key " + shortcut_chord_text({.key = static_cast<shortcut_key_t>(*conflict)}) +
+                " is assigned more than once."});
         diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, text_util::is_valid_bounded_text(r.draft.general.shortcut_profile_path, maximum_preference_string_bytes) &&
             !r.draft.general.shortcut_profile_path.empty(), "Shortcut profile path must be nonempty and at most 4096 bytes."); break;
     case WORM_UI_OPTIONS_PLAYERS:
@@ -214,7 +222,8 @@ auto edit_players(program_preferences_t& p, const wormedit::ui::options_action_t
     auto& players = p.players;
     if (a.field == WORM_UI_OPTIONS_FIELD_PLAYER_ADD) {
         if (players.players.size() >= maximum_external_players) return false;
-        players.players.push_back({});
+        players.players.push_back({"New player", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"});
+        players.selected = players.players.size() - 1;
         return true;
     }
     if (a.player_index >= players.players.size()) return false;
@@ -236,6 +245,26 @@ auto bounded_edit(const wormedit::ui::options_action_t& action) -> bool {
         action.field == WORM_UI_OPTIONS_FIELD_ANCHOR || action.field == WORM_UI_OPTIONS_FIELD_AREA_ALPHA;
     return !small_integer || action.integer <= std::numeric_limits<std::uint32_t>::max();
 }
+auto edit_input(program_preferences_t& candidate, const ui::options_action_t& action) -> bool {
+    if (action.field == WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH) {
+        candidate.general.shortcut_profile_path = action.text; return true;
+    }
+    if (!action.lane_count || action.lane_count > maximum_default_lane_count) return false;
+    auto& defaults = candidate.default_lane_keys;
+    if (action.field == WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_NUMBER_ROW) {
+        defaults.bindings.insert_or_assign(action.lane_count, lane_key_bindings_t::number_row(action.lane_count));
+        return true;
+    }
+    if (action.field == WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_DFJK && action.lane_count == 4) {
+        defaults.bindings.insert_or_assign(4, lane_key_bindings_t::dfjk()); return true;
+    }
+    if (action.field != WORM_UI_OPTIONS_FIELD_DEFAULT_LANE_KEY || action.lane_index >= action.lane_count ||
+        action.integer > 0xffff) return false;
+    auto keys = defaults.keys_for(action.lane_count);
+    keys.keys[action.lane_index] = static_cast<std::uint16_t>(action.integer);
+    defaults.bindings.insert_or_assign(action.lane_count, std::move(keys));
+    return true;
+}
 auto edit_field(options_runtime_t& r, const wormedit::ui::options_action_t& action) -> bool {
     if (action.category != r.category || !bounded_edit(action)) return false;
     auto candidate = r.draft;
@@ -246,8 +275,7 @@ auto edit_field(options_runtime_t& r, const wormedit::ui::options_action_t& acti
     case WORM_UI_OPTIONS_AUDIO: edited = edit_audio(candidate, action); break;
     case WORM_UI_OPTIONS_DISPLAY: edited = edit_display(candidate, action, r.current_field_layout_key); break;
     case WORM_UI_OPTIONS_INPUT:
-        if (action.field != WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH) return false;
-        candidate.general.shortcut_profile_path = action.text; edited = true; break;
+        edited = edit_input(candidate, action); break;
     case WORM_UI_OPTIONS_PLAYERS: edited = edit_players(candidate, action); break;
     default: return false;
     }
@@ -285,6 +313,15 @@ void open_options(options_runtime_t& r, const program_preferences_t& preferences
     ++r.revision;
     validate_draft(r);
 }
+void open_options_category(options_runtime_t& runtime, const program_preferences_t& preferences,
+                           WormUiOptionsCategory category) {
+    if (!valid_category(category)) return;
+    open_options(runtime, preferences);
+    runtime.category = category;
+    runtime.status.clear();
+    ++runtime.revision;
+    validate_draft(runtime);
+}
 auto resolve_scratch_positions(const display_preferences_t& preferences,
     const std::array<std::optional<bool>, 2>& skin_defaults)
     -> std::array<std::optional<bool>, 2> {
@@ -318,6 +355,8 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
     auto lanes = std::move(current_field_layout_lanes);
     auto shortcuts = std::move(shortcut_rows);
     auto devices = std::move(audio_devices);
+    auto bindings = std::move(default_lane_bindings);
+    auto keys = std::move(lane_key_choices);
     const auto& p = r.draft;
     *this = {.visible = r.visible, .revision = r.revision, .category = r.category,
         .changed = r.validation.value(), .can_apply = r.diagnostics.empty(),
@@ -360,6 +399,15 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
     current_field_layout_lanes = std::move(lanes);
     shortcut_rows = std::move(shortcuts);
     audio_devices = std::move(devices);
+    default_lane_count = r.default_lane_count;
+    default_lane_bindings = std::move(bindings);
+    const auto& defaults = p.default_lane_keys.keys_for(default_lane_count);
+    default_lane_bindings.assign(defaults.keys.begin(), defaults.keys.end());
+    lane_key_choices = std::move(keys);
+    lane_key_choices.clear();
+    lane_key_choices.push_back({0, "Unbound"});
+    for (const auto key : std::span{physical_key_hid_usages}.subspan(1))
+        lane_key_choices.push_back({key, sys::shortcut_chord_text({.key = static_cast<shortcut_key_t>(key)})});
     audio_devices.assign(r.audio_devices.begin(), r.audio_devices.end());
     diagnostics.clear();
     for (const auto& item : r.diagnostics)
@@ -395,6 +443,10 @@ auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& p
     case WORM_UI_OPTIONS_SELECT_CATEGORY:
         if (!valid_category(action.category)) return false;
         r.category = action.category; r.status.clear(); break;
+    case WORM_UI_OPTIONS_SELECT_LANE_COUNT:
+        if (r.category != WORM_UI_OPTIONS_INPUT || action.category != WORM_UI_OPTIONS_INPUT ||
+            !action.lane_count || action.lane_count > maximum_default_lane_count) return false;
+        r.default_lane_count = action.lane_count; break;
     case WORM_UI_OPTIONS_APPLY: accepted = apply_category(r, program); break;
     case WORM_UI_OPTIONS_REVERT:
         copy_category(r.draft, program.preferences, r.category);

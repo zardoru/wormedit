@@ -364,12 +364,11 @@ void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
 using wormedit::sys::external_player_runtime_t;
 
 void initialize_program_preferences(wormedit::sys::program_preferences_runtime_t& preferences,
-    external_player_runtime_t& player, application_command_state_t& state,
+    application_command_state_t& state,
     wormedit::notification_sink_t& notifications) {
-    player.program_preferences = &preferences;
-    player.preferences = preferences.preferences.players;
     state.preferences.minimap_click_moves_paused_playhead = preferences.preferences.minimap.click_moves_paused_playhead;
     state.preferences.editor_preferences = preferences.preferences.editor;
+    state.preferences.default_lane_keys = preferences.preferences.default_lane_keys;
     state.preferences.lane_keys = preferences.preferences.lane_keys;
     for (const auto& warning : preferences.warnings)
         notifications.post(wormedit::notification_severity_t::warning,
@@ -583,72 +582,20 @@ auto external_source_measure(const wormedit::chart_document_t& chart,
 
 
 
-void build_external_player_view(external_player_runtime_t& runtime, wormedit::ui::workspace_view_t& view) {
-    auto& players = view.external_player.players;
-    players.clear();
-    for (const auto& player : runtime.preferences.players)
-        players.push_back({.name = player.name, .path = player.path,
-                           .start_arguments = player.start_arguments,
-                           .here_arguments = player.here_arguments,
-                           .stop_arguments = player.stop_arguments});
-    view.external_player.visible = runtime.visible;
-    view.external_player.revision = runtime.revision;
-    view.external_player.selected = runtime.preferences.selected;
-}
-
-auto edit_external_player_preferences(external_player_runtime_t& runtime,
-    const wormedit::ui::external_player_action_t& action, wormedit::notification_sink_t& notifications) -> std::string {
-    auto candidate = runtime.preferences;
-    switch (action.kind) {
-    case wormedit::ui::external_player_action_kind_t::select:
-        if (action.selected >= candidate.players.size()) return post_callback_feedback(notifications,
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::system, "External player selection is invalid.");
-        candidate.selected = action.selected;
-        break;
-    case wormedit::ui::external_player_action_kind_t::save:
-        if (action.selected >= candidate.players.size()) return post_callback_feedback(notifications,
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::system, "External player selection is invalid.");
-        candidate.players[action.selected] = {action.name, action.path, action.start_arguments,
-                                              action.here_arguments, action.stop_arguments};
-        break;
-    case wormedit::ui::external_player_action_kind_t::add:
-        candidate.players.push_back({"New player", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"});
-        candidate.selected = candidate.players.size() - 1;
-        break;
-    case wormedit::ui::external_player_action_kind_t::remove:
-        if (candidate.players.size() <= 1) return post_callback_feedback(notifications,
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::system, "Keep at least one external player definition.");
-        candidate.players.erase(candidate.players.begin() + static_cast<std::ptrdiff_t>(candidate.selected));
-        candidate.selected = 0;
-        break;
-    default: return {};
-    }
-    if (!wormedit::is_valid_external_player_preferences(candidate)) return post_callback_feedback(notifications,
-        wormedit::notification_severity_t::warning, wormedit::notification_source_t::system, "External-player preferences are invalid.");
-    auto program = runtime.program_preferences->preferences;
-    program.players = candidate;
-    const auto error = wormedit::sys::apply_program_preferences(*runtime.program_preferences, std::move(program));
-    runtime.preferences = std::move(candidate);
-    ++runtime.revision;
-    return post_callback_feedback(notifications,
-        error.empty() ? wormedit::notification_severity_t::success : wormedit::notification_severity_t::error,
-        wormedit::notification_source_t::system, error.empty() ? "External-player preferences saved." : error);
-}
-
-auto dispatch_external_player_action(external_player_runtime_t& runtime,
+auto dispatch_external_player_action(wormedit::sys::options_runtime_t& options,
     const wormedit::ui::external_player_action_t& action, const application_command_state_t& state,
-    wormedit::notification_sink_t& notifications) -> bool {
+    const wormedit::program_preferences_t& preferences) -> bool {
     using wormedit::sys::external_player_action_t;
     if (action.kind == wormedit::ui::external_player_action_kind_t::none) return false;
-    if (action.kind == wormedit::ui::external_player_action_kind_t::open) runtime.visible = true;
-    else if (action.kind == wormedit::ui::external_player_action_kind_t::close) runtime.visible = false;
+    if (action.kind == wormedit::ui::external_player_action_kind_t::open)
+        wormedit::sys::open_options_category(options, preferences, WORM_UI_OPTIONS_PLAYERS);
     else if (action.kind == wormedit::ui::external_player_action_kind_t::play_start && state.services.external_player)
         (void)state.services.external_player(external_player_action_t::play_start);
     else if (action.kind == wormedit::ui::external_player_action_kind_t::play_here && state.services.external_player)
         (void)state.services.external_player(external_player_action_t::play_here);
     else if (action.kind == wormedit::ui::external_player_action_kind_t::stop && state.services.external_player)
         (void)state.services.external_player(external_player_action_t::stop);
-    else (void)edit_external_player_preferences(runtime, action, notifications);
+    else return false;
     return true;
 }
 
@@ -1942,7 +1889,8 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     using severity_t = wormedit::notification_severity_t;
     using source_t = wormedit::notification_source_t;
     const auto created = wormedit::apply_add_chart_command(
-        history, workspace.selected_chart.value_or(wormedit::chart_id_t{}));
+        history, workspace.selected_chart.value_or(wormedit::chart_id_t{}),
+        &application_command_state.preferences.default_lane_keys);
     if (!created)
         return wormedit::sys::reject_application_command(
             notifications,
@@ -2654,22 +2602,23 @@ struct application_t::implementation_t {
     auto launch_external_player(wormedit::sys::external_player_action_t action) -> std::string {
         using namespace wormedit::sys;
         const auto& asset_base = session.project_identity.asset_base;
-        if (preferences.external_player_runtime.preferences.selected >=
-            preferences.external_player_runtime.preferences.players.size()) {
-            preferences.external_player_runtime.visible = true;
+        const auto& configured = preferences.program_preferences.preferences.players;
+        if (configured.selected >= configured.players.size()) {
+            wormedit::sys::open_options_category(preferences.options_runtime,
+                preferences.program_preferences.preferences, WORM_UI_OPTIONS_PLAYERS);
             return post_callback_feedback(platform.notification_sink,
                                           wormedit::notification_severity_t::warning,
                                           wormedit::notification_source_t::audio,
-                                          "Choose an external player in Preferences.");
+                                          "Choose a player in Options → External players.");
         }
-        const auto& player = preferences.external_player_runtime.preferences
-                                 .players[preferences.external_player_runtime.preferences.selected];
+        const auto& player = configured.players[configured.selected];
         if (player.path.empty()) {
-            preferences.external_player_runtime.visible = true;
+            wormedit::sys::open_options_category(preferences.options_runtime,
+                preferences.program_preferences.preferences, WORM_UI_OPTIONS_PLAYERS);
             return post_callback_feedback(platform.notification_sink,
                                           wormedit::notification_severity_t::warning,
                                           wormedit::notification_source_t::audio,
-                                          "Choose an external player in Preferences.");
+                                          "Choose a player in Options → External players.");
         }
         const auto* chart = selected_chart(session.history, session.workspace);
         if (action != external_player_action_t::stop &&
@@ -2703,7 +2652,8 @@ struct application_t::implementation_t {
             player, action, session.history.document, chart ? chart->id : wormedit::chart_id_t{},
             source, measure, application_path ? application_path : "");
         if (launch.open_preferences)
-            preferences.external_player_runtime.visible = true;
+            wormedit::sys::open_options_category(preferences.options_runtime,
+                preferences.program_preferences.preferences, WORM_UI_OPTIONS_PLAYERS);
         return post_callback_feedback(
             platform.notification_sink,
             launch.is_success() ? wormedit::notification_severity_t::success
@@ -2832,6 +2782,8 @@ struct application_t::implementation_t {
                                  bool native_project, std::filesystem::path native_path,
                                  std::filesystem::path asset_base) -> bool {
         using namespace wormedit;
+        if (loaded && !native_project)
+            preferences.program_preferences.preferences.default_lane_keys.apply_to(document);
         wormedit::sys::refresh_project_audio_availability(document, asset_base);
         auto replacement_history = document_history_t::from(std::move(document), 128, saved);
         auto replacement_binding = workspace_controller_t::from(replacement_history);
@@ -3222,7 +3174,8 @@ struct application_t::implementation_t {
             sys::chart_import_begin(views.chart_import);
             sys::chart_import_load(views.chart_import,
                                    std::filesystem::path{std::string{action.project_path}},
-                                   session.history.document, session.project_identity.asset_base);
+                                   session.history.document, session.project_identity.asset_base,
+                                   &preferences.program_preferences.preferences.default_lane_keys);
         } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
             sys::chart_import_toggle(views.chart_import, chart_id_t{request.chart_id},
                                      session.history.document, session.project_identity.asset_base);
@@ -3579,7 +3532,7 @@ struct application_t::implementation_t {
                 ? wormedit::sys::apply_project_output_group_ui_action(
                       runtime, history, group, scheduler, session.project_identity.asset_base)
                 : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
-                                                               workspace.selected_chart);
+                    workspace.selected_chart, &preferences.program_preferences.preferences.default_lane_keys);
         auto outcome =
             compose_action_outcome_t::from(std::move(result.status), result.severity,
                                            notification_source_t::document, result.applied);
@@ -3916,6 +3869,8 @@ struct application_t::implementation_t {
             platform.notification_sink.post(*preferences.options_runtime.notification);
         if (!accepted)
             return;
+        if (preferences.options_runtime.category == WORM_UI_OPTIONS_INPUT)
+            commands.preferences.default_lane_keys = preferences.program_preferences.preferences.default_lane_keys;
         if (preferences.options_runtime.category == WORM_UI_OPTIONS_GENERAL)
             (void)session.autosave_loop.set_interval(std::chrono::minutes{
                 preferences.program_preferences.preferences.general.autosave_minutes});
@@ -3924,11 +3879,6 @@ struct application_t::implementation_t {
                 preferences.program_preferences.preferences.editor;
             commands.preferences.minimap_click_moves_paused_playhead =
                 preferences.program_preferences.preferences.minimap.click_moves_paused_playhead;
-        }
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_PLAYERS) {
-            preferences.external_player_runtime.preferences =
-                preferences.program_preferences.preferences.players;
-            ++preferences.external_player_runtime.revision;
         }
         if (preferences.options_runtime.category == WORM_UI_OPTIONS_AUDIO)
             initialize_preferred_transport(preferences.program_preferences.preferences, commands);
@@ -4056,7 +4006,7 @@ struct application_t::implementation_t {
         remember_startup_file(preferences.program_preferences, startup.loaded_primary,
                               requested_primary_path);
         initialize_program_preferences(preferences.program_preferences,
-                                       preferences.external_player_runtime, commands,
+                                       commands,
                                        platform.notification_sink);
         apply_saved_display_settings();
         worm_ui_frontend_select_field_scheme(
@@ -4707,7 +4657,6 @@ struct application_t::implementation_t {
         flattened.view.close_confirmation = close_confirmation_view(
             views.pending_close, session.project_identity.native_project_loaded &&
                                      !session.project_identity.active_project_path.empty());
-        build_external_player_view(preferences.external_player_runtime, flattened.view);
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
         flattened.view.setup.refill(views.project_chart_runtime, session.history.document);
         build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,
@@ -4770,9 +4719,9 @@ struct application_t::implementation_t {
         const bool shortcut_handled =
             process_compose_frame_action(action, viewport_delta_seconds, tap_applied);
         const bool external_handled =
-            dispatch_external_player_action(preferences.external_player_runtime,
+            dispatch_external_player_action(preferences.options_runtime,
                                             action.external_player, commands,
-                                            platform.notification_sink) ||
+                                            preferences.program_preferences.preferences) ||
             dispatch_chart_import_action(action);
         const auto previous_selected_chart = session.workspace.selected_chart;
         const bool project_handled =

@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/options_runtime.h"
+#include "sys/preferences/options_runtime.h"
 #include "sys/shortcut_rows.h"
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>

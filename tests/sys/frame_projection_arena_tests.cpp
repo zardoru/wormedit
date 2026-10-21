@@ -1435,7 +1435,7 @@ TEST_CASE("Warmed retained timing projection preserves storage without heap allo
     check_frame_storage(flattened.view.timing.supported_snap_denominators == grid.supported_denominators);
 }
 
-#include "sys/options_runtime.h"
+#include "sys/preferences/options_runtime.h"
 #include "sys/project_view.h"
 #include "sys/shortcut_rows.h"
 

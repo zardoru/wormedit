@@ -24,7 +24,7 @@
 #include "sys/bga_dock_runtime.h"
 #include "../support/temporary_directory.h"
 #include <fstream>
-#include "sys/options_runtime.h"
+#include "sys/preferences/options_runtime.h"
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"

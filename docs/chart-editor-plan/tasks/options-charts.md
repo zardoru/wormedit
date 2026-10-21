@@ -5,7 +5,7 @@
 Findings (2026-09-30):
 
 - Preferences are scattered: external players have their own file and panel
-  (`src/sys/external_player.cpp`, `src/ui/nuklear/external_player_panel.cpp`),
+  (`src/sys/preferences/external_player.cpp`, `src/ui/nuklear/external_player_panel.cpp`),
   shortcuts have a profile file (`src/core/shortcut_profile_storage.cpp`,
   `src/sys/platform_shortcut_profile.cpp`), minimap preferences are consumed in
   `src/sys/compose_input.cpp` (`consume_minimap_preferences`), the theme is chosen
@@ -44,7 +44,7 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (768/768 core and external-player tests; 16 preference cases; isolated two-start SDL dummy GUI persistence verified)
 - **Outcome:** one versioned `preferences.json` in the SDL preference directory holds all per-user settings in sections (general, editor, audio, display, players, minimap, layout); it loads once at startup, saves atomically on change, and migrates the existing external-player file on first run. Shortcut profiles stay in their own file, referenced by path.
-- **Read first:** `src/sys/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
+- **Read first:** `src/sys/preferences/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
 - **Files owned:** new `include/wormedit/core/preferences.h`, new `src/core/preferences.cpp`, new `tests/core/preferences_tests.cpp`, new `src/sys/preferences_runtime.cpp/.h`, `src/sys/external_player.cpp/.h`, `src/sys/main.cpp` (load/save wiring only), `CMakeLists.txt`, `tests/CMakeLists.txt`; user-approved atomic-helper extensions: new `include/wormedit/core/atomic_file_storage.h`, new `src/core/atomic_file_storage.cpp`, `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_storage.cpp`.
 - **Steps:**
   1. Typed struct per section with defaults and ranges; bounded JSON read (size, depth), unknown keys ignored with one warning, invalid values replaced by defaults with a warning; version field and migration hook.
@@ -74,7 +74,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** done (full 1133/1133; actual General/Editor edits, one-minute autosave, New snap, and all close paths verified)
 - **Outcome:** General: autosave interval (1–30 min, default 5), recent-files count, confirm on close with unsaved changes. Editor: default snap for new charts, default scroll direction per mode family (override of the profile default), playhead anchor while following (default 20 %), note-kind palette visibility, lane-key legend on/off, area-band opacity.
 - **Read first:** `include/wormedit/core/autosave_loop.h`, `src/sys/compose_view.cpp` (playhead anchor constant, scroll direction), `include/wormedit/core/preferences.h`.
-- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/sys/options_runtime.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/compose_view.cpp` (read the preference instead of the constant), `src/core/autosave_loop.cpp` (configurable interval), `tests/core/preferences_tests.cpp`, `tests/core/autosave_loop_tests.cpp`; user-approved complete-settings and confirmation extension: `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/compose_view.h`, `src/sys/compose_scroll_geometry.h`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/autosave_loop.h`, `include/wormedit/formats/native_project_storage.h`, `src/formats/native_project_storage.cpp`, `src/sys/application_frame_services.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`; separately approved follow-anchor extension: `src/sys/compose_playhead_cursor.h`; user-approved coherent follow-bound extension: `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`. The close-confirmation setting activates its planned default of true; recent-files count configures the limit without adding a recent-files subsystem.
+- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/sys/preferences/options_runtime.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/compose_view.cpp` (read the preference instead of the constant), `src/core/autosave_loop.cpp` (configurable interval), `tests/core/preferences_tests.cpp`, `tests/core/autosave_loop_tests.cpp`; user-approved complete-settings and confirmation extension: `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/compose_view.h`, `src/sys/compose_scroll_geometry.h`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/autosave_loop.h`, `include/wormedit/formats/native_project_storage.h`, `src/formats/native_project_storage.cpp`, `src/sys/application_frame_services.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`; separately approved follow-anchor extension: `src/sys/compose_playhead_cursor.h`; user-approved coherent follow-bound extension: `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`. The close-confirmation setting activates its planned default of true; recent-files count configures the limit without adding a recent-files subsystem.
 - **Steps:** one field at a time: add to the struct, read where the constant lives today, add the widget, test the default.
 - **Invariants:** defaults reproduce today's behavior exactly.
 - **Reject/failure behavior:** out-of-range values are rejected by validation.
@@ -90,7 +90,7 @@ Apply the stale-plan check (rule 9) first.
   device/buffer, level/count-in persistence, latency and their runtime wiring are missing.
 - **Supporting ownership (2026-10-21):** the current wiring owner is `src/sys/application.cpp`,
   not the retired main loop. Also owned: `src/ui/frontend/options_notifications.h`,
-  `src/sys/options_runtime.h`, new `src/sys/audio_options_runtime.h/.cpp`, new
+  `src/sys/preferences/options_runtime.h`, new `src/sys/audio_options_runtime.h/.cpp`, new
   `src/sys/sdl_audio_output_config.h`, `src/sys/metronome.h`,
   `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`,
   `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`,
@@ -104,7 +104,7 @@ Apply the stale-plan check (rule 9) first.
   share device fallback/opening, add independent accent gain, and keep latency in display queries.
 - **Outcome:** output device choice (from `SDL_GetAudioPlaybackDevices`, "System default" first), buffer size, metronome volume and accent volume, count-in measures, default playback rate and keep-pitch (T-45/T-233/T-234), preview latency compensation in ms, audition volume.
 - **Read first:** `src/sys/sdl_preview_output.cpp`, `src/sys/sdl_audition_output.cpp`, `src/sys/audio_source_registration.cpp` (metronome sources), `include/wormedit/audio/playback_rate.h`.
-- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/sys/options_runtime.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/sdl_audition_output.cpp/.h`, `tests/core/preferences_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/sys/preferences/options_runtime.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/sdl_audition_output.cpp/.h`, `tests/core/preferences_tests.cpp`.
 - **Steps:** 1. Device list refresh button. 2. Changing device reopens outputs only when stopped (otherwise "applies after Stop"). 3. Latency compensation shifts the reported playhead, not the schedule.
 - **Invariants:** Stop remains a hard boundary; defaults match today.
 - **Reject/failure behavior:** a device that fails to open falls back to the system default with a warning.
@@ -127,7 +127,7 @@ Apply the stale-plan check (rule 9) first.
   interface theme/scale/overlay controls and waveform roles are missing. The playhead already
   uses exact callback-published positions without interpolation; reduced motion preserves that
   clock contract rather than introducing smoothing to disable it.
-- **Supporting ownership (2026-10-21):** also owned: `src/sys/options_runtime.cpp`,
+- **Supporting ownership (2026-10-21):** also owned: `src/sys/preferences/options_runtime.cpp`,
   `src/sys/application.cpp`, `src/sys/window.cpp`, `src/ui/frontend/actions.h`, `src/ui/frontend/options_notifications.h`,
   new `src/ui/nuklear/interface_scale.h`, `src/ui/nuklear/font_atlas.h/.cpp`,
   `src/ui/nuklear/audio_panel.cpp`, `assets/themes/ui-dark.json`,
@@ -168,7 +168,7 @@ Apply the stale-plan check (rule 9) first.
   `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
   `src/sys/application.cpp`, `src/sys/options_runtime.h/.cpp`, `src/sys/project_view.h/.cpp`,
   `src/sys/compose_view.h`, `src/sys/chart_import_session.h/.cpp`,
-  `src/sys/external_player_runtime.h`, `src/sys/workspace_view.cpp`,
+  `src/sys/preferences/external_player_runtime.h`, `src/sys/workspace_view.cpp`,
   `src/ui/frontend/options_notifications.h`, `src/ui/frontend/timing_preview.h`,
   `src/ui/frontend/workspace.h`,
   `src/ui/nuklear/frontend.cpp`, `tests/core/preferences_tests.cpp`,
@@ -185,7 +185,7 @@ Apply the stale-plan check (rule 9) first.
   the old dialog workflow with the shared Options transaction.
 - **Outcome:** the Input & shortcuts page embeds the shortcut remapping list (T-59) and default lane-key bindings used for new or imported charts (the T-242 number-row default and named alternatives such as DFJK for 4K); the External players page hosts the existing T-214 panel; the old standalone panels open the corresponding Options page instead.
 - **Read first:** `src/ui/nuklear/external_player_panel.cpp`, `docs/chart-editor-plan/tasks/editing-commands.md` (T-59), `docs/chart-editor-plan/tasks/compose-ux.md` (T-242), `include/wormedit/core/lane_profiles.h`.
-- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/external_player_panel.cpp/.h`, `src/sys/external_player.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/external_player_panel.cpp/.h`, `src/sys/preferences/external_player.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`.
 - **Steps:** 1. Move the external player UI into a page (pure move). 2. Default-binding preference per lane count consumed by T-242's `default_input_profile_for`. 3. Embed T-59's list when it exists; until then show a link-style note.
 - **Invariants:** per-chart input profiles already saved in projects are never overwritten by preferences.
 - **Reject/failure behavior:** conflicting default bindings are rejected with the conflicting keys named.

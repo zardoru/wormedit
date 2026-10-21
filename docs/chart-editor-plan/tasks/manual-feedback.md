@@ -68,7 +68,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `include/wormedit/core/preferences.h`, `include/wormedit/core/lane_keys.h`, `include/wormedit/core/lane_profiles.h`,
   `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/preferences.cpp`,
   `src/core/lane_keys.cpp`, `src/core/document.cpp`, `src/core/lane_migration.cpp`, `src/core/lane_profiles.cpp`,
-  `src/core/command_registry.cpp`, `src/sys/lane_keys_runtime.cpp`, `src/sys/lane_keys_runtime.h`,
+  `src/core/command_registry.cpp`, `src/sys/preferences/lane_keys_runtime.cpp`, `src/sys/preferences/lane_keys_runtime.h`,
   `src/tools/wormedit_manual_reference.cpp`,
   `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/application.cpp`,
   `src/sys/application_commands.h`, `src/sys/application_commands.cpp`, `src/sys/application_command_dispatch.cpp`,

@@ -1,12 +1,12 @@
 #pragma once
-#include "sys/preferences_runtime.h"
+#include "sys/preferences/preferences_runtime.h"
 // Compatibility of existing fixture setup only; no old dispatcher signatures remain in production.
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/application_frame_services.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_input.h"
-#include "sys/external_player_runtime.h"
+#include "sys/preferences/external_player_runtime.h"
 #include "sys/metadata_actions.h"
 #include "sys/project_open.h"
 #include "sys/project_view.h"

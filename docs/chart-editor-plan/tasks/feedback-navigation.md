@@ -20,8 +20,8 @@ User feedback from the Brain scratchpad, authorized 2026-10-11. Worktree `feedba
 
 - **Status:** done (2026-10-11; verified; committed with this batch)
 - **Outcome:** Options Editor offers a persistent wheel inversion setting that reverses vertical field scrolling and playback seeking independently of upscroll/downscroll.
-- **Read first:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/options_window.cpp`.
-- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/sys/compose_input.cpp` (wheel routing only), `src/ui/nuklear/options_window.cpp`, `src/ui/frontend.h` (options fields only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, this card.
+- **Read first:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/options_window.cpp`.
+- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/compose_input.cpp` (wheel routing only), `src/ui/nuklear/options_window.cpp`, `src/ui/frontend.h` (options fields only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, this card.
 - **Steps:** 1. Audit normalized wheel and preference paths. 2. Add preference, draft UI, persistence and vertical wheel routing. 3. Verify both directions and inversion combinations, Options lifecycle, and unchanged zoom behavior.
 - **Invariants:** Default wheel behavior, modifier zoom, horizontal BGM scroll, autoscroll and keyboard navigation remain unchanged.
 - **Reject/failure behavior:** Invalid preference types retain safe defaults; stale Options actions retain current preferences.
@@ -32,8 +32,8 @@ User feedback from the Brain scratchpad, authorized 2026-10-11. Worktree `feedba
 
 - **Status:** done (2026-10-11; verified; committed with this batch)
 - **Outcome:** Appearance offers a live-preview persistent opacity slider for vertical song, channel and stem waveforms, with a mild 75-percent default.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.cpp`, `src/sys/options_runtime.cpp`, `src/sys/main.cpp`, `include/wormedit/core/preferences.h`.
-- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/sys/main.cpp`, `src/ui/frontend.h` (options/setter only), `src/ui/nuklear/frontend.cpp` (setter only), `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.h`, `src/ui/nuklear/theme.cpp` (opacity helper only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/theme_tests.cpp` (appended opacity test only), this card.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/main.cpp`, `include/wormedit/core/preferences.h`.
+- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/main.cpp`, `src/ui/frontend.h` (options/setter only), `src/ui/nuklear/frontend.cpp` (setter only), `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.h`, `src/ui/nuklear/theme.cpp` (opacity helper only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/theme_tests.cpp` (appended opacity test only), this card.
 - **Steps:** 1. Audit PCM, envelope textures, retained gaps and direct fallback drawing. 2. Add one alpha scaler and settings lifecycle with cache invalidation. 3. Verify endpoints, invalid values, preview/revert/defaults and isolated native waveform captures.
 - **Invariants:** Waveform timing, source data, RGB colors, note visibility and overview navigation remain unchanged.
 - **Reject/failure behavior:** Invalid opacity retains defaults; closing/reverting draft restores saved opacity; failed saves use existing diagnostics.

@@ -2645,7 +2645,7 @@ TEST_CASE("Draw shortcut rejects a retained interaction without editable chart g
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "sys/compose_input.h"
 #include "sys/compose_view.h"
-#include "sys/options_runtime.h"
+#include "sys/preferences/options_runtime.h"
 namespace {
 auto click_audition_song() -> wormedit::song_document_t {
     using namespace wormedit;

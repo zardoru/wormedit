@@ -572,10 +572,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/workspace_view.cpp
         src/sys/workspace_frame_view.cpp
         src/sys/transport_player_actions.cpp
-        src/sys/external_player.cpp
-        src/sys/preferences_runtime.cpp
-        src/sys/options_runtime.cpp
-        src/sys/lane_keys_runtime.cpp
+        src/sys/preferences/external_player.cpp
+        src/sys/preferences/preferences_runtime.cpp
+        src/sys/preferences/options_runtime.cpp
+        src/sys/preferences/lane_keys_runtime.cpp
         src/sys/shortcut_rows.cpp
         src/sys/menu_command_view.cpp
         src/sys/notifications/notification_history_runtime.cpp

@@ -423,8 +423,8 @@ catch_discover_tests(wormedit_player_preview_status_tests
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_options_state_tests
         ui/nuklear_options_state_tests.cpp
-        ../src/sys/options_runtime.cpp
-        ../src/sys/preferences_runtime.cpp
+        ../src/sys/preferences/options_runtime.cpp
+        ../src/sys/preferences/preferences_runtime.cpp
         ../src/sys/platform_shortcut_profile.cpp
         ../src/sys/shortcut_rows.cpp
     )
@@ -438,7 +438,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_external_player_tests
         sys/external_player_tests.cpp
-        ../src/sys/external_player.cpp
+        ../src/sys/preferences/external_player.cpp
     )
     target_include_directories(wormedit_external_player_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
@@ -597,7 +597,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/platform_recovery.cpp
         ../src/sys/audio.cpp
         ../src/sys/window.cpp
-        ../src/sys/external_player.cpp
+        ../src/sys/preferences/external_player.cpp
         ../src/sys/resource_job_state.cpp
         ../src/sys/preview_audio_export.cpp
         ../src/sys/project_save_paths.cpp
@@ -648,8 +648,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/dock_shortcut_event_harness_tests.cpp
         ui/snap_grid_event_harness_tests.cpp
         ui/lane_keys_event_harness_tests.cpp
-        ../src/sys/lane_keys_runtime.cpp
-        ../src/sys/preferences_runtime.cpp
+        ../src/sys/preferences/lane_keys_runtime.cpp
+        ../src/sys/preferences/preferences_runtime.cpp
         ../src/sys/platform_shortcut_profile.cpp
         ui/sound_picker_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
@@ -790,7 +790,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_timing_tests
         ../src/sys/bga_dock_runtime.cpp
         ../src/sys/bga_list_view.cpp
-        ../src/sys/external_player.cpp
+        ../src/sys/preferences/external_player.cpp
         ../src/ui/nuklear/components.cpp
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
@@ -870,8 +870,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/compose_beat_fit_tests.cpp
             sys/compose_onset_snap_tests.cpp
             sys/application_commands_tests.cpp
-            ../src/sys/options_runtime.cpp
-            ../src/sys/preferences_runtime.cpp
+            ../src/sys/preferences/options_runtime.cpp
+            ../src/sys/preferences/preferences_runtime.cpp
             ../src/sys/platform_shortcut_profile.cpp
             ../src/sys/shortcut_rows.cpp
             sys/manual_sound_group_command_tests.cpp
@@ -916,9 +916,9 @@ endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
-        ../src/sys/external_player.cpp
+        ../src/sys/preferences/external_player.cpp
         ../src/sys/project_view.cpp
-        ../src/sys/options_runtime.cpp
+        ../src/sys/preferences/options_runtime.cpp
         ../src/sys/shortcut_rows.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
         sys/frame_projection_arena_tests.cpp

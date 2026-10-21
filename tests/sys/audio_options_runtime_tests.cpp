@@ -1,5 +1,5 @@
 #include "sys/audio_options_runtime.h"
-#include "sys/options_runtime.h"
+#include "sys/preferences/options_runtime.h"
 #include "sys/chart_preview_state.h"
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_init.h>

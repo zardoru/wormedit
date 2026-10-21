@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/preferences_runtime.h"
+#include "sys/preferences/preferences_runtime.h"
 #include "ui/frontend.h"
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/keyed_cache.h>

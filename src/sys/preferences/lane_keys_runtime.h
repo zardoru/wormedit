@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/preferences_runtime.h"
+#include "sys/preferences/preferences_runtime.h"
 #include "sys/shortcut_rows.h"
 #include <wormedit/core/lane_keys.h>
 

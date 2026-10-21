@@ -1,4 +1,4 @@
-#include "sys/external_player.h"
+#include "sys/preferences/external_player.h"
 #include "core/text_util.h"
 #include <wormedit/core/catalogs.h>
 

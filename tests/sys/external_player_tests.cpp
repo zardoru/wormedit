@@ -1,4 +1,4 @@
-#include "sys/external_player.h"
+#include "sys/preferences/external_player.h"
 #include <wormedit/formats/bms.h>
 #include <catch2/catch_test_macros.hpp>
 

@@ -2045,7 +2045,7 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     struct audio_runtime_t {
         notification_sink_t& notifications;
-        audio_options_runtime_t options;
+        audio_options_runtime_t options{};
         metronome_t metronome{};
         project_audio_sources_t project_sources{.metronome = &metronome};
         audio::decoded_block_cache_t audition_cache{};

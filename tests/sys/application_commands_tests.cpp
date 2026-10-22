@@ -10,7 +10,7 @@
 #include "sys/commands/application_commands.h"
 #include "sys/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
-#include "sys/compose_minimap_navigation.h"
+#include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/compose/compose_semantic_layer_commands.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/compose/actions/compose_note_to_bgm.h"
@@ -2643,7 +2643,7 @@ TEST_CASE("Draw shortcut rejects a retained interaction without editable chart g
 
 // Placement audition needs the compose input path, which only the frame-timing executable links.
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/compose_view.h"
 #include "sys/preferences/options_runtime.h"
 namespace {

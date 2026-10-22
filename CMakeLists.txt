@@ -482,13 +482,13 @@ if(WORMEDIT_BUILD_APP)
         src/sys/audio/audio.cpp
         src/sys/application_defaults.cpp
         src/sys/commands/application_commands.cpp
-        src/sys/compose_minimap_navigation.cpp
+        src/sys/compose/input/compose_minimap_navigation.cpp
         src/sys/bookmarks/bookmark_commands.cpp
-        src/sys/compose_navigation.cpp
+        src/sys/compose/input/compose_navigation.cpp
         src/sys/bookmarks/bookmark_chooser_view.cpp
         src/sys/bookmarks/bookmark_navigation.cpp
         src/sys/bookmarks/bookmark_rename_commands.cpp
-        src/sys/compose_playhead_skip.cpp
+        src/sys/compose/input/compose_playhead_skip.cpp
         src/sys/compose/compose_bgm_bar.cpp
         src/sys/resources/sound_list_view.cpp
         src/sys/resources/sound_picker_view.cpp
@@ -514,11 +514,11 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_draw_source_view.cpp
         src/sys/compose_hover_timing.cpp
         src/sys/project/compare_view.cpp
-        src/sys/compose_input.cpp
-        src/sys/compose_waveform_fit_input.cpp
-        src/sys/compose_timing_input.cpp
-        src/sys/compose_resource_input.cpp
-        src/sys/compose_navigation_input.cpp
+        src/sys/compose/input/compose_input.cpp
+        src/sys/compose/input/compose_waveform_fit_input.cpp
+        src/sys/compose/input/compose_timing_input.cpp
+        src/sys/compose/input/compose_resource_input.cpp
+        src/sys/compose/input/compose_navigation_input.cpp
         src/sys/compose/actions/compose_note_to_bgm.cpp
         src/sys/compose/actions/compose_area_actions.cpp
         src/sys/compose/actions/compose_action_outcome.cpp

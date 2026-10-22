@@ -1,7 +1,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing.h>
 #include "core/timing_arithmetic.h"
-#include "sys/compose_input_internal.h"
+#include "sys/compose/input/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 auto select_compose_timing_marker(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context,

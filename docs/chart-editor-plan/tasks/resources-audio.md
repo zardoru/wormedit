@@ -57,12 +57,12 @@ stale-plan check (rule 9) first.
   source-only sound result selects its source without inventing a chart position.
 - **Read first:** `src/sys/resources/sound_usage_view.cpp`; `src/sys/resources/sound_usage_actions.cpp`;
   `src/sys/resources/bga_list_view.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`;
-  `src/sys/compose_input.cpp` (BGA event selection/navigation).
+  `src/sys/compose/input/compose_input.cpp` (BGA event selection/navigation).
 - **Files owned:** new `src/sys/bga_usage_view.h`, `src/sys/bga_usage_view.cpp`, new
   `src/sys/bga_usage_actions.h`, `src/sys/bga_usage_actions.cpp`,
   `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_bga_panel.cpp`,
   `src/ui/nuklear/compose_state.h`, `src/sys/application_frame_view.cpp`,
-  `src/sys/compose_input.cpp`, new `tests/sys/bga_usage_view_tests.cpp`, new
+  `src/sys/compose/input/compose_input.cpp`, new `tests/sys/bga_usage_view_tests.cpp`, new
   `tests/sys/bga_usage_actions_tests.cpp`, new `tests/ui/bga_usage_event_harness_tests.cpp`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, this card and `memory/chart-editor-status/resume.md`.
 - **Steps:**
@@ -186,15 +186,15 @@ stale-plan check (rule 9) first.
 ## T-268 Add a "play sound on click" toggle
 
 - **Status:** done (armed BGM/BGA placement audition is a follow-up, see below)
-- **Done so far:** `audio.toggle_click_audition` registered in `src/core/command_registry.cpp` (no shortcut) with its checked state refreshed in `src/sys/main.cpp`; `dispatch_registered_application_command` in `src/sys/main.cpp` routes it through `toggle_audition_on_click` (`src/sys/preferences/options_runtime.cpp`, same `apply_program_preferences` save path as Options); placements that create a note (click, virtual/measure click, lane-key release, alt pointer hold, sample placement) audition it when the preference is on (`src/sys/compose_input.cpp`, `audition_created_note`); Shift lane assignment unchanged; test "Placement auditions the placed note only while click audition is on" in `tests/sys/application_commands_tests.cpp` (frame-timing exe, passes).
+- **Done so far:** `audio.toggle_click_audition` registered in `src/core/command_registry.cpp` (no shortcut) with its checked state refreshed in `src/sys/main.cpp`; `dispatch_registered_application_command` in `src/sys/main.cpp` routes it through `toggle_audition_on_click` (`src/sys/preferences/options_runtime.cpp`, same `apply_program_preferences` save path as Options); placements that create a note (click, virtual/measure click, lane-key release, alt pointer hold, sample placement) audition it when the preference is on (`src/sys/compose/input/compose_input.cpp`, `audition_created_note`); Shift lane assignment unchanged; test "Placement auditions the placed note only while click audition is on" in `tests/sys/application_commands_tests.cpp` (frame-timing exe, passes).
 - **Follow-up (not blocking):** armed BGM/BGA resource placement does not audition, because those results carry no created object id.
 - **Remaining:** none.
   - Note: `dispatch_registered_application_command` matches the command by id before parsing; `src/sys/commands/application_commands.cpp` has no kind for it (not owned).
-- **Implementation audit (2026-10-07):** the `audition_on_click` editor preference already exists with an Options toggle (`src/sys/preferences/options_runtime.cpp:128`) and gates click audition in `src/sys/compose_input.cpp:2316`. What remains is the toolbar toggle and the `audio.toggle_click_audition` command, driving that same preference. The user calls the toolbar toggle necessary for BMS work.
+- **Implementation audit (2026-10-07):** the `audition_on_click` editor preference already exists with an Options toggle (`src/sys/preferences/options_runtime.cpp:128`) and gates click audition in `src/sys/compose/input/compose_input.cpp:2316`. What remains is the toolbar toggle and the `audio.toggle_click_audition` command, driving that same preference. The user calls the toolbar toggle necessary for BMS work.
 - **Outcome:** a toolbar toggle (speaker icon, command `audio.toggle_click_audition`, default on, as in iBMSC/BMSE) controls whether clicking, selecting, or placing a note or BGM event plays its sound; when off, clicks only select or place. Lane-key Shift assignment keeps its explicit audition.
-- **Current behavior (2026-09-30):** clicking a BGM event always passes `request_audition = true` (`select_compose_bgm_event` in `src/sys/compose_input.cpp`), note clicks request an audition too, and there is no way to turn it off.
-- **Read first:** `src/sys/compose_input.cpp` (`select_compose_bgm_event`, the batch loop that stores `result.audition` into `scene_cache.audition_request`), `src/core/interaction.cpp` (where `.audition` is set), `src/sys/compose/actions/compose_audition_requests.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/core/command_registry.cpp`.
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose/actions/compose_audition_requests.cpp`, `src/sys/main.cpp` (state and dispatch only), `src/core/command_registry.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Current behavior (2026-09-30):** clicking a BGM event always passes `request_audition = true` (`select_compose_bgm_event` in `src/sys/compose/input/compose_input.cpp`), note clicks request an audition too, and there is no way to turn it off.
+- **Read first:** `src/sys/compose/input/compose_input.cpp` (`select_compose_bgm_event`, the batch loop that stores `result.audition` into `scene_cache.audition_request`), `src/core/interaction.cpp` (where `.audition` is set), `src/sys/compose/actions/compose_audition_requests.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/core/command_registry.cpp`.
+- **Files owned:** `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/actions/compose_audition_requests.cpp`, `src/sys/main.cpp` (state and dispatch only), `src/core/command_registry.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/sys/application_commands_tests.cpp`.
 - **Steps:**
   1. Session flag in application state, gated where `audition_request` is stored (one place), so the core keeps proposing auditions and the application decides.
   2. Also audition after a successful placement (click, lane key, armed-resource placement) when the toggle is on, matching iBMSC.

@@ -5,7 +5,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/application_frame_services.h"
 #include "sys/compose/actions/compose_actions.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/preferences/external_player_runtime.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/project/project_open.h"

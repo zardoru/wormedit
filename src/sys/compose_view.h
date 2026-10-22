@@ -12,7 +12,7 @@
 
 #include "sys/resources/sound_list_view.h"
 #include "sys/compose_resource_presenter.h"
-#include "sys/compose_navigation_travel.h"
+#include "sys/compose/input/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
 #include "sys/compose/compose_bgm_bar.h"
 #include "sys/compose/compose_dead_spans.h"

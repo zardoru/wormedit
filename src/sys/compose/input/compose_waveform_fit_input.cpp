@@ -1,5 +1,5 @@
 #include <wormedit/core/rational.h>
-#include "sys/compose_input_internal.h"
+#include "sys/compose/input/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto fit_visible_source_frame(const wormedit::timing_index_t& timing,

@@ -32,8 +32,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (2026-10-09; waveform gap verified by pixel sampling of `t314-gap-after.png`: the band shows background, not waveform)
 - **Remaining:** none.
 - **Outcome:** In Compose a Stop or Delay appears as a hatched block (fixed pixel height, label with duration) in the field and waveform; notes cannot be placed, pasted or dragged into it, and the waveform shows the span as eaten time.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
-- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
+- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
 - **Steps:** 0. Add the `frontend.h` dead-span view struct and pixel mapping from the T-313 projection. 1. Draw the block and a waveform gap using the T-313 spans. 2. Reject note insert, paint, paste and move targets inside a span. Edge validity follows the format's discontinuity-order profile in `docs/timing-preview-scheduling.md` (canonical: BPM, delay, activation, then stop; BMSON 1.0: note/BGA, BPM, then stop): a note at a Delay row occurs after the delay, a note at a Stop row before the stop, and a warp's half-open `[begin, end)` rows are blocked. 3. Test placement rejection and unchanged document. 4. Isolated Xvfb check with `scripts/smoke-compose-virtual-x.sh`.
 - **Invariants:** Existing notes keep their rows; validity at a Stop/Delay edge comes only from the discontinuity-order profile, never a hard-coded side. Blocking is a placement rule, not a data change.
 - **Reject/failure behavior:** A rejected placement leaves document, selection and undo stack unchanged and reports a notification.
@@ -77,8 +77,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (Esc cancel of an in-flight drag not implemented; releasing outside the lane still commits)
 - **Outcome:** Dragging the head or tail of a Kiai area, or creating one with the Kiai gesture, issues one undoable command that rewrites the on/off events and merges overlapped neighbors.
-- **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose/compose_kiai_spans.h` (T-316), `src/sys/compose_input.cpp`.
-- **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_input.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`, user-approved verification scope extension (2026-10-02): `tests/sys/frame_timing_tests.cpp` (real press-anchor/CREATE gesture payloads and explicit 1/8 snap).
+- **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose/compose_kiai_spans.h` (T-316), `src/sys/compose/input/compose_input.cpp`.
+- **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`, user-approved verification scope extension (2026-10-02): `tests/sys/frame_timing_tests.cpp` (real press-anchor/CREATE gesture payloads and explicit 1/8 snap).
 - **Steps:** 0. Add the `frontend.h` view struct and draw the T-316 rectangle with head and tail handles on the canvas. 1. Add a revision-checked core command `set_kiai_span` (insert, resize, delete, merge). 2. Wire it through the standard action pattern; the preview shows the dragged area and overlaps merge only on release. 3. Test merge, split-by-shrink, undo, and retained effect bits.
 - **Invariants:** `retained_effect_bits` and provenance of surviving events are preserved.
 - **Reject/failure behavior:** A stale revision or inverted span rejects atomically.
@@ -96,7 +96,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (impulse insertion already implemented: double-click on the SV lane stages an event with an inline value field)
 - **Outcome:** The Compose SV lane inserts impulse events and draws a line graph of the relative value that keeps the discrete step shape (horizontal hold, vertical jump) for non-recipes, with the 1.0x line marked.
 - **Read first:** `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/timing_lane_controller.h`.
-- **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
+- **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Grep how the Timing screen inserts SV/scroll events and reuse its core commands. 2. Project (row, value) breakpoints with a bounded count. 3. Draw latched steps with vertical jumps inside the area on the SV lane, normalized to the visible value range (1.0x marked when in range). 4. Test insertion and projection.
 - **Invariants:** Existing SV semantics and exports stay identical.
 - **Reject/failure behavior:** Invalid values reject without mutation.

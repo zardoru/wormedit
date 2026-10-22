@@ -1,4 +1,4 @@
-#include "sys/compose_navigation.h"
+#include "sys/compose/input/compose_navigation.h"
 #include "sys/bookmarks/bookmark_commands.h"
 #include <wormedit/core/snap.h>
 

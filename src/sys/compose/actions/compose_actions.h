@@ -3,7 +3,7 @@
 #include "sys/application_edit_inputs.h"
 
 #include "sys/compose/actions/compose_action_outcome.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/resources/resource_job_state.h"

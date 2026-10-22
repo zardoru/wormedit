@@ -1,4 +1,4 @@
-#include "sys/compose_input_internal.h"
+#include "sys/compose/input/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
 auto resource_pointer_spec(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context)
     -> std::variant<resource_pointer_spec_t, std::string> {

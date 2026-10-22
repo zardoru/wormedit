@@ -9,7 +9,7 @@
 #include "sys/compose/actions/compose_bga_actions.h"
 #include "sys/compose/compose_label_search.h"
 #include "sys/compose/actions/compose_measure_commands.h"
-#include "sys/compose_navigation.h"
+#include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/actions/compose_quantize_request.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose/compose_scroll_geometry.h"

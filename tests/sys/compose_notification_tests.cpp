@@ -1,7 +1,7 @@
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

@@ -1,6 +1,6 @@
 #include <wormedit/core/rational.h>
-#include "sys/compose_navigation.h"
-#include "sys/compose_minimap_navigation.h"
+#include "sys/compose/input/compose_navigation.h"
+#include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/snap.h>

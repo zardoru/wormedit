@@ -2,7 +2,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/audio/stem_waveform_window.h"
 
 #include <algorithm>

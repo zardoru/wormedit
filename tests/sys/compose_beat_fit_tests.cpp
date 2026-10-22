@@ -1,7 +1,7 @@
 #include "compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_defaults.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 
 #include <catch2/catch_test_macros.hpp>
 

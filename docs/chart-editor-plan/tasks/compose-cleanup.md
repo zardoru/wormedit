@@ -12,7 +12,7 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 - **Status:** done (2026-10-05; new unit tests and the full headless suite pass)
 - **Result:** a repeat press within 300 ms (`playing_seek_repeat_window`) starts from the recorded seek target (`last_playing_bookmark_seek`). The record is cleared when navigating while stopped, a failed seek, and is ignored for another chart or after the window. A manual seek is covered by the window only. Test: `repeated previous playing bookmark within 300 ms ...`. Review fix (2026-10-05): the record is also cleared by chooser jumps, wheel skips, minimap and seek-bar seeks, and stop, play and restart (`application_command_state_t::invalidate_playing_seek_records`), with mixed-navigation tests.
 - **Outcome:** while playing, pressing Previous Bookmark twice within 300 ms of reaching bookmark B moves to the bookmark before B, not to B again. An event-harness or system test shows this with three bookmarks.
-- **Read first:** `src/sys/compose_bookmark_commands.cpp` (`navigate_beat_bookmark`, `playing_bookmark_origin`), `src/sys/compose_playhead_skip.h`, `src/sys/commands/application_command_dispatch.cpp` (around `navigation_previous_bookmark`).
+- **Read first:** `src/sys/compose_bookmark_commands.cpp` (`navigate_beat_bookmark`, `playing_bookmark_origin`), `src/sys/compose/input/compose_playhead_skip.h`, `src/sys/commands/application_command_dispatch.cpp` (around `navigation_previous_bookmark`).
 - **Files owned:** `src/sys/compose_bookmark_commands.cpp`, `src/sys/compose_bookmark_commands.h`, `src/sys/commands/application_commands.h` (state field only), `tests/sys/` bookmark navigation test beside its sibling, this card, `memory/chart-editor-status/resume.md`.
 - **Steps:**
   1. Record the last seek target row and a steady-clock time in `application_command_state_t` when a playing bookmark seek succeeds.
@@ -29,15 +29,15 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 - **Status:** done (2026-10-05; new unit tests and the full headless suite pass)
 - **Result:** confirmed cause: the live playhead had not advanced to the first notch's target, so each notch recomputed the same row. `skip_playing_playhead` now keeps `last_playhead_skip`; a same-direction repeat within the same 300 ms window starts from it, and a reversal uses the live playhead. Test: `repeated playing skips within 300 ms ...`.
 - **Outcome:** while playing, three fast notches of a notched wheel move the playhead three snap rows, not one row three times. A test feeds three coarse wheel events within 300 ms.
-- **Read first:** `src/sys/compose_playhead_skip.h`, `src/sys/compose_playhead_skip.cpp`, `src/sys/compose_input.cpp` (wheel handling near `compose_wheel_scroll_delta`).
-- **Files owned:** `src/sys/compose_playhead_skip.cpp`, `src/sys/compose_playhead_skip.h`, `src/sys/compose_input.cpp` (wheel-while-playing branch only), the matching test under `tests/sys/`, this card.
+- **Read first:** `src/sys/compose/input/compose_playhead_skip.h`, `src/sys/compose/input/compose_playhead_skip.cpp`, `src/sys/compose/input/compose_input.cpp` (wheel handling near `compose_wheel_scroll_delta`).
+- **Files owned:** `src/sys/compose/input/compose_playhead_skip.cpp`, `src/sys/compose/input/compose_playhead_skip.h`, `src/sys/compose/input/compose_input.cpp` (wheel-while-playing branch only), the matching test under `tests/sys/`, this card.
 - **Steps:**
   1. Confirm the cause: the second notch reads the playhead from before the first seek takes effect, or from just after it, so `playhead_skip_target_row` gives the same row again. Record which in the card.
   2. Keep the last skip target and its time. Within 300 ms (the same constant as T-385), a further skip in the same direction starts from that target.
   3. Add a test with an injected clock for the forward and backward directions.
 - **Invariants:** smooth-pixel (touchpad) wheel scrolling is unchanged. A direction reversal starts from the live playhead.
 - **Reject/failure behavior:** a failed seek clears the record and keeps playing, as now.
-- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'playhead_skip|wheel'`; `clang-tidy -p build src/sys/compose_playhead_skip.cpp`.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'playhead_skip|wheel'`; `clang-tidy -p build src/sys/compose/input/compose_playhead_skip.cpp`.
 - **Out of scope:** wheel behavior while stopped.
 
 ## T-387 Outline the lane header numbers in black

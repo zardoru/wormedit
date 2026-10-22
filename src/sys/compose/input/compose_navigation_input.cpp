@@ -1,4 +1,4 @@
-#include "sys/compose_navigation_input.h"
+#include "sys/compose/input/compose_navigation_input.h"
 namespace wormedit::sys {
 using namespace compose_navigation_input_detail;
 auto compose_result_status(const wormedit::editor_interaction_result_t& result,

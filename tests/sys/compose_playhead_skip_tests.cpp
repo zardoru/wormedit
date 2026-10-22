@@ -1,4 +1,4 @@
-#include "sys/compose_playhead_skip.h"
+#include "sys/compose/input/compose_playhead_skip.h"
 #include "sys/audio/preview_cursor_frame.h"
 
 #include <wormedit/audio/decoder.h>

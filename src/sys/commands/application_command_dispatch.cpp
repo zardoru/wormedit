@@ -10,7 +10,7 @@
 #include "sys/compose/compose_semantic_layer_commands.h"
 
 #include "sys/bookmarks/bookmark_commands.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "sys/compose/compose_sound_selection.h"
 #include "sys/compose_view.h"

@@ -1,5 +1,5 @@
-#include "sys/compose_navigation.h"
-#include "sys/compose_playhead_skip.h"
+#include "sys/compose/input/compose_navigation.h"
+#include "sys/compose/input/compose_playhead_skip.h"
 
 #include <wormedit/core/snap.h>
 

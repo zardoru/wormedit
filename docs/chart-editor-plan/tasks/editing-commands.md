@@ -82,7 +82,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Stale-plan audit (2026-10-03):** `audio.paint_hitsound` remains disabled; atomic `apply_resource_assignment` is implemented, but no hitsound paint capture exists. T-43 moved semantic-layer pointer capture into `src/ui/nuklear/compose_object_input.cpp`; its frontend state, application mode/projection, command dispatch, and toolbar indication are also outside the current owned list. No paint implementation was started.
 - **Outcome:** `audio.paint_hitsound` arms a paint mode: dragging across notes assigns the armed catalog resource to each note touched, committed as one undo step on release.
 - **Read first:** `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph), `include/wormedit/core/resource_assignment.h` (`apply_resource_assignment`), `src/ui/nuklear/compose_input_panel.cpp` (semantic-layer painting capture), `src/sys/main.cpp` (`audio.paint_hitsound`).
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_object_input.cpp`; `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_state.h/.cpp`, application mode/dispatch/projection owners, `src/ui/nuklear/compose_toolbar.cpp`.
+- **Files owned:** `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_object_input.cpp`; `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_state.h/.cpp`, application mode/dispatch/projection owners, `src/ui/nuklear/compose_toolbar.cpp`.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Copy the structure of semantic-layer paint capture: collect touched note IDs during the drag (bounded, deduplicated).
@@ -101,8 +101,8 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Result (2026-10-09):** a mixed selection drags from either selected note or BGM tile using one snapped row delta, fixed BGM source lanes and one Undo. Selected BGM rows vacate together; head/tail overflow, note collisions, BGM collisions and retained BMSON channel conflicts reject atomically. Linked markers use the existing stem command; rejected releases clear previews and retain selection. Y-lock keeps both parts at their original rows, including BGM pointer motion into virtual/outside rows. BGM ghosts retain tails and collision colors, and ordinary movement no longer shows a conversion count.
 - **Validation:** normal application build passes; full CTest: `100% tests passed out of 2968`, `Total Test time (real) = 42.54 sec` (`/tmp/wormedit-mixed-reviewed-suite.log`). Full event harness: `100% tests passed out of 273`, `Total Test time (real) = 1.93 sec` (`/tmp/wormedit-mixed-reviewed-events.log`). Configured clang-tidy finds no new complexity violation in touched production/tests; pre-existing warnings remain. Software-rendered production-frame captures for preview, collision, committed move and Y-lock pass in `/home/zardoru/devel/wormedit-scratch-builds/oct9-mixed-editing/captures/`. Isolated native smoke was attempted and cannot create Xvfb listening sockets (`/tmp/wormedit-mixed-native-smoke.log`); native display/cadence remains unmeasured.
 - **Outcome:** dragging a selection that contains playable notes and BGM events moves both by the same snapped row delta in one command.
-- **Read first:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp` (note-move and BGM-move proposals), `src/sys/compose_input.cpp`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `tests/core/interaction_tests.cpp`. User-approved supporting scope (2026-10-03): existing object-input/action route and pending mixed-preview projection owners. Concrete supporting owners (2026-10-09): `src/ui/nuklear/compose_object_input.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `src/core/editor_scene.cpp`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` and existing scene/projection tests if required, this card and `memory/chart-editor-status/resume.md`.
+- **Read first:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp` (note-move and BGM-move proposals), `src/sys/compose/input/compose_input.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose/input/compose_input.cpp`, `tests/core/interaction_tests.cpp`. User-approved supporting scope (2026-10-03): existing object-input/action route and pending mixed-preview projection owners. Concrete supporting owners (2026-10-09): `src/ui/nuklear/compose_object_input.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `src/core/editor_scene.cpp`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` and existing scene/projection tests if required, this card and `memory/chart-editor-status/resume.md`.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Build one proposal that validates the note part and the BGM part with their existing validators, then publishes both in one command.
@@ -150,8 +150,8 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 - **Status:** ready (T-57 is done; dependency cleared 2026-10-19)
 - **Outcome:** on BMSON 48K charts, a stage selector limits lane-key input to one 24-key bank and highlights it.
-- **Read first:** `include/wormedit/core/lane_profiles.h` (`make_bmson_generic_48k_profile`), `src/sys/compose_input.cpp`, `docs/chart-editor-plan/editing/interactions.md`.
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/core/interaction_tests.cpp`.
+- **Read first:** `include/wormedit/core/lane_profiles.h` (`make_bmson_generic_48k_profile`), `src/sys/compose/input/compose_input.cpp`, `docs/chart-editor-plan/editing/interactions.md`.
+- **Files owned:** `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/core/interaction_tests.cpp`.
 - **Steps:**
   1. Add a focused-stage index to Compose state; lane-key events map through it.
   2. Toolbar buttons switch stages; the legend (T-57) follows.
@@ -220,8 +220,8 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 - **Status:** done (exact owned ghost geometry, keyboard/click atomic commit, red collisions and Escape; full 1180/1180 plus isolated saved-object/undo gates passed)
 - **Outcome:** `edit.paste` shows the snippet as ghosts at the cursor; click or Enter commits, Escape cancels; collisions show red ghosts and block commit.
-- **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/interaction.cpp` (move-proposal ghosts), `src/sys/compose_input.cpp`.
-- **Files owned:** `src/core/chart_clipboard.cpp`, `include/wormedit/core/chart_clipboard.h`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/chart_clipboard_tests.cpp`.
+- **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/interaction.cpp` (move-proposal ghosts), `src/sys/compose/input/compose_input.cpp`.
+- **Files owned:** `src/core/chart_clipboard.cpp`, `include/wormedit/core/chart_clipboard.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/chart_clipboard_tests.cpp`.
 - **Steps:**
   1. Core proposal: place snippet at a row, remap resolution exactly, validate lanes/collisions.
   2. Frontend: ghost preview following the snapped cursor; commit as one command.

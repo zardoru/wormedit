@@ -41,11 +41,11 @@ add_executable(wormedit_core_tests
     ../src/sys/project/output_group_export.cpp
     ../src/sys/audio/tap_timing_runtime.cpp
     ../src/sys/audio/transport_player_actions.cpp
-    ../src/sys/compose_minimap_navigation.cpp
+    ../src/sys/compose/input/compose_minimap_navigation.cpp
     ../src/sys/bookmarks/bookmark_commands.cpp
-    ../src/sys/compose_navigation.cpp
+    ../src/sys/compose/input/compose_navigation.cpp
     ../src/sys/bookmarks/bookmark_rename_commands.cpp
-    ../src/sys/compose_playhead_skip.cpp
+    ../src/sys/compose/input/compose_playhead_skip.cpp
     ../src/sys/compose/compose_bgm_bar.cpp
     ../src/sys/resources/sound_list_view.cpp
     ../src/sys/resources/sound_picker_view.cpp
@@ -701,17 +701,17 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_audition_requests.cpp
         ../src/sys/compose/compose_bgm_bar.cpp
         ../src/sys/bookmarks/bookmark_commands.cpp
-        ../src/sys/compose_navigation.cpp
+        ../src/sys/compose/input/compose_navigation.cpp
         ../src/sys/compose/compose_dead_spans.cpp
-        ../src/sys/compose_input.cpp
-        ../src/sys/compose_waveform_fit_input.cpp
-        ../src/sys/compose_timing_input.cpp
-        ../src/sys/compose_resource_input.cpp
-        ../src/sys/compose_navigation_input.cpp
+        ../src/sys/compose/input/compose_input.cpp
+        ../src/sys/compose/input/compose_waveform_fit_input.cpp
+        ../src/sys/compose/input/compose_timing_input.cpp
+        ../src/sys/compose/input/compose_resource_input.cpp
+        ../src/sys/compose/input/compose_navigation_input.cpp
         ../src/sys/compose/compose_kiai_spans.cpp
-        ../src/sys/compose_minimap_navigation.cpp
+        ../src/sys/compose/input/compose_minimap_navigation.cpp
         ../src/sys/compose/actions/compose_note_to_bgm.cpp
-        ../src/sys/compose_playhead_skip.cpp
+        ../src/sys/compose/input/compose_playhead_skip.cpp
         ../src/sys/compose/actions/compose_quantize_preview.cpp
         ../src/sys/compose_recipe_areas.cpp
         ../src/sys/compose_resource_presenter.cpp
@@ -889,16 +889,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/audio/metronome.cpp
             sys/audio_notification_tests.cpp
             ../src/sys/audio/bmson_waveform_view.cpp
-            ../src/sys/compose_input.cpp
-            ../src/sys/compose_waveform_fit_input.cpp
-            ../src/sys/compose_timing_input.cpp
-            ../src/sys/compose_resource_input.cpp
-            ../src/sys/compose_navigation_input.cpp
+            ../src/sys/compose/input/compose_input.cpp
+            ../src/sys/compose/input/compose_waveform_fit_input.cpp
+            ../src/sys/compose/input/compose_timing_input.cpp
+            ../src/sys/compose/input/compose_resource_input.cpp
+            ../src/sys/compose/input/compose_navigation_input.cpp
             ../src/sys/compose/actions/compose_note_to_bgm.cpp
-            ../src/sys/compose_minimap_navigation.cpp
+            ../src/sys/compose/input/compose_minimap_navigation.cpp
             ../src/sys/bookmarks/bookmark_commands.cpp
-            ../src/sys/compose_navigation.cpp
-            ../src/sys/compose_playhead_skip.cpp
+            ../src/sys/compose/input/compose_navigation.cpp
+            ../src/sys/compose/input/compose_playhead_skip.cpp
             ../src/sys/compose/compose_bgm_bar.cpp)
         target_sources(wormedit_frame_timing_tests PRIVATE
             ../src/sys/audio/chart_preview_state.cpp

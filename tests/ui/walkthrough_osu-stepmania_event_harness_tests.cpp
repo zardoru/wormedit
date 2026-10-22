@@ -2,7 +2,7 @@
 #include "nuklear_event_harness.h"
 #include "sys/application_defaults.h"
 #include "sys/commands/application_command_dispatch.h"
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 #include "sys/compose_view.h"
 #include "sys/project/output_group_export.h"
 #include "sys/project/project_view.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_input.h"
+#include "sys/compose/input/compose_input.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/audio/project_audio_sources.h"

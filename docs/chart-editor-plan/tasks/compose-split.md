@@ -67,7 +67,7 @@ Shared rules for every card in this file:
 
 - **Status:** done (2026-09-30; input and gesture helpers moved with identical bodies; user authorized moving the snap-step constant)
 - **Outcome:** `append_compose_input`, key/wheel/pointer processing, beat-fit drag, and overview input live in `compose_input_panel.cpp`; `compose_panel.cpp` keeps only `worm_ui_nuklear_*` entry points and view validation.
-- **Read first:** `compose_panel.cpp`, `compose_panel_internal.h`, `src/sys/compose_input.h` (do not edit; only avoid a name clash).
+- **Read first:** `compose_panel.cpp`, `compose_panel_internal.h`, `src/sys/compose/input/compose_input.h` (do not edit; only avoid a name clash).
 - **Files owned:** `compose_panel.cpp`, new `compose_input_panel.cpp`, new `compose_input_panel.h`, `compose_panel_internal.h`, `CMakeLists.txt`.
 - **Steps:**
   1. Move the key-processing group (approx. lines 2681–2890), pointer-focus and viewport-cursor group (approx. 3077–3210), beat-fit group (3214–3310), and overview input group (3402–3520).

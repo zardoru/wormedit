@@ -226,6 +226,7 @@ struct timing_recipe_form_t {
    curve cannot be edited yet. status_text carries the last preview or apply diagnostic. */
 namespace wormedit::ui {
 struct compose_recipe_form_view_t {
+    std::vector<std::string_view> postprocess_labels;
     bool visible{};
     bool enabled{};
     wormedit::recipe_id_t recipe_id{};

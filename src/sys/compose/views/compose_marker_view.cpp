@@ -631,10 +631,10 @@ void populate_compose_recipe_areas(
         if (previewing) {
             // The unapplied candidate replaces the stored values in this area's graph.
             previewed = stored_area;
-            const auto sampled = wormedit::sv_recipe_samples_t::from(chart, report->candidate);
-            previewed.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
+            const auto sampled = wormedit::sample_sv_recipe(chart, report->candidate);
+            previewed.evaluable = sampled.diagnostics.empty() && !sampled.points.empty();
             previewed.points.clear();
-            for (const auto& point : sampled.value.points)
+            for (const auto& point : sampled.points)
                 previewed.points.push_back({point.absolute_row, point.value});
             shown = &previewed;
         }
@@ -736,7 +736,14 @@ void populate_compose_recipe_form(frontend_workspace_view_t&,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
                                   wormedit::ui::compose_view_t& view) {
-    view.recipe_form = {};
+    view.recipe_form.visible = false;
+    view.recipe_form.enabled = false;
+    view.recipe_form.recipe_id = {};
+    view.recipe_form.name = {};
+    view.recipe_form.expression_source = {};
+    view.recipe_form.status_text = {};
+    view.recipe_form.form = {};
+    view.recipe_form.postprocess_labels.clear();
     const auto recipe = std::ranges::find(chart.sv_recipes,
         wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected}, &wormedit::sv_recipe_t::id);
     if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end()) return;
@@ -745,6 +752,8 @@ void populate_compose_recipe_form(frontend_workspace_view_t&,
     view.recipe_form.enabled = recipe->enabled;
     view.recipe_form.name = recipe->name;
     view.recipe_form.expression_source = recipe->expression_source;
+    for (const auto& stage : recipe->postprocess)
+        view.recipe_form.postprocess_labels.push_back(stage.label());
     view.recipe_form.status_text = application_state.project.timing_recipe.recipe_preview &&
         !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
         ? std::string_view{application_state.project.timing_recipe.recipe_preview->diagnostics.front().message}

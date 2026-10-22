@@ -334,3 +334,13 @@ TEST_CASE("An empty recipe editor cannot fabricate an applicable proposal",
     CHECK(outcome.report() == nullptr);
     CHECK(outcome.captured_stamp() == chart_stamp_t{});
 }
+
+TEST_CASE("ordinary recipe form edits preserve the stored postprocess order", "[unit][sys][recipe-form][postprocess]") {
+    auto recipe = sample_recipe();
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::normalize}, {.value = {2, 1}}};
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    set(form.value_from, "7", "4");
+    const auto candidate = recipe_from_form(form, recipe);
+    REQUIRE(candidate);
+    CHECK(candidate->postprocess == recipe.postprocess);
+}

@@ -381,10 +381,11 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_parameters_t, value_from, value_to,
                                    bump_length, bump_x, bump_y)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_sampling_t, mode, fixed_point_count, fixed_step_rows,
                                    tolerance, max_points)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_postprocess_t, kind, mode, solve, value)
 // expression_source is schema 2; schema 1 documents gain an empty one in migrate_v1_to_v2.
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_t, id, name, range, output, curve, parameters,
                                    sampling, expression_source, transition_duration,
-                                   transition_is_seconds, enabled)
+                                   transition_is_seconds, enabled, postprocess)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
                                    provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_frame, locked)

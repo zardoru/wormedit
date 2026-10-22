@@ -381,6 +381,16 @@ struct sv_recipe_sampling_t {
     auto operator==(const sv_recipe_sampling_t&) const -> bool = default;
 };
 
+struct sv_recipe_postprocess_t {
+    sv_recipe_postprocess_kind_t kind{sv_recipe_postprocess_kind_t::multiply};
+    sv_recipe_normalization_t mode{sv_recipe_normalization_t::preserve_displacement};
+    sv_recipe_bump_solve_t solve{sv_recipe_bump_solve_t::y};
+    // Multiply factor, normalization target, or bump target average.
+    signed_rational_t value{1, 1};
+    [[nodiscard]] auto label() const -> std::string_view;
+    auto operator==(const sv_recipe_postprocess_t&) const -> bool = default;
+};
+
 struct sv_recipe_t {
     recipe_id_t id;
     std::string name;
@@ -398,6 +408,7 @@ struct sv_recipe_t {
     std::optional<rational_t> transition_duration;
     std::optional<bool> transition_is_seconds;
     bool enabled{true};
+    std::vector<sv_recipe_postprocess_t> postprocess;
 
     auto operator==(const sv_recipe_t&) const -> bool = default;
 };
@@ -917,7 +928,7 @@ struct quantization_preset_t {
     auto operator==(const quantization_preset_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 10;
+inline constexpr std::uint32_t current_document_schema_version = 11;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

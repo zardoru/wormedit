@@ -155,6 +155,15 @@ is exported.
 Recipes appear as areas in the SV (or SPD) lane. Select one to edit its form in the inspector
 (*Apply* keeps the changes, *Revert* drops them); its menu enables, disables or deletes it.
 
+Stored recipes can also carry an ordered post-process pipeline, listed in the inspector.
+*Multiply* scales the batch. *Normalize displacement* (also called *Normalize average*)
+preserves the authored baseline's signed integral; *Normalize distance* preserves its
+absolute integral. Each accepts a target factor, defaulting to one. *Balance bump* keeps
+one region fixed and solves the other against the baseline, including a varying baseline.
+Stages run in their listed order on the same sampled step values used by preview and export.
+Raw and final samples are transient; the project stores only the recipe and its stages.
+Zero denominators, non-finite values and target-forbidden results reject the batch.
+
 == Metronome
 
 *Toggle Metronome* (command menu) clicks on every beat during playback. *Timing Settings* sets its

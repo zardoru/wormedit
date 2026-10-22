@@ -204,6 +204,10 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
         state.recipe_editor.recipe_edit_dirty = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
     }
+    for (const auto label : view.recipe_form.postprocess_labels) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_text(context, label.data(), static_cast<int>(label.size()), NK_TEXT_LEFT);
+    }
     if (!view.recipe_form.status_text.empty()) {
         nk_layout_row_dynamic(context, 36, 1);
         nk_label_wrap(context, view.recipe_form.status_text.data());

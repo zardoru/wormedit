@@ -6,6 +6,7 @@
 #include <wormedit/core/span_manipulation.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -385,6 +386,43 @@ void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagno
 
 } // namespace
 
+auto sv_recipe_postprocess_t::label() const -> std::string_view {
+    switch (kind) {
+    case sv_recipe_postprocess_kind_t::multiply: return "Multiply";
+    case sv_recipe_postprocess_kind_t::normalize:
+        switch (mode) {
+        case sv_recipe_normalization_t::preserve_displacement: return "Normalize displacement";
+        case sv_recipe_normalization_t::preserve_distance: return "Normalize distance";
+        case sv_recipe_normalization_t::preserve_average: return "Normalize average";
+        }
+        break;
+    case sv_recipe_postprocess_kind_t::balance_bump:
+        return solve == sv_recipe_bump_solve_t::x ? "Balance bump: solve X" : "Balance bump: solve Y";
+    }
+    return {};
+}
+
+namespace {
+auto validate_postprocess(const sv_recipe_t& recipe) -> diagnostic_list_t {
+    if (recipe.postprocess.size() > maximum_sv_recipe_postprocess_stages)
+        return {error(diagnostic_code_t::invalid_resolution, "SV postprocess stage cap exceeded")};
+    for (const auto& stage : recipe.postprocess) {
+        if (static_cast<unsigned>(stage.kind) > static_cast<unsigned>(sv_recipe_postprocess_kind_t::balance_bump) ||
+            static_cast<unsigned>(stage.mode) > static_cast<unsigned>(sv_recipe_normalization_t::preserve_average) ||
+            static_cast<unsigned>(stage.solve) > static_cast<unsigned>(sv_recipe_bump_solve_t::x) ||
+            !is_valid_bounded_rational(stage.value, maximum_parameter_magnitude))
+            return {error(diagnostic_code_t::invalid_rational, "Invalid SV postprocess stage")};
+        if (stage.kind == sv_recipe_postprocess_kind_t::balance_bump &&
+            (recipe.curve != sv_recipe_curve_t::bump || to_long_double(recipe.parameters.bump_length) >= 1))
+            return {error(diagnostic_code_t::invalid_rational, "Balancing requires a finite bump and a nonempty remainder")};
+        if (stage.kind == sv_recipe_postprocess_kind_t::normalize &&
+            stage.mode == sv_recipe_normalization_t::preserve_distance && stage.value.numerator < 0)
+            return {error(diagnostic_code_t::invalid_rational, "Distance normalization needs a nonnegative target")};
+    }
+    return {};
+}
+}
+
 auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
@@ -427,6 +465,8 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
     validate_transition(recipe, diagnostics);
     validate_sampling(recipe, span, diagnostics);
     validate_curve_outputs(recipe, diagnostics);
+    const auto stages = validate_postprocess(recipe);
+    diagnostics.insert(diagnostics.end(), stages.begin(), stages.end());
     return diagnostics;
 }
 
@@ -624,7 +664,8 @@ auto sv_recipe_sample_result_t::from(sv_recipe_sample_outcome_t&& outcome) -> sv
         .tolerance_met = outcome.value.tolerance_met};
 }
 auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe) -> sv_recipe_sample_result_t {
-    return sv_recipe_sample_result_t::from(sv_recipe_samples_t::from(chart, recipe));
+    auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    return sv_recipe_sample_result_t::from({.value = prepared.value.samples(), .diagnostics = std::move(prepared.diagnostics)});
 }
 
 namespace {
@@ -679,11 +720,116 @@ auto sample_recipe_emissions(const measure_index_t& index, const sv_recipe_t& re
     return result;
 }
 
+auto emission_value_at(std::span<const sv_recipe_emission_t> emissions, std::uint64_t row) -> long double {
+    const auto after = std::upper_bound(emissions.begin(), emissions.end(), row,
+        [](std::uint64_t sought, const auto& point) { return sought < point.absolute_row; });
+    return std::prev(after)->value;
+}
+
+auto is_bump_region(const sv_recipe_t& recipe, const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::uint64_t row) -> bool {
+    const auto p = recipe_position_for_row(range, row);
+    const auto begin = to_long_double(recipe.parameters.bump_start);
+    return p >= begin && p < begin + to_long_double(recipe.parameters.bump_length);
+}
+
+struct postprocess_integrals_t {
+    std::array<long double, 2> baseline{}, processed{};
+};
+auto postprocess_integrals(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::span<const sv_recipe_emission_t> emissions, bool distance) -> postprocess_integrals_t {
+    const auto index = measure_index_t::from(chart);
+    const auto base = base_events_for(chart, recipe.output, *index);
+    std::set<std::uint64_t> rows{range.first, range.second};
+    for (const auto& point : emissions) rows.insert(point.absolute_row);
+    for (const auto& [row, value] : base) {
+        (void)value;
+        if (row > range.first && row < range.second) rows.insert(row);
+    }
+    postprocess_integrals_t result;
+    for (auto row = rows.begin(), next = std::next(row); next != rows.end(); ++row, ++next) {
+        const auto region = is_bump_region(recipe, range, *row) ? 0U : 1U;
+        const auto baseline = base_value_at(base, *row);
+        const auto weighted = baseline * emission_value_at(emissions, *row);
+        const auto length = static_cast<long double>(*next - *row);
+        result.baseline[region] += (distance ? std::abs(baseline) : baseline) * length;
+        result.processed[region] += (distance ? std::abs(weighted) : weighted) * length;
+    }
+    return result;
+}
+
+auto postprocess_factor(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::span<const sv_recipe_emission_t> emissions, const sv_recipe_postprocess_t& stage) -> std::optional<long double> {
+    const auto target = to_long_double(stage.value);
+    if (stage.kind == sv_recipe_postprocess_kind_t::multiply) return target;
+    const auto integrals = postprocess_integrals(chart, recipe, range, emissions,
+        stage.kind == sv_recipe_postprocess_kind_t::normalize && stage.mode == sv_recipe_normalization_t::preserve_distance);
+    const auto total = integrals.baseline[0] + integrals.baseline[1];
+    const auto solved = stage.solve == sv_recipe_bump_solve_t::x ? 0U : 1U;
+    const auto denominator = stage.kind == sv_recipe_postprocess_kind_t::normalize
+        ? integrals.processed[0] + integrals.processed[1] : integrals.baseline[solved];
+    if (!std::isfinite(denominator) || denominator == 0) return {};
+    return stage.kind == sv_recipe_postprocess_kind_t::normalize ? total * target / denominator
+        : (total * target - integrals.processed[1U - solved]) / denominator;
+}
+
+auto transform_recipe_batch(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::vector<sv_recipe_emission_t>& emissions) -> diagnostic_list_t {
+    for (const auto& stage : recipe.postprocess) {
+        const auto factor = postprocess_factor(chart, recipe, range, emissions, stage);
+        if (!factor)
+            return {error(diagnostic_code_t::invalid_rational, "SV postprocess denominator is zero or non-finite")};
+        for (auto& point : emissions) {
+            if (stage.kind != sv_recipe_postprocess_kind_t::balance_bump) point.value *= *factor;
+            else if (is_bump_region(recipe, range, point.absolute_row) == (stage.solve == sv_recipe_bump_solve_t::x)) point.value = *factor;
+            if (!is_valid_curve_result(point.value, recipe.output))
+                return {error(diagnostic_code_t::invalid_rational, "SV postprocess output is non-finite, oversized, or target-forbidden")};
+        }
+    }
+    return {};
+}
+
+auto add_bump_emission_boundaries(const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::vector<sv_recipe_emission_t>& emissions) -> diagnostic_list_t {
+    if (recipe.curve != sv_recipe_curve_t::bump || recipe.postprocess.empty()) return {};
+    const auto span = range.second - range.first;
+    const std::array offsets{*offset_for_fraction(span, recipe.parameters.bump_start),
+        *offset_for_fraction_sum(span, recipe.parameters.bump_start, recipe.parameters.bump_length)};
+    for (const auto offset : offsets) {
+        const auto row = range.first + offset;
+        const auto found = std::lower_bound(emissions.begin(), emissions.end(), row,
+            [](const auto& point, std::uint64_t sought) { return point.absolute_row < sought; });
+        if (found == emissions.end() || found->absolute_row != row) {
+            const auto value = emission_value_at(emissions, row);
+            emissions.insert(found, {.absolute_row = row, .value = value});
+        }
+    }
+    if (emissions.size() > maximum_sv_recipe_sample_points)
+        return {error(diagnostic_code_t::invalid_resolution, "SV bump boundaries exceed the emission cap")};
+    return {};
+}
+
 } // namespace
 
 auto sv_recipe_prepared_t::from(const chart_document_t& chart, const sv_recipe_t& recipe)
     -> diagnosed_t<sv_recipe_prepared_t> {
     auto sampled = sv_recipe_samples_t::from(chart, recipe);
+    if (sampled.diagnostics.empty() && !recipe.postprocess.empty()) {
+        const auto index = measure_index_t::from(chart);
+        const auto range = *recipe_range(chart, recipe, *index);
+        std::vector<sv_recipe_emission_t> emissions;
+        for (const auto& point : sampled.value.points)
+            emissions.push_back({.absolute_row = point.absolute_row,
+                .value = curve_value(recipe, recipe_position_for_row(range, point.absolute_row))});
+        auto result = from_emissions(chart, recipe, emissions);
+        result.value.raw_samples_ = std::move(sampled.value);
+        result.value.samples_.tolerance_met = result.value.raw_samples_.tolerance_met;
+        return result;
+    }
     sv_recipe_prepared_t prepared;
     prepared.samples_ = std::move(sampled.value);
     if (sampled.diagnostics.empty()) {
@@ -708,14 +854,21 @@ auto sv_recipe_prepared_t::from_emissions(const chart_document_t& chart,
     diagnostics = validate_recipe_emissions(emissions, range, recipe.output);
     if (!diagnostics.empty())
         return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
-    auto sampled = sample_recipe_emissions(*index, recipe, range, emissions);
+    if (!recipe.postprocess.empty())
+        prepared.raw_samples_ = sample_recipe_emissions(*index, recipe, range, emissions).value;
+    std::vector<sv_recipe_emission_t> processed{emissions.begin(), emissions.end()};
+    diagnostics = add_bump_emission_boundaries(recipe, range, processed);
+    if (diagnostics.empty()) diagnostics = transform_recipe_batch(chart, recipe, range, processed);
+    if (!diagnostics.empty())
+        return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
+    auto sampled = sample_recipe_emissions(*index, recipe, range, processed);
     prepared.samples_ = std::move(sampled.value);
     if (sampled.diagnostics.empty()) {
         prepared.recipe_ = recipe;
         prepared.chart_ = chart.id;
         prepared.divisions_ = chart.divisions_per_standard_measure;
         prepared.range_ = range;
-        prepared.emissions_.assign(emissions.begin(), emissions.end());
+        prepared.emissions_ = std::move(processed);
     }
     return {.value = std::move(prepared), .diagnostics = std::move(sampled.diagnostics)};
 }

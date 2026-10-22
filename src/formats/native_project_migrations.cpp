@@ -241,7 +241,21 @@ auto migrate_v9_to_v10(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 9> released_migrations{{
+auto migrate_v10_to_v11(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object() || !chart.contains("sv_recipes")) continue;
+        if (!chart.at("sv_recipes").is_array()) return "chart sv_recipes must be an array";
+        for (auto& recipe : chart.at("sv_recipes")) {
+            if (!recipe.is_object()) return "sv recipe must be an object";
+            if (!recipe.contains("postprocess")) recipe["postprocess"] = nlohmann::json::array();
+        }
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 10> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -251,6 +265,7 @@ constexpr std::array<migration_t, 9> released_migrations{{
     {7, &migrate_v7_to_v8},
     {8, &migrate_v8_to_v9},
     {9, &migrate_v9_to_v10},
+    {10, &migrate_v10_to_v11},
 }};
 
 } // namespace

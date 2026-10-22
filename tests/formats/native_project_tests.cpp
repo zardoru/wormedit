@@ -1742,3 +1742,22 @@ TEST_CASE("Native project settings reject invalid snap and unsafe asset director
     json["document"]["project_settings"] = {{"audio_asset_directory", "../outside"}};
     CHECK_FALSE(wormedit::parse_native_project(json.dump()).value);
 }
+
+TEST_CASE("native projects retain ordered recipe stages and migrate empty pipelines", "[unit][format][native-project][postprocess]") {
+    auto song = rich_bmson_song();
+    auto& recipe = song.charts.front().sv_recipes.front();
+    recipe.postprocess = {{.kind = wormedit::sv_recipe_postprocess_kind_t::multiply, .value = {2, 1}},
+        {.kind = wormedit::sv_recipe_postprocess_kind_t::normalize}};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.value);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->charts.front().sv_recipes.front().postprocess == recipe.postprocess);
+    auto legacy = nlohmann::json::parse(*written.value);
+    legacy["document"]["schema_version"] = std::uint64_t{10};
+    for (auto& chart : legacy["document"]["charts"])
+        for (auto& stored : chart["sv_recipes"]) stored.erase("postprocess");
+    const auto migrated = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(migrated.value);
+    CHECK(migrated.value->charts.front().sv_recipes.front().postprocess.empty());
+}

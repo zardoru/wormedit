@@ -2,6 +2,16 @@
 
 ## Active queue (2026-10-21)
 
+Completed **T-190** (2026-10-22): recipes store ordered multiply, normalization and
+weighted bump-balancing stages in schema 11; older recipes gain an empty pipeline.
+One prepared batch supplies processed projection, preview, composition and export,
+with raw samples retained for inspection. Empty pipelines preserve existing built-in
+behavior. The inspector lists stage order, and ordinary parameter edits retain it.
+GATE and Linux Clang each pass **4,467/4,467**, with **10-TU** complexity and no
+increased allowances; isolated native Apply/save and Undo/save preserve
+both stages and restore the original parameter. The next owner-requested card is
+**T-121**, the checksummed replayable recovery journal.
+
 Completed **T-280** (2026-10-22): BPM/pause/warp edits offer per-edit audio-time
 anchoring, preserving playable note/hold, BGM and sound-channel endpoints through one
 shared transaction; musical positions remain the default. Preview reports movement

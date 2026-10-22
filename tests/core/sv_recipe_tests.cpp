@@ -1,6 +1,7 @@
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/rational.h>
 #include <wormedit/core/workspace.h>
 
 #include <catch2/catch_approx.hpp>
@@ -1258,4 +1259,156 @@ TEST_CASE("SV draft preview and export agree at authored rows between samples",
     REQUIRE(event != baked.value->scrolls.end());
     check_recipe_point(*point, rows[i], expected[i]);
     CHECK((event->multiplier == signed_rational_t{static_cast<std::int64_t>(expected[i]), 1}));
+}
+
+TEST_CASE("SV postprocess normalizes the emitted batch and retains raw inspection", "[core][sv-recipe][postprocess]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {3, 4}, {2, 1});
+    recipe.postprocess.push_back({.kind = sv_recipe_postprocess_kind_t::normalize});
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    REQUIRE(prepared.ok());
+    CHECK(prepared.value.raw_samples().points.front().value == Catch::Approx(0.75));
+    const auto& points = prepared.value.samples().points;
+    long double area{};
+    for (std::size_t i = 1; i < points.size(); ++i)
+        area += points[i - 1].value * (points[i].absolute_row - points[i - 1].absolute_row);
+    CHECK(static_cast<double>(area / chart.divisions_per_standard_measure) == Catch::Approx(1.0));
+}
+
+namespace {
+void check_processed_value(const diagnosed_t<sv_recipe_prepared_t>& prepared, std::uint64_t row, double expected) {
+    REQUIRE(prepared.ok());
+    const auto value = prepared.value.value_at(row);
+    REQUIRE(value);
+    CHECK(static_cast<double>(*value) == Catch::Approx(expected));
+}
+void check_postprocess_denominator_rejection(const diagnosed_t<sv_recipe_prepared_t>& prepared) {
+    REQUIRE_FALSE(prepared.ok());
+    REQUIRE_FALSE(prepared.diagnostics.empty());
+    CHECK(prepared.diagnostics.front().code == diagnostic_code_t::invalid_rational);
+}
+void check_processed_export(const chart_document_t& chart, const sv_recipe_compilation_t& compiled) {
+    const auto baked = bake_sv_recipes_for_export(chart);
+    REQUIRE(baked.value);
+    REQUIRE(baked.value->scrolls.size() == compiled.points.size());
+    for (std::size_t i = 0; i < compiled.points.size(); ++i)
+        CHECK(static_cast<double>(to_long_double(baked.value->scrolls[i].multiplier)) == Catch::Approx(compiled.points[i].value));
+}
+}
+
+TEST_CASE("SV postprocess balances finite bumps and rejects zero denominators", "[core][sv-recipe][postprocess]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {0, 1});
+    SECTION("balanced bump") {
+        recipe.curve = sv_recipe_curve_t::bump;
+        recipe.parameters.bump_length = {1, 4};
+        recipe.parameters.bump_x = {2, 1};
+        recipe.postprocess.push_back({.kind = sv_recipe_postprocess_kind_t::balance_bump});
+        const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+        check_processed_value(prepared, chart.divisions_per_standard_measure / 2, 2.0 / 3);
+        check_processed_value(prepared, 0, 2);
+    }
+    SECTION("zero denominator") {
+        recipe.postprocess.push_back({.kind = sv_recipe_postprocess_kind_t::normalize});
+        const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+        check_postprocess_denominator_rejection(prepared);
+    }
+}
+
+TEST_CASE("SV postprocess order and weighted distance use the emitted step semantics", "[core][sv-recipe][postprocess]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {2, 1});
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::normalize},
+        {.kind = sv_recipe_postprocess_kind_t::multiply, .value = {3, 1}}};
+    SECTION("normalize then multiply") {
+        const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+        check_processed_value(prepared, 0, 3);
+    }
+    SECTION("multiply then normalize") {
+        std::ranges::reverse(recipe.postprocess);
+        const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+        check_processed_value(prepared, 0, 1);
+    }
+    SECTION("distance with a signed varying baseline") {
+        chart.scrolls = {{.id = object_id_t{30}, .position = {measure_id_t{11}, 0}, .multiplier = {-1, 1}},
+            {.id = object_id_t{31}, .position = {measure_id_t{11}, chart.divisions_per_standard_measure / 2}, .multiplier = {3, 1}}};
+        recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::normalize, .mode = sv_recipe_normalization_t::preserve_distance}};
+        const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+        check_processed_value(prepared, 0, 1);
+    }
+}
+
+TEST_CASE("SV postprocess rejects target-forbidden outputs and bounded invalid stages", "[core][sv-recipe][postprocess]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {2, 1});
+    SECTION("negative speed") {
+        recipe.output = sv_recipe_output_t::speeds;
+        recipe.postprocess = {{.value = {-1, 1}}};
+    }
+    SECTION("invalid stage enum") { recipe.postprocess = {{.kind = static_cast<sv_recipe_postprocess_kind_t>(99)}}; }
+    SECTION("zero rational denominator") { recipe.postprocess = {{.value = {1, 0}}}; }
+    SECTION("stage cap") { recipe.postprocess.resize(maximum_sv_recipe_postprocess_stages + 1); }
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    CHECK_FALSE(prepared.ok());
+    CHECK_FALSE(prepared.diagnostics.empty());
+    CHECK(prepared.value.samples().points.empty());
+}
+
+TEST_CASE("SV processed draft composition and export use the same completed batch", "[core][sv-recipe][postprocess]") {
+    auto history = document_history_t::from(make_recipe_song());
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {3, 4}, {2, 1});
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::normalize}};
+    auto proposal = sv_recipe_draft_t::propose(history, chart_id_t{10}, recipe);
+    REQUIRE(proposal.value);
+    const auto preview = preview_sv_recipe_draft(history, *proposal.value);
+    REQUIRE(preview);
+    REQUIRE(apply_proposal(history, *proposal.value));
+    const auto& chart = history.document.charts.front();
+    const auto compiled = compile_sv_recipes(chart, sv_recipe_output_t::sv);
+    REQUIRE(compiled);
+    CHECK(compiled.points == preview.effective_output.points);
+    check_processed_export(chart, compiled);
+}
+
+TEST_CASE("SV normalization weighs emitted values by authored baseline intervals", "[core][sv-recipe][postprocess]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    const auto middle = chart.divisions_per_standard_measure / 2;
+    chart.scrolls = {{.id = object_id_t{30}, .position = {measure_id_t{11}, middle}, .multiplier = {3, 1}}};
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::normalize}};
+    const std::array emissions{sv_recipe_emission_t{.absolute_row = 0, .value = 2},
+        sv_recipe_emission_t{.absolute_row = middle, .value = 4}};
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    REQUIRE(prepared.ok());
+    CHECK(static_cast<double>(*prepared.value.value_at(0)) == Catch::Approx(4.0 / 7));
+    CHECK(static_cast<double>(*prepared.value.value_at(middle)) == Catch::Approx(8.0 / 7));
+    CHECK(prepared.value.raw_samples().points.front().value == Catch::Approx(2));
+}
+
+TEST_CASE("SV bump balancing can solve X against a varying authored baseline", "[core][sv-recipe][postprocess]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    recipe.curve = sv_recipe_curve_t::bump;
+    recipe.parameters.bump_length = {1, 4};
+    recipe.parameters.bump_y = {1, 2};
+    chart.scrolls = {{.id = object_id_t{30}, .position = {measure_id_t{11}, 0}, .multiplier = {2, 1}},
+        {.id = object_id_t{31}, .position = {measure_id_t{11}, chart.divisions_per_standard_measure / 4}, .multiplier = {1, 1}}};
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::balance_bump, .solve = sv_recipe_bump_solve_t::x}};
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    check_processed_value(prepared, 0, 1.75);
+    check_processed_value(prepared, chart.divisions_per_standard_measure / 2, 0.5);
+}
+
+TEST_CASE("Prepared emitted postprocess is consumed once by composition", "[core][sv-recipe][postprocess]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    recipe.postprocess = {{.value = {2, 1}}};
+    const std::array emissions{sv_recipe_emission_t{.absolute_row = 0, .value = 3}};
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    check_processed_value(prepared, 0, 6);
+    const std::array batch{prepared.value};
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, sv_recipe_output_t::sv, batch);
+    REQUIRE(compiled.ok());
+    REQUIRE_FALSE(compiled.value.points.empty());
+    CHECK(compiled.value.points.front().value == Catch::Approx(6));
 }

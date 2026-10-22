@@ -116,3 +116,15 @@ TEST_CASE("recipe graphs are continuous lines normalized to the visible window",
     unevaluable.evaluable = false;
     CHECK(build_recipe_graph(unevaluable, 0, 960, y_of).points.empty());
 }
+
+TEST_CASE("recipe area projection uses postprocessed values", "[unit][sys][recipe-areas][postprocess]") {
+    auto chart = base_chart();
+    auto recipe = linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1});
+    recipe.postprocess = {{.value = {2, 1}}};
+    chart.sv_recipes.push_back(recipe);
+    const auto result = project(chart);
+    REQUIRE(result.areas.size() == 1);
+    REQUIRE(result.areas.front().points.size() == 3);
+    CHECK(result.areas.front().points.front().value == Catch::Approx(2));
+    CHECK(result.areas.front().points.back().value == Catch::Approx(6));
+}

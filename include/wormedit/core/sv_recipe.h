@@ -25,6 +25,8 @@ struct sv_recipe_point_t {
 };
 
 struct sv_recipe_samples_t {
+    // Raw built-in inspection. Use the prepared owner or sample_sv_recipe for
+    // final postprocessed values used by projection and compilation.
     [[nodiscard]] static auto from(const chart_document_t& chart, const sv_recipe_t& recipe)
         -> diagnosed_t<sv_recipe_samples_t>;
     std::vector<sv_recipe_point_t> points;
@@ -54,6 +56,9 @@ class sv_recipe_prepared_t {
 
     [[nodiscard]] auto recipe() const -> const sv_recipe_t& { return recipe_; }
     [[nodiscard]] auto samples() const -> const sv_recipe_samples_t& { return samples_; }
+    [[nodiscard]] auto raw_samples() const -> const sv_recipe_samples_t& {
+        return recipe_.postprocess.empty() ? samples_ : raw_samples_;
+    }
     [[nodiscard]] auto range() const -> const std::pair<std::uint64_t, std::uint64_t>& {
         return range_;
     }
@@ -69,6 +74,7 @@ class sv_recipe_prepared_t {
     std::uint64_t divisions_{};
     std::pair<std::uint64_t, std::uint64_t> range_{};
     sv_recipe_samples_t samples_;
+    sv_recipe_samples_t raw_samples_;
     std::vector<sv_recipe_emission_t> emissions_;
 };
 

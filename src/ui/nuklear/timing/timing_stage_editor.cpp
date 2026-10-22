@@ -370,6 +370,33 @@ static void commit_stage_action(TimingStageEditor& editor, wormedit::ui::timing_
     copy_timing_form_to_action(editor.action);
 }
 
+static void render_stage_anchoring(TimingStageEditor& editor) {
+    const auto& view = *editor.view;
+    using wormedit::timing_lane_kind_t;
+    if (view.stage_lane != timing_lane_kind_t::bpm && view.stage_lane != timing_lane_kind_t::stop &&
+        view.stage_lane != timing_lane_kind_t::delay && view.stage_lane != timing_lane_kind_t::warp) return;
+    auto settings = view.stage_anchoring;
+    nk_bool keep_audio = settings.positions == wormedit::timing_position_policy_t::audio;
+    nk_layout_row_dynamic(editor.context, 24, 1);
+    bool changed = nk_checkbox_label(editor.context, "Keep audio time of notes", &keep_audio) != 0;
+    settings.positions = keep_audio ? wormedit::timing_position_policy_t::audio : wormedit::timing_position_policy_t::musical;
+    if (keep_audio) {
+        nk_bool quantize = settings.allow_quantization;
+        nk_layout_row_dynamic(editor.context, 24, 1);
+        changed = (nk_checkbox_label(editor.context, "Allow quantization", &quantize) != 0) || changed;
+        settings.allow_quantization = quantize != 0;
+        nk_layout_row_dynamic(editor.context, 36, 1);
+        char counts[128]{};
+        std::snprintf(counts, sizeof(counts), "%zu objects move; %zu positions need rounding",
+            view.stage_moved_objects, view.stage_rounded_positions);
+        nk_label_wrap(editor.context, counts);
+    }
+    if (changed && editor.action) {
+        set_timing_action(editor.action, &view, wormedit::ui::timing_stage_action_t::update);
+        editor.action->timing_anchoring = settings;
+    }
+}
+
 static void render_stage_actions(TimingStageEditor& editor) {
     auto* context = editor.context;
     auto* action = editor.action;
@@ -409,6 +436,7 @@ static void render_active_timing_stage(nk_context* context, const wormedit::ui::
     render_stage_title(editor);
     render_stage_primary(editor);
     render_stage_secondary(editor);
+    render_stage_anchoring(editor);
     render_stage_actions(editor);
 }
 
@@ -418,4 +446,10 @@ void worm_ui_nuklear_render_timing_stage_editor(struct nk_context* context,
     if (!context || !view || !action) return;
     synchronize_timing_stage_editor(view);
     if (view->stage_active) render_active_timing_stage(context, view, action);
+}
+
+void worm_ui_nuklear_render_timing_anchoring(nk_context* context,
+    const wormedit::ui::timing_view_t& view, wormedit::ui::workspace_action_t& action) {
+    TimingStageEditor editor{context, &view, &action, 0, 0};
+    render_stage_anchoring(editor);
 }

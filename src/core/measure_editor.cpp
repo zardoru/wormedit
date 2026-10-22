@@ -1203,6 +1203,16 @@ auto apply_measure_edit(document_history_t& history,
     return transaction.commit(std::move(context.label));
 }
 
+auto extend_chart_to_row(chart_document_t& chart, std::uint64_t row, measure_edit_limits_t limits) -> bool {
+    const auto index = measure_index_t::from(chart);
+    if (!index || chart.divisions_per_standard_measure == 0) return false;
+    if (row < index->total_rows) return true;
+    if (chart.divisions_per_standard_measure > limits.maximum_rows_per_measure) return false;
+    const auto extra = (row - index->total_rows) / chart.divisions_per_standard_measure + 1;
+    if (chart.measures.size() > limits.maximum_measures || extra > limits.maximum_measures - chart.measures.size()) return false;
+    return append_default_measures(chart, chart.measures.size() + static_cast<std::size_t>(extra), limits);
+}
+
 auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_t& stream,
                                measure_edit_limits_t limits) -> bool {
     if (!stream.frame_count || stream.sample_rate == 0) return true;

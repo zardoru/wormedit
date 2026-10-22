@@ -74,6 +74,7 @@ add_executable(wormedit_core_tests
     core/note_to_bgm_tests.cpp
     core/bmson_lane_mode_tests.cpp
     core/bmson_slice_reset_tests.cpp
+    core/timing_reposition_tests.cpp
     core/bpm_editor_tests.cpp
     core/bga_preview_tests.cpp
     core/chart_compare_tests.cpp
@@ -631,6 +632,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/notification_hit_region_event_harness_tests.cpp
         sys/global_drop_notification_tests.cpp
         ../src/sys/metadata/metadata_drop_state.cpp
+        ui/timing_anchoring_event_harness_tests.cpp
         ui/timing_settings_tests.cpp
         ui/tap_timing_panel_event_harness_tests.cpp
         ui/compose_beat_fit_tests.cpp

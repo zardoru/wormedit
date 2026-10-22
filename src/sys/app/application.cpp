@@ -992,7 +992,7 @@ void delete_staged_timing_event(const wormedit::ui::workspace_action_t& action,
         post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
     } else {
         const auto result = wormedit::delete_existing_timing_lane_event(
-            history, stage.captured_stamp().chart, kind->kind, *stage.report()->existing_event, timing_locked);
+            history, stage.captured_stamp().chart, kind->kind, *stage.report()->existing_event, timing_locked, stage.report()->anchoring);
         if (result)
             notifications.post(wormedit::notification_severity_t::success,
                                wormedit::notification_source_t::edit, "Timing event deleted.");
@@ -3713,6 +3713,11 @@ struct application_t::implementation_t {
         const wormedit::ui::workspace_action_t& action, bool timing_locked,
         std::uint64_t active_snap_denominator, wormedit::chart_document_t* chart,
         std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage) {
+        if (action.timing_anchoring) {
+            *timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage),
+                session.history, *action.timing_anchoring, timing_locked);
+            return;
+        }
         const auto value = chart == nullptr ? std::optional<wormedit::timing_lane_value_t>{}
                                             : timing_stage_value(*timing_stage->report(), *chart,
                                                                  *session.history.indices(chart->id), action,

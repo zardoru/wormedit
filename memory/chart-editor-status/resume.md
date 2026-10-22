@@ -2,13 +2,27 @@
 
 ## Active queue (2026-10-21)
 
+Completed **T-280** (2026-10-22): BPM/pause/warp edits offer per-edit audio-time
+anchoring, preserving playable note/hold, BGM and sound-channel endpoints through one
+shared transaction; musical positions remain the default. Preview reports movement
+and rounding, and quantization requires explicit permission. Collisions and invalid
+layouts still reject atomically. Audio-time markers retain their stored times.
+GATE and Linux Clang each pass **4,456/4,456**; **14-TU** complexity has no increased
+allowances. Isolated native **120→240 BPM**, save and one Undo preserve all eight
+notes' exact times and restore original rows/BPM/chart extent. Warp regressions pass
+**44 assertions / 2 cases**. Retained BMS control flow, source objects inside warps
+and invalid exact clocks reject audio anchoring. Both requested cards, **T-332** and
+**T-280**, are complete; no sequential follow-up is active.
+
 Completed **T-332** (2026-10-22): Sounds exposes BPM, division-per-beat and signed offset
 with exact waveform cut previews. The shared async shell renders WAVs into the project's
 audio folder and imports one keysound batch; cancel/stale/failure discards output, and
 one Undo restores the catalog. Source audio and chart notes stay unchanged. GATE and
 Linux Clang each pass **4,447/4,447**, plus **7-TU** complexity; isolated native Slice/save
-and Undo/save verify **1→5→1** resources/assets and unchanged source PCM. The next
-owner-requested card is **T-280**, audio-time anchoring for BPM/timing edits.
+and Undo/save verify **1→5→1** resources/assets and unchanged source PCM. The following
+owner-requested **T-280** is complete above. Its Clang run also exposed a cancellation
+test race: an uncreated output parent is valid cleanup. The independent test correction
+passes 30 consecutive runs under each compiler and the full Clang suite above.
 
 Completed **T-621** (2026-10-22): all **428** sys/Nuklear files now live in
 **24** subsystem folders, with filenames/prefixes preserved and one verified commit per

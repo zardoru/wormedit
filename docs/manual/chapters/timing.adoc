@@ -66,6 +66,19 @@ tempo, and kbd:[Alt]-click the Anchor lane to add an anchor.
 * *Insert BPM Change* and *Insert Scroll Velocity* in the command menu add an event at the cursor.
 * Select events like notes and press kbd:[Delete] to remove them.
 
+For BPM, stop, delay and warp edits, musical positions stay fixed by default.
+*Keep audio time of notes* instead repositions playable notes, both hold ends,
+BGM spans and retained sound-channel events to preserve their existing audio times.
+Audio-time bookmarks and sections already store times and stay unchanged.
+The edit preview reports how many objects move and how many positions need rounding.
+Enable *Allow quantization* explicitly to accept that rounding; otherwise the edit
+is rejected without changing the chart. New collisions and invalid lane layouts
+still reject the whole edit. The chart grows when preserving time needs more measures.
+This is an option for the current edit, and the entire edit is one Undo step.
+Retained BMS control flow cannot use this policy yet. Sound objects already swallowed
+by a warp have no playable audio time and also reject it; audible objects at a new
+warp plateau map to its playable exit.
+
 .Editing the starting BPM in place: kbd:[Enter] applies, kbd:[Escape] cancels (captured at {shot-timing-bpm-edit-revision})
 image::timing-bpm-edit.png[The BPM marker on the first row open in its inline editor showing 140]
 

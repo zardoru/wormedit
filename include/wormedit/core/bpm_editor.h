@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/timing_edit_policy.h>
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/result.h>
 
@@ -60,7 +61,7 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 // legal and timing order uses source order before insertion order and stable ID.
 // Insert assigns a fresh chart-wide object ID and an order after existing BPMs.
 [[nodiscard]] auto apply_bpm_edit(document_history_t& history,
-                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {}, timing_anchoring_t anchoring = {})
     -> document_command_result_t;
 
 // Begins a fit anchored at a timing row. Updates the BPM event already at that
@@ -133,11 +134,11 @@ using beat_interval_drag_outcome_t = proposal_outcome_t<beat_interval_drag_t>;
     -> std::optional<signed_rational_t>;
 // Staging composes into an existing transaction; apply publishes immediately.
 [[nodiscard]] auto stage_bpm_edit(document_command_transaction_t& transaction,
-                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {}, timing_anchoring_t anchoring = {})
     -> attempt_t<document_edit_effect_t>;
 
 [[nodiscard]] auto apply_bpm_edit(document_command_transaction_t& transaction,
-                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {}, timing_anchoring_t anchoring = {})
     -> document_command_result_t;
 
 } // namespace wormedit

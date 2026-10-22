@@ -4,6 +4,7 @@
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/timing_reposition.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/numeric_text.h>
@@ -213,19 +214,22 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 }
 
 auto apply_bpm_edit(document_history_t& history,
-    const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t(history).execute<bpm_operation_visitor_t>(action, limits);
+    const bpm_edit_action_t& action, bpm_edit_limits_t limits, timing_anchoring_t anchoring) -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    return transaction.finish_execution(stage_bpm_edit(transaction, action, limits, anchoring));
 }
 
 auto stage_bpm_edit(document_command_transaction_t& transaction, const bpm_edit_action_t& action,
-                    bpm_edit_limits_t limits) -> attempt_t<document_edit_effect_t> {
-    return transaction.stage<bpm_operation_visitor_t>(action, limits);
+                    bpm_edit_limits_t limits, timing_anchoring_t anchoring) -> attempt_t<document_edit_effect_t> {
+    auto staged = transaction.stage<bpm_operation_visitor_t>(action, limits);
+    const auto chart = std::visit([](const auto& edit) { return edit.chart; }, action);
+    return stage_timing_reposition(transaction, chart, anchoring, std::move(staged));
 }
 
 // Native commands retain their immediate-publication boundary; compositions use staging.
 auto apply_bpm_edit(document_command_transaction_t& transaction, const bpm_edit_action_t& action,
-                    bpm_edit_limits_t limits) -> document_command_result_t {
-    return transaction.execute<bpm_operation_visitor_t>(action, limits);
+                    bpm_edit_limits_t limits, timing_anchoring_t anchoring) -> document_command_result_t {
+    return transaction.finish_execution(stage_bpm_edit(transaction, action, limits, anchoring));
 }
 
 namespace {

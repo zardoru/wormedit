@@ -133,6 +133,9 @@ void populate_timing_stage_view(
     const auto* report = stage ? stage->report() : nullptr;
     if (report && report->lifecycle.status() == wormedit::proposal_status_t::active &&
         stage->captured_stamp().is_current(chart.id, revision)) {
+        view.stage_anchoring = report->anchoring;
+        view.stage_moved_objects = report->reposition.moved_objects;
+        view.stage_rounded_positions = report->reposition.rounded_positions;
         view.stage_active = true;
         view.stage_valid = stage->value.has_value();
         view.stage_existing_object_id =

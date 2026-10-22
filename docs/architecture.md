@@ -100,6 +100,13 @@ without also invoking Clear Selection.
 | Workflow/session owner | Project-lifetime state for a multi-frame workflow, or the gesture/proposal owner for a bounded edit. |
 | Completion | The typed transaction result plus any domain report, mapped once into shared command/interaction feedback. |
 
+Timing edits may retain musical positions or preserve sound-object audio times through
+`stage_timing_reposition` in `core/timing_reposition.h`, composed before the shared transaction
+publishes. Its report counts moved objects and positions requiring explicit quantization.
+`document_command_transaction_t::preview` runs that same command boundary on an isolated
+copy with no retained Undo, so preview reports and rejection use the real edit path without
+publishing the live document. The timing controller owns only its candidate and report.
+
 ## Adding a chart edit
 
 You write only what changes:

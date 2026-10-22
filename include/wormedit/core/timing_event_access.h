@@ -61,6 +61,10 @@ template<> struct timing_event_access_t<bpm_event_t>
     static auto apply(document_history_t& history, const Action& action) -> document_command_result_t {
         return apply_bpm_edit(history, action);
     }
+    template<typename Action>
+    static auto stage(document_command_transaction_t& transaction, const Action& action) -> attempt_t<document_edit_effect_t> {
+        return stage_bpm_edit(transaction, action);
+    }
 };
 
 template<> struct timing_event_access_t<scroll_event_t>
@@ -97,6 +101,10 @@ template<> struct timing_event_access_t<pause_event_t>
     static auto apply(document_history_t& history, const Action& action) -> document_command_result_t {
         return apply_pause_warp_edit(history, action);
     }
+    template<typename Action>
+    static auto stage(document_command_transaction_t& transaction, const Action& action) -> attempt_t<document_edit_effect_t> {
+        return stage_pause_warp_edit(transaction, action);
+    }
 };
 
 template<> struct timing_event_access_t<warp_event_t>
@@ -108,6 +116,10 @@ template<> struct timing_event_access_t<warp_event_t>
     template<typename Action>
     static auto apply(document_history_t& history, const Action& action) -> document_command_result_t {
         return apply_pause_warp_edit(history, action);
+    }
+    template<typename Action>
+    static auto stage(document_command_transaction_t& transaction, const Action& action) -> attempt_t<document_edit_effect_t> {
+        return stage_pause_warp_edit(transaction, action);
     }
 };
 

@@ -1,4 +1,5 @@
 #include "lane_occupancy.h"
+#include "chart_position_storage.h"
 #include <array>
 #include <queue>
 #include "../core/checked_math.h"
@@ -369,46 +370,6 @@ auto validate_layout_effects(const chart_document_t& chart, const detail::quanti
     }
 }
 
-auto rehome_measure_objects(chart_document_t& chart, diagnostic_list_t& diagnostics) -> bool {
-    std::unordered_map<std::uint64_t, std::size_t> destinations;
-    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
-        destinations.emplace(chart.measures[index].id.value, index);
-    }
-
-    std::vector<std::vector<note_t>> notes(chart.measures.size());
-    std::vector<std::vector<bgm_event_t>> bgm_events(chart.measures.size());
-    bool valid = true;
-    for (auto& measure : chart.measures) {
-        for (auto& note : measure.notes) {
-            const auto destination = destinations.find(note.position.measure.value);
-            if (destination == destinations.end()) {
-                error(diagnostics, diagnostic_code_t::unknown_measure,
-                      "quantized note refers to an unknown measure", note.id);
-                valid = false;
-            } else {
-                notes[destination->second].push_back(std::move(note));
-            }
-        }
-        for (auto& bgm : measure.bgm_events) {
-            const auto destination = destinations.find(bgm.position.measure.value);
-            if (destination == destinations.end()) {
-                error(diagnostics, diagnostic_code_t::unknown_measure,
-                      "quantized BGM event refers to an unknown measure", bgm.id);
-                valid = false;
-            } else {
-                bgm_events[destination->second].push_back(std::move(bgm));
-            }
-        }
-    }
-    if (!valid) {
-        return false;
-    }
-    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
-        chart.measures[index].notes = std::move(notes[index]);
-        chart.measures[index].bgm_events = std::move(bgm_events[index]);
-    }
-    return true;
-}
 
 auto transform_measure_positions(measure_chunk_t& measure, const quantize_request_t& request,
                                  const auto& transform) -> void {
@@ -566,7 +527,7 @@ auto sync_quantized_source(chart_document_t& chart, const auto& object,
     error(diagnostics, diagnostic_code_t::invalid_id, "The selected stem point is missing.", object.id);
 }
 
-auto validate_quantized_bgm(const chart_document_t& before, chart_document_t& after,
+auto validate_quantized_bgm(const chart_document_t& before, const chart_document_t& after,
                             const detail::quantize_geometry_t& index,
                             quantization_collision_t policy, diagnostic_list_t& diagnostics) -> void {
     std::unordered_map<std::uint64_t, std::pair<object_id_t, local_position_t>> original;
@@ -706,6 +667,20 @@ auto quantization_plan_t::from(const chart_document_t& chart, const quantize_req
     }
     result.value.chart = std::move(working);
     return result;
+}
+
+auto validate_repositioned_audio(const chart_document_t& before, const chart_document_t& after)
+    -> diagnostic_list_t {
+    const auto index = measure_index_t::from(after);
+    if (!index) return index.error();
+    const detail::quantize_geometry_t geometry{*index};
+    diagnostic_list_t diagnostics;
+    validate_note_intervals_and_collisions(before, after, geometry, quantization_collision_t::reject, diagnostics);
+    validate_quantized_bgm(before, after, geometry, quantization_collision_t::reject, diagnostics);
+    validate_quantized_stems(before, after, diagnostics);
+    validate_musical_spans(after, geometry, diagnostics);
+    validate_layout_effects(after, geometry, diagnostics);
+    return diagnostics;
 }
 
 } // namespace wormedit

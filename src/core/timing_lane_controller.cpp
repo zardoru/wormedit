@@ -23,6 +23,17 @@ namespace wormedit {
 namespace {
 using wormedit::reject;
 
+template<class Access, class Edit>
+auto apply_anchored_timing_edit(document_command_transaction_t& transaction, Access access,
+    const Edit& edit, timing_anchoring_t anchoring, timing_reposition_report_t* report = nullptr)
+    -> document_command_result_t {
+    if constexpr (requires { access.stage(transaction, edit); }) {
+        auto staged = access.stage(transaction, edit);
+        return transaction.finish_execution(stage_timing_reposition(transaction, edit.chart,
+            anchoring, std::move(staged), report));
+    } else return access.apply(transaction, edit);
+}
+
 auto is_fixed_initial_bpm(const chart_document_t& chart, object_id_t event) -> bool {
     if (chart.measures.empty()) {
         return false;
@@ -444,14 +455,27 @@ auto timing_lane_pseudonote_preview_t::revise(proposal_revision_scope_t<chart_st
             return false;
         }
         report.position = *position;
-    } else report.set_value(std::get<timing_lane_value_t>(std::move(request)));
+    } else if (const auto* anchoring = std::get_if<timing_anchoring_t>(&request)) report.anchoring = *anchoring;
+    else report.set_value(std::get<timing_lane_value_t>(std::move(request)));
     if (!report.existing_event && is_same_row_is_occupied(chart, report.kind, report.position)) {
         diagnostics.push_back(error(diagnostic_code_t::collision,
             "timing lane row already contains an event of this type"));
         return false;
     }
     return validate_position(chart, report.position, diagnostics, "timing event") &&
-        report.validate_value(chart, diagnostics);
+        report.validate_value(chart, diagnostics) && preview_anchoring(scope, diagnostics);
+}
+
+auto timing_lane_pseudonote_preview_t::preview_anchoring(
+    const proposal_read_scope_t<chart_stamp_t>& scope, diagnostic_list_t& diagnostics) -> bool {
+    report.reposition = {};
+    if (report.anchoring.positions == timing_position_policy_t::musical) return true;
+    timing_lane_pseudonote_proposal_t candidate{.stamp = scope.captured_stamp(), .payload = *this};
+    const auto applied = document_command_transaction_t::preview(scope.source_document(),
+        [&](document_history_t& history) { return apply_proposal(history, candidate); });
+    report.reposition = candidate.payload.report.reposition;
+    diagnostics.insert(diagnostics.end(), applied.diagnostics.begin(), applied.diagnostics.end());
+    return applied.diagnostics.empty();
 }
 
 auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
@@ -552,10 +576,11 @@ auto timing_lane_pseudonote_preview_t::apply(proposal_edit_scope_t<chart_stamp_t
         using edit_type = typename decltype(access)::edit_type;
         const auto value = edit_type::from(report.position, std::get<value_type>(report.value));
         if (report.existing_event)
-            return access.apply(transaction, update_edit_t<edit_type>{
-                .chart = scope.captured_stamp().chart, .id = *report.existing_event, .value = value});
-        return access.apply(transaction, insert_edit_t<edit_type>{
-            .chart = scope.captured_stamp().chart, .value = value});
+            return apply_anchored_timing_edit(transaction, access, update_edit_t<edit_type>{
+                .chart = scope.captured_stamp().chart, .id = *report.existing_event, .value = value},
+                report.anchoring, &report.reposition);
+        return apply_anchored_timing_edit(transaction, access, insert_edit_t<edit_type>{
+            .chart = scope.captured_stamp().chart, .value = value}, report.anchoring, &report.reposition);
     }, result);
 }
 
@@ -583,7 +608,7 @@ void cancel_proposal(timing_lane_pseudonote_outcome_t& outcome) noexcept {
 }
 
 auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t chart,
-                                       timing_lane_kind_t kind, object_id_t event, bool timing_locked)
+                                       timing_lane_kind_t kind, object_id_t event, bool timing_locked, timing_anchoring_t anchoring)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (timing_locked) {
@@ -603,8 +628,9 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     return visit_timing_events(kind, [&](auto access) {
-        return access.apply(history, delete_edit_t<typename decltype(access)::edit_type>{
-            .chart = chart, .id = event});
+        auto transaction = document_command_transaction_t(history);
+        return apply_anchored_timing_edit(transaction, access,
+            delete_edit_t<typename decltype(access)::edit_type>{.chart = chart, .id = event}, anchoring);
     }, result);
 }
 

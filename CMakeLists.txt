@@ -60,6 +60,7 @@ add_library(wormedit_core
     src/core/bmson_sound_channel_editor.cpp
     src/core/sound_selection.cpp
     src/core/note_to_bgm.cpp
+    src/core/timing_reposition.cpp
     src/core/bpm_editor.cpp
     src/core/chart_compare.cpp
     src/core/command.cpp

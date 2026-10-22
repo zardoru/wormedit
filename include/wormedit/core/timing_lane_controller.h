@@ -3,6 +3,7 @@
 #include <wormedit/core/vocabulary.h>
 
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/timing_reposition.h>
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/pause_warp_editor.h>
@@ -41,6 +42,8 @@ using timing_lane_value_t =
 // Editor data remains visible after a failed revision, independently of applicability.
 struct timing_lane_pseudonote_state_t {
     proposal_lifecycle_t lifecycle;
+    timing_anchoring_t anchoring;
+    timing_reposition_report_t reposition;
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};
     local_position_t position;
     timing_lane_value_t value{timing_bpm_value_t{}};
@@ -54,7 +57,7 @@ struct timing_lane_pseudonote_state_t {
     void set_value(timing_lane_value_t&& next);
 };
 
-using timing_lane_revision_t = std::variant<timing_lane_value_t, local_position_t>;
+using timing_lane_revision_t = std::variant<timing_lane_value_t, local_position_t, timing_anchoring_t>;
 
 struct timing_lane_pseudonote_preview_t;
 class timing_lane_pseudonote_outcome_t;
@@ -82,7 +85,7 @@ struct timing_lane_pseudonote_preview_t {
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         timing_lane_event_ref_t event, bool timing_locked) -> timing_lane_pseudonote_outcome_t;
     template<class Candidate> requires std::constructible_from<timing_lane_value_t, Candidate> ||
-        std::same_as<Candidate, local_position_t>
+        std::same_as<Candidate, local_position_t> || std::same_as<Candidate, timing_anchoring_t>
     [[nodiscard]] static auto revise(timing_lane_pseudonote_outcome_t previous,
         const document_history_t& history, Candidate candidate, bool timing_locked)
         -> timing_lane_pseudonote_outcome_t;
@@ -94,6 +97,7 @@ private:
         const document_history_t&, bool timing_locked) -> bool;
     [[nodiscard]] static auto load_initial_event(timing_lane_pseudonote_outcome_t&,
         const document_history_t&, bool timing_locked) -> bool;
+    [[nodiscard]] auto preview_anchoring(const proposal_read_scope_t<chart_stamp_t>&, diagnostic_list_t&) -> bool;
     [[nodiscard]] auto validate_candidate(const chart_document_t&, const proposal_application_input_t&,
         bool has_applicable_state, diagnostic_list_t&) const -> bool;
 };
@@ -152,13 +156,13 @@ class timing_lane_pseudonote_outcome_t : public proposal_outcome_t<timing_lane_p
 };
 
 template<class Candidate> requires std::constructible_from<timing_lane_value_t, Candidate> ||
-    std::same_as<Candidate, local_position_t>
+    std::same_as<Candidate, local_position_t> || std::same_as<Candidate, timing_anchoring_t>
 auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t previous,
     const document_history_t& history, Candidate candidate, bool timing_locked)
     -> timing_lane_pseudonote_outcome_t {
     if (auto* pending = previous.editor()) {
-        using request_type = std::conditional_t<std::same_as<Candidate, local_position_t>,
-            local_position_t, timing_lane_value_t>;
+        using request_type = std::conditional_t<std::same_as<Candidate, local_position_t> ||
+            std::same_as<Candidate, timing_anchoring_t>, Candidate, timing_lane_value_t>;
         proposal_revision_input_t input{.is_timing_locked = timing_locked,
                                        .diagnostics = std::move(previous.diagnostics)};
         const bool is_accepted = proposal_lifecycle_runner_t::revise(*pending, history, input,
@@ -212,7 +216,7 @@ static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
 [[nodiscard]] auto delete_existing_timing_lane_event(document_history_t& history,
                                                       chart_id_t chart, timing_lane_kind_t kind,
                                                       object_id_t event,
-                                                      bool timing_locked)
+                                                      bool timing_locked, timing_anchoring_t anchoring = {})
     -> document_command_result_t;
 
 // Deletes a bounded selection of timing markers as one atomic undoable command. The fixed

@@ -679,3 +679,20 @@ TEST_CASE("Stage publication preserves warnings and applies the declared no-op p
     check_command_stage(result.diagnostics.front().message == "Stage warning");
     check_command_stage(history.undo.size() == (changed ? 1 : 0));
 }
+
+TEST_CASE("Shared command preview uses ordinary validation without publishing or retaining Undo", "[core][command][timing-anchoring]") {
+    auto live = document_history_t::from(make_song());
+    const auto revision = live.document.revision;
+    bool retained_undo{};
+    const auto result = document_command_transaction_t::preview(live.document, [&](document_history_t& preview) {
+        auto applied = apply_bpm_edit(preview, insert_edit_t<bpm_edit_value_t>{
+            .chart = chart_id_t{1}, .value = bpm_edit_value_t::from({measure_id_t{1}, 0}, {.beats_per_minute = {120, 1}})});
+        retained_undo = !preview.undo.empty();
+        return applied;
+    });
+    CHECK(result.applied);
+    CHECK_FALSE(retained_undo);
+    CHECK(live.document.revision == revision);
+    CHECK(live.document.charts.front().bpms.empty());
+    CHECK(live.undo.empty());
+}

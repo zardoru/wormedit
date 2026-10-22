@@ -113,6 +113,12 @@ auto is_quantized_stem_audio_valid(const song_document_t& song, const chart_docu
 
 } // namespace
 
+auto document_command_transaction_t::preview(const song_document_t& document,
+    const std::function<document_command_result_t(document_history_t&)>& edit) -> document_command_result_t {
+    auto history = document_history_t::from(document, 0);
+    return edit(history);
+}
+
 auto document_history_t::from(song_document_t document, std::size_t maximum_undo_entries,
                               bool initially_saved) -> document_history_t {
     if (document.revision == 0) {

@@ -1,5 +1,6 @@
 #pragma once
 #include "audio_slicer.h"
+#include <wormedit/core/timing_edit_policy.h>
 #include "workspace_types.h"
 #include "file_jobs.h"
 #include "lane_keys.h"
@@ -683,6 +684,7 @@ struct workspace_action_t {
     wormedit::recipe_id_t compose_recipe_id;
     std::string timing_meter_numerator_text;
     std::string timing_meter_denominator_text;
+    std::optional<timing_anchoring_t> timing_anchoring;
     wormedit::ui::timing_stage_action_t timing_stage_action;
     wormedit::chart_id_t timing_chart_id;
     uint64_t timing_document_revision;

@@ -941,10 +941,42 @@ struct ComposePanelRenderContext {
     std::size_t shortcut_event_count;
 };
 
+static auto is_inline_audio_timing(wormedit::timing_lane_kind_t lane) -> bool {
+    using wormedit::timing_lane_kind_t;
+    return lane == timing_lane_kind_t::bpm || lane == timing_lane_kind_t::stop || lane == timing_lane_kind_t::delay;
+}
+
+static void update_inline_audio_timing(const ComposePanelRenderContext& panel,
+    bool committed, bool changed) {
+    const auto& timing = *panel.timing_view;
+    worm_ui_nuklear_render_timing_anchoring(panel.context, timing, *panel.action);
+    nk_layout_row_dynamic(panel.context, 26, 1);
+    const bool apply = nk_button_label(panel.context, "Apply timing edit") != 0;
+    if (committed || apply) {
+        worm_ui_nuklear_inline_timing_update(state, timing, *panel.action, true, false);
+        // Keep a rejected proposal editable here. Application acceptance removes the
+        // stage, and the next frame dismisses this popup through the normal binding check.
+        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::confirm)
+            state.inline_timing.inline_timing_open = true;
+    } else if (changed && panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+        worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing.inline_timing_text.data(), *panel.action)) {
+        panel.action->timing_stage_action = wormedit::ui::timing_stage_action_t::update;
+    }
+}
+
+static auto inline_audio_timing_status(const wormedit::ui::timing_view_t& view) -> const char* {
+    if (state.inline_timing.inline_timing_error[0]) return state.inline_timing.inline_timing_error.data();
+    if (view.stage_rounded_positions && !view.stage_anchoring.allow_quantization)
+        return "Allow quantization is required to apply.";
+    if (!view.stage_status_text.empty()) return view.stage_status_text.c_str();
+    return "Enter to apply · Esc to cancel";
+}
+
 static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_rect viewport)
     -> struct nk_rect {
-    constexpr float popup_width = 196.0f;
-    constexpr float popup_height = 75.0f;
+    const bool audio_timing = is_inline_audio_timing(state.inline_timing.inline_timing_lane);
+    const float popup_width = audio_timing ? 310.0f : 196.0f;
+    const float popup_height = audio_timing ? 224.0f : 75.0f;
     const auto popup_x = std::clamp(state.inline_timing.inline_timing_anchor_screen_x,
                                     viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
     const auto popup_y = std::clamp(state.inline_timing.inline_timing_anchor_screen_y - 24.0f,
@@ -1004,22 +1036,23 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
         return;
     }
     nk_layout_row_dynamic(panel.context, 25.0f, 1);
+    const auto before_text = state.inline_timing.inline_timing_text;
     const auto edit_flags = wormedit::ui::chrome::autofocus_text_field(
         panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER |
                            NK_EDIT_AUTO_SELECT,
         state.inline_timing.inline_timing_text.data(), static_cast<int>(state.inline_timing.inline_timing_text.size()),
         nk_filter_default, state.inline_timing.inline_timing_focus_pending);
-    worm_ui_nuklear_inline_timing_update(state, timing, *panel.action,
-                                        (edit_flags & NK_EDIT_COMMITTED) != 0,
-                                        (edit_flags & NK_EDIT_DEACTIVATED) != 0);
+    if (is_inline_audio_timing(timing.stage_lane))
+        update_inline_audio_timing(panel, (edit_flags & NK_EDIT_COMMITTED) != 0,
+            before_text != state.inline_timing.inline_timing_text);
+    else worm_ui_nuklear_inline_timing_update(state, timing, *panel.action,
+        (edit_flags & NK_EDIT_COMMITTED) != 0, (edit_flags & NK_EDIT_DEACTIVATED) != 0);
     if (!state.inline_timing.inline_timing_open) {
         nk_popup_close(panel.context);
         state.inline_timing.inline_timing_popup_close_pending = false;
     }
-    nk_layout_row_dynamic(panel.context, 17.0f, 1);
-    nk_label(panel.context, state.inline_timing.inline_timing_error[0] ? state.inline_timing.inline_timing_error.data()
-                                                    : "Enter to apply · Esc to cancel",
-             NK_TEXT_LEFT);
+    nk_layout_row_dynamic(panel.context, is_inline_audio_timing(timing.stage_lane) ? 36.0f : 17.0f, 1);
+    nk_label_wrap(panel.context, inline_audio_timing_status(timing));
     nk_popup_end(panel.context);
 }
 

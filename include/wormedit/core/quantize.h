@@ -26,4 +26,8 @@ struct quantization_plan_t {
 };
 using quantization_outcome_t = diagnosed_t<quantization_plan_t>;
 
+// Shared validation for audio-time repositioning after a timing edit.
+[[nodiscard]] auto validate_repositioned_audio(const chart_document_t& before,
+    const chart_document_t& after) -> diagnostic_list_t;
+
 } // namespace wormedit

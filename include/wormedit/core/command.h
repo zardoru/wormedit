@@ -10,6 +10,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <memory>
 #include <string>
@@ -356,6 +357,13 @@ concept chart_edit_operation =
 class document_command_transaction_t {
   public:
     explicit document_command_transaction_t(document_history_t& history);
+    // Runs the ordinary command boundary on an isolated document, retaining no Undo.
+    // Domain callbacks may collect reports; the live document is never published.
+    // Returned applied/revision describe the candidate.
+    [[nodiscard]] static auto preview(const song_document_t&,
+        const std::function<document_command_result_t(document_history_t&)>&)
+        -> document_command_result_t;
+
     document_command_transaction_t(document_history_t& history, const document_stamp_t& stamp,
         std::string_view label,
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision,

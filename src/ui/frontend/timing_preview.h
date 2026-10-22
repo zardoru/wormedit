@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/timing_edit_policy.h>
 #include "compose.h"
 #include <wormedit/core/geometry.h>
 #include <wormedit/core/visual_layout.h>
@@ -68,6 +69,8 @@ struct timing_view_t {
     std::vector<timing_speed_view_t> speeds{};
     std::vector<wormedit::ui::compose_timing_marker_view_t> markers{};
     std::vector<timing_grid_line_view_t> grid_lines{};
+    timing_anchoring_t stage_anchoring;
+    std::size_t stage_moved_objects{}, stage_rounded_positions{};
     bool stage_active{};
     bool stage_valid{};
     wormedit::object_id_t stage_existing_object_id{};
@@ -112,6 +115,8 @@ struct timing_view_t {
         speeds.clear();
         markers.clear();
         grid_lines.clear();
+        stage_anchoring = {};
+        stage_moved_objects = stage_rounded_positions = 0;
         stage_active = {};
         stage_valid = {};
         stage_existing_object_id = {};

@@ -164,6 +164,10 @@ struct measure_removal_proposal_t {
                                              const audio_stream_info_t& stream,
                                              measure_edit_limits_t limits = {}) -> bool;
 
+// Extend default measure storage through an object head at this absolute row.
+[[nodiscard]] auto extend_chart_to_row(chart_document_t&, std::uint64_t row,
+    measure_edit_limits_t limits = {}) -> bool;
+
 // Extend native charts to the longest linked music/BGM source after a timing
 // edit. Apply to a document draft so a failed extent rejects the whole command.
 [[nodiscard]] auto extend_native_charts_to_audio_end(song_document_t& document) -> bool;

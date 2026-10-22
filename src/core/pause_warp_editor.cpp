@@ -335,4 +335,8 @@ auto apply_pause_warp_edit(document_command_transaction_t& transaction,
     return transaction.execute<pause_warp_edit_context_t>(action, limits);
 }
 
+auto stage_pause_warp_edit(document_command_transaction_t& transaction,
+    const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage<pause_warp_edit_context_t>(action, limits);
+}
 } // namespace wormedit

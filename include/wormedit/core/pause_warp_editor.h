@@ -70,4 +70,6 @@ apply_pause_warp_edit(document_history_t& history,
     const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits = {})
     -> document_command_result_t;
 
+[[nodiscard]] auto stage_pause_warp_edit(document_command_transaction_t&,
+    const pause_warp_edit_action_t&, pause_warp_edit_limits_t limits = {}) -> attempt_t<document_edit_effect_t>;
 } // namespace wormedit

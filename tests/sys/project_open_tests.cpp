@@ -1,6 +1,6 @@
-#include "sys/project_open.h"
-#include "sys/project_save_paths.h"
-#include "sys/project_view.h"
+#include "sys/project/project_open.h"
+#include "sys/project/project_save_paths.h"
+#include "sys/project/project_view.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/startup_session.h>

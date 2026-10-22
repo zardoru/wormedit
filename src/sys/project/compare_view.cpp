@@ -1,5 +1,5 @@
-#include "sys/workspace_view.h"
-#include "sys/compare_view.h"
+#include "sys/project/workspace_view.h"
+#include "sys/project/compare_view.h"
 #include "sys/notifications/notification_history_runtime.h"
 
 #include <algorithm>

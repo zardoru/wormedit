@@ -147,7 +147,7 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 - **Status:** done (2026-10-04; platform Primary+S routes through existing Save)
 - **Outcome:** Ctrl+S invokes the same project save action as File → Save, including the existing destination picker for an unsaved project.
-- **Read first:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/project_save_paths.cpp`.
+- **Read first:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/project/project_save_paths.cpp`.
 - **Files owned:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/platform_shortcut_profile.cpp`, `src/sys/application_commands.cpp/.h`, `src/sys/workspace_projection.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
 - **Supporting scope (coordinator approved, 2026-10-04):** `src/sys/application_commands.cpp/.h` are owned to route the registered Save command through the existing application action; `src/sys/workspace_projection.cpp` publishes the originating project ID on every tab.
 - **Steps:**

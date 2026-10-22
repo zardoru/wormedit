@@ -175,7 +175,7 @@ endif()
 # Headless converter: the editor's conversion service behind a JSON request.
 add_executable(wormedit-convert
     src/tools/wormedit_convert.cpp
-    src/sys/project_open.cpp
+    src/sys/project/project_open.cpp
 )
 target_include_directories(wormedit-convert PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(wormedit-convert PRIVATE wormedit::core nlohmann_json::nlohmann_json)
@@ -513,7 +513,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_selection_view.cpp
         src/sys/compose_draw_source_view.cpp
         src/sys/compose_hover_timing.cpp
-        src/sys/compare_view.cpp
+        src/sys/project/compare_view.cpp
         src/sys/compose_input.cpp
         src/sys/compose_waveform_fit_input.cpp
         src/sys/compose_timing_input.cpp
@@ -547,11 +547,11 @@ if(WORMEDIT_BUILD_APP)
         src/sys/resources/sound_drop_transaction.cpp
         src/sys/application_startup.cpp
         src/sys/application_lifetime.cpp
-        src/sys/recovery_notification_feedback.cpp
+        src/sys/project/recovery_notification_feedback.cpp
         src/sys/audio/audio_project_import.cpp
-        src/sys/project_open.cpp
-        src/sys/chart_import_session.cpp
-        src/sys/project_save_paths.cpp
+        src/sys/project/project_open.cpp
+        src/sys/project/chart_import_session.cpp
+        src/sys/project/project_save_paths.cpp
         src/sys/main.cpp
         src/sys/application.cpp
         src/sys/application_timing_stage.cpp
@@ -567,10 +567,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_waveform_overlays.cpp
         src/sys/resources/resource_job_state.cpp
         src/sys/audio/preview_audio_export.cpp
-        src/sys/output_group_export.cpp
+        src/sys/project/output_group_export.cpp
         src/sys/audio/player_preview_presenter.cpp
-        src/sys/workspace_view.cpp
-        src/sys/workspace_frame_view.cpp
+        src/sys/project/workspace_view.cpp
+        src/sys/project/workspace_frame_view.cpp
         src/sys/audio/transport_player_actions.cpp
         src/sys/preferences/external_player.cpp
         src/sys/preferences/preferences_runtime.cpp
@@ -579,7 +579,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/shortcut_rows.cpp
         src/sys/menu_command_view.cpp
         src/sys/notifications/notification_history_runtime.cpp
-        src/sys/project_view.cpp
+        src/sys/project/project_view.cpp
         src/sys/audio/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp

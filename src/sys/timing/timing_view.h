@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/measure.h>

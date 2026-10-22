@@ -1,4 +1,4 @@
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "sys/compose_view.h"
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/lane_profiles.h>

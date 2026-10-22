@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
-#include "sys/output_group_export.h"
+#include "sys/project/output_group_export.h"
 #include <map>
 #include <optional>
 #include <wormedit/core/async_job.h>

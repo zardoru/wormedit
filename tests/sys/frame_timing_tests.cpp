@@ -9,7 +9,7 @@
 #include "sys/application_defaults.h"
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/audio/chart_preview_state.h"
-#include "sys/compare_view.h"
+#include "sys/project/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_input.h"

@@ -1,5 +1,5 @@
-#include "sys/project_view.h"
-#include "sys/output_group_export.h"
+#include "sys/project/project_view.h"
+#include "sys/project/output_group_export.h"
 #include "core/text_util.h"
 #include "sys/metadata/metadata_commands.h"
 #include <wormedit/core/rational.h>

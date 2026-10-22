@@ -1,4 +1,4 @@
-#include "sys/output_group_export.h"
+#include "sys/project/output_group_export.h"
 #include <wormedit/core/catalogs.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>

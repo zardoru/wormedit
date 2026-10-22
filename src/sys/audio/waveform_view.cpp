@@ -1,4 +1,4 @@
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include <wormedit/core/rational.h>
 #include "sys/audio/waveform_view.h"
 #include <wormedit/audio/waveform_viewport.h>

@@ -112,7 +112,7 @@ def main():
     args.output.mkdir(parents=True)
     probes = {"producer": "src/sys/compose_marker_view.cpp",
               "bgm": args.bgm_header, "root": "src/ui/frontend/workspace.h",
-              "private": "src/sys/workspace_view.h"}
+              "private": "src/sys/project/workspace_view.h"}
     original = {name: (args.source / path).read_bytes()
                 for name, path in probes.items() if name in args.cases}
     metadata = {"label": args.label, "source": str(args.source),

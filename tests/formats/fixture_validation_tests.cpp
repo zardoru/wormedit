@@ -1,5 +1,5 @@
 #include "fixture_encoding.h"
-#include "sys/project_open.h"
+#include "sys/project/project_open.h"
 
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/lane_profiles.h>

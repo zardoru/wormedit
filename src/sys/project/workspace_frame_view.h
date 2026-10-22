@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sys/audio/player_preview_presenter.h"
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/command.h>

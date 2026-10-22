@@ -24,9 +24,9 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   inline form and deletion checkbox.
 - **Read first:** `docs/audits/output-groups-ux-2026-10-19.md`; `src/ui/nuklear/setup_panel.cpp`
   (`render_output_groups`); `src/ui/nuklear/dialog.h`; `src/ui/frontend/project.h`;
-  `src/sys/project_view.cpp` (`build_output_group_view`).
+  `src/sys/project/project_view.cpp` (`build_output_group_view`).
 - **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/frontend/project.h`,
-  `src/sys/project_view.cpp`, `tests/sys/project_view_tests.cpp`,
+  `src/sys/project/project_view.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`,
   `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`,
   `docs/manual/chapters/walkthrough-bms.adoc`,
@@ -77,12 +77,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   removed. File → Export reaches the same target choice and policy.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/ui/nuklear/compose_resources.cpp`;
   `src/sys/compose_resource_actions.cpp` (`export_compose_output_group_action_t`);
-  `src/sys/output_group_export.h`; `include/wormedit/formats/conversion.h`.
+  `src/sys/project/output_group_export.h`; `include/wormedit/formats/conversion.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/formats/conversion.h`,
   `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/frontend/actions.h`,
   `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`,
-  `src/sys/project_view.h`, `src/sys/project_view.cpp`, `src/sys/compose_resource_actions.cpp`,
-  `src/sys/output_group_export.h`, `src/sys/output_group_export.cpp`,
+  `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`, `src/sys/compose_resource_actions.cpp`,
+  `src/sys/project/output_group_export.h`, `src/sys/project/output_group_export.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`,
   `tests/sys/project_view_tests.cpp`, `tests/sys/resource_notification_tests.cpp`,
@@ -92,7 +92,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/sys/resources/resource_job_state.cpp` own the background export lifecycle and therefore retain the
   prepared Ask-confirmation request; `src/sys/application.cpp` projects that lifecycle state and
   supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_state.h`,
-  `src/sys/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
+  `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
   `src/ui/nuklear/frontend.cpp` carry the existing global File → Export chooser/confirmation
   surface. These extensions are required to keep conversion and filesystem preflight off the UI
   thread while using the same workflow from every project tab. `src/formats/native_project_storage.cpp`
@@ -143,12 +143,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   section is removed, and new compatible projects create one StepMania target instead of parallel
   SM and SSC groups.
 - **Read first:** `include/wormedit/formats/conversion.h` (`stepmania_export_policy_t`);
-  `include/wormedit/core/document.h` (`output_group_t`); `src/sys/output_group_export.h`;
+  `include/wormedit/core/document.h` (`output_group_t`); `src/sys/project/output_group_export.h`;
   `src/core/lane_profiles.cpp` (`mania_step_outputs`); `src/ui/nuklear/setup_panel.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/core/lane_profiles.h`,
   `include/wormedit/formats/conversion.h`, `src/core/lane_profiles.cpp`,
-  `src/ui/frontend/project.h`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`,
-  `src/sys/output_group_export.h`, `src/sys/workspace_view.cpp`,
+  `src/ui/frontend/project.h`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`,
+  `src/sys/project/output_group_export.h`, `src/sys/project/workspace_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/lane_profile_tests.cpp`, `tests/formats/native_project_tests.cpp`,
   `tests/sys/application_defaults_tests.cpp`, `tests/sys/application_commands_tests.cpp`,
@@ -160,7 +160,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `tests/formats/native_project_storage_tests.cpp` advance recovery support with native schema 8;
   `src/sys/application.cpp`, `src/sys/application_edit_inputs.h`,
   `src/sys/application_frame_view.{h,cpp}`, `src/sys/compose_resource_actions.cpp`,
-  `src/sys/project_view.h`, and `src/sys/transport_player_actions.{h,cpp}` remove the obsolete
+  `src/sys/project/project_view.h`, and `src/sys/transport_player_actions.{h,cpp}` remove the obsolete
   application-lifetime export policy and pass target-owned policy through the existing routes.
   `src/ui/frontend/actions.h`, `src/ui/nuklear/setup_state.{h,cpp}` and
   `tests/ui/nuklear_setup_state_tests.cpp` move validation from the retired global form to target
@@ -202,14 +202,14 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   StepMania; WormEdit derives and displays every chart, generated and copied-asset destination, and
   Preview expands the card into per-file **new / replace / reuse / copy** rows with byte sizes plus
   every conversion diagnostic before publication.
-- **Read first:** `src/sys/output_group_export.h` (`output_group_export_preparation_t`);
-  `src/formats/conversion_publication.cpp`; `src/sys/project_view.cpp` (`output_preview`);
-  `src/ui/nuklear/setup_panel.cpp`; `src/sys/project_save_paths.cpp`.
+- **Read first:** `src/sys/project/output_group_export.h` (`output_group_export_preparation_t`);
+  `src/formats/conversion_publication.cpp`; `src/sys/project/project_view.cpp` (`output_preview`);
+  `src/ui/nuklear/setup_panel.cpp`; `src/sys/project/project_save_paths.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/chart_editor.cpp`,
   `src/formats/conversion_publication.cpp`, `src/ui/frontend/project.h`,
   `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/setup_panel.cpp`,
-  `src/sys/application.cpp`, `src/sys/output_group_export.h`,
-  `src/sys/output_group_export.cpp`, `src/sys/project_view.h`, `src/sys/project_view.cpp`,
+  `src/sys/application.cpp`, `src/sys/project/output_group_export.h`,
+  `src/sys/project/output_group_export.cpp`, `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/formats/conversion_publication_tests.cpp`,
   `tests/formats/native_project_tests.cpp`, `tests/sys/project_view_tests.cpp`,
@@ -220,7 +220,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `include/wormedit/formats/conversion_publication.h`, `src/core/lane_profiles.cpp`,
   `src/core/resource_file_copy.cpp`, `src/formats/conversion_publication_storage.cpp`,
   `src/formats/native_project_storage.cpp`, `src/sys/metadata/metadata_view.cpp`,
-  `src/sys/workspace_view.cpp`, `src/tools/wormedit_convert.cpp`,
+  `src/sys/project/workspace_view.cpp`, `src/tools/wormedit_convert.cpp`,
   `src/ui/frontend/runtime.h`, and `src/ui/nuklear/setup_panel.h` carry the typed destination
   through existing asset, storage, projection, CLI and picker boundaries. The corresponding
   storage/default tests plus `tests/sys/compose_action_notification_tests.cpp`,
@@ -271,17 +271,17 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   add/remove compatible charts through their chips, the chart table's Exports cell opens the same
   membership checklist, and an empty Exports section offers suggested targets from the active
   layout instead of a blank generic form.
-- **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/sys/project_view.cpp`;
+- **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/sys/project/project_view.cpp`;
   `src/core/chart_editor.cpp` (`apply_set_output_group_command`);
   `src/core/lane_profiles.cpp` (`default_output_groups`); `src/formats/conversion.cpp`.
 - **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`,
   `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/nuklear/setup_panel.cpp`,
-  `src/sys/project_view.cpp`, `tests/core/chart_editor_tests.cpp`,
+  `src/sys/project/project_view.cpp`, `tests/core/chart_editor_tests.cpp`,
   `tests/core/lane_profile_tests.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, `docs/manual/chapters/walkthrough-bms.adoc`,
   `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, this card and
   `memory/chart-editor-status/resume.md`.
-- **Supporting-file extensions (2026-10-19):** `src/sys/project_view.h` owns the projected
+- **Supporting-file extensions (2026-10-19):** `src/sys/project/project_view.h` owns the projected
   compatibility strings and suggestion storage; `src/formats/conversion.cpp` consumes the public
   BMS layout query instead of retaining a second compatibility fact. `src/sys/application.cpp`
   supplies the selected chart before building suggestions. The BMS walkthrough harness fixture
@@ -322,11 +322,11 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   by lane shape, variant toggles and a lane preview replace the roughly 60-entry combo, while the
   chosen stable catalog ID still drives project construction.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_new_project_wizard`);
-  `src/ui/frontend/workspace.h`; `src/sys/workspace_view.cpp` (`new_project_layout_view`);
+  `src/ui/frontend/workspace.h`; `src/sys/project/workspace_view.cpp` (`new_project_layout_view`);
   `include/wormedit/core/lane_profiles.h`; `src/core/lane_profiles.cpp` (`new_project_layouts`).
 - **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`,
   `src/ui/frontend/workspace.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/resources/catalog_view.h`,
-  `src/sys/workspace_view.cpp`, `tests/core/lane_profile_tests.cpp`,
+  `src/sys/project/workspace_view.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/sys/application_defaults_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.
 - **Supporting-file extensions (2026-10-19):** `tests/sys/frame_projection_arena_tests.cpp`

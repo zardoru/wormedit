@@ -185,7 +185,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Status:** done (2026-10-04; cached diagnostics, bounded active-chart list, rowless rejection and exact Compose jumps)
 - **Scope approval (user, 2026-10-04):** Application cursor-jump wiring may also edit `src/sys/main.cpp`, and actual input coverage may edit `tests/ui/nuklear_event_harness_tests.cpp`. Also approved: `src/core/workspace.cpp` and `include/wormedit/core/workspace.h` to pass cached validation through the normal Compare workspace builder, preserving its focus and diagnostic-cap checks.
 - **Outcome:** the tab shows a bounded list of document-validation diagnostics for the active chart; clicking one moves the Compose cursor to its row.
-- **Read first:** `include/wormedit/core/document.h` (graph validation diagnostics), `src/sys/compare_view.cpp`, `src/ui/nuklear/compare_panel.cpp`.
+- **Read first:** `include/wormedit/core/document.h` (graph validation diagnostics), `src/sys/project/compare_view.cpp`, `src/ui/nuklear/compare_panel.cpp`.
 - **Files owned:** `src/sys/compare_view.cpp/.h`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/frontend.h`. Supporting scope approved 2026-10-04: `src/sys/main.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/core/workspace.cpp`, `include/wormedit/core/workspace.h`.
 - **Steps:**
   1. Project up to 256 diagnostics (code, message, optional row) into the scalar view.
@@ -310,8 +310,8 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Implementation notes (2026-10-09):** nonportable_project_asset_count covers audio, visual, MIDI and generator source paths, including absolute/Windows paths and normalized parent escapes. The main loop publishes a warning on project load or when the external-asset count changes; project_portability_notice_t scans once per revision and suppresses repeated notices after unrelated edits. Empty, contained relative and disposable waveform-cache paths do not warn.
 - **Outcome:** A warning explains that absolute or parent-escaping asset paths may prevent moving the project.
 - **Stale-plan check (2026-10-09):** The user explicitly authorized all remaining Brain scratchpad observations. No split shortcut or portability notice exists; the grip is gated on draggable; invisible notes share ordinary opacity. T-496 is one verified remote commit e37e227 atop ed93979.
-- **Read first:** `src/sys/project_save_paths.h`, `src/sys/project_save_paths.cpp`, `src/sys/main.cpp`, `tests/sys/project_save_paths_tests.cpp`.
-- **Files owned:** `src/sys/project_save_paths.h`, `src/sys/project_save_paths.cpp`, `src/sys/main.cpp`, `tests/sys/project_save_paths_tests.cpp`; coordinator status files `docs/chart-editor-plan/tasks/frontend-shell.md`, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/sys/project/project_save_paths.h`, `src/sys/project/project_save_paths.cpp`, `src/sys/main.cpp`, `tests/sys/project_save_paths_tests.cpp`.
+- **Files owned:** `src/sys/project/project_save_paths.h`, `src/sys/project/project_save_paths.cpp`, `src/sys/main.cpp`, `tests/sys/project_save_paths_tests.cpp`; coordinator status files `docs/chart-editor-plan/tasks/frontend-shell.md`, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** Audit current behavior; implement the smallest shared change; cover the behavior and failure boundaries; build and verify; update the Brain scratchpad and status.
 - **Invariants:** preserve authored data and existing input owners; structural edits are atomic and undoable; no desktop test windows or physical audio.
 - **Reject/failure behavior:** stale/invalid input leaves document history untouched; unavailable environments are recorded accurately; measure heads do not create empty measures.

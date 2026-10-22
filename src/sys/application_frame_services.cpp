@@ -2,7 +2,7 @@
 #include "sys/application_frame_services.h"
 #include "sys/application_edit_inputs.h"
 
-#include "sys/project_open.h"
+#include "sys/project/project_open.h"
 #include "sys/resources/resource_drop_router.h"
 #include "sys/frame_pacing.h"
 

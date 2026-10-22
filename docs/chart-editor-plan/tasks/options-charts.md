@@ -168,7 +168,7 @@ Apply the stale-plan check (rule 9) first.
   `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
   `src/sys/application.cpp`, `src/sys/options_runtime.h/.cpp`, `src/sys/project_view.h/.cpp`,
   `src/sys/compose_view.h`, `src/sys/chart_import_session.h/.cpp`,
-  `src/sys/preferences/external_player_runtime.h`, `src/sys/workspace_view.cpp`,
+  `src/sys/preferences/external_player_runtime.h`, `src/sys/project/workspace_view.cpp`,
   `src/ui/frontend/options_notifications.h`, `src/ui/frontend/timing_preview.h`,
   `src/ui/frontend/workspace.h`,
   `src/ui/nuklear/frontend.cpp`, `tests/core/preferences_tests.cpp`,
@@ -239,7 +239,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** done
 - **Outcome:** a second table lists output groups (name, family, output path, charts); the user can create, rename, delete a group, change its family and relative path, and assign charts with checkboxes; each group shows validation from the conversion service (for example "SM/SSC: several charts allowed", "BMS: one chart per file") and a Preview export button (T-110).
 - **Read first:** `include/wormedit/core/document.h` (`output_group_t`), `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/compose_actions.cpp` (export action).
-- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/ui/frontend.h`; supporting scope approved by root: `src/sys/project_view.h`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp`, `src/sys/compose_actions.cpp`, `tests/sys/project_view_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/options-charts.md`, `memory/chart-editor-status/resume.md`.
+- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`, `src/ui/frontend.h`; supporting scope approved by root: `src/sys/project/project_view.h`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp`, `src/sys/compose_actions.cpp`, `tests/sys/project_view_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/options-charts.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Core group commands (create/rename/delete/family/path/membership) with validation of paths (relative, no traversal). 2. Table UI. 3. Per-group validation text from a dry-run conversion (off the frame thread).
 - **Invariants:** existing published output manifests stay valid; renaming a group does not rename files on disk.
 - **Reject/failure behavior:** invalid paths or unsupported family/chart combinations reject with the reason.
@@ -256,7 +256,7 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
 
 - **Status:** done
 - **Outcome:** Project tab → "Import chart…" reads a chart file (BMS family, SM/SSC, osu!mania, BMSON, `.qua` when T-174 lands), lets the user pick which of its difficulties to add, previews resource matching (reuse identical files, add new ones, report missing), and adds the charts as one undoable command; timing differences from the song are shown before import.
-- **Read first:** `src/sys/project_open.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_import`), `include/wormedit/core/document.h`.
+- **Read first:** `src/sys/project/project_open.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_import`), `include/wormedit/core/document.h`.
 - **Files owned:** new `include/wormedit/core/chart_import.h`, new `src/core/chart_import.cpp`, new `tests/core/chart_import_tests.cpp`, `src/sys/project_open.cpp/.h`, `src/ui/nuklear/setup_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Result (2026-10-10):** `include/wormedit/core/chart_import.h` and `src/core/chart_import.cpp` list a source song's difficulties, plan the import (resources reused by resolved path or identical content, added, or reported missing; timing differences against the song's first chart: initial BPM, audio offset, divisions) and apply it as one revision-checked undoable command. Fresh identities come from `apply_duplicate_chart_command` on a scratch history, so no remap code is duplicated; resource and asset references are remapped to project entries, new entries drop their format identities and sound group, and missing files are added flagged missing. `src/sys/chart_import_session.h/.cpp` read the file through `open_project_file` (every existing importer) and own the dialog state; `src/sys/main.cpp` routes the actions. The Project tab has an "Import chart…" button next to "+", opening a modal `chrome::Dialog` (`src/ui/nuklear/chart_import_dialog.cpp`) with a path field, a Browse… button for the native picker (`WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE`), Read, a ticked difficulty list, the resource summary, missing-file and timing notes, and Cancel / Import. The path field makes the dialog usable and testable without the picker: the Xvfb run typed a path. Extra supporting paths used: `src/sys/chart_import_session.*`, `src/sys/main.cpp`, `src/ui/nuklear/chart_import_dialog.*`, `src/ui/nuklear/frontend.cpp` (picker kind, modal flag and render call only), `tests/ui/nuklear_event_harness_tests.cpp`. Tests: 7 core cases, 4 harness cases plus the button case. BMS text-encoding choice is not offered in the dialog: such files report "open it as a project once to pick one". Xvfb captures: `/home/zardoru/devel/wormedit-scratch-builds/t262/` (`import-open.png`, `import-preview.png`, `import-done.png`).
 - **Steps:** 1. Parse into a temporary song. 2. Resource merge plan (content hash or normalized path match). 3. ID remap and commit. 4. Tests: import an SM difficulty into a BMS-based song; duplicate resource reuse; missing file report.
@@ -278,9 +278,9 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
 - **Supporting ownership (2026-10-21):** also owned: `src/sys/application.cpp`,
   `include/wormedit/core/command.h`, `src/core/command.cpp`, `docs/architecture.md`
   (publication options in the shared finisher preserve imported-source flags),
-  `src/sys/project_view.h`,
+  `src/sys/project/project_view.h`,
   `include/wormedit/core/vocabulary.h`, `include/wormedit/core/resource_file_copy.h`,
-  `src/core/resource_file_copy.cpp`, `src/sys/project_save_paths.cpp`,
+  `src/core/resource_file_copy.cpp`, `src/sys/project/project_save_paths.cpp`,
   `src/sys/metadata/metadata_asset_runtime.cpp`, `src/ui/frontend/project.h`,
   `src/ui/frontend/actions.h`,
   new `tests/ui/project_settings_event_harness_tests.cpp`,
@@ -296,7 +296,7 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
   effective defaults and the actual application/frontend owners.
 - **Outcome:** the native project document carries a typed `project_settings_t` (project asset directories and explicit overrides of program defaults such as default snap for new charts in this project); the Project tab shows them in a "Project settings" section with "Use program default" toggles; editing them is undoable and marks the project dirty. StepMania policies remain on each export target (T-725); external players remain application settings.
 - **Read first:** the scope rule above, `include/wormedit/core/document.h` (song aggregate), `src/sys/main.cpp` (where `stepmania_export_policy` lives today), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `include/wormedit/core/preferences.h`.
-- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/project_settings.h`, new `src/core/project_settings.cpp`, new `tests/core/project_settings_tests.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/sys/main.cpp` (move the StepMania policy state into the document), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/project_settings.h`, new `src/core/project_settings.cpp`, new `tests/core/project_settings_tests.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`, `src/sys/main.cpp` (move the StepMania policy state into the document), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
   1. Type with optional overrides; `effective(project_settings, preferences)` resolves a value and says which scope it came from.
   2. Revision-checked edit command; native schema migration (older projects get empty settings).

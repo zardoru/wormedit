@@ -1,5 +1,5 @@
 #define NK_IMPLEMENTATION
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "ui/nuklear/notification_toasts.h"
 
 #include <catch2/catch_test_macros.hpp>

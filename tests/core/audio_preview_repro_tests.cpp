@@ -1,6 +1,6 @@
 #include "sys/audio/audio_source_registration.h"
 #include "sys/audio/metronome.h"
-#include "sys/project_open.h"
+#include "sys/project/project_open.h"
 
 #include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/audition_resolver.h>

@@ -37,8 +37,8 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_action_outcome.cpp
     ../src/sys/compose_audition_requests.cpp
     ../src/sys/application_commands.cpp
-    ../src/sys/project_view.cpp
-    ../src/sys/output_group_export.cpp
+    ../src/sys/project/project_view.cpp
+    ../src/sys/project/output_group_export.cpp
     ../src/sys/audio/tap_timing_runtime.cpp
     ../src/sys/audio/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
@@ -61,11 +61,11 @@ add_executable(wormedit_core_tests
     ../src/sys/recipe_form.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
-    ../src/sys/recovery_notification_feedback.cpp
+    ../src/sys/project/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
-    ../src/sys/project_open.cpp
-    ../src/sys/chart_import_session.cpp
-    ../src/sys/project_save_paths.cpp
+    ../src/sys/project/project_open.cpp
+    ../src/sys/project/chart_import_session.cpp
+    ../src/sys/project/project_save_paths.cpp
     core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
@@ -233,7 +233,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
 
     add_executable(wormedit_audio_tests
         ../src/sys/audio/preview_audio_export.cpp
-        ../src/sys/project_open.cpp
+        ../src/sys/project/project_open.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/audio/audio_project_import.cpp
         ../src/sys/audio/audio_source_registration.cpp
@@ -600,8 +600,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/preferences/external_player.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
-        ../src/sys/project_save_paths.cpp
-        ../src/sys/output_group_export.cpp
+        ../src/sys/project/project_save_paths.cpp
+        ../src/sys/project/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
@@ -690,7 +690,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_selection_transform.cpp
         ../src/sys/compose_label_search.cpp
         ../src/sys/application_defaults.cpp
-        ../src/sys/project_view.cpp
+        ../src/sys/project/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
@@ -726,7 +726,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/resources/sound_usage_view.cpp
-        ../src/sys/workspace_view.cpp
+        ../src/sys/project/workspace_view.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
         "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")
@@ -828,7 +828,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/timing/timing_view.cpp
         ../src/sys/recipe_form.cpp
-        ../src/sys/workspace_view.cpp
+        ../src/sys/project/workspace_view.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/resources/sound_list_view.cpp
@@ -862,8 +862,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resources/resource_job_state.cpp
             ../src/sys/audio/preview_audio_export.cpp
-            ../src/sys/project_save_paths.cpp
-            ../src/sys/output_group_export.cpp
+            ../src/sys/project/project_save_paths.cpp
+            ../src/sys/project/output_group_export.cpp
             ../src/sys/metadata/metadata_asset_runtime.cpp
             ../src/sys/metadata/metadata_drop_state.cpp
             sys/minimap_center_tests.cpp
@@ -917,7 +917,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
         ../src/sys/preferences/external_player.cpp
-        ../src/sys/project_view.cpp
+        ../src/sys/project/project_view.cpp
         ../src/sys/preferences/options_runtime.cpp
         ../src/sys/shortcut_rows.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
@@ -926,12 +926,12 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
-        ../src/sys/project_save_paths.cpp
-        ../src/sys/output_group_export.cpp
+        ../src/sys/project/project_save_paths.cpp
+        ../src/sys/project/output_group_export.cpp
         sys/metadata_notification_tests.cpp
         ../src/sys/resources/sound_usage_view.cpp
         ../src/sys/frame_timing.cpp
-        ../src/sys/workspace_view.cpp
+        ../src/sys/project/workspace_view.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/resources/sound_list_view.cpp

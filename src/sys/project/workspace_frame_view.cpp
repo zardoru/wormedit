@@ -1,4 +1,4 @@
-#include "sys/workspace_frame_view.h"
+#include "sys/project/workspace_frame_view.h"
 
 #include <algorithm>
 #include <ranges>

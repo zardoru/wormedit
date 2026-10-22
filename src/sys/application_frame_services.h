@@ -7,7 +7,7 @@
 #include "sys/resources/resource_job_state.h"
 #include "sys/audio/preview_audio_export.h"
 #include "sys/resources/sound_drop_transaction.h"
-#include "sys/workspace_edit_feedback.h"
+#include "sys/project/workspace_edit_feedback.h"
 
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/workspace.h>

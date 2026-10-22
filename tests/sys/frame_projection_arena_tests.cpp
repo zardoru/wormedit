@@ -4,7 +4,7 @@
 #include <wormedit/formats/bms.h>
 #include "sys/frame_timing.h"
 #include "sys/notifications/notification_history_runtime.h"
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include <wormedit/core/arena.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
@@ -1436,7 +1436,7 @@ TEST_CASE("Warmed retained timing projection preserves storage without heap allo
 }
 
 #include "sys/preferences/options_runtime.h"
-#include "sys/project_view.h"
+#include "sys/project/project_view.h"
 #include "sys/shortcut_rows.h"
 
 TEST_CASE("Project options and shortcut projections reuse warmed nested storage",

@@ -6,8 +6,8 @@
 #include "sys/audio/player_preview_presenter.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/timing/timing_view.h"
-#include "sys/workspace_frame_view.h"
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_frame_view.h"
+#include "sys/project/workspace_view.h"
 
 #include <wormedit/window.h>
 

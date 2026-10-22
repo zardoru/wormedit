@@ -165,7 +165,7 @@ the standard pattern" instead of repeating it.
 2. **Contract:** add the action and view data at the backend-neutral frontend boundary. New or
    converted surfaces use the C++ types described in `code-style.md`; when extending a legacy
    `WormUi*` surface, keep the existing representation unless the card contains its conversion.
-3. **Application:** a `case` in the matching dispatcher (`src/sys/compose_actions.cpp`, `src/sys/metadata/metadata_actions.cpp`, or `src/sys/project_view.cpp`) that calls the core command, and view projection in `src/sys/compose_view.cpp`, `src/sys/metadata/metadata_view.cpp`, or `src/sys/workspace_view.cpp`.
+3. **Application:** a `case` in the matching dispatcher (`src/sys/compose_actions.cpp`, `src/sys/metadata/metadata_actions.cpp`, or `src/sys/project/project_view.cpp`) that calls the core command, and view projection in `src/sys/compose_view.cpp`, `src/sys/metadata/metadata_view.cpp`, or `src/sys/project/workspace_view.cpp`.
 4. **Frontend:** a widget in the owning Nuklear unit (`src/ui/nuklear/compose_inspector.cpp`, `compose_toolbar.cpp`, `metadata_panel.cpp`, `setup_panel.cpp`, …) that sets the action. Frontend-local state goes in the matching `*_state.cpp` and is tested in `tests/ui/`.
 
 New `.cpp` files go in the source list in `CMakeLists.txt`; new test files go in `tests/CMakeLists.txt` beside a sibling in the same directory.

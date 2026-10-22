@@ -1,5 +1,5 @@
 #include <wormedit/core/bmson_lane_mode.h>
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "sys/resources/catalog_view.h"
 #include <charconv>
 #include <cstdio>

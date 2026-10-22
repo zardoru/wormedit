@@ -15,7 +15,7 @@
 #include "sys/compose_sound_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/native_chart_edit_action.h"
-#include "sys/output_group_export.h"
+#include "sys/project/output_group_export.h"
 #include "sys/audio/transport_player_actions.h"
 
 #include <wormedit/core/command_registry.h>

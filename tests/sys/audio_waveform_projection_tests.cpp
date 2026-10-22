@@ -1,4 +1,4 @@
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "sys/audio/waveform_view.h"
 #include "sys/frame_timing.h"
 #include <catch2/catch_test_macros.hpp>

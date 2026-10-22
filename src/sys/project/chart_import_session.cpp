@@ -1,7 +1,7 @@
-#include "sys/chart_import_session.h"
+#include "sys/project/chart_import_session.h"
 #include "sys/metadata/metadata_commands.h"
 
-#include "sys/project_open.h"
+#include "sys/project/project_open.h"
 #include <wormedit/core/preferences.h>
 
 #include <algorithm>

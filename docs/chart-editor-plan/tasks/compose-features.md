@@ -105,7 +105,7 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; exact runtime voice position, source identity guards, restart/clip regressions and real-window playback/pause/Stop verified)
 - **Outcome:** the minimap shows the position in its displayed audio source when runtime source-frame identity is known, and omits the marker when it is ambiguous.
-- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/workspace_frame_view.h`, `src/sys/workspace_frame_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_panel.cpp`.
+- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/project/workspace_frame_view.h`, `src/sys/project/workspace_frame_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_panel.cpp`.
 - **Files owned:** `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_session.cpp`, `src/sys/application_frame_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_panel.cpp`, `tests/core/audio_transport_tests.cpp`, `tests/core/audio_preview_session_tests.cpp`, `tests/core/audio_audition_session_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp` (assigned after the source-position audit).
 - **Steps:**
   1. Audit runtime source-frame positions for music preview, chart preview, and audition; STOP and report if a source position cannot be identified.

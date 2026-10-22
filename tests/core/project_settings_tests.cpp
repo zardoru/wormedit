@@ -2,7 +2,7 @@
 #include <wormedit/core/preferences.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/chart_editor.h>
-#include "sys/project_view.h"
+#include "sys/project/project_view.h"
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
 

@@ -1,7 +1,7 @@
 #include <wormedit/core/time_shift.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/formats/bms.h>
-#include "sys/output_group_export.h"
+#include "sys/project/output_group_export.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

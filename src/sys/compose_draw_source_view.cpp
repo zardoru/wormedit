@@ -1,4 +1,4 @@
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "core/text_util.h"
 #include "ui/compose_draw_source_labels.h"
 #include "sys/compose_area_actions.h"

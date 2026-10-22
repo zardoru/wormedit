@@ -84,8 +84,8 @@ later covering more bmhelper functions.
 - **Status:** done
 - **Implementation notes (2026-10-02):** `project_sound_list` and `project_sound_properties` (`src/sys/sound_list_projection.h`) are pure and tested headless (4 cases): audio resources only, case-insensitive search and exact tag filter, row windowing with clamped start, use counts from notes and BGM events, inferred kind (stem for music/BGM-only resources). The plain-C view structs in `frontend.h` and the `workspace_frame_view` wiring were left to T-329, which draws them and needs the SDL3 build to check; that avoids adding uncompiled glue now.
 - **Outcome:** the audio-slices view exposes bounded sound rows (name, kind, tags, duration, sample rate, use count, missing flag) filtered by search text and tag, plus the selected sound's properties and its viewport; rows are built only for the visible range.
-- **Read first:** `src/sys/workspace_frame_view.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/ui/frontend.h` (`WormUiAudioSlicesView`).
-- **Files owned:** new `src/sys/sound_list_projection.cpp/.h`, new `tests/sys/sound_list_projection_tests.cpp`, `src/sys/workspace_frame_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Read first:** `src/sys/project/workspace_frame_view.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/ui/frontend.h` (`WormUiAudioSlicesView`).
+- **Files owned:** new `src/sys/sound_list_projection.cpp/.h`, new `tests/sys/sound_list_projection_tests.cpp`, `src/sys/project/workspace_frame_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Add plain-C row and property structs and the selection/scroll fields. 2. Projection with filtering and use counts. 3. Tests: 10,000 rows project only the window; filters; stable selection across revisions.
 - **Invariants:** existing `WormUiAudioSlicesView` fields keep their meaning so the offset drag still works.
 - **Reject/failure behavior:** an invalid view fails `worm_ui_nuklear_audio_slices_view_valid`, never undefined reads.
@@ -115,7 +115,7 @@ later covering more bmhelper functions.
 - **Outcome:** the properties column edits tags as chips plus a text field, and the list filters by tag.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
-- **Supporting ownership (2026-10-20):** `src/ui/frontend/actions.h`, `src/ui/frontend/metadata_audio.h`, `src/sys/workspace_view.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/sys/sound_properties_actions_tests.cpp`: the current metadata route lives in Compose sound actions rather than main; carry structured tags through the view and an optional owned C++ tag payload through that route, with command integration coverage.
+- **Supporting ownership (2026-10-20):** `src/ui/frontend/actions.h`, `src/ui/frontend/metadata_audio.h`, `src/sys/project/workspace_view.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/sys/sound_properties_actions_tests.cpp`: the current metadata route lives in Compose sound actions rather than main; carry structured tags through the view and an optional owned C++ tag payload through that route, with command integration coverage.
 - **Supporting ownership (UI coverage):** `tests/ui/audio_sounds_workflow_event_harness_tests.cpp` exercises the production chip/add emitters and their separation from unapplied name drafts.
 - **Steps:** 1. Commit through `apply_resource_sound_metadata`. 2. Tag filter state. 3. Tests for add, remove, duplicate and limit messages.
 - **Invariants:** one history step per tag edit.

@@ -36,9 +36,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** New BME/PMS publication matrix covers explicit .bme/.bms/.pms filenames, layout-derived folder names and foreign-extension refusal (including the slicing route). Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** A BMS output path such as `song/normal.bme` exports a `.bme` file using the chart's own lane profile; a folder path names files with the extension that matches each chart's layout (`.bme` for BME, `.pms` for PMS).
-- **Read first:** BMS walkthrough F2; `src/sys/output_group_export.h` (request planning), `src/formats/conversion.cpp` (target profile and filename), `src/formats/bms_writer.cpp` (profile lookup).
-- **Files owned:** `src/sys/output_group_export.h`, `src/sys/output_group_export.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h` (if the request type changes), tests in `tests/formats/` and the BMS walkthrough test, `tests/sys/resource_notification_tests.cpp`, this card.
-- **Supporting-file extension:** `tests/sys/resource_notification_tests.cpp` updates the existing shared-plan assertion that encoded extension-as-profile behavior and covers foreign extensions on the slicing route; `src/sys/output_group_export.cpp` validates family extensions before that route can bypass ordinary naming.
+- **Read first:** BMS walkthrough F2; `src/sys/project/output_group_export.h` (request planning), `src/formats/conversion.cpp` (target profile and filename), `src/formats/bms_writer.cpp` (profile lookup).
+- **Files owned:** `src/sys/project/output_group_export.h`, `src/sys/project/output_group_export.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h` (if the request type changes), tests in `tests/formats/` and the BMS walkthrough test, `tests/sys/resource_notification_tests.cpp`, this card.
+- **Supporting-file extension:** `tests/sys/resource_notification_tests.cpp` updates the existing shared-plan assertion that encoded extension-as-profile behavior and covers foreign extensions on the slicing route; `src/sys/project/output_group_export.cpp` validates family extensions before that route can bypass ordinary naming.
 - **Steps:**
   1. Stop deriving `target_profile` from the extension; carry the extension as an output-naming fact.
   2. Choose the folder filename extension from the chart's BMS layout.
@@ -53,7 +53,7 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** New BME import → production note edit → native save → explicit .bme publication resolves the copied WAV; BMS/BMSON sound/image copies and named missing-source refusal pass. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** Exporting a BMS or BMSON chart copies every referenced keysound and BGA file that is not already at its destination next to the chart (atomically with the chart, through the existing pending-asset publication path) and rewrites references to the copies; a source that cannot be found refuses the export naming it, instead of reporting success.
-- **Read first:** BMS walkthrough F3; `src/sys/output_group_export.cpp` (`plan_output_music`, staging), `src/formats/conversion_publication.cpp` (asset discovery), `src/core/resource_file_copy.cpp`.
+- **Read first:** BMS walkthrough F3; `src/sys/project/output_group_export.cpp` (`plan_output_music`, staging), `src/formats/conversion_publication.cpp` (asset discovery), `src/core/resource_file_copy.cpp`.
 - **Files owned:** `src/sys/output_group_export.cpp/.h`, `src/formats/conversion_publication.cpp`, `include/wormedit/formats/conversion_publication.h`, tests, this card.
 - **Supporting-file extension:** `include/wormedit/formats/conversion_publication.h` exposes pending-copy planning at the existing asset-discovery owner so sys does not duplicate its asset inventory.
 - **Steps:**
@@ -116,9 +116,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** New-project Etterna/legacy policy requests reach serialization and publication; legacy output differs, incompatible combinations refuse, and async Preview receives the policy. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** The StepMania export policy chosen in the Project tab (target and timing syntax) is the policy Preview and Export use for SM/SSC groups.
-- **Read first:** osu!mania/StepMania walkthrough finding 3; `src/sys/audio/transport_player_actions.cpp` (policy storage), `src/sys/output_group_export.h` (request builder), `src/sys/project_view.cpp` (preview).
-- **Files owned:** those files, `src/sys/project_view.h`, `src/sys/application_edit_inputs.h`, `src/sys/application.cpp`, `src/sys/compose_resource_actions.cpp`, `src/ui/nuklear/setup_panel.cpp`, tests, this card.
-- **Supporting-file extensions:** `src/sys/project_view.h` captures policy in preview requests; `src/sys/application_edit_inputs.h` passes the session policy to resource actions; `src/sys/application.cpp` supplies the existing stored policy to both paths; `src/sys/compose_resource_actions.cpp` forwards it to export planning; `tests/sys/application_dispatch_fixture.h` keeps aggregate setup named after the input extension. The existing view-owned session policy remains the sole storage owner. `src/ui/nuklear/setup_panel.cpp` explains that group paths own SM/SSC family.
+- **Read first:** osu!mania/StepMania walkthrough finding 3; `src/sys/audio/transport_player_actions.cpp` (policy storage), `src/sys/project/output_group_export.h` (request builder), `src/sys/project/project_view.cpp` (preview).
+- **Files owned:** those files, `src/sys/project/project_view.h`, `src/sys/application_edit_inputs.h`, `src/sys/application.cpp`, `src/sys/compose_resource_actions.cpp`, `src/ui/nuklear/setup_panel.cpp`, tests, this card.
+- **Supporting-file extensions:** `src/sys/project/project_view.h` captures policy in preview requests; `src/sys/application_edit_inputs.h` passes the session policy to resource actions; `src/sys/application.cpp` supplies the existing stored policy to both paths; `src/sys/compose_resource_actions.cpp` forwards it to export planning; `tests/sys/application_dispatch_fixture.h` keeps aggregate setup named after the input extension. The existing view-owned session policy remains the sole storage owner. `src/ui/nuklear/setup_panel.cpp` explains that group paths own SM/SSC family.
 - **Steps:** 1. Store the policy where both planners read it. 2. Tests: Etterna and legacy-timing choices change the written file.
 - **Invariants:** Default policy output unchanged.
 - **Reject/failure behavior:** An incompatible combination is refused before publication.
@@ -130,9 +130,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** Audio-started projects preview and export all three default groups; Preview writes nothing, renders filenames/copies/warnings, and matches publication collision and missing-source refusals. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** Preview uses export's planning (asset staging included), so a project that exports also previews, and Preview lists the files it would write and its warnings rather than only counts.
-- **Read first:** osu!mania/StepMania walkthrough findings 4 and 9, BMS walkthrough F5; `src/sys/project_view.cpp` (preview), `src/sys/output_group_export.cpp` (planning).
-- **Files owned:** those files, `src/sys/output_group_export.h`, `src/sys/project_view.h`, `src/sys/application.cpp`, `src/ui/nuklear/setup_panel.cpp`, `tests/CMakeLists.txt`, `docs/architecture.md`, tests, this card.
-- **Supporting-file extensions:** `src/sys/output_group_export.h` exposes shared read-only preparation; `src/sys/project_view.h` reuses the export request for async Preview; `src/sys/application.cpp` supplies the asset base; `tests/CMakeLists.txt` links shared preparation into core Project-view tests; `docs/architecture.md` records the shared preparation boundary. The existing unbounded preview text is retained and wrapped by the Project tab renderer.
+- **Read first:** osu!mania/StepMania walkthrough findings 4 and 9, BMS walkthrough F5; `src/sys/project/project_view.cpp` (preview), `src/sys/project/output_group_export.cpp` (planning).
+- **Files owned:** those files, `src/sys/project/output_group_export.h`, `src/sys/project/project_view.h`, `src/sys/application.cpp`, `src/ui/nuklear/setup_panel.cpp`, `tests/CMakeLists.txt`, `docs/architecture.md`, tests, this card.
+- **Supporting-file extensions:** `src/sys/project/output_group_export.h` exposes shared read-only preparation; `src/sys/project/project_view.h` reuses the export request for async Preview; `src/sys/application.cpp` supplies the asset base; `tests/CMakeLists.txt` links shared preparation into core Project-view tests; `docs/architecture.md` records the shared preparation boundary. The existing unbounded preview text is retained and wrapped by the Project tab renderer.
 - **Steps:** 1. Share the planning step without publishing. 2. Show planned file names, copies and warning texts. 3. Test: audio-started project previews and exports.
 - **Invariants:** Preview never writes files.
 - **Reject/failure behavior:** Preview reports the same refusals export would.
@@ -144,9 +144,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** Explicit Save/Save As runs on the existing resource worker through `async_job_t`: atomic native snapshot, verified asset copies/reuse, atomic link persistence, then live/Undo/Redo path publication without reverting newer edits. External audio, images, MIDI and generator sources are covered, including files in parent folders and symlinks escaping the project. Copy failures retain the external link and name the file; status lists newly copied paths. The from-new-audio-project event walkthrough covers Save input, the production save runtime, copied bytes/native reopen and a repeat save without copying. All 22 focused CTest cases pass. `scripts/gate.sh --jobs 4`: `gate: passed`, 4,201/4,201 tests, build/whitespace/complexity pass (11 changed translation units, including the accepted T-707 work). Xvfb was not run, per the owner's windowless execution instruction; no originals are moved or deleted.
 - **Outcome:** Saving a project copies song audio, keysounds and images that live outside the project directory into its assets folder and relinks them, so a saved project is self-contained (owner, 2026-10-18).
-- **Read first:** osu!mania/StepMania walkthrough finding 5; `src/sys/application.cpp` (save path), `src/sys/project_save_paths.cpp`, `src/core/resource_file_copy.cpp` and `src/sys/resources/resource_job_state.cpp` (the existing project-copy job).
-- **Files owned:** `src/sys/application.cpp` (save and its completion/close lifecycle only), `src/sys/project_save_paths.cpp`, `src/sys/project_save_paths.h`, `src/sys/resources/resource_job_state.cpp`, `src/sys/resources/resource_job_state.h`, `include/wormedit/core/resource_file_copy.h`, `src/core/resource_file_copy.cpp`, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card.
-- **Supporting-file extensions:** `src/sys/project_save_paths.h` exposes the save worker/report used by the application and tests. `include/wormedit/core/resource_file_copy.h` and `src/core/resource_file_copy.cpp` add opt-in reuse of any identical file in `assets/` at the existing byte-comparison owner. `tests/CMakeLists.txt` links the shared save worker into the three existing resource-runtime test targets.
+- **Read first:** osu!mania/StepMania walkthrough finding 5; `src/sys/application.cpp` (save path), `src/sys/project/project_save_paths.cpp`, `src/core/resource_file_copy.cpp` and `src/sys/resources/resource_job_state.cpp` (the existing project-copy job).
+- **Files owned:** `src/sys/application.cpp` (save and its completion/close lifecycle only), `src/sys/project/project_save_paths.cpp`, `src/sys/project/project_save_paths.h`, `src/sys/resources/resource_job_state.cpp`, `src/sys/resources/resource_job_state.h`, `include/wormedit/core/resource_file_copy.h`, `src/core/resource_file_copy.cpp`, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card.
+- **Supporting-file extensions:** `src/sys/project/project_save_paths.h` exposes the save worker/report used by the application and tests. `include/wormedit/core/resource_file_copy.h` and `src/core/resource_file_copy.cpp` add opt-in reuse of any identical file in `assets/` at the existing byte-comparison owner. `tests/CMakeLists.txt` links the shared save worker into the three existing resource-runtime test targets.
 - **Steps:**
   1. Owner decision (2026-10-18): every save copies every asset outside the project folder into `assets/` and relinks it, silently; identical files are reused, so a repeat save copies nothing. The status message lists what was copied.
   2. Reuse the existing resource copy job (atomic copy, relink, reuse of identical files) after the native file is written.
@@ -245,10 +245,10 @@ were assigned explicitly during the parallel batch. T-658 is next.
   `<asset-id>-<basename>` fallback. Preview reports the same paths that Export publishes.
 - **Read first:** `include/wormedit/core/resource_file_copy.h` (`project_asset_copy_request_t`);
   `src/core/resource_file_copy.cpp` (`inspect_project_asset_file`, `create_project_asset_copy`);
-  `src/sys/output_group_export.cpp` (`prepare_output_assets`);
+  `src/sys/project/output_group_export.cpp` (`prepare_output_assets`);
   `src/formats/conversion_publication.cpp` (`validate_pending_assets`).
 - **Files owned:** `include/wormedit/core/resource_file_copy.h`,
-  `src/core/resource_file_copy.cpp`, `src/sys/output_group_export.cpp`,
+  `src/core/resource_file_copy.cpp`, `src/sys/project/output_group_export.cpp`,
   `src/formats/conversion_publication.cpp`,
   `include/wormedit/formats/conversion_publication.h` if the prepared plan must carry the chosen
   path, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`,
@@ -283,10 +283,10 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Outcome:** On opening a project with outside links, the warning says that Save or Save As copies
   those assets into `assets/` and relinks the project, and that a failed copy retains the original
   link. It does not direct the user to a project-copy control that no longer owns this workflow.
-- **Read first:** `src/sys/project_save_paths.h` (`project_portability_notice_t`);
-  `src/sys/project_save_paths.cpp` (`project_portability_notice_t::update`);
+- **Read first:** `src/sys/project/project_save_paths.h` (`project_portability_notice_t`);
+  `src/sys/project/project_save_paths.cpp` (`project_portability_notice_t::update`);
   `src/sys/application.cpp` (`publish_project_portability_notice`).
-- **Files owned:** `src/sys/project_save_paths.h`, `src/sys/project_save_paths.cpp`,
+- **Files owned:** `src/sys/project/project_save_paths.h`, `src/sys/project/project_save_paths.cpp`,
   `src/sys/application.cpp` (portability notice publication only),
   `tests/sys/project_save_paths_tests.cpp`, this card.
 - **Steps:** 1. Put the user-facing portability fact beside `project_portability_notice_t`; keep

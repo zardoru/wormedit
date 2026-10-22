@@ -1,4 +1,4 @@
-#include "sys/workspace_view.h"
+#include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"
@@ -7,7 +7,7 @@
 #include "ui/nuklear/sound_import_runtime.h"
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/formats/stepmania.h>
-#include "sys/output_group_export.h"
+#include "sys/project/output_group_export.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/bgm_columns.h>

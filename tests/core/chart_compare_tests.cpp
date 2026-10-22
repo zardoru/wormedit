@@ -1,5 +1,5 @@
 #include <wormedit/core/chart_compare.h>
-#include "sys/compare_view.h"
+#include "sys/project/compare_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -1,7 +1,7 @@
 // Headless chart converter: reads a JSON request, runs the editor's conversion
 // service, and prints a JSON result. Exit code 0 only when every artifact was
 // written; invalid requests and rejected conversions write nothing.
-#include "sys/project_open.h"
+#include "sys/project/project_open.h"
 
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/bms_writer.h>

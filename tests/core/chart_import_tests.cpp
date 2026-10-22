@@ -1,4 +1,4 @@
-#include "sys/chart_import_session.h"
+#include "sys/project/chart_import_session.h"
 
 #include <wormedit/core/chart_import.h>
 #include <wormedit/core/lane_keys.h>

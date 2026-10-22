@@ -7,7 +7,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **BMSON lane colors do not follow the profile.** `color_stage` in `src/core/lane_profiles.cpp` colors only the `bms-`, `bme-`, `pms-`, osu! and `bmson-generic-` profiles, so `bmson-beat-*` and `bmson-popn-*` lanes get no key colors. `bmson-beat-7k` should look like BMS SP: seven keys plus a scratch.
 - **The sabun chart cannot take a lane profile.** `/mnt/pukeipukei/G/bms/bms-b/BOFXVII/iberai_dragback/sabun/_untitled.bms` has no playable channels, only `01`, `03`, `04` and `07`. It opens through `populate_bgm_only_compose_projection`, and `dispatch_compose_lane_profile` (`src/sys/compose_actions.cpp:300`) rejects with "No lane layout is active at the cursor." The "empty BMS takes its first layout" path from `e98244d` is reachable only through layout edits.
 - **Only two BGA kinds show.** The document has `background`, `poor`, `layer`, `video` and `storyboard`, with no layer 2: the BMS parser folds `0A` into `layer` (`src/formats/bms.cpp:968`), and the writer splits collisions back into `07`/`0A`. The Compose BGA lane and the selected-image preview handle only `background` and `video` (`src/sys/compose_view.cpp:1137`).
-- **The Rotterdam BGA preview is unreliable.** `rotterdam_7HYPER.bme` declares 163 `#BMP` files as `.png`, but the folder ships `.bmp` files. The name resolver tries alternate extensions only for audio (`src/sys/project_open.cpp:226`). Its 92 layer (`07`) events are also never shown in the editor.
+- **The Rotterdam BGA preview is unreliable.** `rotterdam_7HYPER.bme` declares 163 `#BMP` files as `.png`, but the folder ships `.bmp` files. The name resolver tries alternate extensions only for audio (`src/sys/project/project_open.cpp:226`). Its 92 layer (`07`) events are also never shown in the editor.
 - **Shift+lane key on a BGM selection moves everything.** `compose_input.cpp` routes every `LANE_KEY_PRESS` with BGM selected to `move_selected_bgm_to_lane` and ignores `successive`, while play notes go through `assign_selected_notes_to_lane` (`src/core/interaction.cpp:2087`), which honors it. The two paths duplicate verbs and each has its own exceptions. A refactor is worth it.
 
 ## T-446 Color and order BMSON beat and popn lanes like their BMS equivalents
@@ -32,8 +32,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 - **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** opening a BMSON chart with no semantic layers creates one layer per sound channel, named after its file stem, with colors from a fixed 16-color cycle. Every note and BGM marker belongs to the layer keyed by its sound-channel event. Authored layers remain untouched, and a failed initialization leaves the chart open without partial layer state.
-- **Read first:** `include/wormedit/core/document.h` (`semantic_layer_t`), `src/core/semantic_layer_editor.cpp`, `src/formats/bmson.cpp`, `src/sys/project_open.cpp`.
-- **Files owned:** a new `src/core/bmson_layer_defaults.cpp` and `include/wormedit/core/bmson_layer_defaults.h`, `src/sys/project_open.cpp` (call site), `CMakeLists.txt`, a new `tests/core/bmson_layer_defaults_tests.cpp`, `tests/CMakeLists.txt`, `tests/sys/project_open_tests.cpp` (root-approved 2026-10-07 production BMSON import and native no-reseed boundary coverage), `memory/coordination/layers-oct7.md` (coordinator scope and review evidence), this card.
+- **Read first:** `include/wormedit/core/document.h` (`semantic_layer_t`), `src/core/semantic_layer_editor.cpp`, `src/formats/bmson.cpp`, `src/sys/project/project_open.cpp`.
+- **Files owned:** a new `src/core/bmson_layer_defaults.cpp` and `include/wormedit/core/bmson_layer_defaults.h`, `src/sys/project/project_open.cpp` (call site), `CMakeLists.txt`, a new `tests/core/bmson_layer_defaults_tests.cpp`, `tests/CMakeLists.txt`, `tests/sys/project_open_tests.cpp` (root-approved 2026-10-07 production BMSON import and native no-reseed boundary coverage), `memory/coordination/layers-oct7.md` (coordinator scope and review evidence), this card.
 - **Steps:**
   1. Define the 16-color cycle as a constant table: evenly spaced hues, readable on the dark field.
   2. Add a pure function (chart → layers + membership) that does nothing when the chart already has layers.
@@ -127,8 +127,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 - **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** `rotterdam_7HYPER.bme` resolves all 173 `#BMP` entries: names declared as `.png` find the `.bmp` files. The BGA preview shows the expected images at three sampled measures.
-- **Read first:** `src/sys/project_open.cpp:220-260` (the audio resolver), `tests/sys/project_open_tests.cpp`.
-- **Files owned:** `src/sys/project_open.cpp`, `tests/sys/project_open_tests.cpp`, this card.
+- **Read first:** `src/sys/project/project_open.cpp:220-260` (the audio resolver), `tests/sys/project_open_tests.cpp`.
+- **Files owned:** `src/sys/project/project_open.cpp`, `tests/sys/project_open_tests.cpp`, this card.
 - **Steps:**
   1. Generalize the resolver to take an extension set per asset kind. Images try `.bmp`, `.png`, `.jpg` and `.jpeg`, and video tries `.mpg`, `.mp4`, `.avi`, `.wmv` and `.webm`, with the same "exactly one match" rule.
   2. Test a declared `.png` with only a `.bmp` on disk, an ambiguous pair, and case variations.

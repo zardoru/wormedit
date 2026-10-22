@@ -7,8 +7,8 @@
 #include <wormedit/core/workspace.h>
 
 #include "sys/thread_priority.h"
-#include "sys/output_group_export.h"
-#include "sys/project_save_paths.h"
+#include "sys/project/output_group_export.h"
+#include "sys/project/project_save_paths.h"
 #include "ui/frontend/file_jobs.h"
 
 #include <cstdint>

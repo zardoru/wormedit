@@ -44,6 +44,7 @@ using measure_parse_result_t = result_t<rational_t, measure_error_t>;
 struct measure_definition_t {
     rational_t length;
     std::optional<meter_t> meter;
+    auto operator==(const measure_definition_t&) const -> bool = default;
 };
 
 struct measure_capacity_t {

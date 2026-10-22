@@ -135,6 +135,7 @@ add_executable(wormedit_core_tests
     core/time_shift_tests.cpp
     core/marker_editor_tests.cpp
     core/marker_navigation_tests.cpp
+    core/timing_links_tests.cpp
     core/metadata_inheritance_tests.cpp
     core/metadata_editor_tests.cpp
     core/chart_editor_tests.cpp

@@ -711,9 +711,31 @@ void from_json(const json& value, output_group_t& group) {
     value.at("stepmania").get_to(group.stepmania);
 }
 
+template<class Id>
+void to_json(json& value, const timing_link_identity_t<Id>& identity) {
+    value = json{{"source", identity.source}, {"target", identity.target}};
+}
+template<class Id>
+void from_json(const json& value, timing_link_identity_t<Id>& identity) {
+    value.at("source").get_to(identity.source);
+    value.at("target").get_to(identity.target);
+}
+void to_json(json& value, const timing_category_link_t& link) {
+    value = json{{"source", link.source}, {"is_local_override", link.is_local_override},
+        {"objects", link.objects}, {"recipes", link.recipes}, {"measures", link.measures}};
+}
+void from_json(const json& value, timing_category_link_t& link) {
+    value.at("source").get_to(link.source);
+    value.at("is_local_override").get_to(link.is_local_override);
+    value.at("objects").get_to(link.objects);
+    value.at("recipes").get_to(link.recipes);
+    value.at("measures").get_to(link.measures);
+}
+
 void to_json(json& value, const chart_document_t& chart) {
     value = json{{"id", chart.id},
                  {"metadata", chart.metadata},
+                 {"timing_links", chart.timing_links.categories},
                  {"source_family", chart.source_family},
                  {"divisions_per_standard_measure", chart.divisions_per_standard_measure},
                  {"beat_zero_audio_offset_seconds", chart.beat_zero_audio_offset_seconds},
@@ -748,6 +770,7 @@ void to_json(json& value, const chart_document_t& chart) {
 void from_json(const json& value, chart_document_t& chart) {
     value.at("id").get_to(chart.id);
     value.at("metadata").get_to(chart.metadata);
+    value.at("timing_links").get_to(chart.timing_links.categories);
     value.at("source_family").get_to(chart.source_family);
     value.at("divisions_per_standard_measure").get_to(chart.divisions_per_standard_measure);
     value.at("beat_zero_audio_offset_seconds").get_to(chart.beat_zero_audio_offset_seconds);

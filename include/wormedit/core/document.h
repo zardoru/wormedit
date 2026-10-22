@@ -1,5 +1,6 @@
 #pragma once
 #include <wormedit/core/metadata_inheritance_types.h>
+#include <wormedit/core/timing_links_types.h>
 #include <wormedit/core/project_settings.h>
 
 #include <wormedit/core/diagnostic.h>
@@ -48,6 +49,7 @@ struct source_provenance_t {
     std::string source_field;
     std::string source_spelling;
     std::size_t source_order{};
+    auto operator==(const source_provenance_t&) const -> bool = default;
 };
 
 struct encoding_provenance_t {
@@ -280,6 +282,7 @@ struct bpm_event_t {
     local_position_t position;
     signed_rational_t beats_per_minute;
     source_provenance_t provenance;
+    auto operator==(const bpm_event_t&) const -> bool = default;
 };
 
 enum class pause_kind_t {
@@ -295,6 +298,7 @@ struct pause_event_t {
     signed_rational_t duration;
     pause_unit_t source_unit{pause_unit_t::seconds};
     source_provenance_t provenance;
+    auto operator==(const pause_event_t&) const -> bool = default;
 };
 
 // BMS timing declarations and channel rows may be distributed across root and
@@ -328,6 +332,7 @@ struct warp_event_t {
     position_span_t span;
     warp_provenance_t source_encoding{warp_provenance_t::native};
     source_provenance_t provenance;
+    auto operator==(const warp_event_t&) const -> bool = default;
 };
 
 struct scroll_event_t {
@@ -335,6 +340,7 @@ struct scroll_event_t {
     local_position_t position;
     signed_rational_t multiplier{1, 1};
     source_provenance_t provenance;
+    auto operator==(const scroll_event_t&) const -> bool = default;
 };
 
 struct speed_event_t {
@@ -344,6 +350,7 @@ struct speed_event_t {
     rational_t transition_beats{};
     bool transition_is_seconds{false};
     source_provenance_t provenance;
+    auto operator==(const speed_event_t&) const -> bool = default;
 };
 
 // Parametric SV recipes are authored chart data. Sampled control points are
@@ -420,6 +427,7 @@ struct kiai_event_t {
     bool enabled{false};
     std::uint32_t retained_effect_bits{};
     source_provenance_t provenance;
+    auto operator==(const kiai_event_t&) const -> bool = default;
 };
 
 struct timing_anchor_t {
@@ -427,6 +435,7 @@ struct timing_anchor_t {
     local_position_t position;
     std::uint64_t source_sample_frame{};
     bool locked{false};
+    auto operator==(const timing_anchor_t&) const -> bool = default;
 };
 
 enum class marker_anchor_t {
@@ -775,6 +784,7 @@ struct target_query_policy_t {
 struct chart_document_t {
     chart_id_t id;
     chart_metadata_t metadata;
+    timing_links_t timing_links;
     format_family_t source_family{format_family_t::native_project};
     std::uint64_t divisions_per_standard_measure{default_divisions_per_standard_measure};
     signed_rational_t beat_zero_audio_offset_seconds{};
@@ -930,7 +940,7 @@ struct quantization_preset_t {
     auto operator==(const quantization_preset_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 12;
+inline constexpr std::uint32_t current_document_schema_version = 13;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

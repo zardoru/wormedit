@@ -1,3 +1,4 @@
+#include <wormedit/core/timing_links.h>
 #include "text_util.h"
 #include "chart_object_ids.h"
 #include "interaction_geometry.h"
@@ -1857,6 +1858,8 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
                        diagnostics);
         contextualize_chart_diagnostics(chart, diagnostics, first_diagnostic);
     }
+    const auto links = validate_timing_links(song);
+    diagnostics.insert(diagnostics.end(), links.begin(), links.end());
     validate_song_recipes(work);
     validate_song_output_groups(work);
     return diagnostics;

@@ -9,10 +9,12 @@ Each card records supporting ownership before extending it.
 
 ## T-751 Store timing-category links and exact source mappings
 
-- **Status:** ready (T-124/T-125 complete; runtime implementation deferred by the owner on 2026-10-22)
+- **Status:** done (2026-10-22; schema 13, category source identities and exact snapshot validation)
+- **Verified (2026-10-22):** GATE and Linux Clang each pass **4,512/4,512** (`/tmp/t751-gate.log`, `/tmp/t751-clang.log`); whitespace and **5-TU** complexity pass without increased allowances. Focused timing-link tests pass **47 assertions / 10 cases** (`/tmp/t751-focused-current.log`): unrelated bar boundaries/resolutions, exclusive ends, inexact/overflowing grids, missing/self/cyclic sources, ambiguous identities, effective-snapshot corruption, local overrides, recipes, stop/delay isolation and schema-12 migration. Existing export-byte regressions pass in both full suites. Active source graphs use a bounded nonrecursive walk. Runtime propagation and UI remain the following cards.
+- **Supporting ownership (coordinator, 2026-10-22):** `memory/chart-editor-status/resume.md` tracks the resumed sequence. `include/wormedit/core/measure.h` adds value equality for measure definitions; new `include/wormedit/core/timing_links_types.h` keeps category/link vocabulary lightweight for the later frontend; `include/wormedit/core/document.h` adds value equality on timing records for one category comparison owner. Persist source-to-target object/recipe/measure identity mappings with each source association so propagation retains local identities. A detached override remembers its source for explicit relinking.
 - **Outcome:** native documents store per-category designated-chart links, validate acyclic same-project sources, and resolve exact musical positions across unrelated measure IDs and resolutions.
 - **Read first:** `docs/chart-editor-plan/document-model.md`; `include/wormedit/core/document.h`; `include/wormedit/core/timing.h`; `include/wormedit/core/timing_lane_catalog.h`; `src/formats/native_project_migrations.cpp`.
-- **Files owned:** new `include/wormedit/core/timing_links.h`, new `src/core/timing_links.cpp`, new `tests/core/timing_links_tests.cpp`, `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
+- **Files owned:** new `include/wormedit/core/timing_links_types.h`, `include/wormedit/core/measure.h`, `memory/chart-editor-status/resume.md`, new `include/wormedit/core/timing_links.h`, new `src/core/timing_links.cpp`, new `tests/core/timing_links_tests.cpp`, `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
 - **Steps:** 1. Introduce one exhaustive category catalog covering the ten design categories and recipe targets. 2. Store optional source chart IDs per category with same-project identity and cycle validation. 3. Implement exact musical-beat mapping for positions, spans and row-relative durations using existing checked arithmetic/index owners. 4. Add the next native schema migration from the actual current schema to unlinked categories and verify resolved snapshot consistency on load. 5. Add native round-trip, unknown/cyclic source and cross-resolution exact/rejected mapping regressions.
 - **Invariants:** no rounded positions, shared mutable vectors or silent source substitution; offset and pause units remain exact; older documents remain unlinked.
 - **Reject/failure behavior:** invalid source, cycle, grid overflow or inexact mapping rejects without modifying a document or existing file.
@@ -21,7 +23,7 @@ Each card records supporting ownership before extending it.
 
 ## T-752 Resolve timing links through the shared transaction
 
-- **Status:** blocked-on T-751
+- **Status:** ready (T-751 complete 2026-10-22)
 - **Outcome:** accepted local edits detach only affected linked categories while source edits atomically propagate to all compatible dependents, with complete Undo/Redo.
 - **Read first:** `docs/architecture.md`; `include/wormedit/core/command.h`; `src/core/command.cpp`; `include/wormedit/core/proposal.h`; `src/core/interaction_edit_commit.h`.
 - **Files owned:** `include/wormedit/core/timing_links.h`, `src/core/timing_links.cpp`, `tests/core/timing_links_tests.cpp`, `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/core/command_tests.cpp`, `docs/architecture.md`, this card.

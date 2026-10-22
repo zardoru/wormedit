@@ -8,9 +8,9 @@ Owner approved 2026-10-18 after comparing value with the remaining shrink-wrap r
 
 - **Status:** Done (2026-10-18; verified shared T-679/T-680 source batch)
 - **Outcome:** BGM drawing/picking and bookmark hover/target selection each use one owner for their repeated geometry, preserving distinct area-selection shapes.
-- **Read first:** `src/ui/compose_timing_geometry.h`, `src/ui/nuklear/compose_bookmark_label.h`, `src/ui/nuklear/compose_bookmark_label.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
-- **Files owned:** `src/ui/compose_timing_geometry.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_bookmark_label.h`, `src/ui/nuklear/compose_bookmark_label.cpp`, `src/ui/nuklear/compose_bookmark_rename.h`, `src/ui/nuklear/compose_bookmark_rename.cpp`, `tests/ui/compose_bookmark_label_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`. Coordinator owns this card, `docs/chart-editor-plan/tasks.md` index links and `cmake/check_chart_editor_docs.cmake` registration so the new cards receive the existing field/link checks.
-- **Supporting ownership (coordinator, 2026-10-18):** `src/ui/nuklear/compose_bookmark_rename.cpp` updates the sole external label-height constant use to its existing bookmark-label namespace; no compatibility alias.
+- **Read first:** `src/ui/compose_timing_geometry.h`, `src/ui/nuklear/compose/compose_bookmark_label.h`, `src/ui/nuklear/compose/compose_bookmark_label.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`.
+- **Files owned:** `src/ui/compose_timing_geometry.h`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_bookmark_label.h`, `src/ui/nuklear/compose/compose_bookmark_label.cpp`, `src/ui/nuklear/compose/compose_bookmark_rename.h`, `src/ui/nuklear/compose/compose_bookmark_rename.cpp`, `tests/ui/compose_bookmark_label_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`. Coordinator owns this card, `docs/chart-editor-plan/tasks.md` index links and `cmake/check_chart_editor_docs.cmake` registration so the new cards receive the existing field/link checks.
+- **Supporting ownership (coordinator, 2026-10-18):** `src/ui/nuklear/compose/compose_bookmark_rename.cpp` updates the sole external label-height constant use to its existing bookmark-label namespace; no compatibility alias.
 - **Steps:**
   1. Inventory actual bounds owners/callers and compare head/tail, bookmark line/label, projection, hit-edge and priority policies. Record already-shared BGA/timing/bar-line paths rather than changing them.
   2. Move the existing BGM head-bounds query to the shared lightweight geometry owner and reuse it in picking. Retain reverse ordering, ghost exclusion and closed hit edges.
@@ -28,8 +28,8 @@ Owner approved 2026-10-18 after comparing value with the remaining shrink-wrap r
 
 - **Status:** Done (2026-10-18; characterized before production edits)
 - **Outcome:** Key-queue overflow delegates capture cleanup to the shared cancellation owner, preserving capture evidence until release fences and deferred cancellation are set.
-- **Read first:** `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `docs/frontend-event-harness.md`, `src/ui/nuklear/compose_object_input.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_keyboard_input.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`. Supporting files require coordinator-recorded extension. No concurrent production ownership with T-679.
+- **Read first:** `src/ui/nuklear/compose/compose_keyboard_input.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `docs/frontend-event-harness.md`, `src/ui/nuklear/compose/compose_object_input.cpp`.
+- **Files owned:** `src/ui/nuklear/compose/compose_keyboard_input.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`. Supporting files require coordinator-recorded extension. No concurrent production ownership with T-679.
 - **Steps:**
   1. Trace overflow through next-frame pending cancellation, registry/reset hooks, deferred audio-offset action and release fences. Record that next-frame cancellation already exists.
   2. Add key-overflow characterization using real frontend events to the existing gesture interruption matrix and focused held-pointer/recovery checks. Build/run it before changing production; record exact failures and retained behavior.

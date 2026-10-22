@@ -1,6 +1,6 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/compose_canvas.h"
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/compose/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
 

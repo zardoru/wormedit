@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/core/measure.h>
 #include <catch2/catch_test_macros.hpp>
 #include <array>

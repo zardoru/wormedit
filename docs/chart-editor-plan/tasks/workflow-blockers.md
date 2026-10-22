@@ -213,8 +213,8 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** Six new walkthrough cases start from the production BMS session factory (the wizard family fix remains T-707), project the real catalog and cover picked 0A–0C assignments, armed-05 automatic imports, occupied-slot review, overflow refusal, selection resets and single-file slot drops. Extended drop-capture and overflow unit coverage; focused tests passed 22/22. `scripts/gate.sh --jobs 3`: `gate: passed`, 4201/4201 tests, complexity 13/13. Xvfb verification remains unverified here for the coordinator to run.
 - **Outcome:** If the user has single-clicked a BMS slot in the Sounds dock's *BMS slots* view (the highlighted slot), any multi-file import (*Add sounds…*, a file-dialog import or a drop) fills consecutive slots starting at that slot. Occupied slots go through the existing replace review. With no slot clicked, imports use automatic IDs, as *Add sounds…* does today. Owner, 2026-10-18: "if the BMS slot is specifically selected … mass-imports should also probably start at that index".
-- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp` (`keysound_selected_slot`: set by a click at the slot row, reset to 1 on mode or chart change, synced to the armed sound by `sync_selected_slot_to_armed_resource`), `src/sys/app/application.cpp` (`stage_sound_import`, `stage_dropped_sound_slots`, `dispatch_reviewed_sound_import`), `src/sys/app/application_frame_services.cpp` (`collect_dropped_resources`, `first_slot`), `src/sys/compose/actions/compose_sound_actions.cpp` (`prepare_sound_slot_batch`).
-- **Files owned:** the files above, `src/ui/nuklear/compose_state.h` (the selection fact), `src/ui/nuklear/frontend.cpp` (the dock request), tests, this card; supporting files below.
+- **Read first:** `src/ui/nuklear/compose/compose_sounds_panel.cpp` (`keysound_selected_slot`: set by a click at the slot row, reset to 1 on mode or chart change, synced to the armed sound by `sync_selected_slot_to_armed_resource`), `src/sys/app/application.cpp` (`stage_sound_import`, `stage_dropped_sound_slots`, `dispatch_reviewed_sound_import`), `src/sys/app/application_frame_services.cpp` (`collect_dropped_resources`, `first_slot`), `src/sys/compose/actions/compose_sound_actions.cpp` (`prepare_sound_slot_batch`).
+- **Files owned:** the files above, `src/ui/nuklear/compose/compose_state.h` (the selection fact), `src/ui/nuklear/frontend.cpp` (the dock request), tests, this card; supporting files below.
 - **Supporting-file extensions (2026-10-18):** `src/ui/frontend/compose.h` and `src/sys/resources/sound_drop_transaction.h` carry the explicit-choice fact across the existing frontend and captured-drop boundaries. `src/sys/resources/sound_import_staging.h`, `src/sys/resources/sound_import_staging.cpp`, `CMakeLists.txt` and `tests/CMakeLists.txt` share and link the production staging path for the application and walkthrough harness. `src/sys/compose/actions/compose_sound_actions.h` documents the revised overflow result. `docs/chart-editor-plan/tasks.md` advances the free-ID range as requested.
 - **Steps:**
   1. Record whether the slot was chosen explicitly. A click selects it. The default slot 1 and the armed-sound sync do not, so arming a sound never redirects imports. Mode, chart or project changes clear the choice.
@@ -308,9 +308,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Outcome:** The idle Compose hint says `drag BMS BGM to move` for BMS, `drag BMSON BGM to move`
   for BMSON, and `drag BGM to move` for other chart families. It uses the existing projected family
   facts (`bms_measure_labels` and `bmson_tools_available`).
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`compose_editor_status_hint`);
+- **Read first:** `src/ui/nuklear/compose/compose_canvas.cpp` (`compose_editor_status_hint`);
   `src/ui/frontend/compose.h` (the two family facts); `src/sys/compose/views/compose_view.cpp` (their projection).
-- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
+- **Files owned:** `src/ui/nuklear/compose/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
   this card.
 - **Steps:** 1. Build the idle hint from the existing view facts. 2. Test BMS, BMSON and native views,
   including that higher-priority move/conflict/paste hints still win.

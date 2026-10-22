@@ -75,12 +75,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   saved **Ask / Replace / Keep** existing-files policy, while the menu can choose Replace or Keep
   for one run; the Project header has **Export all**, and the duplicate header/dialog export path is
   removed. File → Export reaches the same target choice and policy.
-- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`; `src/ui/nuklear/compose_resources.cpp`;
+- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`; `src/ui/nuklear/compose/compose_resources.cpp`;
   `src/sys/compose/actions/compose_resource_actions.cpp` (`export_compose_output_group_action_t`);
   `src/sys/project/output_group_export.h`; `include/wormedit/formats/conversion.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/formats/conversion.h`,
   `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/frontend/actions.h`,
-  `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`,
+  `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/compose/compose_resources.cpp`,
   `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`, `src/sys/compose/actions/compose_resource_actions.cpp`,
   `src/sys/project/output_group_export.h`, `src/sys/project/output_group_export.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
@@ -91,8 +91,8 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 - **Supporting-file extensions (2026-10-19):** `src/sys/resources/resource_job_state.h` and
   `src/sys/resources/resource_job_state.cpp` own the background export lifecycle and therefore retain the
   prepared Ask-confirmation request; `src/sys/app/application.cpp` projects that lifecycle state and
-  supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_state.h`,
-  `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
+  supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_state.h`,
+  `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/compose/compose_input_queries.h`, and
   `src/ui/nuklear/frontend.cpp` carry the existing global File → Export chooser/confirmation
   surface. These extensions are required to keep conversion and filesystem preflight off the UI
   thread while using the same workflow from every project tab. `src/formats/native_project_storage.cpp`

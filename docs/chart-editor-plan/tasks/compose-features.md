@@ -13,7 +13,7 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; owned inspector widgets checked at 280 logical pixels and simulated 2x scale)
 - **Outcome:** every widget in `compose_inspector.cpp` renders without clipped labels or overflowing fields at the minimum inspector width, and at 1x and 2x UI scale.
-- **Read first:** `docs/chart-editor-plan/editing/layout.md` (lines about side panels), `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/render/theme.h`.
+- **Read first:** `docs/chart-editor-plan/editing/layout.md` (lines about side panels), `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/render/theme.h`.
 - **Files owned:** `compose_inspector.cpp`, `chrome.h` (only to add a shared width helper), `tests/ui/nuklear_compose_state_tests.cpp` (only if state logic changes).
 - **Steps:**
   1. Audit: list every `render_*` inspector function and note which use fixed-width rows (`nk_layout_row_static`, literal pixel widths). Write the list in the report.
@@ -29,8 +29,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; existing wheel, toolbar scrollbar drag, and middle-button autoscroll verified with 32 BGM lanes)
 - **Outcome:** scrolling the BGM pane sideways never moves playable columns, and both panes keep the same vertical scroll and zoom.
-- **Read first:** `docs/chart-editor-plan/editing/layout.md` (BGM pane paragraph), `src/sys/compose/views/compose_view.h` (`bgm_horizontal_scroll_pixels`), `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`.
-- **Files owned:** `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp` (only if the clamp is wrong), `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Read first:** `docs/chart-editor-plan/editing/layout.md` (BGM pane paragraph), `src/sys/compose/views/compose_view.h` (`bgm_horizontal_scroll_pixels`), `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_state.h`.
+- **Files owned:** `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp` (only if the clamp is wrong), `tests/ui/nuklear_compose_state_tests.cpp`.
 - **Steps:**
   1. Audit: run `git grep -n bgm_horizontal_scroll` and list where the value is read, written, and clamped. State which of wheel, drag, and autoscroll already route to it.
   2. For each missing route, add the smallest change that routes it to the BGM scroll only.
@@ -45,8 +45,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; explicit idempotent Restart/Continue, source offsets and waveform aligned to each restart; core and real-window verification)
 - **Outcome:** the BMSON slice pane exposes separate, idempotent Restart and Continue actions for the selected marker, checked against the document revision and disabled without selection; source offsets and waveform cuts follow the last Restart.
-- **Read first:** `docs/chart-editor-plan/formats-persistence.md` (BMSON slicing), `src/core/bmson_sound_channel_editor.cpp`, `src/ui/nuklear/compose_inspector.cpp` (`render_staged_bmson_regions`).
-- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bmson_sound_channel_editor.cpp`, `include/wormedit/core/bmson_sound_channel_editor.h`, `src/core/sound_slice.cpp`, `src/audio/channel_waveform.cpp`, `tests/CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/core/bmson_slice_reset_tests.cpp`, `tests/formats/bmson_tests.cpp`, `tests/core/audio_audition_resolver_tests.cpp`, `tests/core/audio_object_audition_tests.cpp`, `tests/core/audio_aligned_waveform_tests.cpp` (scope extensions authorized by the user on 2026-09-30).
+- **Read first:** `docs/chart-editor-plan/formats-persistence.md` (BMSON slicing), `src/core/bmson_sound_channel_editor.cpp`, `src/ui/nuklear/compose/compose_inspector.cpp` (`render_staged_bmson_regions`).
+- **Files owned:** `src/ui/nuklear/compose/compose_inspector.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bmson_sound_channel_editor.cpp`, `include/wormedit/core/bmson_sound_channel_editor.h`, `src/core/sound_slice.cpp`, `src/audio/channel_waveform.cpp`, `tests/CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/core/bmson_slice_reset_tests.cpp`, `tests/formats/bmson_tests.cpp`, `tests/core/audio_audition_resolver_tests.cpp`, `tests/core/audio_object_audition_tests.cpp`, `tests/core/audio_aligned_waveform_tests.cpp` (scope extensions authorized by the user on 2026-09-30).
 - **Steps:**
   1. Audit the existing BMSON continuation/restart command. Decision resolved by the user: Reset means force Restart; Continue is a separate explicit action, and repeating either is a no-op.
   2. Add the two buttons and route them through an idempotent setter sharing validation with the existing toggle; derive source offsets and project waveform cuts relative to the latest Restart.
@@ -61,7 +61,7 @@ findings in the card's report, and do not rebuild what exists.
 - **Status:** done (2026-09-30; existing virtual tail audited with the OCT/FP fixture; user-authorized boundary correction and regression)
 - **Outcome:** in a BMS-family chart, Compose's measure rail lists measures up to `#999`, empty measures render as virtual rows, and the first edit in one materializes only that measure.
 - **Read first:** `include/wormedit/core/virtual_canvas.h`, `tests/core/virtual_canvas_tests.cpp`, `docs/chart-editor-plan/editing/layout.md` (measure-number column paragraph), `src/core/editor_scene.cpp`.
-- **Files owned:** `src/core/editor_scene.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp`, `tests/core/virtual_canvas_tests.cpp`.
+- **Files owned:** `src/core/editor_scene.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp`, `tests/core/virtual_canvas_tests.cpp`.
 - **Steps:**
   1. Audit: open a BMS fixture (`tests/fixtures/bms/*.bms`) in the app, scroll past the last authored measure, and record whether virtual rows appear. If they do, mark this card done with the evidence and STOP.
   2. If not, make `editor_scene.cpp` emit virtual measure bands using the existing virtual-canvas helper; do not allocate measure buckets.
@@ -76,7 +76,7 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; user chose a status-bar minimap and keeping existing sync controls)
 - **Outcome:** the overview implementation is split into the status-bar minimap (T-15) and an exact source-frame playhead (T-16).
-- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `src/ui/nuklear/compose_panel.cpp`, `src/sys/compose/views/compose_waveform_overlays.h`.
+- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/sys/compose/views/compose_waveform_overlays.h`.
 - **Files owned:** `docs/chart-editor-plan/tasks/compose-features.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:**
   1. Record the user decision: dock as a minimap in the status bar; keep the existing synchronization controls.
@@ -90,8 +90,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; real audio at 1280/800, click/drag navigation, offset preview/cancel/commit/undo, and unchanged-document dispatcher checks)
 - **Outcome:** Compose exposes its existing waveform and viewport window as an interactive horizontal minimap in the status bar, preserving navigation and beat-zero dragging.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_state.h`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_panel.h`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_panel_internal.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/compose/compose_state.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
 - **Steps:**
   1. Audit the current overview data, layout, and capture lifecycle before changing its host.
   2. Move the overview to the status bar with horizontal drawing and input coordinates; use one input owner and preserve existing offset actions.
@@ -105,8 +105,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; exact runtime voice position, source identity guards, restart/clip regressions and real-window playback/pause/Stop verified)
 - **Outcome:** the minimap shows the position in its displayed audio source when runtime source-frame identity is known, and omits the marker when it is ambiguous.
-- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/project/workspace_frame_view.h`, `src/sys/project/workspace_frame_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_panel.cpp`.
-- **Files owned:** `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_session.cpp`, `src/sys/application_frame_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_panel.cpp`, `tests/core/audio_transport_tests.cpp`, `tests/core/audio_preview_session_tests.cpp`, `tests/core/audio_audition_session_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp` (assigned after the source-position audit).
+- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/project/workspace_frame_view.h`, `src/sys/project/workspace_frame_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose/compose_panel.cpp`.
+- **Files owned:** `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_session.cpp`, `src/sys/application_frame_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/compose/compose_state.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `tests/core/audio_transport_tests.cpp`, `tests/core/audio_preview_session_tests.cpp`, `tests/core/audio_audition_session_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp` (assigned after the source-position audit).
 - **Steps:**
   1. Audit runtime source-frame positions for music preview, chart preview, and audition; STOP and report if a source position cannot be identified.
   2. Publish a bounded source identity and frame snapshot and draw its fraction in the minimap.

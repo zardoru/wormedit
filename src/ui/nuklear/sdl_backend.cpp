@@ -34,7 +34,7 @@
 #include <wormedit/core/keyed_cache.h>
 #include "ui/frontend.h"
 #include "ui/nuklear/render/image_quad.h"
-#include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose/compose_canvas.h"
 #include <limits>
 #include <cmath>
 #include <utility>

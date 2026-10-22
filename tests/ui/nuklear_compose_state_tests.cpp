@@ -1,6 +1,6 @@
 #define NK_IMPLEMENTATION
-#include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/compose/compose_note_menu.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 #include "ui/nuklear/render/theme.h"
 
@@ -614,7 +614,7 @@ TEST_CASE("Go to measure validates authored display numbers and bounded input",
     CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "18446744073709551616"));
 }
 
-#include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose/compose_area_menu.h"
 
 TEST_CASE("Retained area rows project through zoom scroll and reversed field", "[unit][frontend][compose]") {
     wormedit::ui::compose_view_t view{};

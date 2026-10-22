@@ -2,7 +2,7 @@
 #include "sys/resources/catalog_view.h"
 #include <wormedit/core/workspace.h>
 
-#include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose/compose_panel.h"
 #include "ui/nuklear/audio/player_preview.h"
 #include "ui/nuklear/project/setup_state.h"
 #include "ui/nuklear/timing/timing_stage_editor.h"

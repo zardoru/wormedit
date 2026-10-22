@@ -13,12 +13,12 @@
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"
 #include "ui/nuklear/audio/audio_state.h"
-#include "ui/nuklear/compose_area_menu.h"
-#include "ui/nuklear/compose_canvas.h"
-#include "ui/nuklear/compose_inspector.h"
-#include "ui/nuklear/compose_input_internal.h"
-#include "ui/nuklear/compose_note_menu.h"
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_area_menu.h"
+#include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/compose/compose_inspector.h"
+#include "ui/nuklear/compose/compose_input_internal.h"
+#include "ui/nuklear/compose/compose_note_menu.h"
+#include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/project/setup_panel.h"
 #include "ui/nuklear/resources/sound_import_runtime.h"
 #include "ui/nuklear/render/theme.h"
@@ -5075,7 +5075,7 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
 }
 
-#include "ui/nuklear/compose_waveform_gaps.h"
+#include "ui/nuklear/compose/compose_waveform_gaps.h"
 
 TEST_CASE("waveform strips leave out Stop and Delay bands",
           "[unit][frontend-state][compose-waveform-gap]") {

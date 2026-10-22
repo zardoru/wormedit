@@ -12,8 +12,8 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 - **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** in StepMania-family charts, a toolbar note-kind toggle makes hold entry (mouse Alt-drag and lane-key hold) create rolls instead of holds; rolls draw with a distinct striped body.
-- **Read first:** `include/wormedit/core/document.h` (`roll`), `src/core/interaction.cpp` (hold entry), `src/ui/nuklear/compose_canvas.cpp` (hold body drawing), `src/formats/stepmania.cpp`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
+- **Read first:** `include/wormedit/core/document.h` (`roll`), `src/core/interaction.cpp` (hold entry), `src/ui/nuklear/compose/compose_canvas.cpp` (hold body drawing), `src/formats/stepmania.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/ui/nuklear/compose/compose_toolbar.cpp`.
 - **Steps:** 1. Add the armed hold kind to the interaction controller; union rules treat roll and hold as incompatible (reject). 2. Tests: create roll, SSC export/re-import keeps it. 3. Drawing and toggle.
 - **Invariants:** non-StepMania charts never offer rolls.
 - **Reject/failure behavior:** union of a roll with a hold rejects.

@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <array>
 #include <string_view>
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_state.h"
 
 namespace {
 auto click_text(nuklear_event_harness_t& harness, std::string_view label)

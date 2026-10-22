@@ -7,7 +7,7 @@
 - **Status:** done (2026-10-07)
 - **Result:** the baseline failures followed T-396's intentional removal of the single-click rename strip. All eight bookmark-rename event-harness cases pass with double-click opening and a new single-click negative case; documentation check passes. Production behavior is unchanged.
 - **Outcome:** bookmark rename workflow tests use the deliberate double-click gesture, and a single click does not open the editor.
-- **Read first:** `tests/ui/bookmark_rename_event_harness_tests.cpp`, `src/ui/nuklear/compose_bookmark_label.cpp`, `src/ui/nuklear/frontend.cpp`, `docs/chart-editor-plan/tasks/compose-cleanup.md` (T-396).
+- **Read first:** `tests/ui/bookmark_rename_event_harness_tests.cpp`, `src/ui/nuklear/compose/compose_bookmark_label.cpp`, `src/ui/nuklear/frontend.cpp`, `docs/chart-editor-plan/tasks/compose-cleanup.md` (T-396).
 - **Files owned:** `tests/ui/bookmark_rename_event_harness_tests.cpp`, `cmake/check_chart_editor_docs.cmake` (register this card in the checker), this card; root owns task index and status coordination.
 - **Steps:**
   1. Confirm the five baseline failures use the removed single-click rename gesture.

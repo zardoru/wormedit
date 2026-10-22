@@ -1,8 +1,8 @@
-#include "ui/nuklear/compose_input_queries.h"
-#include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose/compose_input_queries.h"
+#include "ui/nuklear/compose/compose_canvas.h"
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/compose/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

@@ -1,4 +1,4 @@
-#include "ui/nuklear/measure_resize.h"
+#include "ui/nuklear/compose/measure_resize.h"
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -7,7 +7,7 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/catalogs.h>
 #include "ui/nuklear/audio/audio_state.h"
-#include "ui/nuklear/compose_drag_capture.h"
+#include "ui/nuklear/compose/compose_drag_capture.h"
 #include "ui/nuklear/chrome/chrome.h"
 
 #include "wormedit/nuklear_config.h"

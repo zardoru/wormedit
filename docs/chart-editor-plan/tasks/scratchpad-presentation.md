@@ -34,8 +34,8 @@ User-authorized batch, 2026-10-11. Fill as well as outlines is explicitly in sco
 
 - **Status:** done
 - **Outcome:** Every layer row shows its name and a muted object-count second line; the color bullet is vertically centered.
-- **Read first:** `src/ui/nuklear/compose_layers_panel.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_layers_panel.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, this card, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/compose/compose_layers_panel.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose/compose_layers_panel.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, this card, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Audit existing behavior. 2. Correct the live path. 3. Verify input and native presentation.
 - **Invariants:** no chart edits or history changes from presentation/toggle actions; preserve modal guards.
 - **Reject/failure behavior:** stale or occluded commands remain rejected.

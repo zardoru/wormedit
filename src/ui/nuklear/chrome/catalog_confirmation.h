@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
 #include <algorithm>
 #include <optional>

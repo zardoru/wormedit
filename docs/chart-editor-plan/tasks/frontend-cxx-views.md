@@ -351,7 +351,7 @@ The exact coordinated producer, consumer, vocabulary and regression inventory is
 
 - **Vocabulary and frontend contract:** `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/ui/frontend/actions.h`, `src/ui/frontend/common.h`, `src/ui/frontend/sound_import.h`.
 - **Application producers and dispatch:** `src/sys/app/application.cpp`, `src/sys/commands/application_command_dispatch.h`, `src/sys/app/application_frame_services.cpp`, `src/sys/app/application_timing_stage.cpp`, `src/sys/app/application_timing_stage.h`, `src/sys/audio/audio_offset_actions.h`, `src/sys/resources/catalog_view.h`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/actions/compose_area_actions.cpp`, `src/sys/compose/actions/compose_bga_actions.cpp`, `src/sys/compose/compose_bgm_bar.cpp`, `src/sys/compose/actions/compose_bookmark_actions.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/input/compose_input_internal.h`, `src/sys/compose/actions/compose_measure_actions.cpp`, `src/sys/compose/actions/compose_quantize_request.h`, `src/sys/compose/actions/compose_recipe_actions.cpp`, `src/sys/compose/actions/compose_resource_actions.cpp`, `src/sys/compose/input/compose_resource_input.cpp`, `src/sys/compose/actions/compose_sound_actions.cpp`, `src/sys/compose/actions/compose_sound_actions.h`, `src/sys/compose/input/compose_timing_input.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/input/compose_waveform_fit_input.cpp`, `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_asset_runtime.cpp`, `src/sys/preferences/preferences_runtime.cpp`, `src/sys/project/recovery_notification_feedback.cpp`, `src/sys/commands/shortcut_rows.cpp`, `src/sys/commands/shortcut_rows.h`, `src/sys/resources/sound_drop_transaction.cpp`, `src/sys/resources/sound_import_staging.cpp`, `src/sys/resources/sound_import_staging.h`, `src/sys/resources/sound_usage_actions.cpp`, `src/sys/audio/transport_player_actions.cpp`.
-- **Frontend consumers and staging:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/ui/nuklear/project/bmson_lane_mode_ui.cpp`, `src/ui/nuklear/project/chart_import_dialog.cpp`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/project/compare_panel.cpp`, `src/ui/nuklear/compose_action_stamp.h`, `src/ui/nuklear/compose_area_menu.cpp`, `src/ui/nuklear/compose_area_menu.h`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_bmson_tab.cpp`, `src/ui/nuklear/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/compose_measure_resize_input.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compose_menu_command.h`, `src/ui/nuklear/compose_note_label_inline.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_recipe_form.cpp`, `src/ui/nuklear/compose_recipe_menu.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_snap_grid.cpp`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_timing_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/resources/keysound_list_state.cpp`, `src/ui/nuklear/resources/keysound_list_state.h`, `src/ui/nuklear/metadata/metadata_audio_section.cpp`, `src/ui/nuklear/metadata/metadata_difficulty_section.cpp`, `src/ui/nuklear/metadata/metadata_format_fields.cpp`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/nuklear/metadata/metadata_song_section.cpp`, `src/ui/nuklear/metadata/metadata_state.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/resources/sound_import_dialog.cpp`, `src/ui/nuklear/resources/sound_import_runtime.cpp`, `src/ui/nuklear/resources/sound_import_runtime.h`, `src/ui/nuklear/resources/sound_import_state.cpp`, `src/ui/nuklear/resources/sound_import_state.h`, `src/ui/nuklear/resources/sound_slot_batch.cpp`, `src/ui/nuklear/resources/sound_slot_batch.h`, `src/ui/nuklear/timing/timing_settings_panel.cpp`, `src/ui/nuklear/timing/timing_stage_editor.cpp`.
+- **Frontend consumers and staging:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/ui/nuklear/project/bmson_lane_mode_ui.cpp`, `src/ui/nuklear/project/chart_import_dialog.cpp`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/project/compare_panel.cpp`, `src/ui/nuklear/compose/compose_action_stamp.h`, `src/ui/nuklear/compose/compose_area_menu.cpp`, `src/ui/nuklear/compose/compose_area_menu.h`, `src/ui/nuklear/compose/compose_bga_panel.cpp`, `src/ui/nuklear/compose/compose_bmson_tab.cpp`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/compose/compose_keyboard_input.cpp`, `src/ui/nuklear/compose/compose_layers_panel.cpp`, `src/ui/nuklear/compose/compose_markers.cpp`, `src/ui/nuklear/compose/compose_measure_resize_input.cpp`, `src/ui/nuklear/compose/compose_measures_panel.cpp`, `src/ui/nuklear/compose/compose_menu_command.h`, `src/ui/nuklear/compose/compose_note_label_inline.cpp`, `src/ui/nuklear/compose/compose_note_menu.cpp`, `src/ui/nuklear/compose/compose_object_input.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_recipe_form.cpp`, `src/ui/nuklear/compose/compose_recipe_menu.cpp`, `src/ui/nuklear/compose/compose_resources.cpp`, `src/ui/nuklear/compose/compose_snap_grid.cpp`, `src/ui/nuklear/compose/compose_sound_picker.cpp`, `src/ui/nuklear/compose/compose_sounds_panel.cpp`, `src/ui/nuklear/compose/compose_state.cpp`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/compose/compose_timing_input.cpp`, `src/ui/nuklear/compose/compose_toolbar.cpp`, `src/ui/nuklear/compose/compose_viewport_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/resources/keysound_list_state.cpp`, `src/ui/nuklear/resources/keysound_list_state.h`, `src/ui/nuklear/metadata/metadata_audio_section.cpp`, `src/ui/nuklear/metadata/metadata_difficulty_section.cpp`, `src/ui/nuklear/metadata/metadata_format_fields.cpp`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/nuklear/metadata/metadata_song_section.cpp`, `src/ui/nuklear/metadata/metadata_state.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/resources/sound_import_dialog.cpp`, `src/ui/nuklear/resources/sound_import_runtime.cpp`, `src/ui/nuklear/resources/sound_import_runtime.h`, `src/ui/nuklear/resources/sound_import_state.cpp`, `src/ui/nuklear/resources/sound_import_state.h`, `src/ui/nuklear/resources/sound_slot_batch.cpp`, `src/ui/nuklear/resources/sound_slot_batch.h`, `src/ui/nuklear/timing/timing_settings_panel.cpp`, `src/ui/nuklear/timing/timing_stage_editor.cpp`.
 - **Regression consumers:** `tests/sys/application_commands_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/compose_area_dispatch_fixture.h`, `tests/sys/compose_beat_fit_tests.cpp`, `tests/sys/compose_bgm_bar_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/compose_quantize_preview_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/global_drop_notification_tests.cpp`, `tests/sys/manual_sound_group_command_tests.cpp`, `tests/sys/metadata_notification_tests.cpp`, `tests/sys/minimap_center_tests.cpp`, `tests/sys/recovery_notification_tests.cpp`, `tests/sys/resource_notification_tests.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/sys/sound_properties_actions_tests.cpp`, `tests/sys/sound_usage_actions_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/bmson_lane_mode_event_harness_tests.cpp`, `tests/ui/bookmark_chooser_event_harness_tests.cpp`, `tests/ui/bookmark_rename_event_harness_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/compose_measure_resize_tests.cpp`, `tests/ui/dock_select_all_event_harness_tests.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/hidden_notification_history_event_harness_tests.cpp`, `tests/ui/hitsound_palette_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/lane_keys_event_harness_tests.cpp`, `tests/ui/live_resource_table_event_harness_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `tests/ui/markers_event_harness_tests.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/ui/minimap_center_event_harness_tests.cpp`, `tests/ui/note_label_inline_event_harness_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_event_harness.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/nuklear_metadata_state_tests.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, `tests/ui/preview_audio_export_event_harness_tests.cpp`, `tests/ui/selected_sound_layers_menu_tests.cpp`, `tests/ui/snap_grid_event_harness_tests.cpp`, `tests/ui/sound_import_state_tests.cpp`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/sound_slot_batch_event_harness_tests.cpp`, `tests/ui/sound_source_copy_event_harness_tests.cpp`, `tests/ui/sound_usage_event_harness_tests.cpp`, `tests/ui/tag_grips_event_harness_tests.cpp`, `tests/ui/tap_timing_panel_event_harness_tests.cpp`, `tests/ui/timing_settings_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`.
 
 ## T-695 Convert the Compose field geometry views
@@ -360,7 +360,7 @@ The exact coordinated producer, consumer, vocabulary and regression inventory is
 - **Value:** The hottest per-frame path, so this is where the steady-state allocation test matters most.
 - **Outcome:** the field geometry structs in `compose.h` are C++ views with owned lists refilled in place: rect, paste ghost, band, lane, grid line, lane layout segment, timing preview rect, dead/Kiai/speed spans, SV graph point, recipe area, difference, hold, note, cursor, timing marker, quantize ghost.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for those structs in `src/ui/frontend/compose.h`, plus `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view_internal.h`, `src/ui/nuklear/compose_canvas.cpp` and the field renderer (`src/ui/field/field_renderer.*`); coordinator-approved supporting files are enumerated in the T-695 inventory and conversion checkpoints below.
+- **Files owned:** the shared list for those structs in `src/ui/frontend/compose.h`, plus `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view_internal.h`, `src/ui/nuklear/compose/compose_canvas.cpp` and the field renderer (`src/ui/field/field_renderer.*`); coordinator-approved supporting files are enumerated in the T-695 inventory and conversion checkpoints below.
 - **Steps:** 1. Inventory as in T-690. 2. Convert one primitive family per checkpoint. 3. Record frame-time and `frame_timing` heap summaries for the smoke chart before and after.
 - **Reject/failure behavior:** the shared list.
 - **Verify:** the shared list.
@@ -384,7 +384,7 @@ The exact coordinated producer, consumer, vocabulary and regression inventory is
   `compose_recipe_areas.h/.inl` and `compose_speed_spans.h`.
 - Frontend supporting ownership includes `src/ui/compose_timing_geometry.h`, the primitive
   references in `src/ui/frontend/actions.h`, `timing_preview.h` and `options_notifications.h`,
-  and `src/ui/nuklear/compose_canvas.h`, `compose_panel.cpp`, `compose_timing_input.cpp`,
+  and `src/ui/nuklear/compose/compose_canvas.h`, `compose_panel.cpp`, `compose_timing_input.cpp`,
   `compose_recipe_menu.cpp`, `compose_state.h/.cpp`, `frontend.cpp`, `compose_input_panel.cpp`,
   `compose_viewport_input.cpp`, `compose_measure_resize_input.cpp`, `compose_note_menu.cpp` and
   `compose_object_input.cpp`. `sdl_backend.h/.cpp` owns per-surface retained tile extraction
@@ -491,7 +491,7 @@ claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
 ### T-696 inventory and ownership (2026-10-20)
 
 - **Types:** BGM lane/event/draft/move preview, waveform and overview rows, BGM bar marks/bookmarks, stem waveform pieces and cuts. The root owns eleven retained vectors and an optional move preview. Stem piece spans borrow retained audio projection rows; waveform pyramids remain audio-cache-owned.
-- **Supporting ownership (coordinator):** `src/sys/app/application_frame_view.cpp`, `src/sys/audio/bmson_waveform_view.cpp`, `src/sys/compose/views/compose_draw_source_view.cpp`, `src/sys/compose/views/compose_scene_view.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/compose/views/compose_view_internal.h`, `src/sys/audio/stem_waveform_window.h`, `src/sys/audio/waveform_view.cpp`, `src/sys/project/workspace_view.cpp`, `src/sys/project/workspace_view.h`, `src/ui/compose_timing_geometry.h`, `src/ui/frontend/common.h`, `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_canvas.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/sdl_backend.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/bmson_lane_mode_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/compose_stem_lane_render_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/minimap_center_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/ui/playback_status_event_harness_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`. These paths cover declarations, producers, persistent reset, cache accounting, canvas/input consumers and existing regression fixtures. `memory/chart-editor-status/resume.md` advances the queue after verification.
+- **Supporting ownership (coordinator):** `src/sys/app/application_frame_view.cpp`, `src/sys/audio/bmson_waveform_view.cpp`, `src/sys/compose/views/compose_draw_source_view.cpp`, `src/sys/compose/views/compose_scene_view.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/compose/views/compose_view_internal.h`, `src/sys/audio/stem_waveform_window.h`, `src/sys/audio/waveform_view.cpp`, `src/sys/project/workspace_view.cpp`, `src/sys/project/workspace_view.h`, `src/ui/compose_timing_geometry.h`, `src/ui/frontend/common.h`, `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/ui/nuklear/compose/compose_canvas.h`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_note_menu.cpp`, `src/ui/nuklear/compose/compose_object_input.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_toolbar.cpp`, `src/ui/nuklear/compose/compose_viewport_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/sdl_backend.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/bmson_lane_mode_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/compose_stem_lane_render_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/minimap_center_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/ui/playback_status_event_harness_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`. These paths cover declarations, producers, persistent reset, cache accounting, canvas/input consumers and existing regression fixtures. `memory/chart-editor-status/resume.md` advances the queue after verification.
 - **Parallel ownership:** waveform/stem producer agent owns `src/sys/audio/waveform_view.cpp`, `src/sys/audio/bmson_waveform_view.cpp`, retained enumeration overloads in `src/sys/audio/stem_waveform_window.h` and the direct-projection cache in `compose_view.h`; consumer agent owns the affected UI paths and UI tests; regression agent owns `tests/sys/frame_timing_tests.cpp`. Coordinator owns shared declarations, remaining sys producers, cache/reset integration, ratchets, documentation and build writes.
 - **Storage versus work:** retire eight BGM/waveform storage-capacity macros and the stem-cut 4096 cutoff. Preserve the audio alignment 4096-row work limit, 512 overview samples, 1024 BGM bar samples/measure-mark sampling budget, scene primitive budget and retained CPU/GPU memory budgets at their consumers. BGM bar bookmarks and BGM lane/event view storage no longer truncate independently.
 - **Warm ownership:** scene text borrows source-stamped retained labels/filenames. BGM mix and visible stem/packed-piece enumeration use retained scratch; interval queries reuse index scratch. Canvas static passes retain only their selected BGM geometry and drawing metadata.
@@ -516,7 +516,7 @@ claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
 - **Status:** done (2026-10-21)
 - **Outcome:** the resource, sound picker, keysound row/display/advance/selection/layer, sound group, keysound fallback, sound slot, BGA row/event views and the BGA and keysound dock requests are C++ types.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for those structs, plus `src/ui/nuklear/compose_sounds_panel.cpp` and `src/ui/nuklear/compose_bga_panel.cpp`; the exact inventory and supporting extensions below are part of this ownership.
+- **Files owned:** the shared list for those structs, plus `src/ui/nuklear/compose/compose_sounds_panel.cpp` and `src/ui/nuklear/compose/compose_bga_panel.cpp`; the exact inventory and supporting extensions below are part of this ownership.
 - **Steps:** 1. Inventory. 2. Convert one family per checkpoint.
 - **Invariants:** the shared list.
 - **Reject/failure behavior:** the shared list.
@@ -526,8 +526,8 @@ claimed. Full phase/heap reports are `/tmp/t695-before-timing.txt` and
 ### T-697 inventory and ownership (2026-10-20)
 
 - Stale-plan check: all fifteen outcome structs still used legacy C storage.
-- Exact owned projection/consumer/regression files from the inventory: `tests/ui/compose_beat_fit_tests.cpp`, `src/ui/frontend/compose.h`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/ui/frontend/runtime.h`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/sound_filter_event_harness_tests.cpp`, `tests/ui/dock_select_all_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/live_resource_table_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/resources/bga_dock_runtime.h`, `src/ui/nuklear/compose_resources.cpp`, `src/sys/app/application.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/resources/bga_dock_runtime.cpp`, `src/sys/project/workspace_view.h`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/views/compose_draw_source_view.cpp`, `src/sys/app/application_frame_view.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/sys/app/application_frame_services.cpp`, `src/sys/resources/sound_import_staging.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/resources/sound_import_dialog.cpp`.
-- Supporting ownership approved within this card: `tests/sys/bga_dock_runtime_tests.cpp` (decoded-thumbnail allocation and source-path refresh regression), `cmake/complexity_baseline.txt` (remove the retired score-28 row-drawing allowance), `tests/CMakeLists.txt` (link the BGA runtime/list into the existing allocation regression target and enable the production heap hook in the image-enabled BGA test target), `include/wormedit/core/resource_vocabulary.h`, `src/sys/audio/audio_fallback.h` and `tests/sys/audio_source_registration_tests.cpp` (share pure resource-filter/fallback enums across the boundary), `src/sys/resource_drop_router.h/.cpp` (reuse the drop-event admission query before filling owned dock requests), `src/sys/compose_resource_presenter.h/.cpp` (session-aware resource cache), `src/sys/compose/views/compose_view_internal.h` (retired arena publication declaration), `src/ui/nuklear/compose_sound_picker.cpp` (inferred row consumer), `src/ui/nuklear/compose_panel.cpp` and `compose_state.cpp` (validation/selection), `tests/sys/sound_list_projection_tests.cpp` (fallback cache), `src/sys/compose/views/compose_scene_view.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/resources/sound_list_view.h`, `src/sys/resources/sound_list_view.cpp`, for BGA scene publication, converted geometry/identity consumers and cached fallback projection storage. `memory/chart-editor-status/resume.md` advances only after verification.
+- Exact owned projection/consumer/regression files from the inventory: `tests/ui/compose_beat_fit_tests.cpp`, `src/ui/frontend/compose.h`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/ui/frontend/runtime.h`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/sound_filter_event_harness_tests.cpp`, `tests/ui/dock_select_all_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/live_resource_table_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/resources/bga_dock_runtime.h`, `src/ui/nuklear/compose/compose_resources.cpp`, `src/sys/app/application.cpp`, `src/ui/nuklear/compose/compose_sounds_panel.cpp`, `src/sys/resources/bga_dock_runtime.cpp`, `src/sys/project/workspace_view.h`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/views/compose_draw_source_view.cpp`, `src/sys/app/application_frame_view.cpp`, `src/ui/nuklear/compose/compose_object_input.cpp`, `src/ui/nuklear/compose/compose_bga_panel.cpp`, `src/sys/app/application_frame_services.cpp`, `src/sys/resources/sound_import_staging.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/resources/sound_import_dialog.cpp`.
+- Supporting ownership approved within this card: `tests/sys/bga_dock_runtime_tests.cpp` (decoded-thumbnail allocation and source-path refresh regression), `cmake/complexity_baseline.txt` (remove the retired score-28 row-drawing allowance), `tests/CMakeLists.txt` (link the BGA runtime/list into the existing allocation regression target and enable the production heap hook in the image-enabled BGA test target), `include/wormedit/core/resource_vocabulary.h`, `src/sys/audio/audio_fallback.h` and `tests/sys/audio_source_registration_tests.cpp` (share pure resource-filter/fallback enums across the boundary), `src/sys/resource_drop_router.h/.cpp` (reuse the drop-event admission query before filling owned dock requests), `src/sys/compose_resource_presenter.h/.cpp` (session-aware resource cache), `src/sys/compose/views/compose_view_internal.h` (retired arena publication declaration), `src/ui/nuklear/compose/compose_sound_picker.cpp` (inferred row consumer), `src/ui/nuklear/compose/compose_panel.cpp` and `compose_state.cpp` (validation/selection), `tests/sys/sound_list_projection_tests.cpp` (fallback cache), `src/sys/compose/views/compose_scene_view.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/resources/sound_list_view.h`, `src/sys/resources/sound_list_view.cpp`, for BGA scene publication, converted geometry/identity consumers and cached fallback projection storage. `memory/chart-editor-status/resume.md` advances only after verification.
 - Resource and keysound lists used `frame_span` plus arena text. BGA dock rows/IDs borrowed runtime vectors; scene BGA events used arena storage. Requests borrowed frontend filter/selection buffers. Converted lists belong to the persistent view and refill in place.
 - Storage-only bounds to retire: resource 128, legacy keysound 4096, fallback 256 / six candidate labels and BGA event 32768. Search top-20 matches, viewport row windows, scene/render budgets, the 64-bit layer masks and BMS format capacities remain work/format bounds.
 
@@ -610,7 +610,7 @@ $ scripts/smoke-compose-virtual-x.sh /tmp/t697-compose.png compose tests/fixture
 - **Status:** done (2026-10-21)
 - **Outcome:** `compose.h` contains no C structs. The remaining views (semantic layers, bookmarks, sections, audio bookmarks/sections, branch rows and choices, recipe form, bookmark chooser, lane key binding, shortcut event, output group, measure row, quantize preset/position/report) and `WormUiComposeView` itself are C++ types, and the T-672 member sits in a C++ parent.
 - **Read first:** the shared list.
-- **Files owned:** the shared list for `src/ui/frontend/compose.h`, plus `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose_panel.cpp` and `compose_inspector.cpp`.
+- **Files owned:** the shared list for `src/ui/frontend/compose.h`, plus `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose/compose_panel.cpp` and `compose_inspector.cpp`.
 - **Steps:** 1. Inventory. 2. Convert the leaf views one family per checkpoint, then `WormUiComposeView`. 3. Shortcut events keep USB HID usages as a typed enum.
 - **Invariants:** the shared list.
 - **Reject/failure behavior:** the shared list.
@@ -668,60 +668,60 @@ Coordinator-approved supporting ownership for the leaf and root conversion:
 - `src/ui/nuklear/project/bms_branch_panel.cpp`
 - `src/ui/nuklear/project/bms_branch_panel.h`
 - `src/ui/nuklear/chrome/catalog_confirmation.h`
-- `src/ui/nuklear/compose_action_stamp.h`
-- `src/ui/nuklear/compose_area_menu.cpp`
-- `src/ui/nuklear/compose_area_menu.h`
-- `src/ui/nuklear/compose_bga_panel.cpp`
-- `src/ui/nuklear/compose_bga_panel.h`
-- `src/ui/nuklear/compose_bmson_tab.cpp`
-- `src/ui/nuklear/compose_bmson_tab.h`
-- `src/ui/nuklear/compose_bookmark_chooser.cpp`
-- `src/ui/nuklear/compose_bookmark_chooser.h`
-- `src/ui/nuklear/compose_bookmark_rename.cpp`
-- `src/ui/nuklear/compose_bookmark_rename.h`
-- `src/ui/nuklear/compose_canvas.cpp`
-- `src/ui/nuklear/compose_canvas.h`
-- `src/ui/nuklear/compose_drag_capture.h`
-- `src/ui/nuklear/compose_input_internal.h`
-- `src/ui/nuklear/compose_input_panel.cpp`
-- `src/ui/nuklear/compose_input_panel.h`
-- `src/ui/nuklear/compose_inspector.cpp`
-- `src/ui/nuklear/compose_inspector.h`
-- `src/ui/nuklear/compose_keyboard_input.cpp`
-- `src/ui/nuklear/compose_keyboard_input.h`
-- `src/ui/nuklear/compose_layers_panel.cpp`
-- `src/ui/nuklear/compose_layers_panel.h`
-- `src/ui/nuklear/compose_markers.cpp`
-- `src/ui/nuklear/compose_markers.h`
-- `src/ui/nuklear/compose_measure_resize_input.cpp`
-- `src/ui/nuklear/compose_measures_panel.cpp`
-- `src/ui/nuklear/compose_measures_panel.h`
-- `src/ui/nuklear/compose_menu_command.h`
-- `src/ui/nuklear/compose_note_label_inline.cpp`
-- `src/ui/nuklear/compose_note_label_inline.h`
-- `src/ui/nuklear/compose_note_menu.cpp`
-- `src/ui/nuklear/compose_note_menu.h`
-- `src/ui/nuklear/compose_object_input.cpp`
-- `src/ui/nuklear/compose_panel.cpp`
-- `src/ui/nuklear/compose_panel.h`
-- `src/ui/nuklear/compose_panel_internal.h`
-- `src/ui/nuklear/compose_recipe_form.cpp`
-- `src/ui/nuklear/compose_recipe_menu.cpp`
-- `src/ui/nuklear/compose_recipe_menu.h`
-- `src/ui/nuklear/compose_resources.cpp`
-- `src/ui/nuklear/compose_resources.h`
-- `src/ui/nuklear/compose_snap_grid.cpp`
-- `src/ui/nuklear/compose_snap_grid.h`
-- `src/ui/nuklear/compose_sound_picker.cpp`
-- `src/ui/nuklear/compose_sound_picker.h`
-- `src/ui/nuklear/compose_sounds_panel.cpp`
-- `src/ui/nuklear/compose_sounds_panel.h`
-- `src/ui/nuklear/compose_state.cpp`
-- `src/ui/nuklear/compose_state.h`
-- `src/ui/nuklear/compose_timing_input.cpp`
-- `src/ui/nuklear/compose_toolbar.cpp`
-- `src/ui/nuklear/compose_toolbar.h`
-- `src/ui/nuklear/compose_viewport_input.cpp`
+- `src/ui/nuklear/compose/compose_action_stamp.h`
+- `src/ui/nuklear/compose/compose_area_menu.cpp`
+- `src/ui/nuklear/compose/compose_area_menu.h`
+- `src/ui/nuklear/compose/compose_bga_panel.cpp`
+- `src/ui/nuklear/compose/compose_bga_panel.h`
+- `src/ui/nuklear/compose/compose_bmson_tab.cpp`
+- `src/ui/nuklear/compose/compose_bmson_tab.h`
+- `src/ui/nuklear/compose/compose_bookmark_chooser.cpp`
+- `src/ui/nuklear/compose/compose_bookmark_chooser.h`
+- `src/ui/nuklear/compose/compose_bookmark_rename.cpp`
+- `src/ui/nuklear/compose/compose_bookmark_rename.h`
+- `src/ui/nuklear/compose/compose_canvas.cpp`
+- `src/ui/nuklear/compose/compose_canvas.h`
+- `src/ui/nuklear/compose/compose_drag_capture.h`
+- `src/ui/nuklear/compose/compose_input_internal.h`
+- `src/ui/nuklear/compose/compose_input_panel.cpp`
+- `src/ui/nuklear/compose/compose_input_panel.h`
+- `src/ui/nuklear/compose/compose_inspector.cpp`
+- `src/ui/nuklear/compose/compose_inspector.h`
+- `src/ui/nuklear/compose/compose_keyboard_input.cpp`
+- `src/ui/nuklear/compose/compose_keyboard_input.h`
+- `src/ui/nuklear/compose/compose_layers_panel.cpp`
+- `src/ui/nuklear/compose/compose_layers_panel.h`
+- `src/ui/nuklear/compose/compose_markers.cpp`
+- `src/ui/nuklear/compose/compose_markers.h`
+- `src/ui/nuklear/compose/compose_measure_resize_input.cpp`
+- `src/ui/nuklear/compose/compose_measures_panel.cpp`
+- `src/ui/nuklear/compose/compose_measures_panel.h`
+- `src/ui/nuklear/compose/compose_menu_command.h`
+- `src/ui/nuklear/compose/compose_note_label_inline.cpp`
+- `src/ui/nuklear/compose/compose_note_label_inline.h`
+- `src/ui/nuklear/compose/compose_note_menu.cpp`
+- `src/ui/nuklear/compose/compose_note_menu.h`
+- `src/ui/nuklear/compose/compose_object_input.cpp`
+- `src/ui/nuklear/compose/compose_panel.cpp`
+- `src/ui/nuklear/compose/compose_panel.h`
+- `src/ui/nuklear/compose/compose_panel_internal.h`
+- `src/ui/nuklear/compose/compose_recipe_form.cpp`
+- `src/ui/nuklear/compose/compose_recipe_menu.cpp`
+- `src/ui/nuklear/compose/compose_recipe_menu.h`
+- `src/ui/nuklear/compose/compose_resources.cpp`
+- `src/ui/nuklear/compose/compose_resources.h`
+- `src/ui/nuklear/compose/compose_snap_grid.cpp`
+- `src/ui/nuklear/compose/compose_snap_grid.h`
+- `src/ui/nuklear/compose/compose_sound_picker.cpp`
+- `src/ui/nuklear/compose/compose_sound_picker.h`
+- `src/ui/nuklear/compose/compose_sounds_panel.cpp`
+- `src/ui/nuklear/compose/compose_sounds_panel.h`
+- `src/ui/nuklear/compose/compose_state.cpp`
+- `src/ui/nuklear/compose/compose_state.h`
+- `src/ui/nuklear/compose/compose_timing_input.cpp`
+- `src/ui/nuklear/compose/compose_toolbar.cpp`
+- `src/ui/nuklear/compose/compose_toolbar.h`
+- `src/ui/nuklear/compose/compose_viewport_input.cpp`
 - `src/ui/nuklear/frontend.cpp`
 - `src/ui/nuklear/metadata/metadata_audio_section.cpp`
 - `src/ui/nuklear/chrome/popup_lifecycle.h`

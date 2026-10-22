@@ -8,7 +8,7 @@
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/formats/stepmania.h>
 #include "sys/project/output_group_export.h"
-#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/bgm_columns.h>
 #include <wormedit/core/note_to_bgm.h>

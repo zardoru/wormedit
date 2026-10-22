@@ -57,8 +57,8 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 - **Status:** done (2026-10-17)
 - **Outcome:** A Compose view option shows a measure lane where each bar line is a hit-testable object: click selects, area selection includes it, Draw places one (split), Delete removes it, and the selection gestures from T-655 and T-656 work on it.
-- **Read first:** `src/ui/frontend.h`, `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `docs/frontend-event-harness.md`.
-- **Files owned:** `src/ui/frontend.h`, `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Read first:** `src/ui/frontend.h`, `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `docs/frontend-event-harness.md`.
+- **Files owned:** `src/ui/frontend.h`, `src/sys/compose/views/compose_view.cpp`, `src/ui/nuklear/compose/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
 - **Steps:**
   1. Project the lane (hidden by default) from the existing grid-line projection.
   2. Index bar lines in the hit test so click and area selection produce `bar_line` objects.

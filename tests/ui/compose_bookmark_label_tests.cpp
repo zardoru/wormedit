@@ -1,4 +1,4 @@
-#include "ui/nuklear/compose_bookmark_label.h"
+#include "ui/nuklear/compose/compose_bookmark_label.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

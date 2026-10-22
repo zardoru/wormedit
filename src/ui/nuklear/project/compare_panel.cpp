@@ -1,6 +1,6 @@
 #include "ui/nuklear/project/compare_panel.h"
 #include "ui/nuklear/chrome/content_layout.h"
-#include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose/compose_canvas.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 

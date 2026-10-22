@@ -1,5 +1,5 @@
 #include "sys/resources/resource_job_state.h"
-#include "sys/document_edit_feedback.h"
+#include "sys/commands/document_edit_feedback.h"
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>

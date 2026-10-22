@@ -72,7 +72,7 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 - **Value:** Modest. Three copies today; the risk is new commands adding a fourth with different failure messages.
 - **Outcome:** `publish_metadata_edit` (`src/sys/metadata/metadata_actions.cpp`), resource-copy relink completion (`src/sys/resources/resource_job_state.cpp`) and audio import (`src/sys/metadata/metadata_asset_runtime.cpp`) rebind through the same function that `finish_compose_outcome` uses, passing only their own success and failure messages. Ratchet `sys_workspace_rebind` 1.
 - **Read first:** `src/sys/compose_action_outcome.cpp` (`finish_compose_outcome`), `src/sys/metadata/metadata_actions.cpp`, `src/sys/resources/resource_job_state.cpp`, `src/sys/metadata/metadata_asset_runtime.cpp`, `src/core/workspace.cpp` (`rebind_workspace`).
-- **Files owned:** `src/sys/document_edit_feedback.h`/`.cpp` (new), the four sys files above, `cmake/ceremony_ratchet.txt`, `CMakeLists.txt` (source list), a focused test under `tests/sys/`, this card.
+- **Files owned:** `src/sys/commands/document_edit_feedback.h`/`.cpp` (new), the four sys files above, `cmake/ceremony_ratchet.txt`, `CMakeLists.txt` (source list), a focused test under `tests/sys/`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rnE "= (wormedit::)?rebind_workspace\(" src/sys` (expect 4). If T-686 has not landed, add the `sys_workspace_rebind` row from its step 2 first.
   2. Extract the rebind-and-map step (rebind, require no diagnostics, report the first diagnostic or a caller-given fallback) from `finish_compose_outcome` into `document_edit_feedback`.

@@ -1,6 +1,6 @@
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 #include "sys/compose_input.h"
 
 #include <catch2/catch_test_macros.hpp>

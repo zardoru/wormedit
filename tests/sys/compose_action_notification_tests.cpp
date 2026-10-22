@@ -4,7 +4,7 @@
 #include "sys/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_quantize.h"

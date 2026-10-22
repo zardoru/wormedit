@@ -85,8 +85,8 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done
 - **Outcome:** pressing an Alt+digit note-kind shortcut in Compose arms that kind and switches to the note paint tool, so the palette button lights up exactly as after a click. Pressing it again while that kind is already armed keeps paint mode on.
-- **Read first:** `src/sys/application_command_dispatch.cpp` (`note_kind_command`), `src/ui/nuklear/compose_toolbar.cpp` (`render_compose_note_palette_column`), `src/core/command_registry.cpp` (note-kind chords), `docs/frontend-event-harness.md`.
-- **Files owned:** `src/sys/application_command_dispatch.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Read first:** `src/sys/commands/application_command_dispatch.cpp` (`note_kind_command`), `src/ui/nuklear/compose_toolbar.cpp` (`render_compose_note_palette_column`), `src/core/command_registry.cpp` (note-kind chords), `docs/frontend-event-harness.md`.
+- **Files owned:** `src/sys/commands/application_command_dispatch.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
 - **Steps:**
   1. Harness repro first: send Alt+2 to a focused Compose lane, then assert the dispatched command and that `note_paint_mode_active` stays false. If the chord never reaches dispatch, record where it is dropped (text-entry owner, Alt menu mnemonic, SDL keymod) and fix that path instead.
   2. In `note_kind_command`, enable note paint mode after a successful `arm_note_kind`, using the same core call the toolbar toggle uses.
@@ -101,8 +101,8 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done
 - **Outcome:** Alt+1 selects the Select tool (leaves note paint mode). Tap, Hold, Mine, Invisible, Lift, Fake and Roll move to Alt+2 through Alt+8. Palette tooltips and the command list show the new chords.
-- **Read first:** `src/core/command_registry.cpp`, `src/sys/application_commands.cpp` (`parse_application_command`), `src/ui/nuklear/compose_toolbar.cpp` (palette labels), `src/sys/main.cpp` (note-kind command state).
-- **Files owned:** `src/core/command_registry.cpp`, `src/sys/application_commands.cpp`, `src/sys/application_commands.h`, `src/sys/application_command_dispatch.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Read first:** `src/core/command_registry.cpp`, `src/sys/commands/application_commands.cpp` (`parse_application_command`), `src/ui/nuklear/compose_toolbar.cpp` (palette labels), `src/sys/main.cpp` (note-kind command state).
+- **Files owned:** `src/core/command_registry.cpp`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_commands.h`, `src/sys/commands/application_command_dispatch.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
 - **Steps:**
   1. Add an `edit.tool_select` command (Alt+1) that turns note paint mode off. Its checked state mirrors `!note_paint_mode_active`.
   2. Move the seven note-kind chords to digit_2…digit_8.

@@ -1437,7 +1437,7 @@ TEST_CASE("Warmed retained timing projection preserves storage without heap allo
 
 #include "sys/preferences/options_runtime.h"
 #include "sys/project/project_view.h"
-#include "sys/shortcut_rows.h"
+#include "sys/commands/shortcut_rows.h"
 
 TEST_CASE("Project options and shortcut projections reuse warmed nested storage",
           "[sys][project-options][allocation]") {

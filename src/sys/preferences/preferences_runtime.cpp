@@ -1,6 +1,6 @@
 #include "ui/frontend/workspace.h"
 #include "sys/preferences/preferences_runtime.h"
-#include "sys/platform_shortcut_profile.h"
+#include "sys/commands/platform_shortcut_profile.h"
 
 #include <exception>
 #include <algorithm>

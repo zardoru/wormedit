@@ -78,12 +78,12 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Read first:** `docs/architecture.md`; `docs/chart-editor-plan/decisions/code-style.md`;
   `docs/audits/workflow-navigation-2026-10-18.md`; `src/sys/compose_actions.cpp`;
   `src/sys/compose_area_actions.cpp`; `src/sys/compose_quantize_request.h`;
-  `src/sys/application_command_dispatch.cpp`; `src/core/command.cpp`.
+  `src/sys/commands/application_command_dispatch.cpp`; `src/core/command.cpp`.
 - **Files owned:** new `src/sys/compose_quantize.h`, `src/sys/compose_quantize.cpp`;
   `src/sys/compose_actions.h`, `src/sys/compose_actions.cpp`,
   `src/sys/compose_actions_internal.h`, `src/sys/compose_area_actions.h`,
   `src/sys/compose_area_actions.cpp`, `src/sys/compose_quantize_request.h`,
-  `src/sys/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp`,
+  `src/sys/commands/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp`,
   `tests/sys/frame_timing_tests.cpp`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/ceremony_ratchet.txt`, `docs/architecture.md`,
   this card, the baseline audit and `memory/chart-editor-status/resume.md`.
@@ -161,8 +161,8 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Status:** Done (2026-10-17; owner asked for it directly)
 - **Value:** Small but cheap. Each of the two traps cost real time once: a new scope flag is silently false at positional construction sites, and an appended action enum value aborts test discovery instead of failing the build.
 - **Outcome:** `editor_selection_scope_t` has named presets (at least `every_object()`), and no positional construction remains. The Compose action and input enums end with a `_COUNT` sentinel, every table sized from an enum uses it, and a `static_assert` ties each route table to it.
-- **Read first:** `include/wormedit/core/interaction.h` (`editor_selection_scope_t`), `src/sys/compose_input_internal.h:1145`, `src/sys/application_command_dispatch.cpp:484`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp` (`compose_kind_count`, `build_compose_action_routes`), `cmake/ceremony_ratchet.txt`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/sys/compose_input_internal.h`, `src/sys/application_command_dispatch.cpp`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp`, `cmake/ceremony_ratchet.txt`, this card.
+- **Read first:** `include/wormedit/core/interaction.h` (`editor_selection_scope_t`), `src/sys/compose_input_internal.h:1145`, `src/sys/commands/application_command_dispatch.cpp:484`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp` (`compose_kind_count`, `build_compose_action_routes`), `cmake/ceremony_ratchet.txt`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/sys/compose_input_internal.h`, `src/sys/commands/application_command_dispatch.cpp`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp`, `cmake/ceremony_ratchet.txt`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rn "editor_selection_scope_t{true" src` and `grep -n "_COUNT" src/ui/frontend/actions.h`.
   2. Add the presets; convert both positional sites; add a ratchet row for positional construction at 0.
@@ -172,7 +172,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Reject/failure behavior:** If the route table cannot be `constexpr` without restructuring the route modules, keep the runtime build and add only the `static_assert` on size; record why.
 - **Verify:** GATE (T-665), or by hand: `cmake --build build --parallel <jobs>`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -R '^documentation\.'`, with `<jobs>` chosen as in T-665.
 - **Out of scope:** Re-routing actions (T-636 is done); renaming scope fields.
-- **Done:** `editor_selection_scope_t::every_object()` (all five kinds) replaces the positional `{true, true, true, true, true}` in `src/sys/compose_input_internal.h`; Select All's scope in `src/sys/application_command_dispatch.cpp` is now the designated `every_object_but_bar_lines`, since it deliberately excludes bar lines (they are selectable only through the measure lane). Ratchet row `positional_selection_scope` at 0. `WORM_UI_COMPOSE_ACTION_COUNT` ends the action enum and sizes the route index (`compose_action_kind_count` in `src/sys/compose_action_routes.h`). The combined route index cannot be `constexpr` because its seven modules live in different files, so (per this card's reject clause) each module instead `static_assert`s `is_valid_route_module`: every kind below the count, none repeated within the module. A repeat across modules is still checked at startup, and T-665's gate now reports that failure clearly. No input-kind table is sized by an enum, so the input enum got no sentinel; the other `+ 1` sizes found were byte capacities for a terminating NUL. Evidence: build passes; a scratch duplicate route in `compose_bga_actions.cpp` failed with "static assertion failed"; a scratch positional scope failed `documentation.ceremony_ratchet` ("1 > maximum 0"); both reverted; complexity unchanged (only the existing `build_speed_graph` finding).
+- **Done:** `editor_selection_scope_t::every_object()` (all five kinds) replaces the positional `{true, true, true, true, true}` in `src/sys/compose_input_internal.h`; Select All's scope in `src/sys/commands/application_command_dispatch.cpp` is now the designated `every_object_but_bar_lines`, since it deliberately excludes bar lines (they are selectable only through the measure lane). Ratchet row `positional_selection_scope` at 0. `WORM_UI_COMPOSE_ACTION_COUNT` ends the action enum and sizes the route index (`compose_action_kind_count` in `src/sys/compose_action_routes.h`). The combined route index cannot be `constexpr` because its seven modules live in different files, so (per this card's reject clause) each module instead `static_assert`s `is_valid_route_module`: every kind below the count, none repeated within the module. A repeat across modules is still checked at startup, and T-665's gate now reports that failure clearly. No input-kind table is sized by an enum, so the input enum got no sentinel; the other `+ 1` sizes found were byte capacities for a terminating NUL. Evidence: build passes; a scratch duplicate route in `compose_bga_actions.cpp` failed with "static assertion failed"; a scratch positional scope failed `documentation.ceremony_ratchet` ("1 > maximum 0"); both reverted; complexity unchanged (only the existing `build_speed_graph` finding).
 
 ## T-662 Let event-harness tests find widgets by tooltip
 

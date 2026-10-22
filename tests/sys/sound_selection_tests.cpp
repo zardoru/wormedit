@@ -1,4 +1,4 @@
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include "sys/compose_sound_selection.h"

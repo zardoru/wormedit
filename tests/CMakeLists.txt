@@ -33,10 +33,10 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/compose_quantize.cpp
-    ../src/sys/document_edit_feedback.cpp
+    ../src/sys/commands/document_edit_feedback.cpp
     ../src/sys/compose_action_outcome.cpp
     ../src/sys/compose_audition_requests.cpp
-    ../src/sys/application_commands.cpp
+    ../src/sys/commands/application_commands.cpp
     ../src/sys/project/project_view.cpp
     ../src/sys/project/output_group_export.cpp
     ../src/sys/audio/tap_timing_runtime.cpp
@@ -84,7 +84,7 @@ add_executable(wormedit_core_tests
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
     sys/shortcut_rows_tests.cpp
-    ../src/sys/shortcut_rows.cpp
+    ../src/sys/commands/shortcut_rows.cpp
     sys/compose_bookmark_commands_tests.cpp
     sys/bookmark_rename_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
@@ -425,8 +425,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_options_state_tests.cpp
         ../src/sys/preferences/options_runtime.cpp
         ../src/sys/preferences/preferences_runtime.cpp
-        ../src/sys/platform_shortcut_profile.cpp
-        ../src/sys/shortcut_rows.cpp
+        ../src/sys/commands/platform_shortcut_profile.cpp
+        ../src/sys/commands/shortcut_rows.cpp
     )
     target_include_directories(wormedit_options_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_options_state_tests PRIVATE
@@ -650,7 +650,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/lane_keys_event_harness_tests.cpp
         ../src/sys/preferences/lane_keys_runtime.cpp
         ../src/sys/preferences/preferences_runtime.cpp
-        ../src/sys/platform_shortcut_profile.cpp
+        ../src/sys/commands/platform_shortcut_profile.cpp
         ui/sound_picker_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp
@@ -660,8 +660,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/input_options_event_harness_tests.cpp
         ui/project_settings_event_harness_tests.cpp
         ui/menu_bar_event_harness_tests.cpp
-        ../src/sys/menu_command_view.cpp
-        ../src/sys/shortcut_rows.cpp
+        ../src/sys/commands/menu_command_view.cpp
+        ../src/sys/commands/shortcut_rows.cpp
         ../src/sys/bookmarks/bookmark_rename_commands.cpp
         ui/compose_bgm_layer_tests.cpp
         ui/sound_usage_event_harness_tests.cpp
@@ -676,8 +676,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_status_event_harness_tests.cpp
         ui/preview_audio_export_event_harness_tests.cpp
         ui/walkthrough_osu-stepmania_event_harness_tests.cpp
-        ../src/sys/application_commands.cpp
-        ../src/sys/application_command_dispatch.cpp
+        ../src/sys/commands/application_commands.cpp
+        ../src/sys/commands/application_command_dispatch.cpp
         ../src/sys/compose_actions.cpp
         ../src/sys/compose_resource_actions.cpp
         ../src/sys/compose_marker_actions.cpp
@@ -696,7 +696,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_quantize.cpp
-        ../src/sys/document_edit_feedback.cpp
+        ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_bgm_bar.cpp
@@ -775,7 +775,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
             sys/bga_dock_runtime_tests.cpp ../src/sys/resources/bga_dock_runtime.cpp
             ../src/sys/frame_timing.cpp
-            ../src/sys/document_edit_feedback.cpp
+            ../src/sys/commands/document_edit_feedback.cpp
             ../src/sys/compose_action_outcome.cpp
             ../src/sys/compose_audition_requests.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/resources/bga_list_view.cpp)
@@ -809,7 +809,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_quantize.cpp
-        ../src/sys/document_edit_feedback.cpp
+        ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_view.cpp
@@ -872,14 +872,14 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/application_commands_tests.cpp
             ../src/sys/preferences/options_runtime.cpp
             ../src/sys/preferences/preferences_runtime.cpp
-            ../src/sys/platform_shortcut_profile.cpp
-            ../src/sys/shortcut_rows.cpp
+            ../src/sys/commands/platform_shortcut_profile.cpp
+            ../src/sys/commands/shortcut_rows.cpp
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp
             ../src/sys/compose_sound_actions.cpp
-            ../src/sys/application_command_dispatch.cpp
-            ../src/sys/application_commands.cpp
+            ../src/sys/commands/application_command_dispatch.cpp
+            ../src/sys/commands/application_commands.cpp
             ../src/sys/audio/transport_player_actions.cpp
             ../src/sys/application_defaults.cpp
             ../src/sys/audio/waveform_view.cpp
@@ -919,11 +919,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/preferences/external_player.cpp
         ../src/sys/project/project_view.cpp
         ../src/sys/preferences/options_runtime.cpp
-        ../src/sys/shortcut_rows.cpp
+        ../src/sys/commands/shortcut_rows.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
         sys/frame_projection_arena_tests.cpp
         sys/resource_notification_tests.cpp
-        ../src/sys/document_edit_feedback.cpp
+        ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
         ../src/sys/project/project_save_paths.cpp

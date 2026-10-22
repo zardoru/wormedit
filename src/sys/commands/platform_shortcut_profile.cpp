@@ -1,4 +1,4 @@
-#include "sys/platform_shortcut_profile.h"
+#include "sys/commands/platform_shortcut_profile.h"
 
 #include <wormedit/core/shortcut_profile_startup.h>
 

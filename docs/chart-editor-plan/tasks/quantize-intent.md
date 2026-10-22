@@ -21,8 +21,8 @@ Authorized 2026-10-11 from priority scratchpad feedback. Existing quantize core 
 
 - **Status:** done
 - **Outcome:** Registry commands toggle preview (Ctrl/Cmd+Alt+Q by default) and Apply current quantize settings through the shared production path, preserving focus/context guards. Apply has no new default shortcut and remains remappable.
-- **Read first:** src/core/command_registry.cpp; src/sys/application_commands.h/.cpp; src/sys/application_command_dispatch.cpp; src/sys/main.cpp; tests/sys/application_commands_tests.cpp; tests/core/command_registry_tests.cpp.
-- **Files owned:** src/core/command_registry.cpp; src/sys/application_commands.h/.cpp; src/sys/application_command_dispatch.cpp; src/sys/main.cpp; tests/sys/application_commands_tests.cpp; tests/core/command_registry_tests.cpp; this card; `memory/chart-editor-status/resume.md`. Shared ownership is coordinated by root.
+- **Read first:** src/core/command_registry.cpp; src/sys/application_commands.h/.cpp; src/sys/commands/application_command_dispatch.cpp; src/sys/main.cpp; tests/sys/application_commands_tests.cpp; tests/core/command_registry_tests.cpp.
+- **Files owned:** src/core/command_registry.cpp; src/sys/application_commands.h/.cpp; src/sys/commands/application_command_dispatch.cpp; src/sys/main.cpp; tests/sys/application_commands_tests.cpp; tests/core/command_registry_tests.cpp; this card; `memory/chart-editor-status/resume.md`. Shared ownership is coordinated by root.
 - **Steps:** 1. Audit existing behavior. 2. Implement the shared live path. 3. Verify state, command/input routing and native presentation.
 - **Invariants:** no document mutation for preview; existing atomic quantize/Undo and modal/stale guards remain.
 - **Reject/failure behavior:** invalid Apply reports existing diagnostics without mutation; stale or occluded requests cannot bypass guards.

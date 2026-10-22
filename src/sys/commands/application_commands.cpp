@@ -1,4 +1,4 @@
-#include "sys/application_commands.h"
+#include "sys/commands/application_commands.h"
 #include <wormedit/core/hitsound_editor.h>
 
 #include <charconv>

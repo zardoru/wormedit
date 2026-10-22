@@ -1,5 +1,5 @@
 #include "sys/bookmarks/bookmark_navigation.h"
-#include "sys/native_chart_edit_action.h"
+#include "sys/commands/native_chart_edit_action.h"
 
 #include <wormedit/core/marker_editor.h>
 

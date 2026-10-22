@@ -5,7 +5,7 @@
 #include "../sys/application_dispatch_fixture.h"
 #include "compose_area_dispatch_fixture.h"
 #include "project_audio_sources_fixture.h"
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 #include "sys/application_defaults.h"
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/audio/chart_preview_state.h"

@@ -1,6 +1,6 @@
 #pragma once
 #include "sys/preferences/preferences_runtime.h"
-#include "sys/shortcut_rows.h"
+#include "sys/commands/shortcut_rows.h"
 #include <wormedit/core/lane_keys.h>
 
 namespace wormedit::sys {

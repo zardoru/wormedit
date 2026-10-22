@@ -101,7 +101,7 @@ already separate relevant facts. Prefer those types and their current finishers;
 do not add another generic workflow-result type. Preserve accepted no-ops,
 document changes, diagnostics and rebind failure as separate facts.
 Sources: [measure helpers](../../src/sys/compose_measure_commands.cpp),
-[command dispatch](../../src/sys/application_command_dispatch.cpp),
+[command dispatch](../../src/sys/commands/application_command_dispatch.cpp),
 [editor completion](../../src/core/interaction_edit_commit.h).
 
 ### Execution convergence remains incomplete

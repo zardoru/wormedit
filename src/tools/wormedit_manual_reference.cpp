@@ -4,7 +4,7 @@
 //   wormedit-manual-reference layouts     new-project layouts with lanes, lane keys and outputs
 // documentation.manual_reference fails when docs/manual/generated/ differs from this output.
 
-#include "sys/shortcut_rows.h"
+#include "sys/commands/shortcut_rows.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/lane_profiles.h>

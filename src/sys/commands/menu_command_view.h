@@ -1,6 +1,6 @@
 #pragma once
 #include "ui/frontend.h"
-#include "sys/shortcut_rows.h"
+#include "sys/commands/shortcut_rows.h"
 #include <wormedit/core/command_registry.h>
 
 namespace wormedit::sys {

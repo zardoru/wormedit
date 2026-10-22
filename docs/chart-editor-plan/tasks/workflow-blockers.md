@@ -70,8 +70,8 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** Added a hidden-Timing registry regression and two new-project production-path walkthrough cases for F3, visible palette/Compose settings and F4 recovery; focused tests passed 14/14. `scripts/gate.sh --jobs 3`: `gate: passed`, 4195/4195 tests, complexity 6/6. Smoke script shell syntax passed; its new `timing` pixel assertion and real-window checks remain unverified here for the coordinator to run.
 - **Outcome:** F3 (*Open Timing*) enters Timing focus in Compose, and *Timing Settings* opens a visible panel from Compose and the command palette. The smoke script's `timing` mode asserts that Timing focus is on.
-- **Read first:** osu!mania/StepMania walkthrough, real-window checks; `src/core/command_registry.cpp` (the F1–F7 loop, `is_eligible`), `src/sys/application_command_dispatch.cpp` (`workspace_open_timing`, `timing_settings_visible`), `src/ui/nuklear/timing_settings_panel.cpp`.
-- **Files owned:** `src/core/command_registry.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/application.cpp` (registration state only), the timing settings frontend files, `scripts/smoke-compose-virtual-x.sh`, tests (including `tests/CMakeLists.txt`), this card.
+- **Read first:** osu!mania/StepMania walkthrough, real-window checks; `src/core/command_registry.cpp` (the F1–F7 loop, `is_eligible`), `src/sys/commands/application_command_dispatch.cpp` (`workspace_open_timing`, `timing_settings_visible`), `src/ui/nuklear/timing_settings_panel.cpp`.
+- **Files owned:** `src/core/command_registry.cpp`, `src/sys/commands/application_command_dispatch.cpp`, `src/sys/application.cpp` (registration state only), the timing settings frontend files, `scripts/smoke-compose-virtual-x.sh`, tests (including `tests/CMakeLists.txt`), this card.
 - **Supporting-file extension (2026-10-18):** `tests/CMakeLists.txt` links the production application command dispatcher and its Compose route dependencies into the walkthrough event harness.
 - **Steps:**
   1. Register `workspace.open_timing` against Compose (it is an alias), so destination visibility passes.
@@ -87,9 +87,9 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Status:** done
 - **Evidence (2026-10-18):** Added three feedback unit cases (including all seven Timing-disabled commands) and a new-project F3 → refused Alt+2 → F4 → note-placement walkthrough; focused tests passed 14/14. `scripts/gate.sh --jobs 3`: `gate: passed`, 4195/4195 tests, complexity 6/6. Real-window feedback verification remains unverified here for the coordinator to run.
 - **Outcome:** Commands refused because Timing focus is on say so and name the way out ("Timing focus is on: press F4 to edit notes."), instead of "Command is currently unavailable: edit.tool_draw". Unavailable-command feedback in general uses the command's display name, not its ID.
-- **Read first:** osu!mania/StepMania walkthrough finding 1; `src/sys/application.cpp` (unavailable-command feedback), `src/sys/application_command_dispatch.cpp` (Draw refusal).
-- **Files owned:** `src/sys/application.cpp` (that feedback only), `src/sys/application_command_dispatch.cpp`, `src/sys/application_command_dispatch.h`, tests, this card.
-- **Supporting-file extension (2026-10-18):** `src/sys/application_command_dispatch.h` declares the shared unavailable-command feedback formatter for the application boundary and production-path tests.
+- **Read first:** osu!mania/StepMania walkthrough finding 1; `src/sys/application.cpp` (unavailable-command feedback), `src/sys/commands/application_command_dispatch.cpp` (Draw refusal).
+- **Files owned:** `src/sys/application.cpp` (that feedback only), `src/sys/commands/application_command_dispatch.cpp`, `src/sys/commands/application_command_dispatch.h`, tests, this card.
+- **Supporting-file extension (2026-10-18):** `src/sys/commands/application_command_dispatch.h` declares the shared unavailable-command feedback formatter for the application boundary and production-path tests.
 - **Steps:**
   1. Unavailable-command feedback names the command's display name.
   2. Commands disabled by Timing focus carry the reason and the F4 remedy.
@@ -329,11 +329,11 @@ were assigned explicitly during the parallel batch. T-658 is next.
 - **Outcome:** One typed policy identifies commands disabled specifically by Timing focus. Registry
   enablement and both unavailable-command feedback paths query it, so adding or removing a command
   cannot leave the F4 refusal list out of sync.
-- **Read first:** `src/sys/application_command_dispatch.cpp` (`timing_focus_command_refusal`);
+- **Read first:** `src/sys/commands/application_command_dispatch.cpp` (`timing_focus_command_refusal`);
   `src/sys/application.cpp` (`refresh_note_kind_commands`, `refresh_quantize_commands`,
-  `refresh_compose_dock_commands`); `src/sys/application_commands.h` (command kinds and parser).
-- **Files owned:** `src/sys/application_command_dispatch.h`,
-  `src/sys/application_command_dispatch.cpp`, `src/sys/application.cpp`,
+  `refresh_compose_dock_commands`); `src/sys/commands/application_commands.h` (command kinds and parser).
+- **Files owned:** `src/sys/commands/application_command_dispatch.h`,
+  `src/sys/commands/application_command_dispatch.cpp`, `src/sys/application.cpp`,
   `tests/sys/application_commands_tests.cpp`,
   `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, this card.
 - **Steps:** 1. Define the Timing-focus capability/refusal policy once at the application-command
@@ -345,6 +345,6 @@ were assigned explicitly during the parallel batch. T-658 is next.
   disablement reasons keep their existing messages.
 - **Reject/failure behavior:** Not applicable.
 - **Verify:** `ctest --test-dir build -j 8 -R '^(frame-timing\.Timing focus|frontend-state\.Osu StepMania walkthrough)' --output-on-failure`;
-  `scripts/check-complexity.py --build-dir build src/sys/application.cpp src/sys/application_command_dispatch.cpp`;
+  `scripts/check-complexity.py --build-dir build src/sys/application.cpp src/sys/commands/application_command_dispatch.cpp`;
   GATE.
 - **Out of scope:** A general command-reason framework or changes to Timing-focus membership.

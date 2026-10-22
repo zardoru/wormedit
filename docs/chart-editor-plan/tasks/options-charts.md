@@ -7,7 +7,7 @@ Findings (2026-09-30):
 - Preferences are scattered: external players have their own file and panel
   (`src/sys/preferences/external_player.cpp`, `src/ui/nuklear/external_player_panel.cpp`),
   shortcuts have a profile file (`src/core/shortcut_profile_storage.cpp`,
-  `src/sys/platform_shortcut_profile.cpp`), minimap preferences are consumed in
+  `src/sys/commands/platform_shortcut_profile.cpp`), minimap preferences are consumed in
   `src/sys/compose_input.cpp` (`consume_minimap_preferences`), the theme is chosen
   by the `WORMEDIT_THEME_DIR` environment variable, and playback rate and
   metronome state are session-only. Several planned cards (T-228 dock layout,
@@ -44,7 +44,7 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (768/768 core and external-player tests; 16 preference cases; isolated two-start SDL dummy GUI persistence verified)
 - **Outcome:** one versioned `preferences.json` in the SDL preference directory holds all per-user settings in sections (general, editor, audio, display, players, minimap, layout); it loads once at startup, saves atomically on change, and migrates the existing external-player file on first run. Shortcut profiles stay in their own file, referenced by path.
-- **Read first:** `src/sys/preferences/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
+- **Read first:** `src/sys/preferences/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/commands/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
 - **Files owned:** new `include/wormedit/core/preferences.h`, new `src/core/preferences.cpp`, new `tests/core/preferences_tests.cpp`, new `src/sys/preferences_runtime.cpp/.h`, `src/sys/external_player.cpp/.h`, `src/sys/main.cpp` (load/save wiring only), `CMakeLists.txt`, `tests/CMakeLists.txt`; user-approved atomic-helper extensions: new `include/wormedit/core/atomic_file_storage.h`, new `src/core/atomic_file_storage.cpp`, `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_storage.cpp`.
 - **Steps:**
   1. Typed struct per section with defaults and ranges; bounded JSON read (size, depth), unknown keys ignored with one warning, invalid values replaced by defaults with a warning; version field and migration hook.

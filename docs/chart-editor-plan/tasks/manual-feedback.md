@@ -38,11 +38,11 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Status:** done (2026-10-20)
 - **Stale-plan audit / wiring (2026-10-20):** Preferences contain no lane-key overrides;
   Compose projects `chart.input_profile.bindings` directly. Shortcut capture is owned by
-  `src/sys/shortcut_rows.cpp`; Options uses `options_runtime.*` and `options_window.cpp`.
+  `src/sys/commands/shortcut_rows.cpp`; Options uses `options_runtime.*` and `options_window.cpp`.
   This card adds a core preference value, a sys draft/dialog owner, and a C++ frontend surface.
 - **Scope extension:** Coordinator approves `src/core/lane_keys.cpp`, `src/sys/lane_keys_runtime.*`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
-  `src/sys/application.cpp`, `src/sys/application_commands.*`, `src/sys/application_command_dispatch.cpp`,
+  `src/sys/application.cpp`, `src/sys/application_commands.*`, `src/sys/commands/application_command_dispatch.cpp`,
   `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md` for persistence, dialog lifecycle, command routing,
   input isolation, cached binding projection, build registration and completion evidence.
@@ -62,7 +62,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Value:** High for wide and unusual layouts: today a chart whose layout has no default keys ("No lane keys are bound for this chart") can only be keyed with the mouse, and nobody can change a default they dislike.
 - **Outcome:** A *Lane keys* dialog (Options, and the command menu) shows the current layout's lanes by stage with their keys and a physical keyboard map; clicking a lane and pressing a key binds it, Backspace unbinds, presets (Wormedit default, iBMSC interleaved for DP, Custom) fill all lanes at once, and *Apply* saves the layout's keys to the user's preferences, where every chart with that layout uses them. See the [mockup](https://claude.ai/artifact/12NUndRq3jDPrJCzcSfhXN) (owner, 2026-10-18: "quite beautiful").
 - **Decision (owner, 2026-10-18):** lane keys per layout are the user's personal configuration, global: program preferences keyed by layout profile ID, not chart or project data. A chart's stored `input_profile_t` is only the fallback for a layout the user never customized.
-- **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/options_window.cpp`.
+- **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/commands/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/options_window.cpp`.
 - **Files owned:** `src/ui/nuklear/lane_keys_dialog.cpp`, `src/ui/nuklear/lane_keys_dialog.h`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
   `include/wormedit/core/preferences.h`, `include/wormedit/core/lane_keys.h`, `include/wormedit/core/lane_profiles.h`,
@@ -71,7 +71,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `src/core/command_registry.cpp`, `src/sys/preferences/lane_keys_runtime.cpp`, `src/sys/preferences/lane_keys_runtime.h`,
   `src/tools/wormedit_manual_reference.cpp`,
   `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/application.cpp`,
-  `src/sys/application_commands.h`, `src/sys/application_commands.cpp`, `src/sys/application_command_dispatch.cpp`,
+  `src/sys/commands/application_commands.h`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_command_dispatch.cpp`,
   `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/options_window.h`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/ui/lane_keys_event_harness_tests.cpp`, `docs/manual/generated/shortcuts.adoc`,
@@ -171,7 +171,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 - **Status:** done (2026-10-18; owner: "Yes, do add the shortcuts")
 - **Outcome:** Every row of the command palette shows the command's current keys right-aligned in platform form (`Ctrl+Shift+Z`, `⌘` on macOS), nothing for unbound commands, following rebinds.
-- **Read first:** `src/sys/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome.h` (`menu_item`).
+- **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome.h` (`menu_item`).
 - **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
 - **Steps:**
   1. Cache the chord text per command, reformatted only when a binding or the platform modifier changes, because the palette view is rebuilt every frame.

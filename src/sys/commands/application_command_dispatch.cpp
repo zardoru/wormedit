@@ -1,5 +1,5 @@
 #include "sys/compose_interaction_view.h"
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"

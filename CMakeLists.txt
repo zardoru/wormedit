@@ -184,7 +184,7 @@ wormedit_enable_warnings(wormedit-convert)
 # Manual reference tables generated from the command registry and layout catalog.
 add_executable(wormedit-manual-reference
     src/tools/wormedit_manual_reference.cpp
-    src/sys/shortcut_rows.cpp
+    src/sys/commands/shortcut_rows.cpp
 )
 target_include_directories(wormedit-manual-reference PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(wormedit-manual-reference PRIVATE wormedit::core)
@@ -481,7 +481,7 @@ if(WORMEDIT_BUILD_APP)
         src/common/static_interval_index.cpp
         src/sys/audio/audio.cpp
         src/sys/application_defaults.cpp
-        src/sys/application_commands.cpp
+        src/sys/commands/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
         src/sys/bookmarks/bookmark_commands.cpp
         src/sys/compose_navigation.cpp
@@ -505,7 +505,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/recipe_form.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/compose_quantize.cpp
-        src/sys/application_command_dispatch.cpp
+        src/sys/commands/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
         src/sys/compose_scene_view.cpp
@@ -522,7 +522,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_note_to_bgm.cpp
         src/sys/compose_area_actions.cpp
         src/sys/compose_action_outcome.cpp
-        src/sys/document_edit_feedback.cpp
+        src/sys/commands/document_edit_feedback.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_resource_actions.cpp
         src/sys/compose_marker_actions.cpp
@@ -576,13 +576,13 @@ if(WORMEDIT_BUILD_APP)
         src/sys/preferences/preferences_runtime.cpp
         src/sys/preferences/options_runtime.cpp
         src/sys/preferences/lane_keys_runtime.cpp
-        src/sys/shortcut_rows.cpp
-        src/sys/menu_command_view.cpp
+        src/sys/commands/shortcut_rows.cpp
+        src/sys/commands/menu_command_view.cpp
         src/sys/notifications/notification_history_runtime.cpp
         src/sys/project/project_view.cpp
         src/sys/audio/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
-        src/sys/platform_shortcut_profile.cpp
+        src/sys/commands/platform_shortcut_profile.cpp
         src/sys/window.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
     )

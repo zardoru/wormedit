@@ -2,7 +2,7 @@
 
 #include "sys/application_edit_inputs.h"
 
-#include "sys/application_commands.h"
+#include "sys/commands/application_commands.h"
 #include "sys/compose_view.h"
 
 #include <wormedit/core/command_registry.h>

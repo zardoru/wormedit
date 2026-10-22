@@ -1,4 +1,4 @@
-#include "sys/menu_command_view.h"
+#include "sys/commands/menu_command_view.h"
 #include "nuklear_event_harness.h"
 
 #include <catch2/catch_test_macros.hpp>

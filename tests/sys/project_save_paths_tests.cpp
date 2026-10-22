@@ -1,5 +1,5 @@
 #include "sys/project/project_save_paths.h"
-#include "sys/application_commands.h"
+#include "sys/commands/application_commands.h"
 #include "sys/application_defaults.h"
 #include <wormedit/formats/native_project.h>
 #include <catch2/generators/catch_generators.hpp>

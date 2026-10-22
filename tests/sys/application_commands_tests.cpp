@@ -6,15 +6,15 @@
 #include "../sys/application_dispatch_fixture.h"
 #endif
 #include "compose_area_dispatch_fixture.h"
-#include "sys/application_command_dispatch.h"
-#include "sys/application_commands.h"
+#include "sys/commands/application_command_dispatch.h"
+#include "sys/commands/application_commands.h"
 #include "sys/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
 #include "sys/compose_note_to_bgm.h"
-#include "sys/native_chart_edit_action.h"
+#include "sys/commands/native_chart_edit_action.h"
 #include "sys/project/output_group_export.h"
 #include "sys/audio/transport_player_actions.h"
 

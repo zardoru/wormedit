@@ -2,7 +2,7 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include "sys/notifications/notification_history_runtime.h"
-#include "sys/application_command_dispatch.h"
+#include "sys/commands/application_command_dispatch.h"
 
 #include <algorithm>
 #include <chrono>

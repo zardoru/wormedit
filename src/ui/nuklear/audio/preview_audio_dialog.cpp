@@ -1,4 +1,4 @@
-#include "ui/nuklear/preview_audio_dialog.h"
+#include "ui/nuklear/audio/preview_audio_dialog.h"
 #include <cstdio>
 
 namespace wormedit::ui {

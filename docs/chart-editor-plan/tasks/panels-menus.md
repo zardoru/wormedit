@@ -122,7 +122,7 @@ Apply the stale-plan check (rule 9) first.
   thumbnails and T-352 owns natural order and ID capacity. Optional BMP-slot authoring remains a
   separate future scope; do not execute the historical steps below.
 - **Outcome:** same behavior as T-229 for `#BMP` slots and BGA resources, with thumbnails (T-49) at 32 px.
-- **Read first:** `src/ui/nuklear/sounds_panel.cpp`, `src/ui/nuklear/player_preview_texture.h`, `include/wormedit/visual/image_job.h`.
+- **Read first:** `src/ui/nuklear/sounds_panel.cpp`, `src/ui/nuklear/audio/player_preview_texture.h`, `include/wormedit/visual/image_job.h`.
 - **Files owned:** new `src/ui/nuklear/images_panel.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`.
 - **Steps:** reuse the T-229 presenter with the image role; thumbnails only for visible rows.
 - **Invariants:** as T-229.

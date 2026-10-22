@@ -20,8 +20,8 @@ Synced user feedback, 2026-10-11. Priority bugs selected after T-564–T-566.
 
 - **Status:** done
 - **Outcome:** Metadata plain-wheel input scrolls the form and its embedded waveform keeps a bounded height, so lower sections stay reachable.
-- **Read first:** src/ui/nuklear/audio_panel.cpp; src/ui/nuklear/metadata_audio_section.cpp; tests/ui/nuklear_event_harness_tests.cpp.
-- **Files owned:** src/ui/nuklear/audio_panel.cpp; src/ui/nuklear/metadata_audio_section.cpp; tests/ui/nuklear_event_harness_tests.cpp; tests/ui/menu_bar_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-project-access.md; docs/chart-editor-plan/tasks.md; memory/chart-editor-status/resume.md. Root records supporting scope.
+- **Read first:** src/ui/nuklear/audio/audio_panel.cpp; src/ui/nuklear/metadata_audio_section.cpp; tests/ui/nuklear_event_harness_tests.cpp.
+- **Files owned:** src/ui/nuklear/audio/audio_panel.cpp; src/ui/nuklear/metadata_audio_section.cpp; tests/ui/nuklear_event_harness_tests.cpp; tests/ui/menu_bar_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-project-access.md; docs/chart-editor-plan/tasks.md; memory/chart-editor-status/resume.md. Root records supporting scope.
 - **Steps:** Reproduce repeated scroll growth; give embedded preview fixed geometry; reserve plain wheel for Metadata scrolling and retain explicit zoom buttons; verify actual scroll, clipped input and unchanged audio offset.
 - **Invariants:** Standalone Audio/Slices wheel zoom and deliberate offset drags keep their existing behavior.
 - **Reject/failure behavior:** Stale or unavailable contexts reject without partial edits or accidental publication.

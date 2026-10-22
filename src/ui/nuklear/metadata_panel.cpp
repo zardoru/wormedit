@@ -1,5 +1,5 @@
 #include "ui/nuklear/metadata_panel.h"
-#include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/audio/audio_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/metadata_panel_internal.h"
 #include "ui/nuklear/metadata_audio_section.h"

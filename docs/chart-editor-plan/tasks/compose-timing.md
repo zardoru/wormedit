@@ -128,7 +128,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (SPEEDS and recipe curve editing split into T-322 and T-323 at the user's request)
 - **Outcome:** A checked list maps every control of the Timing screen (tap tempo, BPM table, anchors, SPEEDS, recipe form, anchors) to a Compose location; each missing one is ported or explicitly removed.
-- **Read first:** `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/ui/compose_mode.h`, `src/ui/nuklear/compose_inspector.cpp`.
+- **Read first:** `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/audio/tap_timing_panel.cpp`, `src/ui/compose_mode.h`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `docs/chart-editor-plan/tasks/compose-timing.md`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`.
 - **Steps:** 1. List every widget and action of the Timing panel in this card's Result. 2. Port each unported one, one commit each. 3. Verify each with a state test. 4. List every Timing test and where it now lives (ported or superseded).
 - **Invariants:** Everything survives in Compose: every Timing screen action maps to a Compose action. Timing tests are ported, not dropped.

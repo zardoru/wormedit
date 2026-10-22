@@ -23,8 +23,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 - **Status:** done (2026-10-04; shared section and column separators)
 - **Outcome:** the Sounds tab separates related toolbar actions and the list, waveform/slicer and properties sections using the shared chrome separators.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/chrome.h`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/chrome.h`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/chrome.h`.
+- **Files owned:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/chrome.h`, `tests/ui/nuklear_event_harness_tests.cpp`.
 - **Steps:**
   1. Identify the current toolbar and section boundaries in `audio_panel.cpp`; group existing controls by purpose without changing their actions.
   2. Apply shared toolbar/layout separators with consistent spacing; preserve the list and waveform space at narrow window sizes.
@@ -40,8 +40,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 - **Status:** done (2026-10-04; Sounds source copy through the existing project-copy path)
 - **Outcome:** the Sounds tab offers Copy source into project for selected sounds, using the existing project-copy flow and relinking their sources only after successful copies.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_file_copy.h`, `src/sys/audio/audio_project_import.cpp`, `src/ui/nuklear/metadata_audio_section.cpp`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/main.cpp`, `src/sys/audio_project_import.cpp/.h`, `src/core/resource_file_copy.cpp`, `include/wormedit/core/resource_file_copy.h`, `tests/core/resource_file_copy_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_source_copy_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/compose/actions/compose_actions.cpp`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `include/wormedit/core/resource_file_copy.h`, `src/sys/audio/audio_project_import.cpp`, `src/ui/nuklear/metadata_audio_section.cpp`.
+- **Files owned:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/main.cpp`, `src/sys/audio_project_import.cpp/.h`, `src/core/resource_file_copy.cpp`, `include/wormedit/core/resource_file_copy.h`, `tests/core/resource_file_copy_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_source_copy_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/compose/actions/compose_actions.cpp`.
 - **Supporting scope (coordinator approved, 2026-10-04):** New `tests/ui/sound_source_copy_event_harness_tests.cpp` and `tests/CMakeLists.txt` isolate the Sounds copy workflow tests. `src/sys/compose/actions/compose_actions.cpp` lets Audio/Slices use the existing revision-checked asset-copy path; its shared application edits belong to the coordinator.
 - **Steps:**
   1. Reuse the existing project-copy policy for destination paths, filename collisions, shared assets and unsaved projects; expose the action for the current Sounds selection.
@@ -58,8 +58,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 - **Status:** done (2026-10-04)
 - **Outcome:** Find uses in the Sounds tab lists references to the selected sound with chart and position, and activates/navigates to a chosen reference.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/sys/sound_list_projection.cpp`, `include/wormedit/core/document.h`, `src/sys/compose_bookmark_commands.cpp`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/main.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/compose/actions/compose_actions.cpp`, new `src/sys/sound_usage_projection.cpp/.h`, new `src/sys/sound_usage_actions.cpp/.h`, new `tests/sys/sound_usage_projection_tests.cpp`, new `tests/sys/sound_usage_actions_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_usage_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/sys/sound_list_projection.cpp`, `include/wormedit/core/document.h`, `src/sys/compose_bookmark_commands.cpp`.
+- **Files owned:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/main.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/compose/actions/compose_actions.cpp`, new `src/sys/sound_usage_projection.cpp/.h`, new `src/sys/sound_usage_actions.cpp/.h`, new `tests/sys/sound_usage_projection_tests.cpp`, new `tests/sys/sound_usage_actions_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_usage_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Supporting scope (coordinator approved, 2026-10-04):** `src/sys/application_frame_projection.cpp` passes retained usage requests into the independent projection; `tests/sys/frame_projection_arena_tests.cpp` covers arena-owned result labels. Existing Sounds separator harness checks now inspect filtered list rows separately from the retained selected sound in Properties and apply emitted selection to the fixture view. Dedicated `tests/ui/sound_usage_event_harness_tests.cpp` verifies precise resource selection and usage activation without overlapping existing layer/group harness edits. New `src/sys/sound_usage_actions.cpp/.h` isolates the navigation boundary for `tests/sys/sound_usage_actions_tests.cpp` to prove stale/deleted rejection and source-only navigation without a cursor move. Audio contracts carry full stable identity and revision; positioned uses navigate to Compose, while source-only uses select their chart/channel/clip in Sounds without inventing a cursor position.
 - **Steps:**
   1. Add a deterministic usage projection for note and BGM resource references across charts, including supported sound-channel/asset references and shared-asset distinctions.

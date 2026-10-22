@@ -1,4 +1,4 @@
-#include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/audio/player_preview_texture.h"
 #include "ui/nuklear/color.h"
 #include "ui/nuklear/image_quad.h"
 

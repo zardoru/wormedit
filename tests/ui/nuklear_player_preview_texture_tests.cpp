@@ -1,7 +1,7 @@
 #define NK_IMPLEMENTATION
 
-#include "ui/nuklear/player_preview.h"
-#include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/audio/player_preview.h"
+#include "ui/nuklear/audio/player_preview_texture.h"
 
 #include "wormedit/nuklear_config.h"
 

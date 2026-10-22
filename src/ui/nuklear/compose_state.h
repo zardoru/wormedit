@@ -10,7 +10,7 @@
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/sound_slot_batch.h"
 #include "ui/nuklear/dialog.h"
-#include "ui/nuklear/preview_audio_dialog.h"
+#include "ui/nuklear/audio/preview_audio_dialog.h"
 
 #include <array>
 #include <cstddef>

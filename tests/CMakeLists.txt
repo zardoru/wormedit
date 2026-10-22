@@ -467,7 +467,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/measure_resize_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ui/nuklear_meter_state_tests.cpp
-        ../src/ui/nuklear/audio_state.cpp
+        ../src/ui/nuklear/audio/audio_state.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/ui/nuklear/compose_bookmark_label.cpp
         ../src/ui/nuklear/theme.cpp
@@ -478,7 +478,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/keysound_list_state.cpp
         ../src/ui/nuklear/measure_resize.cpp
         ../src/ui/nuklear/timing/timing_state.cpp
-        ../src/ui/nuklear/meter_state.cpp
+        ../src/ui/nuklear/audio/meter_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
@@ -553,8 +553,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
         ../src/ui/nuklear/image_quad.cpp
-        ../src/ui/nuklear/player_preview.cpp
-        ../src/ui/nuklear/player_preview_texture.cpp
+        ../src/ui/nuklear/audio/player_preview.cpp
+        ../src/ui/nuklear/audio/player_preview_texture.cpp
     )
     target_include_directories(wormedit_player_preview_texture_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"

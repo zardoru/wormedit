@@ -2,7 +2,7 @@
 #include "ui/nuklear/compose_menu_command.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_toolbar.h"
-#include "ui/nuklear/meter_state.h"
+#include "ui/nuklear/audio/meter_state.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/ui_metrics.h"
 #include "ui/nuklear/context_menu.h"

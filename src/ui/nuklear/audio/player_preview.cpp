@@ -1,5 +1,5 @@
-#include "ui/nuklear/player_preview.h"
-#include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/audio/player_preview.h"
+#include "ui/nuklear/audio/player_preview_texture.h"
 #include "ui/nuklear/arrow_glyph.h"
 
 #include "wormedit/nuklear_config.h"

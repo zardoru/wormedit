@@ -3,7 +3,7 @@
 [Back to the task-card index](../tasks.md).
 
 User request (Zar, 2026-10-02), redesigning the workspace tab `audio_slices`
-("Sonidos", `src/ui/nuklear/audio_panel.cpp`). Today it shows a grid of
+("Sonidos", `src/ui/nuklear/audio/audio_panel.cpp`). Today it shows a grid of
 "Asset N" buttons and one fixed 190 px overview. Target layout: a listbox of
 sounds on the left, a vertical column with the waveform in the centre, and a
 properties column on the right (with side margins). This is the workspace tab,
@@ -58,7 +58,7 @@ later covering more bmhelper functions.
 - **Status:** done
 - **Implementation notes (2026-10-02):** `src/ui/nuklear/sound_import_state.h/.cpp` holds the pending list and phases (`choose_kind`, `review_list`, `ready`); the 8 cases in `tests/ui/sound_import_state_tests.cpp` are registered in the frontend-state target, which needs SDL3 and was not built here. They passed compiled standalone against Catch2 (50 assertions); run `ctest -R '^frontend-state\.'` on your build to confirm. Also done: flac accepted as a stem-friendly extension; mp3 and any single file when the chart has BGM go straight to `ready`.
 - **Outcome:** dropped or picked files produce a pending import list (name, kind, remove, reorder) that the user confirms or cancels; a single wav/ogg with no BGM asks "stem or sound"; a single mp3 defaults to sound; several files always show the list.
-- **Read first:** `src/sys/metadata/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio_state.h`, `src/sys/audio/audio_project_import.h`.
+- **Read first:** `src/sys/metadata/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio/audio_state.h`, `src/sys/audio/audio_project_import.h`.
 - **Files owned:** new `src/ui/nuklear/sound_import_state.cpp/.h`, new `tests/ui/sound_import_state_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Pure state machine: add paths, classify by extension and chart-has-BGM, edit, confirm, cancel. 2. Tests for each rule above, bounds (1,000 files), duplicate paths, non-audio files rejected with a message.
 - **Invariants:** no filesystem access in the state; plain C types at the `frontend.h` boundary.
@@ -100,7 +100,7 @@ later covering more bmhelper functions.
 - **Done so far (2026-10-03):** `WormUiSoundRowView` rows in `frontend.h` (cap 512), filled from `project_sound_list` in `workspace_projection.cpp`, and a three-column layout (searchable list, waveform, read-only properties) with side margins in `audio_panel.cpp`. At the time it was compiled only as a syntax check against Nuklear master, plus the headless suite (1225/1225).
 - **Native audit (2026-10-11):** `/tmp/sounds-native-before.png` confirms the live three-column tab renders, but its fixed-height columns leave excess empty space, the waveform only adjusts offset, the list lacks keyboard audition and properties remain read-only. The old smoke script has no audio mode; isolated authenticated TCP Xvfb capture used instead. Coordinator supporting scope: `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/app/main.cpp`, `src/sys/compose/actions/compose_actions.cpp`, core resource sound-metadata name support and focused production event/sys tests. Existing import review/drop machinery is audited and reused; tags/slicer remain excluded.
 - **Outcome:** the tab shows a searchable listbox (click, Up/Down, double click or Space audition), a central zoomable waveform (wheel zoom about the pointer, drag pan, offset drag kept), and a right column with properties and side margins; dropping files opens the T-326 dialog.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/theme.cpp`, `src/ui/nuklear/metadata_panel.cpp` (margin pattern), `src/ui/nuklear/compose_resources.cpp`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/theme.cpp`, `src/ui/nuklear/metadata_panel.cpp` (margin pattern), `src/ui/nuklear/compose_resources.cpp`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp/.h`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`. Supporting ownership (2026-10-11): `src/ui/frontend.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose/actions/compose_actions.cpp`, `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/sound_properties_actions_tests.cpp`, `tests/sys/audio_waveform_projection_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `scripts/smoke-compose-virtual-x.sh`.
 - **Steps:** 1. Three-column layout with theme tokens. 2. Listbox with keyboard model. 3. Waveform with the T-327 viewport. 4. Property fields and the import dialog. 5. Action wiring through the standard pattern.
 - **Invariants:** The production Nuklear frontend is built and exercised by event tests; state logic remains separately tested.
@@ -113,8 +113,8 @@ later covering more bmhelper functions.
 - **Status:** done (2026-10-20)
 - **Verification:** Add/remove chips, case-insensitive duplicate handling, tag-only edits, bounded rejection and filtering are covered through core/metadata and production-input tests. GATE passes 4,318/4,318, whitespace and changed-C++ complexity (`/tmp/wormedit-gate.aCMmTI`); manual instructions are in `sounds-and-layers.adoc`.
 - **Outcome:** the properties column edits tags as chips plus a text field, and the list filters by tag.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/app/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
+- **Files owned:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/app/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
 - **Supporting ownership (2026-10-20):** `src/ui/frontend/actions.h`, `src/ui/frontend/metadata_audio.h`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/actions/compose_sound_actions.cpp`, `tests/sys/sound_properties_actions_tests.cpp`: the current metadata route lives in Compose sound actions rather than main; carry structured tags through the view and an optional owned C++ tag payload through that route, with command integration coverage.
 - **Supporting ownership (UI coverage):** `tests/ui/audio_sounds_workflow_event_harness_tests.cpp` exercises the production chip/add emitters and their separation from unapplied name drafts.
 - **Steps:** 1. Commit through `apply_resource_sound_metadata`. 2. Tag filter state. 3. Tests for add, remove, duplicate and limit messages.
@@ -153,8 +153,8 @@ later covering more bmhelper functions.
 
 - **Status:** ready
 - **Outcome:** with a sound selected the user enters BPM, division and offset, sees the cut lines on the zoomable waveform, and "Slice" creates the resulting sounds in one bulk import (T-325) as keysounds.
-- **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/audio_slicer.h`, `include/wormedit/core/sound_import.h`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/app/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
+- **Read first:** `src/ui/nuklear/audio/audio_panel.cpp`, `include/wormedit/core/audio_slicer.h`, `include/wormedit/core/sound_import.h`.
+- **Files owned:** `src/ui/nuklear/audio/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/app/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
 - **Steps:** 1. Fields and cut-line preview. 2. Background slicing job with progress. 3. Bulk import of the outputs. 4. Tests for field validation.
 - **Invariants:** the source sound is never modified.
 - **Reject/failure behavior:** a failed job imports nothing and reports the first error.

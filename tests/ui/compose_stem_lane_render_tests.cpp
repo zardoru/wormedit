@@ -38,7 +38,7 @@ struct field_submission_fixture_t {
 }
 
 #include "ui/nuklear/compose_canvas.h"
-#include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/audio/audio_panel.h"
 #include "ui/nuklear/compose_state.h"
 namespace {
 void check_clipped_wide_stem_canvas(bool selected) {

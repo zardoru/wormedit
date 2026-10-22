@@ -8,7 +8,7 @@ if(NOT window_source MATCHES "SDL_CreateRenderer\\(window->handle, \"gpu\"\\)" O
     message(FATAL_ERROR "window layer must require SDL3's GPU renderer and verify its GPU device")
 endif()
 
-file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/player_preview_texture.cpp" preview_source)
+file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/audio/player_preview_texture.cpp" preview_source)
 if(NOT preview_source MATCHES "SDL_CreateTexture" OR
    NOT preview_source MATCHES "nk_(sub)?image_ptr")
     message(FATAL_ERROR "player preview must retain SDL textures through pointer image handles")

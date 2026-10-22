@@ -2,11 +2,11 @@
 #include "ui/nuklear/content_layout.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
-#include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/audio/audio_panel.h"
 
 #include <wormedit/core/rational.h>
 #include <wormedit/core/catalogs.h>
-#include "ui/nuklear/audio_state.h"
+#include "ui/nuklear/audio/audio_state.h"
 #include "ui/nuklear/compose_drag_capture.h"
 #include "ui/nuklear/chrome.h"
 

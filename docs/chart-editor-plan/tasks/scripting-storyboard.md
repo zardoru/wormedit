@@ -61,7 +61,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-153)
 - **Outcome:** a preview toggle chooses Pass or Fail; the Pass/Fail layers and `Passing`/`Failing` triggers follow it.
-- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/audio/player_preview_presenter.cpp`, `src/ui/nuklear/player_preview.cpp`.
+- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/audio/player_preview_presenter.cpp`, `src/ui/nuklear/audio/player_preview.cpp`.
 - **Files owned:** those three files, `src/ui/frontend.h`, `tests/core/storyboard_preview_tests.cpp`.
 - **Steps:** 1. State parameter on evaluation. 2. Toggle in the preview overlay.
 - **Invariants:** default is Pass.

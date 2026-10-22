@@ -12,7 +12,7 @@
 #include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"
-#include "ui/nuklear/audio_state.h"
+#include "ui/nuklear/audio/audio_state.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_inspector.h"

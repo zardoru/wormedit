@@ -130,7 +130,7 @@ Apply the stale-plan check (rule 9) first.
 - **Supporting ownership (2026-10-21):** also owned: `src/sys/preferences/options_runtime.cpp`,
   `src/sys/app/application.cpp`, `src/sys/app/window.cpp`, `src/ui/frontend/actions.h`, `src/ui/frontend/options_notifications.h`,
   new `src/ui/nuklear/interface_scale.h`, `src/ui/nuklear/font_atlas.h/.cpp`,
-  `src/ui/nuklear/audio_panel.cpp`, `assets/themes/ui-dark.json`,
+  `src/ui/nuklear/audio/audio_panel.cpp`, `assets/themes/ui-dark.json`,
   new `tests/ui/display_options_event_harness_tests.cpp`, `tests/ui/font_atlas_tests.cpp`,
   `tests/ui/theme_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md`. These wire accepted display settings through the

@@ -1,5 +1,5 @@
 #include "sys/compose/actions/compose_audition_requests.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"

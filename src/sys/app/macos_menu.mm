@@ -1,4 +1,4 @@
-#include "sys/macos_menu.h"
+#include "sys/app/macos_menu.h"
 
 #import <AppKit/AppKit.h>
 #include <SDL3/SDL_keycode.h>

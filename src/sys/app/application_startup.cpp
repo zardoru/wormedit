@@ -1,4 +1,4 @@
-#include "sys/application_startup.h"
+#include "sys/app/application_startup.h"
 
 #include "ui/frontend.h"
 

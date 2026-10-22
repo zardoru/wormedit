@@ -1,7 +1,7 @@
 #include <wormedit/core/timing.h>
 #include "sys/compose/actions/compose_actions.h"
 #include <wormedit/core/hitsound_editor.h>
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/compose/actions/compose_area_actions.h"

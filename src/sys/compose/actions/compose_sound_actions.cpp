@@ -1,5 +1,5 @@
 #include "sys/compose/actions/compose_sound_actions.h"
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_action_outcome.h"
 #include "sys/compose/actions/compose_action_routes.h"
 #include "sys/metadata/metadata_commands.h"

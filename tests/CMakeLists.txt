@@ -15,7 +15,7 @@ set_tests_properties(tooling.complexity PROPERTIES LABELS "unit;tooling")
 if(UNIX)
     add_executable(wormedit_crash_backtrace_tests
         sys/crash_backtrace_tests.cpp
-        ../src/sys/crash_backtrace.cpp
+        ../src/sys/app/crash_backtrace.cpp
     )
     target_include_directories(wormedit_crash_backtrace_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     set_target_properties(wormedit_crash_backtrace_tests PROPERTIES ENABLE_EXPORTS ON)
@@ -60,7 +60,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/compose/views/recipe_form.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
-    ../src/sys/application_defaults.cpp
+    ../src/sys/app/application_defaults.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
     ../src/sys/project/project_open.cpp
@@ -234,7 +234,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
         ../src/sys/audio/preview_audio_export.cpp
         ../src/sys/project/project_open.cpp
-        ../src/sys/application_defaults.cpp
+        ../src/sys/app/application_defaults.cpp
         ../src/sys/audio/audio_project_import.cpp
         ../src/sys/audio/audio_source_registration.cpp
         ../src/sys/audio/project_audio_sources.cpp
@@ -319,7 +319,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/audio_options_runtime_tests.cpp
             ../src/sys/audio/audio_options_runtime.cpp
             ../src/sys/audio/chart_preview_state.cpp
-            ../src/sys/frame_timing.cpp
+            ../src/sys/app/frame_timing.cpp
             ../src/sys/audio/sdl_audition_output.cpp
             ../src/sys/audio/sdl_preview_output.cpp
         )
@@ -518,7 +518,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/field/field_tile_cache.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
-        ../src/sys/frame_timing.cpp
+        ../src/sys/app/frame_timing.cpp
     )
     target_include_directories(wormedit_nuklear_sdl_backend_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
@@ -539,7 +539,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
         ../src/ui/nuklear/sdl_backend.cpp
-        ../src/sys/frame_timing.cpp)
+        ../src/sys/app/frame_timing.cpp)
     target_include_directories(wormedit_field_renderer_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_field_renderer_tests PRIVATE
@@ -592,11 +592,11 @@ endif()
 if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         sys/application_lifetime_tests.cpp
-        ../src/sys/application_lifetime.cpp
-        ../src/sys/application_startup.cpp
-        ../src/sys/platform_recovery.cpp
+        ../src/sys/app/application_lifetime.cpp
+        ../src/sys/app/application_startup.cpp
+        ../src/sys/app/platform_recovery.cpp
         ../src/sys/audio/audio.cpp
-        ../src/sys/window.cpp
+        ../src/sys/app/window.cpp
         ../src/sys/preferences/external_player.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
@@ -607,7 +607,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness_tests.cpp
         ui/walkthrough_bms_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
-        ../src/sys/application_defaults.cpp
+        ../src/sys/app/application_defaults.cpp
         ui/widget_lookup_event_harness_tests.cpp
         ../src/sys/resources/resource_drop_router.cpp
         ../src/sys/metadata/metadata_actions.cpp
@@ -689,7 +689,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_measure_commands.cpp
         ../src/sys/compose/actions/compose_selection_transform.cpp
         ../src/sys/compose/compose_label_search.cpp
-        ../src/sys/application_defaults.cpp
+        ../src/sys/app/application_defaults.cpp
         ../src/sys/project/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
@@ -729,7 +729,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/project/workspace_view.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
-        "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")
+        "${CMAKE_SOURCE_DIR}/src/sys/app/frame_timing.cpp")
     target_include_directories(wormedit_frontend_event_harness_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
@@ -774,7 +774,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
             sys/bga_dock_runtime_tests.cpp ../src/sys/resources/bga_dock_runtime.cpp
-            ../src/sys/frame_timing.cpp
+            ../src/sys/app/frame_timing.cpp
             ../src/sys/commands/document_edit_feedback.cpp
             ../src/sys/compose/actions/compose_action_outcome.cpp
             ../src/sys/compose/actions/compose_audition_requests.cpp
@@ -806,7 +806,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/notification_panel.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
         ../src/ui/nuklear/theme.cpp
-        ../src/sys/frame_timing.cpp
+        ../src/sys/app/frame_timing.cpp
         ../src/sys/compose/actions/compose_area_actions.cpp
         ../src/sys/compose/actions/compose_quantize.cpp
         ../src/sys/commands/document_edit_feedback.cpp
@@ -881,7 +881,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/commands/application_command_dispatch.cpp
             ../src/sys/commands/application_commands.cpp
             ../src/sys/audio/transport_player_actions.cpp
-            ../src/sys/application_defaults.cpp
+            ../src/sys/app/application_defaults.cpp
             ../src/sys/audio/waveform_view.cpp
             ../src/sys/audio/waveform_analysis_runtime.cpp
             ../src/sys/audio/audio_source_registration.cpp
@@ -930,7 +930,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/project/output_group_export.cpp
         sys/metadata_notification_tests.cpp
         ../src/sys/resources/sound_usage_view.cpp
-        ../src/sys/frame_timing.cpp
+        ../src/sys/app/frame_timing.cpp
         ../src/sys/project/workspace_view.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
@@ -1004,13 +1004,13 @@ catch_discover_tests(wormedit_convert_tests
 # Pure pacing policy has no SDL, core, or Catch dependencies.
 add_executable(wormedit_frame_pacing_tests
     sys/frame_pacing_tests.cpp
-    ../src/sys/frame_pacing.cpp)
+    ../src/sys/app/frame_pacing.cpp)
 target_include_directories(wormedit_frame_pacing_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 add_test(NAME frame-pacing COMMAND wormedit_frame_pacing_tests)
 set_tests_properties(frame-pacing PROPERTIES LABELS "unit;sys")
 
 if(APPLE AND WORMEDIT_BUILD_APP)
-    add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/macos_menu.mm)
+    add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/app/macos_menu.mm)
     set_target_properties(wormedit_macos_menu_tests PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
     target_compile_options(wormedit_macos_menu_tests PRIVATE -fobjc-arc)
     target_include_directories(wormedit_macos_menu_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")

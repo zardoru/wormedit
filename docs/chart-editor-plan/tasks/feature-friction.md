@@ -304,7 +304,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 ## T-669 Reach zero compiler warnings, then make them errors on our targets
 
 - **Status:** Done (2026-10-17; owner asked for it directly)
-- **Value:** High for its cost. When an enum gains a value, `-Wswitch` is what points at every switch that must handle it. The current build already prints warnings (unused variables at `src/sys/application.cpp:3048`, `src/sys/compose/actions/compose_actions.cpp:3646`, `src/sys/compose/input/compose_input.cpp:1246`, and missing-field-initializer warnings), so a new one scrolls past unseen.
+- **Value:** High for its cost. When an enum gains a value, `-Wswitch` is what points at every switch that must handle it. The current build already prints warnings (unused variables at `src/sys/app/application.cpp:3048`, `src/sys/compose/actions/compose_actions.cpp:3646`, `src/sys/compose/input/compose_input.cpp:1246`, and missing-field-initializer warnings), so a new one scrolls past unseen.
 - **Outcome:** Wormedit's own targets build with zero warnings under GCC and the linux-clang preset, and `-Werror` (`/WX` for MSVC) is on for those targets only, never for dependencies.
 - **Read first:** `CMakeLists.txt` (the `target_compile_options` lines), `CMakePresets.json`, `AGENTS.md`.
 - **Files owned:** `CMakeLists.txt`, and every source file with a warning, recorded on this card after step 1's inventory, this card.

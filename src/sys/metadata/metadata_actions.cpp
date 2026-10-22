@@ -1,7 +1,7 @@
 #include "sys/metadata/metadata_commands.h"
 #include "sys/commands/document_edit_feedback.h"
 #include "sys/metadata/metadata_actions.h"
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
 
 #include "ui/frontend.h"

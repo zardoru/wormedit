@@ -1,6 +1,6 @@
 #pragma once
 #include <wormedit/core/proposal.h>
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_action_outcome.h"
 #include "ui/frontend.h"
 

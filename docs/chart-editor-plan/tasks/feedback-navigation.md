@@ -8,8 +8,8 @@ User feedback from the Brain scratchpad, authorized 2026-10-11. Worktree `feedba
 
 - **Status:** done (2026-10-11; verified; committed with this batch)
 - **Outcome:** A Compose toolbar direction icon toggles upscroll/downscroll for the active mode family and persists that preference without editing chart data.
-- **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/main.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_toolbar.cpp` (navigation group/layout only), `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h` (action/options fields only), `src/sys/main.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` and `tests/ui/inspector_resource_workflow_tests.cpp` (toolbar geometry fixtures), this card.
+- **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/app/main.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_toolbar.cpp` (navigation group/layout only), `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h` (action/options fields only), `src/sys/app/main.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` and `tests/ui/inspector_resource_workflow_tests.cpp` (toolbar geometry fixtures), this card.
 - **Steps:** 1. Audit existing mode-family direction preferences. 2. Add toolbar toggle through the revision-checked action boundary and persist through session preferences. 3. Verify direction/cursor/history and stale input; inspect isolated Xvfb toolbar.
 - **Invariants:** Notes, lane identity, cursor row, zoom, document revision and Undo remain unchanged; other mode families retain their preferences.
 - **Reject/failure behavior:** Reject stale actions and pending chart gestures; preference save failures use existing diagnostics.
@@ -32,8 +32,8 @@ User feedback from the Brain scratchpad, authorized 2026-10-11. Worktree `feedba
 
 - **Status:** done (2026-10-11; verified; committed with this batch)
 - **Outcome:** Appearance offers a live-preview persistent opacity slider for vertical song, channel and stem waveforms, with a mild 75-percent default.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/main.cpp`, `include/wormedit/core/preferences.h`.
-- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/main.cpp`, `src/ui/frontend.h` (options/setter only), `src/ui/nuklear/frontend.cpp` (setter only), `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.h`, `src/ui/nuklear/theme.cpp` (opacity helper only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/theme_tests.cpp` (appended opacity test only), this card.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/app/main.cpp`, `include/wormedit/core/preferences.h`.
+- **Files owned:** `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/sys/preferences/options_runtime.cpp`, `src/sys/app/main.cpp`, `src/ui/frontend.h` (options/setter only), `src/ui/nuklear/frontend.cpp` (setter only), `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/theme.h`, `src/ui/nuklear/theme.cpp` (opacity helper only), `tests/core/preferences_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/ui/theme_tests.cpp` (appended opacity test only), this card.
 - **Steps:** 1. Audit PCM, envelope textures, retained gaps and direct fallback drawing. 2. Add one alpha scaler and settings lifecycle with cache invalidation. 3. Verify endpoints, invalid values, preview/revert/defaults and isolated native waveform captures.
 - **Invariants:** Waveform timing, source data, RGB colors, note visibility and overview navigation remain unchanged.
 - **Reject/failure behavior:** Invalid opacity retains defaults; closing/reverting draft restores saved opacity; failed saves use existing diagnostics.

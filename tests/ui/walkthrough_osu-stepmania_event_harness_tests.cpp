@@ -1,6 +1,6 @@
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/views/compose_view.h"

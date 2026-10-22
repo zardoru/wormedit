@@ -12,8 +12,8 @@ not a measured claim for WormEdit. Audio has separate callback/decode threads.
 
 - **Status:** done in code (2026-10-07); root application build and 2,574/2,574 tests pass; live display certification remains pending.
 - **Outcome:** active frame pacing uses a 5 ms whole-frame budget instead of appending 1 ms after every presentation; a frame whose work or presentation already consumes the budget receives no additional sleep, while nonblocking/failed VSync and invisible windows remain bounded.
-- **Read first:** `src/sys/application_frame_services.cpp`, `src/sys/application_frame_services.h`, `src/sys/main.cpp`, `src/sys/window.cpp`, `include/wormedit/window.h`.
-- **Files owned:** `src/sys/application_frame_services.cpp`, `src/sys/application_frame_services.h`, `src/sys/main.cpp` (frame-start timestamp and render call only), new `src/sys/frame_pacing.cpp`, new `src/sys/frame_pacing.h`, new `tests/sys/frame_pacing_tests.cpp`, this card only. Root approved narrow manifest sections: `CMakeLists.txt` application source entry adjacent to `application_frame_services.cpp`; `tests/CMakeLists.txt` standalone two-source pacing target/include/test/labels only. No other manifest ownership transfers.
+- **Read first:** `src/sys/app/application_frame_services.cpp`, `src/sys/app/application_frame_services.h`, `src/sys/app/main.cpp`, `src/sys/app/window.cpp`, `include/wormedit/window.h`.
+- **Files owned:** `src/sys/app/application_frame_services.cpp`, `src/sys/app/application_frame_services.h`, `src/sys/app/main.cpp` (frame-start timestamp and render call only), new `src/sys/app/frame_pacing.cpp`, new `src/sys/app/frame_pacing.h`, new `tests/sys/frame_pacing_tests.cpp`, this card only. Root approved narrow manifest sections: `CMakeLists.txt` application source entry adjacent to `application_frame_services.cpp`; `tests/CMakeLists.txt` standalone two-source pacing target/include/test/labels only. No other manifest ownership transfers.
 - **Steps:**
   1. Audit the production loop and record the unconditional `SDL_Delay(1)` plus existing VSync policy. Measure the legacy delay through an isolated/injected-clock schedule and keep useful CPU time distinct from presentation wait. Inspect dense-chart evidence without rewriting scene queries.
   2. Capture the whole-frame start before frame services. Compute a bounded remainder for visible frames (5 ms), hidden/minimized/occluded frames (50 ms), and apply SDL's precise delay only to a positive remainder. The configured VSync flag is not proof that present actually blocked.
@@ -71,7 +71,7 @@ not a measured claim for WormEdit. Audio has separate callback/decode threads.
 
 - **Status:** done for the available optimized integrated UI probe (2026-10-07); real GPU/display and older-device certification remain pending
 - **Outcome:** an optimized integrated production workspace/projection/frontend/software-render probe reports useful frame work against 5 ms, distinct from presentation and pacing wait. Actual 200 Hz display certification remains pending unless a permitted real-display measurement exists.
-- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/frame_timing.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/field_renderer_tests.cpp`, T-475 above.
+- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/app/application_frame_services.cpp`, `src/sys/app/frame_timing.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/field_renderer_tests.cpp`, T-475 above.
 - **Files owned:** this card only; root scratch probes outside the repository. Supporting production instrumentation requires exact recorded scope extension before edits.
 - **Steps:**
   1. Build normal optimized production targets and identify which frame stages the probe truly executes. Include frontend/software submission, matched-visible 50k/100k fixtures, warm follow/idle, selection, paint hover and boundary transitions where supported.

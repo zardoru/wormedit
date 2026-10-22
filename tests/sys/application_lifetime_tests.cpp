@@ -1,5 +1,5 @@
-#include "sys/application_lifetime.h"
-#include "sys/application.h"
+#include "sys/app/application_lifetime.h"
+#include "sys/app/application.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <SDL3/SDL_init.h>

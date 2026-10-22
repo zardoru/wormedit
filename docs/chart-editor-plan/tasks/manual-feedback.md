@@ -24,7 +24,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Status:** done (2026-10-18; owner's key sets)
 - **Outcome:** New projects for BMS DP5/DP7, osu!mania 12K/16K/18K and 12K/16K SpecialStyle start with lane keys, left to right: DP5 `1Q2W3E` + `U8I9O0` (right scratch outside) or `YU8I9O` (right scratch inside); DP7 and 16K `1Q2W3E4R` + `Y7U8I9O0`; 12K `1Q2W3E` + `Y7U8I9`; 18K `1234QWERF` + `7890YUIOH`; SpecialStyle like the DP layout of the same width with both scratches outside.
 - **Read first:** `include/wormedit/core/lane_profiles.h` (`new_project_layout_descriptor_t`), `src/core/lane_profiles.cpp` (`project_layouts`).
-- **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/sys/application_defaults.cpp`, `src/tools/wormedit_manual_reference.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/sys/application_defaults_tests.cpp`, `docs/manual/generated/layouts.adoc`, this card.
+- **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/sys/app/application_defaults.cpp`, `src/tools/wormedit_manual_reference.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/sys/application_defaults_tests.cpp`, `docs/manual/generated/layouts.adoc`, this card.
 - **Steps:**
   1. Add `lane_keys` and `profile()` to the layout descriptor; creation and the manual generator use `profile()`.
   2. Bind the owner's sets; layouts without one keep D7 (no keys above ten lanes): DP free-zone and foot-pedal variants, 11K, 13K–15K, 17K, PMS 18, Octave, BMSON.
@@ -42,7 +42,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   This card adds a core preference value, a sys draft/dialog owner, and a C++ frontend surface.
 - **Scope extension:** Coordinator approves `src/core/lane_keys.cpp`, `src/sys/lane_keys_runtime.*`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
-  `src/sys/application.cpp`, `src/sys/application_commands.*`, `src/sys/commands/application_command_dispatch.cpp`,
+  `src/sys/app/application.cpp`, `src/sys/application_commands.*`, `src/sys/commands/application_command_dispatch.cpp`,
   `src/sys/compose/views/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md` for persistence, dialog lifecycle, command routing,
   input isolation, cached binding projection, build registration and completion evidence.
@@ -70,7 +70,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `src/core/lane_keys.cpp`, `src/core/document.cpp`, `src/core/lane_migration.cpp`, `src/core/lane_profiles.cpp`,
   `src/core/command_registry.cpp`, `src/sys/preferences/lane_keys_runtime.cpp`, `src/sys/preferences/lane_keys_runtime.h`,
   `src/tools/wormedit_manual_reference.cpp`,
-  `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/application.cpp`,
+  `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/app/application.cpp`,
   `src/sys/commands/application_commands.h`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_command_dispatch.cpp`,
   `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/options_window.h`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
@@ -172,7 +172,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Status:** done (2026-10-18; owner: "Yes, do add the shortcuts")
 - **Outcome:** Every row of the command palette shows the command's current keys right-aligned in platform form (`Ctrl+Shift+Z`, `⌘` on macOS), nothing for unbound commands, following rebinds.
 - **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome.h` (`menu_item`).
-- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
+- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/app/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
 - **Steps:**
   1. Cache the chord text per command, reformatted only when a binding or the platform modifier changes, because the palette view is rebuilt every frame.
   2. Draw it with the same right-aligned helper the menu bar uses.

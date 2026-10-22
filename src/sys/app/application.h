@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/application_startup.h"
+#include "sys/app/application_startup.h"
 #include <memory>
 
 namespace wormedit::sys {

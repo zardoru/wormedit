@@ -11,7 +11,7 @@
 #include "ui/workspace_menu.h"
 #include "ui/nuklear/menu_bar.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
-#include "sys/macos_menu.h"
+#include "sys/app/macos_menu.h"
 #endif
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/sound_import_dialog.h"

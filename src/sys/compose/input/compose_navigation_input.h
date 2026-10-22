@@ -1,6 +1,6 @@
 #pragma once
 #include "sys/compose/views/compose_interaction_view.h"
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/timing/timing_view.h"
 #include "sys/compose/input/compose_input.h"

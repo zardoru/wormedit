@@ -1,14 +1,14 @@
 #include <wormedit/core/timing_lane_catalog.h>
-#include "sys/application_timing_stage.h"
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_timing_stage.h"
+#include "sys/app/application_edit_inputs.h"
 #include "core/timing_event_internal.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/timing/timing_view.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
-#include "sys/macos_menu.h"
+#include "sys/app/macos_menu.h"
 #endif
 
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "sys/compose/compose_timing_target.h"
 #include "sys/timing/timing_view.h"
 #include "ui/frontend.h"

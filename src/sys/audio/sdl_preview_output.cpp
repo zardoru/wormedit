@@ -1,6 +1,6 @@
 #include <wormedit/core/rational.h>
-#include "sys/frame_timing.h"
-#include "sys/thread_priority.h"
+#include "sys/app/frame_timing.h"
+#include "sys/app/thread_priority.h"
 #include "sys/audio/sdl_preview_output.h"
 #include "sys/audio/sdl_audio_stream_lock.h"
 #include "sys/audio/sdl_audio_output_config.h"

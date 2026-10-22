@@ -15,7 +15,7 @@ file(GLOB_RECURSE protected_sources
     "${WORMEDIT_SOURCE_ROOT}/src/editor/*.h"
     "${WORMEDIT_SOURCE_ROOT}/src/ui/field/*.cpp"
     "${WORMEDIT_SOURCE_ROOT}/src/ui/field/*.h"
-    "${WORMEDIT_SOURCE_ROOT}/src/sys/main.cpp"
+    "${WORMEDIT_SOURCE_ROOT}/src/sys/app/main.cpp"
 )
 
 set(violations "")

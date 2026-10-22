@@ -1,9 +1,9 @@
 #include "../ui/nuklear_event_harness.h"
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/project/project_import_feedback.h"
-#include "sys/application_startup_feedback.h"
+#include "sys/app/application_startup_feedback.h"
 #include "sys/project/workspace_edit_feedback.h"
-#include "sys/frontend_notification_sink.h"
+#include "sys/app/frontend_notification_sink.h"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace wormedit;

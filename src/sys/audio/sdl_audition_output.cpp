@@ -1,4 +1,4 @@
-#include "sys/thread_priority.h"
+#include "sys/app/thread_priority.h"
 #include "sys/audio/sdl_audition_output.h"
 #include "sys/audio/sdl_audio_stream_lock.h"
 #include "sys/audio/sdl_audio_output_config.h"

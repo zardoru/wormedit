@@ -26,7 +26,7 @@ User-authorized scratchpad batch, 2026-10-09. Shared frontend/menu ownership is 
 - **Status:** done (2026-10-09; implementation and verification committed together)
 - **Stale-plan audit (2026-10-09):** The shared model puts external commands directly after Metronome without a separator.
 - **Outcome:** Playback draws a separator between internal transport and external player commands, shared with the native menu model.
-- **Read first:** `src/ui/nuklear/menu_bar.cpp`, `src/ui/workspace_menu.h`, `src/sys/macos_menu.mm`.
+- **Read first:** `src/ui/nuklear/menu_bar.cpp`, `src/ui/workspace_menu.h`, `src/sys/app/macos_menu.mm`.
 - **Files owned:** `src/ui/nuklear/compose_keyboard_input.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/workspace_menu.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `docs/chart-editor-plan/tasks/scratchpad-help.md`, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Implement the outcome through existing production input/menu/dialog paths. 2. Verify routing, preservation and dismissal with production tests. 3. Build, run the suite and complexity checks, inspect isolated native captures, then synchronize the Brain.
 - **Invariants:** authored chart data and Undo are unchanged by Help/menu presentation; selected-object lane reassignment and Draw keyboard input remain available.

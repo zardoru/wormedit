@@ -2,7 +2,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/formats/bms.h>
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 #include "sys/notifications/notification_history_runtime.h"
 #include "sys/project/workspace_view.h"
 #include <wormedit/core/arena.h>

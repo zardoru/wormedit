@@ -6,7 +6,7 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/workspace.h>
 
-#include "sys/thread_priority.h"
+#include "sys/app/thread_priority.h"
 #include "sys/project/output_group_export.h"
 #include "sys/project/project_save_paths.h"
 #include "ui/frontend/file_jobs.h"

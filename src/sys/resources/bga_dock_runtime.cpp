@@ -1,5 +1,5 @@
 #include "sys/resources/bga_dock_runtime.h"
-#include "sys/thread_priority.h"
+#include "sys/app/thread_priority.h"
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_job.h>
 #include <wormedit/visual/visual_asset.h>

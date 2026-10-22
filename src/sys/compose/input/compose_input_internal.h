@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/compose/input/compose_navigation.h"

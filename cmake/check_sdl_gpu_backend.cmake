@@ -2,7 +2,7 @@ if(NOT DEFINED WORMEDIT_SOURCE_ROOT)
     message(FATAL_ERROR "WORMEDIT_SOURCE_ROOT is required")
 endif()
 
-file(READ "${WORMEDIT_SOURCE_ROOT}/src/sys/window.cpp" window_source)
+file(READ "${WORMEDIT_SOURCE_ROOT}/src/sys/app/window.cpp" window_source)
 if(NOT window_source MATCHES "SDL_CreateRenderer\\(window->handle, \"gpu\"\\)" OR
    NOT window_source MATCHES "SDL_GetGPURendererDevice\\(window->renderer\\)")
     message(FATAL_ERROR "window layer must require SDL3's GPU renderer and verify its GPU device")

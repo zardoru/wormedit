@@ -1,6 +1,6 @@
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/resources/sound_import_staging.h"

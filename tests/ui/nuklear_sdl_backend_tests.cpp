@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include "ui/frontend.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 #include <array>
 #include <cmath>
 #include <vector>

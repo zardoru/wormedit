@@ -1,6 +1,6 @@
 #include "wormedit/window.h"
 #include "ui/frontend/actions.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_init.h>

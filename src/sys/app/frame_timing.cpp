@@ -1,4 +1,4 @@
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 #include "ui/frontend.h"
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_stdinc.h>

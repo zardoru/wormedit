@@ -1,6 +1,6 @@
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/commands/document_edit_feedback.h"
-#include "sys/thread_priority.h"
+#include "sys/app/thread_priority.h"
 #include <wormedit/core/async_job.h>
 
 #include "ui/frontend.h"

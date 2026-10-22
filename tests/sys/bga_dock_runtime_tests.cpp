@@ -1,5 +1,5 @@
 #include "sys/resources/bga_dock_runtime.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 #include "../support/temporary_directory.h"
 
 #include <catch2/catch_test_macros.hpp>

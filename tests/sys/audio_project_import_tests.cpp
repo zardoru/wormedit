@@ -1,5 +1,5 @@
 #include "sys/audio/audio_project_import.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>

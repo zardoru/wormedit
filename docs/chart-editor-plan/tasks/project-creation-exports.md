@@ -90,7 +90,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   and `memory/chart-editor-status/resume.md`.
 - **Supporting-file extensions (2026-10-19):** `src/sys/resources/resource_job_state.h` and
   `src/sys/resources/resource_job_state.cpp` own the background export lifecycle and therefore retain the
-  prepared Ask-confirmation request; `src/sys/application.cpp` projects that lifecycle state and
+  prepared Ask-confirmation request; `src/sys/app/application.cpp` projects that lifecycle state and
   supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_state.h`,
   `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
   `src/ui/nuklear/frontend.cpp` carry the existing global File → Export chooser/confirmation
@@ -158,7 +158,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `memory/chart-editor-status/resume.md`.
 - **Supporting-file extensions (2026-10-19):** `src/formats/native_project_storage.cpp` and
   `tests/formats/native_project_storage_tests.cpp` advance recovery support with native schema 8;
-  `src/sys/application.cpp`, `src/sys/application_edit_inputs.h`,
+  `src/sys/app/application.cpp`, `src/sys/app/application_edit_inputs.h`,
   `src/sys/application_frame_view.{h,cpp}`, `src/sys/compose/actions/compose_resource_actions.cpp`,
   `src/sys/project/project_view.h`, and `src/sys/transport_player_actions.{h,cpp}` remove the obsolete
   application-lifetime export policy and pass target-owned policy through the existing routes.
@@ -208,7 +208,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/chart_editor.cpp`,
   `src/formats/conversion_publication.cpp`, `src/ui/frontend/project.h`,
   `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/setup_panel.cpp`,
-  `src/sys/application.cpp`, `src/sys/project/output_group_export.h`,
+  `src/sys/app/application.cpp`, `src/sys/project/output_group_export.h`,
   `src/sys/project/output_group_export.cpp`, `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/formats/conversion_publication_tests.cpp`,
@@ -283,7 +283,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `memory/chart-editor-status/resume.md`.
 - **Supporting-file extensions (2026-10-19):** `src/sys/project/project_view.h` owns the projected
   compatibility strings and suggestion storage; `src/formats/conversion.cpp` consumes the public
-  BMS layout query instead of retaining a second compatibility fact. `src/sys/application.cpp`
+  BMS layout query instead of retaining a second compatibility fact. `src/sys/app/application.cpp`
   supplies the selected chart before building suggestions. The BMS walkthrough harness fixture
   declares its projected compatibility after the view contract gained the mask and reasons.
 - **Steps:**

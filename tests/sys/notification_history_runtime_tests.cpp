@@ -1,6 +1,6 @@
 #include "sys/notifications/notification_history_runtime.h"
 #include "sys/commands/application_command_dispatch.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>

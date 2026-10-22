@@ -1,4 +1,4 @@
-#include "sys/frame_pacing.h"
+#include "sys/app/frame_pacing.h"
 
 namespace wormedit::sys {
 

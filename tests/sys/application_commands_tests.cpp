@@ -1,5 +1,5 @@
 #include "sys/compose/actions/compose_audition_requests.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
@@ -8,7 +8,7 @@
 #include "compose_area_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/commands/application_commands.h"
-#include "sys/application_timing_stage.h"
+#include "sys/app/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/compose/compose_semantic_layer_commands.h"

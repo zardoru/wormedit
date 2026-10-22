@@ -1,6 +1,6 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 
 #include <catch2/catch_test_macros.hpp>
 

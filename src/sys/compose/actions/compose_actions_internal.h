@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_edit_inputs.h"
 #include "sys/bookmarks/bookmark_commands.h"
 #include "sys/compose/actions/compose_action_context.h"
 #include "sys/compose/actions/compose_action_outcome.h"

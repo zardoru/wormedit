@@ -480,7 +480,7 @@ if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
         src/common/static_interval_index.cpp
         src/sys/audio/audio.cpp
-        src/sys/application_defaults.cpp
+        src/sys/app/application_defaults.cpp
         src/sys/commands/application_commands.cpp
         src/sys/compose/input/compose_minimap_navigation.cpp
         src/sys/bookmarks/bookmark_commands.cpp
@@ -536,26 +536,26 @@ if(WORMEDIT_BUILD_APP)
         src/sys/resources/bga_list_view.cpp
         src/sys/resources/bga_dock_runtime.cpp
         src/sys/compose/actions/compose_audition_requests.cpp
-        src/sys/crash_backtrace.cpp
+        src/sys/app/crash_backtrace.cpp
         src/sys/audio/audio_source_registration.cpp
         src/sys/audio/project_audio_sources.cpp
         src/sys/audio/metronome.cpp
-        src/sys/application_frame_view.cpp
-        src/sys/application_frame_services.cpp
+        src/sys/app/application_frame_view.cpp
+        src/sys/app/application_frame_services.cpp
         src/sys/resources/resource_drop_router.cpp
-        src/sys/frame_pacing.cpp
+        src/sys/app/frame_pacing.cpp
         src/sys/resources/sound_drop_transaction.cpp
-        src/sys/application_startup.cpp
-        src/sys/application_lifetime.cpp
+        src/sys/app/application_startup.cpp
+        src/sys/app/application_lifetime.cpp
         src/sys/project/recovery_notification_feedback.cpp
         src/sys/audio/audio_project_import.cpp
         src/sys/project/project_open.cpp
         src/sys/project/chart_import_session.cpp
         src/sys/project/project_save_paths.cpp
-        src/sys/main.cpp
-        src/sys/application.cpp
-        src/sys/application_timing_stage.cpp
-        src/sys/frame_timing.cpp
+        src/sys/app/main.cpp
+        src/sys/app/application.cpp
+        src/sys/app/application_timing_stage.cpp
+        src/sys/app/frame_timing.cpp
         src/sys/timing/timing_view.cpp
         src/sys/timing/timing_edit_runtime.cpp
         src/sys/metadata/metadata_drop_state.cpp
@@ -581,14 +581,14 @@ if(WORMEDIT_BUILD_APP)
         src/sys/notifications/notification_history_runtime.cpp
         src/sys/project/project_view.cpp
         src/sys/audio/tap_timing_runtime.cpp
-        src/sys/platform_recovery.cpp
+        src/sys/app/platform_recovery.cpp
         src/sys/commands/platform_shortcut_profile.cpp
-        src/sys/window.cpp
+        src/sys/app/window.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
     )
     if(APPLE)
-        target_sources(wormedit PRIVATE src/sys/macos_menu.mm)
-        set_source_files_properties(src/sys/macos_menu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_sources(wormedit PRIVATE src/sys/app/macos_menu.mm)
+        set_source_files_properties(src/sys/app/macos_menu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         set_target_properties(wormedit PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_MACOS_MENU=1)
         target_link_libraries(wormedit PRIVATE "-framework AppKit")

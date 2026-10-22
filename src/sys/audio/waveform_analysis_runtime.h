@@ -3,7 +3,7 @@
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
 #include "sys/compose/views/compose_view.h"
-#include "sys/thread_priority.h"
+#include "sys/app/thread_priority.h"
 
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/waveform.h>

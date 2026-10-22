@@ -1,10 +1,10 @@
 #include "core/text_util.h"
-#include "sys/application_frame_services.h"
-#include "sys/application_edit_inputs.h"
+#include "sys/app/application_frame_services.h"
+#include "sys/app/application_edit_inputs.h"
 
 #include "sys/project/project_open.h"
 #include "sys/resources/resource_drop_router.h"
-#include "sys/frame_pacing.h"
+#include "sys/app/frame_pacing.h"
 
 #include "ui/frontend.h"
 #include "wormedit/window.h"

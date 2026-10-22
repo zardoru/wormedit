@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/platform_recovery.h"
+#include "sys/app/platform_recovery.h"
 
 #include <wormedit/core/startup_session.h>
 #include <wormedit/audio.h>

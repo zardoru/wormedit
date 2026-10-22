@@ -6,7 +6,7 @@
 #include "compose_area_dispatch_fixture.h"
 #include "project_audio_sources_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/audio/chart_preview_state.h"
 #include "sys/project/compare_view.h"
@@ -19,7 +19,7 @@
 #include "sys/compose/actions/compose_quantize.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/compose/views/compose_view_internal.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 #include <wormedit/core/arena.h>
 #include "sys/resources/bga_dock_runtime.h"
 #include "../support/temporary_directory.h"

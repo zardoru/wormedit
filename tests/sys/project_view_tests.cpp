@@ -1,5 +1,5 @@
 #include "sys/project/project_view.h"
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <chrono>

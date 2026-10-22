@@ -1,4 +1,4 @@
-#include "sys/application_defaults.h"
+#include "sys/app/application_defaults.h"
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/lane_profiles.h>

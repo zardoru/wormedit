@@ -1,7 +1,7 @@
 #include <wormedit/core/rational.h>
-#include "sys/application_frame_view.h"
+#include "sys/app/application_frame_view.h"
 #include "sys/compose/views/compose_hover_timing.h"
-#include "sys/frame_timing.h"
+#include "sys/app/frame_timing.h"
 
 #include "sys/audio/bmson_waveform_view.h"
 #include "sys/compose/views/compose_view.h"

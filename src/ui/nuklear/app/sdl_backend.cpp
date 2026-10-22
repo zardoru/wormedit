@@ -27,7 +27,7 @@
 // Nuklear retains assertion-only bookkeeping in release builds.
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif
-#include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/app/sdl_backend.h"
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

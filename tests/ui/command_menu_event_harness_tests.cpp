@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/command_menu.h"
+#include "ui/nuklear/app/command_menu.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/core/command_registry.h>
 #include <catch2/catch_test_macros.hpp>

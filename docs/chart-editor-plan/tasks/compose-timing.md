@@ -157,8 +157,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done
 - **Outcome:** The Timing tab, `timing_panel.*`, `timing_state.*` and their tests are gone; the app builds and Compose timing focus still works.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/timing_panel.h`, `src/ui/nuklear/timing/timing_state.h`, `CMakeLists.txt`.
-- **Files owned:** `src/ui/nuklear/timing_panel.*`, `src/ui/nuklear/timing_state.*`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/*timing*`, `docs/chart-editor-plan/tasks/*.md`, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/timing_panel.h`, `src/ui/nuklear/timing/timing_state.h`, `CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/timing_panel.*`, `src/ui/nuklear/timing_state.*`, `src/ui/nuklear/app/frontend.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/*timing*`, `docs/chart-editor-plan/tasks/*.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. T-320, T-322 and T-323 are done. `timing_panel.cpp` also owns shared pieces Compose still calls (`worm_ui_nuklear_render_timing_stage_editor`, the recipe form): move them into Compose files before deleting the screen. 2. Remove the tab and its code. Tests that still apply to behavior now in Compose must exist before deletion (ported per T-320); delete only tests of the removed screen itself. 3. Update plan and docs links that name the screen. 4. Full build, `documentation.` tests and Compose smoke.
 - **Invariants:** Document, formats and Compose timing focus are byte-identical in behavior.
 - **Reject/failure behavior:** If any check fails, stop and report; do not delete tests to get green.

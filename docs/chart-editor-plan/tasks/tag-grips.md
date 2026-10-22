@@ -8,7 +8,7 @@
 - **Stale-plan audit (2026-10-11):** `render_metadata_tag_row` still uses Up/Down and text Remove buttons in `metadata_song_section.cpp`.
 - **Outcome:** Search tags have Lucide drag grips with insertion feedback and icon removal, with changes staged until Apply and discarded by Revert.
 - **Read first:** `src/ui/nuklear/metadata/metadata_song_section.cpp`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/ui/nuklear/project/setup_panel.cpp`, `tests/ui/nuklear_event_harness.h`.
-- **Files owned:** `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/nuklear/metadata/metadata_panel.h`, `src/ui/nuklear/metadata/metadata_state.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/ui/nuklear/metadata/metadata_song_section.cpp`, `src/ui/nuklear/frontend.cpp` (metadata drag cancellation hooks only), `tests/ui/nuklear_metadata_state_tests.cpp`, `tests/ui/tag_grips_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/tag-grips.md`.
+- **Files owned:** `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/nuklear/metadata/metadata_panel.h`, `src/ui/nuklear/metadata/metadata_state.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/ui/nuklear/metadata/metadata_song_section.cpp`, `src/ui/nuklear/app/frontend.cpp` (metadata drag cancellation hooks only), `tests/ui/nuklear_metadata_state_tests.cpp`, `tests/ui/tag_grips_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/tag-grips.md`.
 - **Supporting scope:** Coordinator approved extracted song section and narrow frontend cancellation hooks. Coordinator registers the dedicated event test in `tests/CMakeLists.txt`.
 - **Steps:**
   1. Add bounded draft drag state and lossless insertion reordering.

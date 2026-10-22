@@ -8,8 +8,8 @@ User-authorized batch, 2026-10-11. Fill as well as outlines is explicitly in sco
 
 - **Status:** done
 - **Outcome:** Repeated shortcut/menu invocation closes the active dock; compact layout switches to the requested dock; Create layer always opens Layers.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, this card, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/app/frontend.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/app/frontend.cpp`, `tests/ui/dock_shortcut_event_harness_tests.cpp`, this card, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Audit existing behavior. 2. Correct the live path. 3. Verify input and native presentation.
 - **Invariants:** no chart edits or history changes from presentation/toggle actions; preserve modal guards.
 - **Reject/failure behavior:** stale or occluded commands remain rejected.
@@ -47,8 +47,8 @@ User-authorized batch, 2026-10-11. Fill as well as outlines is explicitly in sco
 
 - **Status:** done
 - **Outcome:** Project uses responsive side margins capped at 48 px to preserve table width; Charts and StepMania export policy have clear section headers while chart controls remain functional.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`, this card, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`, this card, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Audit existing behavior. 2. Correct the live path. 3. Verify input and native presentation.
 - **Invariants:** no chart edits or history changes from presentation/toggle actions; preserve modal guards.
 - **Reject/failure behavior:** stale or occluded commands remain rejected.

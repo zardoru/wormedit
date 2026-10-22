@@ -19,7 +19,7 @@
 #include "ui/nuklear/compose/compose_input_internal.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/render/theme.h"
-#include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/app/sdl_backend.h"
 
 #include "wormedit/nuklear_config.h"
 #include <wormedit/core/vocabulary.h>

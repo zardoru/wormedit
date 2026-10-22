@@ -34,8 +34,8 @@ Authorized 2026-10-11 from priority scratchpad feedback. Existing quantize core 
 
 - **Status:** done
 - **Outcome:** Palette has a prominent title using the existing 28 px display face and same-row keycaps for navigation/activation/cancel; narrow headers use the regular face. Bold is not currently available in the atlas. Shared dialog defaults remain unchanged.
-- **Read first:** src/ui/nuklear/command_menu.cpp; src/ui/nuklear/dialog.h/.cpp; tests/ui/command_menu_event_harness_tests.cpp.
-- **Files owned:** src/ui/nuklear/command_menu.cpp; src/ui/nuklear/dialog.h/.cpp; tests/ui/command_menu_event_harness_tests.cpp; this card; `memory/chart-editor-status/resume.md`. Shared ownership is coordinated by root.
+- **Read first:** src/ui/nuklear/app/command_menu.cpp; src/ui/nuklear/dialog.h/.cpp; tests/ui/command_menu_event_harness_tests.cpp.
+- **Files owned:** src/ui/nuklear/app/command_menu.cpp; src/ui/nuklear/dialog.h/.cpp; tests/ui/command_menu_event_harness_tests.cpp; this card; `memory/chart-editor-status/resume.md`. Shared ownership is coordinated by root.
 - **Steps:** 1. Audit existing behavior. 2. Implement the shared live path. 3. Verify state, command/input routing and native presentation.
 - **Invariants:** no document mutation for preview; existing atomic quantize/Undo and modal/stale guards remain.
 - **Reject/failure behavior:** invalid Apply reports existing diagnostics without mutation; stale or occluded requests cannot bypass guards.

@@ -2,7 +2,7 @@
 #include "wormedit/config.h"
 #include "sys/commands/menu_command_view.h"
 #include "sys/app/frame_timing.h"
-#include "ui/nuklear/menu_bar.h"
+#include "ui/nuklear/app/menu_bar.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>

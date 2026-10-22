@@ -1,10 +1,10 @@
 #include "ui/frontend/workspace.h"
 #include "core/text_util.h"
-#include "ui/nuklear/command_menu.h"
+#include "ui/nuklear/app/command_menu.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/chrome/modal_input.h"
-#include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/app/sdl_backend.h"
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keycode.h>

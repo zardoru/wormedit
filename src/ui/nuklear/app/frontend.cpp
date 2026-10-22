@@ -9,7 +9,7 @@
 #include "wormedit/config.h"
 #include "ui/nuklear/chrome/catalog_confirmation.h"
 #include "ui/workspace_menu.h"
-#include "ui/nuklear/menu_bar.h"
+#include "ui/nuklear/app/menu_bar.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/app/macos_menu.h"
 #endif
@@ -44,7 +44,7 @@
 #include "ui/nuklear/render/image_quad.h"
 #include "ui/nuklear/metadata/metadata_panel.h"
 #include "ui/nuklear/metadata/metadata_state.h"
-#include "ui/nuklear/command_menu.h"
+#include "ui/nuklear/app/command_menu.h"
 #include "ui/nuklear/audio/player_preview.h"
 #include "ui/nuklear/project/setup_panel.h"
 #include "ui/nuklear/render/interface_scale.h"
@@ -57,7 +57,7 @@
 #include "ui/nuklear/chrome/notification_panel.h"
 #include "ui/nuklear/project/compare_panel.h"
 
-#include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/render/font_atlas.h"
 
 #include <wormedit/formats/bms.h>

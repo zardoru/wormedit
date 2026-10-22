@@ -57,7 +57,7 @@ Bookmark editing already exists in the Markers panel
 - **Current behavior (2026-10-01):** `draw_compose_beat_bookmarks` and `draw_compose_audio_bookmarks` (`src/ui/nuklear/compose/compose_canvas.cpp`) draw lines only, although `WormUiComposeBookmarkView::label` and `WormUiComposeAudioBookmarkView::label` already carry the names.
 - **Stale-plan check:** grep `field_text` inside `draw_compose_beat_bookmarks`.
 - **Read first:** `src/ui/nuklear/compose/compose_canvas.cpp` (`draw_compose_beat_bookmarks`, `draw_compose_audio_bookmarks`, `field_text`, the note-label text drawing), `src/ui/frontend.h` (bookmark views).
-- **Files owned:** `src/ui/nuklear/compose/compose_canvas.cpp`, user-approved scope extension (2026-10-02): `src/ui/nuklear/compose/compose_bookmark_label.cpp`, `src/ui/nuklear/frontend.cpp` (font atlas glyph ranges); `tests/ui/compose_bookmark_label_tests.cpp` (new), `tests/CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/compose/compose_canvas.cpp`, user-approved scope extension (2026-10-02): `src/ui/nuklear/compose/compose_bookmark_label.cpp`, `src/ui/nuklear/app/frontend.cpp` (font atlas glyph ranges); `tests/ui/compose_bookmark_label_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:**
   1. A pure helper that, given label width, font height, line y, field bounds, and the previous label's box, returns the text box or none: right-aligned to the field's right edge with 4 px padding, sitting on the line, truncated with "…" to at most half the field width.
   2. Draw with `field_text` in the line color on the same layer as the line. Skip a label whose box would overlap the previous drawn label (keep the earlier one).

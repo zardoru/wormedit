@@ -6,7 +6,7 @@ Findings (2026-09-30, code reading; numbers are upper bounds from capacities):
 
 - Every frame, `nk_sdl_render` (the stock SDL3 demo backend in
   `build/_deps/nuklear-src/demo/sdl3_renderer/nuklear_sdl3_renderer.h`, called
-  from `src/ui/nuklear/frontend.cpp` with `NK_ANTI_ALIASING_ON`) converts the whole
+  from `src/ui/nuklear/app/frontend.cpp` with `NK_ANTI_ALIASING_ON`) converts the whole
   command list with anti-aliasing for every shape and line, allocates fresh
   vertex and index buffers (`nk_buffer_init`), and issues one
   `SDL_RenderGeometryRaw` per Nuklear draw command; each clip change breaks the
@@ -49,8 +49,8 @@ rendering). Apply the stale-plan check (rule 9) first.
 
 - **Status:** done
 - **Outcome:** the frame-timing overlay and `WORMEDIT_FRAME_TIMING_REPORT` also show, per frame, vertices, indices, draw calls, clip-rect changes, and texture switches, and split "Render/present" into convert, submit, and present (VSync wait).
-- **Read first:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp` (the `nk_sdl_render` call and `SDL_RenderPresent` in `src/sys/app/window.cpp`), the SDL3 demo backend named above.
-- **Files owned:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/app/window.cpp` (timer call only), `tests/sys/frame_timing_tests.cpp`, `src/ui/frontend.h` (user-approved scalar counter and 24-phase view contract extension).
+- **Read first:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/app/frontend.cpp` (the `nk_sdl_render` call and `SDL_RenderPresent` in `src/sys/app/window.cpp`), the SDL3 demo backend named above.
+- **Files owned:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/app/frontend.cpp`, `src/sys/app/window.cpp` (timer call only), `tests/sys/frame_timing_tests.cpp`, `src/ui/frontend.h` (user-approved scalar counter and 24-phase view contract extension).
 - **Steps:** 1. Counters filled where the draw list is converted and submitted. 2. Sub-phase timers. 3. Record the T-211 fixture at normal zoom and at maximum zoom (sample mode) and put both tables in the report.
 - **Invariants:** no allocation when the overlay is hidden.
 - **Reject/failure behavior:** none.
@@ -115,8 +115,8 @@ Verification: parent coordinated integrated build and full suite 913/913; focuse
 
 - **Status:** done
 - **Outcome:** a project-owned copy of the SDL3 backend replaces the demo header: vertex and index buffers persist across frames (cleared, not reallocated), colors are 8-bit where SDL accepts them, indices are 32-bit (with T-244), and consecutive commands with the same texture and clip are merged into one `SDL_RenderGeometryRaw` call.
-- **Read first:** the demo backend, `include/wormedit/nuklear_config.h`, `src/ui/nuklear/frontend.cpp`.
-- **Files owned:** new `src/ui/nuklear/sdl_backend.cpp/.h` (with the upstream license notice), `src/ui/nuklear/frontend.cpp`, `include/wormedit/nuklear_config.h`, `CMakeLists.txt`, new `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/CMakeLists.txt`.
+- **Read first:** the demo backend, `include/wormedit/nuklear_config.h`, `src/ui/nuklear/app/frontend.cpp`.
+- **Files owned:** new `src/ui/nuklear/sdl_backend.cpp/.h` (with the upstream license notice), `src/ui/nuklear/app/frontend.cpp`, `include/wormedit/nuklear_config.h`, `CMakeLists.txt`, new `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Copy the backend verbatim, build, confirm identical screenshots. 2. Persistent buffers. 3. Command merging with a test on a synthetic command list. 4. Keep `NK_ANTI_ALIASING_ON` for now.
 - **Invariants:** pixel-identical output at step 1; visually identical after merging.
 - **Reject/failure behavior:** none.
@@ -140,7 +140,7 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
 
 - **Status:** done
 - **Outcome:** everything inside the Compose field rectangle is drawn by a new frontend-private field renderer that builds per-layer vertex batches directly from the scalar Compose view and submits them with `SDL_RenderGeometryRaw` (no Nuklear shapes, no `nk_convert`, no anti-aliasing for axis-aligned primitives), culled to the viewport; Nuklear keeps only the surrounding chrome.
-- **Read first:** `src/ui/nuklear/compose/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/render/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
+- **Read first:** `src/ui/nuklear/compose/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/render/arrow_glyph.h`, `src/ui/nuklear/app/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
 - **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h` (header extension approved by user), `src/ui/nuklear/compose_area_menu.cpp/.h` (user-approved migration of the existing field band drawing helper), `CMakeLists.txt`, `cmake/check_ui_boundary.cmake` (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
   0. Keep per-frame vertex scratch in a `frame_arena_t` (T-271) or persistent vectors; never allocate per primitive.
@@ -232,14 +232,14 @@ Decision (user, 2026-09-30): permit at most one pixel of static-layer raster var
 
 - **Status:** done (2026-10-21)
 - **Outcome:** the UI renders directly into the backbuffer at its pixel size with `SDL_SetRenderScale(pixel / logical)` and logical presentation disabled, removing the per-frame intermediate target and scaling pass and making text and lines sharp on fractional scales; input keeps using window points.
-- **Read first:** `src/ui/nuklear/frontend.cpp` (the `SDL_SetRenderLogicalPresentation` block and its comment), `memory/chart-editor-status/implemented/editing-frontend.md` (the resize/high-DPI paragraph), the architecture test that guards the resize mapping.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/app/window.cpp`, `cmake/check_sdl_gpu_backend.cmake`, `src/ui/nuklear/sdl_backend.h`, `src/ui/nuklear/sdl_backend.cpp`, `tests/ui/nuklear_sdl_backend_tests.cpp`, this card, `memory/chart-editor-status/implemented/editing-frontend.md` and `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/app/frontend.cpp` (the `SDL_SetRenderLogicalPresentation` block and its comment), `memory/chart-editor-status/implemented/editing-frontend.md` (the resize/high-DPI paragraph), the architecture test that guards the resize mapping.
+- **Files owned:** `src/ui/nuklear/app/frontend.cpp`, `src/sys/app/window.cpp`, `cmake/check_sdl_gpu_backend.cmake`, `src/ui/nuklear/app/sdl_backend.h`, `src/ui/nuklear/app/sdl_backend.cpp`, `tests/ui/nuklear_sdl_backend_tests.cpp`, this card, `memory/chart-editor-status/implemented/editing-frontend.md` and `memory/chart-editor-status/resume.md`.
 - **Supporting ownership (2026-10-21):** backend declaration/implementation owns the point-to-backbuffer mapping so the actual production setup can be exercised by the existing pixel fixture. The backend tests cover resize, full-window coverage and scissors at 1, 1.25, 1.5 and 2×. SDL's existing `UpdatePixelClipRect` scales point-space scissors; the adapter retains its point-space viewport clamp and must not apply that scale twice. Window creation and pointer coordinates need no change.
 - **Steps:** 1. Replace the logical presentation with render scale plus a clip-rect conversion in the backend (clip rects must be scaled too). 2. Update the architecture test to guard the new mapping. 3. Check fractional scales 1.25, 1.5, and 2.0 with smoke captures (no unpainted bands, which was the original reason for the logical presentation).
 - **Invariants:** hit-testing, clipping, and full-window clear stay aligned (the original bug must not return).
 - **Reject/failure behavior:** if the renderer rejects the scale, fall back to the current logical presentation.
 - **Verify:** standard build/test; smoke PNGs at each scale; T-246 present time.
-- **Verification (2026-10-21):** `scripts/gate.sh --jobs 8` passes build, **4,388/4,388 tests**, whitespace and complexity across three affected translation units (`/tmp/t251-gate.log`, `/tmp/wormedit-gate.uYtNIX`). Explicit consuming-TU `scripts/check-complexity.py --build-dir build --jobs 8 src/ui/nuklear/frontend.cpp src/ui/nuklear/sdl_backend.cpp tests/ui/nuklear_sdl_backend_tests.cpp` also passes (`/tmp/t251-complexity.log`). Backend checks pass **13/13**, including pixel coverage/scissors after changing point dimensions at 1/1.25/1.5/2× (`/tmp/t251-backend-tests2.log`).
+- **Verification (2026-10-21):** `scripts/gate.sh --jobs 8` passes build, **4,388/4,388 tests**, whitespace and complexity across three affected translation units (`/tmp/t251-gate.log`, `/tmp/wormedit-gate.uYtNIX`). Explicit consuming-TU `scripts/check-complexity.py --build-dir build --jobs 8 src/ui/nuklear/app/frontend.cpp src/ui/nuklear/app/sdl_backend.cpp tests/ui/nuklear_sdl_backend_tests.cpp` also passes (`/tmp/t251-complexity.log`). Backend checks pass **13/13**, including pixel coverage/scissors after changing point dimensions at 1/1.25/1.5/2× (`/tmp/t251-backend-tests2.log`).
 - **Visual/timing evidence:** isolated Xvfb GPU Compose captures at 1.25/1.5/2× and after resizing were inspected: `/tmp/t251-scaled-{1.25,1.5,2}{,-resized}.png`. X11 reports equal point/pixel sizes, so these runs relink the existing application objects against the same build's shared SDL and use `/tmp/t251-density.c` to simulate window-point dimensions and matching pointer coordinates; `/tmp/t251-large-steps.sh` resizes 1600×1200 → 1800×1300. This exercises native GPU geometry/scissors, not a physical fractional-DPI compositor. Ordinary production static-SDL 1× captures are `/tmp/t251-perf-{before,after}.png`. Separate otherwise idle runs of `scripts/smoke-compose-virtual-x.sh` with `WORMEDIT_FRAME_TIMING_REPORT` record last-240-frame present mean/p99 **4.349/6.273 → 4.302/5.614 ms** (`/tmp/t251-perf-{before,after}.txt`); no general frame-time improvement is claimed. Font-atlas resolution is unchanged.
 - **Out of scope:** font atlas resolution changes.
 
@@ -283,7 +283,7 @@ Decision (user, 2026-09-30): permit at most one pixel of static-layer raster var
 
 - **Status:** done
 - **Outcome:** the whole-source minimap waveform is drawn from a retained texture instead of rebuilding hundreds of stroke vertices each frame; playhead, viewport thumb and offset markers remain exact dynamic overlays.
-- **Read first:** `src/ui/nuklear/compose/compose_panel.cpp`, `src/sys/waveform_view_projection.cpp`, `src/ui/nuklear/sdl_backend.h`, `src/ui/frontend.h`.
+- **Read first:** `src/ui/nuklear/compose/compose_panel.cpp`, `src/sys/waveform_view_projection.cpp`, `src/ui/nuklear/app/sdl_backend.h`, `src/ui/frontend.h`.
 - **Files owned:** `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h`, `src/ui/frontend.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/compose/views/compose_view.h`, `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Attribute minimap-only vertices, conversion time and uploads with an isolated baseline. 2. Publish immutable overview generation and cache the entire waveform texture by source/detail/style/size/renderer generation, independently of the queued main-field geometry. 3. Verify direct-versus-texture pixels, resize/reset/source replacement and unchanged exact seek/drag markers, then report measured workload differences.
 - **Geometry-only baseline (2026-10-01):** An isolated pinned-Nuklear conversion with the production vertex layout/AA configuration, 512 representative peak strokes and identical dynamic overlays measured 3,116 vertices / 6,300 indices (139.502 µs average conversion over 240 warmed samples). Overlay-only measured 44 / 156; substituting one texture quad measured 48 / 162 (3.238 µs). Thus waveform geometry alone is 3,072 vertices versus 4; these are synthetic conversion measurements, not a whole-application frame-time gain or an implemented texture/upload cache. Actual source-generation, renderer lifecycle, pixels and application workload verification remain required. Reproducer and real output: `/tmp/wormedit-t305/overview-baseline.cpp` and `overview-baseline.log`.

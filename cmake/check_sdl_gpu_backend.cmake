@@ -14,7 +14,7 @@ if(NOT preview_source MATCHES "SDL_CreateTexture" OR
     message(FATAL_ERROR "player preview must retain SDL textures through pointer image handles")
 endif()
 
-file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/frontend.cpp" frontend_source)
+file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/app/frontend.cpp" frontend_source)
 if(NOT frontend_source MATCHES "set_window_render_coordinates\\("
    OR NOT frontend_source MATCHES "g_renderer, window_width, window_height")
     message(FATAL_ERROR
@@ -22,7 +22,7 @@ if(NOT frontend_source MATCHES "set_window_render_coordinates\\("
     )
 endif()
 
-file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/sdl_backend.cpp" backend_source)
+file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/app/sdl_backend.cpp" backend_source)
 if(NOT backend_source MATCHES "SDL_GetRenderOutputSize\\(renderer, &pixels_w, &pixels_h\\)"
    OR NOT backend_source MATCHES "SDL_SetRenderLogicalPresentation\\(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED\\)"
    OR NOT backend_source MATCHES "SDL_SetRenderScale\\(renderer, static_cast<float>\\(pixels_w\\) / width,"

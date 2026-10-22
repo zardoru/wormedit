@@ -80,8 +80,8 @@ Synced feedback, 2026-10-11. Root may record supporting ownership needed for the
 
 - **Status:** done
 - **Outcome:** File Save project after chart import opens the existing Save As picker instead of rejecting its own menu capture.
-- **Read first:** src/ui/nuklear/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp.
-- **Files owned:** src/ui/nuklear/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-completion.md; memory/chart-editor-status/resume.md.
+- **Read first:** src/ui/nuklear/app/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp.
+- **Files owned:** src/ui/nuklear/app/frontend.cpp; tests/ui/nuklear_event_harness_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-completion.md; memory/chart-editor-status/resume.md.
 - **Steps:** 1. Reproduce the menu command rejection. 2. Exclude its own menu release capture from queued Save's popup guard. 3. Retain other popup/modal and project identity guards. 4. Verify native import and Save As plus frontend regressions and full suites.
 - **Invariants:** Save uses the existing publication and picker paths and cannot target a different project.
 - **Reject/failure behavior:** Unrelated popups and modals continue to block Save; picker cancellation does not save.

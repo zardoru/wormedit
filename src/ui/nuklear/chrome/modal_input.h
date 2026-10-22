@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/app/sdl_backend.h"
 #include <SDL3/SDL_events.h>
 
 namespace wormedit::ui::chrome {

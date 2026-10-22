@@ -106,7 +106,7 @@ Charts  1                                                     [ + ]   ← headin
   **123 assertions / 10 cases**. Default clang-tidy passes on both affected production TUs
   (`/tmp/t417-tidy-{setup,frontend}.log`). Isolated Xvfb captures inspected:
   `/tmp/t417-keyboard-{up,undo}.png`, `/tmp/t417-drag-{preview,committed,undo}.png`.
-- **Supporting ownership (2026-10-21):** `src/ui/nuklear/frontend.cpp` and
+- **Supporting ownership (2026-10-21):** `src/ui/nuklear/app/frontend.cpp` and
   `src/ui/nuklear/project/setup_panel.h` consume admitted shortcuts through the existing focus/modal
   gates, before command dispatch. New `tests/ui/project_chart_actions_event_harness_tests.cpp`
   and `tests/CMakeLists.txt` keep new feature regressions out of the general harness file;
@@ -119,7 +119,7 @@ Charts  1                                                     [ + ]   ← headin
   `src/sys/project/project_view.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, this card and
-  `memory/chart-editor-status/resume.md`, `src/ui/nuklear/frontend.cpp`,
+  `memory/chart-editor-status/resume.md`, `src/ui/nuklear/app/frontend.cpp`,
   `src/ui/nuklear/project/setup_panel.h`, `tests/ui/project_chart_actions_event_harness_tests.cpp`,
   `tests/CMakeLists.txt`, `tests/ui/popup_menu_event_harness_tests.cpp`.
 - **Steps:**

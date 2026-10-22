@@ -136,7 +136,7 @@ Public domain under [The Unlicense](LICENSE). Bundled and fetched dependencies k
 licenses, among them SDL3, Nuklear, miniaudio, stb, zlib, Catch2, nlohmann/json, Lua and, when
 enabled, FFmpeg (LGPL).
 
-- The Nuklear SDL3 backend in `src/ui/nuklear/sdl_backend.cpp` is adapted from Nuklear's
+- The Nuklear SDL3 backend in `src/ui/nuklear/app/sdl_backend.cpp` is adapted from Nuklear's
   `demo/sdl3_renderer` and keeps its MIT notice.
 - [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project, included as
   the `third_party/libotoworm` submodule under its own license.

@@ -513,7 +513,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_nuklear_sdl_backend_tests
         ui/nuklear_sdl_backend_tests.cpp
-        ../src/ui/nuklear/sdl_backend.cpp
+        ../src/ui/nuklear/app/sdl_backend.cpp
         ../src/ui/field/field_renderer.cpp
         ../src/ui/field/field_tile_cache.cpp
         ../src/common/static_interval_index.cpp
@@ -538,7 +538,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/field/field_tile_cache.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
-        ../src/ui/nuklear/sdl_backend.cpp
+        ../src/ui/nuklear/app/sdl_backend.cpp
         ../src/sys/app/frame_timing.cpp)
     target_include_directories(wormedit_field_renderer_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")

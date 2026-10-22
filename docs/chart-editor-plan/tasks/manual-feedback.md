@@ -43,7 +43,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Scope extension:** Coordinator approves `src/core/lane_keys.cpp`, `src/sys/lane_keys_runtime.*`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
   `src/sys/app/application.cpp`, `src/sys/application_commands.*`, `src/sys/commands/application_command_dispatch.cpp`,
-  `src/sys/compose/views/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
+  `src/sys/compose/views/compose_view.h`, `src/ui/nuklear/app/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md` for persistence, dialog lifecycle, command routing,
   input isolation, cached binding projection, build registration and completion evidence.
   `include/wormedit/core/lane_keys.h` owns the resolved-profile cache. `include/wormedit/core/document.h`,
@@ -72,7 +72,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `src/tools/wormedit_manual_reference.cpp`,
   `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/app/application.cpp`,
   `src/sys/commands/application_commands.h`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_command_dispatch.cpp`,
-  `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/preferences/options_window.cpp`, `src/ui/nuklear/preferences/options_window.h`,
+  `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/preferences/options_window.cpp`, `src/ui/nuklear/preferences/options_window.h`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/ui/lane_keys_event_harness_tests.cpp`, `docs/manual/generated/shortcuts.adoc`,
   `docs/manual/generated/layouts.adoc`,
@@ -171,8 +171,8 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 - **Status:** done (2026-10-18; owner: "Yes, do add the shortcuts")
 - **Outcome:** Every row of the command palette shows the command's current keys right-aligned in platform form (`Ctrl+Shift+Z`, `⌘` on macOS), nothing for unbound commands, following rebinds.
-- **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome/chrome.h` (`menu_item`).
-- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/app/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
+- **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/app/command_menu.cpp`, `src/ui/nuklear/chrome/chrome.h` (`menu_item`).
+- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/app/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/app/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
 - **Steps:**
   1. Cache the chord text per command, reformatted only when a binding or the platform modifier changes, because the palette view is rebuilt every frame.
   2. Draw it with the same right-aligned helper the menu bar uses.

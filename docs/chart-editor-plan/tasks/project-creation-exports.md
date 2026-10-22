@@ -93,7 +93,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   prepared Ask-confirmation request; `src/sys/app/application.cpp` projects that lifecycle state and
   supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_state.h`,
   `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/compose/compose_input_queries.h`, and
-  `src/ui/nuklear/frontend.cpp` carry the existing global File → Export chooser/confirmation
+  `src/ui/nuklear/app/frontend.cpp` carry the existing global File → Export chooser/confirmation
   surface. These extensions are required to keep conversion and filesystem preflight off the UI
   thread while using the same workflow from every project tab. `src/formats/native_project_storage.cpp`
   and `tests/formats/native_project_storage_tests.cpp` advance the recovery envelope's supported
@@ -207,7 +207,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/ui/nuklear/project/setup_panel.cpp`; `src/sys/project/project_save_paths.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/chart_editor.cpp`,
   `src/formats/conversion_publication.cpp`, `src/ui/frontend/project.h`,
-  `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`,
+  `src/ui/frontend/actions.h`, `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`,
   `src/sys/app/application.cpp`, `src/sys/project/output_group_export.h`,
   `src/sys/project/output_group_export.cpp`, `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
@@ -321,11 +321,11 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   [new-project-layout.svg](../mockups/new-project-layout.svg): a short game list, layout cards grouped
   by lane shape, variant toggles and a lane preview replace the roughly 60-entry combo, while the
   chosen stable catalog ID still drives project construction.
-- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_new_project_wizard`);
+- **Read first:** `src/ui/nuklear/app/frontend.cpp` (`render_new_project_wizard`);
   `src/ui/frontend/workspace.h`; `src/sys/project/workspace_view.cpp` (`new_project_layout_view`);
   `include/wormedit/core/lane_profiles.h`; `src/core/lane_profiles.cpp` (`new_project_layouts`).
 - **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`,
-  `src/ui/frontend/workspace.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/resources/catalog_view.h`,
+  `src/ui/frontend/workspace.h`, `src/ui/nuklear/app/frontend.cpp`, `src/sys/resources/catalog_view.h`,
   `src/sys/project/workspace_view.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/sys/application_defaults_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.

@@ -90,8 +90,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; real audio at 1280/800, click/drag navigation, offset preview/cancel/commit/undo, and unchanged-document dispatcher checks)
 - **Outcome:** Compose exposes its existing waveform and viewport window as an interactive horizontal minimap in the status bar, preserving navigation and beat-zero dragging.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_state.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_panel.h`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_panel_internal.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/compose/compose_state.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Read first:** `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_state.h`.
+- **Files owned:** `src/ui/nuklear/app/frontend.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `src/ui/nuklear/compose/compose_panel.h`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_panel_internal.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/compose/compose_state.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
 - **Steps:**
   1. Audit the current overview data, layout, and capture lifecycle before changing its host.
   2. Move the overview to the status bar with horizontal drawing and input coordinates; use one input owner and preserve existing offset actions.

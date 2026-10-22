@@ -1,7 +1,7 @@
 #include "sys/commands/application_command_dispatch.h"
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/interaction_dispatch.h>
-#include "sys/compose_sound_selection.h"
+#include "sys/compose/compose_sound_selection.h"
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>

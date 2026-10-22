@@ -1,4 +1,4 @@
-#include "sys/compose_bgm_bar.h"
+#include "sys/compose/compose_bgm_bar.h"
 
 #include <wormedit/formats/bmson.h>
 

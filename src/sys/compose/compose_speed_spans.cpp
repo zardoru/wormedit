@@ -1,5 +1,5 @@
 #include <wormedit/core/rational.h>
-#include "sys/compose_speed_spans.h"
+#include "sys/compose/compose_speed_spans.h"
 
 namespace wormedit::sys {
 

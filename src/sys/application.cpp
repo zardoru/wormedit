@@ -8,7 +8,7 @@
 #include "sys/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_note_to_bgm.h"
-#include "sys/compose_sound_selection.h"
+#include "sys/compose/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/macos_menu.h"
 #endif
@@ -30,7 +30,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
 #include "sys/project/compare_view.h"
-#include "sys/compose_timing_target.h"
+#include "sys/compose/compose_timing_target.h"
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
 #include "sys/recipe_form.h"
@@ -134,7 +134,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/audio/chart_preview_state.h"
-#include "sys/compose_playhead_cursor.h"
+#include "sys/compose/compose_playhead_cursor.h"
 #include "sys/audio/audio_transport_frame.h"
 #include "sys/audio/preview_cursor_frame.h"
 #include "sys/audio/waveform_analysis_runtime.h"

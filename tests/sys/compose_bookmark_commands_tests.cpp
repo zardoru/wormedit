@@ -3,7 +3,7 @@
 #include "sys/compose_navigation.h"
 #include "sys/commands/application_commands.h"
 #include "sys/compose_playhead_skip.h"
-#include "sys/compose_playhead_cursor.h"
+#include "sys/compose/compose_playhead_cursor.h"
 
 #include <wormedit/audio/decoder.h>
 

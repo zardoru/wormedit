@@ -11,7 +11,7 @@
 #include "sys/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_minimap_navigation.h"
-#include "sys/compose_semantic_layer_commands.h"
+#include "sys/compose/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/commands/native_chart_edit_action.h"

@@ -46,18 +46,18 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_navigation.cpp
     ../src/sys/bookmarks/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
-    ../src/sys/compose_bgm_bar.cpp
+    ../src/sys/compose/compose_bgm_bar.cpp
     ../src/sys/resources/sound_list_view.cpp
     ../src/sys/resources/sound_picker_view.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_note_to_bgm.cpp
     ../src/sys/compose_selection_transform.cpp
-    ../src/sys/compose_label_search.cpp
-    ../src/sys/compose_dead_spans.cpp
-    ../src/sys/compose_kiai_spans.cpp
-    ../src/sys/compose_sv_graph.cpp
+    ../src/sys/compose/compose_label_search.cpp
+    ../src/sys/compose/compose_dead_spans.cpp
+    ../src/sys/compose/compose_kiai_spans.cpp
+    ../src/sys/compose/compose_sv_graph.cpp
     ../src/sys/compose_recipe_areas.cpp
-    ../src/sys/compose_speed_spans.cpp
+    ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/recipe_form.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
@@ -688,7 +688,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_bga_actions.cpp
         ../src/sys/compose_measure_commands.cpp
         ../src/sys/compose_selection_transform.cpp
-        ../src/sys/compose_label_search.cpp
+        ../src/sys/compose/compose_label_search.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/project/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
@@ -699,24 +699,24 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
-        ../src/sys/compose_bgm_bar.cpp
+        ../src/sys/compose/compose_bgm_bar.cpp
         ../src/sys/bookmarks/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
-        ../src/sys/compose_dead_spans.cpp
+        ../src/sys/compose/compose_dead_spans.cpp
         ../src/sys/compose_input.cpp
         ../src/sys/compose_waveform_fit_input.cpp
         ../src/sys/compose_timing_input.cpp
         ../src/sys/compose_resource_input.cpp
         ../src/sys/compose_navigation_input.cpp
-        ../src/sys/compose_kiai_spans.cpp
+        ../src/sys/compose/compose_kiai_spans.cpp
         ../src/sys/compose_minimap_navigation.cpp
         ../src/sys/compose_note_to_bgm.cpp
         ../src/sys/compose_playhead_skip.cpp
         ../src/sys/compose_quantize_preview.cpp
         ../src/sys/compose_recipe_areas.cpp
         ../src/sys/compose_resource_presenter.cpp
-        ../src/sys/compose_speed_spans.cpp
-        ../src/sys/compose_sv_graph.cpp
+        ../src/sys/compose/compose_speed_spans.cpp
+        ../src/sys/compose/compose_sv_graph.cpp
         ../src/sys/compose_view.cpp
         ../src/sys/compose_scene_view.cpp
         ../src/sys/compose_marker_view.cpp
@@ -817,11 +817,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_marker_view.cpp
         ../src/sys/compose_selection_view.cpp
         ../src/sys/compose_draw_source_view.cpp
-        ../src/sys/compose_dead_spans.cpp
-        ../src/sys/compose_kiai_spans.cpp
-        ../src/sys/compose_sv_graph.cpp
+        ../src/sys/compose/compose_dead_spans.cpp
+        ../src/sys/compose/compose_kiai_spans.cpp
+        ../src/sys/compose/compose_sv_graph.cpp
         ../src/sys/compose_recipe_areas.cpp
-        ../src/sys/compose_speed_spans.cpp
+        ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
@@ -858,7 +858,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_bga_actions.cpp
             ../src/sys/compose_measure_commands.cpp
             ../src/sys/compose_selection_transform.cpp
-            ../src/sys/compose_label_search.cpp
+            ../src/sys/compose/compose_label_search.cpp
             ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resources/resource_job_state.cpp
             ../src/sys/audio/preview_audio_export.cpp
@@ -899,7 +899,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/bookmarks/bookmark_commands.cpp
             ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
-            ../src/sys/compose_bgm_bar.cpp)
+            ../src/sys/compose/compose_bgm_bar.cpp)
         target_sources(wormedit_frame_timing_tests PRIVATE
             ../src/sys/audio/chart_preview_state.cpp
             ../src/sys/audio/sdl_audition_output.cpp

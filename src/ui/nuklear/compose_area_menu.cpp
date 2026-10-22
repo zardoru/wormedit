@@ -1,5 +1,5 @@
 #include "ui/nuklear/compose_menu_command.h"
-#include "sys/compose_scroll_geometry.h"
+#include "sys/compose/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_note_menu.h"

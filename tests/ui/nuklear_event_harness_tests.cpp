@@ -8,7 +8,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_navigation.h"
 #include "sys/compose_sound_actions.h"
-#include "sys/compose_sound_selection.h"
+#include "sys/compose/compose_sound_selection.h"
 #include "sys/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"

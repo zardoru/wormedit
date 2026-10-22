@@ -1,4 +1,4 @@
-#include "sys/compose_speed_spans.h"
+#include "sys/compose/compose_speed_spans.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

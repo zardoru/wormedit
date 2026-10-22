@@ -61,7 +61,7 @@ window buttons.
 - **Status:** done (2026-10-06; the dock hides below 900 px, and the Compose projection narrows its viewport by the dock through the `compose_left_dock_pixels` hook in `application_command_state_t`, wired in `src/sys/main.cpp` and `src/sys/application_frame_projection.cpp`. Harness tests cover the shift and the narrow-window hide. No smoke capture with a branching BMS chart yet: the `compose` smoke fixture has no branches)
 - **Outcome:** the branch panel is a fixed left dock, not a floating one, and the field and BGM area start to its right. The BGM area scrolls horizontally inside its narrower space, and nothing overlaps at 1280 px wide.
 - **Read first:** `src/ui/nuklear/compose_panel.cpp` (`ComposeDockLayout`, `render_compose_side_docks`, `compose_bgm_scroll_valid`), `src/ui/nuklear/compose_toolbar.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_inspector.cpp` (remove the branch call), `src/ui/nuklear/compose_state.h`, `src/sys/compose_bgm_bar.cpp` (if scroll bounds come from there), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_inspector.cpp` (remove the branch call), `src/ui/nuklear/compose_state.h`, `src/sys/compose/compose_bgm_bar.cpp` (if scroll bounds come from there), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
 - **Steps:**
   1. Add a left dock width to the layout and shift the field origin by it.
   2. Clamp BGM horizontal scroll to the new visible width, and test that the last BGM column is reachable.

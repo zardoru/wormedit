@@ -1,9 +1,9 @@
 #pragma once
-#include "sys/compose_source_key.h"
+#include "sys/compose/compose_source_key.h"
 #include <wormedit/core/semantic_layer_editor.h>
 #include "sys/bookmarks/bookmark_chooser_view.h"
-#include "sys/compose_dead_spans.h"
-#include "sys/compose_sv_graph.h"
+#include "sys/compose/compose_dead_spans.h"
+#include "sys/compose/compose_sv_graph.h"
 #include "sys/compose_recipe_areas.h"
 #include "sys/metadata/metadata_projection_cache.h"
 #include "sys/compose_resource_presenter.h"

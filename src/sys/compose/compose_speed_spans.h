@@ -3,7 +3,7 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/timing.h>
 
-#include "sys/compose_sv_graph.h"
+#include "sys/compose/compose_sv_graph.h"
 
 #include <algorithm>
 #include <cstddef>

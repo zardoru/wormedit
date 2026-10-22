@@ -1,5 +1,5 @@
 #include "core/timing_arithmetic.h"
-#include "sys/compose_dead_spans.h"
+#include "sys/compose/compose_dead_spans.h"
 
 #include <algorithm>
 #include <map>

@@ -56,4 +56,4 @@ template <typename RowToY>
 
 } // namespace wormedit::sys
 
-#include "sys/compose_sv_graph.inl"
+#include "sys/compose/compose_sv_graph.inl"

@@ -1,4 +1,4 @@
-#include "sys/compose_sv_graph.h"
+#include "sys/compose/compose_sv_graph.h"
 
 #include <catch2/catch_test_macros.hpp>
 

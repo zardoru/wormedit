@@ -10,7 +10,7 @@
 #include "sys/compose_quantize.h"
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_input.h"
-#include "sys/compose_scroll_geometry.h"
+#include "sys/compose/compose_scroll_geometry.h"
 #include "sys/recipe_form.h"
 #include <cstdio>
 #include <cstring>

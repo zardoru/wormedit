@@ -489,19 +489,19 @@ if(WORMEDIT_BUILD_APP)
         src/sys/bookmarks/bookmark_navigation.cpp
         src/sys/bookmarks/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
-        src/sys/compose_bgm_bar.cpp
+        src/sys/compose/compose_bgm_bar.cpp
         src/sys/resources/sound_list_view.cpp
         src/sys/resources/sound_picker_view.cpp
         src/sys/resources/sound_usage_view.cpp
         src/sys/resources/sound_usage_actions.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
-        src/sys/compose_label_search.cpp
-        src/sys/compose_dead_spans.cpp
-        src/sys/compose_kiai_spans.cpp
-        src/sys/compose_sv_graph.cpp
+        src/sys/compose/compose_label_search.cpp
+        src/sys/compose/compose_dead_spans.cpp
+        src/sys/compose/compose_kiai_spans.cpp
+        src/sys/compose/compose_sv_graph.cpp
         src/sys/compose_recipe_areas.cpp
-        src/sys/compose_speed_spans.cpp
+        src/sys/compose/compose_speed_spans.cpp
         src/sys/recipe_form.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/compose_quantize.cpp

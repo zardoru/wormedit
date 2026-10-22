@@ -8,9 +8,9 @@
 #include "sys/compose_navigation.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_playhead_skip.h"
-#include "sys/compose_scroll_geometry.h"
-#include "sys/compose_semantic_layer_commands.h"
-#include "sys/compose_sound_selection.h"
+#include "sys/compose/compose_scroll_geometry.h"
+#include "sys/compose/compose_semantic_layer_commands.h"
+#include "sys/compose/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
 
 #include <wormedit/audio/decoder.h>

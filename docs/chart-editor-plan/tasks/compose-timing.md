@@ -32,7 +32,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (2026-10-09; waveform gap verified by pixel sampling of `t314-gap-after.png`: the band shows background, not waveform)
 - **Remaining:** none.
 - **Outcome:** In Compose a Stop or Delay appears as a hatched block (fixed pixel height, label with duration) in the field and waveform; notes cannot be placed, pasted or dragged into it, and the waveform shows the span as eaten time.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
 - **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
 - **Steps:** 0. Add the `frontend.h` dead-span view struct and pixel mapping from the T-313 projection. 1. Draw the block and a waveform gap using the T-313 spans. 2. Reject note insert, paint, paste and move targets inside a span. Edge validity follows the format's discontinuity-order profile in `docs/timing-preview-scheduling.md` (canonical: BPM, delay, activation, then stop; BMSON 1.0: note/BGA, BPM, then stop): a note at a Delay row occurs after the delay, a note at a Stop row before the stop, and a warp's half-open `[begin, end)` rows are blocked. 3. Test placement rejection and unchanged document. 4. Isolated Xvfb check with `scripts/smoke-compose-virtual-x.sh`.
 - **Invariants:** Existing notes keep their rows; validity at a Stop/Delay edge comes only from the discontinuity-order profile, never a hard-coded side. Blocking is a placement rule, not a data change.
@@ -49,7 +49,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (already implemented: src/audio/aligned_waveform.cpp:56, row mapping by exact time; regression test added)
 - **Outcome:** A Warp's span shows as a blank gap in the waveform and the audio is omitted there; playback and seeking never map real audio time into the warped rows.
-- **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/compose_dead_spans.h` (T-313).
+- **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313).
 - **Files owned:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. Reproduce: warp rows currently map to audio. 2. A warp consumes zero time: draw its N-pulse (rational) span as a blank waveform gap because no audio time maps to those rows; the audio on both sides stays contiguous. 3. Playback and the playhead jump from the last pre-warp beat to the post-warp beat with no elapsed time; seeking into a warp row resolves to the post-warp time. 4. Test exact PCM contiguity around a span, seek into a span, and overlapping warps.
 - **Invariants:** Mapping stays rational-exact; BPM fitting and the audio offset are unaffected by the omission.
@@ -77,7 +77,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (Esc cancel of an in-flight drag not implemented; releasing outside the lane still commits)
 - **Outcome:** Dragging the head or tail of a Kiai area, or creating one with the Kiai gesture, issues one undoable command that rewrites the on/off events and merges overlapped neighbors.
-- **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_kiai_spans.h` (T-316), `src/sys/compose_input.cpp`.
+- **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose/compose_kiai_spans.h` (T-316), `src/sys/compose_input.cpp`.
 - **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`, user-approved verification scope extension (2026-10-02): `tests/sys/frame_timing_tests.cpp` (real press-anchor/CREATE gesture payloads and explicit 1/8 snap).
 - **Steps:** 0. Add the `frontend.h` view struct and draw the T-316 rectangle with head and tail handles on the canvas. 1. Add a revision-checked core command `set_kiai_span` (insert, resize, delete, merge). 2. Wire it through the standard action pattern; the preview shows the dragged area and overlaps merge only on release. 3. Test merge, split-by-shrink, undo, and retained effect bits.
 - **Invariants:** `retained_effect_bits` and provenance of surviving events are preserved.
@@ -113,7 +113,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (recipe parameter editing moves to T-320; Lua evaluation is T-189)
 - **Outcome:** A recipe applied without materializing persists as a Compose area (range, parameters, sampling) that can be edited and materialized into SV events by an explicit command.
-- **Read first:** `include/wormedit/core/document.h`, `src/ui/nuklear/timing_panel.cpp`, `src/sys/timing/timing_edit_runtime.h`, `src/sys/compose_sv_graph.h` (T-318).
+- **Read first:** `include/wormedit/core/document.h`, `src/ui/nuklear/timing_panel.cpp`, `src/sys/timing/timing_edit_runtime.h`, `src/sys/compose/compose_sv_graph.h` (T-318).
 - **Files owned:** `src/sys/compose_recipe_areas.h/.cpp` (new), `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_recipe_areas_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Reuse `sv_recipe_t` as a persistent document entity (user decision), including native schema round trip. 2. Draw each area on the lane with its resolved value line graph (T-318), normalized to the visible range. 3. Add Materialize and Delete actions, one undo step each. 4. Test save/load round trip and materialization equality with the immediate path.
 - **Invariants:** Materializing later yields exactly the same events as materializing immediately.

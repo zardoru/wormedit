@@ -8,8 +8,8 @@
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
-#include "sys/compose_scroll_geometry.h"
-#include "sys/compose_playhead_cursor.h"
+#include "sys/compose/compose_scroll_geometry.h"
+#include "sys/compose/compose_playhead_cursor.h"
 #include "sys/audio/inline_preview_cursor.h"
 #include "sys/audio/preview_cursor_frame.h"
 

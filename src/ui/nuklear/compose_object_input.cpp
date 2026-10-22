@@ -1,7 +1,7 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/tooltip.h"
-#include "sys/compose_scroll_geometry.h"
+#include "sys/compose/compose_scroll_geometry.h"
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_canvas.h"

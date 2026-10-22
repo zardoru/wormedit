@@ -1,5 +1,5 @@
-#include "sys/compose_scroll_geometry.h"
-#include "sys/compose_timing_target.h"
+#include "sys/compose/compose_scroll_geometry.h"
+#include "sys/compose/compose_timing_target.h"
 
 #include <catch2/catch_test_macros.hpp>
 

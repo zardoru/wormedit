@@ -9,7 +9,7 @@
 #endif
 
 #include "sys/application_defaults.h"
-#include "sys/compose_timing_target.h"
+#include "sys/compose/compose_timing_target.h"
 #include "sys/timing/timing_view.h"
 #include "ui/frontend.h"
 #include <SDL3/SDL_clipboard.h>
@@ -27,7 +27,7 @@
 #endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include "sys/compose_playhead_cursor.h"
+#include "sys/compose/compose_playhead_cursor.h"
 #include "sys/audio/sdl_preview_output.h"
 
 #endif

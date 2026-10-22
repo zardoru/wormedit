@@ -15,7 +15,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_input_internal.h"
 #include "sys/compose_minimap_navigation.h"
-#include "sys/compose_playhead_cursor.h"
+#include "sys/compose/compose_playhead_cursor.h"
 #include "sys/compose_quantize.h"
 #include "sys/compose_view.h"
 #include "sys/compose_view_internal.h"

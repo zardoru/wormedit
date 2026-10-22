@@ -1,4 +1,4 @@
-#include "sys/compose_kiai_spans.h"
+#include "sys/compose/compose_kiai_spans.h"
 
 namespace wormedit::sys {
 

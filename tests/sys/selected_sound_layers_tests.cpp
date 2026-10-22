@@ -1,4 +1,4 @@
-#include "sys/compose_semantic_layer_commands.h"
+#include "sys/compose/compose_semantic_layer_commands.h"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace wormedit;

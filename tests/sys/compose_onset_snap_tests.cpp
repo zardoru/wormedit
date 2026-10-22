@@ -1,5 +1,5 @@
 #include <wormedit/audio/waveform.h>
-#include "sys/compose_onset_snap.h"
+#include "sys/compose/compose_onset_snap.h"
 
 #include <catch2/catch_test_macros.hpp>
 

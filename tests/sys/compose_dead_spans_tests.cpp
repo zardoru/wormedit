@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <limits>
-#include "sys/compose_dead_spans.h"
+#include "sys/compose/compose_dead_spans.h"
 
 #include <catch2/catch_test_macros.hpp>
 

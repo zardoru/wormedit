@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/compose_source_key.h"
+#include "sys/compose/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
 #include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/compose_audition_requests.h"
@@ -14,15 +14,15 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
-#include "sys/compose_bgm_bar.h"
-#include "sys/compose_dead_spans.h"
-#include "sys/compose_kiai_spans.h"
+#include "sys/compose/compose_bgm_bar.h"
+#include "sys/compose/compose_dead_spans.h"
+#include "sys/compose/compose_kiai_spans.h"
 #include "sys/compose_recipe_areas.h"
-#include "sys/compose_speed_spans.h"
+#include "sys/compose/compose_speed_spans.h"
 #include "sys/recipe_form.h"
-#include "sys/compose_sv_graph.h"
+#include "sys/compose/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
-#include "sys/compose_scroll_geometry.h"
+#include "sys/compose/compose_scroll_geometry.h"
 #include "sys/audio/stem_waveform_window.h"
 #include "ui/compose_mode.h"
 #include "ui/compose_timing_geometry.h"
@@ -44,7 +44,7 @@
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>
 #include <wormedit/audio/aligned_waveform.h>
-#include "sys/compose_onset_snap.h"
+#include "sys/compose/compose_onset_snap.h"
 #endif
 
 #include <array>

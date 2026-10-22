@@ -72,7 +72,7 @@ Bookmark editing already exists in the Markers panel
 
 - **Status:** deferred (was: ready; user request 2026-10-19, not immediate work)
 - **Outcome:** A reviewed design and bounded implementation cards cover creating a section from a selection, marking it as a song interval cut out on export, skipping it entirely in ordinary Compose waveform/timeline/playback/navigation, and exposing its distinct dead-span overlay only in Timing focus mode.
-- **Read first:** `docs/chart-editor-plan/editing/metadata-interop.md`; `src/sys/compose_bookmark_actions.cpp`; `src/ui/nuklear/compose_area_menu.cpp`; `src/sys/compose_dead_spans.cpp`; `src/sys/project/output_group_export.cpp`.
+- **Read first:** `docs/chart-editor-plan/editing/metadata-interop.md`; `src/sys/compose_bookmark_actions.cpp`; `src/ui/nuklear/compose_area_menu.cpp`; `src/sys/compose/compose_dead_spans.cpp`; `src/sys/project/output_group_export.cpp`.
 - **Files owned:** `docs/chart-editor-plan/editing/metadata-interop.md`, `docs/chart-editor-plan/tasks/markers.md`, `docs/chart-editor-plan/tasks.md`; future implementation-card files only after recording their paths here.
 - **Steps:**
   1. Start only when the user explicitly picks up T-729; preserve the current immediate-work queue.

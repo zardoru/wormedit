@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_scroll_geometry.h"
+#include "sys/compose/compose_scroll_geometry.h"
 #include "ui/frontend.h"
 
 namespace wormedit::sys {

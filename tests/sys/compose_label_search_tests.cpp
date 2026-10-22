@@ -1,4 +1,4 @@
-#include "sys/compose_label_search.h"
+#include "sys/compose/compose_label_search.h"
 
 #include <catch2/catch_test_macros.hpp>
 

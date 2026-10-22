@@ -44,13 +44,13 @@ auto inherited_value(const song_document_t& song, const chart_document_t& chart,
     const inherited_metadata_field_t_info& field) -> std::string {
     if (field.field == inherited_metadata_field_t::title) return song.metadata.title;
     if (field.field == inherited_metadata_field_t::artist) return song.metadata.artist;
-    if (auto value = retained_value(chart.metadata.format_groups, field)) return *value;
-    if (auto value = retained_value(song.metadata.format_groups, field)) return *value;
-    if (field.field == inherited_metadata_field_t::music) {
+    if (const auto role = field.audio_role()) {
         for (const auto& resource : song.resources)
-            if (resource.has_role(resource_role_t::music))
+            if (resource.has_role(*role))
                 if (const auto* asset = song.find_audio_asset(resource.asset)) return asset->source_path.generic_string();
     }
+    if (auto value = retained_value(chart.metadata.format_groups, field)) return *value;
+    if (auto value = retained_value(song.metadata.format_groups, field)) return *value;
     return {};
 }
 }

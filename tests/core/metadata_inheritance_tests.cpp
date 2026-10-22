@@ -121,7 +121,7 @@ TEST_CASE("Native schema eleven metadata migrates to inherited slots without rep
     const auto parsed = parse_native_project(root.dump());
     REQUIRE(parsed.ok());
     REQUIRE(parsed.value);
-    CHECK(parsed.value->schema_version == 12);
+    CHECK(parsed.value->schema_version == current_document_schema_version);
     CHECK(parsed.value->charts.front().metadata.overrides == metadata_overrides_t{});
     CHECK(parsed.value->metadata.title == original.metadata.title);
 }
@@ -249,4 +249,17 @@ TEST_CASE("Conditional BMS extra metadata overrides require explicit flattening"
     const auto flattened = write_bms(song, {.branch_policy = bms_branch_policy_t::flatten_active});
     require_export(flattened);
     CHECK(flattened.value->find("#GENRE Local") != std::string::npos);
+}
+TEST_CASE("Inherited audio paths follow current registered assets after saved path publication", "[core][metadata-inheritance]") {
+    auto song = inherited_song();
+    song.metadata.format_groups = {
+        {.family = format_family_t::stepmania, .ordered_fields = {{"MUSIC", "old.ogg"}}},
+        {.family = format_family_t::bms, .ordered_fields = {{"PREVIEW", "old-preview.ogg"}}}};
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "assets/music.ogg"},
+        {.id = asset_id_t{2}, .source_path = "assets/preview.ogg"}};
+    song.resources = {{.id = resource_id_t{1}, .name = "old.ogg", .asset = asset_id_t{1}, .roles = {resource_role_t::music}},
+        {.id = resource_id_t{2}, .name = "old-preview.ogg", .asset = asset_id_t{2}, .roles = {resource_role_t::preview}}};
+    const auto resolved = resolved_metadata_t::from(song, song.charts.front());
+    CHECK(resolved.value(inherited_metadata_field_t::music) == "assets/music.ogg");
+    CHECK(resolved.value(inherited_metadata_field_t::preview) == "assets/preview.ogg");
 }

@@ -279,3 +279,75 @@ TEST_CASE("File dialog failure retains completion metadata and wins over cancell
     CHECK(result->error().choice.path == "/failed.wav");
     CHECK(result->error().choice.canceled);
 }
+
+namespace {
+void check_clean_inheritance_source(const metadata_inheritance_draft_t& draft, const wormedit::ui::metadata_view_t& view) {
+    const auto overrides = draft.overrides();
+    CHECK_FALSE(overrides.value(wormedit::inherited_metadata_field_t::title));
+    CHECK(overrides.value(wormedit::inherited_metadata_field_t::artist) == std::optional<std::string>{""});
+    CHECK_FALSE(draft.is_changed(view));
+}
+}
+TEST_CASE("Metadata inheritance draft distinguishes local empty values and returning to inheritance", "[frontend-state][metadata-inheritance]") {
+    using field_t = wormedit::inherited_metadata_field_t;
+    wormedit::ui::metadata_view_t view{};
+    view.document_revision = 7;
+    view.chart_id = wormedit::chart_id_t{9};
+    view.inheritance = {{.field = field_t::title, .label = "Title", .inherited = "Shared title"},
+        {.field = field_t::artist, .label = "Artist", .inherited = "Shared artist", .override_value = ""}};
+    metadata_inheritance_draft_t draft;
+    draft.synchronize(view);
+    check_clean_inheritance_source(draft, view);
+    draft.row_for(field_t::title).inherit = false;
+    CHECK(draft.overrides().value(field_t::title) == std::optional<std::string>{"Shared title"});
+    CHECK(draft.is_changed(view));
+    draft.row_for(field_t::artist).inherit = true;
+    CHECK_FALSE(draft.overrides().value(field_t::artist));
+    draft.reset(view);
+    check_clean_inheritance_source(draft, view);
+}
+TEST_CASE("Metadata inheritance drafts survive frames and reset at chart revision boundaries", "[frontend-state][metadata-inheritance]") {
+    using field_t = wormedit::inherited_metadata_field_t;
+    wormedit::ui::metadata_view_t view{};
+    view.document_revision = 7;
+    view.chart_id = wormedit::chart_id_t{9};
+    view.inheritance = {{.field = field_t::title, .label = "Title", .inherited = "Shared title"}};
+    metadata_inheritance_draft_t draft;
+    draft.synchronize(view);
+    draft.row_for(field_t::title).inherit = false;
+    draft.row_for(field_t::title).text[0] = 'L';
+    draft.row_for(field_t::title).text[1] = '\0';
+    draft.synchronize(view);
+    CHECK(draft.overrides().value(field_t::title) == std::optional<std::string>{"L"});
+    ++view.document_revision;
+    draft.synchronize(view);
+    CHECK(draft.row_for(field_t::title).inherit);
+    CHECK(std::string_view{draft.row_for(field_t::title).text.data()} == "Shared title");
+    view.chart_id = wormedit::chart_id_t{10};
+    view.inheritance.front().inherited.assign(wormedit::default_metadata_edit_limits.maximum_chart_text_bytes + 1, 'x');
+    draft.synchronize(view);
+    CHECK_FALSE(draft.row_for(field_t::title).can_override);
+    CHECK_FALSE(draft.overrides().value(field_t::title));
+}
+
+TEST_CASE("Saved audio path refresh preserves unrelated pending metadata edits", "[frontend-state][metadata-inheritance]") {
+    using field_t = wormedit::inherited_metadata_field_t;
+    wormedit::ui::metadata_view_t view{};
+    view.document_revision = 7;
+    view.chart_id = wormedit::chart_id_t{9};
+    view.inheritance = {{.field = field_t::title, .label = "Title", .inherited = "Shared title"},
+        {.field = field_t::music, .label = "Music file", .inherited = "old.ogg", .override_value = "old.ogg"}};
+    metadata_inheritance_draft_t draft;
+    draft.synchronize(view);
+    draft.row_for(field_t::title).inherit = false;
+    draft.row_for(field_t::title).text[0] = 'L';
+    draft.row_for(field_t::title).text[1] = '\0';
+    view.inheritance.back().inherited = "assets/music.ogg";
+    view.inheritance.back().override_value = "assets/music.ogg";
+    draft.synchronize(view);
+    CHECK(draft.overrides().value(field_t::title) == std::optional<std::string>{"L"});
+    CHECK(draft.overrides().value(field_t::music) == std::optional<std::string>{"assets/music.ogg"});
+    CHECK(draft.is_changed(view));
+    draft.row_for(field_t::title).inherit = true;
+    CHECK_FALSE(draft.is_changed(view));
+}

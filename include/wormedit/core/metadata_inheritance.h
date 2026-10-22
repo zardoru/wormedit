@@ -10,9 +10,12 @@ struct inherited_metadata_field_t_info {
     std::string_view stepmania_key;
     std::string_view osu_key;
     [[nodiscard]] auto key(format_family_t) const -> std::string_view;
-    [[nodiscard]] auto is_audio_path() const -> bool {
-        return field == inherited_metadata_field_t::music || field == inherited_metadata_field_t::preview;
+    [[nodiscard]] auto audio_role() const -> std::optional<resource_role_t> {
+        if (field == inherited_metadata_field_t::music) return resource_role_t::music;
+        if (field == inherited_metadata_field_t::preview) return resource_role_t::preview;
+        return {};
     }
+    [[nodiscard]] auto is_audio_path() const -> bool { return audio_role().has_value(); }
 };
 inline constexpr std::array<inherited_metadata_field_t_info, inherited_metadata_field_count> inherited_metadata_fields{{
     {inherited_metadata_field_t::title, "Title", "TITLE", "title", "TITLE", "Metadata.Title"},

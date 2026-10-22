@@ -9,7 +9,7 @@ Each card records supporting ownership before extending it.
 
 ## T-751 Store timing-category links and exact source mappings
 
-- **Status:** blocked-on T-125
+- **Status:** ready (T-124/T-125 complete; runtime implementation deferred by the owner on 2026-10-22)
 - **Outcome:** native documents store per-category designated-chart links, validate acyclic same-project sources, and resolve exact musical positions across unrelated measure IDs and resolutions.
 - **Read first:** `docs/chart-editor-plan/document-model.md`; `include/wormedit/core/document.h`; `include/wormedit/core/timing.h`; `include/wormedit/core/timing_lane_catalog.h`; `src/formats/native_project_migrations.cpp`.
 - **Files owned:** new `include/wormedit/core/timing_links.h`, new `src/core/timing_links.cpp`, new `tests/core/timing_links_tests.cpp`, `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.

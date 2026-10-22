@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/channel_map_editor.h>
+#include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/lane_profiles.h>
 
@@ -39,6 +40,8 @@ struct metadata_channel_summary_key_t {
     void assign(const channel_map_preview_view_t& preview);
 };
 struct metadata_projection_cache_t {
+    void invalidate_asset_paths() { inheritance.invalidate(); }
+    keyed_cache_t<std::tuple<document_stamp_t, chart_id_t, std::uint64_t>, resolved_metadata_t> inheritance;
     keyed_cache_t<std::filesystem::path, std::string> project_directory;
     keyed_cache_t<std::filesystem::path, std::string> selected_music_source;
     keyed_cache_t<std::filesystem::path, std::string> copy_preview_source;

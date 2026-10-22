@@ -567,3 +567,32 @@ TEST_CASE("Metadata audio offset keeps lock priority over a stale stamp",
           "[unit][sys][metadata-notification][metadata-timing-stamp]") {
     check_metadata_timing_boundary(WORM_UI_METADATA_EDIT_AUDIO_OFFSET, true);
 }
+
+namespace {
+void check_fresh_inheritance_dispatch(metadata_notification_fixture_t& fixture, const wormedit::ui::workspace_action_t& action) {
+    REQUIRE(fixture.dispatch(action));
+    CHECK(fixture.history.undo.size() == 1);
+    CHECK(fixture.history.document.charts.front().metadata.overrides == action.metadata_overrides);
+    CHECK(undo_document_command(fixture.history));
+    CHECK_FALSE(fixture.history.document.charts.front().metadata.overrides.has_values());
+}
+void check_stale_inheritance_dispatch(metadata_notification_fixture_t& fixture, wormedit::ui::workspace_action_t action) {
+    --action.metadata_document_revision;
+    const auto message = fixture.dispatch(action);
+    REQUIRE(message);
+    CHECK(*message == stale_action_message("Metadata edit"));
+    CHECK(fixture.history.undo.empty());
+    CHECK_FALSE(fixture.history.document.charts.front().metadata.overrides.has_values());
+}
+}
+TEST_CASE("Metadata inheritance dispatch is stamped atomic and undoable", "[sys][metadata-inheritance]") {
+    metadata_notification_fixture_t fixture;
+    wormedit::ui::workspace_action_t action{};
+    action.metadata_edit = WORM_UI_METADATA_EDIT_INHERITANCE;
+    action.metadata_document_revision = fixture.history.document.revision;
+    action.metadata_chart_id = fixture.history.document.charts.front().id;
+    action.metadata_overrides.value(inherited_metadata_field_t::title) = "Local title";
+    action.metadata_overrides.value(inherited_metadata_field_t::artist) = "";
+    SECTION("fresh") { check_fresh_inheritance_dispatch(fixture, action); }
+    SECTION("stale") { check_stale_inheritance_dispatch(fixture, action); }
+}

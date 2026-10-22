@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/metadata_inheritance_types.h>
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
 #include "workspace_types.h"
@@ -436,6 +437,7 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
     WORM_UI_METADATA_EDIT_SONG,
     WORM_UI_METADATA_EDIT_CHART,
+    WORM_UI_METADATA_EDIT_INHERITANCE,
     WORM_UI_METADATA_EDIT_AUDIO_OFFSET,
     WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD,
@@ -561,6 +563,7 @@ struct workspace_action_t {
     std::optional<std::string> metadata_artist;
     std::optional<std::string> metadata_chart_name;
     std::optional<std::string> metadata_chart_author;
+    metadata_overrides_t metadata_overrides;
     std::vector<std::optional<std::string>> metadata_search_tags;
     bool metadata_inspect_copy;
     bool metadata_inspect_export;

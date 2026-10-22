@@ -200,6 +200,24 @@ void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
         });
 }
 
+void populate_metadata_inheritance(frontend_workspace_view_t& flattened, const document_history_t& history) {
+    auto& metadata = flattened.view.metadata;
+    const auto* chart = metadata.has_chart ? history.document.find_chart(metadata.chart_id) : nullptr;
+    if (!chart) { metadata.inheritance.clear(); return; }
+    const auto& resolved = flattened.metadata_projection_cache.inheritance.get_or_build(
+        std::tuple{document_stamp_t::from(history.document), chart->id, flattened.query_session_generation},
+        [&] { return resolved_metadata_t::from(history.document, *chart); });
+    metadata.inheritance.resize(inherited_metadata_fields.size());
+    for (std::size_t index = 0; index < inherited_metadata_fields.size(); ++index) {
+        const auto& field = inherited_metadata_fields[index];
+        auto& row = metadata.inheritance[index];
+        row.field = field.field;
+        row.label = field.label;
+        row.inherited = resolved.inherited[index];
+        row.override_value = chart->metadata.overrides.value(field.field);
+    }
+}
+
 void populate_metadata_chart_choices(frontend_workspace_view_t& flattened,
                                      const document_history_t& history) {
     auto& choices = flattened.view.metadata.chart_choices;
@@ -270,6 +288,7 @@ void populate_metadata_view_projection(
     metadata.dropped_music_path = metadata_drop.music_path;
     metadata.dropped_output_relative_path = metadata_drop.output_path;
 
+    populate_metadata_inheritance(flattened, history);
     populate_metadata_music(flattened, history, workspace);
     populate_metadata_chart_resolution(flattened, history);
     populate_metadata_copy_preview(flattened, history, metadata_asset_runtime);

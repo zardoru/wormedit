@@ -13,8 +13,32 @@
 #include <string_view>
 #include <vector>
 
+struct metadata_inheritance_row_draft_t {
+    bool inherit{true};
+    bool can_override{true};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_chart_text_bytes + 1> text{};
+    void reset_from(const wormedit::ui::metadata_inheritance_field_view_t&);
+    [[nodiscard]] auto is_changed(const wormedit::ui::metadata_inheritance_field_view_t&) const -> bool;
+};
+class metadata_inheritance_draft_t {
+  public:
+    void synchronize(const wormedit::ui::metadata_view_t&);
+    void reset(const wormedit::ui::metadata_view_t&);
+    [[nodiscard]] auto row_for(wormedit::inherited_metadata_field_t field) -> metadata_inheritance_row_draft_t& {
+        return rows_.at(static_cast<std::size_t>(field));
+    }
+    [[nodiscard]] auto is_changed(const wormedit::ui::metadata_view_t&) const -> bool;
+    [[nodiscard]] auto overrides() const -> wormedit::metadata_overrides_t;
+  private:
+    std::vector<wormedit::ui::metadata_inheritance_field_view_t> source_;
+    std::uint64_t revision_{std::numeric_limits<std::uint64_t>::max()};
+    wormedit::chart_id_t chart_;
+    std::array<metadata_inheritance_row_draft_t, wormedit::inherited_metadata_field_count> rows_;
+};
+
 struct worm_ui_nuklear_metadata_state_t {
     static constexpr std::size_t visible_tag_count = 64;
+    metadata_inheritance_draft_t inheritance;
 
     std::uint64_t buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t buffer_chart_id{};

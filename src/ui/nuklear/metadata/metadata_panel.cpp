@@ -186,17 +186,22 @@ void metadata_input_row(struct nk_context* context, const char* label, char* buf
 void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_enabled,
                            const char* revert_label, const char* apply_label,
                            bool& revert, bool& apply) {
-    nk_layout_row_template_begin(context, 23);
-    nk_layout_row_template_push_dynamic(context);
-    nk_layout_row_template_push_static(context, 96);
-    nk_layout_row_template_push_static(context, 96);
-    nk_layout_row_template_end(context);
-    nk_spacing(context, 1);
     auto revert_style = wormedit::ui::chrome::button_style(context, false);
     style_metadata_footer_button(revert_style, revert_enabled, false);
-    revert = nk_button_label_styled(context, &revert_style, revert_label) && revert_enabled;
     auto apply_style = wormedit::ui::chrome::button_style(context, apply_enabled);
     style_metadata_footer_button(apply_style, apply_enabled, true);
+    const auto width = [&](const char* label, const nk_style_button& style) {
+        const auto* font = context->style.font;
+        const auto text = font->width(font->userdata, font->height, label, static_cast<int>(std::strlen(label)));
+        return std::max(96.0f, std::ceil(text + 2.0f * (style.padding.x + style.border + style.rounding)));
+    };
+    nk_layout_row_template_begin(context, 23);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, width(revert_label, revert_style));
+    nk_layout_row_template_push_static(context, width(apply_label, apply_style));
+    nk_layout_row_template_end(context);
+    nk_spacing(context, 1);
+    revert = nk_button_label_styled(context, &revert_style, revert_label) && revert_enabled;
     apply = nk_button_label_styled(context, &apply_style, apply_label) && apply_enabled;
 }
 

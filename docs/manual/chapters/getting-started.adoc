@@ -77,6 +77,19 @@ the session, or save it as a new project. A damaged final record leaves earlier 
 edits recoverable. Recovery does not overwrite the primary project automatically.
 Storage problems retain earlier artifacts and report a warning.
 
+=== Per-difficulty metadata
+
+On *Metadata* (kbd:[F2]), choose a difficulty and expand *Song field overrides*
+inside its *Difficulty* section. A checked *Inherit* box shows the shared/source
+value in grey. Uncheck it to enter a local export value. An empty local value is
+kept explicitly; checking *Inherit* again restores inheritance. *Apply fields*
+commits the group together, and one Undo restores the previous settings.
+
+Music and preview-file values refer to audio already imported into the project.
+Preview audio is a separate file; osu! preview time and StepMania sample timing
+remain in their format-specific fields. Export reports unsupported fields or
+conflicting song values in a multi-difficulty output group.
+
 [#importing-assets]
 == Importing sounds, images and song audio
 

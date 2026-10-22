@@ -453,6 +453,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_audio_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_difficulty_section.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_inheritance_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_format_fields.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_song_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_state.cpp"

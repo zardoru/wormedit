@@ -3,6 +3,7 @@
 #include "catalog.h"
 #include "project.h"
 #include <wormedit/core/metadata_limits.h>
+#include <wormedit/core/metadata_inheritance_types.h>
 #include <array>
 #include <string>
 #include <vector>
@@ -99,6 +100,13 @@ struct metadata_drop_target_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+struct metadata_inheritance_field_view_t {
+    inherited_metadata_field_t field;
+    std::string label;
+    std::string inherited;
+    std::optional<std::string> override_value;
+    auto operator==(const metadata_inheritance_field_view_t&) const -> bool = default;
+};
 struct metadata_view_t {
     wormedit::ui::kind_catalog_view_t<wormedit::format_family_t> format_families;
     bool visible;
@@ -115,6 +123,7 @@ struct metadata_view_t {
     std::string artist;
     std::string chart_name;
     std::string chart_author;
+    std::vector<metadata_inheritance_field_view_t> inheritance;
     bool has_chart_rating;
     int64_t chart_rating_numerator;
     uint64_t chart_rating_denominator;

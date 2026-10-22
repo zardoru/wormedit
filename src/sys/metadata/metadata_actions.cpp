@@ -346,6 +346,10 @@ auto dispatch_metadata_edit(const wormedit::ui::workspace_action_t& action, docu
         return dispatch_song_edit(action, history, workspace);
     case WORM_UI_METADATA_EDIT_CHART:
         return dispatch_chart_edit(action, history, workspace);
+    case WORM_UI_METADATA_EDIT_INHERITANCE:
+        return publish_metadata_edit(apply_metadata_edit(history, action.metadata_document_revision,
+            set_chart_metadata_overrides_action_t{.chart = action.metadata_chart_id,
+                .overrides = action.metadata_overrides}), workspace, history);
     case WORM_UI_METADATA_EDIT_BATCH_CHART:
         return dispatch_batch_chart_edit(action, history, workspace);
     case WORM_UI_METADATA_EDIT_AUDIO_OFFSET:

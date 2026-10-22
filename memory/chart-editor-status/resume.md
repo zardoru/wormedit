@@ -2,16 +2,24 @@
 
 ## Active queue (2026-10-22)
 
-Completed **T-124** (2026-10-22): six optional per-difficulty metadata overrides
-preserve inheritance versus explicit empty, commit atomically and round-trip in native
-schema 12. Existing exports stay byte-identical without overrides; writers resolve
-supported slots and reject unsupported/conflicting values. File overrides reference
-imported audio and survive relinking, Save As, recovery and export staging. GATE
-passes **4,495/4,495**, whitespace and **16-TU** complexity without increased allowances.
-Next is owner-requested **T-125**, inherit/override controls in Metadata, followed by
-**T-730** timing-link work. Clang will verify the completed metadata pair together.
-Timing decisions: designated charts as sources, all timing categories and measure
-layouts, exact same-project links, and new charts inheriting selected links.
+Completed **T-124**, **T-125** and **T-730 planning** (2026-10-22), with
+separate commits. Six optional per-difficulty metadata overrides preserve inheritance
+versus explicit empty, commit atomically and round-trip in native schema 12. Metadata
+shows retained inherit/override controls; supported exports resolve the values and
+reject unsupported/conflicting fields. File overrides reference imported audio and
+survive relinking, Save As, recovery and export staging. Save-path publication refreshes
+clean rows without discarding unrelated drafts. GATE and Linux Clang each pass
+**4,502/4,502**, and whitespace and **13-TU** complexity pass without increased
+allowances. Isolated native edit/save/Undo verifies flags, unchanged shared title and
+eight notes/BPM, and byte-identical copied audio.
+
+**No sequential follow-up is active.** The owner explicitly chose to finish the selected
+metadata cards and timing-link design; runtime links are not implemented. T-751 is
+ready for a later pickup, followed by T-752–T-755. The recorded timing choices are
+designated charts as sources, all timing categories and measure layouts, exact
+same-project mapping, category-local detachment and selected links inherited by new
+charts. See [the design](../../docs/chart-editor-plan/document-model.md#shared-timing-categories)
+and [implementation cards](../../docs/chart-editor-plan/tasks/timing-links.md).
 
 Completed **T-190** (2026-10-22): recipes store ordered multiply, normalization and
 weighted bump-balancing stages in schema 11; older recipes gain an empty pipeline.

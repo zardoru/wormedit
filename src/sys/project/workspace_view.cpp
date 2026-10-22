@@ -1135,6 +1135,7 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
         view.compose.sound_picker.ready = false;
     }
     if (!view.metadata.visible) {
+        view.metadata.inheritance.clear();
         view.metadata.search_tags.clear();
         view.metadata.format_fields.clear();
         view.metadata.channel_map_lanes.clear();
@@ -1169,7 +1170,7 @@ void metadata_view_t::reset() {
         copy_preview_source, channel_map_preview_message, lane_profile_preview_message,
         audio_waveform_columns, search_tags, format_fields,
         format_targets, output_groups, channel_map_lanes,
-        lane_profile_choices, chart_choices, format_families.entries);
+        lane_profile_choices, chart_choices, format_families.entries, inheritance);
     title.clear();
     artist.clear();
     chart_name.clear();

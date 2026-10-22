@@ -289,3 +289,43 @@ auto worm_ui_nuklear_finish_metadata_tag_drag() -> bool {
     else std::rotate(begin + source, begin + source + 1, begin + target + 1);
     return true;
 }
+
+void metadata_inheritance_row_draft_t::reset_from(const wormedit::ui::metadata_inheritance_field_view_t& field) {
+    inherit = !field.override_value.has_value();
+    text.fill('\0');
+    const auto& value = field.override_value ? *field.override_value : field.inherited;
+    can_override = wormedit::text_util::is_valid_bounded_text(value, text.size() - 1);
+    if (can_override) std::copy(value.begin(), value.end(), text.begin());
+}
+auto metadata_inheritance_row_draft_t::is_changed(const wormedit::ui::metadata_inheritance_field_view_t& field) const -> bool {
+    if (inherit) return field.override_value.has_value();
+    return !field.override_value || std::string_view{text.data()} != *field.override_value;
+}
+void metadata_inheritance_draft_t::synchronize(const wormedit::ui::metadata_view_t& view) {
+    if (revision_ != view.document_revision || chart_ != view.chart_id) { reset(view); return; }
+    if (source_ == view.inheritance) return;
+    for (const auto& field : view.inheritance) {
+        auto& row = row_for(field.field);
+        const auto previous = std::ranges::find(source_, field.field, &wormedit::ui::metadata_inheritance_field_view_t::field);
+        if (previous == source_.end() || !row.is_changed(*previous)) row.reset_from(field);
+    }
+    source_ = view.inheritance;
+}
+void metadata_inheritance_draft_t::reset(const wormedit::ui::metadata_view_t& view) {
+    source_ = view.inheritance;
+    revision_ = view.document_revision;
+    chart_ = view.chart_id;
+    for (auto& row : rows_) row = {};
+    for (const auto& field : view.inheritance) row_for(field.field).reset_from(field);
+}
+auto metadata_inheritance_draft_t::is_changed(const wormedit::ui::metadata_view_t& view) const -> bool {
+    return std::ranges::any_of(view.inheritance, [&](const auto& field) {
+        return rows_.at(static_cast<std::size_t>(field.field)).is_changed(field);
+    });
+}
+auto metadata_inheritance_draft_t::overrides() const -> wormedit::metadata_overrides_t {
+    wormedit::metadata_overrides_t result;
+    for (std::size_t index = 0; index < rows_.size(); ++index)
+        if (!rows_[index].inherit) result.values[index] = rows_[index].text.data();
+    return result;
+}

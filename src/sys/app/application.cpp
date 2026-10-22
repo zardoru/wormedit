@@ -2371,6 +2371,8 @@ struct application_t::implementation_t {
                               wormedit::document_stamp_t stamp) {
         using namespace wormedit;
         report.publish_paths(session.history, session.project_identity.asset_base);
+        for (auto* frame : {&views.workspace_frame, &views.compare_first_frame, &views.compare_second_frame})
+            frame->metadata_projection_cache.invalidate_asset_paths();
         session.history.saved_revision = stamp.revision;
         const auto version =
             native_project_document_version_t{.project_id = stamp.project, .revision = stamp.revision};

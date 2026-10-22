@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
-#include "ui/nuklear/sound_import_state.h"
+#include "ui/nuklear/resources/sound_import_state.h"
 
 struct nk_context;
 struct SDL_Window;

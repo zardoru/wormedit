@@ -14,7 +14,7 @@
 #include "sys/app/macos_menu.h"
 #endif
 #include "ui/nuklear/ui_gallery.h"
-#include "ui/nuklear/sound_import_dialog.h"
+#include "ui/nuklear/resources/sound_import_dialog.h"
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/lane_keys_dialog.h"
 #include "ui/nuklear/audio/tap_timing_panel.h"
@@ -32,7 +32,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_snap_grid.h"
-#include "ui/nuklear/sound_import_runtime.h"
+#include "ui/nuklear/resources/sound_import_runtime.h"
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"

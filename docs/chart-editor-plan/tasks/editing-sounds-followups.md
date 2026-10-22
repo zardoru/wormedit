@@ -8,7 +8,7 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 - **Status:** done (already implemented: src/ui/nuklear/compose_sounds_panel.cpp:314; src/sys/workspace_projection.cpp:747)
 - **Outcome:** advance-after-place in the Sounds dock follows automatic mode's displayed resource order or slots mode's ascending BMS WAV ID order.
-- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/sys/sound_list_projection.cpp`.
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/resources/keysound_list_state.h`, `src/sys/sound_list_projection.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/workspace_projection.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
 - **Steps:**
   1. Audit `keysound_advance_rows` and T-346/T-358 first; use the active mode's displayed ordering for the next eligible sound, preserving current search/filter semantics.

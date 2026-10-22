@@ -1,6 +1,6 @@
 #include "ui/frontend/workspace.h"
-#include "ui/nuklear/sound_import_runtime.h"
-#include "ui/nuklear/sound_import_dialog.h"
+#include "ui/nuklear/resources/sound_import_runtime.h"
+#include "ui/nuklear/resources/sound_import_dialog.h"
 
 #include <SDL3/SDL_dialog.h>
 

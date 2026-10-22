@@ -1,4 +1,4 @@
-#include "ui/nuklear/sound_slot_batch.h"
+#include "ui/nuklear/resources/sound_slot_batch.h"
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"

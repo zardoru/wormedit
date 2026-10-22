@@ -4,7 +4,7 @@
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/resources/sound_import_staging.h"
-#include "ui/nuklear/sound_import_runtime.h"
+#include "ui/nuklear/resources/sound_import_runtime.h"
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/formats/stepmania.h>
 #include "sys/project/output_group_export.h"

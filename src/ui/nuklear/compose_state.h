@@ -3,12 +3,12 @@
 
 #include "ui/frontend.h"
 #include "ui/nuklear/compose_drag_capture.h"
-#include "ui/nuklear/keysound_list_state.h"
+#include "ui/nuklear/resources/keysound_list_state.h"
 #include "ui/nuklear/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose_sound_picker.h"
 #include "ui/nuklear/compose_bookmark_rename.h"
 #include "ui/nuklear/context_menu.h"
-#include "ui/nuklear/sound_slot_batch.h"
+#include "ui/nuklear/resources/sound_slot_batch.h"
 #include "ui/nuklear/dialog.h"
 #include "ui/nuklear/audio/preview_audio_dialog.h"
 

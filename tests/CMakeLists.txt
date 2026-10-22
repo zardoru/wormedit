@@ -474,8 +474,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp
-        ../src/ui/nuklear/sound_import_state.cpp
-        ../src/ui/nuklear/keysound_list_state.cpp
+        ../src/ui/nuklear/resources/sound_import_state.cpp
+        ../src/ui/nuklear/resources/keysound_list_state.cpp
         ../src/ui/nuklear/measure_resize.cpp
         ../src/ui/nuklear/timing/timing_state.cpp
         ../src/ui/nuklear/audio/meter_state.cpp

@@ -1,4 +1,4 @@
-#include "ui/nuklear/sound_import_dialog.h"
+#include "ui/nuklear/resources/sound_import_dialog.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
 

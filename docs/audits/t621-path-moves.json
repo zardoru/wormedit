@@ -7340,5 +7340,536 @@
       "path": "src/sys/application.cpp",
       "reason": "Explicit equivalent empty initialization required by the existing Clang missing-field-initializers error; GCC application and Clang object builds passed."
     }
-  ]
+  ],
+  "completed_folders": [
+    {
+      "folder": "src/sys/notifications",
+      "commit": "56ccbb566d3819695cb38737948f4400e038ce12",
+      "log_prefix": "/tmp/t621-sys-notifications",
+      "gate_tail": [
+        "gate: 8 job(s), set explicitly; logs in /tmp/wormedit-gate.ytamWr",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  59.91 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/preferences",
+      "commit": "6eb55ad4ccfdba168bbeb95ca6aa22edb204852e",
+      "log_prefix": "/tmp/t621-src-sys-preferences",
+      "gate_tail": [
+        "gate: 8 job(s), set explicitly; logs in /tmp/wormedit-gate.rw08CJ",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  72.72 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/timing",
+      "commit": "7a9a49b70c27d3a09f32a0729f6902954d71901c",
+      "log_prefix": "/tmp/t621-src-sys-timing",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.ezhXD6",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 237.61 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/bookmarks",
+      "commit": "46b86ff9b0a3c0c956d98810e1c251be35a5b376",
+      "log_prefix": "/tmp/t621-src-sys-bookmarks",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.VVfhwo",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 232.24 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/metadata",
+      "commit": "e514cd205300059b9d34f05f5381b6df2a2b055a",
+      "log_prefix": "/tmp/t621-src-sys-metadata",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.IzxqHa",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 233.28 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/resources",
+      "commit": "5835ff79218e22fd33383d3a02ee0dedda812657",
+      "log_prefix": "/tmp/t621-src-sys-resources",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.Olg9LU",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 256.89 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/audio",
+      "commit": "0eeb46e12dc507b4926d0210c9254ec570b1ab6e",
+      "log_prefix": "/tmp/t621-src-sys-audio",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.nuMXFu",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 268.95 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/project",
+      "commit": "e8c6300894624316f0e9af57b728cb6fddd10f53",
+      "log_prefix": "/tmp/t621-src-sys-project",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.1tHMyp",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 241.03 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/commands",
+      "commit": "46d5374bcffbd924cf550b1946b1c56c48736b3c",
+      "log_prefix": "/tmp/t621-src-sys-commands",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.Iy4kr4",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 232.55 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/compose",
+      "commit": "807d8e1d26ad755ded430f047f14615a9700baf5",
+      "log_prefix": "/tmp/t621-src-sys-compose",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.z1bwvM",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 232.74 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/compose/actions",
+      "commit": "71f103eb2f878bfadd23b62076c202733ee20542",
+      "log_prefix": "/tmp/t621-src-sys-compose-actions",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.AtqVyW",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 234.48 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/compose/input",
+      "commit": "888f581701e036a4e2d89b7b9e8b6618c5b510cb",
+      "log_prefix": "/tmp/t621-src-sys-compose-input",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.7jwHiP",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 231.96 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/compose/views",
+      "commit": "a42a37ea6c8e7e514ff8463d4605655ac130e042",
+      "log_prefix": "/tmp/t621-src-sys-compose-views",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.baJYUU",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 231.55 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/sys/app",
+      "commit": "99c74c84bf0ba0303dc9d4d148321b546ebdeb5e",
+      "log_prefix": "/tmp/t621-src-sys-app",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.zrxZmp",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 233.18 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/timing",
+      "commit": "99402f63b7f6be5155c00120e0f8b17f3964b81b",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-timing",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.d7Lide",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 231.66 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/audio",
+      "commit": "20696d52cc3ab0c8d8012802b83bfaf13da9ce1f",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-audio",
+      "gate_tail": [
+        "gate: 1 job(s), set explicitly; logs in /tmp/wormedit-gate.ltJ3ik",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) = 230.74 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/resources",
+      "commit": "540e8882c8074b00e894387c95f7a60c2923f66a",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-resources",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.UjiERZ",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  52.16 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/metadata",
+      "commit": "2b32ba8b1f0af13c6b4e0c8b4928b49c38bc1e8a",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-metadata",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.aWK8Fp",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  50.89 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/preferences",
+      "commit": "e128879b7972db494c3c23fba7cfbb835d359cb4",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-preferences",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.ss9zUo",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  51.12 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/project",
+      "commit": "2546078525fef601632dd225779be1731eccda4c",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-project",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.aB8JVo",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  51.52 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/render",
+      "commit": "886ec1f3b48896e09212e94271b0917264861b3c",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-render",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.eF2R34",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  51.65 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/chrome",
+      "commit": "cbf4b05a83cc81e5bafb3b45188c9310058d566d",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-chrome",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.lbPsef",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  51.95 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/compose",
+      "commit": "0e6e8fbb7959b427aebad2d5036f8fc813e2b938",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-compose",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.oedD1N",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  51.52 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    },
+    {
+      "folder": "src/ui/nuklear/app",
+      "commit": "6d81bd50eefe386ab96cea3ea5d73632d2613a56",
+      "log_prefix": "/tmp/t621-src-ui-nuklear-app",
+      "gate_tail": [
+        "gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.UxWLZe",
+        "  pass  build",
+        "  pass  ctest",
+        "  pass  whitespace",
+        "  pass  complexity",
+        "  100% tests passed out of 4443",
+        "gate: passed"
+      ],
+      "clang_summary": [
+        "100% tests passed out of 4443",
+        "Total Test time (real) =  52.21 sec"
+      ],
+      "gcc_test_count": 4443,
+      "clang_test_count": 4443,
+      "event_test_count": 609,
+      "documentation_test_count": 5
+    }
+  ],
+  "completed_on": "2026-10-22"
 }

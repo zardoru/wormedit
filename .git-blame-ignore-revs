@@ -1,1 +1,49 @@
-# T-621 behavior-preserving subsystem moves. Revisions are added after each commit exists.
+# T-621: behavior-preserving subsystem moves; keep the original commit history.
+# src/sys/notifications
+56ccbb566d3819695cb38737948f4400e038ce12
+# src/sys/preferences
+6eb55ad4ccfdba168bbeb95ca6aa22edb204852e
+# src/sys/timing
+7a9a49b70c27d3a09f32a0729f6902954d71901c
+# src/sys/bookmarks
+46b86ff9b0a3c0c956d98810e1c251be35a5b376
+# src/sys/metadata
+e514cd205300059b9d34f05f5381b6df2a2b055a
+# src/sys/resources
+5835ff79218e22fd33383d3a02ee0dedda812657
+# src/sys/audio
+0eeb46e12dc507b4926d0210c9254ec570b1ab6e
+# src/sys/project
+e8c6300894624316f0e9af57b728cb6fddd10f53
+# src/sys/commands
+46d5374bcffbd924cf550b1946b1c56c48736b3c
+# src/sys/compose
+807d8e1d26ad755ded430f047f14615a9700baf5
+# src/sys/compose/actions
+71f103eb2f878bfadd23b62076c202733ee20542
+# src/sys/compose/input
+888f581701e036a4e2d89b7b9e8b6618c5b510cb
+# src/sys/compose/views
+a42a37ea6c8e7e514ff8463d4605655ac130e042
+# src/sys/app
+99c74c84bf0ba0303dc9d4d148321b546ebdeb5e
+# src/ui/nuklear/timing
+99402f63b7f6be5155c00120e0f8b17f3964b81b
+# src/ui/nuklear/audio
+20696d52cc3ab0c8d8012802b83bfaf13da9ce1f
+# src/ui/nuklear/resources
+540e8882c8074b00e894387c95f7a60c2923f66a
+# src/ui/nuklear/metadata
+2b32ba8b1f0af13c6b4e0c8b4928b49c38bc1e8a
+# src/ui/nuklear/preferences
+e128879b7972db494c3c23fba7cfbb835d359cb4
+# src/ui/nuklear/project
+2546078525fef601632dd225779be1731eccda4c
+# src/ui/nuklear/render
+886ec1f3b48896e09212e94271b0917264861b3c
+# src/ui/nuklear/chrome
+cbf4b05a83cc81e5bafb3b45188c9310058d566d
+# src/ui/nuklear/compose
+0e6e8fbb7959b427aebad2d5036f8fc813e2b938
+# src/ui/nuklear/app
+6d81bd50eefe386ab96cea3ea5d73632d2613a56

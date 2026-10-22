@@ -2,6 +2,20 @@
 
 ## Active queue (2026-10-21)
 
+Completed **T-621** (2026-10-22): all **428** sys/Nuklear files now live in
+**24** subsystem folders, with filenames/prefixes preserved and one verified commit per
+folder. All move revisions are in `.git-blame-ignore-revs`; the exact path/consumer inventory
+and body hashes are retained. Every folder passes GCC and Linux Clang **4,443/4,443**,
+**609/609** event cases, **5/5** documentation checks and changed-C++ complexity without
+increased allowances. Final path/body/baseline checks pass. The pre-existing Clang Options
+initializer diagnostic was fixed in a separate prerequisite commit; large-file splitting
+was not included. After the interrupted concurrent build, verification initially ran
+with one worker under a 3 GiB cap. On 2026-10-22 the owner authorized about three
+quarters of the machine: subsequent verification uses four compiler workers, up to
+twelve test workers, a twelve-core CPU quota and a 9 GiB cap (8 GiB soft limit).
+GCC and Clang remain sequential.
+libc++ remains unavailable; Xvfb was skipped for these structural moves.
+
 Completed **T-263** (2026-10-21): native schema 10 carries optional new-chart snap and
 audio/visual copy folders. Project controls show inherited defaults and commit stamped,
 undoable edits; future copies honor the folders while existing files stay in place.

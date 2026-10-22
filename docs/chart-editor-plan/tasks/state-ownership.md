@@ -491,14 +491,23 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-621 Move subsystem files into folders
 
-- **Status:** partial (2026-10-21; exact move and caller inventory recorded)
+- **Status:** Done (2026-10-22)
 - **Owner scheduling (2026-10-21):** the owner explicitly schedules this card now; T-619 and
   the eligible T-620 scope are complete. No other implementation lane is active.
-- **Done so far:** stale-plan audit confirms 249 flat sys files and 179 flat Nuklear files.
-  The [exact move inventory](../../audits/t621-path-moves.json) records all 428 old/new paths,
-  original file/body hashes, 24 destination folders in execution order, and each consumer.
-- **Remaining:** apply the inventory one destination folder per gated commit; list all move
-  revisions in `.git-blame-ignore-revs`; complete GCC/Clang, event and documentation gates.
+- **Completion:** moved all 249 sys and 179 Nuklear files into 24 subsystem folders,
+  preserving every basename and prefix, with one verified commit per destination folder.
+  The [exact inventory](../../audits/t621-path-moves.json) retains original/reviewed body
+  hashes and records every move revision; [.git-blame-ignore-revs](../../../.git-blame-ignore-revs)
+  lists all 24 move commits without rewriting history. All 428 source bodies match the
+  reviewed baseline after include/path normalization; complexity identities and limits
+  match the original baseline after reversing paths. No large-file splits were performed.
+- **Gate evidence:** every folder passes GCC build/full CTest (4,443/4,443), whitespace,
+  changed-C++ clang-tidy complexity, Linux Clang configure/build/full CTest (4,443/4,443),
+  explicit event harness (609/609) and documentation (5/5). Per-folder log prefixes and
+  revision hashes are in the inventory; commit bodies record the commands and output.
+  Final source-body/baseline and active-consumer path checks pass. Final metadata passes
+  all five documentation checks. libc++ is not installed and was not run; Xvfb was skipped
+  as required. The interrupted timing run was fully rerun under the resource budget below.
 - **Supporting ownership approved (2026-10-21):** all exact old/new paths and consumer paths
   in the inventory are owned for relocation and include/path updates only, including
   `cmake/complexity_baseline.txt`, `cmake/edit_execution_allowances.txt`, documentation guards,
@@ -514,10 +523,14 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Resource budget (owner steering, 2026-10-21):** after the concurrent compiler run
   exhausted shared memory, verification runs sequentially with one worker, low CPU/I/O
   priority, a 3 GiB memory cap and at most two CPU cores for internal test threads.
-  Preserve desktop headroom; interrupted timing verification is rerun before committing.
+  Preserve desktop headroom; interrupted timing verification was rerun before committing.
+  On 2026-10-22 the owner authorized about three quarters of the machine while away:
+  remaining parts use four compiler/complexity workers and up to twelve test workers,
+  a twelve-core CPU quota and a 9 GiB hard / 8 GiB soft memory cap. GCC and Clang
+  remain sequential; completed one-worker checks retain their actual command evidence.
 - **Shrink-wrap dependency (2026-10-18):** T-678 removed the unused legacy Chart and Field models. Their deleted paths and the obsolete lowercase-header step are removed from this card; the unrelated interval-index owner remains.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/app/application.cpp` (about 4,800 lines), `src/sys/compose/actions/compose_actions.cpp` (3,700), `src/ui/nuklear/compose/compose_canvas.cpp` (3,400), `src/sys/compose/views/compose_view.cpp` (2,700) and `src/sys/compose/input/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
-- **Findings closed:** FL1–FL5 (targets; not yet closed).
+- **Findings closed:** FL1–FL4. FL5 was already resolved by T-678 deleting the obsolete Chart model; the unrelated interval index remains unchanged.
 - **Stale-plan audit:** Search by behavior: prefix clusters, include paths, CMake source entries. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
 - **Outcome:** Folders: move `src/sys` and `src/ui/nuklear` into subsystem folders (FL2), keeping file-name prefixes (FL3). Pure `git mv` plus include and CMake path edits, one commit per folder, each listed in `.git-blame-ignore-revs`. Runs last.
 - **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`.

@@ -1,8 +1,8 @@
 #include "ui/nuklear/compose_bookmark_chooser.h"
 
 #include "wormedit/nuklear_config.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 #include <cstring>
 
 #include <algorithm>

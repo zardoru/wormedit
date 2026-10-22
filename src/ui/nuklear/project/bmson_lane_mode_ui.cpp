@@ -1,6 +1,6 @@
 #include "ui/nuklear/project/bmson_lane_mode_ui.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/context_menu.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/context_menu.h"
 #include "wormedit/nuklear_config.h"
 #include <algorithm>
 

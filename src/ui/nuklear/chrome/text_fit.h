@@ -1,6 +1,6 @@
 #include "core/text_util.h"
 #pragma once
-#include "ui/nuklear/text_layout.h"
+#include "ui/nuklear/chrome/text_layout.h"
 #include <optional>
 
 namespace wormedit::ui::chrome {

@@ -1,6 +1,6 @@
 #include "ui/nuklear/audio/tap_timing_panel.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/render/theme.h"
 #include <algorithm>
 #include <cmath>

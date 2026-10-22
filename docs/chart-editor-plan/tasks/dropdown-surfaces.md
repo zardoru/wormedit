@@ -6,8 +6,8 @@
 
 - **Status:** done (2026-10-11; verified; uncommitted user-feedback batch)
 - **Outcome:** Fix transparent dropdown panels and ensure shared panel fills/shadows work across menus and safe combos without covering content.
-- **Read first:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/components.cpp` (actual surface implementation), `tests/ui/components_tests.cpp`, relevant theme surface code only if required, focused surface/dialog/event tests.
-- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/components.cpp` (actual surface implementation), `tests/ui/components_tests.cpp`, relevant theme surface code only if required, focused surface/dialog/event tests. This card; coordinator owns shared index/checker/status and integration. Coordinate separate frontend payload regions; append tests through incremental patches.
+- **Read first:** `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/chrome/components.cpp` (actual surface implementation), `tests/ui/components_tests.cpp`, relevant theme surface code only if required, focused surface/dialog/event tests.
+- **Files owned:** `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/chrome/components.cpp` (actual surface implementation), `tests/ui/components_tests.cpp`, relevant theme surface code only if required, focused surface/dialog/event tests. This card; coordinator owns shared index/checker/status and integration. Coordinate separate frontend payload regions; append tests through incremental patches.
 - **Steps:** 1. Audit implementation and mockup. 2. Implement the requested behavior through existing runtime boundaries. 3. Add meaningful interaction/persistence regressions. 4. Verify integrated build, full suite, native captures and complexity. 5. Reconcile Brain and local status.
 - **Invariants:** Popup fill and shadow use the app viewport boundary independently of the host clip. Restore the original command clip and styles; paint surfaces before content.
 - **Reject/failure behavior:** Stale or missing targets reject safely; interrupted gestures cancel. Missing recent files report diagnostics through the existing open path. Dropdown closure cannot click through.

@@ -1,6 +1,6 @@
-#include "ui/nuklear/text_fit.h"
+#include "ui/nuklear/chrome/text_fit.h"
 #include "ui/nuklear/compose_menu_command.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_note_label_inline.h"
 #include "ui/nuklear/compose_state.h"

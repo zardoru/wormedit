@@ -7,7 +7,7 @@
 - **Status:** done (2026-10-11; verified; uncommitted follow-up)
 - **Stale-plan audit (2026-10-11):** Menu selection closes Nuklear's popup before underlying widgets render; the same pointer edge can also select a workspace tab or Project control. Existing menu dispatch tests checked command IDs but did not reject simultaneous workspace actions.
 - **Outcome:** Selecting or dismissing a workspace menu consumes the entire pointer gesture; only the menu action is emitted and a fresh subsequent click works normally.
-- **Read first:** `src/ui/nuklear/menu_bar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/popup_lifecycle.h`, `tests/ui/menu_bar_event_harness_tests.cpp`, `docs/frontend-event-harness.md`.
+- **Read first:** `src/ui/nuklear/menu_bar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/chrome/popup_lifecycle.h`, `tests/ui/menu_bar_event_harness_tests.cpp`, `docs/frontend-event-harness.md`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/menu_bar.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/menu-input-capture.md`.
 - **Steps:** 1. Retain menu pointer ownership after selection and dismissal. 2. Mask mouse edges and held travel for later widgets with scoped restoration of original input. 3. Exercise menu commands, Project and landing controls, held input and release through the production event harness. 4. Run integrated build, regression suite and affected-source complexity checks.
 - **Invariants:** Menu switching remains available; each menu command dispatches once; native file dialogs and document mutation stay in existing application paths; pointer state is restored before the next input cycle.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "wormedit/nuklear_config.h"
 
 #include <optional>

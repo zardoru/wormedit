@@ -1,7 +1,7 @@
 #include "ui/nuklear/project/chart_import_dialog.h"
 
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/dialog.h"
 
 #include <array>
 #include <cstring>

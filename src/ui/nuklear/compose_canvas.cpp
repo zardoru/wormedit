@@ -4,14 +4,14 @@
 
 #include <wormedit/core/rational.h>
 #include "core/text_util.h"
-#include "ui/nuklear/text_fit.h"
+#include "ui/nuklear/chrome/text_fit.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/compose_inspector.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_waveform_gaps.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/tooltip.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_bookmark_label.h"

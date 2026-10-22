@@ -4,7 +4,7 @@
 
 Findings (2026-09-30):
 
-- `chrome::apply_theme` in `src/ui/nuklear/chrome.h` only styles window, text,
+- `chrome::apply_theme` in `src/ui/nuklear/chrome/chrome.h` only styles window, text,
   button, and tab. Every other Nuklear style group (`menu_button`,
   `contextual_button`, `combo`, `selectable`, `property`, `edit`,
   `scrollv/scrollh`, `checkbox`, `option`, `window.popup_*`,
@@ -31,8 +31,8 @@ Apply the stale-plan check (rule 9) first.
 - **Merged with T-436 (user decision 2026-10-07):** this card is now the second half of [T-436](dialogs.md#t-436-regularize-the-ui-components-one-set-of-sizes-radii-gaps-and-state-colors). T-436 built the tokens and wormedit's own components; this card applies the same tokens to the stock Nuklear widgets that are still drawn with near-default styling. It keeps its ID because T-226, T-228 and T-257 wait on it.
 - **Mockup:** [components.svg](../mockups/components.svg) (reference: match its structure and hierarchy)
 - **Outcome:** menus, context menus, combos, selectables, properties, edit fields, scrollbars, Nuklear checkboxes and options, popups, tooltips and tree headers take their heights, radii, gaps, font and state colors from `ui_metrics.h` and the `theme::ui` roles, matching the T-436 components beside them. Every widget uses one font object. The existing `WORMEDIT_UI_GALLERY=1` window shows each of these widgets in normal, hover, active and disabled states next to the T-436 components.
-- **Read first:** `src/ui/nuklear/ui_metrics.h`, `src/ui/nuklear/chrome.h` (`apply_theme`, `button_style`), `src/ui/nuklear/render/theme.cpp` (roles), `src/ui/nuklear/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup: grep `nk_font`, `font_atlas`, `nk_style_set_font`).
-- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/ui_metrics.h`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup and menu row geometry), `tests/ui/components_tests.cpp`, `assets/themes/ui-dark.json` if roles are added, this card. Also touched: `src/ui/nuklear/render/theme.h` and `assets/themes/ui-dark.json` (added `separator` role), `src/ui/nuklear/tooltip` not touched. Second pass (approved 2026-10-09): `src/ui/nuklear/components.cpp` (the `popup` role in `paint_surface` only); `popup` added to `theme.h`, `theme.cpp` and `ui-dark.json`.
+- **Read first:** `src/ui/nuklear/chrome/ui_metrics.h`, `src/ui/nuklear/chrome/chrome.h` (`apply_theme`, `button_style`), `src/ui/nuklear/render/theme.cpp` (roles), `src/ui/nuklear/chrome/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup: grep `nk_font`, `font_atlas`, `nk_style_set_font`).
+- **Files owned:** `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/chrome/ui_metrics.h`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/chrome/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup and menu row geometry), `tests/ui/components_tests.cpp`, `assets/themes/ui-dark.json` if roles are added, this card. Also touched: `src/ui/nuklear/render/theme.h` and `assets/themes/ui-dark.json` (added `separator` role), `src/ui/nuklear/tooltip` not touched. Second pass (approved 2026-10-09): `src/ui/nuklear/chrome/components.cpp` (the `popup` role in `paint_surface` only); `popup` added to `theme.h`, `theme.cpp` and `ui-dark.json`.
 - **Design reference:** the T-436 tokens and state colors. Colors come from `assets/themes/ui-dark.json` (neutral, blue, coral and lime scales, 50–950, referenced by roles as `$scale.shade`), originally expanded from <https://octet.design/colors/palette/dark-header-color-palette-1731325758/>. T-436 left `destructive`, `destructive_text` and `text_faint` as constants in `ui_metrics.h`; move them into the theme roles here if this card needs them.
 - **Steps:**
   1. Report which fonts are loaded and whether any code pushes a different font. If menus render with another font, find the cause and fix it (one font object for the whole context).
@@ -41,7 +41,7 @@ Apply the stale-plan check (rule 9) first.
   4. Extend the gallery draw test in `tests/ui/components_tests.cpp` so the new section draws inside the render target.
 - **Invariants:** layout sizes and hit areas are unchanged except menu padding and where a token value changes a height. Smoke captures are compared before and after.
 - **Reject/failure behavior:** none.
-- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'components'`; `ctest --test-dir build -L event-harness`; `scripts/smoke-compose-virtual-x.sh /tmp/gallery.png gallery` and a `compose` capture with a menu open, compared against the T-436 buttons; `clang-tidy -p build src/ui/nuklear/ui_gallery.cpp`.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'components'`; `ctest --test-dir build -L event-harness`; `scripts/smoke-compose-virtual-x.sh /tmp/gallery.png gallery` and a `compose` capture with a menu open, compared against the T-436 buttons; `clang-tidy -p build src/ui/nuklear/chrome/ui_gallery.cpp`.
 - **Out of scope:** new colors, a light theme, and migrating screens onto the T-436 components (T-407, T-411, T-415, T-419).
 
 - **Supporting ownership extension (2026-10-09):** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/metadata/metadata_audio_section.cpp`, `src/ui/nuklear/metadata/metadata_format_fields.cpp`, `src/ui/nuklear/resources/sound_import_dialog.cpp`, `tests/ui/nuklear_popup_combo_tests.cpp`, `tests/CMakeLists.txt` (link the production surface/theme into combo and notification tests), `src/ui/nuklear/context_menu.h/.cpp` (share token row heights with the menubar), and `memory/chart-editor-status/resume.md` are approved for paired combo-end style restoration, lifecycle coverage and completion status, within the existing theming outcome. `docs/chart-editor-plan/tasks/options-charts.md` is approved only to remove T-257's completed T-225 prerequisite.
@@ -70,8 +70,8 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (2026-10-09; live shortcut, checked and disabled rows verified)
 - **Outcome:** a `chrome::menu_item(label, shortcut_text, checked, enabled)` helper draws label left, shortcut right in muted text, an optional check mark, and the disabled style; all menus use it; shortcut text comes from the registry's current chords (so remapping in T-59 updates menus).
-- **Read first:** `src/ui/nuklear/chrome.h`, `include/wormedit/core/command_registry.h` (command state, chords), `src/ui/nuklear/menu_bar.cpp`.
-- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/frontend.h`, `src/sys/app/main.cpp` (project command state/chord text and share menu dispatch), new `src/sys/menu_command_projection.cpp/.h`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `CMakeLists.txt`.
+- **Read first:** `src/ui/nuklear/chrome/chrome.h`, `include/wormedit/core/command_registry.h` (command state, chords), `src/ui/nuklear/menu_bar.cpp`.
+- **Files owned:** `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/frontend.h`, `src/sys/app/main.cpp` (project command state/chord text and share menu dispatch), new `src/sys/menu_command_projection.cpp/.h`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `CMakeLists.txt`.
 - **Ownership extension (coordinator, 2026-10-09):** a testable projection unit copies bounded registry state and current shortcuts; build wiring and production event tests verify remaps, disabled items, and checked states. Stale audit: macOS has shortcuts/checks, but in-window rows currently only draw labels.
 - **Steps:** 1. Project `{id, label, chord_text, enabled, checked}` for menu commands into a bounded view array. 2. Helper + use everywhere.
 - **Result (2026-10-09):** a bounded, pointer-free command view carries current registry labels, shortcuts, enabled and checked state. One themed menu-row helper reserves a check gutter, right-aligns muted shortcut text and dims all row content when disabled. Unbound commands leave the shortcut column empty; remaps update on the next frame. Primary resolves to Ctrl or ⌘; Command is included in the native font range. Local panel/tool checks follow their actual visibility. Existing native menu duplicate-key retirement now resolves Primary per platform, and in-window command selections use that shared dispatch too.
@@ -162,7 +162,7 @@ Apply the stale-plan check (rule 9) first.
 - **Request (user, 2026-10-01):** "The note palette should [be] a sort of tall left toolbar a la osu or affinity or paint programs in general"; side confirmed: "Left by default."
 - **Current behavior (2026-10-01):** `render_note_kind_palette` (`src/ui/nuklear/compose_toolbar.cpp`) draws a second toolbar row of 30-px icon buttons when `note_kind_palette_visible` is true.
 - **Stale-plan check:** grep `render_note_kind_palette` in `src/ui/nuklear/compose_panel.cpp`.
-- **Read first:** `src/ui/nuklear/compose_toolbar.cpp` (`render_note_kind_palette`, `render_compose_toolbar`), `src/ui/nuklear/compose_panel.cpp` (the `Compose editor` / `Compose inspector` layout space), `src/ui/nuklear/chrome.h` (`IconButton`).
+- **Read first:** `src/ui/nuklear/compose_toolbar.cpp` (`render_note_kind_palette`, `render_compose_toolbar`), `src/ui/nuklear/compose_panel.cpp` (the `Compose editor` / `Compose inspector` layout space), `src/ui/nuklear/chrome/chrome.h` (`IconButton`).
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`.
 - **Steps:**
   1. Expose the palette as `render_compose_note_palette_column(context, view, action)` and stop calling it from `render_compose_toolbar`.

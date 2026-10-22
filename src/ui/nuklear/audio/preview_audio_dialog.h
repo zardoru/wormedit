@@ -1,6 +1,6 @@
 #pragma once
 #include "ui/frontend.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/dialog.h"
 #include <array>
 
 namespace wormedit::ui {

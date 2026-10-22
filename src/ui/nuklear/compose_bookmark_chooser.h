@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 
 #include "ui/frontend.h"
 

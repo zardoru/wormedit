@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ui/nuklear/popup_lifecycle.h"
-#include "ui/nuklear/ui_metrics.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 #include "wormedit/nuklear_config.h"
 
 #include <vector>

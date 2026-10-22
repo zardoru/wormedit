@@ -1,5 +1,5 @@
-#include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/text_layout.h"
+#include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/text_layout.h"
 
 #include <algorithm>
 #include <cmath>

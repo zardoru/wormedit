@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "ui/nuklear/content_layout.h"
+#include "ui/nuklear/chrome/content_layout.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/project/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio/audio_panel.h"
@@ -8,7 +8,7 @@
 #include <wormedit/core/catalogs.h>
 #include "ui/nuklear/audio/audio_state.h"
 #include "ui/nuklear/compose_drag_capture.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 #include "wormedit/nuklear_config.h"
 

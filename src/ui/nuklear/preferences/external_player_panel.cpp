@@ -1,5 +1,5 @@
 #include "ui/nuklear/preferences/external_player_panel.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include <array>
 #include <cstdio>
 

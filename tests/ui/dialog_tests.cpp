@@ -1,7 +1,7 @@
-#include "ui/nuklear/dialog.h"
-#include "ui/nuklear/text_layout.h"
-#include "ui/nuklear/text_fit.h"
-#include "ui/nuklear/color.h"
+#include "ui/nuklear/chrome/dialog.h"
+#include "ui/nuklear/chrome/text_layout.h"
+#include "ui/nuklear/chrome/text_fit.h"
+#include "ui/nuklear/chrome/color.h"
 #include "core/text_util.h"
 
 #include <catch2/catch_test_macros.hpp>

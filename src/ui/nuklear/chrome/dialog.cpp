@@ -1,5 +1,5 @@
-#include "ui/nuklear/dialog.h"
-#include "ui/nuklear/text_layout.h"
+#include "ui/nuklear/chrome/dialog.h"
+#include "ui/nuklear/chrome/text_layout.h"
 
 #include <algorithm>
 #include <cmath>

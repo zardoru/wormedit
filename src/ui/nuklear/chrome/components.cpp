@@ -1,7 +1,7 @@
-#include "ui/nuklear/color.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/color.h"
+#include "ui/nuklear/chrome/chrome.h"
 #if defined(WORMEDIT_TEST_ICON_WIDGETS)
-#include "ui/nuklear/icon_widget_recording.h"
+#include "ui/nuklear/chrome/icon_widget_recording.h"
 #endif
 
 #include <algorithm>

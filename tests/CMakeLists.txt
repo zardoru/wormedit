@@ -498,10 +498,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_nuklear_popup_combo_tests
         ui/nuklear_popup_combo_tests.cpp
-        ../src/ui/nuklear/components.cpp
+        ../src/ui/nuklear/chrome/components.cpp
         ../src/ui/nuklear/render/theme.cpp
         ../src/ui/nuklear/render/arrow_glyph.cpp
-        ../src/ui/nuklear/tooltip.cpp)
+        ../src/ui/nuklear/chrome/tooltip.cpp)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
@@ -791,7 +791,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/resources/bga_dock_runtime.cpp
         ../src/sys/resources/bga_list_view.cpp
         ../src/sys/preferences/external_player.cpp
-        ../src/ui/nuklear/components.cpp
+        ../src/ui/nuklear/chrome/components.cpp
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         sys/timing_lane_ui_tests.cpp
@@ -801,9 +801,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp
         sys/notification_history_runtime_tests.cpp
-        ../src/ui/nuklear/notification_toasts.cpp
-        ../src/ui/nuklear/tooltip.cpp
-        ../src/ui/nuklear/notification_panel.cpp
+        ../src/ui/nuklear/chrome/notification_toasts.cpp
+        ../src/ui/nuklear/chrome/tooltip.cpp
+        ../src/ui/nuklear/chrome/notification_panel.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
         ../src/ui/nuklear/render/theme.cpp
         ../src/sys/app/frame_timing.cpp

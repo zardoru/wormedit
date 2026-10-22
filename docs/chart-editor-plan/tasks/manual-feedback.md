@@ -171,8 +171,8 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 - **Status:** done (2026-10-18; owner: "Yes, do add the shortcuts")
 - **Outcome:** Every row of the command palette shows the command's current keys right-aligned in platform form (`Ctrl+Shift+Z`, `⌘` on macOS), nothing for unbound commands, following rebinds.
-- **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome.h` (`menu_item`).
-- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/app/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
+- **Read first:** `src/sys/commands/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome/chrome.h` (`menu_item`).
+- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/app/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
 - **Steps:**
   1. Cache the chord text per command, reformatted only when a binding or the platform modifier changes, because the palette view is rebuilt every frame.
   2. Draw it with the same right-aligned helper the menu bar uses.

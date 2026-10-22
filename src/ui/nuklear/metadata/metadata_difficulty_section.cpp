@@ -1,7 +1,7 @@
 #include "ui/nuklear/metadata/metadata_difficulty_section.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/tooltip.h"
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 
 #include <algorithm>

@@ -13,7 +13,7 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; owned inspector widgets checked at 280 logical pixels and simulated 2x scale)
 - **Outcome:** every widget in `compose_inspector.cpp` renders without clipped labels or overflowing fields at the minimum inspector width, and at 1x and 2x UI scale.
-- **Read first:** `docs/chart-editor-plan/editing/layout.md` (lines about side panels), `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/chrome.h`, `src/ui/nuklear/render/theme.h`.
+- **Read first:** `docs/chart-editor-plan/editing/layout.md` (lines about side panels), `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/chrome/chrome.h`, `src/ui/nuklear/render/theme.h`.
 - **Files owned:** `compose_inspector.cpp`, `chrome.h` (only to add a shared width helper), `tests/ui/nuklear_compose_state_tests.cpp` (only if state logic changes).
 - **Steps:**
   1. Audit: list every `render_*` inspector function and note which use fixed-width rows (`nk_layout_row_static`, literal pixel widths). Write the list in the report.

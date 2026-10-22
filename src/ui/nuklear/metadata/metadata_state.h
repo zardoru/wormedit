@@ -1,6 +1,6 @@
 #pragma once
 #include "ui/field/rect.h"
-#include "ui/nuklear/file_dialog_slot.h"
+#include "ui/nuklear/chrome/file_dialog_slot.h"
 
 #include "ui/frontend.h"
 

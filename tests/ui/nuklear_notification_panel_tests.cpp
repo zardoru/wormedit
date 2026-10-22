@@ -1,4 +1,4 @@
-#include "ui/nuklear/notification_panel.h"
+#include "ui/nuklear/chrome/notification_panel.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <array>

@@ -1,6 +1,6 @@
-#include "ui/nuklear/ui_gallery.h"
+#include "ui/nuklear/chrome/ui_gallery.h"
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/vector_icons.h"
 
 #include <algorithm>

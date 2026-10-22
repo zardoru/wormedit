@@ -2,8 +2,8 @@
 #include "ui/nuklear/compose_note_label_inline.h"
 
 #include "ui/nuklear/compose_bookmark_label.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 
 #include <algorithm>
 #include <cmath>

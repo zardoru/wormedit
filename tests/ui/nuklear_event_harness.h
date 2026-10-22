@@ -2,7 +2,7 @@
 #include "ui/frontend/workspace.h"
 
 #include "ui/frontend.h"
-#include "ui/nuklear/icon_widget_recording.h"
+#include "ui/nuklear/chrome/icon_widget_recording.h"
 
 #include <SDL3/SDL.h>
 

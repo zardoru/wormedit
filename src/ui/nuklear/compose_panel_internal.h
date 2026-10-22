@@ -3,7 +3,7 @@
 #include "ui/compose_mode.h"
 #include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/panel_input.h"
+#include "ui/nuklear/chrome/panel_input.h"
 #include "wormedit/nuklear_config.h"
 
 #include <optional>

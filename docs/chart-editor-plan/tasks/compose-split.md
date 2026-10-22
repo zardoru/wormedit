@@ -37,7 +37,7 @@ Shared rules for every card in this file:
 
 - **Status:** done (2026-09-30; toolbar and exclusive helpers moved without behavior changes)
 - **Outcome:** `render_compose_toolbar`, `render_compose_view_controls`, and `render_compose_bgm_scroll_controls` live in `compose_toolbar.cpp`.
-- **Read first:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/chrome.h`.
+- **Read first:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/chrome/chrome.h`.
 - **Files owned:** `src/ui/nuklear/compose_panel.cpp`, new `compose_toolbar.cpp`, new `compose_toolbar.h`, `compose_panel_internal.h`, `CMakeLists.txt`.
 - **Steps:**
   1. Move `ComposeToolbarContext` into `compose_panel_internal.h`.

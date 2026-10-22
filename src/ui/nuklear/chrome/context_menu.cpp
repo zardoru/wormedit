@@ -1,4 +1,4 @@
-#include "ui/nuklear/context_menu.h"
+#include "ui/nuklear/chrome/context_menu.h"
 #include "ui/nuklear/compose_state.h"
 
 auto worm_ui_nuklear_compose_state_t::has_palette_context_menu() const -> bool {
@@ -14,8 +14,8 @@ void worm_ui_nuklear_compose_state_t::abandon_palette_context_menus() {
         wormedit::ui::chrome::context_menu_abandon(*menu);
 }
 
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/tooltip.h"
 
 #include <algorithm>
 #include <cstring>

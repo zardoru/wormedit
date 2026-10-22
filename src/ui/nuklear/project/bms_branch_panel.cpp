@@ -1,7 +1,7 @@
 #include "ui/nuklear/project/bms_branch_panel.h"
 
 #include "wormedit/nuklear_config.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 #include <algorithm>
 #include <array>

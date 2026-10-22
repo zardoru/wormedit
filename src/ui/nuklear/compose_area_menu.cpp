@@ -1,9 +1,9 @@
 #include "ui/nuklear/compose_menu_command.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_note_menu.h"
-#include "ui/nuklear/context_menu.h"
+#include "ui/nuklear/chrome/context_menu.h"
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/compose_state.h"
 

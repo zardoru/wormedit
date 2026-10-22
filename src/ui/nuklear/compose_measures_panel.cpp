@@ -1,9 +1,9 @@
 #include "ui/nuklear/compose_measures_panel.h"
-#include "ui/nuklear/content_layout.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/content_layout.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_action_stamp.h"
 #include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/tooltip.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>

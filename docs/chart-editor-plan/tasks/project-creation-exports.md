@@ -23,7 +23,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   overflow menu, and create/edit/delete use the shared modal-dialog rules instead of the trailing
   inline form and deletion checkbox.
 - **Read first:** `docs/audits/output-groups-ux-2026-10-19.md`; `src/ui/nuklear/project/setup_panel.cpp`
-  (`render_output_groups`); `src/ui/nuklear/dialog.h`; `src/ui/frontend/project.h`;
+  (`render_output_groups`); `src/ui/nuklear/chrome/dialog.h`; `src/ui/frontend/project.h`;
   `src/sys/project/project_view.cpp` (`build_output_group_view`).
 - **Files owned:** `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/frontend/project.h`,
   `src/sys/project/project_view.cpp`, `tests/sys/project_view_tests.cpp`,

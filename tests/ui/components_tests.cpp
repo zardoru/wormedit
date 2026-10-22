@@ -1,8 +1,8 @@
-#include "ui/nuklear/catalog_chrome.h"
-#include "ui/nuklear/content_layout.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/ui_gallery.h"
-#include "ui/nuklear/ui_metrics.h"
+#include "ui/nuklear/chrome/catalog_chrome.h"
+#include "ui/nuklear/chrome/content_layout.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/ui_gallery.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

@@ -1,6 +1,6 @@
 #include "ui/nuklear/compose_bmson_tab.h"
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/render/theme.h"
 

@@ -1,7 +1,7 @@
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/timing/timing_settings_panel.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/dialog.h"
 #include <array>
 #include <cstdint>
 #include <cstdio>

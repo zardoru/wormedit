@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
-#include "ui/nuklear/panel_input.h"
+#include "ui/nuklear/chrome/panel_input.h"
 
 #include <cstddef>
 #include <cstdint>

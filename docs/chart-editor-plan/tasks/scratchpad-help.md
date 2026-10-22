@@ -41,7 +41,7 @@ User-authorized scratchpad batch, 2026-10-09. Shared frontend/menu ownership is 
 - **Status:** done (2026-10-09; implementation and verification committed together)
 - **Stale-plan audit (2026-10-09):** About currently contains only version and build.
 - **Outcome:** About shows the repository, author, license and concise AI disclosure alongside version/build.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `README.md`, `src/ui/nuklear/dialog.h`.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `README.md`, `src/ui/nuklear/chrome/dialog.h`.
 - **Files owned:** `src/ui/nuklear/compose_keyboard_input.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/workspace_menu.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `docs/chart-editor-plan/tasks/scratchpad-help.md`, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Implement the outcome through existing production input/menu/dialog paths. 2. Verify routing, preservation and dismissal with production tests. 3. Build, run the suite and complexity checks, inspect isolated native captures, then synchronize the Brain.
 - **Invariants:** authored chart data and Undo are unchanged by Help/menu presentation; selected-object lane reassignment and Draw keyboard input remain available.

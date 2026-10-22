@@ -1,6 +1,6 @@
 #include "ui/nuklear/resources/sound_import_dialog.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/dialog.h"
 
 #include <algorithm>
 #include <array>

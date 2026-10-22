@@ -1,9 +1,9 @@
 #include "ui/nuklear/compose_sound_picker.h"
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 #include <algorithm>
 #include <cstring>
 

@@ -6,8 +6,8 @@
 
 - **Status:** done (2026-10-04; root reviewed integration, full application build and suite pass)
 - **Outcome:** pressing the Notifications window's real close control hides history and releases its stale window rectangle from frontend pointer capture; reopening shows it normally and restores capture only while visible.
-- **Read first:** `AGENTS.md`, `docs/chart-editor-plan/tasks.md`, this card, `src/ui/nuklear/notification_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.h`, `tests/CMakeLists.txt`.
-- **Files owned:** `src/ui/nuklear/notification_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, new `tests/ui/hidden_notification_history_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card, `docs/chart-editor-plan/tasks.md`, new `memory/coordination/hidden-history.md`.
+- **Read first:** `AGENTS.md`, `docs/chart-editor-plan/tasks.md`, this card, `src/ui/nuklear/chrome/notification_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.h`, `tests/CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/chrome/notification_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, new `tests/ui/hidden_notification_history_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card, `docs/chart-editor-plan/tasks.md`, new `memory/coordination/hidden-history.md`.
 - **Steps:**
   1. Use actual event-harness input to close history with its X control; verify wheel and motion at the old bounds route back to Compose.
   2. Ensure both producer and frontend treat Nuklear's hidden window as closed for model state, hit testing and capture; reopening clears hidden state.

@@ -1,12 +1,12 @@
 #include <wormedit/core/diagnostic.h>
 #include <wormedit/core/metadata_rating.h>
-#include "ui/nuklear/text_fit.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/text_fit.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/project/setup_panel.h"
 #include "ui/nuklear/project/setup_state.h"
-#include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/context_menu.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/context_menu.h"
+#include "ui/nuklear/chrome/dialog.h"
 
 #include "wormedit/nuklear_config.h"
 

@@ -1,6 +1,6 @@
 #include "ui/field/rect.h"
 #include "core/text_util.h"
-#include "ui/nuklear/text_fit.h"
+#include "ui/nuklear/chrome/text_fit.h"
 #include "ui/nuklear/compose_bookmark_label.h"
 
 #include <algorithm>

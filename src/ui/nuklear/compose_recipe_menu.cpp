@@ -1,8 +1,8 @@
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_panel_internal.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/context_menu.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/context_menu.h"
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/compose_state.h"
 

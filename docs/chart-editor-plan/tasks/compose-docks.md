@@ -93,7 +93,7 @@ window buttons.
 - **Status:** done (2026-10-05; Xvfb capture of the transport row inspected; harness cases and the full headless suite pass)
 - **Result:** `music-2` (Lucide, same pinned commit) was added to `assets/icons/lucide`, `scripts/generate-lucide-icons.py`, `Glyph::music_2` and the regenerated `lucide_icon_pixels.h` (the generator needed `rsvg-convert` and Pillow, installed for this run). `render_transport_rate` now draws an `IconButton` with the same availability gate and `SET_KEEP_PITCH` payload; its status-bar column went from 100 px to one icon column. Tooltip: "Preserve pitch at reduced speed", or "Keep pitch is unavailable without audio output" when disabled. The capture shows the off state only; the on state uses the shared `IconButton` selected style. Tests: `tests/ui/keep_pitch_event_harness_tests.cpp`.
 - **Outcome:** the transport "Keep pitch" text button becomes an icon toggle with the tooltip "Preserve pitch at reduced speed", showing its on and off states like the other transport toggles.
-- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_transport_rate`), `src/ui/nuklear/chrome.h` (`IconButton`, `mode_button`), `scripts/generate-lucide-icons.py`.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_transport_rate`), `src/ui/nuklear/chrome/chrome.h` (`IconButton`, `mode_button`), `scripts/generate-lucide-icons.py`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/render/lucide_icons.h`, `src/ui/nuklear/render/lucide_icon_pixels.h`, `src/ui/nuklear/render/lucide_icons.cpp`, `scripts/generate-lucide-icons.py` (icon list only), this card.
 - **Steps:**
   1. Add a Lucide icon such as `audio-waveform` or `music-2` through the generator.

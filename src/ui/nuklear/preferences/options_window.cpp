@@ -1,6 +1,6 @@
 #include "ui/nuklear/preferences/options_window.h"
-#include "ui/nuklear/chrome.h"
-#include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/render/theme.h"
 #include <cstdio>
 #include <string_view>

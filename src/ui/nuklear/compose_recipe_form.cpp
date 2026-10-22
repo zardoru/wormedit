@@ -1,6 +1,6 @@
 #include "ui/nuklear/compose_recipe_form.h"
 
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose_panel_internal.h"
 
 #include <array>

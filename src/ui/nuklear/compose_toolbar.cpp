@@ -3,11 +3,11 @@
 
 #include <wormedit/core/rational.h>
 #include "ui/nuklear/compose_toolbar.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/tooltip.h"
 #include <cstdio>
 #include "ui/nuklear/render/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
 
 #include <algorithm>

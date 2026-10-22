@@ -91,7 +91,7 @@ The worked example is T-672: `compose_measure_lane_view_t` in `src/ui/frontend/c
 - Supporting ownership extensions: `src/ui/frontend/file_jobs.h` borrows process-lifetime phase
   labels (all four existing producers select literals), avoiding owned-string snapshot allocation;
   `src/sys/shortcut_rows.*` retains first-chord and joined palette text in the existing shared cache;
-  `src/ui/nuklear/chrome.h` shares its combo implementation with a typed span/label projection.
+  `src/ui/nuklear/chrome/chrome.h` shares its combo implementation with a typed span/label projection.
   Compare uses that overload without recreating a label-pointer array or changing popup layout.
 - The frontend workspace render entry accepts the persistent root by mutable reference/pointer
   only to fill its presentation-only Compose input-occlusion flag. This removes the previous
@@ -667,7 +667,7 @@ Coordinator-approved supporting ownership for the leaf and root conversion:
 - `src/ui/frontend/workspace.h`
 - `src/ui/nuklear/project/bms_branch_panel.cpp`
 - `src/ui/nuklear/project/bms_branch_panel.h`
-- `src/ui/nuklear/catalog_confirmation.h`
+- `src/ui/nuklear/chrome/catalog_confirmation.h`
 - `src/ui/nuklear/compose_action_stamp.h`
 - `src/ui/nuklear/compose_area_menu.cpp`
 - `src/ui/nuklear/compose_area_menu.h`
@@ -724,7 +724,7 @@ Coordinator-approved supporting ownership for the leaf and root conversion:
 - `src/ui/nuklear/compose_viewport_input.cpp`
 - `src/ui/nuklear/frontend.cpp`
 - `src/ui/nuklear/metadata/metadata_audio_section.cpp`
-- `src/ui/nuklear/popup_lifecycle.h`
+- `src/ui/nuklear/chrome/popup_lifecycle.h`
 - `src/ui/nuklear/audio/preview_audio_dialog.cpp`
 - `src/ui/nuklear/audio/preview_audio_dialog.h`
 - `src/ui/nuklear/sdl_backend.cpp`

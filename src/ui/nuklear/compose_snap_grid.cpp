@@ -1,6 +1,6 @@
 #include "ui/nuklear/compose_snap_grid.h"
 #include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 #include <algorithm>
 #include <array>

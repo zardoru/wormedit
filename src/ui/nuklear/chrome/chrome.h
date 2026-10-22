@@ -1,12 +1,12 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 #include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/render/lucide_icons.h"
-#include "ui/nuklear/text_field.h"
-#include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/ui_metrics.h"
+#include "ui/nuklear/chrome/text_field.h"
+#include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 
 #include <algorithm>
 #include <cstring>

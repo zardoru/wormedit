@@ -1,5 +1,5 @@
-#include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <array>

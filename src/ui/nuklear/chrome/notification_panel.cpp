@@ -1,6 +1,6 @@
 #include "ui/field/rect.h"
-#include "ui/nuklear/notification_panel.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/notification_panel.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 
 #include <algorithm>

@@ -1,9 +1,9 @@
 #include "ui/field/rect.h"
 #include "ui/nuklear/metadata/metadata_audio_section.h"
-#include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/chrome/tooltip.h"
 
 #include "ui/nuklear/audio/audio_panel.h"
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 
 #include <cstring>

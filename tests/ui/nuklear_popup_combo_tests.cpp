@@ -1,5 +1,5 @@
 #define NK_IMPLEMENTATION
-#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/chrome/chrome.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

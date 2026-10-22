@@ -2,6 +2,7 @@
 #include "ui/nuklear/audio/audio_state.h"
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <source_location>
@@ -284,4 +285,31 @@ TEST_CASE("Sounds alignment release commits without a movement threshold",
     expect(released.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
     expect(released.get().audio_offset_drag_delta_frames == 0);
     expect(!worm_ui_nuklear_audio_state().offset_drag_active);
+}
+
+TEST_CASE("Sounds Slice emits the current source stamp and exact text parameters",
+          "[event-harness][sounds-workflow][slicer-ui]") {
+    fixture_t fixture{1280, 720};
+    auto& view = fixture.harness.view().audio_slices;
+    view.slicer.can_slice = true;
+    view.slicer.message = "8 slices";
+    auto& state = worm_ui_nuklear_audio_state();
+    std::strcpy(state.slicer_bpm, "123.456");
+    std::strcpy(state.slicer_division, "4");
+    std::strcpy(state.slicer_offset, "-0.125");
+    (void)fixture.harness.frame();
+    const auto button = fixture.harness.drawn_text_center("Slice");
+    expect(button);
+    const auto frames = wormedit::test::click_at(fixture.harness, button->first, button->second);
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) { return frame.get().audio_slicer.has_value(); });
+    expect(found != frames.end());
+    const auto& action = *found->get().audio_slicer;
+    expect(action.project == view.usage_song_id);
+    expect(action.chart == view.chart_id);
+    expect(action.resource == view.selected_resource_id);
+    expect(action.asset == view.selected_asset_id);
+    expect(action.revision == view.document_revision);
+    expect(action.settings.bpm == "123.456");
+    expect(action.settings.division == "4");
+    expect(action.settings.offset == "-0.125");
 }

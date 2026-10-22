@@ -27,3 +27,8 @@ auto worm_ui_nuklear_audio_list_key_command(int direction, bool audition) noexce
     state.list_audition_pending = state.list_audition_pending || audition;
     return true;
 }
+
+auto worm_ui_frontend_audio_slicer_settings() -> wormedit::ui::audio_slicer_settings_t {
+    const auto& state = worm_ui_nuklear_audio_state();
+    return {.bpm = state.slicer_bpm, .division = state.slicer_division, .offset = state.slicer_offset};
+}

@@ -1,4 +1,5 @@
 #pragma once
+#include "audio_slicer.h"
 #include "catalog.h"
 #include "project.h"
 #include <wormedit/core/metadata_limits.h>
@@ -249,6 +250,7 @@ struct audio_waveform_viewport_request_t {
 
 namespace wormedit::ui {
 struct audio_slices_view_t {
+    audio_slicer_view_t slicer;
     std::vector<wormedit::ui::sound_row_view_t> sound_rows;
     bool sound_rows_truncated;
     resource_id_t selected_resource_id;

@@ -272,9 +272,11 @@ void update_waveform_viewport(nk_context* context, const wormedit::ui::audio_sli
     const auto& input = context->input;
     if (context->current->flags & NK_WINDOW_NO_INPUT) return;
     if (wheel_zoom && !audio.waveform_pan_active && !audio.offset_drag_active &&
-        nk_input_is_mouse_hovering_rect(&input, bounds) && input.mouse.scroll_delta.y != 0.0f)
+        nk_input_is_mouse_hovering_rect(&input, bounds) && input.mouse.scroll_delta.y != 0.0f) {
         viewport = zoom_waveform_viewport(viewport, input.mouse.pos.x - bounds.x,
                                           std::pow(1.25, input.mouse.scroll_delta.y));
+        context->input.mouse.scroll_delta.y = 0.0f;
+    }
     if (audio.waveform_pan_active) {
         viewport = pan_waveform_viewport(audio.waveform_pan_origin,
                                          audio.waveform_pan_anchor_x - input.mouse.pos.x);
@@ -294,7 +296,44 @@ auto waveform_navigation_hint(bool embedded) -> const char* {
 
 auto waveform_height(nk_context* context, bool embedded) -> float {
     return embedded ? 180.0f : wormedit::ui::layout::remaining_content_height(context,
-        {.minimum = 80.0f, .reserved = 82.0f});
+        {.minimum = 80.0f, .reserved = 226.0f});
+}
+
+void render_slicer_controls(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                             wormedit::ui::workspace_action_t& action, bool embedded) {
+    if (embedded) return;
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Slice into keysounds", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 20, 3);
+    for (const auto* label : {"BPM", "Division per beat", "Offset (seconds)"}) nk_label(context, label, NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 26, 3);
+    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.slicer_bpm, sizeof(audio.slicer_bpm), nk_filter_float);
+    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.slicer_division, sizeof(audio.slicer_division), nk_filter_decimal);
+    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.slicer_offset, sizeof(audio.slicer_offset), nk_filter_float);
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label_wrap(context, view.slicer.message.c_str());
+    nk_layout_row_dynamic(context, 28, 1);
+    const bool enabled = view.slicer.can_slice && view.selected_resource_id.value != 0;
+    if (!enabled) nk_widget_disable_begin(context);
+    const auto clicked = nk_button_label(context, "Slice");
+    if (!enabled) nk_widget_disable_end(context);
+    if (clicked && enabled) action.audio_slicer = wormedit::ui::audio_slicer_action_t{
+        .project = view.usage_song_id, .chart = view.chart_id, .resource = view.selected_resource_id,
+        .asset = view.selected_asset_id, .revision = view.document_revision,
+        .settings = worm_ui_frontend_audio_slicer_settings()};
+}
+
+void render_slicer_cuts(nk_command_buffer* canvas, struct nk_rect bounds,
+                       const wormedit::ui::audio_slices_view_t& view, float waveform_shift, bool embedded) {
+    if (embedded) return;
+    const auto& viewport = audio.waveform_viewport;
+    if (viewport.frames_per_pixel <= 0) return;
+    for (const auto frame : view.slicer.cut_frames) {
+        const auto x = bounds.x + waveform_shift + static_cast<float>((static_cast<double>(frame) - viewport.begin_frame) / viewport.frames_per_pixel);
+        if (x >= bounds.x && x <= bounds.x + bounds.w)
+            nk_stroke_line(canvas, x, bounds.y, x, bounds.y + bounds.h, 1.0f,
+                wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_playhead));
+    }
 }
 
 void render_waveform_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t* view,
@@ -379,7 +418,9 @@ void render_waveform_column(struct nk_context* context, const wormedit::ui::audi
         nk_stroke_line(canvas, audio.offset_drag_anchor_x, bounds.y, audio.offset_drag_anchor_x,
                        bounds.y + bounds.h, 1.0f, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::waveform_playhead));
     }
+    render_slicer_cuts(canvas, bounds, *view, waveform_shift, embedded);
     nk_push_scissor(canvas, parent_clip);
+    render_slicer_controls(context, *view, *action, embedded);
 
     if (audio.offset_drag_active || view->offset_drag_active) {
         nk_layout_row_dynamic(context, 20, 1);
@@ -819,7 +860,9 @@ void render_sound_columns(struct nk_context* context, const wormedit::ui::audio_
         render_sound_list_column(context, view, action);
         nk_group_end(context);
     }
-    if (nk_group_begin(context, "sound_wave", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
+    const auto waveform_flags = static_cast<nk_flags>(NK_WINDOW_BORDER) |
+        (height < 380.0f ? 0U : static_cast<nk_flags>(NK_WINDOW_NO_SCROLLBAR));
+    if (nk_group_begin(context, "sound_wave", waveform_flags)) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "Waveform", NK_TEXT_LEFT);
         wormedit::ui::chrome::section_separator(context);

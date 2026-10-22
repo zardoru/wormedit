@@ -65,6 +65,22 @@ There can be up to 32 tags of 64 bytes each; rejected edits keep the existing ta
 diagnostic. *Filter by tag* matches part of an individual tag, without regard to case. The
 ordinary search also finds names and tag text.
 
+== Slicing a long sound
+
+Save the project, select a difficulty, and select a sound on the *Sounds* tab.
+Under the waveform, *Slice into keysounds* accepts *BPM*, *Division per beat*, and
+*Offset (seconds)*. Division 4 makes four slices per beat (sixteenth notes).
+The cut lines follow waveform zoom and pan; negative offsets are allowed, and a
+positive offset keeps the leading audio as a separate slice.
+
+Click *Slice* to render WAVs into the project's audio folder and register them as
+keysounds in one Undo step. The source stays untouched, and no notes are placed
+in Compose. The file-job status shows progress and offers *Cancel*. Cancellation,
+a failed render/import, or changing the document while the job runs imports
+nothing and removes the unaccepted output. Undo removes the imported catalog
+entries while retaining their files for Redo. The preview refuses grids with
+more than 1295 slices.
+
 == osu! hitsounds
 
 osu!mania charts show hitsound controls below the note-kind palette. The whistle, cymbal and

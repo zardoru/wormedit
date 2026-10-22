@@ -232,7 +232,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         PRIVATE wormedit::audio_decoder Catch2::Catch2WithMain)
 
     add_executable(wormedit_audio_tests
+        ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_open.cpp
         ../src/sys/app/application_defaults.cpp
         ../src/sys/audio/audio_project_import.cpp
@@ -265,6 +267,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_ogg_encoder_tests.cpp
         core/audio_preview_export_tests.cpp
         core/audio_waveform_viewport_tests.cpp
+        sys/audio_slicer_runtime_tests.cpp
         core/audio_slice_render_tests.cpp
         formats/slice_span_render_tests.cpp
         core/audio_aligned_waveform_tests.cpp
@@ -600,6 +603,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/preferences/external_player.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_save_paths.cpp
         ../src/sys/project/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
@@ -862,6 +866,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resources/resource_job_state.cpp
             ../src/sys/audio/preview_audio_export.cpp
+            ../src/sys/audio/audio_slicer_runtime.cpp
             ../src/sys/project/project_save_paths.cpp
             ../src/sys/project/output_group_export.cpp
             ../src/sys/metadata/metadata_asset_runtime.cpp
@@ -926,6 +931,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/resources/resource_job_state.cpp
         ../src/sys/audio/preview_audio_export.cpp
+        ../src/sys/audio/audio_slicer_runtime.cpp
         ../src/sys/project/project_save_paths.cpp
         ../src/sys/project/output_group_export.cpp
         sys/metadata_notification_tests.cpp

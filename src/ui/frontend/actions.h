@@ -1,4 +1,5 @@
 #pragma once
+#include "audio_slicer.h"
 #include "workspace_types.h"
 #include "file_jobs.h"
 #include "lane_keys.h"
@@ -513,6 +514,7 @@ struct workspace_action_t {
     uint8_t transport_rate_index;
     wormedit::audio::playback_rate_id_t transport_rate_id;
     bool transport_keep_pitch;
+    std::optional<audio_slicer_action_t> audio_slicer;
     wormedit::asset_id_t audio_asset_id;
     wormedit::resource_id_t audio_resource_id;
     wormedit::song_id_t sound_usage_song_id;

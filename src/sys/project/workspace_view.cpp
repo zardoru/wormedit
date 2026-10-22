@@ -1186,7 +1186,7 @@ void metadata_view_t::reset() {
 
 void audio_slices_view_t::reset() {
     sys::reset_workspace_storage(*this,
-        sound_rows, usage_rows, asset_ids,
+        sound_rows, usage_rows, asset_ids, slicer.cut_frames, slicer.message,
         waveform_columns, sound_kinds.entries);
     asset_ids.clear();
     waveform_columns.clear();

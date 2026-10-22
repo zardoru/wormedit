@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/frontend/audio_slicer.h"
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -31,6 +32,7 @@ struct worm_ui_nuklear_audio_state_t {
     std::int64_t offset_drag_delta_frames{};
     bool offset_escape_pending{};
     bool offset_cancel_pending{};
+    char slicer_bpm[32]{"120"}, slicer_division[16]{"1"}, slicer_offset[32]{"0"};
     char search_text[128]{};
     char tag_filter[128]{};
     char new_tag[257]{};

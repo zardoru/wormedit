@@ -2,6 +2,14 @@
 
 ## Active queue (2026-10-21)
 
+Completed **T-332** (2026-10-22): Sounds exposes BPM, division-per-beat and signed offset
+with exact waveform cut previews. The shared async shell renders WAVs into the project's
+audio folder and imports one keysound batch; cancel/stale/failure discards output, and
+one Undo restores the catalog. Source audio and chart notes stay unchanged. GATE and
+Linux Clang each pass **4,447/4,447**, plus **7-TU** complexity; isolated native Slice/save
+and Undo/save verify **1→5→1** resources/assets and unchanged source PCM. The next
+owner-requested card is **T-280**, audio-time anchoring for BPM/timing edits.
+
 Completed **T-621** (2026-10-22): all **428** sys/Nuklear files now live in
 **24** subsystem folders, with filenames/prefixes preserved and one verified commit per
 folder. All move revisions are in `.git-blame-ignore-revs`; the exact path/consumer inventory

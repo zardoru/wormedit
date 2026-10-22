@@ -567,6 +567,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/views/compose_waveform_overlays.cpp
         src/sys/resources/resource_job_state.cpp
         src/sys/audio/preview_audio_export.cpp
+        src/sys/audio/audio_slicer_runtime.cpp
         src/sys/project/output_group_export.cpp
         src/sys/audio/player_preview_presenter.cpp
         src/sys/project/workspace_view.cpp

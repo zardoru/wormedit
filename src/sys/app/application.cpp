@@ -7,6 +7,7 @@
 #include "sys/preferences/external_player_runtime.h"
 #include "sys/app/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
+#include "sys/audio/audio_slicer_runtime.h"
 #include "sys/compose/actions/compose_note_to_bgm.h"
 #include "sys/compose/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
@@ -2021,8 +2022,9 @@ struct application_t::implementation_t {
         task_scheduler_t resource_copy_scheduler{1, 1, background_scheduler_options()};
         runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
         runtime::preview_audio_export_t preview_audio_runtime{resource_copy_scheduler, notifications};
+        runtime::audio_slicer_t audio_slicer_runtime{resource_copy_scheduler, notifications};
         [[nodiscard]] auto is_resource_worker_busy() const -> bool {
-            return resource_copy_runtime.is_busy() || preview_audio_runtime.is_busy();
+            return resource_copy_runtime.is_busy() || preview_audio_runtime.is_busy() || audio_slicer_runtime.is_busy();
         }
         runtime::metadata_asset_t metadata_asset_runtime{notifications};
         runtime::output_group_export_t export_runtime{notifications};
@@ -4072,6 +4074,7 @@ struct application_t::implementation_t {
         jobs.project_open_runtime.shutdown();
         jobs.resource_copy_runtime.cancel();
         jobs.preview_audio_runtime.cancel();
+        jobs.audio_slicer_runtime.cancel();
         jobs.metadata_asset_runtime.cancel();
         jobs.export_runtime.cancel();
         jobs.resource_copy_scheduler.shutdown();
@@ -4491,6 +4494,7 @@ struct application_t::implementation_t {
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
                 jobs.preview_audio_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
+            jobs.audio_slicer_runtime.poll(session.history, session.workspace);
             poll_project_save();
             poll_project_open();
             compose_viewport_delta_seconds =
@@ -4638,6 +4642,13 @@ struct application_t::implementation_t {
         flattened.view.file_jobs.opening = jobs.project_open_runtime.view();
         const auto preview_audio = jobs.preview_audio_runtime.view();
         flattened.view.file_jobs.exporting = preview_audio.active ? preview_audio : jobs.export_runtime.view();
+        const auto slicer = jobs.audio_slicer_runtime.view();
+        if (slicer.active) flattened.view.file_jobs.exporting = slicer;
+        auto& audio = flattened.view.audio_slices;
+        jobs.audio_slicer_runtime.populate(audio.slicer, worm_ui_frontend_audio_slicer_settings(),
+            audio.sample_rate, audio.total_frames, session.project_identity.native_project_loaded &&
+            audio.has_chart && !jobs.is_resource_worker_busy() && !jobs.export_runtime.is_busy() &&
+            !jobs.metadata_asset_runtime.import_pending());
         flattened.view.file_jobs.preview = views.project_chart_runtime.preview_view();
         const auto export_confirmation = jobs.export_runtime.confirmation_view();
         flattened.view.compose.export_confirmation_required = export_confirmation.required;
@@ -4693,6 +4704,21 @@ struct application_t::implementation_t {
                          views.project_chart_runtime.session_generation);
     }
 
+    void dispatch_audio_slicer(const wormedit::ui::workspace_action_t& action) {
+        if (!action.audio_slicer) return;
+        if (!session.project_identity.native_project_loaded || jobs.is_resource_worker_busy() ||
+            jobs.export_runtime.is_busy() || jobs.metadata_asset_runtime.import_pending() ||
+            session.workspace.selected_chart != action.audio_slicer->chart) {
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::import_,
+                "Save the project and wait for current file jobs before slicing.");
+            return;
+        }
+        const auto started = jobs.audio_slicer_runtime.start(session.history.document,
+            *action.audio_slicer, session.project_identity.asset_base);
+        platform.notification_sink.post(started ? notification_severity_t::info : notification_severity_t::warning,
+            notification_source_t::import_, started ? "Audio slicing started." : started.error().message);
+    }
+
     void dispatch_preview_audio_export(const wormedit::ui::workspace_action_t& action) {
         if (!action.preview_audio_export) return;
         if (jobs.is_resource_worker_busy() || jobs.export_runtime.is_busy() || jobs.metadata_asset_runtime.import_pending()) {
@@ -4715,6 +4741,7 @@ struct application_t::implementation_t {
         dispatch_lane_keys(action);
         dispatch_options_page_action(action.options);
         dispatch_preview_audio_export(action);
+        dispatch_audio_slicer(action);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         const auto& skin = preferences.program_preferences.preferences.audio.osu_skin_directory;
         sync_hitsound_monitoring();
@@ -4766,7 +4793,8 @@ struct application_t::implementation_t {
 
             if (action.file_jobs.cancel_open) jobs.project_open_runtime.cancel();
             if (action.file_jobs.cancel_export) {
-                if (jobs.preview_audio_runtime.is_busy()) jobs.preview_audio_runtime.cancel();
+                if (jobs.audio_slicer_runtime.is_busy()) jobs.audio_slicer_runtime.cancel();
+                else if (jobs.preview_audio_runtime.is_busy()) jobs.preview_audio_runtime.cancel();
                 else jobs.export_runtime.cancel();
             }
             if (action.file_jobs.cancel_preview) views.project_chart_runtime.request_cancel_preview();

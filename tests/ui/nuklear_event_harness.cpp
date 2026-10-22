@@ -5,7 +5,7 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/player_preview.h"
 #include "ui/nuklear/setup_state.h"
-#include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/timing/timing_stage_editor.h"
 
 #include <algorithm>
 #include <array>

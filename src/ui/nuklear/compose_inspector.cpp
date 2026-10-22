@@ -9,7 +9,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_markers.h"
-#include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/timing/timing_stage_editor.h"
 
 #include <algorithm>
 #include <array>

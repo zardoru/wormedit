@@ -12,7 +12,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_pointer_chords.h"
 #include "ui/nuklear/compose_measure_resize_input.h"
-#include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/timing/timing_stage_editor.h"
 
 #include "wormedit/nuklear_config.h"
 

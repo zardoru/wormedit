@@ -25,7 +25,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_recipe_form.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/timing/timing_stage_editor.h"
 
 #include "wormedit/nuklear_config.h"
 

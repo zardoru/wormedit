@@ -1,6 +1,6 @@
-#include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/timing/timing_stage_editor.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/timing_state.h"
+#include "ui/nuklear/timing/timing_state.h"
 
 #include "wormedit/nuklear_config.h"
 

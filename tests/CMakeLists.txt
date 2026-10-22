@@ -477,7 +477,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/sound_import_state.cpp
         ../src/ui/nuklear/keysound_list_state.cpp
         ../src/ui/nuklear/measure_resize.cpp
-        ../src/ui/nuklear/timing_state.cpp
+        ../src/ui/nuklear/timing/timing_state.cpp
         ../src/ui/nuklear/meter_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE

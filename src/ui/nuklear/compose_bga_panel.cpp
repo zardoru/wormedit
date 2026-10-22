@@ -8,9 +8,9 @@
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/popup_lifecycle.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/vector_icons.h"
+#include "ui/nuklear/render/vector_icons.h"
 #include "wormedit/core/document.h"
 #include <SDL3/SDL.h>
 #include <algorithm>

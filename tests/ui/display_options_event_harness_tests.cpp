@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/interface_scale.h"
+#include "ui/nuklear/render/interface_scale.h"
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
 

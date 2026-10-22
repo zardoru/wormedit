@@ -1,6 +1,6 @@
 #include "ui/nuklear/color.h"
-#include "ui/nuklear/theme.h"
-#include "ui/nuklear/arrow_glyph.h"
+#include "ui/nuklear/render/theme.h"
+#include "ui/nuklear/render/arrow_glyph.h"
 #include <wormedit/core/lane_profiles.h>
 
 #include <nlohmann/json.hpp>

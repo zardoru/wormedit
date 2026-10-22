@@ -129,14 +129,14 @@ Apply the stale-plan check (rule 9) first.
   clock contract rather than introducing smoothing to disable it.
 - **Supporting ownership (2026-10-21):** also owned: `src/sys/preferences/options_runtime.cpp`,
   `src/sys/app/application.cpp`, `src/sys/app/window.cpp`, `src/ui/frontend/actions.h`, `src/ui/frontend/options_notifications.h`,
-  new `src/ui/nuklear/interface_scale.h`, `src/ui/nuklear/font_atlas.h/.cpp`,
+  new `src/ui/nuklear/render/interface_scale.h`, `src/ui/nuklear/font_atlas.h/.cpp`,
   `src/ui/nuklear/audio/audio_panel.cpp`, `assets/themes/ui-dark.json`,
   new `tests/ui/display_options_event_harness_tests.cpp`, `tests/ui/font_atlas_tests.cpp`,
   `tests/ui/theme_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md`. These wire accepted display settings through the
   actual font/render/input owners, keep native high-DPI rendering, and verify popup/input alignment.
 - **Outcome:** theme choice from the bundled themes directory (replacing the `WORMEDIT_THEME_DIR` environment variable, which stays as an override), UI scale (auto, 100–200 %), frame-timing overlay toggle, reduced motion (no playhead smoothing), and waveform colors from theme roles.
-- **Read first:** `src/ui/nuklear/theme.cpp` (`load`), `assets/themes/`, `src/ui/nuklear/frontend.cpp` (font and scale setup), `src/sys/app/frame_timing.cpp`.
+- **Read first:** `src/ui/nuklear/render/theme.cpp` (`load`), `assets/themes/`, `src/ui/nuklear/frontend.cpp` (font and scale setup), `src/sys/app/frame_timing.cpp`.
 - **Files owned:** `src/ui/nuklear/preferences/options_window.cpp`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/frontend.cpp` (scale and font rebuild only), `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `tests/core/preferences_tests.cpp`.
 - **Steps:** 1. Theme reload at runtime (re-run `theme::load` and `apply_theme`). 2. UI scale rebuilds the font atlas once.
 - **Invariants:** resize/high-DPI alignment unchanged.

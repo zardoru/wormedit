@@ -140,7 +140,7 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
 
 - **Status:** done
 - **Outcome:** everything inside the Compose field rectangle is drawn by a new frontend-private field renderer that builds per-layer vertex batches directly from the scalar Compose view and submits them with `SDL_RenderGeometryRaw` (no Nuklear shapes, no `nk_convert`, no anti-aliasing for axis-aligned primitives), culled to the viewport; Nuklear keeps only the surrounding chrome.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/render/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
 - **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h` (header extension approved by user), `src/ui/nuklear/compose_area_menu.cpp/.h` (user-approved migration of the existing field band drawing helper), `CMakeLists.txt`, `cmake/check_ui_boundary.cmake` (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
   0. Keep per-frame vertex scratch in a `frame_arena_t` (T-271) or persistent vectors; never allocate per primitive.

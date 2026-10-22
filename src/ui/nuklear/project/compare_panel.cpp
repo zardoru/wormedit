@@ -2,7 +2,7 @@
 #include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 
 #include <algorithm>
 

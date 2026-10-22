@@ -2,8 +2,8 @@
 
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/popup_lifecycle.h"
-#include "ui/nuklear/theme.h"
-#include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/render/theme.h"
+#include "ui/nuklear/render/lucide_icons.h"
 #include "ui/nuklear/text_field.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/ui_metrics.h"

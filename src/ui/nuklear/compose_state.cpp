@@ -5,8 +5,8 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/popup_lifecycle.h"
-#include "ui/nuklear/arrow_glyph.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/arrow_glyph.h"
+#include "ui/nuklear/render/theme.h"
 #include "wormedit/nuklear_config.h"
 
 #include <wormedit/core/numeric_text.h>

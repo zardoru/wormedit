@@ -426,7 +426,7 @@ The exact coordinated producer, consumer, vocabulary and regression inventory is
   limits and unconverted BGM/bookmark/sound bounds are unchanged. Artificial output cutoffs for
   geometry, timing spans/graphs/markers and layout segments are gone; oversized layout lists
   now show every segment. The regression explicitly covers **2,049** segments.
-- Additional UI ownership from compilation/review: `src/ui/nuklear/theme.h` and `arrow_glyph.h`
+- Additional UI ownership from compilation/review: `src/ui/nuklear/render/theme.h` and `arrow_glyph.h`
   supply typed overloads for existing drawing helpers; `options_window.cpp` only consumes the
   typed marker ID. The exact UI fixture set is `tests/ui/nuklear_event_harness_tests.cpp`,
   `compose_beat_fit_tests.cpp`, `compose_measure_resize_tests.cpp`,

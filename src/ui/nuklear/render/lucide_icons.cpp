@@ -1,5 +1,5 @@
-#include "ui/nuklear/lucide_icons.h"
-#include "ui/nuklear/lucide_icon_pixels.h"
+#include "ui/nuklear/render/lucide_icons.h"
+#include "ui/nuklear/render/lucide_icon_pixels.h"
 
 #include <SDL3/SDL_render.h>
 

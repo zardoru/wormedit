@@ -410,8 +410,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_settings_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/audio_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/bms_branch_panel.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/arrow_glyph.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/font_atlas.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/arrow_glyph.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/font_atlas.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_label.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_chooser.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sound_picker.cpp"
@@ -444,8 +444,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/field/field_renderer.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/field/field_tile_cache.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/field/field_glyphs.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/image_quad.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/lucide_icons.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/image_quad.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/lucide_icons.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_audio_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_difficulty_section.cpp"
@@ -471,7 +471,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/text_field.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/meter_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/theme.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/theme.cpp"
     )
 
 endif()

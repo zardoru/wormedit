@@ -4,7 +4,7 @@
 
 #include "ui/nuklear/audio/audio_panel.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 
 #include <cstring>
 #include <SDL3/SDL_dialog.h>

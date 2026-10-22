@@ -1,4 +1,4 @@
-#include "ui/nuklear/font_atlas.h"
+#include "ui/nuklear/render/font_atlas.h"
 #include "ui/nuklear/sdl_backend.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>

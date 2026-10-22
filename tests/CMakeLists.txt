@@ -468,9 +468,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_timing_state_tests.cpp
         ui/nuklear_meter_state_tests.cpp
         ../src/ui/nuklear/audio/audio_state.cpp
-        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/render/arrow_glyph.cpp
         ../src/ui/nuklear/compose_bookmark_label.cpp
-        ../src/ui/nuklear/theme.cpp
+        ../src/ui/nuklear/render/theme.cpp
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata/metadata_state.cpp
         ../src/ui/nuklear/project/setup_state.cpp
@@ -499,8 +499,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_nuklear_popup_combo_tests
         ui/nuklear_popup_combo_tests.cpp
         ../src/ui/nuklear/components.cpp
-        ../src/ui/nuklear/theme.cpp
-        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/render/theme.cpp
+        ../src/ui/nuklear/render/arrow_glyph.cpp
         ../src/ui/nuklear/tooltip.cpp)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
@@ -533,7 +533,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_field_renderer_tests
         ui/field_renderer_tests.cpp
         ui/field_tile_cache_tests.cpp
-        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/render/arrow_glyph.cpp
         ../src/ui/field/field_renderer.cpp
         ../src/ui/field/field_tile_cache.cpp
         ../src/common/static_interval_index.cpp
@@ -552,7 +552,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
-        ../src/ui/nuklear/image_quad.cpp
+        ../src/ui/nuklear/render/image_quad.cpp
         ../src/ui/nuklear/audio/player_preview.cpp
         ../src/ui/nuklear/audio/player_preview_texture.cpp
     )
@@ -805,7 +805,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/tooltip.cpp
         ../src/ui/nuklear/notification_panel.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
-        ../src/ui/nuklear/theme.cpp
+        ../src/ui/nuklear/render/theme.cpp
         ../src/sys/app/frame_timing.cpp
         ../src/sys/compose/actions/compose_area_actions.cpp
         ../src/sys/compose/actions/compose_quantize.cpp
@@ -824,7 +824,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/actions/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
-        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/render/arrow_glyph.cpp
         ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/timing/timing_view.cpp
         ../src/sys/compose/views/recipe_form.cpp

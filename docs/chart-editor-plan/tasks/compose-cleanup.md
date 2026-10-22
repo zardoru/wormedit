@@ -198,8 +198,8 @@ Every control `worm_ui_nuklear_render_compose_resources` draws today (`compose_r
 - **Future work (user, 2026-10-05):** audio-time bookmarks and beat bookmarks (and likewise audio-time and beat sections) should become one single marker concept in the UI instead of two parallel groups with separate lists and forms. Not started and not planned as a card yet. It will need a decision on how one list shows both anchors and how "add" picks beat or audio time.
 - **Mockup:** [bookmarks-sections.svg](../mockups/bookmarks-sections.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the "Markers / sections" block becomes two compact groups, Bookmarks and Sections. Each has icon buttons for previous, next, add and delete with tooltips, and a list of entries. The combo-plus-text-field forms are gone.
-- **Read first:** `src/ui/nuklear/compose_inspector.cpp` (`render_compose_marker_section`), `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/lucide_icons.h`, `src/ui/nuklear/chrome.h` (`IconButton`).
-- **Files owned:** `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/compose_markers.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/lucide_icons.h`, `src/ui/nuklear/lucide_icon_pixels.h` (via `scripts/generate-lucide-icons.py`), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Read first:** `src/ui/nuklear/compose_inspector.cpp` (`render_compose_marker_section`), `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/render/lucide_icons.h`, `src/ui/nuklear/chrome.h` (`IconButton`).
+- **Files owned:** `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/compose_markers.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/render/lucide_icons.h`, `src/ui/nuklear/render/lucide_icon_pixels.h` (via `scripts/generate-lucide-icons.py`), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
 - **Steps:**
   1. **STOP** and show the user an ASCII mockup of both groups before coding.
   2. Build the Bookmarks group, with a clickable list where a click navigates and a double-click renames (the T-371 editor).

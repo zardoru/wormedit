@@ -9,13 +9,13 @@
 #include "ui/nuklear/compose_bmson_tab.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
-#include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/render/lucide_icons.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/resources/sound_import_state.h"
 #include "ui/nuklear/resources/sound_import_runtime.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/tooltip.h"
-#include "ui/nuklear/vector_icons.h"
+#include "ui/nuklear/render/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
 

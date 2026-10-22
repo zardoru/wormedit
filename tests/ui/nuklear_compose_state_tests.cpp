@@ -1,8 +1,8 @@
 #define NK_IMPLEMENTATION
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_note_menu.h"
-#include "ui/nuklear/arrow_glyph.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/arrow_glyph.h"
+#include "ui/nuklear/render/theme.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

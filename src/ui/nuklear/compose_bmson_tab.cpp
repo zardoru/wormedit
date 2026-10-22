@@ -2,7 +2,7 @@
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_panel_internal.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 
 #include <algorithm>
 #include <cstdint>

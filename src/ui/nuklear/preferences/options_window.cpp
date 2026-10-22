@@ -1,7 +1,7 @@
 #include "ui/nuklear/preferences/options_window.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 #include <cstdio>
 #include <string_view>
 #include "ui/nuklear/preferences/shortcuts_panel.h"

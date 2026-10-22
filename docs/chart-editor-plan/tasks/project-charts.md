@@ -40,7 +40,7 @@ Charts  1                                                     [ + ]   ← headin
 - **Remaining:** none for this card.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the table matches the proposal's heading, header and rows. The "+" opens New Chart, the header checkbox selects all, none or shows a partial state, "Clear selection" is gone, columns are ellipsized with the full text in a tooltip, and row selection follows the click rules.
-- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/project/setup_state.cpp` (selection helpers), `src/ui/nuklear/chrome.h`, `src/ui/nuklear/lucide_icons.h`.
+- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/project/setup_state.cpp` (selection helpers), `src/ui/nuklear/chrome.h`, `src/ui/nuklear/render/lucide_icons.h`.
 - **Files owned:** `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/project/setup_state.cpp`, `src/ui/nuklear/project/setup_state.h`, `src/ui/nuklear/chrome.h` (a drawn `Checkbox` helper), `tests/ui/` setup state tests, `tests/ui/nuklear_event_harness_tests.cpp`, this card. Also touched: `tests/ui/nuklear_setup_state_tests.cpp` (the owned setup state tests).
 - **Steps:**
   1. Use `chrome::Checkbox` from T-436.

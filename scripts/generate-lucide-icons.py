@@ -9,7 +9,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets/icons/lucide"
-DESTINATION = ROOT / "src/ui/nuklear/lucide_icon_pixels.h"
+DESTINATION = ROOT / "src/ui/nuklear/render/lucide_icon_pixels.h"
 SIZE = 40
 NAMES = (
     "zoom-in", "zoom-out", "panel-right-open", "panel-right-close",

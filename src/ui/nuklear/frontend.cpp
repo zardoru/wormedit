@@ -41,24 +41,24 @@
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/content_margin.h"
-#include "ui/nuklear/image_quad.h"
+#include "ui/nuklear/render/image_quad.h"
 #include "ui/nuklear/metadata/metadata_panel.h"
 #include "ui/nuklear/metadata/metadata_state.h"
 #include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/audio/player_preview.h"
 #include "ui/nuklear/project/setup_panel.h"
-#include "ui/nuklear/interface_scale.h"
+#include "ui/nuklear/render/interface_scale.h"
 #include "ui/nuklear/project/setup_state.h"
 #include "ui/nuklear/timing/timing_stage_editor.h"
 #include "ui/nuklear/timing/timing_state.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/notification_toasts.h"
 #include "ui/nuklear/notification_panel.h"
 #include "ui/nuklear/project/compare_panel.h"
 
 #include "ui/nuklear/sdl_backend.h"
-#include "ui/nuklear/font_atlas.h"
+#include "ui/nuklear/render/font_atlas.h"
 
 #include <wormedit/formats/bms.h>
 

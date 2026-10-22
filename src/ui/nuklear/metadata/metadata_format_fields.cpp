@@ -1,7 +1,7 @@
 #include "ui/nuklear/metadata/metadata_format_fields.h"
 
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/theme.h"
+#include "ui/nuklear/render/theme.h"
 
 #include "wormedit/nuklear_config.h"
 

@@ -10,7 +10,7 @@
 #include "sys/compose_sound_actions.h"
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
-#include "sys/metadata_actions.h"
+#include "sys/metadata/metadata_actions.h"
 #include "sys/resource_drop_router.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_area_menu.h"

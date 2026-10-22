@@ -5,7 +5,7 @@
 #include "sys/compose_dead_spans.h"
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_recipe_areas.h"
-#include "sys/metadata_projection_cache.h"
+#include "sys/metadata/metadata_projection_cache.h"
 #include "sys/compose_resource_presenter.h"
 
 #include "sys/sound_list_view.h"

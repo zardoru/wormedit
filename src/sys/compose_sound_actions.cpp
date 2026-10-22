@@ -2,7 +2,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_action_routes.h"
-#include "sys/metadata_commands.h"
+#include "sys/metadata/metadata_commands.h"
 #include "sys/resource_action_context.h"
 #include <wormedit/core/proposal.h>
 

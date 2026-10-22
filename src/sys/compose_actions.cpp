@@ -14,7 +14,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_semantic_layer_commands.h"
-#include "sys/metadata_commands.h"
+#include "sys/metadata/metadata_commands.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
 #include <cassert>

@@ -281,7 +281,7 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
   `src/sys/project_view.h`,
   `include/wormedit/core/vocabulary.h`, `include/wormedit/core/resource_file_copy.h`,
   `src/core/resource_file_copy.cpp`, `src/sys/project_save_paths.cpp`,
-  `src/sys/metadata_asset_runtime.cpp`, `src/ui/frontend/project.h`,
+  `src/sys/metadata/metadata_asset_runtime.cpp`, `src/ui/frontend/project.h`,
   `src/ui/frontend/actions.h`,
   new `tests/ui/project_settings_event_harness_tests.cpp`,
   `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`,

@@ -1,6 +1,6 @@
 #include "../support/stale_action_assertions.h"
 #include <catch2/generators/catch_generators.hpp>
-#include "sys/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_asset_runtime.h"
 #include <wormedit/formats/osu_mania.h>
 #include <span>
 #include "sys/resource_job_state.h"

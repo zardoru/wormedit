@@ -610,8 +610,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/application_defaults.cpp
         ui/widget_lookup_event_harness_tests.cpp
         ../src/sys/resource_drop_router.cpp
-        ../src/sys/metadata_actions.cpp
-        ../src/sys/metadata_asset_runtime.cpp
+        ../src/sys/metadata/metadata_actions.cpp
+        ../src/sys/metadata/metadata_asset_runtime.cpp
         ../src/sys/sound_drop_transaction.cpp
         ../src/sys/compose_sound_actions.cpp
         ui/gesture_lifecycle_event_harness_tests.cpp
@@ -626,7 +626,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/hidden_notification_history_event_harness_tests.cpp
         ui/notification_hit_region_event_harness_tests.cpp
         sys/global_drop_notification_tests.cpp
-        ../src/sys/metadata_drop_state.cpp
+        ../src/sys/metadata/metadata_drop_state.cpp
         ui/timing_settings_tests.cpp
         ui/tap_timing_panel_event_harness_tests.cpp
         ui/compose_beat_fit_tests.cpp
@@ -864,8 +864,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/preview_audio_export.cpp
             ../src/sys/project_save_paths.cpp
             ../src/sys/output_group_export.cpp
-            ../src/sys/metadata_asset_runtime.cpp
-            ../src/sys/metadata_drop_state.cpp
+            ../src/sys/metadata/metadata_asset_runtime.cpp
+            ../src/sys/metadata/metadata_drop_state.cpp
             sys/minimap_center_tests.cpp
             sys/compose_beat_fit_tests.cpp
             sys/compose_onset_snap_tests.cpp
@@ -939,10 +939,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/timing/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp
-        ../src/sys/metadata_view.cpp
-        ../src/sys/metadata_drop_state.cpp
-        ../src/sys/metadata_asset_runtime.cpp
-        ../src/sys/metadata_actions.cpp)
+        ../src/sys/metadata/metadata_view.cpp
+        ../src/sys/metadata/metadata_drop_state.cpp
+        ../src/sys/metadata/metadata_asset_runtime.cpp
+        ../src/sys/metadata/metadata_actions.cpp)
     target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE

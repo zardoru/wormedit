@@ -558,10 +558,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/frame_timing.cpp
         src/sys/timing/timing_view.cpp
         src/sys/timing/timing_edit_runtime.cpp
-        src/sys/metadata_drop_state.cpp
-        src/sys/metadata_asset_runtime.cpp
-        src/sys/metadata_actions.cpp
-        src/sys/metadata_view.cpp
+        src/sys/metadata/metadata_drop_state.cpp
+        src/sys/metadata/metadata_asset_runtime.cpp
+        src/sys/metadata/metadata_actions.cpp
+        src/sys/metadata/metadata_view.cpp
         src/sys/waveform_view.cpp
         src/sys/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp

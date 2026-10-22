@@ -1,4 +1,4 @@
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_drop_state.h"
 
 #include <wormedit/core/metadata_editor.h>
 

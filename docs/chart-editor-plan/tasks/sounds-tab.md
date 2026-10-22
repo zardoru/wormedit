@@ -58,7 +58,7 @@ later covering more bmhelper functions.
 - **Status:** done
 - **Implementation notes (2026-10-02):** `src/ui/nuklear/sound_import_state.h/.cpp` holds the pending list and phases (`choose_kind`, `review_list`, `ready`); the 8 cases in `tests/ui/sound_import_state_tests.cpp` are registered in the frontend-state target, which needs SDL3 and was not built here. They passed compiled standalone against Catch2 (50 assertions); run `ctest -R '^frontend-state\.'` on your build to confirm. Also done: flac accepted as a stem-friendly extension; mp3 and any single file when the chart has BGM go straight to `ready`.
 - **Outcome:** dropped or picked files produce a pending import list (name, kind, remove, reorder) that the user confirms or cancels; a single wav/ogg with no BGM asks "stem or sound"; a single mp3 defaults to sound; several files always show the list.
-- **Read first:** `src/sys/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio_state.h`, `src/sys/audio_project_import.h`.
+- **Read first:** `src/sys/metadata/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio_state.h`, `src/sys/audio_project_import.h`.
 - **Files owned:** new `src/ui/nuklear/sound_import_state.cpp/.h`, new `tests/ui/sound_import_state_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Pure state machine: add paths, classify by extension and chart-has-BGM, edit, confirm, cancel. 2. Tests for each rule above, bounds (1,000 files), duplicate paths, non-audio files rejected with a message.
 - **Invariants:** no filesystem access in the state; plain C types at the `frontend.h` boundary.

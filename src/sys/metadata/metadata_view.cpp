@@ -1,6 +1,6 @@
-#include "sys/metadata_view.h"
+#include "sys/metadata/metadata_view.h"
 
-#include "sys/metadata_actions.h"
+#include "sys/metadata/metadata_actions.h"
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>

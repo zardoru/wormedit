@@ -4,8 +4,8 @@
 
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_input.h"
-#include "sys/metadata_asset_runtime.h"
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_drop_state.h"
 #include "sys/resource_job_state.h"
 
 #include <filesystem>

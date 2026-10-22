@@ -1,5 +1,5 @@
 #include "../ui/nuklear_event_harness.h"
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_drop_state.h"
 #include "sys/project_import_feedback.h"
 #include "sys/application_startup_feedback.h"
 #include "sys/workspace_edit_feedback.h"

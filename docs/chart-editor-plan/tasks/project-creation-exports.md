@@ -219,7 +219,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `include/wormedit/core/resource_file_copy.h`,
   `include/wormedit/formats/conversion_publication.h`, `src/core/lane_profiles.cpp`,
   `src/core/resource_file_copy.cpp`, `src/formats/conversion_publication_storage.cpp`,
-  `src/formats/native_project_storage.cpp`, `src/sys/metadata_view.cpp`,
+  `src/formats/native_project_storage.cpp`, `src/sys/metadata/metadata_view.cpp`,
   `src/sys/workspace_view.cpp`, `src/tools/wormedit_convert.cpp`,
   `src/ui/frontend/runtime.h`, and `src/ui/nuklear/setup_panel.h` carry the typed destination
   through existing asset, storage, projection, CLI and picker boundaries. The corresponding

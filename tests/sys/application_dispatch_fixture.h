@@ -7,7 +7,7 @@
 #include "sys/compose_actions.h"
 #include "sys/compose_input.h"
 #include "sys/preferences/external_player_runtime.h"
-#include "sys/metadata_actions.h"
+#include "sys/metadata/metadata_actions.h"
 #include "sys/project_open.h"
 #include "sys/project_view.h"
 #include "sys/timing/timing_edit_runtime.h"

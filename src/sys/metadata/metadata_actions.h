@@ -2,8 +2,8 @@
 
 #include "sys/application_edit_inputs.h"
 
-#include "sys/metadata_asset_runtime.h"
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_drop_state.h"
 
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/notifications.h>

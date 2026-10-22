@@ -1,7 +1,7 @@
 #pragma once
 
-#include "sys/metadata_asset_runtime.h"
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_drop_state.h"
 #include "sys/workspace_view.h"
 
 #include <filesystem>

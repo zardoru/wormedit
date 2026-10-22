@@ -1,6 +1,6 @@
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
-#include "sys/metadata_actions.h"
+#include "sys/metadata/metadata_actions.h"
 #include "ui/frontend.h"
 #include <catch2/catch_test_macros.hpp>
 #include <wormedit/core/chart_editor.h>

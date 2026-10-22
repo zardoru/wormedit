@@ -1,8 +1,8 @@
 #pragma once
 
 #include "sys/compose_view.h"
-#include "sys/metadata_asset_runtime.h"
-#include "sys/metadata_drop_state.h"
+#include "sys/metadata/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_drop_state.h"
 #include "sys/player_preview_presenter.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/timing/timing_view.h"

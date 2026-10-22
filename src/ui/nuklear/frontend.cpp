@@ -15,8 +15,8 @@
 #endif
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/resources/sound_import_dialog.h"
-#include "ui/nuklear/options_window.h"
-#include "ui/nuklear/lane_keys_dialog.h"
+#include "ui/nuklear/preferences/options_window.h"
+#include "ui/nuklear/preferences/lane_keys_dialog.h"
 #include "ui/nuklear/audio/tap_timing_panel.h"
 #include "ui/nuklear/timing/timing_settings_panel.h"
 

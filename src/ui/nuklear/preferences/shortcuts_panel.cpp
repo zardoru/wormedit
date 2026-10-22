@@ -1,4 +1,4 @@
-#include "ui/nuklear/shortcuts_panel.h"
+#include "ui/nuklear/preferences/shortcuts_panel.h"
 #include "wormedit/nuklear_config.h"
 
 #include <cstddef>

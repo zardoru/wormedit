@@ -49,7 +49,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `include/wormedit/core/lane_keys.h` owns the resolved-profile cache. `include/wormedit/core/document.h`,
   `include/wormedit/core/vocabulary.h` and `src/core/document.cpp` expose lane color vocabulary and
   the display-order query; `src/core/lane_migration.cpp` reuses that query instead of retaining its
-  private copy. `src/ui/nuklear/options_window.h` threads the new typed Options entry action.
+  private copy. `src/ui/nuklear/preferences/options_window.h` threads the new typed Options entry action.
   The final DP7 check found stage-local display columns and intentionally unbound new-project
   factories. Coordinator also approves `src/core/lane_profiles.cpp` and
   `tests/core/lane_profile_tests.cpp`: defaults and saved keys now traverse P1 then P2, and the
@@ -62,8 +62,8 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Value:** High for wide and unusual layouts: today a chart whose layout has no default keys ("No lane keys are bound for this chart") can only be keyed with the mouse, and nobody can change a default they dislike.
 - **Outcome:** A *Lane keys* dialog (Options, and the command menu) shows the current layout's lanes by stage with their keys and a physical keyboard map; clicking a lane and pressing a key binds it, Backspace unbinds, presets (Wormedit default, iBMSC interleaved for DP, Custom) fill all lanes at once, and *Apply* saves the layout's keys to the user's preferences, where every chart with that layout uses them. See the [mockup](https://claude.ai/artifact/12NUndRq3jDPrJCzcSfhXN) (owner, 2026-10-18: "quite beautiful").
 - **Decision (owner, 2026-10-18):** lane keys per layout are the user's personal configuration, global: program preferences keyed by layout profile ID, not chart or project data. A chart's stored `input_profile_t` is only the fallback for a layout the user never customized.
-- **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/commands/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/options_window.cpp`.
-- **Files owned:** `src/ui/nuklear/lane_keys_dialog.cpp`, `src/ui/nuklear/lane_keys_dialog.h`,
+- **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/commands/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/preferences/options_window.cpp`.
+- **Files owned:** `src/ui/nuklear/preferences/lane_keys_dialog.cpp`, `src/ui/nuklear/preferences/lane_keys_dialog.h`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
   `include/wormedit/core/preferences.h`, `include/wormedit/core/lane_keys.h`, `include/wormedit/core/lane_profiles.h`,
   `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/preferences.cpp`,
@@ -72,7 +72,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `src/tools/wormedit_manual_reference.cpp`,
   `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/app/application.cpp`,
   `src/sys/commands/application_commands.h`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_command_dispatch.cpp`,
-  `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/options_window.h`,
+  `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/preferences/options_window.cpp`, `src/ui/nuklear/preferences/options_window.h`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/ui/lane_keys_event_harness_tests.cpp`, `docs/manual/generated/shortcuts.adoc`,
   `docs/manual/generated/layouts.adoc`,

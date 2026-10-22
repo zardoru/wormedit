@@ -1,4 +1,4 @@
-#include "ui/nuklear/chart_import_dialog.h"
+#include "ui/nuklear/project/chart_import_dialog.h"
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"

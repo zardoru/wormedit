@@ -1,4 +1,4 @@
-#include "ui/nuklear/compare_panel.h"
+#include "ui/nuklear/project/compare_panel.h"
 #include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/chrome.h"

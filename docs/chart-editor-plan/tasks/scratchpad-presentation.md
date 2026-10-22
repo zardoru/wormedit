@@ -47,8 +47,8 @@ User-authorized batch, 2026-10-11. Fill as well as outlines is explicitly in sco
 
 - **Status:** done
 - **Outcome:** Project uses responsive side margins capped at 48 px to preserve table width; Charts and StepMania export policy have clear section headers while chart controls remain functional.
-- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/setup_panel.cpp`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/setup_panel.cpp`, this card, `memory/chart-editor-status/resume.md`.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`, this card, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Audit existing behavior. 2. Correct the live path. 3. Verify input and native presentation.
 - **Invariants:** no chart edits or history changes from presentation/toggle actions; preserve modal guards.
 - **Reject/failure behavior:** stale or occluded commands remain rejected.

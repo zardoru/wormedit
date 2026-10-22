@@ -8,7 +8,7 @@
 #include "ui/nuklear/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/bms_branch_panel.h"
+#include "ui/nuklear/project/bms_branch_panel.h"
 
 #include <algorithm>
 #include <array>

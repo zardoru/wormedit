@@ -19,7 +19,7 @@
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/setup_panel.h"
+#include "ui/nuklear/project/setup_panel.h"
 #include "ui/nuklear/resources/sound_import_runtime.h"
 #include "ui/nuklear/theme.h"
 #include <wormedit/core/resource_assignment.h>

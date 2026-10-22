@@ -1,5 +1,5 @@
 #include "ui/nuklear/compose_menu_command.h"
-#include "ui/nuklear/bmson_lane_mode_ui.h"
+#include "ui/nuklear/project/bmson_lane_mode_ui.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/tooltip.h"

@@ -1,6 +1,6 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_note_menu.h"
-#include "ui/nuklear/bmson_lane_mode_ui.h"
+#include "ui/nuklear/project/bmson_lane_mode_ui.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <array>

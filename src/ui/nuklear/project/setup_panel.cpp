@@ -2,8 +2,8 @@
 #include <wormedit/core/metadata_rating.h>
 #include "ui/nuklear/text_fit.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/setup_panel.h"
-#include "ui/nuklear/setup_state.h"
+#include "ui/nuklear/project/setup_panel.h"
+#include "ui/nuklear/project/setup_state.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/dialog.h"

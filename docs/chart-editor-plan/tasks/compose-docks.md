@@ -45,8 +45,8 @@ window buttons.
 - **Status:** done (2026-10-06; rows gained `node_id`, `raw_statement` and `choice_block` in `src/ui/frontend.h` and `src/sys/workspace_projection.cpp`; the harness test is in `tests/ui/nuklear_event_harness_tests.cpp`)
 - **Successor direction (2026-10-20):** this is historical source-outline work, not the new scope editor. The [scoped-program contract](../editing/bms-scoped-program.md) and T-731–T-744 replace that feature direction with Control/Chart/Text ownership and explicit edit targets; this completed status does not claim those capabilities exist.
 - **Outcome:** the branch panel shows `#RANDOM`/`#SWITCH` blocks and their `#IF`/`#CASE` arms as an expandable tree of nodes. Selecting a node shows only the statements the chart parser did not understand.
-- **Read first:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/ui/frontend.h` (`WormUiComposeBranchRowView`, `WormUiComposeBranchChoiceView`), the view projection that fills them (`grep -rn branch_rows src/sys`).
-- **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/ui/nuklear/bms_branch_panel.h`, `src/ui/frontend.h` (branch view fields), the branch projection in `src/sys/`, `tests/ui/` branch panel test, this card.
+- **Read first:** `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/ui/frontend.h` (`WormUiComposeBranchRowView`, `WormUiComposeBranchChoiceView`), the view projection that fills them (`grep -rn branch_rows src/sys`).
+- **Files owned:** `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/ui/nuklear/project/bms_branch_panel.h`, `src/ui/frontend.h` (branch view fields), the branch projection in `src/sys/`, `tests/ui/` branch panel test, this card.
 - **Steps:**
   1. Add node rows (kind, value and arm) to the projection, and filter statement rows down to the unparsed ones.
   2. Render the nodes with `nk_tree` and choice controls on each block node.

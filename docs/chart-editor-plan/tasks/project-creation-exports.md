@@ -22,10 +22,10 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   chart chips and one status line; **Edit**, **Preview**, **Duplicate** and **Delete…** live in its
   overflow menu, and create/edit/delete use the shared modal-dialog rules instead of the trailing
   inline form and deletion checkbox.
-- **Read first:** `docs/audits/output-groups-ux-2026-10-19.md`; `src/ui/nuklear/setup_panel.cpp`
+- **Read first:** `docs/audits/output-groups-ux-2026-10-19.md`; `src/ui/nuklear/project/setup_panel.cpp`
   (`render_output_groups`); `src/ui/nuklear/dialog.h`; `src/ui/frontend/project.h`;
   `src/sys/project/project_view.cpp` (`build_output_group_view`).
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/frontend/project.h`,
+- **Files owned:** `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/frontend/project.h`,
   `src/sys/project/project_view.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`,
   `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`,
@@ -75,12 +75,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   saved **Ask / Replace / Keep** existing-files policy, while the menu can choose Replace or Keep
   for one run; the Project header has **Export all**, and the duplicate header/dialog export path is
   removed. File → Export reaches the same target choice and policy.
-- **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/ui/nuklear/compose_resources.cpp`;
+- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`; `src/ui/nuklear/compose_resources.cpp`;
   `src/sys/compose/actions/compose_resource_actions.cpp` (`export_compose_output_group_action_t`);
   `src/sys/project/output_group_export.h`; `include/wormedit/formats/conversion.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/formats/conversion.h`,
   `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/frontend/actions.h`,
-  `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`,
+  `src/ui/nuklear/project/setup_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`,
   `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`, `src/sys/compose/actions/compose_resource_actions.cpp`,
   `src/sys/project/output_group_export.h`, `src/sys/project/output_group_export.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
@@ -144,10 +144,10 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   SM and SSC groups.
 - **Read first:** `include/wormedit/formats/conversion.h` (`stepmania_export_policy_t`);
   `include/wormedit/core/document.h` (`output_group_t`); `src/sys/project/output_group_export.h`;
-  `src/core/lane_profiles.cpp` (`mania_step_outputs`); `src/ui/nuklear/setup_panel.cpp`.
+  `src/core/lane_profiles.cpp` (`mania_step_outputs`); `src/ui/nuklear/project/setup_panel.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/core/lane_profiles.h`,
   `include/wormedit/formats/conversion.h`, `src/core/lane_profiles.cpp`,
-  `src/ui/frontend/project.h`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`,
+  `src/ui/frontend/project.h`, `src/ui/nuklear/project/setup_panel.cpp`, `src/sys/project/project_view.cpp`,
   `src/sys/project/output_group_export.h`, `src/sys/project/workspace_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/lane_profile_tests.cpp`, `tests/formats/native_project_tests.cpp`,
@@ -204,10 +204,10 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   every conversion diagnostic before publication.
 - **Read first:** `src/sys/project/output_group_export.h` (`output_group_export_preparation_t`);
   `src/formats/conversion_publication.cpp`; `src/sys/project/project_view.cpp` (`output_preview`);
-  `src/ui/nuklear/setup_panel.cpp`; `src/sys/project/project_save_paths.cpp`.
+  `src/ui/nuklear/project/setup_panel.cpp`; `src/sys/project/project_save_paths.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/chart_editor.cpp`,
   `src/formats/conversion_publication.cpp`, `src/ui/frontend/project.h`,
-  `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/setup_panel.cpp`,
+  `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/project/setup_panel.cpp`,
   `src/sys/app/application.cpp`, `src/sys/project/output_group_export.h`,
   `src/sys/project/output_group_export.cpp`, `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
@@ -221,7 +221,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/core/resource_file_copy.cpp`, `src/formats/conversion_publication_storage.cpp`,
   `src/formats/native_project_storage.cpp`, `src/sys/metadata/metadata_view.cpp`,
   `src/sys/project/workspace_view.cpp`, `src/tools/wormedit_convert.cpp`,
-  `src/ui/frontend/runtime.h`, and `src/ui/nuklear/setup_panel.h` carry the typed destination
+  `src/ui/frontend/runtime.h`, and `src/ui/nuklear/project/setup_panel.h` carry the typed destination
   through existing asset, storage, projection, CLI and picker boundaries. The corresponding
   storage/default tests plus `tests/sys/compose_action_notification_tests.cpp`,
   `tests/sys/frame_projection_arena_tests.cpp`, and both walkthrough event-harness files update
@@ -271,11 +271,11 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   add/remove compatible charts through their chips, the chart table's Exports cell opens the same
   membership checklist, and an empty Exports section offers suggested targets from the active
   layout instead of a blank generic form.
-- **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/sys/project/project_view.cpp`;
+- **Read first:** `src/ui/nuklear/project/setup_panel.cpp`; `src/sys/project/project_view.cpp`;
   `src/core/chart_editor.cpp` (`apply_set_output_group_command`);
   `src/core/lane_profiles.cpp` (`default_output_groups`); `src/formats/conversion.cpp`.
 - **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`,
-  `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/nuklear/setup_panel.cpp`,
+  `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/nuklear/project/setup_panel.cpp`,
   `src/sys/project/project_view.cpp`, `tests/core/chart_editor_tests.cpp`,
   `tests/core/lane_profile_tests.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/ui/nuklear_event_harness_tests.cpp`, `docs/manual/chapters/walkthrough-bms.adoc`,

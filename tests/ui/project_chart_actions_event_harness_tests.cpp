@@ -1,5 +1,5 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/setup_panel.h"
+#include "ui/nuklear/project/setup_panel.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

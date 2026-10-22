@@ -97,31 +97,70 @@ Initial core event types:
 
 Events need stable IDs so selection, undo/redo, labels, slice references, and validation results do not depend on mutable timestamps or container order.
 
-### Shared timing categories (deferred)
+### Shared timing categories
 
-User request (2026-10-19; [T-730](tasks/editing-depth.md#t-730-plan-granular-timing-links-with-copy-on-write-overrides)):
-allow charts/difficulties, including those targeting different compatible file
-formats, to share timing layouts by category. **BPM**, **SV/scroll**, **SPEEDS**,
-**Kiai**, **stops** and **delays** must each be independently linkable, locally
-overridable and relinkable;
-the later design pass will enumerate the remaining timing categories.
+The owner picked up [T-730](tasks/editing-depth.md#t-730-plan-granular-timing-links-with-copy-on-write-overrides)
+on 2026-10-22. **Designated charts are sources**, not named timing sets. Every link
+is inside one project and names a source chart and one category. New difficulties
+inherit the links selected in their creation workflow. The selection is explicit;
+creating an unrelated new project has no source chart to inherit.
 
-A linked category follows its shared timing source. On the first local write,
-copy that category's currently effective data into a local override and apply
-the edit there. Other charts and other linked categories remain linked and
-unchanged. This is **copy-on-write semantics**; the physical storage strategy
-is a later implementation decision. A detached category keeps its own data
-until explicitly relinked. Restoring a link uses the source's current data and
-may discard that category's local timing information; make that consequence
-explicit and require deliberate confirmation when local data would be lost.
-Linking, local edits and relinking must be undoable.
+The independently linkable categories are **BPM**, **SV/scroll**, **SPEEDS**,
+**Kiai**, **stops**, **delays**, **warps**, **timing anchors**, **beat-zero audio
+offset**, and **measure layout**. SV recipes follow their output category: scroll
+recipes belong to SV/scroll, speed recipes to SPEEDS. Stop and delay records retain
+their separate boundary semantics even though both live in `pauses`. Measure layout
+means the ordered musical lengths and bar boundaries, while each chart retains its
+own row resolution and measure IDs. Lane profiles, playable content, BGA, bookmarks,
+sections, labels and semantic layers remain local; these are not timing categories.
 
-Native persistence must retain the links and overrides, while preview/playback
-and export resolve each category's effective timing consistently. The design
-must cover exact position mapping between charts with different measure IDs,
-resolutions and format capabilities. Source ownership, editing shared sources,
-additional category boundaries and unsupported combinations await the deferred
-planning task; no implementation or immediate queue change is requested.
+A linked category follows its source chart's current effective category. Editing the
+source is ordinary chart editing. The first actual local write detaches only the
+changed category, beginning with its current effective data. A no-op, failed edit,
+preview or cancelled gesture does not detach anything. Relinking replaces only that
+category with the source's current data; local data loss requires an explicit,
+stamped confirmation. Linking, detaching, source propagation and relinking publish
+through the shared transaction and Undo restores the whole consistent document.
+Chains are allowed only when acyclic per category. A source cannot be deleted while
+any surviving chart or selected creation default refers to it; detachment must occur
+first. Duplicating a chart retains its source links, never creates a self-link, and
+assigns fresh local identities using the existing duplication owner.
+
+Map positions by exact cumulative musical beats, using `measure_index_t` and checked
+rational arithmetic. Source and target measure IDs are unrelated. Preserve the target
+resolution, reject unrepresentable rows and spans, and never round implicitly.
+Seconds remain seconds; row-relative durations convert exactly between resolutions.
+Measure-layout changes re-map every local object and both endpoints of holds/spans,
+then reuse `rehome_measure_objects` for note/BGM storage. Source changes that cannot
+preserve a dependent chart reject atomically, including objects outside the new
+layout, collisions or unsupported retained conditional timing. Audio-time navigation
+markers keep their audio positions. Sample-frame anchors require compatible known
+audio-clock geometry; absent or incompatible geometry is a diagnosed rejection.
+
+Use one category catalog and one link owner. Existing timing consumers currently read
+chart vectors directly; converting each consumer into its own resolver would duplicate
+policy. The implementation therefore materializes effective linked data into the
+ordinary chart snapshot at the shared publication boundary. Linked vectors are derived
+from their designated source, never a second authoring authority. Compare category
+content before publication to detect local writes, detach those categories, then
+resolve source dependencies in order and validate the resulting document once. Link
+and relink operations explicitly declare intent so replacement is not mistaken for a
+local edit. Preview uses the same detached transaction path. Undo/Redo restore complete
+resolved snapshots without running edits again.
+
+Native persistence stores the link identities and resolved snapshots and validates
+their consistency on load. Older schemas migrate to unlinked categories. Journals and
+recovery use that same native codec. Playback, recipes, preview and export consume the
+same resolved snapshot. Interchange formats emit effective timing only; they never
+serialize project links or silently flatten unsupported target semantics. Retained
+BMS conditionals/projections and osu! absolute-time measure partitions need explicit
+compatibility checks rather than generic vector copying.
+
+The bounded implementation sequence is [T-751–T-755](tasks/timing-links.md): model,
+exact mapping and persistence; shared transaction propagation and local detachment;
+measure/clock compatibility and consumer verification; category controls and creation
+links; then end-to-end recovery/export proof. This design does not claim runtime links
+are already implemented.
 
 ### Beat-zero and audio offsets
 

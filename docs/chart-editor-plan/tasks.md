@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Granular timing links](tasks/timing-links.md)
+
 - [State ownership and lifetime consolidation](tasks/state-ownership.md)
 - [Canvas geometry and input-loss ownership](tasks/canvas-input-ownership.md)
 - [SV, specialized-lane and gesture extension friction](tasks/extension-friction.md)

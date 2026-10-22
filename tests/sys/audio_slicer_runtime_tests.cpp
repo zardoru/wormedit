@@ -56,7 +56,9 @@ auto render_unpublished(const sys::audio_slicer_request_t& request) -> std::file
 void check_discarded(const document_history_t& history, std::size_t before, const std::filesystem::path& directory) {
     CHECK(history.document.resources.size() == before);
     CHECK(history.undo.empty());
-    CHECK(std::filesystem::is_empty(directory / "assets"));
+    // Cancellation may stop the worker before it creates the output parent.
+    const auto assets = directory / "assets";
+    CHECK((!std::filesystem::exists(assets) || std::filesystem::is_empty(assets)));
 }
 void check_imported(document_history_t& history, std::size_t before) {
     REQUIRE(history.document.resources.size() > before);

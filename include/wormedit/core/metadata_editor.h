@@ -29,6 +29,11 @@ struct set_chart_metadata_action_t {
     std::optional<signed_rational_t> rating;
 };
 
+struct set_chart_metadata_overrides_action_t {
+    chart_id_t chart;
+    metadata_overrides_t overrides;
+};
+
 struct batch_chart_metadata_action_t {
     std::vector<chart_id_t> charts;
     std::optional<std::string> author;
@@ -90,7 +95,7 @@ struct erase_format_metadata_field_action_t {
 };
 
 using metadata_edit_action_t =
-    std::variant<set_song_metadata_action_t, set_chart_metadata_action_t,
+    std::variant<set_song_metadata_action_t, set_chart_metadata_action_t, set_chart_metadata_overrides_action_t,
                  set_output_group_path_action_t, edit_format_metadata_field_action_t,
                  erase_format_metadata_field_action_t>;
 

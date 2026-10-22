@@ -2,6 +2,17 @@
 
 ## Active queue (2026-10-22)
 
+Completed **T-124** (2026-10-22): six optional per-difficulty metadata overrides
+preserve inheritance versus explicit empty, commit atomically and round-trip in native
+schema 12. Existing exports stay byte-identical without overrides; writers resolve
+supported slots and reject unsupported/conflicting values. File overrides reference
+imported audio and survive relinking, Save As, recovery and export staging. GATE
+passes **4,495/4,495**, whitespace and **16-TU** complexity without increased allowances.
+Next is owner-requested **T-125**, inherit/override controls in Metadata, followed by
+**T-730** timing-link work. Clang will verify the completed metadata pair together.
+Timing decisions: designated charts as sources, all timing categories and measure
+layouts, exact same-project links, and new charts inheriting selected links.
+
 Completed **T-190** (2026-10-22): recipes store ordered multiply, normalization and
 weighted bump-balancing stages in schema 11; older recipes gain an empty pipeline.
 One prepared batch supplies processed projection, preview, composition and export,

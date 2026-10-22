@@ -41,6 +41,14 @@ auto is_inside_project(const std::filesystem::path& relative) -> bool {
     return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
 }
 
+void relink_saved_path(std::filesystem::path& path, const std::filesystem::path& directory,
+                       const project_save_report_t& report) {
+    if (path.empty()) return;
+    const auto source = resolved_asset_path(path, directory);
+    if (const auto found = report.relinks.find(source); found != report.relinks.end())
+        path = found->second;
+}
+
 struct project_save_assets_t {
     project_save_report_t& report;
     std::filesystem::path directory;
@@ -83,22 +91,23 @@ struct project_save_assets_t {
         for (auto& asset : document.midi_assets) changed |= copy_path(asset.id, asset.source_path);
         for (auto& recipe : document.generator_recipes)
             changed |= copy_path(asset_id_t{recipe.id.value}, recipe.source_path);
+        for (auto& chart : document.charts)
+            changed |= chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+                relink_saved_path(path, directory, report);
+            });
         return changed;
     }
 };
 
-void relink_saved_path(std::filesystem::path& path, const std::filesystem::path& directory,
-                       const project_save_report_t& report) {
-    if (path.empty()) return;
-    const auto source = resolved_asset_path(path, directory);
-    if (const auto found = report.relinks.find(source); found != report.relinks.end())
-        path = found->second;
-}
 
 void publish_saved_paths(song_document_t& document, const std::filesystem::path& old_base,
                           const project_save_report_t& report) {
     const auto directory = resolved_asset_path(report.destination.parent_path(), {});
     rebase_project_paths(document, old_base, directory);
+    for (auto& chart : document.charts)
+        chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+            relink_saved_path(path, directory, report);
+        });
     for (auto& asset : document.audio_assets) relink_saved_path(asset.source_path, directory, report);
     for (auto& asset : document.visual_assets) relink_saved_path(asset.source_path, directory, report);
     for (auto& asset : document.midi_assets) relink_saved_path(asset.source_path, directory, report);
@@ -151,6 +160,10 @@ void rebase_project_paths(song_document_t& document,
     if (!source || !destination || *source == *destination) {
         return;
     }
+    for (auto& chart : document.charts)
+        chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+            rebase_path(path, *source, *destination);
+        });
     for (auto& asset : document.audio_assets) {
         rebase_path(asset.source_path, *source, *destination);
         if (asset.waveform_cache_path) {

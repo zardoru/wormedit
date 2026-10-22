@@ -54,7 +54,10 @@ auto is_metadata_within_limits(const song_document_t& song, const metadata_edit_
         if (!is_valid_bounded_text(chart.metadata.name, limits.maximum_chart_text_bytes) ||
             !is_valid_bounded_text(chart.metadata.author, limits.maximum_chart_text_bytes) ||
             !account(chart.metadata.name) || !account(chart.metadata.author) ||
-            !account_groups(chart.metadata.format_groups))
+            !account_groups(chart.metadata.format_groups) ||
+            !std::ranges::all_of(chart.metadata.overrides.values, [&](const auto& value) {
+                return !value || (is_valid_bounded_text(*value, limits.maximum_chart_text_bytes) && account(*value));
+            }))
             return false;
     return true;
 }
@@ -156,6 +159,18 @@ auto apply_metadata_action(metadata_edit_context_t& context,
     metadata.title = edit.title;
     metadata.artist = edit.artist;
     metadata.ordered_search_tags = edit.ordered_search_tags;
+}
+
+auto apply_metadata_action(metadata_edit_context_t& context,
+                           const set_chart_metadata_overrides_action_t& edit) -> void {
+    auto* chart = context.proposed.find_chart(edit.chart);
+    if (!chart) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "Metadata override refers to an unknown difficulty."));
+        return;
+    }
+    context.changed = chart->metadata.overrides != edit.overrides;
+    chart->metadata.overrides = edit.overrides;
 }
 
 auto apply_metadata_action(metadata_edit_context_t& context,

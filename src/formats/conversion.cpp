@@ -216,6 +216,10 @@ auto prepare_staged_assets(conversion_context_t& context, song_document_t& prepa
     }
     for (auto& asset : prepared.audio_assets) {
         if (const auto found = paths_by_id.find(asset.id.value); found != paths_by_id.end()) {
+            for (auto& chart : prepared.charts)
+                chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
+                    if (reference.lexically_normal() == asset.source_path.lexically_normal()) reference = found->second;
+                });
             asset.source_path = found->second;
         }
     }

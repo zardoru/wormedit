@@ -1919,6 +1919,10 @@ auto apply_resource_asset_relink(document_history_t& history,
         const auto index = static_cast<std::size_t>(audio -
                                                     history.document.audio_assets.data());
         proposed.audio_assets[index].source_path = path;
+        for (auto& chart : proposed.charts)
+            chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& reference) {
+                if (reference.lexically_normal() == current.lexically_normal()) reference = path;
+            });
         // The user pointed the asset at a file they chose, so its sounds are no longer missing.
         for (auto& resource : proposed.resources)
             if (resource.asset == action.asset) resource.missing = false;

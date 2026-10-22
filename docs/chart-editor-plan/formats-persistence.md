@@ -68,6 +68,19 @@ Introduce a native, versioned editor project format early. It holds the full edi
 
 Metadata has explicit scope and inheritance. Shared song fields include title, subtitle, primary artist, genre, music, preview, and common artwork where their meanings align. Per-difficulty fields include difficulty name, chart author/credit, rating, mode/key count, and target-specific overrides. A difficulty inherits a shared value until it sets an override; clearing an override returns to inheritance, while an explicit empty target value remains distinct when a format permits it.
 
+T-124 adds explicit native title, subtitle, artist, genre, music-file and preview-audio-file
+overrides per difficulty. A null slot inherits existing song/source metadata; an empty string
+is an authored empty value. Clearing an override returns to inheritance. File overrides refer
+to imported audio assets, and the shared asset-path transformations preserve them through
+Save As, relinking, recovery and export staging. Preview audio means a separate audio file;
+osu! PreviewTime and StepMania sample start/length remain their existing typed format fields.
+Writers reject overrides without a target metadata slot. Music metadata is available in
+SM/SSC and osu!, while separate preview audio is available in BMS/BMSON. BMS conditionally
+owned subtitle/genre/preview overrides require explicit flattening. SM/SSC output groups
+reject different effective song metadata across selected charts rather than choosing a winner.
+Native schema 12 retains the override flags; schema 11 migrates to inherited slots.
+
+
 The Metadata tab groups target fields under clearly labeled **BMS**, **StepMania**, **osu!**, and **BMSON** sections and identifies whether each value belongs to the song, difficulty, or output file. Selecting a source/target mode or format profile immediately draws that profile's ordinary default field set as typed labeled controls; authors must not have to discover standard fields by manually adding generic key/value rows. Retained unknown and duplicate fields remain available in an advanced ordered table. For example, BMS exposes and round-trips `#TITLE`, `#SUBTITLE`, `#ARTIST`, `#SUBARTIST`, `#GENRE`, `#PLAYER`, `#PLAYLEVEL`, `#RANK`, `#TOTAL`, `#VOLWAV`, `#STAGEFILE`, `#BANNER`, `#BACKBMP`, `#PREVIEW`, `#DIFFICULTY`, and other profile-valid metadata; osu! exposes difficulty `Version`, `HPDrainRate`/HP, `OverallDifficulty`/OD, `CircleSize`/keys, `ApproachRate`, tags, and preview/bookmark fields. SM/SSC and BMSON receive the same exhaustive per-version inventory rather than a hand-picked normalized subset. A normalized field may map to another target where semantics match, but retained spelling, ordering, duplicates, and source ownership remain available for loss-aware re-export. Format-only fields never disappear merely because the current export target does not use them.
 
 Per-chart Metadata includes an explicit mode/profile and key-count selector. It offers only counts supported by the selected profile plus a clearly named generic/custom layout path; it never treats a changed number as a harmless scalar edit. Changing key count or profile opens a lane-layout migration preview for existing taps, holds, special notes, bindings, split-stage groups, and target channel identities, then commits one undoable layout command or cancels without mutation. The selected profile also supplies the initial scroll direction and note presentation defaults, which remain separately overridable as editor-view preferences.

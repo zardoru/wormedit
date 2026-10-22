@@ -19,6 +19,7 @@ void anchor_recovery_asset_paths(song_document_t& snapshot, const std::filesyste
     const auto assets = [&](auto& rows) {
         for (auto& row : rows) anchor(row.source_path);
     };
+    for (auto& chart : snapshot.charts) chart.metadata.overrides.transform_audio_paths(anchor);
     assets(snapshot.audio_assets);
     assets(snapshot.visual_assets);
     assets(snapshot.midi_assets);

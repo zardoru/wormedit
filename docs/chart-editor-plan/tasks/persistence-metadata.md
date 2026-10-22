@@ -75,11 +75,14 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-124 Model metadata inheritance and overrides
 
-- **Status:** ready
-- **Outcome:** per-difficulty title/subtitle/artist/genre/music/preview fields can be "inherit from song" or an explicit override; export resolves them; native projects store the flag (schema v2 through T-122's migration).
+- **Status:** done (2026-10-22; schema 12, atomic overrides, target writers and audio-reference integration)
+- **Verified (2026-10-22):** GATE passes **4,495/4,495**, whitespace and **16-TU** complexity with no increased allowances (`/tmp/t124-gate-final.log`, `/tmp/wormedit-gate.yqcqy5`). Ten focused cases cover inheritance versus explicit empty, sibling isolation, Undo/Redo, schema-11 migration, native persistence, malformed/unimported audio rejection, inherited export-byte preservation across BMS/BMSON/osu!/SM/SSC, selected-chart metadata conflicts, conditional BMS rejection/explicit flattening, Save As/live path publication, recovery anchoring and staged export paths. Linux Clang will verify the completed T-124/T-125 pair together.
+- **Supporting ownership (coordinator, 2026-10-22):** `src/formats/bms_writer.cpp`, `src/formats/bmson_writer.cpp`, `src/formats/osu_mania.cpp`, `src/formats/stepmania.cpp`, their existing writer tests, `include/wormedit/core/metadata_inheritance.h`, `src/core/metadata_inheritance.cpp`, `tests/core/metadata_inheritance_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `docs/chart-editor-plan/formats-persistence.md` and `memory/chart-editor-status/resume.md` provide shared field definitions/resolution, target-specific export validation and proof of unchanged inheritance. Use schema 12 with an 11→12 migration; do not alter released migrations. Music means the background music path; Preview means a separate preview audio path. Formats without those metadata slots reject explicit overrides rather than inventing fields or synthesizing audio events.
+- **Audio-reference integration ownership (coordinator, 2026-10-22):** `src/core/autosave_loop.cpp`, `src/core/resource_assignment.cpp`, `src/sys/project/project_save_paths.cpp`, `src/formats/conversion.cpp`, `src/formats/conversion_publication.cpp`, and their existing tests keep override audio references aligned with registered assets through recovery anchoring, relinking, Save As and staged exports. Nonempty file overrides must refer to one imported audio asset; explicit empty means no file.
+- **Outcome:** per-difficulty title/subtitle/artist/genre/music/preview fields can be "inherit from song" or an explicit override; export resolves them; native projects store the flag (schema 12 through an 11→12 migration).
 - **Read first:** `docs/chart-editor-plan/formats-persistence.md` (metadata scope paragraphs), `include/wormedit/core/document.h`, `include/wormedit/core/metadata_editor.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/core/metadata_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`.
-- **Steps:** 1. Add `std::optional<std::string>` overrides per field on the chart. 2. `resolved_title(chart, song)` helpers used by writers. 3. v1→v2 migration sets every override to empty (inherit). 4. Commands to set/clear an override.
+- **Steps:** 1. Add `std::optional<std::string>` overrides per field on the chart. 2. `resolved_title(chart, song)` helpers used by writers. 3. v11→v12 migration sets every override to null (inherit), preserving released migrations. 4. Commands to set/clear an override.
 - **Invariants:** existing exports byte-identical when no overrides are set.
 - **Reject/failure behavior:** stale revision rejects.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|native_project|round.?trip'`.
@@ -87,7 +90,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-125 Add inherit/override controls in Metadata
 
-- **Status:** blocked-on T-124
+- **Status:** ready (T-124 done 2026-10-22)
 - **Outcome:** each difficulty field shows an "Inherit" checkbox; unchecking reveals an editable override.
 - **Read first:** `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/sys/metadata/metadata_actions.cpp`.
 - **Files owned:** `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata/metadata_panel.cpp` (or T-42's section unit).

@@ -412,3 +412,20 @@ TEST_CASE("Project save applies separate asset directory overrides only to futur
     check_save(fixture.read(fixture.project / reopened.audio_assets[0].source_path) == "song bytes");
     check_save(fixture.read(fixture.project / reopened.visual_assets[0].source_path) == "image bytes");
 }
+
+TEST_CASE("Save As and live publication keep per-chart music overrides aligned with copied audio", "[sys][project-save-paths][metadata-inheritance]") {
+    project_save_fixture_t fixture;
+    fixture.document.charts.front().metadata.overrides.value(inherited_metadata_field_t::music) =
+        fixture.document.audio_assets.front().source_path.generic_string();
+    const auto saved = fixture.save();
+    require_save(saved.storage.value);
+    const auto reopened = fixture.reopen();
+    require_save(reopened.charts.front().metadata.overrides.value(inherited_metadata_field_t::music));
+    check_save(*reopened.charts.front().metadata.overrides.value(inherited_metadata_field_t::music) ==
+        reopened.audio_assets.front().source_path.generic_string());
+    auto history = document_history_t::from(fixture.document);
+    saved.publish_paths(history, fixture.root);
+    check_save(*history.document.charts.front().metadata.overrides.value(inherited_metadata_field_t::music) ==
+        history.document.audio_assets.front().source_path.generic_string());
+    check_save(validate_document(history.document).empty());
+}

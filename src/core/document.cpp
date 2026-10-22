@@ -2,6 +2,7 @@
 #include "chart_object_ids.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
@@ -1218,6 +1219,8 @@ auto validate_chart(const chart_document_t& chart,
                     diagnostic_list_t& diagnostics) -> void {
     validate_bms_control_tree(chart, diagnostics);
     validate_format_groups(chart.metadata.format_groups, diagnostics);
+    const auto overrides = validate_metadata_overrides(chart.metadata.overrides, format_family_t::native_project);
+    diagnostics.insert(diagnostics.end(), overrides.begin(), overrides.end());
     if (chart.divisions_per_standard_measure == 0) {
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
                        "chart divisions per standard measure must be positive");
@@ -1848,6 +1851,8 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
         diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Project settings contain invalid values."));
     for (const auto& chart : song.charts) {
         const auto first_diagnostic = diagnostics.size();
+        const auto audio = metadata_audio_references_t::from(song, chart.metadata.overrides);
+        diagnostics.insert(diagnostics.end(), audio.diagnostics.begin(), audio.diagnostics.end());
         validate_chart(chart, work.resource_ids, work.resource_assets, work.audio_asset_ids,
                        diagnostics);
         contextualize_chart_diagnostics(chart, diagnostics, first_diagnostic);

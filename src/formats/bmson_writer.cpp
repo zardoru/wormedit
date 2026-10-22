@@ -1,3 +1,4 @@
+#include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/rational.h>
 #include "../core/checked_math.h"
 #include "../core/text_util.h"
@@ -1012,18 +1013,20 @@ void set_info_level(const chart_document_t& chart, json_t& info) {
 
 void populate_info_metadata(writer_output_context_t& output, json_t& info) {
     const auto genre_edited = apply_bmson_info_metadata(output.song, output.chart, info);
-    if (!output.chart.metadata.author.empty() && !output.song.metadata.artist.empty() &&
+    if (!output.chart.metadata.overrides.value(inherited_metadata_field_t::artist) &&
+        !output.chart.metadata.author.empty() && !output.song.metadata.artist.empty() &&
         output.chart.metadata.author != output.song.metadata.artist)
         fail(bmson_write_diagnostic_code_t::unsupported_feature,
              "BMSON has one artist field and cannot retain different song and chart authors",
              "$.info.artist");
-    info["title"] = output.song.metadata.title;
-    info["artist"] = output.chart.metadata.author.empty()
-                         ? output.song.metadata.artist : output.chart.metadata.author;
+    info["title"] = output.chart.metadata.overrides.resolve(inherited_metadata_field_t::title, output.song.metadata.title);
+    info["artist"] = output.chart.metadata.overrides.resolve(inherited_metadata_field_t::artist,
+        output.chart.metadata.author.empty() ? output.song.metadata.artist : output.chart.metadata.author);
     info["chart_name"] = output.chart.metadata.name;
     info["resolution"] = output.grid.resolution;
     info["mode_hint"] = output.lanes.mode;
-    if (output.song.metadata.ordered_search_tags.size() > 1)
+    if (!output.chart.metadata.overrides.value(inherited_metadata_field_t::genre) &&
+        output.song.metadata.ordered_search_tags.size() > 1)
         fail(bmson_write_diagnostic_code_t::unsupported_feature,
              "BMSON has one genre field and cannot retain multiple ordered search tags",
              "$.info.genre");
@@ -1079,6 +1082,11 @@ void write_info_section(writer_output_context_t& output) {
     collect_bpm_values(output);
     append_initial_bpm(output, info);
     append_info_resource_paths(output.song, info);
+    const auto diagnostics = validate_metadata_overrides(output.chart.metadata.overrides, format_family_t::bmson);
+    if (!diagnostics.empty()) fail(bmson_write_diagnostic_code_t::unsupported_feature,
+        diagnostics.front().message, "$.info");
+    for (const auto& field : inherited_metadata_fields)
+        if (const auto& value = output.chart.metadata.overrides.value(field.field)) info[std::string{field.bmson_key}] = *value;
     output.root["info"] = std::move(info);
 }
 

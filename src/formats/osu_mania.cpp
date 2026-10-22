@@ -1,3 +1,4 @@
+#include <wormedit/core/metadata_inheritance.h>
 #include "../core/text_util.h"
 #include <wormedit/formats/osu_mania.h>
 
@@ -2904,8 +2905,11 @@ auto osu_bookmarks_text(const std::vector<std::int64_t>& bookmarks) -> std::stri
 }
 
 template <typename fail_t>
-auto collect_osu_music_files(const song_document_t& song, fail_t&& fail)
+auto collect_osu_music_files(const song_document_t& song, const chart_document_t& chart, fail_t&& fail)
     -> std::vector<std::string> {
+    if (const auto& music = chart.metadata.overrides.value(inherited_metadata_field_t::music)) {
+        return music->empty() ? std::vector<std::string>{} : std::vector<std::string>{*music};
+    }
     std::vector<std::string> files;
     for (const auto& resource : song.resources) {
         if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
@@ -2927,13 +2931,16 @@ auto collect_osu_music_files(const song_document_t& song, fail_t&& fail)
 template <typename fail_t>
 auto collect_osu_tags(const song_document_t& song, const chart_document_t& chart,
                       fail_t&& fail) -> std::string {
+    const auto override_diagnostics = validate_metadata_overrides(chart.metadata.overrides, format_family_t::osu_mania);
+    if (!override_diagnostics.empty()) fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+        override_diagnostics.front().message, "metadata.overrides");
     const auto check = [&](std::string_view value, std::string_view field) {
         if (!is_writer_safe_text(value))
             fail(osu_mania_write_diagnostic_code_t::invalid_metadata,
                  "metadata cannot contain newlines or NUL bytes", std::string(field));
     };
-    check(song.metadata.title, "Metadata.Title");
-    check(song.metadata.artist, "Metadata.Artist");
+    check(chart.metadata.overrides.resolve(inherited_metadata_field_t::title, song.metadata.title), "Metadata.Title");
+    check(chart.metadata.overrides.resolve(inherited_metadata_field_t::artist, song.metadata.artist), "Metadata.Artist");
     check(chart.metadata.name, "Metadata.Version");
     check(chart.metadata.author, "Metadata.Creator");
     std::string tags;
@@ -2959,8 +2966,8 @@ void account_osu_metadata(const std::vector<std::string>& music_files,
     if (!music_files.empty()) account("AudioFilename: " + music_files.front());
     account("Mode: 3");
     if (!bookmarks.empty()) account(osu_bookmarks_text(bookmarks));
-    account("Title:" + song.metadata.title);
-    account("Artist:" + song.metadata.artist);
+    account("Title:" + std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::title, song.metadata.title)});
+    account("Artist:" + std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::artist, song.metadata.artist)});
     account("Creator:" + chart.metadata.author);
     account("Version:" + chart.metadata.name);
     if (!tags.empty()) account("Tags:" + std::string(tags));
@@ -3002,8 +3009,8 @@ void append_osu_metadata_sections(const song_document_t& song, const chart_docum
     append_osu_section(fields, "Editor", append_line);
     if (!bookmarks.empty()) append_line(osu_bookmarks_text(bookmarks));
     append_osu_section(fields, "Metadata", append_line);
-    append_line("Title:" + song.metadata.title);
-    append_line("Artist:" + song.metadata.artist);
+    append_line("Title:" + std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::title, song.metadata.title)});
+    append_line("Artist:" + std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::artist, song.metadata.artist)});
     append_line("Creator:" + chart.metadata.author);
     append_line("Version:" + chart.metadata.name);
     if (!tags.empty()) append_line("Tags:" + std::string(tags));
@@ -3549,7 +3556,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         auto bookmark_times = serialize_osu_bookmarks(*chart, measures, timestamp_at_row,
                                                       account_event, fail, warn);
 
-        auto music_files = collect_osu_music_files(song, fail);
+        auto music_files = collect_osu_music_files(song, *chart, fail);
         auto tags = collect_osu_tags(song, *chart, fail);
         auto extra_fields = options.preserve_unknown_fields
                                 ? passthrough_fields(*chart, song, result.diagnostics)

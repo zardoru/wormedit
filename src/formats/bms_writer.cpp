@@ -1,3 +1,4 @@
+#include <wormedit/core/metadata_inheritance.h>
 #include "bms_timing_directive.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
@@ -1247,8 +1248,10 @@ void validate_unsupported_chart_features(const chart_document_t& chart,
 
 auto export_title_artist(const song_document_t& song, const chart_document_t& chart)
     -> std::pair<std::string, std::string> {
-    auto title = song.metadata.title.empty() ? chart.metadata.name : song.metadata.title;
-    auto artist = song.metadata.artist.empty() ? chart.metadata.author : song.metadata.artist;
+    auto title = std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::title,
+        song.metadata.title.empty() ? chart.metadata.name : song.metadata.title)};
+    auto artist = std::string{chart.metadata.overrides.resolve(inherited_metadata_field_t::artist,
+        song.metadata.artist.empty() ? chart.metadata.author : song.metadata.artist)};
     if (has_line_break_or_nul(title) || has_line_break_or_nul(artist) ||
         has_edge_whitespace(title) || has_edge_whitespace(artist) || !is_valid_utf8(title) ||
         !is_valid_utf8(artist))
@@ -2706,11 +2709,36 @@ auto has_retained_root_player(const metadata_output_context_t& context) -> bool 
     return false;
 }
 
+auto is_explicit_extra_metadata(const metadata_output_context_t& context, std::string_view token) -> bool {
+    return std::ranges::any_of(inherited_metadata_fields, [&](const auto& field) {
+        return field.field != inherited_metadata_field_t::title && field.field != inherited_metadata_field_t::artist &&
+            field.bms_key == token && context.chart.metadata.overrides.value(field.field).has_value();
+    });
+}
+void append_explicit_metadata(metadata_output_context_t& context) {
+    for (const auto& field : inherited_metadata_fields) {
+        if (field.field == inherited_metadata_field_t::title || field.field == inherited_metadata_field_t::artist || field.bms_key.empty()) continue;
+        const auto& value = context.chart.metadata.overrides.value(field.field);
+        if (!value) continue;
+        if (std::ranges::any_of(context.tree.branch_metadata_fields, [&](const auto& source) {
+            return source.second.first == field.bms_key;
+        })) fail(bms_write_diagnostic_code_t::unsupported_branch_policy,
+            "Overriding conditional " + std::string{field.bms_key} + " requires explicit flatten_active.", "$.charts[].metadata.overrides");
+        context.output.emplace_back("#" + std::string{field.bms_key} + " " + *value);
+    }
+}
+
+auto is_retained_metadata_suppressed(const metadata_output_context_t& context,
+    std::size_t group_index, std::size_t field_index) -> bool {
+    const auto& group = *context.groups[group_index];
+    return is_branch_metadata_field(context.tree, group, field_index) ||
+        is_explicit_extra_metadata(context, ascii_upper(group.ordered_fields[field_index].first));
+}
+
 auto metadata_field_output(metadata_output_context_t& context, std::size_t group_index,
                            std::size_t field_index) -> std::optional<std::string> {
     const auto& fields = context.groups[group_index]->ordered_fields;
-    if (is_branch_metadata_field(context.tree, *context.groups[group_index], field_index))
-        return std::nullopt;
+    if (is_retained_metadata_suppressed(context, group_index, field_index)) return std::nullopt;
     const auto& [token, retained_value] = fields[field_index];
     const auto upper_token = ascii_upper(token);
     const auto path = "$.metadata.format_groups[" + std::to_string(group_index) +
@@ -2788,6 +2816,7 @@ auto emit_metadata_header(metadata_output_context_t context) -> std::vector<std:
         context.output.emplace_back("#OFFSET " + std::string(context.offset));
     if (!context.has_ordered_playlevel && context.playlevel)
         context.output.emplace_back("#PLAYLEVEL " + std::to_string(*context.playlevel));
+    append_explicit_metadata(context);
     return context.output;
 }
 
@@ -3374,6 +3403,9 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                  "select one chart explicitly when the song does not contain exactly one chart",
                  "$.charts");
         }
+        const auto override_diagnostics = validate_metadata_overrides(chart->metadata.overrides, format_family_t::bms);
+        if (!override_diagnostics.empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
+            override_diagnostics.front().message, "$.charts[].metadata.overrides");
         const auto had_active_recipes = std::ranges::any_of(
             chart->sv_recipes, [](const auto& recipe) { return recipe.enabled; });
         auto baked_chart = bake_sv_recipes_for_export(*chart);
@@ -3386,7 +3418,7 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
         validate_bms_profile(song, *chart, options);
 
         if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
-            song.charts.size() == 1 && !had_active_recipes &&
+            song.charts.size() == 1 && !had_active_recipes && !chart->metadata.overrides.has_values() &&
             chart->beat_zero_audio_offset_seconds.numerator == 0 &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
             if (const auto source = bms_source_t::from(song, *chart, true)) {

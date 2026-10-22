@@ -1,3 +1,4 @@
+#include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/rational.h>
 #include "../core/timing_arithmetic.h"
 #include "../core/checked_math.h"
@@ -2409,15 +2410,48 @@ class stepmania_writer_t {
             value.insert(0, "\\");
         emit("KEYSOUNDS", value);
     }
+    auto shared_metadata_override(inherited_metadata_field_t field, std::string_view inherited)
+        -> std::optional<std::string> {
+        const auto first = charts_.front()->metadata.overrides.resolve(field, inherited);
+        bool authored{};
+        for (const auto* chart : charts_) {
+            authored = authored || chart->metadata.overrides.value(field).has_value();
+            if (chart->metadata.overrides.resolve(field, inherited) != first) {
+                report(stepmania_write_diagnostic_code_t::conflicting_song_metadata,
+                    "Selected charts have different effective song metadata; export them separately.", "metadata.overrides");
+                return {};
+            }
+        }
+        return authored ? std::optional<std::string>{first} : std::nullopt;
+    }
+    auto resolved_music_path() -> std::optional<std::string> {
+        const auto all_override = std::ranges::all_of(charts_, [](const auto* chart) {
+            return chart->metadata.overrides.value(inherited_metadata_field_t::music).has_value();
+        });
+        const auto inherited = all_override ? std::optional<std::string>{} : music_path();
+        const auto baseline = inherited.value_or(std::string{group_value(song_group_, "MUSIC")});
+        const auto overridden = shared_metadata_override(inherited_metadata_field_t::music, baseline);
+        return overridden ? overridden : inherited;
+    }
+    auto validate_inherited_metadata() -> bool {
+        for (const auto* chart : charts_) {
+            const auto diagnostics = validate_metadata_overrides(chart->metadata.overrides, format_family_t::stepmania);
+            if (!diagnostics.empty()) {
+                report(stepmania_write_diagnostic_code_t::invalid_metadata, diagnostics.front().message, "metadata.overrides");
+                return false;
+            }
+        }
+        return true;
+    }
     void emit_song_metadata() {
     if (options_.profile == stepmania_profile_t::ssc)
         emit("VERSION", "0.83");
-    if (!song_.metadata.title.empty())
-        emit("TITLE", song_.metadata.title);
-    if (!song_.metadata.artist.empty())
-        emit("ARTIST", song_.metadata.artist);
+    const auto title = shared_metadata_override(inherited_metadata_field_t::title, song_.metadata.title);
+    const auto artist = shared_metadata_override(inherited_metadata_field_t::artist, song_.metadata.artist);
+    if (title || !song_.metadata.title.empty()) emit("TITLE", title.value_or(song_.metadata.title));
+    if (artist || !song_.metadata.artist.empty()) emit("ARTIST", artist.value_or(song_.metadata.artist));
     song_group_ = family_group(song_.metadata.format_groups);
-    const auto modeled_music = music_path();
+    const auto modeled_music = resolved_music_path();
     if (modeled_music) emit("MUSIC", *modeled_music);
     emit_keysounds();
     std::set<std::string> modeled_song{
@@ -2425,6 +2459,14 @@ class stepmania_writer_t {
         "WARPS",     "SCROLLS",    "SPEEDS",     "NOTEDATA", "STEPSTYPE",   "DESCRIPTION",
         "CHARTNAME", "CHARTSTYLE", "DIFFICULTY", "METER",    "RADARVALUES", "NOTES",
         "KEYSOUNDS"};
+    for (const auto field : {inherited_metadata_field_t::subtitle, inherited_metadata_field_t::genre}) {
+        const auto& descriptor = inherited_metadata_fields[static_cast<std::size_t>(field)];
+        const auto value = shared_metadata_override(field, group_value(song_group_, descriptor.stepmania_key));
+        if (value) {
+            emit(descriptor.stepmania_key, *value);
+            modeled_song.insert(std::string{descriptor.stepmania_key});
+        }
+    }
     const auto source_music = group_value(song_group_, "MUSIC");
     if (modeled_music || stepmania_relative_path(source_music)) modeled_song.insert("MUSIC");
     if (options_.profile == stepmania_profile_t::sm) {
@@ -2592,7 +2634,7 @@ class stepmania_writer_t {
     }
   public:
     auto run() -> stepmania_write_outcome_t {
-        if (!resolve_options() || !select_and_bake_charts()) return std::move(result_);
+        if (!resolve_options() || !select_and_bake_charts() || !validate_inherited_metadata()) return std::move(result_);
         emit_song_metadata();
         prepare_timing();
         for (std::size_t index = 0; index < charts_.size(); ++index)

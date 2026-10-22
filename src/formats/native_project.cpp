@@ -443,7 +443,13 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_control_node_t, id, kind, value, original
                                    close_source_span, close_text, close_source_order,
                                    close_line_ending, children)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(branch_selection_t, branch, selected_value)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups)
+void to_json(json& value, const metadata_overrides_t& overrides) { value = overrides.values; }
+void from_json(const json& value, metadata_overrides_t& overrides) {
+    if (!value.is_array() || value.size() != inherited_metadata_field_count)
+        throw std::invalid_argument("metadata overrides must contain exactly six slots");
+    value.get_to(overrides.values);
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups, overrides)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_command_t, opcode, easing, start_time_ms, end_time_ms,
                                    from, to, value_count, source_order)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_node_t, kind, command, loop_start_time_ms,

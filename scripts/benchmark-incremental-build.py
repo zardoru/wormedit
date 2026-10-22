@@ -110,7 +110,7 @@ def parse_arguments():
 def main():
     args = parse_arguments()
     args.output.mkdir(parents=True)
-    probes = {"producer": "src/sys/compose_marker_view.cpp",
+    probes = {"producer": "src/sys/compose/views/compose_marker_view.cpp",
               "bgm": args.bgm_header, "root": "src/ui/frontend/workspace.h",
               "private": "src/sys/project/workspace_view.h"}
     original = {name: (args.source / path).read_bytes()

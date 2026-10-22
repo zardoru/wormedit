@@ -1,4 +1,4 @@
-#include "sys/compose_resource_presenter.h"
+#include "sys/compose/views/compose_resource_presenter.h"
 
 #include <catch2/catch_test_macros.hpp>
 

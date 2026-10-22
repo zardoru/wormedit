@@ -2,7 +2,7 @@
 #include "ui/frontend/sound_import.h"
 #include "sys/compose/actions/compose_action_outcome.h"
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "ui/frontend.h"
 
 #include <wormedit/core/command.h>

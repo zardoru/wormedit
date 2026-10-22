@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/note_to_bgm.h>
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include <algorithm>
 
 #include <optional>

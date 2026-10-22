@@ -66,8 +66,8 @@ checks, session changes and commit handling as well as ghost projection.
 and quantize state, alongside projection/cache types. A reader following either
 the feature name or the file's advertised responsibility gets only part of the
 workflow. This is a concrete first extraction candidate with a bounded outcome.
-Sources: [paste implementation](../../src/sys/compose_view.cpp),
-[state declarations](../../src/sys/compose_view.h).
+Sources: [paste implementation](../../src/sys/compose/views/compose_view.cpp),
+[state declarations](../../src/sys/compose/views/compose_view.h).
 
 The same issue appears in `interaction_gesture_lifecycle.cpp`: the shared admission
 and cleanup mechanisms coexist with `pending_note_move_gesture_t::begin`, `revise`

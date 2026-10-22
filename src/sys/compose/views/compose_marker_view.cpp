@@ -1,6 +1,6 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
-#include "sys/compose_view_internal.h"
+#include "sys/compose/views/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
     compose_marker_storage_t<wormedit::ui::compose_audio_bookmark_view_t>& storage,

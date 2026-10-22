@@ -1,4 +1,4 @@
-#include "sys/compose_view_internal.h"
+#include "sys/compose/views/compose_view_internal.h"
 #include "ui/compose_draw_source_labels.h"
 #include <wormedit/formats/osu_mania.h>
 namespace wormedit::sys::compose_projection_detail {

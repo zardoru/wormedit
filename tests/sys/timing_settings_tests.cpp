@@ -1,4 +1,4 @@
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "sys/timing/timing_settings.h"
 #include <wormedit/core/timing.h>
 #include <catch2/catch_test_macros.hpp>

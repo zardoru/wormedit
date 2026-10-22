@@ -103,7 +103,7 @@ Apply the stale-plan check (rule 9) first.
   T-358. Use the existing Sounds dock rather than the obsolete T-228 panel; do not execute the
   historical steps below.
 - **Outcome:** for BMS charts the Sounds panel lists every slot `01`–`ZZ` (or base-62 range when the chart uses it) with its file name or blank, uses count, and missing state; only visible rows are built; double-click arms the slot for placement; Enter/F2 or a file drop assigns a file to the slot (creating or relinking the resource with that exact BMS identifier); a play button auditions it. For formats without slots (BMSON, SM, osu!, Quaver) the panel shows the compact table from T-206.
-- **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_creation` with BMS identifier, `apply_resource_asset_relink`), `docs/references/bms-command-memo.md`.
+- **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose/views/compose_resource_presenter.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_creation` with BMS identifier, `apply_resource_asset_relink`), `docs/references/bms-command-memo.md`.
 - **Files owned:** new `src/ui/nuklear/sounds_panel.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`, `CMakeLists.txt`.
 - **Steps:**
   1. Presenter: virtualized slot window (first visible slot, count ≤ 64) with slot label, resource id or empty, name, uses, state.
@@ -135,7 +135,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** blocked-on T-228
 - **Outcome:** a list of measures `#000`–`#999` (virtual BMS measures included) showing length as ratio and meter; multi-select with Shift/Ctrl; an editor row applies a length or meter to all selected measures in one command; clicking a row jumps the cursor there.
 - **Read first:** `include/wormedit/core/measure_editor.h`, `include/wormedit/core/virtual_canvas.h`, `src/sys/main.cpp` (existing meter form handler), `docs/chart-editor-plan/document-model.md` (measure length paragraph).
-- **Files owned:** new `src/ui/nuklear/measures_panel.cpp/.h`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/measures_panel.cpp/.h`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`.
 - **Steps:** 1. Core batch definition update over a bounded measure list (materializing virtual BMS measures as needed). 2. Virtualized list. 3. Editor row with decimal ratio and meter fields (T-73 suggestions when present).
 - **Invariants:** exact ratios; stable measure IDs.
 - **Reject/failure behavior:** any invalid measure rejects the batch.

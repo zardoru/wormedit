@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sys/bookmarks/bookmark_commands.h"
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 
 #include <cstdint>
 #include <optional>

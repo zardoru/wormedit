@@ -309,7 +309,7 @@ were assigned explicitly during the parallel batch. T-658 is next.
   for BMSON, and `drag BGM to move` for other chart families. It uses the existing projected family
   facts (`bms_measure_labels` and `bmson_tools_available`).
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`compose_editor_status_hint`);
-  `src/ui/frontend/compose.h` (the two family facts); `src/sys/compose_view.cpp` (their projection).
+  `src/ui/frontend/compose.h` (the two family facts); `src/sys/compose/views/compose_view.cpp` (their projection).
 - **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
   this card.
 - **Steps:** 1. Build the idle hint from the existing view facts. 2. Test BMS, BMSON and native views,

@@ -11,7 +11,7 @@
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/actions/compose_quantize.h"
 #include "sys/compose/actions/compose_quantize_request.h"
-#include "sys/compose_resource_presenter.h"
+#include "sys/compose/views/compose_resource_presenter.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "sys/compose/compose_semantic_layer_commands.h"
 #include "sys/metadata/metadata_commands.h"

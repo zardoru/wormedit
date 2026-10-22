@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <tuple>
 
-#include "sys/compose_resource_presenter.h"
+#include "sys/compose/views/compose_resource_presenter.h"
 #include "sys/resources/sound_list_view.h"
 #include "sys/resources/sound_usage_view.h"
 #include "sys/bookmarks/bookmark_navigation.h"

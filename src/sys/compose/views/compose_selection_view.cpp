@@ -1,4 +1,4 @@
-#include "sys/compose_view_internal.h"
+#include "sys/compose/views/compose_view_internal.h"
 #include <wormedit/core/interaction_dispatch.h>
 namespace wormedit::sys::compose_projection_detail {
 auto converted_bgm_preview_count(const wormedit::editor_interaction_state_t& state) -> std::size_t {

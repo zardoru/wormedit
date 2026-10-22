@@ -1,4 +1,4 @@
-#include "sys/recipe_form.h"
+#include "sys/compose/views/recipe_form.h"
 
 #include <catch2/catch_test_macros.hpp>
 

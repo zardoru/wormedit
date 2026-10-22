@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/audio/player_preview_presenter.h"

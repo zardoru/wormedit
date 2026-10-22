@@ -500,19 +500,19 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/compose_dead_spans.cpp
         src/sys/compose/compose_kiai_spans.cpp
         src/sys/compose/compose_sv_graph.cpp
-        src/sys/compose_recipe_areas.cpp
+        src/sys/compose/views/compose_recipe_areas.cpp
         src/sys/compose/compose_speed_spans.cpp
-        src/sys/recipe_form.cpp
+        src/sys/compose/views/recipe_form.cpp
         src/sys/compose/actions/compose_quantize_preview.cpp
         src/sys/compose/actions/compose_quantize.cpp
         src/sys/commands/application_command_dispatch.cpp
-        src/sys/compose_resource_presenter.cpp
-        src/sys/compose_view.cpp
-        src/sys/compose_scene_view.cpp
-        src/sys/compose_marker_view.cpp
-        src/sys/compose_selection_view.cpp
-        src/sys/compose_draw_source_view.cpp
-        src/sys/compose_hover_timing.cpp
+        src/sys/compose/views/compose_resource_presenter.cpp
+        src/sys/compose/views/compose_view.cpp
+        src/sys/compose/views/compose_scene_view.cpp
+        src/sys/compose/views/compose_marker_view.cpp
+        src/sys/compose/views/compose_selection_view.cpp
+        src/sys/compose/views/compose_draw_source_view.cpp
+        src/sys/compose/views/compose_hover_timing.cpp
         src/sys/project/compare_view.cpp
         src/sys/compose/input/compose_input.cpp
         src/sys/compose/input/compose_waveform_fit_input.cpp
@@ -564,7 +564,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/metadata/metadata_view.cpp
         src/sys/audio/waveform_view.cpp
         src/sys/audio/bmson_waveform_view.cpp
-        src/sys/compose_waveform_overlays.cpp
+        src/sys/compose/views/compose_waveform_overlays.cpp
         src/sys/resources/resource_job_state.cpp
         src/sys/audio/preview_audio_export.cpp
         src/sys/project/output_group_export.cpp

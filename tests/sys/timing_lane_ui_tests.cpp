@@ -1,4 +1,4 @@
-#include "sys/compose_view_internal.h"
+#include "sys/compose/views/compose_view_internal.h"
 #include <wormedit/core/timing_lane_catalog.h>
 
 #include <catch2/catch_test_macros.hpp>

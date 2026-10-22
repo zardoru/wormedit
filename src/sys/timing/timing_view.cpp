@@ -1,7 +1,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include "sys/timing/timing_view.h"
-#include "sys/recipe_form.h"
+#include "sys/compose/views/recipe_form.h"
 
 #include <wormedit/core/grid.h>
 #include <wormedit/core/snap.h>

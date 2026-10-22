@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "sys/project/workspace_view.h"
 
 namespace wormedit::sys {

@@ -71,4 +71,4 @@ template <typename RowToY>
 
 } // namespace wormedit::sys
 
-#include "sys/compose_recipe_areas.inl"
+#include "sys/compose/views/compose_recipe_areas.inl"

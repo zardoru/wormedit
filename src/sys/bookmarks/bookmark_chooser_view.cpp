@@ -1,7 +1,7 @@
 #include "core/text_util.h"
 #include <wormedit/core/rational.h>
 #include "sys/bookmarks/bookmark_navigation.h"
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
 

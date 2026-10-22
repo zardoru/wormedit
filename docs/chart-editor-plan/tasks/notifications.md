@@ -4,7 +4,7 @@
 
 Today every message is one string. `src/sys/main.cpp` threads a single
 `std::string& status` through dozens of handlers (last writer wins), Compose and
-Timing keep their own `status` strings (`src/sys/compose_view.h`,
+Timing keep their own `status` strings (`src/sys/compose/views/compose_view.h`,
 `src/sys/timing/timing_view.h`), and the Nuklear frontend has a separate
 `g_project_dialog_error`. Nothing carries a severity, so a routine hint such as
 "Compose navigation canceled." can hide a command's result or an error in the
@@ -105,7 +105,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 - **User import-fix text override (2026-10-04):** Root explicitly approves changing main's expanded import-warning prefix to `Chart imported with warning: …` and retaining all `opened.warnings` in explicit detail within the existing 4 KiB UTF-8 bound. Actual first diagnostic text/count stay identical. This user-authorized import-fix scope overrides historical migration-only prefix preservation; severity/source remain explicit warning/import. Import lead owns loader/CLI propagation, so Sol does not edit `src/sys/project/project_open.cpp` or `src/tools/wormedit_convert.cpp`.
 - **Import warning formatter support (2026-10-04):** Sol additionally owns new `src/sys/project/project_import_feedback.h` and formatter/sink checks in `tests/sys/global_drop_notification_tests.cpp`. The helper retains all warning bytes and keeps the main session opener below the complexity limit; empty warnings remain quiet.
-- **Final global producer support (2026-10-04):** Sol adds `src/sys/compose_view.h`, `src/sys/compose_minimap_navigation.h/.cpp`, `src/sys/compose_bookmark_commands.h/.cpp`, `tests/sys/compose_bookmark_commands_tests.cpp`, and existing `tests/sys/frame_timing_tests.cpp` for explicit seek producer publication and bookmark duplicate suppression. `src/sys/application_frame_services.h/.cpp` and main own revision/identity-based authoritative rebind failure suppression; failed rebinds still retry each frame. This does not migrate Compose projection messages before T-222.
+- **Final global producer support (2026-10-04):** Sol adds `src/sys/compose/views/compose_view.h`, `src/sys/compose_minimap_navigation.h/.cpp`, `src/sys/compose_bookmark_commands.h/.cpp`, `tests/sys/compose_bookmark_commands_tests.cpp`, and existing `tests/sys/frame_timing_tests.cpp` for explicit seek producer publication and bookmark duplicate suppression. `src/sys/application_frame_services.h/.cpp` and main own revision/identity-based authoritative rebind failure suppression; failed rebinds still retry each frame. This does not migrate Compose projection messages before T-222.
 - **Startup producer correction (2026-10-04):** Sol owns new `src/sys/application_startup_feedback.h` and regressions in `tests/sys/global_drop_notification_tests.cpp`. Startup context does not repeat the N5 platform error; loaded/failed primary outcomes are document success/error, no-project discovery context is recovery info.
 - **Rebind edge support (2026-10-04):** Sol owns new `src/sys/project/workspace_edit_feedback.h` and actual core-rebind regressions in `tests/sys/global_drop_notification_tests.cpp`. Identity/revision/history stamp suppresses persistent frame failures, while each frame still retries and successful rebinding resets the edge.
 
@@ -113,7 +113,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 - **Status:** done (2026-10-08 audit; see Result and Inventory bullets)
 - **Outcome:** `compose_input_family_result_t` messages, `flattened.compose.status`, the Timing view `status`, and `g_project_dialog_error` post notifications; routine gesture messages ("Compose navigation canceled.", "… move") become `hint`, so they can no longer hide a command result (fixes the precedence half of T-207).
-- **Read first:** `src/sys/compose/input/compose_input.cpp` (`continue_batch` messages), `src/sys/compose/actions/compose_actions.cpp` (`compose_result_status`), `src/sys/compose_view.cpp` (`view.status_text` assignments), `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/frontend.cpp` (`g_project_dialog_error`).
+- **Read first:** `src/sys/compose/input/compose_input.cpp` (`continue_batch` messages), `src/sys/compose/actions/compose_actions.cpp` (`compose_result_status`), `src/sys/compose/views/compose_view.cpp` (`view.status_text` assignments), `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/frontend.cpp` (`g_project_dialog_error`).
 - **Files owned:** those files and their headers, `src/ui/frontend.h`.
 - **Steps:** as T-221, file by file; add a regression test that a command success followed by a navigation-cancel hint in the same frame keeps the success as the current line.
 - **Invariants:** as T-221.

@@ -17,7 +17,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (headless projection; pixel view moves to T-314)
 - **Outcome:** A single bounded projection lists every Stop, Delay and Warp as a dead span with its row range, duration and kind, consumed by both the canvas and the waveform.
-- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `src/sys/timing/timing_view.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/frontend.h`.
+- **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/timing.h`, `src/sys/timing/timing_view.cpp`, `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/ui/frontend.h`.
 - **Files owned:** `src/sys/compose_dead_spans.h/.cpp` (new), `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/sys/compose_dead_spans_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Grep for an existing projection first (rule 9). 2. Define `WormUiComposeDeadSpanView` (kind stop/delay/warp, begin/end row, begin/end seconds, selected, object id). 3. Build it from `timing_index_t` and `warp_event_t::span` with a fixed capacity and a clipped visible window. 4. Test overlapping, adjacent, negative-stop-as-warp and empty charts.
 - **Invariants:** Pure projection; the document is never mutated. Stop/Delay occupy zero rows, Warp occupies rows but zero seconds; both are rational-exact until the final pixel conversion.
@@ -32,8 +32,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (2026-10-09; waveform gap verified by pixel sampling of `t314-gap-after.png`: the band shows background, not waveform)
 - **Remaining:** none.
 - **Outcome:** In Compose a Stop or Delay appears as a hatched block (fixed pixel height, label with duration) in the field and waveform; notes cannot be placed, pasted or dragged into it, and the waveform shows the span as eaten time.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
-- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
+- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
 - **Steps:** 0. Add the `frontend.h` dead-span view struct and pixel mapping from the T-313 projection. 1. Draw the block and a waveform gap using the T-313 spans. 2. Reject note insert, paint, paste and move targets inside a span. Edge validity follows the format's discontinuity-order profile in `docs/timing-preview-scheduling.md` (canonical: BPM, delay, activation, then stop; BMSON 1.0: note/BGA, BPM, then stop): a note at a Delay row occurs after the delay, a note at a Stop row before the stop, and a warp's half-open `[begin, end)` rows are blocked. 3. Test placement rejection and unchanged document. 4. Isolated Xvfb check with `scripts/smoke-compose-virtual-x.sh`.
 - **Invariants:** Existing notes keep their rows; validity at a Stop/Delay edge comes only from the discontinuity-order profile, never a hard-coded side. Blocking is a placement rule, not a data change.
 - **Reject/failure behavior:** A rejected placement leaves document, selection and undo stack unchanged and reports a notification.
@@ -49,8 +49,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (already implemented: src/audio/aligned_waveform.cpp:56, row mapping by exact time; regression test added)
 - **Outcome:** A Warp's span shows as a blank gap in the waveform and the audio is omitted there; playback and seeking never map real audio time into the warped rows.
-- **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313).
-- **Files owned:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Read first:** `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/compose/compose_dead_spans.h` (T-313).
+- **Files owned:** `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. Reproduce: warp rows currently map to audio. 2. A warp consumes zero time: draw its N-pulse (rational) span as a blank waveform gap because no audio time maps to those rows; the audio on both sides stays contiguous. 3. Playback and the playhead jump from the last pre-warp beat to the post-warp beat with no elapsed time; seeking into a warp row resolves to the post-warp time. 4. Test exact PCM contiguity around a span, seek into a span, and overlapping warps.
 - **Invariants:** Mapping stays rational-exact; BPM fitting and the audio offset are unaffected by the omission.
 - **Reject/failure behavior:** Invalid spans leave the waveform unchanged and report a diagnostic.
@@ -64,7 +64,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (headless projection; drawing moves to T-317)
 - **Outcome:** Kiai is drawn in Compose as a rectangle covering its whole active area, with head and tail, merging overlaps; the data model keeps point on/off events.
 - **Read first:** `include/wormedit/core/document.h`, `include/wormedit/core/marker_editor.h`, `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
-- **Files owned:** `src/sys/compose_kiai_spans.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_kiai_spans_tests.cpp` (new), `tests/CMakeLists.txt`.
+- **Files owned:** `src/sys/compose_kiai_spans.h/.cpp` (new), `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_kiai_spans_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Derive merged intervals from on/off pairs; an open interval ends at the chart end. 2. Draw the rectangle with selectable head and tail handles. 3. Test overlapping, duplicate, leading-off and unmatched events.
 - **Invariants:** Projection only: import/export and native schema are unchanged and byte-identical.
 - **Reject/failure behavior:** Malformed event lists project to the best valid intervals without mutation.
@@ -96,7 +96,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (impulse insertion already implemented: double-click on the SV lane stages an event with an inline value field)
 - **Outcome:** The Compose SV lane inserts impulse events and draws a line graph of the relative value that keeps the discrete step shape (horizontal hold, vertical jump) for non-recipes, with the 1.0x line marked.
 - **Read first:** `src/sys/timing/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/timing_lane_controller.h`.
-- **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
+- **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/input/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:** 1. Grep how the Timing screen inserts SV/scroll events and reuse its core commands. 2. Project (row, value) breakpoints with a bounded count. 3. Draw latched steps with vertical jumps inside the area on the SV lane, normalized to the visible value range (1.0x marked when in range). 4. Test insertion and projection.
 - **Invariants:** Existing SV semantics and exports stay identical.
 - **Reject/failure behavior:** Invalid values reject without mutation.
@@ -176,7 +176,7 @@ Owner request (2026-10-20): eventually allow adding a Compose lane to control th
 - **Status:** done (the focus-mode inline editor changes the multiplier only; transitions are edited in the full-mode inspector)
 - **Outcome:** StepMania SPEEDS appear in the SPD lane as spans with their exact extent and transition, can be inserted, dragged and edited from Compose, and SPEEDS-output recipes keep their areas there.
 - **Read first:** `src/ui/nuklear/timing_panel.cpp` (`draw_speed_markers`, `draw_hovered_speed_span`, stage editor transition fields), `include/wormedit/core/timing_lane_controller.h`, `src/sys/timing/timing_view.cpp` (speed projection), `src/ui/nuklear/compose_canvas.cpp`.
-- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, new `src/sys/compose_speed_spans.h/.cpp` and its test, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, new `src/sys/compose_speed_spans.h/.cpp` and its test, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Project each SPEEDS event to its affected span (from its row to the next event, with the transition length) as a pure, tested function. 2. Draw spans in the SPD lane with hover detail. 3. Make markers and the staged editor accept transition seconds/beats exactly as the Timing screen does. 4. State and projection tests; Xvfb capture.
 - **Invariants:** exact rational multipliers and transitions; StepMania export unchanged.
 - **Reject/failure behavior:** invalid transitions reject without a revision.
@@ -191,7 +191,7 @@ Owner request (2026-10-20): eventually allow adding a Compose lane to control th
 - **Status:** done (full-mode inspector; the focus mode has no inspector)
 - **Outcome:** selecting a recipe in Compose opens an editor for its output, curve (constant, linear, exponential, bump), exact values, sampling mode and counts, with a live preview of the raw and composed value, Apply as one undo step and Cancel.
 - **Read first:** `src/ui/nuklear/timing_panel.cpp` (`render_timing_recipe_form`, recipe draft handling), `include/wormedit/core/sv_recipe.h` (`sv_recipe_draft_t`, `preview_sv_recipe_draft`, `update_sv_recipe_action_t`), `src/sys/main.cpp` (`dispatch_timing_recipe_action`), `src/ui/nuklear/compose_inspector.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, new `src/ui/nuklear/compose_recipe_form.cpp/.h`, `src/ui/frontend.h`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, new `src/ui/nuklear/compose_recipe_form.cpp/.h`, `src/ui/frontend.h`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `CMakeLists.txt`.
 - **Steps:** 1. Reuse the core draft and preview API (no new model). 2. Port the form fields (exact rationals typed as text, validation messages) into a Compose inspector section for the selected recipe (`application.recipe_selected`). 3. Show the raw candidate and composed preview in the lane while editing. 4. A `lua_expression` recipe shows its source read-only until T-189. 5. Tests for form state and the apply/cancel/stale paths; Xvfb capture.
 - **Invariants:** exact rational values; Apply is one undoable command; Cancel and stale revisions leave the document unchanged.
 - **Reject/failure behavior:** invalid parameter combinations stay editable and are reported by preview and Apply.

@@ -1,5 +1,5 @@
 #include "sys/project/workspace_view.h"
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/lane_profiles.h>
 #include <catch2/catch_test_macros.hpp>

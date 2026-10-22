@@ -1,4 +1,4 @@
-#include "sys/recipe_form.h"
+#include "sys/compose/views/recipe_form.h"
 #include "sys/notifications/projection_notification_feedback.h"
 #include "wormedit/core/numeric_text.h"
 

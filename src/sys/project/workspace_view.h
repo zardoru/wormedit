@@ -4,9 +4,9 @@
 #include "sys/bookmarks/bookmark_chooser_view.h"
 #include "sys/compose/compose_dead_spans.h"
 #include "sys/compose/compose_sv_graph.h"
-#include "sys/compose_recipe_areas.h"
+#include "sys/compose/views/compose_recipe_areas.h"
 #include "sys/metadata/metadata_projection_cache.h"
-#include "sys/compose_resource_presenter.h"
+#include "sys/compose/views/compose_resource_presenter.h"
 
 #include "sys/resources/sound_list_view.h"
 #include "sys/resources/sound_usage_view.h"

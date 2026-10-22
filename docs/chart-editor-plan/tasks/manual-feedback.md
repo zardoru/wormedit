@@ -43,7 +43,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Scope extension:** Coordinator approves `src/core/lane_keys.cpp`, `src/sys/lane_keys_runtime.*`,
   `src/ui/frontend/lane_keys.h`, `src/ui/frontend/workspace.h`, `src/ui/frontend/actions.h`,
   `src/sys/application.cpp`, `src/sys/application_commands.*`, `src/sys/commands/application_command_dispatch.cpp`,
-  `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
+  `src/sys/compose/views/compose_view.h`, `src/ui/nuklear/frontend.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`,
   and `memory/chart-editor-status/resume.md` for persistence, dialog lifecycle, command routing,
   input isolation, cached binding projection, build registration and completion evidence.
   `include/wormedit/core/lane_keys.h` owns the resolved-profile cache. `include/wormedit/core/document.h`,
@@ -70,7 +70,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   `src/core/lane_keys.cpp`, `src/core/document.cpp`, `src/core/lane_migration.cpp`, `src/core/lane_profiles.cpp`,
   `src/core/command_registry.cpp`, `src/sys/preferences/lane_keys_runtime.cpp`, `src/sys/preferences/lane_keys_runtime.h`,
   `src/tools/wormedit_manual_reference.cpp`,
-  `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/application.cpp`,
+  `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/application.cpp`,
   `src/sys/commands/application_commands.h`, `src/sys/commands/application_commands.cpp`, `src/sys/commands/application_command_dispatch.cpp`,
   `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/options_window.h`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/lane_keys_tests.cpp`, `tests/core/lane_profile_tests.cpp`,
@@ -126,8 +126,8 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
   paste report's existing equality contract now that it retains proposed columns.
 - **Value:** Medium: pasting iBMSC or BMSE notes with BGM into a chart with fewer BGM columns is refused today ("BMS BGM column has no matching target source lane"), so users must count columns and add them first.
 - **Outcome:** When external BMS editor text (T-700) refers to more BGM columns than the chart has, the paste preview shows the extra columns and committing adds them and the notes in one Undo step.
-- **Read first:** `src/formats/bms_clipboard.cpp` (BGM column mapping), `src/sys/compose_view.cpp` (`begin_compose_paste`, `decode_external_clipboard`), `src/core/bgm_columns.cpp` (`Set BGM column count`).
-- **Files owned:** `src/formats/bms_clipboard.cpp`, `include/wormedit/formats/bms_clipboard.h`, `src/sys/compose_view.cpp`, `src/core/chart_clipboard.cpp` (applying with column growth), `include/wormedit/core/chart_clipboard.h`, `include/wormedit/core/bgm_columns.h`, `src/core/bgm_columns.cpp`, `include/wormedit/core/document.h`, tests, `docs/manual/chapters/walkthrough-bms.adoc` (drop the "BGM needs columns" note), `memory/chart-editor-status/resume.md` (completion record), this card.
+- **Read first:** `src/formats/bms_clipboard.cpp` (BGM column mapping), `src/sys/compose/views/compose_view.cpp` (`begin_compose_paste`, `decode_external_clipboard`), `src/core/bgm_columns.cpp` (`Set BGM column count`).
+- **Files owned:** `src/formats/bms_clipboard.cpp`, `include/wormedit/formats/bms_clipboard.h`, `src/sys/compose/views/compose_view.cpp`, `src/core/chart_clipboard.cpp` (applying with column growth), `include/wormedit/core/chart_clipboard.h`, `include/wormedit/core/bgm_columns.h`, `src/core/bgm_columns.cpp`, `include/wormedit/core/document.h`, tests, `docs/manual/chapters/walkthrough-bms.adoc` (drop the "BGM needs columns" note), `memory/chart-editor-status/resume.md` (completion record), this card.
 - **Steps:**
   1. Let the decoder report the highest BGM column the text uses instead of rejecting.
   2. Stage the column growth in the paste proposal so preview and commit agree; one transaction adds columns and pastes.

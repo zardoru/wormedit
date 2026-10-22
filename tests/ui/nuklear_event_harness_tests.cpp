@@ -9,7 +9,7 @@
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/compose/compose_sound_selection.h"
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"
 #include "ui/nuklear/audio_state.h"

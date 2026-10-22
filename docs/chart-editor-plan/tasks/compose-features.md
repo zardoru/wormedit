@@ -29,8 +29,8 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; existing wheel, toolbar scrollbar drag, and middle-button autoscroll verified with 32 BGM lanes)
 - **Outcome:** scrolling the BGM pane sideways never moves playable columns, and both panes keep the same vertical scroll and zoom.
-- **Read first:** `docs/chart-editor-plan/editing/layout.md` (BGM pane paragraph), `src/sys/compose_view.h` (`bgm_horizontal_scroll_pixels`), `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`.
-- **Files owned:** `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp` (only if the clamp is wrong), `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Read first:** `docs/chart-editor-plan/editing/layout.md` (BGM pane paragraph), `src/sys/compose/views/compose_view.h` (`bgm_horizontal_scroll_pixels`), `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.h`.
+- **Files owned:** `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp` (only if the clamp is wrong), `tests/ui/nuklear_compose_state_tests.cpp`.
 - **Steps:**
   1. Audit: run `git grep -n bgm_horizontal_scroll` and list where the value is read, written, and clamped. State which of wheel, drag, and autoscroll already route to it.
   2. For each missing route, add the smallest change that routes it to the BGM scroll only.
@@ -61,7 +61,7 @@ findings in the card's report, and do not rebuild what exists.
 - **Status:** done (2026-09-30; existing virtual tail audited with the OCT/FP fixture; user-authorized boundary correction and regression)
 - **Outcome:** in a BMS-family chart, Compose's measure rail lists measures up to `#999`, empty measures render as virtual rows, and the first edit in one materializes only that measure.
 - **Read first:** `include/wormedit/core/virtual_canvas.h`, `tests/core/virtual_canvas_tests.cpp`, `docs/chart-editor-plan/editing/layout.md` (measure-number column paragraph), `src/core/editor_scene.cpp`.
-- **Files owned:** `src/core/editor_scene.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp`, `tests/core/virtual_canvas_tests.cpp`.
+- **Files owned:** `src/core/editor_scene.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose/views/compose_view.cpp`, `tests/core/virtual_canvas_tests.cpp`.
 - **Steps:**
   1. Audit: open a BMS fixture (`tests/fixtures/bms/*.bms`) in the app, scroll past the last authored measure, and record whether virtual rows appear. If they do, mark this card done with the evidence and STOP.
   2. If not, make `editor_scene.cpp` emit virtual measure bands using the existing virtual-canvas helper; do not allocate measure buckets.
@@ -76,7 +76,7 @@ findings in the card's report, and do not rebuild what exists.
 
 - **Status:** done (2026-09-30; user chose a status-bar minimap and keeping existing sync controls)
 - **Outcome:** the overview implementation is split into the status-bar minimap (T-15) and an exact source-frame playhead (T-16).
-- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `src/ui/nuklear/compose_panel.cpp`, `src/sys/compose_waveform_overlays.h`.
+- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `src/ui/nuklear/compose_panel.cpp`, `src/sys/compose/views/compose_waveform_overlays.h`.
 - **Files owned:** `docs/chart-editor-plan/tasks/compose-features.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:**
   1. Record the user decision: dock as a minimap in the status bar; keep the existing synchronization controls.

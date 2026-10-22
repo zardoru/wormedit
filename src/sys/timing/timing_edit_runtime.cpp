@@ -1,6 +1,6 @@
 #include "sys/timing/timing_edit_runtime.h"
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 
 namespace wormedit::sys {
 namespace runtime {

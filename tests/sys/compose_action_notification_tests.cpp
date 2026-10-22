@@ -11,7 +11,7 @@
 #include "sys/compose/actions/compose_quantize_request.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/compose_scroll_geometry.h"
-#include "sys/recipe_form.h"
+#include "sys/compose/views/recipe_form.h"
 #include <cstdio>
 #include <cstring>
 

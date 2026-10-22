@@ -8,7 +8,7 @@ User feedback from the Brain scratchpad, authorized 2026-10-11. Worktree `feedba
 
 - **Status:** done (2026-10-11; verified; committed with this batch)
 - **Outcome:** A Compose toolbar direction icon toggles upscroll/downscroll for the active mode family and persists that preference without editing chart data.
-- **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/sys/main.cpp`.
+- **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/main.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp` (navigation group/layout only), `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h` (action/options fields only), `src/sys/main.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` and `tests/ui/inspector_resource_workflow_tests.cpp` (toolbar geometry fixtures), this card.
 - **Steps:** 1. Audit existing mode-family direction preferences. 2. Add toolbar toggle through the revision-checked action boundary and persist through session preferences. 3. Verify direction/cursor/history and stale input; inspect isolated Xvfb toolbar.
 - **Invariants:** Notes, lane identity, cursor row, zoom, document revision and Undo remain unchanged; other mode families retain their preferences.

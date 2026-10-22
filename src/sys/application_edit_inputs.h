@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/formats/conversion.h>

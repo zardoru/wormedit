@@ -30,7 +30,7 @@ add_executable(wormedit_core_tests
     sys/bga_lane_workflow_tests.cpp
     sys/stem_window_tests.cpp
     sys/document_edit_feedback_tests.cpp
-    ../src/sys/compose_resource_presenter.cpp
+    ../src/sys/compose/views/compose_resource_presenter.cpp
     ../src/sys/compose/actions/compose_area_actions.cpp
     ../src/sys/compose/actions/compose_quantize.cpp
     ../src/sys/commands/document_edit_feedback.cpp
@@ -56,9 +56,9 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/compose_dead_spans.cpp
     ../src/sys/compose/compose_kiai_spans.cpp
     ../src/sys/compose/compose_sv_graph.cpp
-    ../src/sys/compose_recipe_areas.cpp
+    ../src/sys/compose/views/compose_recipe_areas.cpp
     ../src/sys/compose/compose_speed_spans.cpp
-    ../src/sys/recipe_form.cpp
+    ../src/sys/compose/views/recipe_form.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
@@ -713,16 +713,16 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_note_to_bgm.cpp
         ../src/sys/compose/input/compose_playhead_skip.cpp
         ../src/sys/compose/actions/compose_quantize_preview.cpp
-        ../src/sys/compose_recipe_areas.cpp
-        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/compose/views/compose_recipe_areas.cpp
+        ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/compose_sv_graph.cpp
-        ../src/sys/compose_view.cpp
-        ../src/sys/compose_scene_view.cpp
-        ../src/sys/compose_marker_view.cpp
-        ../src/sys/compose_selection_view.cpp
-        ../src/sys/compose_draw_source_view.cpp
-        ../src/sys/recipe_form.cpp
+        ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/views/compose_scene_view.cpp
+        ../src/sys/compose/views/compose_marker_view.cpp
+        ../src/sys/compose/views/compose_selection_view.cpp
+        ../src/sys/compose/views/compose_draw_source_view.cpp
+        ../src/sys/compose/views/recipe_form.cpp
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/resources/sound_usage_view.cpp
@@ -795,7 +795,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         sys/timing_lane_ui_tests.cpp
-        ../src/sys/compose_hover_timing.cpp
+        ../src/sys/compose/views/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
         sys/compose_notification_tests.cpp
         ui/nuklear_notification_state_tests.cpp
@@ -812,22 +812,22 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/commands/document_edit_feedback.cpp
         ../src/sys/compose/actions/compose_action_outcome.cpp
         ../src/sys/compose/actions/compose_audition_requests.cpp
-        ../src/sys/compose_view.cpp
-        ../src/sys/compose_scene_view.cpp
-        ../src/sys/compose_marker_view.cpp
-        ../src/sys/compose_selection_view.cpp
-        ../src/sys/compose_draw_source_view.cpp
+        ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/views/compose_scene_view.cpp
+        ../src/sys/compose/views/compose_marker_view.cpp
+        ../src/sys/compose/views/compose_selection_view.cpp
+        ../src/sys/compose/views/compose_draw_source_view.cpp
         ../src/sys/compose/compose_dead_spans.cpp
         ../src/sys/compose/compose_kiai_spans.cpp
         ../src/sys/compose/compose_sv_graph.cpp
-        ../src/sys/compose_recipe_areas.cpp
+        ../src/sys/compose/views/compose_recipe_areas.cpp
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/actions/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
-        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/timing/timing_view.cpp
-        ../src/sys/recipe_form.cpp
+        ../src/sys/compose/views/recipe_form.cpp
         ../src/sys/project/workspace_view.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
@@ -937,8 +937,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/timing/timing_view.cpp
-        ../src/sys/recipe_form.cpp
-        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/compose/views/recipe_form.cpp
+        ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/metadata/metadata_view.cpp
         ../src/sys/metadata/metadata_drop_state.cpp
         ../src/sys/metadata/metadata_asset_runtime.cpp

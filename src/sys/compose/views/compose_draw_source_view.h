@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 
 namespace wormedit::sys {
 void prepare_draw_stem_sources(compose_scene_cache_t& cache,

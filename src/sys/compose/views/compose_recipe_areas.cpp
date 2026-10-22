@@ -1,4 +1,4 @@
-#include "sys/compose_recipe_areas.h"
+#include "sys/compose/views/compose_recipe_areas.h"
 
 #include <wormedit/core/sv_recipe.h>
 

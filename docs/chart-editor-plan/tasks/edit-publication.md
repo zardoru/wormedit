@@ -80,4 +80,4 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 - **Invariants:** Same messages, severities, notification sources and ordering relative to auditions and other feedback.
 - **Reject/failure behavior:** A rebind failure still reports the same message and leaves the document change committed, as today.
 - **Verify:** GATE; `ctest --test-dir build -R '^documentation\.'` shows `sys_workspace_rebind: 1`.
-- **Out of scope:** Audition admission and feedback ordering in `finish_compose_outcome`, which stay compose-specific; frame-level `publish_*` functions in `src/sys/application.cpp` and scene publication in `src/sys/compose_view.cpp`, which publish UI output, not edits.
+- **Out of scope:** Audition admission and feedback ordering in `finish_compose_outcome`, which stay compose-specific; frame-level `publish_*` functions in `src/sys/application.cpp` and scene publication in `src/sys/compose/views/compose_view.cpp`, which publish UI output, not edits.

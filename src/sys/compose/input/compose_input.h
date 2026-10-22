@@ -2,7 +2,7 @@
 
 #include "sys/application_edit_inputs.h"
 
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/notifications.h>

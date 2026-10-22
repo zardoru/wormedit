@@ -1,6 +1,6 @@
-#include "sys/compose_projection_context.h"
+#include "sys/compose/views/compose_projection_context.h"
 #include <wormedit/core/rational.h>
-#include "sys/compose_waveform_overlays.h"
+#include "sys/compose/views/compose_waveform_overlays.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/core/bpm_editor.h>

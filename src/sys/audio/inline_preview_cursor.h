@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_interaction_view.h"
+#include "sys/compose/views/compose_interaction_view.h"
 
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/interaction_queries.h>

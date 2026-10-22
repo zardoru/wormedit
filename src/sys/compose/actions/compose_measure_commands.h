@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/notifications.h>
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 
 #include <wormedit/core/interaction_state.h>
 #include <wormedit/core/measure_editor.h>

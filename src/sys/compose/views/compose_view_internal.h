@@ -1,13 +1,13 @@
 #pragma once
 #include <wormedit/core/keyed_cache.h>
 #include "sys/compose/actions/compose_area_actions.h"
-#include "sys/compose_draw_source_view.h"
+#include "sys/compose/views/compose_draw_source_view.h"
 #include "sys/compose/actions/compose_note_to_bgm.h"
-#include "sys/compose_resource_presenter.h"
+#include "sys/compose/views/compose_resource_presenter.h"
 #include "sys/compose/compose_sound_selection.h"
-#include "sys/compose_projection_context.h"
+#include "sys/compose/views/compose_projection_context.h"
 #include "sys/frame_timing.h"
-#include "sys/recipe_form.h"
+#include "sys/compose/views/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/sv_recipe.h>

@@ -2644,7 +2644,7 @@ TEST_CASE("Draw shortcut rejects a retained interaction without editable chart g
 // Placement audition needs the compose input path, which only the frame-timing executable links.
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "sys/compose/input/compose_input.h"
-#include "sys/compose_view.h"
+#include "sys/compose/views/compose_view.h"
 #include "sys/preferences/options_runtime.h"
 namespace {
 auto click_audition_song() -> wormedit::song_document_t {

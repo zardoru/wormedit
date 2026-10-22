@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-## Active queue (2026-10-21)
+## Active queue (2026-10-22)
 
 Completed **T-190** (2026-10-22): recipes store ordered multiply, normalization and
 weighted bump-balancing stages in schema 11; older recipes gain an empty pipeline.
@@ -9,8 +9,22 @@ with raw samples retained for inspection. Empty pipelines preserve existing buil
 behavior. The inspector lists stage order, and ordinary parameter edits retain it.
 GATE and Linux Clang each pass **4,467/4,467**, with **10-TU** complexity and no
 increased allowances; isolated native Apply/save and Undo/save preserve
-both stages and restore the original parameter. The next owner-requested card is
-**T-121**, the checksummed replayable recovery journal.
+both stages and restore the original parameter.
+
+Completed **T-121** (2026-10-22): accepted commands and Undo/Redo journal complete
+post-states through the shared publication boundary and async worker. Checksums and
+bounded sequence/revision validation recover the valid prefix after a torn record.
+The next edit acknowledges the prior flush; capacity or I/O failure requests an early
+native checkpoint. Successful autosave compacts its captured cursor, preserving later
+edits and retaining journals on directory-sync warnings. Recovery envelope v2 adds
+a checksummed cursor; cursorless v1 and native schema 11 remain readable. Existing
+recovery actions handle journals and decreasing Undo revisions, including clean
+revision-zero primary initialization. GATE and Linux Clang each pass **4,485/4,485**;
+**11-TU** complexity has no increased allowances. Focused recovery checks pass
+**256 assertions / 22 cases**. Isolated SIGKILL/restart, recovery Save as and live
+Recover restore the unsaved 240 BPM/15-measure state while the original 120 BPM/
+eight-measure primary stays byte-identical. Both requested cards, **T-190** and
+**T-121**, are complete; no sequential follow-up is active.
 
 Completed **T-280** (2026-10-22): BPM/pause/warp edits offer per-edit audio-time
 anchoring, preserving playable note/hold, BGM and sound-channel endpoints through one

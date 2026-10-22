@@ -2,6 +2,7 @@
 
 #include <wormedit/core/task_graph.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/command_journal.h>
 #include <wormedit/formats/native_project_storage.h>
 
 #include <chrono>
@@ -9,6 +10,8 @@
 #include <optional>
 
 namespace wormedit {
+
+struct document_history_t;
 
 struct native_project_autosave_target_t {
     // Saved native projects keep the backup next to the primary. Sessions without
@@ -25,6 +28,7 @@ struct native_project_autosave_target_t {
     std::filesystem::path intended_project_path;
     // Relative source assets are anchored to this live session directory.
     std::filesystem::path asset_base;
+    void anchor_assets(song_document_t&) const;
 };
 
 [[nodiscard]] auto
@@ -45,7 +49,8 @@ class native_project_autosave_loop_t {
         std::uint64_t initial_session_sequence = 0,
         clock_t::duration interval = std::chrono::minutes{5},
         clock_t::duration retry_delay = std::chrono::seconds{30},
-        notification_sink_t notifications = notification_sink_t::muted());
+        notification_sink_t notifications = notification_sink_t::muted(),
+        command_journal_limits_t journal_limits = {});
     ~native_project_autosave_loop_t();
 
     native_project_autosave_loop_t(const native_project_autosave_loop_t&) = delete;
@@ -55,6 +60,9 @@ class native_project_autosave_loop_t {
     // Preserve the session and last successful publication; pending workers keep their snapshot.
     [[nodiscard]] auto set_interval(clock_t::duration interval) noexcept -> bool;
     void mark_explicit_save(native_project_document_version_t saved_version) noexcept;
+    void mark_explicit_save(native_project_document_version_t saved_version, const song_document_t& current);
+    void observe(document_history_t&, const native_project_autosave_target_t&);
+    void flush_journal();
     [[nodiscard]] auto
     reset_session(clock_t::time_point session_started_at,
                   std::optional<native_project_document_version_t> last_explicit_save,
@@ -72,9 +80,11 @@ class native_project_autosave_loop_t {
     [[nodiscard]] auto session_sequence() const noexcept -> std::uint64_t;
 
   private:
+    void prepare_publication(const song_document_t&);
     struct completion_t {
         native_project_autosave_coordinator_t coordinator;
         native_project_autosave_outcome_t result;
+        std::optional<native_project_journal_position_t> journal_position;
     };
 
     struct worker_t {
@@ -88,6 +98,7 @@ class native_project_autosave_loop_t {
     task_scheduler_t& scheduler_;
     notification_sink_t notifications_{notification_sink_t::muted()};
     native_project_autosave_coordinator_t coordinator_;
+    command_journal_runtime_t journal_;
     clock_t::duration interval_;
     clock_t::duration retry_delay_;
     std::optional<clock_t::time_point> retry_after_;

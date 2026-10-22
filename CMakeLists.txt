@@ -54,6 +54,8 @@ endif()
 add_library(wormedit_core
     src/core/audio_offset_editor.cpp
     src/core/autosave_loop.cpp
+    src/core/command_journal.cpp
+    src/core/command_journal_runtime.cpp
     src/core/bms_branch_editor.cpp
     src/core/bms_branch_view.cpp
     src/core/bmson_lane_mode.cpp

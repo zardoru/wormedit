@@ -73,12 +73,21 @@ struct native_project_document_version_t {
     auto operator==(const native_project_document_version_t&) const -> bool = default;
 };
 
+struct native_project_journal_position_t {
+    [[nodiscard]] static auto from(const std::filesystem::path& backup, std::uint64_t initial_sequence = 0)
+        -> native_project_journal_position_t;
+    std::filesystem::path path;
+    std::uint64_t sequence{};
+    auto operator==(const native_project_journal_position_t&) const -> bool = default;
+};
+
 struct native_project_recovery_metadata_t {
     std::filesystem::path original_source_path;
     std::filesystem::path intended_project_path;
     std::optional<std::uint64_t> last_explicit_save_revision;
     std::chrono::system_clock::time_point utc_write_time{std::chrono::system_clock::now()};
     std::uint64_t session_sequence{};
+    std::optional<native_project_journal_position_t> journal_position;
 };
 
 struct native_project_recovery_snapshot_t {
@@ -111,6 +120,7 @@ enum class native_project_recovery_comparison_t {
     older_revision,
     equal_revision,
     newer_revision,
+    journaled_changes,
 };
 
 
@@ -121,6 +131,7 @@ enum class native_project_recovery_quarantine_t {
 };
 
 struct native_project_recovery_candidate_t {
+    [[nodiscard]] auto journal_precedes(const native_project_recovery_candidate_t&) const -> std::optional<bool>;
     std::filesystem::path path;
     native_project_recovery_candidate_kind_t kind{
         native_project_recovery_candidate_kind_t::caller_supplied_entry};
@@ -130,6 +141,7 @@ struct native_project_recovery_candidate_t {
         native_project_recovery_comparison_t::not_comparable};
     std::optional<native_project_document_version_t> version;
     std::optional<native_project_recovery_metadata_t> recovery_metadata;
+    bool is_command_journal{};
     std::optional<song_document_t> document;
     // Content identity captured by the bounded scanner and required by action
     // execution. Callers should treat these fields as an opaque scan ticket.
@@ -200,6 +212,14 @@ using native_project_recovery_scan_outcome_t = diagnosed_t<native_project_recove
 [[nodiscard]] auto parse_native_project_recovery_snapshot(std::string_view bytes,
                                                           native_project_limits_t limits = {})
     -> native_project_recovery_parse_outcome_t;
+
+// Shared SHA-256 content identity used by recovery envelopes, scan tickets and journals.
+[[nodiscard]] auto native_project_content_checksum(std::string_view bytes) -> std::string;
+
+// Single-writer append. Expected size prevents appending after an unknown or
+// torn write. Complete file and directory flushes precede acknowledgement.
+[[nodiscard]] auto append_native_bytes_file(const std::filesystem::path&, std::string_view,
+    std::uint64_t expected_size, std::size_t maximum_bytes) -> result_t<void, std::string>;
 
 // Validate each supplied artifact independently. The scanner recognizes the
 // adjacent `.bak`, caller-owned untitled recovery entries, immediate regular
@@ -285,6 +305,7 @@ class native_project_autosave_coordinator_t {
 
     [[nodiscard]] auto set_interval(clock_t::duration interval) noexcept -> bool;
     void mark_explicit_save(native_project_document_version_t saved_version) noexcept;
+    void request_checkpoint() noexcept { checkpoint_requested_ = true; }
 
     [[nodiscard]] auto is_due(const song_document_t& song, clock_t::time_point now) const noexcept
         -> bool;
@@ -293,7 +314,8 @@ class native_project_autosave_coordinator_t {
                                       const std::filesystem::path& caller_supplied_backup_path,
                                       std::filesystem::path original_source_path = {},
                                       std::filesystem::path intended_project_path = {},
-                                      native_project_storage_options_t options = {})
+                                      native_project_storage_options_t options = {},
+                                      std::optional<native_project_journal_position_t> journal_position = {})
         -> native_project_autosave_outcome_t;
 
 
@@ -308,6 +330,7 @@ class native_project_autosave_coordinator_t {
     std::optional<native_project_document_version_t> last_autosaved_;
     std::uint64_t session_sequence_{};
     bool interval_valid_{};
+    bool checkpoint_requested_{};
 };
 
 } // namespace wormedit

@@ -2237,6 +2237,15 @@ struct application_t::implementation_t {
         return true;
     }
 
+    void bind_project_journal() {
+        if (!session.project_identity.session_loaded) return;
+        auto target = native_project_autosave_target_t::from(session.history.document.id,
+            session.project_identity.native_project_loaded, session.project_identity.active_project_path,
+            platform.recovery_directory ? *platform.recovery_directory : std::filesystem::path{});
+        target.asset_base = session.project_identity.asset_base;
+        session.autosave_loop.observe(session.history, target);
+    }
+
     void tick_loaded_project_autosave() {
         if (!session.project_identity.session_loaded || jobs.project_open_runtime.is_busy())
             return;
@@ -2347,6 +2356,7 @@ struct application_t::implementation_t {
                                       path_error.message());
             return false;
         }
+        session.autosave_loop.flush_journal();
         const auto started = jobs.resource_copy_runtime.start_project_save(
             session.history.document, session.project_identity.asset_base, destination);
         if (!started) {
@@ -2364,7 +2374,6 @@ struct application_t::implementation_t {
         session.history.saved_revision = stamp.revision;
         const auto version =
             native_project_document_version_t{.project_id = stamp.project, .revision = stamp.revision};
-        session.autosave_loop.mark_explicit_save(version);
         session.project_identity.scanned_primary_version = version;
         session.project_identity.active_project_path = report.destination;
         remember_project_file(preferences.program_preferences, report.destination,
@@ -2372,6 +2381,8 @@ struct application_t::implementation_t {
         session.project_identity.native_project_loaded = true;
         session.project_identity.asset_base = report.destination.parent_path();
         session.project_identity.external_player_source_path.clear();
+        bind_project_journal();
+        session.autosave_loop.mark_explicit_save(version, session.history.document);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         post_audio_inventory_feedback(
             audio_runtime.project_sources.reconcile(session.history.document, session.project_identity.asset_base),
@@ -2725,6 +2736,7 @@ struct application_t::implementation_t {
         jobs.project_open_runtime.cancel();
         wormedit::sys::begin_project_session(session.project_identity, views.project_chart_runtime,
                                              std::move(replacement));
+        bind_project_journal();
         worm_ui_frontend_begin_project_session();
         views.audio_offset_drag.reset();
         views.audio_offset_drag_tab.reset();
@@ -3992,6 +4004,7 @@ struct application_t::implementation_t {
         session.project_identity.native_project_loaded = startup.loaded_primary;
         session.project_identity.active_project_path =
             startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
+        bind_project_journal();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audio_runtime.resident_samples.set_listener(
             [this](audio::resident_snapshot_ptr_t snapshot) {

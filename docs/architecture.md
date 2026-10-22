@@ -51,6 +51,17 @@ Document-only metadata edits may set publication options on `document_edit_effec
 The shared finisher passes them to commit; project settings preserve existing imported-source
 flags without enabling passthrough for sources that were already edited *(T-263)*.
 
+Live history may attach `document_publication_observer_t` through the autosave loop.
+The shared commit and Undo/Redo boundaries acknowledge the previous journal record
+before publishing another edit, then capture the accepted post-state with its prior
+revision and command label. Detached previews constructed through the shared preview
+runner have no observer. Domain edits contain no journal code.
+`command_journal_runtime_t` serializes and appends through `async_job_t`; the single
+writer retains validated sequence metadata, while recovery reads verify the entire
+bounded stream. A successful autosave acknowledges its captured journal cursor before
+compaction, preserving later publications. Capacity or I/O failures request an early
+native checkpoint through the existing autosave coordinator.
+
 Accepted audition requests travel on those outcomes to the shared finisher, which submits them
 to the project-owned `compose_auditions_t`. Its input scope delivers the last object request,
 then the last draft request, after the entire input batch. Its catalog scope delivers the

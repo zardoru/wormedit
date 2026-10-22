@@ -7,7 +7,8 @@ SDL-based per-user recovery-directory discovery, and the periodic application
 autosave loop are implemented. The loop checks dirty revisions against the
 monotonic five-minute coordinator, captures one immutable document snapshot,
 and submits bounded serialization/publication to a one-worker, one-task
-scheduler. Command journaling and crash-marker backends remain planned.
+scheduler. Checksummed command journaling, valid-prefix replay and startup recovery
+are implemented. Crash-marker backends remain planned.
 
 ## Recovery artifacts
 
@@ -54,6 +55,48 @@ The implemented scanner covers the primary, adjacent `.bak`, caller-supplied rec
 If a valid backup is newer than the explicit save, show a recovery banner before editing with actions to inspect it read-only, recover it into the session, save it as a new project, or discard it. Never overwrite the primary project merely because a backup exists. Show the saved and backup revisions/times plus a document-level change summary when both can be decoded. If the primary is missing or corrupt and the backup is valid, recommend recovery while retaining the corrupt original for inspection.
 
 If a crash marker exists but the primary save validates and no newer valid backup exists, atomically create the `.bak` from that known-good primary before continuing, as requested. Do not overwrite a newer valid recovery snapshot. Corrupt backups are only quarantined after an explicit action and never loaded or used to replace a primary file. Choosing discard is explicit and moves only the selected, scan-ticket-matching recovery generation into quarantine after confirming the primary/session baseline; the original remains recoverable under its quarantine name.
+
+## Command journal
+
+The live history publication boundary captures every accepted command and Undo/Redo
+as a complete native post-state, prior revision, command label and monotonic journal
+sequence. Each record's SHA-256 covers its payload and metadata. Full post-states
+represent replacement deltas, so replay covers every command family without a second
+command serializer. Audio and other external assets remain referenced; relative paths
+are anchored on the worker using the same recovery target as autosave.
+
+Serialization and file publication run through `async_job_t` on the autosave scheduler.
+Before accepting another publication, the history boundary waits for the previous
+record's file and directory flushes. With healthy storage, the current publication is
+the only accepted edit that may still be in flight. The writer owns its generation and
+validated prefix, checks the expected file length before appending, and avoids parsing
+the growing file for each note. Recovery independently verifies every record.
+The default bounds are four queued snapshots, 64 MiB per file, 16 MiB per record and
+1,024 records. Reaching a bound or encountering a write failure requests an early full
+checkpoint using the existing autosave coordinator and retry policy. Prior artifacts
+remain available when storage fails, with a recovery warning.
+
+Saved projects use an adjacent `<project>.bak.journal-<generation>`; untitled/imported
+sessions use the corresponding recovery-directory target. New generations preserve
+unresolved artifacts. Opening/startup discovers journals under the existing candidate,
+directory and byte budgets. JSON parsing uses the dependency with record depth, node,
+duplicate-key and payload bounds. A bad checksum, malformed post-state, revision gap,
+sequence gap or torn final record stops replay at the validated prefix. Identical
+duplicates are idempotent. A corrupt journal never prevents another valid backup from
+being offered.
+
+Autosave captures a path/sequence cursor with its immutable document. Recovery
+envelope version 2 adds that cursor and its checksum; envelopes without a cursor retain
+version 1, and both are readable. Only a successfully flushed backup acknowledges
+compaction, and directory-sync warnings retain the journal. Records newer than the
+captured cursor survive. A completed checkpoint can remove its covered valid prefix
+and unusable tail; an unread limit refuses compaction. Recovery sequence floors continue
+across generations, and cursor-aware ranking handles Undo's decreasing numeric revision.
+Explicit Save records the resulting baseline, including edits made while Save ran.
+
+The scanner's ticket covers the entire journal, including a corrupt tail. Existing
+Inspect/Recover/Save-as/Discard actions revalidate that exact artifact before using its
+validated post-state; journal replay adds no automatic primary overwrite or new replay UI.
 
 ## Crash handling
 

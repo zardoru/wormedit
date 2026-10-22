@@ -58,7 +58,11 @@ auto recovery_action_request(
                 .version = scanned_primary_version
                     ? std::optional<native_project_document_version_t>{
                           native_project_document_version_t{.project_id = history.document.id,
-                                                            .revision = history.document.revision}}
+                              // A clean history initializes a disk revision of zero to one.
+                              // Keep the scan's disk identity for that initialization alone.
+                              .revision = scanned_primary_version->revision == 0 &&
+                                  history.document.revision == 1 && !is_document_dirty(history)
+                                      ? 0 : history.document.revision}}
                     : std::nullopt,
             },
         };

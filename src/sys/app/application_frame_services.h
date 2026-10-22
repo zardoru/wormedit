@@ -38,7 +38,7 @@ void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
 auto compose_frame_delta_seconds(std::uint64_t& last_ticks) -> double;
 
 void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
-                               const document_history_t& history,
+                               document_history_t& history,
                                bool loaded_primary,
                                const std::filesystem::path& requested_primary_path,
                                const std::filesystem::path& recovery_path,

@@ -16,13 +16,16 @@ struct recovery_fixture_t {
     workspace_controller_t workspace;
     native_project_recovery_controller_t controller;
     bool recovered{};
-    recovery_fixture_t() {
+    explicit recovery_fixture_t(std::uint64_t primary_revision = 5) {
         std::filesystem::create_directories(directory);
         const auto binding = workspace_controller_t::from(history);
         expect_recovery(static_cast<bool>((binding.value && binding.diagnostics.empty())));
         workspace = *binding.value;
         const auto primary = directory / "chart.wormedit";
-        expect_recovery(create_native_project_file(primary, history.document).value);
+        auto primary_document = history.document;
+        primary_document.revision = primary_revision;
+        expect_recovery(create_native_project_file(primary, primary_document).value);
+        history = document_history_t::from(primary_document, 128, true);
         auto backup = history.document;
         backup.revision = 6;
         expect_recovery(create_native_project_recovery_file(native_project_adjacent_backup_path(primary),
@@ -43,15 +46,31 @@ struct recovery_fixture_t {
         value.recovery_candidate_index = target.candidate_index;
         return value;
     }
-    auto dispatch(const wormedit::ui::workspace_action_t& action) -> std::string {
+    auto dispatch(const wormedit::ui::workspace_action_t& action, std::uint64_t primary_revision = 5) -> std::string {
         return dispatch_recovery_ui_action(action, controller, history, workspace,
-            native_project_document_version_t{song_id_t{417}, 5}, autosave, recovered, sink);
+            native_project_document_version_t{song_id_t{417}, primary_revision}, autosave, recovered, sink);
     }
     auto entries() -> std::vector<notification_entry_t> {
         center.drain_inbox(notification_time_t{0});
         return center.snapshot(notification_capacity);
     }
 };
+}
+TEST_CASE("Recovery retains revision-zero disk identity after clean history initialization", "[unit][sys][recovery-notification]") {
+    recovery_fixture_t fixture{0};
+    expect_recovery(fixture.history.document.revision == 1);
+    SECTION("clean session") {
+        expect_recovery(fixture.dispatch(fixture.action(WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER), 0) ==
+            "Recovery loaded into the current session. Review it and save explicitly.");
+        expect_recovery(fixture.recovered);
+        expect_recovery(fixture.history.document.revision == 6);
+    }
+    SECTION("different session revision") {
+        fixture.history.document.revision = 2;
+        expect_recovery(fixture.dispatch(fixture.action(WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER), 0).find(
+            "current session no longer matches") != std::string::npos);
+        expect_recovery(!fixture.recovered);
+    }
 }
 TEST_CASE("Recovery inspection is read-only info and loading is explicit success", "[unit][sys][recovery-notification]") {
     recovery_fixture_t fixture;

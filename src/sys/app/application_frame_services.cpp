@@ -141,7 +141,7 @@ auto compose_frame_delta_seconds(std::uint64_t& last_ticks) -> double {
 }
 
 void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
-                               const document_history_t& history,
+                               document_history_t& history,
                                bool loaded_primary,
                                const std::filesystem::path& requested_primary_path,
                                const std::filesystem::path& recovery_path,
@@ -150,6 +150,7 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
     auto target = native_project_autosave_target_t::from(
         history.document.id, loaded_primary, requested_primary_path, recovery_path);
     target.asset_base = asset_base;
+    autosave_loop.observe(history, target);
     if (const auto result = autosave_loop.tick(
             history.document, is_document_dirty(history),
             native_project_autosave_loop_t::clock_t::now(), target)) {

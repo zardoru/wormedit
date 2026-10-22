@@ -1,5 +1,6 @@
 #include "../core/text_util.h"
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/core/command_journal.h>
 
 #include <nlohmann/json.hpp>
 
@@ -37,6 +38,7 @@ using json = nlohmann::json;
 
 constexpr std::string_view recovery_format = "wormedit-recovery";
 constexpr std::uint64_t recovery_format_version = 1;
+constexpr std::uint64_t journal_recovery_format_version = 2;
 
 // The envelope records the document schema of its payload. The payload is a native project, so any
 // schema the project reader can migrate or read directly is acceptable here.
@@ -271,6 +273,27 @@ auto strict_signed(const json& value) -> std::int64_t {
     throw std::invalid_argument("recovery envelope timestamp is outside the signed range");
 }
 
+auto journal_position_json(const native_project_journal_position_t& position) -> json {
+    return {{"path", path_to_utf8(position.path)}, {"sequence", position.sequence}};
+}
+void write_journal_position(json& root, const std::optional<native_project_journal_position_t>& position) {
+    if (!position) return;
+    const auto value = journal_position_json(*position);
+    root["journal_path"] = value.at("path");
+    root["journal_sequence"] = value.at("sequence");
+    root["journal_position_sha256"] = sha256(value.dump());
+}
+auto read_journal_position(const json& root) -> std::optional<native_project_journal_position_t> {
+    if (!root.contains("journal_path")) return {};
+    const auto& path = root.at("journal_path").get_ref<const std::string&>();
+    if (path.empty() || !text_util::is_valid_bounded_text(path, maximum_recovery_path_bytes))
+        throw std::invalid_argument("invalid journal checkpoint path");
+    native_project_journal_position_t position{.path = path_from_utf8(path), .sequence = strict_unsigned(root.at("journal_sequence"))};
+    if (sha256(journal_position_json(position).dump()) != root.at("journal_position_sha256").get<std::string>())
+        throw std::invalid_argument("journal checkpoint checksum mismatch");
+    return position;
+}
+
 auto recovery_envelope(const song_document_t& song, std::string_view payload,
                        const native_project_recovery_metadata_t& metadata,
                        const native_project_storage_options_t& options,
@@ -294,7 +317,7 @@ auto recovery_envelope(const song_document_t& song, std::string_view payload,
                                    metadata.utc_write_time.time_since_epoch())
                                    .count();
         json root{{"format", recovery_format},
-                  {"format_version", recovery_format_version},
+                  {"format_version", metadata.journal_position ? journal_recovery_format_version : recovery_format_version},
                   {"schema_version", song.schema_version},
                   {"project_id", song.id.value},
                   {"revision", song.revision},
@@ -308,6 +331,7 @@ auto recovery_envelope(const song_document_t& song, std::string_view payload,
                   {"payload_length", payload.size()},
                   {"payload_sha256", sha256(payload)},
                   {"payload", payload}};
+        write_journal_position(root, metadata.journal_position);
         auto bytes = root.dump(2);
         bytes.push_back('\n');
         const auto maximum_bytes =
@@ -359,6 +383,50 @@ struct parsed_recovery_t {
     native_project_recovery_snapshot_t snapshot;
 };
 
+auto parse_journal_recovery(std::string_view bytes, native_project_limits_t limits,
+    std::vector<native_project_storage_diagnostic_t>& diagnostics, const std::filesystem::path& path)
+    -> std::optional<parsed_recovery_t> {
+    auto journal = command_journal_read_t::from(bytes, {}, limits);
+    if (journal.value.snapshot) {
+        if (!journal.value.snapshot->metadata.journal_position && !path.empty())
+            journal.value.snapshot->metadata.journal_position = native_project_journal_position_t{
+                .path = path, .sequence = journal.value.last_sequence};
+        for (auto& diagnostic : journal.diagnostics) diagnostic.severity = diagnostic_severity_t::warning;
+    }
+    diagnostics.insert(diagnostics.end(), journal.diagnostics.begin(), journal.diagnostics.end());
+    if (journal.value.snapshot) return parsed_recovery_t{.snapshot = std::move(*journal.value.snapshot)};
+    return {};
+}
+
+auto read_recovery_metadata(const json& root, std::uint64_t revision) -> native_project_recovery_metadata_t {
+    std::optional<std::uint64_t> saved_revision;
+    const auto& saved = root.at("last_explicit_save_revision");
+    if (!saved.is_null()) saved_revision = strict_unsigned(saved);
+    const auto position = read_journal_position(root);
+    if (root.size() == 16 && !position) throw std::invalid_argument("incomplete journal checkpoint receipt");
+    if (saved_revision && *saved_revision > revision && (!position || !position->sequence))
+        throw std::invalid_argument("saved revision is newer than the snapshot without a journal receipt");
+    const auto timestamp = std::chrono::milliseconds{strict_signed(root.at("utc_write_time_unix_ms"))};
+    const auto earliest = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::duration::min()).count();
+    const auto latest = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::duration::max()).count();
+    if (timestamp.count() < earliest || timestamp.count() > latest)
+        throw std::invalid_argument("recovery timestamp is outside the system clock range");
+    return {.original_source_path = path_from_utf8(root.at("source_path").get_ref<const std::string&>()),
+        .intended_project_path = path_from_utf8(root.at("intended_project_path").get_ref<const std::string&>()),
+        .last_explicit_save_revision = saved_revision,
+        .utc_write_time = std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(timestamp)},
+        .session_sequence = strict_unsigned(root.at("session_sequence")), .journal_position = position};
+}
+
+auto is_supported_recovery_envelope(const json& root) -> bool {
+    if (!root.is_object() || root.value("format", std::string{}) != recovery_format) return false;
+    const auto version = strict_unsigned(root.at("format_version"));
+    return ((version == recovery_format_version && root.size() == 13) ||
+        (version == journal_recovery_format_version && root.size() == 16)) &&
+        is_recovery_schema_readable(strict_unsigned(root.at("schema_version")));
+}
+
 class recovery_envelope_sax_t final : public nlohmann::json_sax<json> {
   public:
     explicit recovery_envelope_sax_t(std::size_t maximum_payload_bytes)
@@ -393,7 +461,7 @@ class recovery_envelope_sax_t final : public nlohmann::json_sax<json> {
         return start_container();
     }
     auto key(string_t& value) -> bool override {
-        constexpr std::array<std::string_view, 13> keys{"format",
+        constexpr std::array<std::string_view, 16> keys{"format",
                                                         "format_version",
                                                         "schema_version",
                                                         "project_id",
@@ -405,7 +473,7 @@ class recovery_envelope_sax_t final : public nlohmann::json_sax<json> {
                                                         "utc_write_time_unix_ms",
                                                         "payload_length",
                                                         "payload_sha256",
-                                                        "payload"};
+                                                        "payload", "journal_path", "journal_sequence", "journal_position_sha256"};
         const auto key_view = std::string_view{value};
         if (value.size() > 64 || std::ranges::find(keys, key_view) == keys.end() ||
             std::ranges::find(seen_keys_, value) != seen_keys_.end()) {
@@ -479,6 +547,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
                          std::vector<native_project_storage_diagnostic_t>& diagnostics,
                          const std::filesystem::path& path = {})
     -> std::optional<parsed_recovery_t> {
+    if (bytes.starts_with(command_journal_header)) return parse_journal_recovery(bytes, limits, diagnostics, path);
     const auto maximum_bytes = maximum_recovery_envelope_bytes(limits.maximum_source_bytes);
     if (bytes.size() > maximum_bytes) {
         add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::resource_limit,
@@ -498,10 +567,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
     }
     try {
         const auto root = json::parse(bytes);
-        if (!root.is_object() || root.size() != 13 ||
-            root.value("format", std::string{}) != recovery_format ||
-            strict_unsigned(root.at("format_version")) != recovery_format_version ||
-            !is_recovery_schema_readable(strict_unsigned(root.at("schema_version")))) {
+        if (!is_supported_recovery_envelope(root)) {
             add_diagnostic(diagnostics,
                            native_project_storage_diagnostic_code_t::validation_failure,
                            "recovery envelope schema is unsupported or malformed", path);
@@ -509,7 +575,6 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
         }
         const auto project_id = strict_unsigned(root.at("project_id"));
         const auto revision = strict_unsigned(root.at("revision"));
-        const auto session_sequence = strict_unsigned(root.at("session_sequence"));
         const auto payload_length = strict_unsigned(root.at("payload_length"));
         const auto& payload = root.at("payload").get_ref<const std::string&>();
         const auto& checksum = root.at("payload_sha256").get_ref<const std::string&>();
@@ -547,46 +612,8 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
                 "recovery envelope ID or revision differs from its native-project payload", path);
             return std::nullopt;
         }
-        std::optional<std::uint64_t> saved_revision;
-        const auto& saved = root.at("last_explicit_save_revision");
-        if (!saved.is_null()) {
-            saved_revision = strict_unsigned(saved);
-        }
-        if (saved_revision.has_value() && *saved_revision > revision) {
-            add_diagnostic(
-                diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
-                "recovery envelope saved revision is newer than its document revision", path);
-            return std::nullopt;
-        }
-        const auto timestamp =
-            std::chrono::milliseconds{strict_signed(root.at("utc_write_time_unix_ms"))};
-        const auto earliest_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            std::chrono::system_clock::duration::min())
-                                            .count();
-        const auto latest_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          std::chrono::system_clock::duration::max())
-                                          .count();
-        if (timestamp.count() < earliest_timestamp || timestamp.count() > latest_timestamp) {
-            add_diagnostic(diagnostics,
-                           native_project_storage_diagnostic_code_t::validation_failure,
-                           "recovery envelope timestamp is outside the system clock range", path);
-            return std::nullopt;
-        }
         return parsed_recovery_t{
-            .snapshot = {
-                .song = std::move(*parsed_song.value),
-                .metadata =
-                    {
-                        .original_source_path = path_from_utf8(source_path),
-                        .intended_project_path = path_from_utf8(intended_path),
-                        .last_explicit_save_revision = saved_revision,
-                        .utc_write_time =
-                            std::chrono::system_clock::time_point{
-                                std::chrono::duration_cast<std::chrono::system_clock::duration>(
-                                    timestamp)},
-                        .session_sequence = session_sequence,
-                    },
-            }};
+            .snapshot = {.song = std::move(*parsed_song.value), .metadata = read_recovery_metadata(root, revision)}};
     } catch (const std::exception& exception) {
         add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
                        std::string("recovery envelope is malformed: ") + exception.what(), path);
@@ -658,6 +685,7 @@ auto recovery_candidate_precedes(const native_project_recovery_candidate_t& left
         left.version->project_id != right.version->project_id) {
         return false;
     }
+    if (const auto order = left.journal_precedes(right)) return *order;
     if (left.version->revision != right.version->revision) {
         return left.version->revision > right.version->revision;
     }
@@ -726,14 +754,17 @@ auto process_id() -> std::uint64_t {
 #endif
 }
 
+auto recovery_generation_suffix(std::uint64_t sequence) -> std::string {
+    return std::to_string(process_id()) + "-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(sequence);
+}
+
 auto make_temporary_path(const std::filesystem::path& destination, std::uint64_t sequence)
     -> std::filesystem::path {
     const auto parent =
         destination.has_parent_path() ? destination.parent_path() : std::filesystem::path{"."};
     auto name = destination.filename();
-    const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-    name += ".wormedit-tmp-" + std::to_string(process_id()) + "-" + std::to_string(ticks) + "-" +
-            std::to_string(sequence);
+    name += ".wormedit-tmp-" + recovery_generation_suffix(sequence);
     return parent / name;
 }
 
@@ -816,6 +847,44 @@ auto close_file(native_file_t& handle, int& error_value) -> bool {
 #endif
     handle = invalid_file;
     return result;
+}
+
+auto open_append_file(const std::filesystem::path& path, std::uint64_t expected_size,
+    native_file_t& handle, int& error_value) -> bool {
+#ifdef _WIN32
+    handle = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+        expected_size ? OPEN_EXISTING : CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == invalid_file) { error_value = static_cast<int>(GetLastError()); return false; }
+#else
+    int flags = O_WRONLY | O_APPEND;
+    if (!expected_size) flags |= O_CREAT | O_EXCL;
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    handle = ::open(path.c_str(), flags, S_IRUSR | S_IWUSR);
+    if (handle == invalid_file) { error_value = errno; return false; }
+#endif
+    return true;
+}
+auto verify_append_size(native_file_t handle, std::uint64_t expected_size, int& error_value) -> bool {
+#ifdef _WIN32
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(handle, &size)) { error_value = static_cast<int>(GetLastError()); return false; }
+    if (size.QuadPart < 0 || static_cast<std::uint64_t>(size.QuadPart) != expected_size) {
+        error_value = ERROR_INVALID_DATA;
+        return false;
+    }
+    LARGE_INTEGER end{};
+    if (!SetFilePointerEx(handle, end, nullptr, FILE_END)) { error_value = static_cast<int>(GetLastError()); return false; }
+#else
+    struct stat status{};
+    if (::fstat(handle, &status) != 0) { error_value = errno; return false; }
+    if (!S_ISREG(status.st_mode) || status.st_size < 0 || static_cast<std::uint64_t>(status.st_size) != expected_size) {
+        error_value = EINVAL;
+        return false;
+    }
+#endif
+    return true;
 }
 
 auto read_file_exact(const std::filesystem::path& path, std::size_t expected_size,
@@ -1168,6 +1237,30 @@ auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     return primary.has_parent_path() ? primary.parent_path() / filename : filename;
 }
 
+auto native_project_journal_position_t::from(const std::filesystem::path& backup, std::uint64_t initial_sequence)
+    -> native_project_journal_position_t {
+    static std::atomic<std::uint64_t> generation{};
+    auto path = backup;
+    path += ".journal-" + recovery_generation_suffix(generation.fetch_add(1));
+    return {.path = std::move(path), .sequence = initial_sequence};
+}
+
+auto native_project_recovery_candidate_t::journal_precedes(const native_project_recovery_candidate_t& other) const
+    -> std::optional<bool> {
+    if (!recovery_metadata || !other.recovery_metadata) return {};
+    const auto& left = recovery_metadata->journal_position;
+    const auto& right = other.recovery_metadata->journal_position;
+    if (!left || !right) return {};
+    if (left->path == right->path && left->sequence != right->sequence) return left->sequence > right->sequence;
+    if (recovery_metadata->session_sequence != other.recovery_metadata->session_sequence)
+        return recovery_metadata->session_sequence > other.recovery_metadata->session_sequence;
+    return {};
+}
+
+auto native_project_content_checksum(std::string_view bytes) -> std::string {
+    return sha256(bytes);
+}
+
 auto parse_native_project_recovery_snapshot(std::string_view bytes, native_project_limits_t limits)
     -> native_project_recovery_parse_outcome_t {
     native_project_recovery_parse_outcome_t result{};
@@ -1224,7 +1317,7 @@ auto add_recovery_spec(recovery_collection_state_t& state, const std::filesystem
 }
 
 auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
-                                       recovery_collection_state_t& state)
+                                       recovery_collection_state_t& state, std::string_view filename_prefix = {})
     -> std::vector<discovered_recovery_entry_t> {
     std::error_code error;
     std::filesystem::directory_iterator iterator{directory, error};
@@ -1262,6 +1355,7 @@ auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
         const auto status = iterator->symlink_status(type_error);
         if (type_error || status.type() != std::filesystem::file_type::regular) continue;
         const auto filename = path_to_utf8(iterator->path().filename());
+        if (!filename.starts_with(filename_prefix)) continue;
         if (filename.find(".wormedit-quarantine-") != std::string::npos) continue;
         if (filename.find(".wormedit-crash-marker") != std::string::npos) continue;
         const auto kind = filename.find(".wormedit-tmp-") != std::string::npos
@@ -1394,11 +1488,25 @@ void collect_stale_recovery_temporaries(const native_project_recovery_scan_reque
     }
 }
 
+void collect_command_journals(const native_project_recovery_scan_request_t& request, recovery_collection_state_t& state) {
+    if (request.primary_path.empty() || !state.inputs_within_limit) return;
+    const auto backup = native_project_adjacent_backup_path(request.primary_path);
+    const auto directory = backup.has_parent_path() ? backup.parent_path() : std::filesystem::path{"."};
+    const auto prefix = path_to_utf8(backup.filename()) + ".journal-";
+    const auto entries = inspect_caller_recovery_directory(directory, state, prefix);
+    for (const auto& entry : entries) {
+        if (!add_recovery_spec(state, entry.path, entry.kind)) break;
+        if (entry.kind == native_project_recovery_candidate_kind_t::caller_supplied_entry)
+            state.completed_recovery_entries.push_back(entry.path);
+    }
+}
+
 auto collect_recovery_candidates(const native_project_recovery_scan_request_t& request,
                                  recovery_collection_state_t& state) -> bool {
     collect_recovery_primary_paths(request, state);
     collect_caller_recovery_entries(request, state);
     collect_caller_recovery_directories(request, state);
+    collect_command_journals(request, state);
     collect_stale_recovery_temporaries(request, state);
     return state.inputs_within_limit;
 }
@@ -1472,6 +1580,7 @@ void parse_recovery_candidate(native_project_recovery_candidate_t& candidate,
                               std::vector<native_project_storage_diagnostic_t>& diagnostics,
                               std::size_t maximum_diagnostics) {
     std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
+    candidate.is_command_journal = bytes.starts_with(command_journal_header);
     const bool primary_file =
         spec.kind == native_project_recovery_candidate_kind_t::primary ||
         spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
@@ -1568,7 +1677,13 @@ void recommend_recovery_actions(
             continue;
         }
         candidate.comparison = compare_versions(*candidate.version, *primary_version);
+        if (candidate.version->project_id == primary_version->project_id &&
+            candidate.version->revision != primary_version->revision && candidate.recovery_metadata &&
+            candidate.recovery_metadata->journal_position &&
+            candidate.recovery_metadata->last_explicit_save_revision == primary_version->revision)
+            candidate.comparison = native_project_recovery_comparison_t::journaled_changes;
         switch (candidate.comparison) {
+        case native_project_recovery_comparison_t::journaled_changes:
         case native_project_recovery_comparison_t::newer_revision:
         case native_project_recovery_comparison_t::different_project:
             candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
@@ -1632,7 +1747,8 @@ auto choose_preferred_recovery(
             !candidate.version)
             continue;
         if (!primary_version ||
-            candidate.comparison == native_project_recovery_comparison_t::newer_revision)
+            candidate.comparison == native_project_recovery_comparison_t::newer_revision ||
+            candidate.comparison == native_project_recovery_comparison_t::journaled_changes)
             eligible.push_back(index);
     }
     if (eligible.empty()) return std::nullopt;
@@ -2102,7 +2218,8 @@ void recover_scanned_document(std::span<const native_project_recovery_candidate_
     }
     if (options.expected_session.version &&
         (candidate.version->project_id != options.expected_session.version->project_id ||
-         candidate.version->revision < options.expected_session.version->revision)) {
+         (candidate.version->revision < options.expected_session.version->revision &&
+          candidate.comparison != native_project_recovery_comparison_t::journaled_changes))) {
         add_action_error(result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
                          "recovery candidate belongs to another project or is older than the session",
                          candidate.path);
@@ -2155,6 +2272,21 @@ auto create_native_project_file(const std::filesystem::path& destination,
         });
 }
 
+auto append_native_bytes_file(const std::filesystem::path& destination, std::string_view bytes,
+    std::uint64_t expected_size, std::size_t maximum_bytes) -> result_t<void, std::string> {
+    if (expected_size > maximum_bytes || bytes.size() > maximum_bytes - expected_size)
+        return std::unexpected("Append exceeds its byte budget.");
+    temporary_file_t file{.path = destination, .keep = true};
+    int error{};
+    if (!open_append_file(destination, expected_size, file.handle, error) ||
+        !verify_append_size(file.handle, expected_size, error) || !write_all(file.handle, bytes, error) ||
+        !flush_file(file.handle, error) || !close_file(file.handle, error))
+        return std::unexpected("Durable append failed: " + std::error_code(error, std::system_category()).message());
+    std::string failure;
+    if (!sync_directory(destination, failure)) return std::unexpected(std::move(failure));
+    return {};
+}
+
 auto create_native_bytes_file(const std::filesystem::path& destination, std::string_view bytes,
                                 native_project_storage_options_t options)
     -> native_project_storage_outcome_t {
@@ -2176,7 +2308,8 @@ auto create_native_project_recovery_file(const std::filesystem::path& destinatio
     -> native_project_storage_outcome_t {
     native_project_storage_outcome_t result{};
     if (metadata.last_explicit_save_revision.has_value() &&
-        *metadata.last_explicit_save_revision > song.revision) {
+        *metadata.last_explicit_save_revision > song.revision &&
+        (!metadata.journal_position || !metadata.journal_position->sequence)) {
         add_diagnostic(
             result.diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
             "last explicit-save revision cannot be newer than the recovery snapshot", destination);
@@ -2336,17 +2469,18 @@ void native_project_autosave_coordinator_t::mark_explicit_save(
 auto native_project_autosave_coordinator_t::is_due(const song_document_t& song,
                                                    clock_t::time_point now) const noexcept -> bool {
     const auto version = to_version(song);
-    return interval_valid_ &&
+    return interval_valid_ && (checkpoint_requested_ || (
            !(last_explicit_save_.has_value() && *last_explicit_save_ == version) &&
            !(last_autosaved_.has_value() && *last_autosaved_ == version) &&
-           now >= last_successful_autosave_at_ && now - last_successful_autosave_at_ >= interval_;
+           now >= last_successful_autosave_at_ && now - last_successful_autosave_at_ >= interval_));
 }
 
 auto native_project_autosave_coordinator_t::create_autosave(
     const song_document_t& song, clock_t::time_point now,
     const std::filesystem::path& caller_supplied_backup_path,
     std::filesystem::path original_source_path, std::filesystem::path intended_project_path,
-    native_project_storage_options_t options) -> native_project_autosave_outcome_t {
+    native_project_storage_options_t options,
+    std::optional<native_project_journal_position_t> journal_position) -> native_project_autosave_outcome_t {
     native_project_autosave_outcome_t result{.value = {.revision = song.revision,
         .session_sequence = session_sequence_}, .diagnostics = {}};
     if (!interval_valid_) {
@@ -2366,6 +2500,7 @@ auto native_project_autosave_coordinator_t::create_autosave(
                        "autosave session sequence is exhausted", caller_supplied_backup_path);
         return result;
     }
+    const auto sequence = std::max(session_sequence_ + 1, journal_position ? journal_position->sequence : 0);
     native_project_recovery_metadata_t metadata{
         .original_source_path = std::move(original_source_path),
         .intended_project_path = std::move(intended_project_path),
@@ -2374,7 +2509,8 @@ auto native_project_autosave_coordinator_t::create_autosave(
                 ? std::optional<std::uint64_t>{last_explicit_save_->revision}
                 : std::nullopt,
         .utc_write_time = std::chrono::system_clock::now(),
-        .session_sequence = session_sequence_ + 1,
+        .session_sequence = sequence,
+        .journal_position = std::move(journal_position),
     };
     const auto publication = create_native_project_recovery_file(
         caller_supplied_backup_path, song, std::move(metadata), std::move(options));
@@ -2385,7 +2521,8 @@ auto native_project_autosave_coordinator_t::create_autosave(
     }
     last_successful_autosave_at_ = now;
     last_autosaved_ = version;
-    ++session_sequence_;
+    checkpoint_requested_ = false;
+    session_sequence_ = sequence;
     result.value.session_sequence = session_sequence_;
     result.value.status = native_project_autosave_status_t::published;
     return result;

@@ -70,6 +70,8 @@ auto recovery_comparison_name(wormedit::native_project_recovery_comparison_t com
         return "same revision";
     case comparison_t::newer_revision:
         return "newer";
+    case comparison_t::journaled_changes:
+        return "journaled edits after save";
     }
     return "unknown comparison";
 }

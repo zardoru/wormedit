@@ -189,6 +189,24 @@ struct document_command_record_t {
     std::uint64_t sequence{};
 };
 
+// Only captures accepted publications; observers must not edit or reenter history.
+class document_publication_observer_t {
+  public:
+    using callback_t = std::function<void(const song_document_t&, std::uint64_t, std::string_view)>;
+    using barrier_t = std::function<void(const song_document_t&)>;
+    void set(callback_t callback, barrier_t barrier = {}) {
+        callback_ = std::move(callback);
+        barrier_ = std::move(barrier);
+    }
+    void prepare(const song_document_t& document) const { if (barrier_) barrier_(document); }
+    void notify(const song_document_t& document, std::uint64_t before_revision, std::string_view label) const {
+        if (callback_) callback_(document, before_revision, label);
+    }
+  private:
+    callback_t callback_;
+    barrier_t barrier_;
+};
+
 struct document_history_t {
     // Starts a bounded history; promotes a zero source revision to the first usable revision.
     [[nodiscard]] static auto from(song_document_t document,
@@ -209,6 +227,7 @@ struct document_history_t {
     std::size_t maximum_undo_entries{128};
     editor_selection_history_t selections;
     std::uint64_t next_history_sequence{1};
+    document_publication_observer_t publications;
 
     [[nodiscard]] auto can_undo() const -> bool { return !undo.empty() || !selections.undo.empty(); }
     [[nodiscard]] auto can_redo() const -> bool { return !redo.empty() || !selections.redo.empty(); }

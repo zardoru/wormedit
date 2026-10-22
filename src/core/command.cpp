@@ -186,6 +186,7 @@ static auto commit_validated_document(document_history_t& history, song_document
         return result;
     }
 
+    history.publications.prepare(history.document);
     document_command_record_t record{
         .label = std::move(label),
         .before = history.document,
@@ -194,6 +195,7 @@ static auto commit_validated_document(document_history_t& history, song_document
     };
     history.document = record.after;
     history.undo.push_back(std::move(record));
+    history.publications.notify(history.document, history.undo.back().before.revision, history.undo.back().label);
     trim_undo_history(history);
     history.redo.clear();
     history.selections.redo.clear();
@@ -416,9 +418,11 @@ auto undo_document_command(document_history_t& history) -> bool {
     if (history.undo.empty()) {
         return false;
     }
+    history.publications.prepare(history.document);
     auto record = std::move(history.undo.back());
     history.undo.pop_back();
     history.document = record.before;
+    history.publications.notify(history.document, record.after.revision, "Undo");
     history.redo.push_back(std::move(record));
     return true;
 }
@@ -427,9 +431,11 @@ auto redo_document_command(document_history_t& history) -> bool {
     if (history.redo.empty()) {
         return false;
     }
+    history.publications.prepare(history.document);
     auto record = std::move(history.redo.back());
     history.redo.pop_back();
     history.document = record.after;
+    history.publications.notify(history.document, record.before.revision, "Redo");
     history.undo.push_back(std::move(record));
     trim_undo_history(history);
     return true;

@@ -31,11 +31,11 @@ add_executable(wormedit_core_tests
     sys/stem_window_tests.cpp
     sys/document_edit_feedback_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
-    ../src/sys/compose_area_actions.cpp
-    ../src/sys/compose_quantize.cpp
+    ../src/sys/compose/actions/compose_area_actions.cpp
+    ../src/sys/compose/actions/compose_quantize.cpp
     ../src/sys/commands/document_edit_feedback.cpp
-    ../src/sys/compose_action_outcome.cpp
-    ../src/sys/compose_audition_requests.cpp
+    ../src/sys/compose/actions/compose_action_outcome.cpp
+    ../src/sys/compose/actions/compose_audition_requests.cpp
     ../src/sys/commands/application_commands.cpp
     ../src/sys/project/project_view.cpp
     ../src/sys/project/output_group_export.cpp
@@ -49,9 +49,9 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/compose_bgm_bar.cpp
     ../src/sys/resources/sound_list_view.cpp
     ../src/sys/resources/sound_picker_view.cpp
-    ../src/sys/compose_measure_commands.cpp
-    ../src/sys/compose_note_to_bgm.cpp
-    ../src/sys/compose_selection_transform.cpp
+    ../src/sys/compose/actions/compose_measure_commands.cpp
+    ../src/sys/compose/actions/compose_note_to_bgm.cpp
+    ../src/sys/compose/actions/compose_selection_transform.cpp
     ../src/sys/compose/compose_label_search.cpp
     ../src/sys/compose/compose_dead_spans.cpp
     ../src/sys/compose/compose_kiai_spans.cpp
@@ -59,7 +59,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_recipe_areas.cpp
     ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/recipe_form.cpp
-    ../src/sys/compose_quantize_preview.cpp
+    ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
@@ -309,7 +309,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         add_executable(wormedit_sdl_audio_tests
             sys/audio_transport_notification_tests.cpp
             sys/audition_notification_tests.cpp
-            ../src/sys/compose_audition_requests.cpp
+            ../src/sys/compose/actions/compose_audition_requests.cpp
             ../src/sys/audio/audio_source_registration.cpp
             ../src/sys/audio/project_audio_sources.cpp
         ../src/sys/audio/metronome.cpp
@@ -613,7 +613,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/metadata/metadata_actions.cpp
         ../src/sys/metadata/metadata_asset_runtime.cpp
         ../src/sys/resources/sound_drop_transaction.cpp
-        ../src/sys/compose_sound_actions.cpp
+        ../src/sys/compose/actions/compose_sound_actions.cpp
         ui/gesture_lifecycle_event_harness_tests.cpp
         ui/tag_grips_event_harness_tests.cpp
         ui/command_menu_event_harness_tests.cpp
@@ -678,27 +678,27 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/walkthrough_osu-stepmania_event_harness_tests.cpp
         ../src/sys/commands/application_commands.cpp
         ../src/sys/commands/application_command_dispatch.cpp
-        ../src/sys/compose_actions.cpp
-        ../src/sys/compose_resource_actions.cpp
-        ../src/sys/compose_marker_actions.cpp
-        ../src/sys/compose_bookmark_actions.cpp
-        ../src/sys/compose_measure_actions.cpp
-        ../src/sys/compose_recipe_actions.cpp
-        ../src/sys/compose_transform_actions.cpp
-        ../src/sys/compose_bga_actions.cpp
-        ../src/sys/compose_measure_commands.cpp
-        ../src/sys/compose_selection_transform.cpp
+        ../src/sys/compose/actions/compose_actions.cpp
+        ../src/sys/compose/actions/compose_resource_actions.cpp
+        ../src/sys/compose/actions/compose_marker_actions.cpp
+        ../src/sys/compose/actions/compose_bookmark_actions.cpp
+        ../src/sys/compose/actions/compose_measure_actions.cpp
+        ../src/sys/compose/actions/compose_recipe_actions.cpp
+        ../src/sys/compose/actions/compose_transform_actions.cpp
+        ../src/sys/compose/actions/compose_bga_actions.cpp
+        ../src/sys/compose/actions/compose_measure_commands.cpp
+        ../src/sys/compose/actions/compose_selection_transform.cpp
         ../src/sys/compose/compose_label_search.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/project/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
-        ../src/sys/compose_area_actions.cpp
-        ../src/sys/compose_quantize.cpp
+        ../src/sys/compose/actions/compose_area_actions.cpp
+        ../src/sys/compose/actions/compose_quantize.cpp
         ../src/sys/commands/document_edit_feedback.cpp
-        ../src/sys/compose_action_outcome.cpp
-        ../src/sys/compose_audition_requests.cpp
+        ../src/sys/compose/actions/compose_action_outcome.cpp
+        ../src/sys/compose/actions/compose_audition_requests.cpp
         ../src/sys/compose/compose_bgm_bar.cpp
         ../src/sys/bookmarks/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
@@ -710,9 +710,9 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_navigation_input.cpp
         ../src/sys/compose/compose_kiai_spans.cpp
         ../src/sys/compose_minimap_navigation.cpp
-        ../src/sys/compose_note_to_bgm.cpp
+        ../src/sys/compose/actions/compose_note_to_bgm.cpp
         ../src/sys/compose_playhead_skip.cpp
-        ../src/sys/compose_quantize_preview.cpp
+        ../src/sys/compose/actions/compose_quantize_preview.cpp
         ../src/sys/compose_recipe_areas.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/compose/compose_speed_spans.cpp
@@ -776,9 +776,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/bga_dock_runtime_tests.cpp ../src/sys/resources/bga_dock_runtime.cpp
             ../src/sys/frame_timing.cpp
             ../src/sys/commands/document_edit_feedback.cpp
-            ../src/sys/compose_action_outcome.cpp
-            ../src/sys/compose_audition_requests.cpp
-            ../src/sys/compose_bga_actions.cpp ../src/sys/resources/bga_list_view.cpp)
+            ../src/sys/compose/actions/compose_action_outcome.cpp
+            ../src/sys/compose/actions/compose_audition_requests.cpp
+            ../src/sys/compose/actions/compose_bga_actions.cpp ../src/sys/resources/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1
             $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
@@ -807,11 +807,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/notifications/notification_history_runtime.cpp
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
-        ../src/sys/compose_area_actions.cpp
-        ../src/sys/compose_quantize.cpp
+        ../src/sys/compose/actions/compose_area_actions.cpp
+        ../src/sys/compose/actions/compose_quantize.cpp
         ../src/sys/commands/document_edit_feedback.cpp
-        ../src/sys/compose_action_outcome.cpp
-        ../src/sys/compose_audition_requests.cpp
+        ../src/sys/compose/actions/compose_action_outcome.cpp
+        ../src/sys/compose/actions/compose_audition_requests.cpp
         ../src/sys/compose_view.cpp
         ../src/sys/compose_scene_view.cpp
         ../src/sys/compose_marker_view.cpp
@@ -822,7 +822,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/compose_sv_graph.cpp
         ../src/sys/compose_recipe_areas.cpp
         ../src/sys/compose/compose_speed_spans.cpp
-        ../src/sys/compose_quantize_preview.cpp
+        ../src/sys/compose/actions/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
@@ -848,16 +848,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/compose_action_notification_tests.cpp
-            ../src/sys/compose_actions.cpp
-            ../src/sys/compose_resource_actions.cpp
-            ../src/sys/compose_marker_actions.cpp
-            ../src/sys/compose_bookmark_actions.cpp
-            ../src/sys/compose_measure_actions.cpp
-            ../src/sys/compose_recipe_actions.cpp
-            ../src/sys/compose_transform_actions.cpp
-            ../src/sys/compose_bga_actions.cpp
-            ../src/sys/compose_measure_commands.cpp
-            ../src/sys/compose_selection_transform.cpp
+            ../src/sys/compose/actions/compose_actions.cpp
+            ../src/sys/compose/actions/compose_resource_actions.cpp
+            ../src/sys/compose/actions/compose_marker_actions.cpp
+            ../src/sys/compose/actions/compose_bookmark_actions.cpp
+            ../src/sys/compose/actions/compose_measure_actions.cpp
+            ../src/sys/compose/actions/compose_recipe_actions.cpp
+            ../src/sys/compose/actions/compose_transform_actions.cpp
+            ../src/sys/compose/actions/compose_bga_actions.cpp
+            ../src/sys/compose/actions/compose_measure_commands.cpp
+            ../src/sys/compose/actions/compose_selection_transform.cpp
             ../src/sys/compose/compose_label_search.cpp
             ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resources/resource_job_state.cpp
@@ -877,7 +877,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp
-            ../src/sys/compose_sound_actions.cpp
+            ../src/sys/compose/actions/compose_sound_actions.cpp
             ../src/sys/commands/application_command_dispatch.cpp
             ../src/sys/commands/application_commands.cpp
             ../src/sys/audio/transport_player_actions.cpp
@@ -894,7 +894,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_timing_input.cpp
             ../src/sys/compose_resource_input.cpp
             ../src/sys/compose_navigation_input.cpp
-            ../src/sys/compose_note_to_bgm.cpp
+            ../src/sys/compose/actions/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/bookmarks/bookmark_commands.cpp
             ../src/sys/compose_navigation.cpp
@@ -1025,7 +1025,7 @@ set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
 # Compile the actual unavailable owner even when the application has audio enabled.
 add_executable(wormedit_audition_unavailable_tests
     sys/audition_unavailable_tests.cpp
-    ../src/sys/compose_audition_requests.cpp
+    ../src/sys/compose/actions/compose_audition_requests.cpp
 )
 target_include_directories(wormedit_audition_unavailable_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(wormedit_audition_unavailable_tests PRIVATE

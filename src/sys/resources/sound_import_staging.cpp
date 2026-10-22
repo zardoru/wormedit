@@ -1,5 +1,5 @@
 #include "sys/resources/sound_import_staging.h"
-#include "sys/compose_sound_actions.h"
+#include "sys/compose/actions/compose_sound_actions.h"
 #include "ui/frontend.h"
 #include <algorithm>
 

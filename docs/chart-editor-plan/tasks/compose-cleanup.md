@@ -215,8 +215,8 @@ Every control `worm_ui_nuklear_render_compose_resources` draws today (`compose_r
 - **Status:** done (2026-10-05; new tests and the full headless suite pass)
 - **Result:** extending measures is not part of bookmark add, so both messages (`add_beat_bookmark_here` and `edit_beat_bookmark`) now say "Bookmarks can only go inside existing measures. Add measures up to the cursor first." The document and revision stay unchanged. Test: `adding a bookmark past the last measure ...`. The beat-section message still says "materialized" (out of scope).
 - **Outcome:** adding a beat bookmark with the cursor past the last measure either creates the measures needed, as note placement does, or says "Bookmarks can only go inside existing measures. Add measures up to the cursor first." The words "materialized cursor measure" no longer appear.
-- **Read first:** `src/sys/compose_bookmark_commands.cpp` (around `virtual_bms_cursor_row`), `src/sys/compose_actions.cpp` (near line 1586), and how note placement handles `virtual_bms_cursor_row`.
-- **Files owned:** `src/sys/compose_bookmark_commands.cpp`, `src/sys/compose_actions.cpp`, the matching test under `tests/sys/`, this card.
+- **Read first:** `src/sys/compose_bookmark_commands.cpp` (around `virtual_bms_cursor_row`), `src/sys/compose/actions/compose_actions.cpp` (near line 1586), and how note placement handles `virtual_bms_cursor_row`.
+- **Files owned:** `src/sys/compose_bookmark_commands.cpp`, `src/sys/compose/actions/compose_actions.cpp`, the matching test under `tests/sys/`, this card.
 - **Steps:**
   1. If note placement extends measures within one undo step, reuse that path for bookmarks.
   2. Otherwise, replace both messages with the plain wording above.

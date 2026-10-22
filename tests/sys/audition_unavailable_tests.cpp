@@ -1,4 +1,4 @@
-#include "sys/compose_audition_requests.h"
+#include "sys/compose/actions/compose_audition_requests.h"
 
 #include <catch2/catch_test_macros.hpp>
 

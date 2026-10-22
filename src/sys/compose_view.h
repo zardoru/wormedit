@@ -2,8 +2,8 @@
 #include "sys/compose/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
 #include "sys/bookmarks/bookmark_navigation.h"
-#include "sys/compose_audition_requests.h"
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_audition_requests.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 #include "sys/audio/metronome.h"
 #include <algorithm>
 #include <wormedit/audio/playback_rate.h>
@@ -21,7 +21,7 @@
 #include "sys/compose/compose_speed_spans.h"
 #include "sys/recipe_form.h"
 #include "sys/compose/compose_sv_graph.h"
-#include "sys/compose_quantize_preview.h"
+#include "sys/compose/actions/compose_quantize_preview.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "sys/audio/stem_waveform_window.h"
 #include "ui/compose_mode.h"

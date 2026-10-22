@@ -166,7 +166,7 @@ document, and a failed run keeps the last materialized result.
 - **Status:** blocked-on T-189, T-201 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** the SV recipe inspector section (T-201) can switch a recipe's curve to "Lua function", pick a module file and entry point, edit named parameters and seed, and shows sampled points, errors with file:line, and the composed curve.
 - **Read first:** `src/scripting/lua_curve.h`, the T-201 inspector section, `docs/osbx-draft-spec.md` (Composition, preview, and recipe editing).
-- **Files owned:** the T-201 inspector unit, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
+- **Files owned:** the T-201 inspector unit, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`.
 - **Steps:** standard pattern; evaluation off the frame thread with cancellation.
 - **Invariants:** editing never runs Lua on the frame thread.
 - **Reject/failure behavior:** errors show inline; the last good preview stays.

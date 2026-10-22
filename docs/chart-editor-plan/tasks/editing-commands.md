@@ -82,7 +82,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Stale-plan audit (2026-10-03):** `audio.paint_hitsound` remains disabled; atomic `apply_resource_assignment` is implemented, but no hitsound paint capture exists. T-43 moved semantic-layer pointer capture into `src/ui/nuklear/compose_object_input.cpp`; its frontend state, application mode/projection, command dispatch, and toolbar indication are also outside the current owned list. No paint implementation was started.
 - **Outcome:** `audio.paint_hitsound` arms a paint mode: dragging across notes assigns the armed catalog resource to each note touched, committed as one undo step on release.
 - **Read first:** `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph), `include/wormedit/core/resource_assignment.h` (`apply_resource_assignment`), `src/ui/nuklear/compose_input_panel.cpp` (semantic-layer painting capture), `src/sys/main.cpp` (`audio.paint_hitsound`).
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_object_input.cpp`; `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_state.h/.cpp`, application mode/dispatch/projection owners, `src/ui/nuklear/compose_toolbar.cpp`.
+- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_object_input.cpp`; `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_state.h/.cpp`, application mode/dispatch/projection owners, `src/ui/nuklear/compose_toolbar.cpp`.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Copy the structure of semantic-layer paint capture: collect touched note IDs during the drag (bounded, deduplicated).
@@ -120,7 +120,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Implementation notes (2026-10-01):** core `apply_quantize_command` and `quantize_chart_exact` already exist and are tested, so only the dry-run projection and inspector UI remain.
 - **Outcome:** the Compose inspector offers **Quantize selection** to the active snap with a preview count of moved/colliding notes, then commits through `apply_quantize_command`.
 - **Read first:** `include/wormedit/core/quantize.h`, `include/wormedit/core/command.h` (`apply_quantize_command`), `docs/chart-editor-plan/editing/interactions.md` (quantization paragraph), `src/ui/nuklear/compose_inspector.cpp`.
-- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/quantize_tests.cpp`.
+- **Files owned:** `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/quantize_tests.cpp`.
 - **Steps:**
   1. Project a dry-run `quantize_chart_exact` result (moved, collided, unchanged counts) for the current selection into the view.
   2. Add the button and the counts; Apply calls `apply_quantize_command`.

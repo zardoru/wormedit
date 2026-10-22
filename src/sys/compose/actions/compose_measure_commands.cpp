@@ -1,5 +1,5 @@
 #include "sys/notifications/projection_notification_feedback.h"
-#include "sys/compose_measure_commands.h"
+#include "sys/compose/actions/compose_measure_commands.h"
 
 #include <algorithm>
 #include <wormedit/core/snap.h>

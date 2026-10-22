@@ -6,7 +6,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_navigation.h"
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 #include "sys/compose_playhead_skip.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "sys/compose/compose_semantic_layer_commands.h"

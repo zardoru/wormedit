@@ -93,7 +93,7 @@ not a measured claim for WormEdit. Audio has separate callback/decode threads.
 
 - **Status:** done (2026-10-08; integrated as `dd8a8a1`; root normal build, 2,599/2,599 tests and merged optimized attribution pass)
 - **Outcome:** the selected-note quantize preview avoids demonstrated unnecessary dense-chart work during activation and revision changes while preserving exact quantization and collision reports.
-- **Read first:** `src/sys/compose_quantize_preview.cpp`, `src/sys/compose_quantize_preview.h`, `src/core/quantize.cpp`, `include/wormedit/core/quantize.h`, `tests/sys/compose_quantize_preview_tests.cpp`, T-475 above.
+- **Read first:** `src/sys/compose/actions/compose_quantize_preview.cpp`, `src/sys/compose/actions/compose_quantize_preview.h`, `src/core/quantize.cpp`, `include/wormedit/core/quantize.h`, `tests/sys/compose_quantize_preview_tests.cpp`, T-475 above.
 - **Files owned:** the five source/header/test files above, `tests/core/quantize_tests.cpp`, `src/core/quantize_geometry.h` (approved private validated measure-ID and reverse-row lookup shared only by exact quantize and preview reporting), this card only. Root owns manifests, integration and status.
 - **Steps:**
   1. Stale audit, then capture an optimized production baseline for 50k/100k charts: single late selection activation, selected revision changes and repeat warm hits. Reuse the prior dense probe where possible; attribute core quantization versus report construction before changes.

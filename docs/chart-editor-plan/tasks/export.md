@@ -5,7 +5,7 @@
 Stage 5 leftovers from [authoring/export](../stages/authoring-export.md) and the
 [formats plan](../formats-persistence.md). Compose already exports an output
 group through `convert_document` + `publish_conversion_group_atomic`
-(`WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP` in `src/sys/compose_actions.cpp`).
+(`WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP` in `src/sys/compose/actions/compose_actions.cpp`).
 Most remaining format work waits on user decisions; those cards are
 `blocked-on-user`. Apply the stale-plan check (rule 9) first.
 
@@ -19,8 +19,8 @@ Most remaining format work waits on user decisions; those cards are
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** The existing export worker converts and publishes immediately, and polling returns only a status string; there is no bounded retained preview summary. Completion needs unowned `src/sys/resource_job_state.h/.cpp` for worker/results/state, `src/sys/main.cpp` and `src/sys/application_frame_projection.h/.cpp` to pass the summary, and `src/sys/workspace_projection.cpp` for output-group projection; the owned `compose_view.cpp` projects chart scenes instead. Worker retention and revision-staleness checks also need an appropriate system/UI test owner and source-list ownership.
 - **Outcome:** a **Preview export** button lists, for the selected output group, each artifact name, byte size, and every loss/diagnostic from `convert_document`, without writing files; Export stays a separate click.
-- **Read first:** `include/wormedit/formats/conversion.h`, `src/sys/compose_actions.cpp` (export action near `convert_document`), `src/ui/frontend.h` (`compose_export_overwrite`).
-- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_resources.cpp` or the unit that renders the export button, `tests/formats/conversion_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/resource_job_state.h/.cpp`, `src/sys/main.cpp`, `src/sys/application_frame_projection.h/.cpp`, `src/sys/workspace_projection.cpp`.
+- **Read first:** `include/wormedit/formats/conversion.h`, `src/sys/compose/actions/compose_actions.cpp` (export action near `convert_document`), `src/ui/frontend.h` (`compose_export_overwrite`).
+- **Files owned:** `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_resources.cpp` or the unit that renders the export button, `tests/formats/conversion_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/resource_job_state.h/.cpp`, `src/sys/main.cpp`, `src/sys/application_frame_projection.h/.cpp`, `src/sys/workspace_projection.cpp`.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Run conversion on a snapshot off the frame thread (reuse the export worker path) and store a bounded summary (≤64 artifacts, ≤256 diagnostics) keyed by document revision.

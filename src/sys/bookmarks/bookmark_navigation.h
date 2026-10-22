@@ -1,6 +1,6 @@
 #pragma once
 #include "sys/bookmarks/bookmark_chooser_view.h"
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 #include <chrono>
 #include <optional>
 #include <wormedit/core/command.h>

@@ -1,9 +1,9 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose_view.h"
-#include "sys/compose_area_actions.h"
+#include "sys/compose/actions/compose_area_actions.h"
 #include "sys/compose_draw_source_view.h"
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 #include "sys/compose_view_internal.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose/compose_sound_selection.h"

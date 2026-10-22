@@ -1,4 +1,4 @@
-#include "sys/compose_actions_internal.h"
+#include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/notifications/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 auto edit_selected_note_labels_action_t::validate(compose_action_context_t& context) const

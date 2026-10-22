@@ -1,8 +1,8 @@
 #pragma once
 
-#include "sys/compose_action_context.h"
-#include "sys/compose_action_routes.h"
-#include "sys/compose_area_actions.h"
+#include "sys/compose/actions/compose_action_context.h"
+#include "sys/compose/actions/compose_action_routes.h"
+#include "sys/compose/actions/compose_area_actions.h"
 
 namespace wormedit::sys {
 // Standalone area tests retain their boundary; production borrows the existing dispatch context.

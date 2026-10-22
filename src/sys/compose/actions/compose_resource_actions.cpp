@@ -1,5 +1,5 @@
 #include <wormedit/core/timing.h>
-#include "sys/compose_actions_internal.h"
+#include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/resources/resource_action_context.h"
 namespace wormedit::sys::compose_action_detail {
 auto import_resource_role(const wormedit::ui::workspace_action_t& action)

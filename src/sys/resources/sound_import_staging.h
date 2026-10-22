@@ -1,7 +1,7 @@
 #pragma once
 #include "ui/frontend/sound_import.h"
 
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 #include "sys/resources/sound_drop_transaction.h"
 #include <span>
 #include <string>

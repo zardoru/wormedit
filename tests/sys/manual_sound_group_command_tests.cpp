@@ -1,5 +1,5 @@
 #include <wormedit/core/sound_groups.h>
-#include "sys/compose_sound_actions.h"
+#include "sys/compose/actions/compose_sound_actions.h"
 
 #include <catch2/catch_test_macros.hpp>
 

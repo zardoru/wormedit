@@ -82,9 +82,9 @@ them back through `quantize_request_from_action`. Reuse is desirable, but the sh
 entry belongs below the frontend decoder: both input routes can call a typed
 workflow. T-694's C++ payload conversion alone will not remove this dependency if
 the command continues constructing frontend actions internally.
-Sources: [command adapter](../../src/sys/compose_actions.cpp),
-[selection workflow](../../src/sys/compose_area_actions.cpp),
-[request decoder](../../src/sys/compose_quantize_request.h).
+Sources: [command adapter](../../src/sys/compose/actions/compose_actions.cpp),
+[selection workflow](../../src/sys/compose/actions/compose_area_actions.cpp),
+[request decoder](../../src/sys/compose/actions/compose_quantize_request.h).
 
 ### Presentation feedback can hide the execution result
 
@@ -100,7 +100,7 @@ The existing `document_command_result_t`, `command_result_with_t<Payload>`,
 already separate relevant facts. Prefer those types and their current finishers;
 do not add another generic workflow-result type. Preserve accepted no-ops,
 document changes, diagnostics and rebind failure as separate facts.
-Sources: [measure helpers](../../src/sys/compose_measure_commands.cpp),
+Sources: [measure helpers](../../src/sys/compose/actions/compose_measure_commands.cpp),
 [command dispatch](../../src/sys/commands/application_command_dispatch.cpp),
 [editor completion](../../src/core/interaction_edit_commit.h).
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/compose_action_context.h"
+#include "sys/compose/actions/compose_action_context.h"
 #include "sys/metadata/metadata_commands.h"
 #include "sys/resources/resource_action_context.h"
 #include <algorithm>

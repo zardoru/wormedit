@@ -1,4 +1,4 @@
-#include "sys/compose_measure_commands.h"
+#include "sys/compose/actions/compose_measure_commands.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -176,7 +176,7 @@ TEST_CASE("moving a bar line trades length between neighbors in one undo step", 
     CHECK(fixture.history.undo.size() == 1);
 }
 
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 
 TEST_CASE("selected notes move to the BGM area and leave the selection", "[sys][note-to-bgm]") {
     fixture_t fixture({measure_id_t{3}, 0});

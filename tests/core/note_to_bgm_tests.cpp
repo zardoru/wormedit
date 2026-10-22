@@ -5,7 +5,7 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/native_project.h>
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

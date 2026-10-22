@@ -2,7 +2,7 @@
 #pragma once
 
 #include "sys/application_edit_inputs.h"
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/notifications.h>

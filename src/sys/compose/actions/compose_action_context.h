@@ -1,7 +1,7 @@
 #pragma once
 #include <wormedit/core/proposal.h>
 #include "sys/application_edit_inputs.h"
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 #include "ui/frontend.h"
 
 namespace wormedit::sys::compose_action_detail {

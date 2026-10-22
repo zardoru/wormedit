@@ -2,7 +2,7 @@
 #include "nuklear_event_harness.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"
-#include "sys/compose_sound_actions.h"
+#include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/resources/sound_import_staging.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include <wormedit/core/chart_editor.h>

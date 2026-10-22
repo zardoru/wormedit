@@ -123,7 +123,7 @@ Stage 7 from [later work](../stages/later.md) and the
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-158)
 - **Outcome:** a script returns note/layer proposals; the editor shows them as ghosts; Apply commits one command, Cancel discards.
 - **Read first:** `src/scripting/lua_document_api.h`, `src/core/interaction.cpp` (ghost proposals).
-- **Files owned:** new `src/scripting/lua_generator.cpp/.h`, new `tests/lua/lua_generator_tests.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/scripting/lua_generator.cpp/.h`, new `tests/lua/lua_generator_tests.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Validate every proposal like normal placement. 2. Golden test: fixed script + seed → identical batch. 3. UI: script path field, Run, Apply, Cancel.
 - **Invariants:** fixed seed → identical output on all platforms.
 - **Reject/failure behavior:** any invalid proposal rejects the batch with the first error.
@@ -153,10 +153,10 @@ Stage 7 from [later work](../stages/later.md) and the
   Timing-pane list; keep every operation one undoable command.
 - **Outcome:** the Compose recipe workflow exposes Enable, Duplicate, Delete and explicit
   composition-order controls for the chart's SV/SCROLLS/SPEEDS recipes, each as one command.
-- **Read first:** `include/wormedit/core/sv_recipe.h`, `src/sys/compose_recipe_actions.cpp`,
+- **Read first:** `include/wormedit/core/sv_recipe.h`, `src/sys/compose/actions/compose_recipe_actions.cpp`,
   `src/ui/nuklear/compose_recipe_menu.cpp`, `src/ui/nuklear/compose_recipe_form.cpp`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`,
-  `tests/core/sv_recipe_tests.cpp`, `src/sys/compose_recipe_actions.cpp`,
+  `tests/core/sv_recipe_tests.cpp`, `src/sys/compose/actions/compose_recipe_actions.cpp`,
   `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_recipe_menu.cpp`,
   `src/ui/nuklear/compose_recipe_form.cpp`, `tests/sys/frame_timing_tests.cpp`,
   `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,

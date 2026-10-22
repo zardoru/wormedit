@@ -1,4 +1,4 @@
-#include "sys/compose_quantize_preview.h"
+#include "sys/compose/actions/compose_quantize_preview.h"
 
 #include <wormedit/core/quantize.h>
 

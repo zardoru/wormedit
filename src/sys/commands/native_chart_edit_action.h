@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/compose_action_outcome.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 #include <cassert>
 #include <type_traits>
 #include <utility>

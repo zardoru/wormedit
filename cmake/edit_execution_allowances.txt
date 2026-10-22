@@ -48,8 +48,8 @@ document_adoption | src/core/time_shift.cpp | 1 | Existing detached payload publ
 scratch_history | src/core/timing_lane_controller.cpp | 2 | Legacy detached edit/preview composition; audited migration debt.
 document_adoption | src/core/timing_lane_controller.cpp | 2 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 scratch_history | src/sys/application.cpp | 2 | Session creation/replacement boundary; creates a new history, not a nested command.
-working_document | src/sys/compose_actions.cpp | 3 | Existing domain access to working data; migrate chart acquisition through the runner.
-scratch_history | src/sys/compose_bga_actions.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
+working_document | src/sys/compose/actions/compose_actions.cpp | 3 | Existing domain access to working data; migrate chart acquisition through the runner.
+scratch_history | src/sys/compose/actions/compose_bga_actions.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 scratch_history | src/sys/compose_input.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 scratch_history | src/sys/project/recovery_notification_feedback.cpp | 1 | Session creation/replacement boundary; creates a new history, not a nested command.
 detached_document | src/core/interaction_gesture_lifecycle.cpp | 2 | Existing detached proposal/gesture payload; audited publication boundary.

@@ -1,4 +1,4 @@
-#include "sys/compose_actions_internal.h"
+#include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/notifications/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
 auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {

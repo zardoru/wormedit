@@ -1,6 +1,6 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/numeric_text.h>
-#include "sys/compose_actions_internal.h"
+#include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/commands/native_chart_edit_action.h"
 #include "sys/notifications/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {

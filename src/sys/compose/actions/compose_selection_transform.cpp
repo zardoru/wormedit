@@ -1,5 +1,5 @@
 #include "sys/notifications/projection_notification_feedback.h"
-#include "sys/compose_selection_transform.h"
+#include "sys/compose/actions/compose_selection_transform.h"
 
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/time_shift.h>

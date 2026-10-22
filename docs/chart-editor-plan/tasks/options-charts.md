@@ -238,8 +238,8 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** done
 - **Outcome:** a second table lists output groups (name, family, output path, charts); the user can create, rename, delete a group, change its family and relative path, and assign charts with checkboxes; each group shows validation from the conversion service (for example "SM/SSC: several charts allowed", "BMS: one chart per file") and a Preview export button (T-110).
-- **Read first:** `include/wormedit/core/document.h` (`output_group_t`), `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/compose_actions.cpp` (export action).
-- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`, `src/ui/frontend.h`; supporting scope approved by root: `src/sys/project/project_view.h`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp`, `src/sys/compose_actions.cpp`, `tests/sys/project_view_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/options-charts.md`, `memory/chart-editor-status/resume.md`.
+- **Read first:** `include/wormedit/core/document.h` (`output_group_t`), `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/compose/actions/compose_actions.cpp` (export action).
+- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project/project_view.cpp`, `src/ui/frontend.h`; supporting scope approved by root: `src/sys/project/project_view.h`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `tests/sys/project_view_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/options-charts.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Core group commands (create/rename/delete/family/path/membership) with validation of paths (relative, no traversal). 2. Table UI. 3. Per-group validation text from a dry-run conversion (off the frame thread).
 - **Invariants:** existing published output manifests stay valid; renaming a group does not rename files on disk.
 - **Reject/failure behavior:** invalid paths or unsupported family/chart combinations reject with the reason.
@@ -289,7 +289,7 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
   `src/formats/native_project_storage.cpp` (shared schema ceiling),
   `src/formats/conversion_publication_storage.cpp` (private export staging layout),
   `src/sys/resources/resource_job_state.h`, `src/sys/resources/resource_job_state.cpp`,
-  `src/sys/compose_resource_actions.cpp`, `tests/sys/compose_action_notification_tests.cpp`
+  `src/sys/compose/actions/compose_resource_actions.cpp`, `tests/sys/compose_action_notification_tests.cpp`
   (Sounds/BGA background copies),
   `tests/sys/resource_notification_tests.cpp` (captured-folder cleanup after a stale import),
   `memory/chart-editor-status/resume.md`. These connect document settings to copy planning,

@@ -76,12 +76,12 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   for one run; the Project header has **Export all**, and the duplicate header/dialog export path is
   removed. File → Export reaches the same target choice and policy.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp`; `src/ui/nuklear/compose_resources.cpp`;
-  `src/sys/compose_resource_actions.cpp` (`export_compose_output_group_action_t`);
+  `src/sys/compose/actions/compose_resource_actions.cpp` (`export_compose_output_group_action_t`);
   `src/sys/project/output_group_export.h`; `include/wormedit/formats/conversion.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `include/wormedit/formats/conversion.h`,
   `src/core/chart_editor.cpp`, `src/ui/frontend/project.h`, `src/ui/frontend/actions.h`,
   `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`,
-  `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`, `src/sys/compose_resource_actions.cpp`,
+  `src/sys/project/project_view.h`, `src/sys/project/project_view.cpp`, `src/sys/compose/actions/compose_resource_actions.cpp`,
   `src/sys/project/output_group_export.h`, `src/sys/project/output_group_export.cpp`,
   `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`,
   `tests/core/chart_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`,
@@ -159,7 +159,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 - **Supporting-file extensions (2026-10-19):** `src/formats/native_project_storage.cpp` and
   `tests/formats/native_project_storage_tests.cpp` advance recovery support with native schema 8;
   `src/sys/application.cpp`, `src/sys/application_edit_inputs.h`,
-  `src/sys/application_frame_view.{h,cpp}`, `src/sys/compose_resource_actions.cpp`,
+  `src/sys/application_frame_view.{h,cpp}`, `src/sys/compose/actions/compose_resource_actions.cpp`,
   `src/sys/project/project_view.h`, and `src/sys/transport_player_actions.{h,cpp}` remove the obsolete
   application-lifetime export policy and pass target-owned policy through the existing routes.
   `src/ui/frontend/actions.h`, `src/ui/nuklear/setup_state.{h,cpp}` and

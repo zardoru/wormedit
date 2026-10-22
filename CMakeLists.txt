@@ -494,8 +494,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/resources/sound_picker_view.cpp
         src/sys/resources/sound_usage_view.cpp
         src/sys/resources/sound_usage_actions.cpp
-        src/sys/compose_measure_commands.cpp
-        src/sys/compose_selection_transform.cpp
+        src/sys/compose/actions/compose_measure_commands.cpp
+        src/sys/compose/actions/compose_selection_transform.cpp
         src/sys/compose/compose_label_search.cpp
         src/sys/compose/compose_dead_spans.cpp
         src/sys/compose/compose_kiai_spans.cpp
@@ -503,8 +503,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_recipe_areas.cpp
         src/sys/compose/compose_speed_spans.cpp
         src/sys/recipe_form.cpp
-        src/sys/compose_quantize_preview.cpp
-        src/sys/compose_quantize.cpp
+        src/sys/compose/actions/compose_quantize_preview.cpp
+        src/sys/compose/actions/compose_quantize.cpp
         src/sys/commands/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
@@ -519,23 +519,23 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_timing_input.cpp
         src/sys/compose_resource_input.cpp
         src/sys/compose_navigation_input.cpp
-        src/sys/compose_note_to_bgm.cpp
-        src/sys/compose_area_actions.cpp
-        src/sys/compose_action_outcome.cpp
+        src/sys/compose/actions/compose_note_to_bgm.cpp
+        src/sys/compose/actions/compose_area_actions.cpp
+        src/sys/compose/actions/compose_action_outcome.cpp
         src/sys/commands/document_edit_feedback.cpp
-        src/sys/compose_actions.cpp
-        src/sys/compose_resource_actions.cpp
-        src/sys/compose_marker_actions.cpp
-        src/sys/compose_bookmark_actions.cpp
-        src/sys/compose_measure_actions.cpp
-        src/sys/compose_recipe_actions.cpp
-        src/sys/compose_transform_actions.cpp
-        src/sys/compose_sound_actions.cpp
+        src/sys/compose/actions/compose_actions.cpp
+        src/sys/compose/actions/compose_resource_actions.cpp
+        src/sys/compose/actions/compose_marker_actions.cpp
+        src/sys/compose/actions/compose_bookmark_actions.cpp
+        src/sys/compose/actions/compose_measure_actions.cpp
+        src/sys/compose/actions/compose_recipe_actions.cpp
+        src/sys/compose/actions/compose_transform_actions.cpp
+        src/sys/compose/actions/compose_sound_actions.cpp
         src/sys/resources/sound_import_staging.cpp
-        src/sys/compose_bga_actions.cpp
+        src/sys/compose/actions/compose_bga_actions.cpp
         src/sys/resources/bga_list_view.cpp
         src/sys/resources/bga_dock_runtime.cpp
-        src/sys/compose_audition_requests.cpp
+        src/sys/compose/actions/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
         src/sys/audio/audio_source_registration.cpp
         src/sys/audio/project_audio_sources.cpp

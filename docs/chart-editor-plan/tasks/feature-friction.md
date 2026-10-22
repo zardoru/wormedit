@@ -47,7 +47,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 ## T-722 Route keyboard and frontend quantize through one typed workflow
 
 - **Status:** done (2026-10-19)
-- **Completion:** `src/sys/compose_quantize.cpp` now owns capability, stamped editor initialization,
+- **Completion:** `src/sys/compose/actions/compose_quantize.cpp` now owns capability, stamped editor initialization,
   preview toggling, typed selection normalization, report retention and application outcomes.
   Registered Apply passes the stored typed request directly; the area route alone decodes the
   frontend payload. Application still forces collision rejection, disables preview-only resolution
@@ -76,13 +76,13 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
   `WormUiWorkspaceAction`. Both routes retain one typed application body for selection attachment,
   report storage, core mutation and outcome construction.
 - **Read first:** `docs/architecture.md`; `docs/chart-editor-plan/decisions/code-style.md`;
-  `docs/audits/workflow-navigation-2026-10-18.md`; `src/sys/compose_actions.cpp`;
-  `src/sys/compose_area_actions.cpp`; `src/sys/compose_quantize_request.h`;
+  `docs/audits/workflow-navigation-2026-10-18.md`; `src/sys/compose/actions/compose_actions.cpp`;
+  `src/sys/compose/actions/compose_area_actions.cpp`; `src/sys/compose/actions/compose_quantize_request.h`;
   `src/sys/commands/application_command_dispatch.cpp`; `src/core/command.cpp`.
-- **Files owned:** new `src/sys/compose_quantize.h`, `src/sys/compose_quantize.cpp`;
-  `src/sys/compose_actions.h`, `src/sys/compose_actions.cpp`,
-  `src/sys/compose_actions_internal.h`, `src/sys/compose_area_actions.h`,
-  `src/sys/compose_area_actions.cpp`, `src/sys/compose_quantize_request.h`,
+- **Files owned:** new `src/sys/compose/actions/compose_quantize.h`, `src/sys/compose/actions/compose_quantize.cpp`;
+  `src/sys/compose/actions/compose_actions.h`, `src/sys/compose/actions/compose_actions.cpp`,
+  `src/sys/compose/actions/compose_actions_internal.h`, `src/sys/compose/actions/compose_area_actions.h`,
+  `src/sys/compose/actions/compose_area_actions.cpp`, `src/sys/compose/actions/compose_quantize_request.h`,
   `src/sys/commands/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp`,
   `tests/sys/frame_timing_tests.cpp`,
   `CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/ceremony_ratchet.txt`, `docs/architecture.md`,
@@ -161,8 +161,8 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Status:** Done (2026-10-17; owner asked for it directly)
 - **Value:** Small but cheap. Each of the two traps cost real time once: a new scope flag is silently false at positional construction sites, and an appended action enum value aborts test discovery instead of failing the build.
 - **Outcome:** `editor_selection_scope_t` has named presets (at least `every_object()`), and no positional construction remains. The Compose action and input enums end with a `_COUNT` sentinel, every table sized from an enum uses it, and a `static_assert` ties each route table to it.
-- **Read first:** `include/wormedit/core/interaction.h` (`editor_selection_scope_t`), `src/sys/compose_input_internal.h:1145`, `src/sys/commands/application_command_dispatch.cpp:484`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp` (`compose_kind_count`, `build_compose_action_routes`), `cmake/ceremony_ratchet.txt`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/sys/compose_input_internal.h`, `src/sys/commands/application_command_dispatch.cpp`, `src/ui/frontend/actions.h`, `src/sys/compose_actions.cpp`, `cmake/ceremony_ratchet.txt`, this card.
+- **Read first:** `include/wormedit/core/interaction.h` (`editor_selection_scope_t`), `src/sys/compose_input_internal.h:1145`, `src/sys/commands/application_command_dispatch.cpp:484`, `src/ui/frontend/actions.h`, `src/sys/compose/actions/compose_actions.cpp` (`compose_kind_count`, `build_compose_action_routes`), `cmake/ceremony_ratchet.txt`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/sys/compose_input_internal.h`, `src/sys/commands/application_command_dispatch.cpp`, `src/ui/frontend/actions.h`, `src/sys/compose/actions/compose_actions.cpp`, `cmake/ceremony_ratchet.txt`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rn "editor_selection_scope_t{true" src` and `grep -n "_COUNT" src/ui/frontend/actions.h`.
   2. Add the presets; convert both positional sites; add a ratchet row for positional construction at 0.
@@ -172,7 +172,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Reject/failure behavior:** If the route table cannot be `constexpr` without restructuring the route modules, keep the runtime build and add only the `static_assert` on size; record why.
 - **Verify:** GATE (T-665), or by hand: `cmake --build build --parallel <jobs>`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -R '^documentation\.'`, with `<jobs>` chosen as in T-665.
 - **Out of scope:** Re-routing actions (T-636 is done); renaming scope fields.
-- **Done:** `editor_selection_scope_t::every_object()` (all five kinds) replaces the positional `{true, true, true, true, true}` in `src/sys/compose_input_internal.h`; Select All's scope in `src/sys/commands/application_command_dispatch.cpp` is now the designated `every_object_but_bar_lines`, since it deliberately excludes bar lines (they are selectable only through the measure lane). Ratchet row `positional_selection_scope` at 0. `WORM_UI_COMPOSE_ACTION_COUNT` ends the action enum and sizes the route index (`compose_action_kind_count` in `src/sys/compose_action_routes.h`). The combined route index cannot be `constexpr` because its seven modules live in different files, so (per this card's reject clause) each module instead `static_assert`s `is_valid_route_module`: every kind below the count, none repeated within the module. A repeat across modules is still checked at startup, and T-665's gate now reports that failure clearly. No input-kind table is sized by an enum, so the input enum got no sentinel; the other `+ 1` sizes found were byte capacities for a terminating NUL. Evidence: build passes; a scratch duplicate route in `compose_bga_actions.cpp` failed with "static assertion failed"; a scratch positional scope failed `documentation.ceremony_ratchet` ("1 > maximum 0"); both reverted; complexity unchanged (only the existing `build_speed_graph` finding).
+- **Done:** `editor_selection_scope_t::every_object()` (all five kinds) replaces the positional `{true, true, true, true, true}` in `src/sys/compose_input_internal.h`; Select All's scope in `src/sys/commands/application_command_dispatch.cpp` is now the designated `every_object_but_bar_lines`, since it deliberately excludes bar lines (they are selectable only through the measure lane). Ratchet row `positional_selection_scope` at 0. `WORM_UI_COMPOSE_ACTION_COUNT` ends the action enum and sizes the route index (`compose_action_kind_count` in `src/sys/compose/actions/compose_action_routes.h`). The combined route index cannot be `constexpr` because its seven modules live in different files, so (per this card's reject clause) each module instead `static_assert`s `is_valid_route_module`: every kind below the count, none repeated within the module. A repeat across modules is still checked at startup, and T-665's gate now reports that failure clearly. No input-kind table is sized by an enum, so the input enum got no sentinel; the other `+ 1` sizes found were byte capacities for a terminating NUL. Evidence: build passes; a scratch duplicate route in `compose_bga_actions.cpp` failed with "static assertion failed"; a scratch positional scope failed `documentation.ceremony_ratchet` ("1 > maximum 0"); both reverted; complexity unchanged (only the existing `build_speed_graph` finding).
 
 ## T-662 Let event-harness tests find widgets by tooltip
 
@@ -199,8 +199,8 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Status:** deferred (proposed 2026-10-17; start only if the owner names T-663)
 - **Value:** Small, and the least certain of these cards. It removes per-field mirroring and the second write in each toggle, but the benefit grows only if more toggles arrive. Skip it if no new toggle is planned.
 - **Outcome:** `edit_snap_enabled`, `y_lock` and `bar_line_time` form one `editor_edit_settings_t` stored in `project.compose_view` (where D3 puts them) and copied whole into the interaction state at the existing idle-frame point. Toggles write only `compose_view`; the view reads the struct.
-- **Read first:** `src/sys/compose_view.h` (`compose_view_state_t`), `src/sys/compose_view.cpp` (the `!retained_state->is_pending()` copy and `view.y_lock`), `src/sys/compose_actions.cpp` (the snap, Y-lock and bar-line time toggles), `include/wormedit/core/interaction.h`, D3 in [state ownership](state-ownership.md) (T-601).
-- **Files owned:** `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_actions.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/note_move.cpp`, `tests/sys/compose_action_notification_tests.cpp`, this card.
+- **Read first:** `src/sys/compose_view.h` (`compose_view_state_t`), `src/sys/compose_view.cpp` (the `!retained_state->is_pending()` copy and `view.y_lock`), `src/sys/compose/actions/compose_actions.cpp` (the snap, Y-lock and bar-line time toggles), `include/wormedit/core/interaction.h`, D3 in [state ownership](state-ownership.md) (T-601).
+- **Files owned:** `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/note_move.cpp`, `tests/sys/compose_action_notification_tests.cpp`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rn "editor_edit_settings_t" include src`.
   2. Add a test first: changing snap or Y-lock while a gesture is pending takes effect only after the gesture ends (today's behavior from the idle-frame copy).
@@ -304,7 +304,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 ## T-669 Reach zero compiler warnings, then make them errors on our targets
 
 - **Status:** Done (2026-10-17; owner asked for it directly)
-- **Value:** High for its cost. When an enum gains a value, `-Wswitch` is what points at every switch that must handle it. The current build already prints warnings (unused variables at `src/sys/application.cpp:3048`, `src/sys/compose_actions.cpp:3646`, `src/sys/compose_input.cpp:1246`, and missing-field-initializer warnings), so a new one scrolls past unseen.
+- **Value:** High for its cost. When an enum gains a value, `-Wswitch` is what points at every switch that must handle it. The current build already prints warnings (unused variables at `src/sys/application.cpp:3048`, `src/sys/compose/actions/compose_actions.cpp:3646`, `src/sys/compose_input.cpp:1246`, and missing-field-initializer warnings), so a new one scrolls past unseen.
 - **Outcome:** Wormedit's own targets build with zero warnings under GCC and the linux-clang preset, and `-Werror` (`/WX` for MSVC) is on for those targets only, never for dependencies.
 - **Read first:** `CMakeLists.txt` (the `target_compile_options` lines), `CMakePresets.json`, `AGENTS.md`.
 - **Files owned:** `CMakeLists.txt`, and every source file with a warning, recorded on this card after step 1's inventory, this card.

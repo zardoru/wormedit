@@ -1,10 +1,10 @@
 #include <wormedit/core/timing.h>
-#include "sys/compose_area_actions.h"
+#include "sys/compose/actions/compose_area_actions.h"
 #include "core/timing_arithmetic.h"
-#include "sys/compose_action_context.h"
-#include "sys/compose_action_routes.h"
-#include "sys/compose_quantize.h"
-#include "sys/compose_quantize_request.h"
+#include "sys/compose/actions/compose_action_context.h"
+#include "sys/compose/actions/compose_action_routes.h"
+#include "sys/compose/actions/compose_quantize.h"
+#include "sys/compose/actions/compose_quantize_request.h"
 #include <algorithm>
 #include <array>
 #include <ranges>

@@ -9,8 +9,8 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 - **Status:** done (2026-10-18; owner: "ctrl+m should toggle a measure line … we need a shortcut to remove a measure-line")
 - **Outcome:** Ctrl+M adds a bar line at the cursor when the cursor is inside a measure, and removes the bar line under the cursor (merging that measure into the one before) when it is on one; no object changes its row, each press is one Undo step, and the chart's first bar line is refused with a hint.
-- **Read first:** `src/sys/compose_measure_commands.cpp` (`apply_cursor_measure_split`), `include/wormedit/core/measure_editor.h` (`remove_bar_lines`).
-- **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp` (`remove_bar_line_action_t`), `src/sys/compose_measure_commands.cpp`, `src/core/command_registry.cpp` (display name), `tests/sys/application_commands_tests.cpp`, `docs/manual/chapters/measures.adoc`, this card.
+- **Read first:** `src/sys/compose/actions/compose_measure_commands.cpp` (`apply_cursor_measure_split`), `include/wormedit/core/measure_editor.h` (`remove_bar_lines`).
+- **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp` (`remove_bar_line_action_t`), `src/sys/compose/actions/compose_measure_commands.cpp`, `src/core/command_registry.cpp` (display name), `tests/sys/application_commands_tests.cpp`, `docs/manual/chapters/measures.adoc`, this card.
 - **Steps:**
   1. Add `remove_bar_line_action_t` to the measure edit command over the existing `remove_bar_lines`.
   2. Make the cursor command remove the bar line at a measure head and split elsewhere; rename it *Toggle Measure Line at Cursor*. The command ID `measures.split_at_cursor` stays so saved shortcut profiles keep working.

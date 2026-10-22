@@ -1,4 +1,4 @@
-#include "sys/compose_audition_requests.h"
+#include "sys/compose/actions/compose_audition_requests.h"
 #include "sys/application_defaults.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
@@ -12,8 +12,8 @@
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose/compose_semantic_layer_commands.h"
-#include "sys/compose_sound_actions.h"
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_sound_actions.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 #include "sys/commands/native_chart_edit_action.h"
 #include "sys/project/output_group_export.h"
 #include "sys/audio/transport_player_actions.h"
@@ -181,7 +181,7 @@ TEST_CASE("Command menu has a stable typed application command", "[unit][sys][co
 
 #endif
 
-#include "sys/compose_area_actions.h"
+#include "sys/compose/actions/compose_area_actions.h"
 #include <algorithm>
 #include <array>
 #include <wormedit/formats/native_project.h>

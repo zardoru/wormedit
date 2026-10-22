@@ -1,4 +1,4 @@
-#include "sys/compose_note_to_bgm.h"
+#include "sys/compose/actions/compose_note_to_bgm.h"
 
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/interaction_dispatch.h>

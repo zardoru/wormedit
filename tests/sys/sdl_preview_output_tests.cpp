@@ -1,6 +1,6 @@
 #include "project_audio_sources_fixture.h"
-#include "sys/sdl_preview_output.h"
-#include "sys/chart_preview_state.h"
+#include "sys/audio/sdl_preview_output.h"
+#include "sys/audio/chart_preview_state.h"
 
 #include <wormedit/audio/source_registry.h>
 

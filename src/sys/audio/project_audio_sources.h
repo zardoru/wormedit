@@ -1,7 +1,7 @@
 #pragma once
 
-#include "sys/audio_source_registration.h"
-#include "sys/metronome.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/metronome.h"
 #include <wormedit/audio/hitsound_resolver.h>
 #include <wormedit/audio/audition_resolver.h>
 

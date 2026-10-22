@@ -1,4 +1,4 @@
-#include "sys/metronome.h"
+#include "sys/audio/metronome.h"
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/metronome.h>
 #include <string>

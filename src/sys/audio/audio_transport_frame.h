@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/chart_preview_state.h"
+#include "sys/audio/chart_preview_state.h"
 
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>

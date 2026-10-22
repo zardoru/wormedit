@@ -9,14 +9,14 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/application_commands.h"
 #include "sys/application_timing_stage.h"
-#include "sys/audio_offset_actions.h"
+#include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/native_chart_edit_action.h"
 #include "sys/output_group_export.h"
-#include "sys/transport_player_actions.h"
+#include "sys/audio/transport_player_actions.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>

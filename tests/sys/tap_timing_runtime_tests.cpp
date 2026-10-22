@@ -1,5 +1,5 @@
 #include "../support/stale_action_assertions.h"
-#include "sys/tap_timing_runtime.h"
+#include "sys/audio/tap_timing_runtime.h"
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>

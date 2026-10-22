@@ -38,7 +38,7 @@ The following describes the original scaffold, not the current application. T-67
 
 `src/common/Chart.h` contains a small normalized chart model. `src/common/chart.cpp` currently imports through `libotoworm`, converts charts to seconds, and copies notes, BPM, warps, stops, and interpolated speed multipliers. BMSON loading is routed through `libotoworm`, but its slice data, sound list, BGM events, measure lengths, source metadata, and most format-specific information are discarded during conversion. This dependency is temporary scaffold code. Wormedit will own its format codecs, timing model, and conversion pipeline; `libotoworm` is source and behavior reference only and should leave the application link once the replacement fixture coverage is in place.
 
-The UI and audio layers are still scaffolds. `src/editor/field.cpp` is empty, and `src/sys/audio.cpp` only initializes SDL audio and validates that an import path is non-empty. There is no save path yet.
+The UI and audio layers are still scaffolds. `src/editor/field.cpp` is empty, and `src/sys/audio/audio.cpp` only initializes SDL audio and validates that an import path is non-empty. There is no save path yet.
 
 Before editor features are built, the internal document model needs to become loss-aware and suitable for editing. Extending the existing `ChartSegment` maps in place would make clean round trips difficult.
 

@@ -1,8 +1,8 @@
-#include "sys/preview_audio_export.h"
+#include "sys/audio/preview_audio_export.h"
 #include "core/text_util.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include "sys/audio_source_registration.h"
+#include "sys/audio/audio_source_registration.h"
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/audio/hitsound_resolver.h>
 #include <wormedit/audio/offline_mix.h>

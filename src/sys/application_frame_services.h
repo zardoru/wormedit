@@ -5,7 +5,7 @@
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/resources/resource_job_state.h"
-#include "sys/preview_audio_export.h"
+#include "sys/audio/preview_audio_export.h"
 #include "sys/resources/sound_drop_transaction.h"
 #include "sys/workspace_edit_feedback.h"
 

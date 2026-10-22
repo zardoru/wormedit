@@ -3,7 +3,7 @@
 #include "sys/compose_input.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include "sys/project_audio_sources.h"
+#include "sys/audio/project_audio_sources.h"
 #include <wormedit/audio/waveform_job.h>
 
 #include <functional>

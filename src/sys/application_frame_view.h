@@ -3,7 +3,7 @@
 #include "sys/compose_view.h"
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
-#include "sys/player_preview_presenter.h"
+#include "sys/audio/player_preview_presenter.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/timing/timing_view.h"
 #include "sys/workspace_frame_view.h"
@@ -15,11 +15,11 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/decoder.h>
-#include "sys/chart_preview_state.h"
-#include "sys/waveform_analysis_runtime.h"
+#include "sys/audio/chart_preview_state.h"
+#include "sys/audio/waveform_analysis_runtime.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/audio/preview_session.h>
-#include "sys/project_audio_sources.h"
+#include "sys/audio/project_audio_sources.h"
 #endif
 
 #include <filesystem>

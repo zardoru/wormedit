@@ -1,9 +1,9 @@
 #include "sys/workspace_view.h"
-#include "sys/bmson_waveform_view.h"
+#include "sys/audio/bmson_waveform_view.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
-#include "sys/stem_waveform_window.h"
+#include "sys/audio/stem_waveform_window.h"
 
 #include <wormedit/audio/channel_waveform.h>
 #include <wormedit/core/sound_slice.h>

@@ -1,6 +1,6 @@
-#include "sys/audio_options_runtime.h"
+#include "sys/audio/audio_options_runtime.h"
 #include "sys/preferences/options_runtime.h"
-#include "sys/chart_preview_state.h"
+#include "sys/audio/chart_preview_state.h"
 #include <SDL3/SDL_audio.h>
 #include <algorithm>
 

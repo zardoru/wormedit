@@ -1,13 +1,13 @@
-#include "sys/project_audio_sources.h"
-#include "sys/audio_source_registration_internal.h"
+#include "sys/audio/project_audio_sources.h"
+#include "sys/audio/audio_source_registration_internal.h"
 #include <algorithm>
 #include <system_error>
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #if defined(WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS)
-#include "sys/chart_preview_state.h"
+#include "sys/audio/chart_preview_state.h"
 #endif
 #if defined(WORMEDIT_HAS_PROJECT_AUDIO_WAVEFORMS)
-#include "sys/waveform_analysis_runtime.h"
+#include "sys/audio/waveform_analysis_runtime.h"
 #endif
 namespace wormedit::sys {
 namespace {

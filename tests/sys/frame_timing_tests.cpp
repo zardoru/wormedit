@@ -7,8 +7,8 @@
 #include "project_audio_sources_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
-#include "sys/bmson_waveform_view.h"
-#include "sys/chart_preview_state.h"
+#include "sys/audio/bmson_waveform_view.h"
+#include "sys/audio/chart_preview_state.h"
 #include "sys/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
@@ -28,8 +28,8 @@
 #include "sys/recipe_form.h"
 #include "sys/timing/timing_view.h"
 #include "sys/timing/timing_edit_runtime.h"
-#include "sys/waveform_analysis_runtime.h"
-#include "sys/waveform_view.h"
+#include "sys/audio/waveform_analysis_runtime.h"
+#include "sys/audio/waveform_view.h"
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -5094,7 +5094,7 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
     expect_compose_test(placed_resource_notifications.empty());
 }
 
-#include "sys/stem_waveform_window.h"
+#include "sys/audio/stem_waveform_window.h"
 namespace {
 void link_window_channels(chart_document_t& chart) {
     chart.source_family = format_family_t::bmson;

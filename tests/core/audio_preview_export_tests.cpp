@@ -1,4 +1,4 @@
-#include "sys/preview_audio_export.h"
+#include "sys/audio/preview_audio_export.h"
 #include <wormedit/audio/ogg_encoder.h>
 #include <wormedit/formats/osu_mania.h>
 #include "../support/temporary_directory.h"

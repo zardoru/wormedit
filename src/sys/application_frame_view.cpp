@@ -3,11 +3,11 @@
 #include "sys/compose_hover_timing.h"
 #include "sys/frame_timing.h"
 
-#include "sys/bmson_waveform_view.h"
+#include "sys/audio/bmson_waveform_view.h"
 #include "sys/compose_view.h"
 #include "sys/compose_waveform_overlays.h"
 #include "sys/metadata/metadata_view.h"
-#include "sys/waveform_view.h"
+#include "sys/audio/waveform_view.h"
 
 #include <wormedit/audio/playback_rate.h>
 #include <wormedit/window.h>

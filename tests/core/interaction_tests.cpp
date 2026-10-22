@@ -10,8 +10,8 @@
 #include <wormedit/formats/native_project.h>
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_playhead_cursor.h"
-#include "sys/inline_preview_cursor.h"
-#include "sys/preview_cursor_frame.h"
+#include "sys/audio/inline_preview_cursor.h"
+#include "sys/audio/preview_cursor_frame.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

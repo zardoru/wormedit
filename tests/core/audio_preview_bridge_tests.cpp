@@ -1,5 +1,5 @@
 #include <wormedit/audio/metronome.h>
-#include "sys/metronome.h"
+#include "sys/audio/metronome.h"
 #include <cmath>
 #include <wormedit/audio/preview_bridge.h>
 

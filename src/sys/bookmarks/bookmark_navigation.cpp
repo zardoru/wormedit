@@ -1,6 +1,6 @@
 #include "sys/bookmarks/bookmark_navigation.h"
 #if defined(WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS)
-#include "sys/chart_preview_state.h"
+#include "sys/audio/chart_preview_state.h"
 #endif
 namespace wormedit::sys {
 auto bookmark_navigation_t::preserve_preview_revision(chart_id_t chart,

@@ -1,5 +1,5 @@
-#include "sys/audio_source_registration.h"
-#include "sys/audio_source_registration_internal.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/audio_source_registration_internal.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 

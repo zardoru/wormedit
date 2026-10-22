@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/sdl_session_results.h"
+#include "sys/audio/sdl_session_results.h"
 
 #include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/playback_rate.h>

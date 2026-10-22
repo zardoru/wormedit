@@ -8,10 +8,10 @@
 #include <optional>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include "sys/chart_preview_state.h"
-#include "sys/project_audio_sources.h"
-#include "sys/sdl_audition_output.h"
-#include "sys/sdl_preview_output.h"
+#include "sys/audio/chart_preview_state.h"
+#include "sys/audio/project_audio_sources.h"
+#include "sys/audio/sdl_audition_output.h"
+#include "sys/audio/sdl_preview_output.h"
 #include <wormedit/audio/object_audition.h>
 #endif
 

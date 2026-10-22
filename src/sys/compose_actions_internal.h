@@ -17,7 +17,7 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
 #include "sys/recipe_form.h"
-#include "sys/transport_player_actions.h"
+#include "sys/audio/transport_player_actions.h"
 #include "ui/frontend.h"
 #include "wormedit/audio.h"
 #include <wormedit/core/bmson_lane_mode.h>
@@ -79,7 +79,7 @@
 #include <variant>
 #include <vector>
 
-#include "sys/audio_fallback.h"
+#include "sys/audio/audio_fallback.h"
 
 namespace wormedit::sys::compose_action_detail {
 

@@ -1,7 +1,7 @@
 #include "../support/stale_action_assertions.h"
 #include "project_audio_sources_fixture.h"
 #include "sys/compose_audition_requests.h"
-#include "sys/audio_transport_frame.h"
+#include "sys/audio/audio_transport_frame.h"
 #include <SDL3/SDL_timer.h>
 #include <wormedit/audio/audition_resolver.h>
 #include <catch2/catch_test_macros.hpp>

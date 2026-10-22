@@ -28,7 +28,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/compose_playhead_cursor.h"
-#include "sys/sdl_preview_output.h"
+#include "sys/audio/sdl_preview_output.h"
 
 #endif
 

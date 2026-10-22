@@ -37,8 +37,8 @@ Stage 7 from [later work](../stages/later.md) and the
 
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-150)
 - **Outcome:** preview selects the correct frame path (`name0.png`, `name1.png`, …) from time, delay, and loop type.
-- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/player_preview_presenter.cpp`.
-- **Files owned:** `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `src/sys/player_preview_presenter.cpp`.
+- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/audio/player_preview_presenter.cpp`.
+- **Files owned:** `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `src/sys/audio/player_preview_presenter.cpp`.
 - **Steps:** 1. Pure frame-index function with tests for LoopOnce end and LoopForever wrap. 2. Resolve frame path through the resource catalog.
 - **Invariants:** exact millisecond math.
 - **Reject/failure behavior:** missing frame image shows the missing placeholder.
@@ -61,7 +61,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-153)
 - **Outcome:** a preview toggle chooses Pass or Fail; the Pass/Fail layers and `Passing`/`Failing` triggers follow it.
-- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/player_preview_presenter.cpp`, `src/ui/nuklear/player_preview.cpp`.
+- **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/audio/player_preview_presenter.cpp`, `src/ui/nuklear/player_preview.cpp`.
 - **Files owned:** those three files, `src/ui/frontend.h`, `tests/core/storyboard_preview_tests.cpp`.
 - **Steps:** 1. State parameter on evaluation. 2. Toggle in the preview overlay.
 - **Invariants:** default is Pass.

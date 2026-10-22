@@ -1,6 +1,6 @@
 #include "compose_scene_cache_fixture.h"
-#include "sys/audio_source_registration.h"
-#include "sys/waveform_analysis_runtime.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/waveform_analysis_runtime.h"
 
 #include <catch2/catch_test_macros.hpp>
 

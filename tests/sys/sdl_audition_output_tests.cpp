@@ -1,4 +1,4 @@
-#include "sys/sdl_audition_output.h"
+#include "sys/audio/sdl_audition_output.h"
 
 #include <wormedit/audio/source_registry.h>
 

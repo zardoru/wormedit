@@ -1,8 +1,8 @@
 #include "sys/workspace_view.h"
 #include <wormedit/core/rational.h>
-#include "sys/waveform_view.h"
+#include "sys/audio/waveform_view.h"
 #include <wormedit/audio/waveform_viewport.h>
-#include "sys/bmson_waveform_view.h"
+#include "sys/audio/bmson_waveform_view.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/aligned_waveform.h>

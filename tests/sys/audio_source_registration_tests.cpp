@@ -1,6 +1,6 @@
-#include "sys/audio_source_registration.h"
-#include "sys/project_audio_sources.h"
-#include "sys/audio_fallback.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/project_audio_sources.h"
+#include "sys/audio/audio_fallback.h"
 #include <wormedit/audio/object_audition.h>
 
 #include <catch2/catch_test_macros.hpp>

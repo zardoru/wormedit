@@ -54,8 +54,8 @@ document, and a failed run keeps the last materialized result.
 
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on T-182)
 - **Outcome:** OSBX sprites render through the existing storyboard draw path (same quads, layers, and image cache as OSB sprites).
-- **Read first:** `include/wormedit/core/storyboard_preview.h`, `src/sys/player_preview_presenter.cpp`, `include/wormedit/core/osbx_evaluator.h`.
-- **Files owned:** `src/core/storyboard_preview.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/sys/player_preview_presenter.cpp`, `tests/core/storyboard_preview_tests.cpp`.
+- **Read first:** `include/wormedit/core/storyboard_preview.h`, `src/sys/audio/player_preview_presenter.cpp`, `include/wormedit/core/osbx_evaluator.h`.
+- **Files owned:** `src/core/storyboard_preview.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/sys/audio/player_preview_presenter.cpp`, `tests/core/storyboard_preview_tests.cpp`.
 - **Steps:** 1. Convert evaluated matrices into the existing draw-instance form (add shear support if the instance lacks it). 2. Test one sheared sprite end to end.
 - **Invariants:** OSB sprites render unchanged.
 - **Reject/failure behavior:** missing images use the missing placeholder.

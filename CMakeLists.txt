@@ -479,7 +479,7 @@ endif()
 if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
         src/common/static_interval_index.cpp
-        src/sys/audio.cpp
+        src/sys/audio/audio.cpp
         src/sys/application_defaults.cpp
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
@@ -537,9 +537,9 @@ if(WORMEDIT_BUILD_APP)
         src/sys/resources/bga_dock_runtime.cpp
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
-        src/sys/audio_source_registration.cpp
-        src/sys/project_audio_sources.cpp
-        src/sys/metronome.cpp
+        src/sys/audio/audio_source_registration.cpp
+        src/sys/audio/project_audio_sources.cpp
+        src/sys/audio/metronome.cpp
         src/sys/application_frame_view.cpp
         src/sys/application_frame_services.cpp
         src/sys/resources/resource_drop_router.cpp
@@ -548,7 +548,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_startup.cpp
         src/sys/application_lifetime.cpp
         src/sys/recovery_notification_feedback.cpp
-        src/sys/audio_project_import.cpp
+        src/sys/audio/audio_project_import.cpp
         src/sys/project_open.cpp
         src/sys/chart_import_session.cpp
         src/sys/project_save_paths.cpp
@@ -562,16 +562,16 @@ if(WORMEDIT_BUILD_APP)
         src/sys/metadata/metadata_asset_runtime.cpp
         src/sys/metadata/metadata_actions.cpp
         src/sys/metadata/metadata_view.cpp
-        src/sys/waveform_view.cpp
-        src/sys/bmson_waveform_view.cpp
+        src/sys/audio/waveform_view.cpp
+        src/sys/audio/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp
         src/sys/resources/resource_job_state.cpp
-        src/sys/preview_audio_export.cpp
+        src/sys/audio/preview_audio_export.cpp
         src/sys/output_group_export.cpp
-        src/sys/player_preview_presenter.cpp
+        src/sys/audio/player_preview_presenter.cpp
         src/sys/workspace_view.cpp
         src/sys/workspace_frame_view.cpp
-        src/sys/transport_player_actions.cpp
+        src/sys/audio/transport_player_actions.cpp
         src/sys/preferences/external_player.cpp
         src/sys/preferences/preferences_runtime.cpp
         src/sys/preferences/options_runtime.cpp
@@ -580,7 +580,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/menu_command_view.cpp
         src/sys/notifications/notification_history_runtime.cpp
         src/sys/project_view.cpp
-        src/sys/tap_timing_runtime.cpp
+        src/sys/audio/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
@@ -674,7 +674,7 @@ if(WORMEDIT_BUILD_APP)
 
     if(WORMEDIT_ENABLE_FFMPEG AND TARGET PkgConfig::WORMEDIT_FFMPEG)
         target_link_libraries(wormedit PRIVATE PkgConfig::WORMEDIT_FFMPEG)
-        set_source_files_properties(src/sys/audio_project_import.cpp TARGET_DIRECTORY wormedit
+        set_source_files_properties(src/sys/audio/audio_project_import.cpp TARGET_DIRECTORY wormedit
             PROPERTIES COMPILE_DEFINITIONS WORMEDIT_HAS_FFMPEG=1)
     endif()
 
@@ -685,12 +685,12 @@ if(WORMEDIT_BUILD_APP)
 
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_sources(wormedit PRIVATE
-            src/sys/chart_preview_state.cpp
-            src/sys/audio_transport_frame.cpp
-            src/sys/waveform_analysis_runtime.cpp
-            src/sys/sdl_audition_output.cpp
-            src/sys/sdl_preview_output.cpp
-            src/sys/audio_options_runtime.cpp
+            src/sys/audio/chart_preview_state.cpp
+            src/sys/audio/audio_transport_frame.cpp
+            src/sys/audio/waveform_analysis_runtime.cpp
+            src/sys/audio/sdl_audition_output.cpp
+            src/sys/audio/sdl_preview_output.cpp
+            src/sys/audio/audio_options_runtime.cpp
         )
         target_link_libraries(wormedit PRIVATE wormedit::audio_decoder)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)

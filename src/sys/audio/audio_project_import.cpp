@@ -1,4 +1,4 @@
-#include "sys/audio_project_import.h"
+#include "sys/audio/audio_project_import.h"
 #include "core/text_util.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

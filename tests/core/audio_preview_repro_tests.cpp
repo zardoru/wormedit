@@ -1,5 +1,5 @@
-#include "sys/audio_source_registration.h"
-#include "sys/metronome.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/metronome.h"
 #include "sys/project_open.h"
 
 #include <wormedit/audio/preview_session.h>

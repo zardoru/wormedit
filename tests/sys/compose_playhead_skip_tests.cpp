@@ -1,5 +1,5 @@
 #include "sys/compose_playhead_skip.h"
-#include "sys/preview_cursor_frame.h"
+#include "sys/audio/preview_cursor_frame.h"
 
 #include <wormedit/audio/decoder.h>
 

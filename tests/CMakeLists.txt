@@ -39,8 +39,8 @@ add_executable(wormedit_core_tests
     ../src/sys/application_commands.cpp
     ../src/sys/project_view.cpp
     ../src/sys/output_group_export.cpp
-    ../src/sys/tap_timing_runtime.cpp
-    ../src/sys/transport_player_actions.cpp
+    ../src/sys/audio/tap_timing_runtime.cpp
+    ../src/sys/audio/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/bookmarks/bookmark_commands.cpp
     ../src/sys/compose_navigation.cpp
@@ -232,13 +232,13 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         PRIVATE wormedit::audio_decoder Catch2::Catch2WithMain)
 
     add_executable(wormedit_audio_tests
-        ../src/sys/preview_audio_export.cpp
+        ../src/sys/audio/preview_audio_export.cpp
         ../src/sys/project_open.cpp
         ../src/sys/application_defaults.cpp
-        ../src/sys/audio_project_import.cpp
-        ../src/sys/audio_source_registration.cpp
-        ../src/sys/project_audio_sources.cpp
-        ../src/sys/metronome.cpp
+        ../src/sys/audio/audio_project_import.cpp
+        ../src/sys/audio/audio_source_registration.cpp
+        ../src/sys/audio/project_audio_sources.cpp
+        ../src/sys/audio/metronome.cpp
         core/audio_audition_bridge_tests.cpp
         core/audio_audition_pump_tests.cpp
         core/audio_audition_resolver_tests.cpp
@@ -286,7 +286,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
 
         # Exercise the tolerant capability branch even on FFmpeg-equipped development hosts.
         add_executable(wormedit_audio_project_import_no_ffmpeg_tests
-            ../src/sys/audio_project_import.cpp
+            ../src/sys/audio/audio_project_import.cpp
             sys/audio_project_import_tests.cpp)
         target_include_directories(wormedit_audio_project_import_no_ffmpeg_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_audio_project_import_no_ffmpeg_tests PRIVATE
@@ -310,18 +310,18 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/audio_transport_notification_tests.cpp
             sys/audition_notification_tests.cpp
             ../src/sys/compose_audition_requests.cpp
-            ../src/sys/audio_source_registration.cpp
-            ../src/sys/project_audio_sources.cpp
-        ../src/sys/metronome.cpp
-            ../src/sys/audio_transport_frame.cpp
+            ../src/sys/audio/audio_source_registration.cpp
+            ../src/sys/audio/project_audio_sources.cpp
+        ../src/sys/audio/metronome.cpp
+            ../src/sys/audio/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
             sys/audio_options_runtime_tests.cpp
-            ../src/sys/audio_options_runtime.cpp
-            ../src/sys/chart_preview_state.cpp
+            ../src/sys/audio/audio_options_runtime.cpp
+            ../src/sys/audio/chart_preview_state.cpp
             ../src/sys/frame_timing.cpp
-            ../src/sys/sdl_audition_output.cpp
-            ../src/sys/sdl_preview_output.cpp
+            ../src/sys/audio/sdl_audition_output.cpp
+            ../src/sys/audio/sdl_preview_output.cpp
         )
         target_compile_definitions(wormedit_sdl_audio_tests
             PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1 WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS=1 WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
@@ -381,7 +381,7 @@ endif()
 if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
     add_executable(wormedit_player_preview_delivery_tests
         sys/player_preview_presenter_tests.cpp
-        ../src/sys/player_preview_presenter.cpp
+        ../src/sys/audio/player_preview_presenter.cpp
     )
     target_compile_definitions(wormedit_player_preview_delivery_tests PRIVATE
         WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
@@ -405,7 +405,7 @@ endif()
 
 add_executable(wormedit_player_preview_status_tests
     sys/player_preview_status_tests.cpp
-    ../src/sys/player_preview_presenter.cpp
+    ../src/sys/audio/player_preview_presenter.cpp
 )
 target_include_directories(wormedit_player_preview_status_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
@@ -595,11 +595,11 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/application_lifetime.cpp
         ../src/sys/application_startup.cpp
         ../src/sys/platform_recovery.cpp
-        ../src/sys/audio.cpp
+        ../src/sys/audio/audio.cpp
         ../src/sys/window.cpp
         ../src/sys/preferences/external_player.cpp
         ../src/sys/resources/resource_job_state.cpp
-        ../src/sys/preview_audio_export.cpp
+        ../src/sys/audio/preview_audio_export.cpp
         ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
@@ -753,12 +753,12 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     endif()
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_sources(wormedit_frontend_event_harness_tests PRIVATE
-            ../src/sys/audio_source_registration.cpp
-            ../src/sys/project_audio_sources.cpp
-            ../src/sys/metronome.cpp
-            ../src/sys/chart_preview_state.cpp
-            ../src/sys/sdl_audition_output.cpp
-            ../src/sys/sdl_preview_output.cpp)
+            ../src/sys/audio/audio_source_registration.cpp
+            ../src/sys/audio/project_audio_sources.cpp
+            ../src/sys/audio/metronome.cpp
+            ../src/sys/audio/chart_preview_state.cpp
+            ../src/sys/audio/sdl_audition_output.cpp
+            ../src/sys/audio/sdl_preview_output.cpp)
         target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
             wormedit::audio_decoder)
         target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
@@ -861,7 +861,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_label_search.cpp
             ../src/sys/bookmarks/bookmark_rename_commands.cpp
             ../src/sys/resources/resource_job_state.cpp
-            ../src/sys/preview_audio_export.cpp
+            ../src/sys/audio/preview_audio_export.cpp
             ../src/sys/project_save_paths.cpp
             ../src/sys/output_group_export.cpp
             ../src/sys/metadata/metadata_asset_runtime.cpp
@@ -880,15 +880,15 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp
             ../src/sys/application_commands.cpp
-            ../src/sys/transport_player_actions.cpp
+            ../src/sys/audio/transport_player_actions.cpp
             ../src/sys/application_defaults.cpp
-            ../src/sys/waveform_view.cpp
-            ../src/sys/waveform_analysis_runtime.cpp
-            ../src/sys/audio_source_registration.cpp
-        ../src/sys/project_audio_sources.cpp
-        ../src/sys/metronome.cpp
+            ../src/sys/audio/waveform_view.cpp
+            ../src/sys/audio/waveform_analysis_runtime.cpp
+            ../src/sys/audio/audio_source_registration.cpp
+        ../src/sys/audio/project_audio_sources.cpp
+        ../src/sys/audio/metronome.cpp
             sys/audio_notification_tests.cpp
-            ../src/sys/bmson_waveform_view.cpp
+            ../src/sys/audio/bmson_waveform_view.cpp
             ../src/sys/compose_input.cpp
             ../src/sys/compose_waveform_fit_input.cpp
             ../src/sys/compose_timing_input.cpp
@@ -901,9 +901,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
         target_sources(wormedit_frame_timing_tests PRIVATE
-            ../src/sys/chart_preview_state.cpp
-            ../src/sys/sdl_audition_output.cpp
-            ../src/sys/sdl_preview_output.cpp)
+            ../src/sys/audio/chart_preview_state.cpp
+            ../src/sys/audio/sdl_audition_output.cpp
+            ../src/sys/audio/sdl_preview_output.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1
             WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
@@ -925,7 +925,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/resource_notification_tests.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/resources/resource_job_state.cpp
-        ../src/sys/preview_audio_export.cpp
+        ../src/sys/audio/preview_audio_export.cpp
         ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         sys/metadata_notification_tests.cpp

@@ -1,4 +1,4 @@
-#include "sys/stem_waveform_window.h"
+#include "sys/audio/stem_waveform_window.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>

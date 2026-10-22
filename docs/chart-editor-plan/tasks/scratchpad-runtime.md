@@ -18,8 +18,8 @@
 
 - **Status:** done
 - **Outcome:** Preview loops continue without a frontend-service drain/reprime gap at supported playback rates and pitch modes.
-- **Read first:** src/sys/sdl_preview_output.cpp; src/audio/preview_session.cpp; tests/sys/sdl_preview_output_tests.cpp.
-- **Files owned:** src/sys/sdl_preview_output.cpp; src/sys/sdl_preview_output.h; src/audio/preview_session.cpp; include/wormedit/audio/preview_session.h; tests/sys/sdl_preview_output_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-runtime.md; memory/chart-editor-status/resume.md. Root records necessary supporting scope.
+- **Read first:** src/sys/audio/sdl_preview_output.cpp; src/audio/preview_session.cpp; tests/sys/sdl_preview_output_tests.cpp.
+- **Files owned:** src/sys/audio/sdl_preview_output.cpp; src/sys/audio/sdl_preview_output.h; src/audio/preview_session.cpp; include/wormedit/audio/preview_session.h; tests/sys/sdl_preview_output_tests.cpp; docs/chart-editor-plan/tasks/scratchpad-runtime.md; memory/chart-editor-status/resume.md. Root records necessary supporting scope.
 - **Steps:** 1. Measure queued audio at boundaries. 2. Prepare wrap playback without waiting for the control frame. 3. Preserve source clock, voice tails, generation and cancellation. 4. Verify continuous samples across rates and pitch modes.
 - **Invariants:** callback safety; Stop/seek/edit cancellation; source positions and loop bounds remain authoritative.
 - **Reject/failure behavior:** unavailable or invalid loops fail clearly; no callback blocking or stale audio publication.

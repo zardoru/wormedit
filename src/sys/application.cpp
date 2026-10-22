@@ -6,7 +6,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/preferences/external_player_runtime.h"
 #include "sys/application_timing_stage.h"
-#include "sys/audio_offset_actions.h"
+#include "sys/audio/audio_offset_actions.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
@@ -26,7 +26,7 @@
 #include "sys/application_frame_view.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
-#include "sys/audio_project_import.h"
+#include "sys/audio/audio_project_import.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
 #include "sys/compare_view.h"
@@ -36,7 +36,7 @@
 #include "sys/recipe_form.h"
 #include "sys/workspace_view.h"
 #include "sys/workspace_frame_view.h"
-#include "sys/transport_player_actions.h"
+#include "sys/audio/transport_player_actions.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/timing/timing_view.h"
 #include "sys/timing/timing_edit_runtime.h"
@@ -55,7 +55,7 @@
 #include "sys/preferences/external_player.h"
 #include "sys/preferences/preferences_runtime.h"
 #include "sys/preferences/options_runtime.h"
-#include "sys/audio_options_runtime.h"
+#include "sys/audio/audio_options_runtime.h"
 #include "sys/preferences/lane_keys_runtime.h"
 #include "sys/shortcut_rows.h"
 #include "sys/menu_command_view.h"
@@ -66,20 +66,20 @@
 #include "sys/chart_import_session.h"
 #include <wormedit/core/snap.h>
 #include <wormedit/core/chart_editor.h>
-#include "sys/tap_timing_runtime.h"
+#include "sys/audio/tap_timing_runtime.h"
 #include <SDL3/SDL_filesystem.h>
 #include <wormedit/core/virtual_canvas.h>
 #include "sys/project_open.h"
 #include "sys/project_import_feedback.h"
 #include "sys/project_save_paths.h"
-#include "sys/player_preview_presenter.h"
-#include "sys/waveform_view.h"
-#include "sys/bmson_waveform_view.h"
+#include "sys/audio/player_preview_presenter.h"
+#include "sys/audio/waveform_view.h"
+#include "sys/audio/bmson_waveform_view.h"
 #include "sys/compose_audition_requests.h"
 #include "sys/crash_backtrace.h"
-#include "sys/inline_preview_cursor.h"
-#include "sys/audio_source_registration.h"
-#include "sys/project_audio_sources.h"
+#include "sys/audio/inline_preview_cursor.h"
+#include "sys/audio/audio_source_registration.h"
+#include "sys/audio/project_audio_sources.h"
 #include "sys/compose_waveform_overlays.h"
 #include "ui/frontend.h"
 #include "wormedit/config.h"
@@ -133,13 +133,13 @@
 #endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include "sys/chart_preview_state.h"
+#include "sys/audio/chart_preview_state.h"
 #include "sys/compose_playhead_cursor.h"
-#include "sys/audio_transport_frame.h"
-#include "sys/preview_cursor_frame.h"
-#include "sys/waveform_analysis_runtime.h"
-#include "sys/sdl_audition_output.h"
-#include "sys/sdl_preview_output.h"
+#include "sys/audio/audio_transport_frame.h"
+#include "sys/audio/preview_cursor_frame.h"
+#include "sys/audio/waveform_analysis_runtime.h"
+#include "sys/audio/sdl_audition_output.h"
+#include "sys/audio/sdl_preview_output.h"
 #include <wormedit/audio/aligned_waveform.h>
 #include <wormedit/audio/channel_waveform.h>
 #include <wormedit/audio/decoder.h>

@@ -1,9 +1,9 @@
-#include "sys/waveform_analysis_runtime.h"
+#include "sys/audio/waveform_analysis_runtime.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
 #include "sys/compose_input.h"
-#include "sys/stem_waveform_window.h"
+#include "sys/audio/stem_waveform_window.h"
 
 #include <algorithm>
 #include <unordered_set>

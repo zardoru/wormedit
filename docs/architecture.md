@@ -315,7 +315,7 @@ until copied into private staging, so rejection/cancellation cannot leave a new 
 folder or audio file. Completed exchange remains published even if cancellation races
 with completion. Individual writers and filesystem calls are not preemptible.
 Selected-area audio export belongs to `runtime::preview_audio_export_t`
-(`sys/preview_audio_export.h`) over `async_job_t`. Its admitted request owns the
+(`sys/audio/preview_audio_export.h`) over `async_job_t`. Its admitted request owns the
 document snapshot, source paths, row interval and trim/fade/encoder settings. The worker
 uses the ordinary timing schedule, shared music binding and hitsound resolver with
 `render_offline_interval`, then encodes Vorbis and decode-verifies a same-directory

@@ -2,15 +2,15 @@
 
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_session.h>
-#include "sys/project_audio_sources.h"
+#include "sys/audio/project_audio_sources.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>
 
-#include "sys/sdl_audition_output.h"
-#include "sys/sdl_preview_output.h"
+#include "sys/audio/sdl_audition_output.h"
+#include "sys/audio/sdl_preview_output.h"
 
 #include <cstdint>
 #include <optional>

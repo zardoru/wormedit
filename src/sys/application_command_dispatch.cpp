@@ -15,7 +15,7 @@
 #include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 #include "sys/preferences/external_player.h"
-#include "sys/transport_player_actions.h"
+#include "sys/audio/transport_player_actions.h"
 #include "ui/frontend.h"
 #include <wormedit/core/chart_clipboard.h>
 

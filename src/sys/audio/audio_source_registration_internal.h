@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/audio_source_registration.h"
+#include "sys/audio/audio_source_registration.h"
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace wormedit::sys {
 [[nodiscard]] auto resolve_asset_path(const audio_asset_t&, const std::filesystem::path&)

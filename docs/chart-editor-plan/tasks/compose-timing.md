@@ -49,8 +49,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 - **Status:** done (already implemented: src/audio/aligned_waveform.cpp:56, row mapping by exact time; regression test added)
 - **Outcome:** A Warp's span shows as a blank gap in the waveform and the audio is omitted there; playback and seeking never map real audio time into the warped rows.
-- **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio_transport_frame.cpp`, `src/sys/compose_dead_spans.h` (T-313).
-- **Files owned:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/compose_dead_spans.h` (T-313).
+- **Files owned:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. Reproduce: warp rows currently map to audio. 2. A warp consumes zero time: draw its N-pulse (rational) span as a blank waveform gap because no audio time maps to those rows; the audio on both sides stays contiguous. 3. Playback and the playhead jump from the last pre-warp beat to the post-warp beat with no elapsed time; seeking into a warp row resolves to the post-warp time. 4. Test exact PCM contiguity around a span, seek into a span, and overlapping warps.
 - **Invariants:** Mapping stays rational-exact; BPM fitting and the audio offset are unaffected by the omission.
 - **Reject/failure behavior:** Invalid spans leave the waveform unchanged and report a diagnostic.

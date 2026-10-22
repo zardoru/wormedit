@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/project_audio_sources.h"
+#include "sys/audio/project_audio_sources.h"
 
 // Fixtures that install decoded bindings directly have already reconciled their
 // authored inventory. Keep those immutable test identities when querying sys views.

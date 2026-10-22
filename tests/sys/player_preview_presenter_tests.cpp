@@ -1,4 +1,4 @@
-#include "sys/player_preview_presenter.h"
+#include "sys/audio/player_preview_presenter.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/task_graph.h>

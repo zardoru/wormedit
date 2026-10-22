@@ -1,4 +1,4 @@
-#include "ui/nuklear/metadata_song_section.h"
+#include "ui/nuklear/metadata/metadata_song_section.h"
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"

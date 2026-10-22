@@ -1,4 +1,4 @@
-#include "ui/nuklear/metadata_difficulty_section.h"
+#include "ui/nuklear/metadata/metadata_difficulty_section.h"
 #include "ui/nuklear/tooltip.h"
 
 #include "ui/nuklear/chrome.h"

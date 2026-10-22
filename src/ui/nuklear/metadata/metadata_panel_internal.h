@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/nuklear/metadata_state.h"
+#include "ui/nuklear/metadata/metadata_state.h"
 
 #include <cstddef>
 

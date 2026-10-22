@@ -85,8 +85,8 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 - **Status:** blocked-on T-124
 - **Outcome:** each difficulty field shows an "Inherit" checkbox; unchecking reveals an editable override.
-- **Read first:** `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata/metadata_actions.cpp`.
-- **Files owned:** `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp` (or T-42's section unit).
+- **Read first:** `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/sys/metadata/metadata_actions.cpp`.
+- **Files owned:** `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata/metadata_panel.cpp` (or T-42's section unit).
 - **Steps:** standard pattern.
 - **Invariants:** inherited values display the song value greyed.
 - **Reject/failure behavior:** core rejections in the status line.
@@ -115,8 +115,8 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 - **Captures:** `/home/zardoru/.claude/jobs/4e7ef06b/tmp/t127/meta3-expanded.png` (selector at 7K), `meta4-combo-open.png` (family list 1K–18K), `meta5-preview.png` (5K preview), `meta5-applied.png` (applied, "Key-count profile changed.").
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** per-chart selector showing only counts supported by the chart's format family plus "Custom", with the preview counts and a confirm button.
-- **Read first:** `include/wormedit/core/lane_migration.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata/metadata_actions.cpp`.
-- **Files owned:** `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata/metadata_actions.h`. Approved for this card: `src/ui/nuklear/metadata_difficulty_section.cpp`, `src/ui/nuklear/metadata_state.h`, `src/sys/metadata_drop_state.h/.cpp`, `tests/sys/metadata_notification_tests.cpp`; plus `src/sys/metadata/metadata_actions.h`, `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp` and `src/ui/frontend.h` as listed above.
+- **Read first:** `include/wormedit/core/lane_migration.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/sys/metadata/metadata_actions.cpp`.
+- **Files owned:** `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata/metadata_actions.h`. Approved for this card: `src/ui/nuklear/metadata/metadata_difficulty_section.cpp`, `src/ui/nuklear/metadata/metadata_state.h`, `src/sys/metadata_drop_state.h/.cpp`, `tests/sys/metadata_notification_tests.cpp`; plus `src/sys/metadata/metadata_actions.h`, `src/sys/metadata/metadata_actions.cpp`, `src/sys/metadata/metadata_view.cpp` and `src/ui/frontend.h` as listed above.
 - **Implementation audit (2026-10-03):** no migration selector exists. Family choices and a real generic Custom target can be built in owned files; Custom must not reuse the osu!mania 1–18 factory or become a no-op for the current layout. The sealed migration preview/count/conflict state needs shared dispatch/projection access declared in unowned `src/sys/metadata/metadata_actions.h`, the same ownership gap as T-96. The user approved this scope extension on 2026-10-03; no implementation was started.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
@@ -132,14 +132,14 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** the core batch command already exists as `apply_batch_chart_metadata_edit` in `metadata_editor.h` (added with T-260); only the Metadata multi-select UI (step 2) is open.
 - **Outcome:** Metadata offers a multi-select of difficulties; applying author or rating edits writes all selected charts in one command.
-- **Read first:** `include/wormedit/core/metadata_editor.h`, `src/sys/metadata/metadata_actions.cpp`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Files owned:** `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp`, `src/sys/metadata/metadata_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata/metadata_view.cpp`, `src/ui/nuklear/metadata_state.h/.cpp` as needed for resettable selection state.
+- **Read first:** `include/wormedit/core/metadata_editor.h`, `src/sys/metadata/metadata_actions.cpp`, `src/ui/nuklear/metadata/metadata_panel.cpp`.
+- **Files owned:** `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp`, `src/sys/metadata/metadata_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata/metadata_view.cpp`, `src/ui/nuklear/metadata_state.h/.cpp` as needed for resettable selection state.
 - **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Core batch command over a bounded chart-ID list. 2. UI checkboxes per difficulty.
 - **Invariants:** one undo step.
 - **Reject/failure behavior:** any invalid chart rejects all.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** format fields.
-- **Supporting scope (coordinator, 2026-10-08):** `src/ui/nuklear/metadata_difficulty_section.cpp` and `tests/sys/metadata_notification_tests.cpp`.
+- **Supporting scope (coordinator, 2026-10-08):** `src/ui/nuklear/metadata/metadata_difficulty_section.cpp` and `tests/sys/metadata_notification_tests.cpp`.
 - **Result (2026-10-08):** Metadata's Difficulty section now lists a checkbox per difficulty (selection in `metadata_state.h`, reset with the metadata state, pruned of vanished ids) with Apply Mapper / Apply Rating buttons that send `WORM_UI_METADATA_EDIT_BATCH_CHART`; `dispatch_batch_chart_edit` writes them through `apply_batch_chart_metadata_edit` as one undo step. The view carries up to 256 chart choices (`WormUiMetadataChartChoice`). New test in `metadata_notification_tests.cpp` (two charts, one undo step, stale revision rejects). Full suite 2838/2838, event-harness 253/253.
 
 
@@ -149,8 +149,8 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** steps 1 and 2 are done: `format_field_schema.h` has the typed table (`format_field_schemas`, `find_format_field_schema`) and `validate_format_field_value` with plain-ASCII integer/decimal parsing, case-insensitive choices (StepMania `DIFFICULTY`) and single-line text. Stored names are the exact `ordered_fields` spellings: BMS tokens without `#`, StepMania tags, osu! `Difficulty.HPDrainRate`/`Difficulty.OverallDifficulty`/`Metadata.Version`, BMSON `info.level`/`info.judge_rank`/`info.total`. Tests in `tests/core/format_field_schema_tests.cpp`. Step 3 (the typed widgets) remains.
 - **Outcome:** Metadata's format section shows named typed fields for BMS (`#PLAYER`, `#RANK`, `#TOTAL`, `#PLAYLEVEL`, `#DIFFICULTY`), StepMania (`#CREDIT`, `#DIFFICULTY`, `#METER`), osu! (`HPDrainRate`, `OverallDifficulty`, `Version`), and BMSON (`level`, `judge_rank`, `total`) that read/write the existing ordered format fields.
-- **Read first:** `docs/chart-editor-plan/formats-persistence.md` (Metadata tab paragraph), `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Files owned:** new `include/wormedit/core/format_field_schema.h`, new `src/core/format_field_schema.cpp`, new `tests/core/format_field_schema_tests.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/metadata_format_fields.cpp/.h`, `src/ui/nuklear/metadata_state.h`.
+- **Read first:** `docs/chart-editor-plan/formats-persistence.md` (Metadata tab paragraph), `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata/metadata_panel.cpp`.
+- **Files owned:** new `include/wormedit/core/format_field_schema.h`, new `src/core/format_field_schema.cpp`, new `tests/core/format_field_schema_tests.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata/metadata_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/metadata_format_fields.cpp/.h`, `src/ui/nuklear/metadata/metadata_state.h`.
 - **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Static schema table (format, key, type int/decimal/text, range). 2. Validation function with tests. 3. Render typed widgets that edit through the existing format-field insert/replace commands.
 - **Invariants:** unknown fields remain in the generic list; nothing is reordered.
 - **Reject/failure behavior:** out-of-range values show an inline error and are not applied.

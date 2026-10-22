@@ -1,5 +1,5 @@
 #include "ui/field/rect.h"
-#include "ui/nuklear/metadata_audio_section.h"
+#include "ui/nuklear/metadata/metadata_audio_section.h"
 #include "ui/nuklear/tooltip.h"
 
 #include "ui/nuklear/audio/audio_panel.h"

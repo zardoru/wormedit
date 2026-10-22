@@ -1,6 +1,6 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include "core/text_util.h"
-#include "sys/catalog_view.h"
+#include "sys/resources/catalog_view.h"
 #include "sys/application.h"
 #include <wormedit/core/hitsound_editor.h>
 #include "sys/application_edit_inputs.h"
@@ -41,10 +41,10 @@
 #include "sys/timing/timing_view.h"
 #include "sys/timing/timing_edit_runtime.h"
 #include "sys/compose_sound_actions.h"
-#include "sys/sound_import_staging.h"
-#include "sys/sound_usage_actions.h"
+#include "sys/resources/sound_import_staging.h"
+#include "sys/resources/sound_usage_actions.h"
 #include "sys/compose_bga_actions.h"
-#include "sys/bga_dock_runtime.h"
+#include "sys/resources/bga_dock_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_actions.h"

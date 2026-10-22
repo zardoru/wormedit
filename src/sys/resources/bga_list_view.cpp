@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/bga_list_view.h"
+#include "sys/resources/bga_list_view.h"
 #include <wormedit/core/resource_assignment.h>
 #include <algorithm>
 #include <unordered_map>

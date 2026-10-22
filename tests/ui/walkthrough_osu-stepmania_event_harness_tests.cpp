@@ -6,7 +6,7 @@
 #include "sys/compose_view.h"
 #include "sys/output_group_export.h"
 #include "sys/project_view.h"
-#include "sys/resource_job_state.h"
+#include "sys/resources/resource_job_state.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/command_registry.h>

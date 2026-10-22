@@ -1,7 +1,7 @@
 #pragma once
 #include <wormedit/core/document.h>
 #include <wormedit/core/resource_assignment.h>
-#include "sys/sound_list_view.h"
+#include "sys/resources/sound_list_view.h"
 #include <cstddef>
 #include <string>
 #include <vector>

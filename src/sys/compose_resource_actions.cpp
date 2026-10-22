@@ -1,6 +1,6 @@
 #include <wormedit/core/timing.h>
 #include "sys/compose_actions_internal.h"
-#include "sys/resource_action_context.h"
+#include "sys/resources/resource_action_context.h"
 namespace wormedit::sys::compose_action_detail {
 auto import_resource_role(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_role_t> {

@@ -3,7 +3,7 @@
 #include "sys/application_edit_inputs.h"
 
 #include "sys/project_open.h"
-#include "sys/resource_drop_router.h"
+#include "sys/resources/resource_drop_router.h"
 #include "sys/frame_pacing.h"
 
 #include "ui/frontend.h"

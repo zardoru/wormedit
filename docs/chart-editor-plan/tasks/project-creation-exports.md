@@ -88,8 +88,8 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `tests/sys/project_view_tests.cpp`, `tests/sys/resource_notification_tests.cpp`,
   `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.
-- **Supporting-file extensions (2026-10-19):** `src/sys/resource_job_state.h` and
-  `src/sys/resource_job_state.cpp` own the background export lifecycle and therefore retain the
+- **Supporting-file extensions (2026-10-19):** `src/sys/resources/resource_job_state.h` and
+  `src/sys/resources/resource_job_state.cpp` own the background export lifecycle and therefore retain the
   prepared Ask-confirmation request; `src/sys/application.cpp` projects that lifecycle state and
   supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_state.h`,
   `src/sys/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
@@ -325,7 +325,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/ui/frontend/workspace.h`; `src/sys/workspace_view.cpp` (`new_project_layout_view`);
   `include/wormedit/core/lane_profiles.h`; `src/core/lane_profiles.cpp` (`new_project_layouts`).
 - **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`,
-  `src/ui/frontend/workspace.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/catalog_view.h`,
+  `src/ui/frontend/workspace.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/resources/catalog_view.h`,
   `src/sys/workspace_view.cpp`, `tests/core/lane_profile_tests.cpp`,
   `tests/sys/application_defaults_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.

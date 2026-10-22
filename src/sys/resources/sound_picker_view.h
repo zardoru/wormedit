@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/sound_list_view.h"
+#include "sys/resources/sound_list_view.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/keyed_cache.h>
 #include <tuple>

@@ -21,7 +21,7 @@
 #include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
 #include <wormedit/core/arena.h>
-#include "sys/bga_dock_runtime.h"
+#include "sys/resources/bga_dock_runtime.h"
 #include "../support/temporary_directory.h"
 #include <fstream>
 #include "sys/preferences/options_runtime.h"

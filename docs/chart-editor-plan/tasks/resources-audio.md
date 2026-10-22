@@ -55,8 +55,8 @@ stale-plan check (rule 9) first.
 - **Outcome:** Sounds and BGA resources each offer a bounded **Find uses** list across project charts;
   activating a positioned note/BGM/BGA result opens its chart and moves the cursor to it, while a
   source-only sound result selects its source without inventing a chart position.
-- **Read first:** `src/sys/sound_usage_view.cpp`; `src/sys/sound_usage_actions.cpp`;
-  `src/sys/bga_list_view.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`;
+- **Read first:** `src/sys/resources/sound_usage_view.cpp`; `src/sys/resources/sound_usage_actions.cpp`;
+  `src/sys/resources/bga_list_view.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`;
   `src/sys/compose_input.cpp` (BGA event selection/navigation).
 - **Files owned:** new `src/sys/bga_usage_view.h`, `src/sys/bga_usage_view.cpp`, new
   `src/sys/bga_usage_actions.h`, `src/sys/bga_usage_actions.cpp`,
@@ -92,7 +92,7 @@ stale-plan check (rule 9) first.
 - **Coordinator scope (2026-10-11):** extend live Sounds/Images docks (`compose_sounds_panel.cpp`, `compose_bga_panel.cpp`, `keysound_list_state.cpp/.h`, `compose_state.h`) and their state/event tests; `sound_list_projection.cpp/.h` and tests filter before virtual windows. `frontend.cpp` exports filter requests. Existing inspector resource list is retired; preserve group/layer filters and armed resource identity.
 - **Outcome:** the catalog has a text filter (case-insensitive substring on name/path/BMS ID) and a Used/Unused/Missing/All selector in addition to the existing role tabs.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`filter_role`, `filter_name`), `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
-- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, `src/sys/workspace_projection.cpp`. Supporting ownership (2026-10-11): `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp`, associated projection/state/event tests.
+- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, `src/sys/workspace_projection.cpp`. Supporting ownership (2026-10-11): `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/resources/bga_dock_runtime.cpp`, associated projection/state/event tests.
 - **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
 - **Invariants:** armed resource stays armed even when filtered out.
 - **Reject/failure behavior:** none.

@@ -3,7 +3,7 @@
 #include "sys/metadata/metadata_asset_runtime.h"
 #include <wormedit/formats/osu_mania.h>
 #include <span>
-#include "sys/resource_job_state.h"
+#include "sys/resources/resource_job_state.h"
 #include "ui/frontend.h"
 
 #include <wormedit/core/resource_file_copy.h>

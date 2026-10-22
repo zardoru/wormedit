@@ -1,5 +1,5 @@
-#include "sys/sound_list_view.h"
-#include "sys/sound_picker_view.h"
+#include "sys/resources/sound_list_view.h"
+#include "sys/resources/sound_picker_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 

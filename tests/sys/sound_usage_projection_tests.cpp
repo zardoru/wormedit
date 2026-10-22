@@ -1,4 +1,4 @@
-#include "sys/sound_usage_view.h"
+#include "sys/resources/sound_usage_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 

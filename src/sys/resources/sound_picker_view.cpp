@@ -1,5 +1,5 @@
 #include "core/text_util.h"
-#include "sys/sound_picker_view.h"
+#include "sys/resources/sound_picker_view.h"
 
 #include <algorithm>
 #include <unordered_set>

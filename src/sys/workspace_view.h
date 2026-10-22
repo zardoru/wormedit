@@ -8,8 +8,8 @@
 #include "sys/metadata/metadata_projection_cache.h"
 #include "sys/compose_resource_presenter.h"
 
-#include "sys/sound_list_view.h"
-#include "sys/sound_usage_view.h"
+#include "sys/resources/sound_list_view.h"
+#include "sys/resources/sound_usage_view.h"
 #include "sys/notifications/projection_notification_feedback.h"
 #include "ui/frontend/workspace.h"
 

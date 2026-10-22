@@ -3,7 +3,7 @@
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_action_routes.h"
 #include "sys/metadata/metadata_commands.h"
-#include "sys/resource_action_context.h"
+#include "sys/resources/resource_action_context.h"
 #include <wormedit/core/proposal.h>
 
 #include <wormedit/core/natural_order.h>

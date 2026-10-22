@@ -1,4 +1,4 @@
-#include "sys/catalog_view.h"
+#include "sys/resources/catalog_view.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/formats/bms.h>

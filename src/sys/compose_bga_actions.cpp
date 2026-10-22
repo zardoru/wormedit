@@ -2,7 +2,7 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/compose_action_routes.h"
-#include "sys/resource_action_context.h"
+#include "sys/resources/resource_action_context.h"
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/resource_assignment.h>
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)

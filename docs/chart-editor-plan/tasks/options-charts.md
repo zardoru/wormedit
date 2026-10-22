@@ -288,7 +288,7 @@ Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{c
   `tests/formats/native_project_storage_tests.cpp` (current-version expectations),
   `src/formats/native_project_storage.cpp` (shared schema ceiling),
   `src/formats/conversion_publication_storage.cpp` (private export staging layout),
-  `src/sys/resource_job_state.h`, `src/sys/resource_job_state.cpp`,
+  `src/sys/resources/resource_job_state.h`, `src/sys/resources/resource_job_state.cpp`,
   `src/sys/compose_resource_actions.cpp`, `tests/sys/compose_action_notification_tests.cpp`
   (Sounds/BGA background copies),
   `tests/sys/resource_notification_tests.cpp` (captured-folder cleanup after a stale import),

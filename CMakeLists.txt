@@ -490,10 +490,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/bookmarks/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
-        src/sys/sound_list_view.cpp
-        src/sys/sound_picker_view.cpp
-        src/sys/sound_usage_view.cpp
-        src/sys/sound_usage_actions.cpp
+        src/sys/resources/sound_list_view.cpp
+        src/sys/resources/sound_picker_view.cpp
+        src/sys/resources/sound_usage_view.cpp
+        src/sys/resources/sound_usage_actions.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp
@@ -531,10 +531,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_recipe_actions.cpp
         src/sys/compose_transform_actions.cpp
         src/sys/compose_sound_actions.cpp
-        src/sys/sound_import_staging.cpp
+        src/sys/resources/sound_import_staging.cpp
         src/sys/compose_bga_actions.cpp
-        src/sys/bga_list_view.cpp
-        src/sys/bga_dock_runtime.cpp
+        src/sys/resources/bga_list_view.cpp
+        src/sys/resources/bga_dock_runtime.cpp
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
         src/sys/audio_source_registration.cpp
@@ -542,9 +542,9 @@ if(WORMEDIT_BUILD_APP)
         src/sys/metronome.cpp
         src/sys/application_frame_view.cpp
         src/sys/application_frame_services.cpp
-        src/sys/resource_drop_router.cpp
+        src/sys/resources/resource_drop_router.cpp
         src/sys/frame_pacing.cpp
-        src/sys/sound_drop_transaction.cpp
+        src/sys/resources/sound_drop_transaction.cpp
         src/sys/application_startup.cpp
         src/sys/application_lifetime.cpp
         src/sys/recovery_notification_feedback.cpp
@@ -565,7 +565,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/waveform_view.cpp
         src/sys/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp
-        src/sys/resource_job_state.cpp
+        src/sys/resources/resource_job_state.cpp
         src/sys/preview_audio_export.cpp
         src/sys/output_group_export.cpp
         src/sys/player_preview_presenter.cpp

@@ -1,4 +1,4 @@
-#include "sys/bga_dock_runtime.h"
+#include "sys/resources/bga_dock_runtime.h"
 #include "sys/frame_timing.h"
 #include "../support/temporary_directory.h"
 

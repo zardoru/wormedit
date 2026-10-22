@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/sound_drop_transaction.h"
+#include "sys/resources/sound_drop_transaction.h"
 namespace wormedit::sys {
 // Production SDL resource-drop admission; hit-tests the current frontend and
 // lets the shared transaction retain POSITION, destination and origin.

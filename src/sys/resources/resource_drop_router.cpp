@@ -1,4 +1,4 @@
-#include "sys/resource_drop_router.h"
+#include "sys/resources/resource_drop_router.h"
 #include "ui/frontend.h"
 namespace wormedit::sys {
 auto is_resource_drop_event(const SDL_Event& event) -> bool {

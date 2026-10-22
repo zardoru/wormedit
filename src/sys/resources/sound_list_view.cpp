@@ -1,6 +1,6 @@
 #include "core/text_util.h"
 #include <wormedit/core/document_index.h>
-#include "sys/sound_list_view.h"
+#include "sys/resources/sound_list_view.h"
 
 #include <algorithm>
 #include <functional>

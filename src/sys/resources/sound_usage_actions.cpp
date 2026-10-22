@@ -1,6 +1,6 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/rational.h>
-#include "sys/sound_usage_actions.h"
+#include "sys/resources/sound_usage_actions.h"
 
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/interaction_dispatch.h>

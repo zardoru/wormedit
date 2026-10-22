@@ -1,15 +1,15 @@
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/workspace_view.h"
-#include "sys/catalog_view.h"
+#include "sys/resources/catalog_view.h"
 #include <charconv>
 #include <cstdio>
 #include <tuple>
 
 #include "sys/compose_resource_presenter.h"
-#include "sys/sound_list_view.h"
-#include "sys/sound_usage_view.h"
+#include "sys/resources/sound_list_view.h"
+#include "sys/resources/sound_usage_view.h"
 #include "sys/bookmarks/bookmark_navigation.h"
-#include "sys/sound_picker_view.h"
+#include "sys/resources/sound_picker_view.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/resource_file_copy.h>

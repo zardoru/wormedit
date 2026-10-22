@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sys/resource_job_state.h"
+#include "sys/resources/resource_job_state.h"
 
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>

@@ -1,5 +1,5 @@
 #pragma once
-#include "sys/bga_list_view.h"
+#include "sys/resources/bga_list_view.h"
 #include "ui/frontend.h"
 #include <filesystem>
 #include <memory>

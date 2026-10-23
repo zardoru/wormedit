@@ -42,11 +42,13 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 
 ## T-733 Decode modeled content in every BMS scope
 
-- **Status:** ready (T-732 complete; question 22 answered 2026-10-23)
+- **Status:** done (2026-10-23; prepared import only, public activation stays T-744)
 - **Prerequisites:** T-732 (done); [question 22](../decisions/open-questions.md) (answered: separate SETRANDOM/SETSWITCH settings nodes, typed case SKIP behavior and automatic structural markers).
+- **Implementation:** `prepare_bms_program` consumes the shared source-tree/codec/numeric stage and decodes every retained scope independently of preview selections. IF chains use ordered sibling identities; fixed selectors are settings leaves; SKIP is anchored case behavior, including nested conditions. Typed declarations retain duplicates and share asset storage; exact fractions and both hold endpoints survive. Opaque Text retains original encoded bytes in place. Malformed/unsupported known content refuses the complete prepared value with located diagnostics and bounded read-only source backing; no partial resources or legacy edits publish. Per-slot provenance references the shared backing rather than copying entire channel lines.
 - **Outcome:** a prepared program contains typed active and inactive content while retaining only comments and semantically unknown commands as Text.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, `tests/fixtures/bms/control-flow-mixed.bms`.
-- **Files owned:** `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, new `src/formats/bms_program_import.cpp`, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `tests/core/bms_program_tests.cpp` (extend the prepared value grammar for the approved directive mapping), new `tests/formats/bms_program_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
+- **Files owned:** `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, new `src/formats/bms_program_import.cpp`, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `tests/core/bms_program_tests.cpp` (extend the prepared value grammar for the approved directive mapping), new `tests/formats/bms_program_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card, `src/formats/bms_program_import_internal.h`, `src/formats/bms_timing_directive.h`, `memory/chart-editor-status/resume.md` (completion/next-card status only).
+- **Coordinator supporting scope (2026-10-23):** add `src/formats/bms_program_import_internal.h` and `src/formats/bms_timing_directive.h` for the shared source-tree/statement decoder seam (reusing the current parser and numeric rules), plus `memory/chart-editor-status/resume.md` for completion. Share source-tree preparation with the public legacy parser without activating scoped ownership. Malformed/unsupported known statements reject prepared publication with diagnostics and retained original bytes; only genuinely opaque content becomes Text.
 - **Steps:**
   1. Extend the prepared values/validation for the approved body scopes, separate SETRANDOM/SETSWITCH settings nodes and typed case stop-fallthrough behavior; settings-only nodes have no Chart children and grouping/closing markers are structural syntax.
   2. Reuse the existing parser/codec and T-731 command classification to decode typed declarations and events in every scope without requiring each outcome to be selected first.
@@ -56,11 +58,12 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 - **Invariants:** import is lossless across all retained outcomes; known commands are not mislabeled Text as a migration shortcut.
 - **Reject/failure behavior:** failed preparation leaves the legacy document authoritative and untouched; no partial program is published.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-import]'`.
+- **Verification results (2026-10-23):** GATE passes build, **4,657/4,657** tests, whitespace and complexity across **5 translation units**, with no new/increased allowances (`/tmp/t733-gate1.log`, `/tmp/wormedit-gate.8iQ1uu`). The final Linux Clang build and full suite also pass **4,657/4,657** (`/tmp/t733-clang-ctest.log`); final documentation checks pass **5/5**. Focused import passes **151 assertions / 19 cases** and model checks **239 / 27** (`/tmp/t733-import-final.log`, `/tmp/t733-model-final.log`); existing BMS checks pass **8,575 / 150** (`/tmp/t733-legacy1.log`). No UI/native/public ownership cutover is enabled.
 - **Out of scope:** changing BMS dialect semantics (existing profile fixtures govern), malformed-flow repair proposals (T-287), activating the new public owner (T-744).
 
 ## T-734 Derive playable chart projections from scoped programs
 
-- **Status:** blocked-on T-733
+- **Status:** ready (T-733 completed 2026-10-23)
 - **Outcome:** the same program and evaluation environment produce a deterministic chart projection with semantic-owner identities on editable objects.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_program.h`, `src/core/bms_branch_view.cpp`, `src/formats/bms_branch_selection.cpp`, `docs/references/bms-control-flow.md`.
 - **Files owned:** `include/wormedit/core/bms_program.h`, new `src/core/bms_program_projection.cpp`, `include/wormedit/core/bms_branch_view.h`, `src/core/bms_branch_view.cpp`, `include/wormedit/formats/bms_branch_selection.h`, `src/formats/bms_branch_selection.cpp`, new `tests/core/bms_program_projection_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.

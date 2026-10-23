@@ -195,6 +195,7 @@ add_executable(wormedit_core_tests
     core/bmson_layer_defaults_tests.cpp
     core/workspace_tests.cpp
     formats/bms_tests.cpp
+    formats/bms_program_import_tests.cpp
     formats/bms_clipboard_tests.cpp
     formats/bms_writer_tests.cpp
     formats/bmson_tests.cpp

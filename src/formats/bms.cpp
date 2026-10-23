@@ -1,4 +1,5 @@
 #include "bms_timing_directive.h"
+#include "bms_program_import_internal.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
@@ -350,17 +351,8 @@ auto is_base36_digit(char byte) -> bool {
 }
 
 auto is_bms_metadata_command(std::string_view token) -> bool {
-    constexpr std::array commands{
-        std::string_view{"PLAYER"},     std::string_view{"GENRE"},   std::string_view{"TITLE"},
-        std::string_view{"SUBTITLE"},   std::string_view{"ARTIST"},  std::string_view{"SUBARTIST"},
-        std::string_view{"PLAYLEVEL"},  std::string_view{"OFFSET"},  std::string_view{"RANK"},
-        std::string_view{"DEFEXRANK"},
-        std::string_view{"TOTAL"},      std::string_view{"VOLWAV"},  std::string_view{"STAGEFILE"},
-        std::string_view{"BANNER"},     std::string_view{"BACKBMP"}, std::string_view{"PREVIEW"},
-        std::string_view{"DIFFICULTY"}, std::string_view{"COMMENT"}, std::string_view{"URL"},
-        std::string_view{"EMAIL"},
-    };
-    return std::ranges::find(commands, token) != commands.end();
+    const auto* definition = bms_metadata_definition_t::from(token);
+    return definition && definition->field != bms_metadata_field_t::octave_fp;
 }
 
 auto is_safe_bms_header_token(std::string_view token) -> bool {
@@ -619,6 +611,14 @@ auto node_source_line(const bms_control_node_t& node) -> source_line_t {
     };
 }
 
+auto bms_bga_kind_for_channel(std::string_view channel) -> std::optional<visual_event_kind_t> {
+    if (channel == "04") return visual_event_kind_t::background;
+    if (channel == "06") return visual_event_kind_t::poor;
+    if (channel == "07") return visual_event_kind_t::layer;
+    if (channel == "0A") return visual_event_kind_t::layer2;
+    return std::nullopt;
+}
+
 struct bms_channel_materializer_t {
     chart_document_t& chart;
     song_document_t& song;
@@ -765,10 +765,7 @@ struct bms_channel_materializer_t {
         if (object_id == "00") {
             return;
         }
-        const auto kind = channel == "06" ? visual_event_kind_t::poor
-                          : channel == "07" ? visual_event_kind_t::layer
-                          : channel == "0A" ? visual_event_kind_t::layer2
-                                              : visual_event_kind_t::background;
+        const auto kind = bms_bga_kind_for_channel(channel).value_or(visual_event_kind_t::background);
         chart.bga_events.push_back({
             .id = new_id<object_id_t>(ids),
             .position = position,
@@ -1503,8 +1500,9 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
         });
         return std::nullopt;
     }
-    result.value.encoding.original_bytes =
-        std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
+    if (!result.value.encoding.original_bytes)
+        result.value.encoding.original_bytes =
+            std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
     result.value.encoding.unchanged_since_import = true;
 
     const auto* data = reinterpret_cast<const char*>(bytes.data());
@@ -2515,7 +2513,15 @@ void prepare_channel_materialization(
     }
 }
 
-auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options)
+auto ensure_bms_source_measure(chart_document_t& chart, std::size_t index, id_allocator_t& ids)
+    -> measure_chunk_t& {
+    while (chart.measures.size() <= index)
+        chart.measures.push_back({.id = new_id<measure_id_t>(ids), .definition = {{1, 1}, meter_t{4, 4}}});
+    return chart.measures[index];
+}
+
+auto parse_bms_source(std::span<const std::byte> bytes, const bms_parse_options_t& options,
+                      id_allocator_t& ids)
     -> bms_parse_outcome_t {
     bms_parse_outcome_t result{};
     auto lines = prepare_bms_source_lines(bytes, options, result);
@@ -2524,7 +2530,6 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     }
 
     song_document_t song;
-    id_allocator_t ids;
     song.id = new_id<song_id_t>(ids);
     chart_document_t chart;
     chart.id = new_id<chart_id_t>(ids);
@@ -2538,25 +2543,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     auto& root = *chart.bms_control_tree;
     std::vector<std::size_t> current_path;
     std::vector<open_frame_t> frames;
-    std::map<std::string, resource_id_t, std::less<>> resource_ids;
-    std::map<std::size_t, std::size_t> last_measure_length_order;
-    std::vector<std::pair<std::string, std::string>> ordered_metadata_fields;
-    std::vector<std::size_t> ordered_metadata_source_orders;
 
     auto ensure_measure = [&](std::size_t index) -> measure_chunk_t& {
-        while (chart.measures.size() <= index) {
-            chart.measures.push_back({
-                .id = new_id<measure_id_t>(ids),
-                .definition = {{1, 1}, meter_t{4, 4}},
-            });
-        }
-        return chart.measures[index];
-    };
-
-    auto resource_context = bms_resource_parse_context_t{song, result, ids, resource_ids};
-    auto add_resource = [&](const source_line_t& line, std::string_view command,
-                            std::string_view identifier, const std::string& name) {
-        resource_context.add(line, command, identifier, name);
+        return ensure_bms_source_measure(chart, index, ids);
     };
 
     auto control_context = control_tree_build_context_t{root, current_path, frames, options, result,
@@ -2593,6 +2582,36 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     if (chart.measures.empty()) {
         (void)ensure_measure(0);
     }
+
+    result.value.encoding.original_bytes = std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
+    result.value.encoding.unchanged_since_import = true;
+    song.charts.push_back(std::move(chart));
+    result.value.song = std::move(song);
+    return result;
+}
+
+auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options)
+    -> bms_parse_outcome_t {
+    id_allocator_t ids;
+    auto result = parse_bms_source(bytes, options, ids);
+    if (!result.value.song) return result;
+    auto song = std::move(*result.value.song);
+    result.value.song.reset();
+    auto chart = std::move(song.charts.front());
+    song.charts.clear();
+    auto& root = *chart.bms_control_tree;
+    std::map<std::string, resource_id_t, std::less<>> resource_ids;
+    std::map<std::size_t, std::size_t> last_measure_length_order;
+    std::vector<std::pair<std::string, std::string>> ordered_metadata_fields;
+    std::vector<std::size_t> ordered_metadata_source_orders;
+    auto ensure_measure = [&](std::size_t index) -> measure_chunk_t& {
+        return ensure_bms_source_measure(chart, index, ids);
+    };
+    auto resource_context = bms_resource_parse_context_t{song, result, ids, resource_ids};
+    auto add_resource = [&](const source_line_t& line, std::string_view command,
+                            std::string_view identifier, const std::string& name) {
+        resource_context.add(line, command, identifier, name);
+    };
 
     auto line_diagnostic = [&](const bms_control_node_t& node, diagnostic_severity_t severity,
                                bms_parse_diagnostic_code_t code, std::string message) {
@@ -3900,4 +3919,29 @@ auto delete_bms_inactive_branch_statement(const song_document_t& song,
     return result;
 }
 
+} // namespace wormedit
+
+namespace wormedit {
+auto bms_source_statement_t::from(const bms_control_node_t& node) -> bms_source_statement_t {
+    const auto parsed = parse_line(node.original_text);
+    const auto token = text_util::ascii_upper(parsed.token);
+    return {.token = token, .value = parsed.semantic_value, .separator = parsed.separator,
+            .measure_channel = parse_measure_command(token)};
+}
+auto bms_source_statement_t::positive_number() const -> std::optional<signed_rational_t> {
+    return parse_positive_rational(value);
+}
+auto bms_source_statement_t::measure_length() const -> std::optional<rational_t> {
+    return parse_bms_measure_length(value);
+}
+auto bms_source_statement_t::is_control() const -> bool { return is_control_token(token); }
+auto bms_source_statement_t::is_playable() const -> bool {
+    return measure_channel && is_playable_channel(measure_channel->second);
+}
+auto bms_source_statement_t::is_builtin_channel() const -> bool {
+    return measure_channel && is_builtin_materialized_channel(measure_channel->second);
+}
+auto bms_source_statement_t::bga_kind() const -> std::optional<visual_event_kind_t> {
+    return measure_channel ? bms_bga_kind_for_channel(measure_channel->second) : std::nullopt;
+}
 } // namespace wormedit

@@ -228,3 +228,86 @@ TEST_CASE("BMS stable identities do not depend on contiguous numbering", "[bms-p
     CHECK(program->parent(branch_id_t{7}) == branch_id_t{maximum});
     CHECK_FALSE(bms_program_t::from_root(branch_id_t{}, branch_id_t{7}));
 }
+
+namespace {
+auto switch_nodes() -> std::vector<bms_program_node_t> {
+    return {
+        {.id = branch_id_t{1}, .value = bms_root_scope_t{}, .children = {branch_id_t{2}, branch_id_t{9}, branch_id_t{10}, branch_id_t{3}}},
+        {.id = branch_id_t{2}, .value = bms_chart_content_t{}},
+        {.id = branch_id_t{3}, .value = bms_switch_scope_t{2}, .children = {branch_id_t{4}, branch_id_t{5}, branch_id_t{7}}},
+        {.id = branch_id_t{4}, .value = bms_chart_content_t{}},
+        {.id = branch_id_t{5}, .value = bms_case_scope_t{.value = 1}, .children = {branch_id_t{6}}},
+        {.id = branch_id_t{6}, .value = bms_chart_content_t{}},
+        {.id = branch_id_t{7}, .value = bms_case_scope_t{}, .children = {branch_id_t{8}}},
+        {.id = branch_id_t{8}, .value = bms_chart_content_t{}},
+        {.id = branch_id_t{9}, .value = bms_set_random_t{2}},
+        {.id = branch_id_t{10}, .value = bms_set_switch_t{1}}};
+}
+}
+TEST_CASE("BMS fixed selectors are settings leaves without invented Chart bodies", "[bms-program]") {
+    const auto program = bms_program_t::from(switch_nodes());
+    REQUIRE(program);
+    CHECK_FALSE(program->find(branch_id_t{9})->is_scope());
+    CHECK_FALSE(program->target_chart(branch_id_t{10}));
+    CHECK(program->find(branch_id_t{9})->children.empty());
+    CHECK(std::get<bms_set_switch_t>(program->find(branch_id_t{10})->value).value == 1);
+}
+TEST_CASE("BMS switch cases and defaults target their own first Chart", "[bms-program]") {
+    const auto program = bms_program_t::from(switch_nodes());
+    REQUIRE(program);
+    CHECK(program->target_chart(branch_id_t{3}) == branch_id_t{4});
+    CHECK(program->target_chart(branch_id_t{5}) == branch_id_t{6});
+    CHECK(program->target_chart(branch_id_t{7}) == branch_id_t{8});
+}
+TEST_CASE("BMS switch grammar rejects misplaced cases and terminal default violations", "[bms-program]") {
+    auto nodes = switch_nodes();
+    SECTION("wrong case parent") { nodes[2].value = bms_random_scope_t{2}; }
+    SECTION("duplicate DEF") { std::get<bms_case_scope_t>(nodes[4].value).value.reset(); }
+    SECTION("CASE after DEF") { nodes[2].children = {branch_id_t{4}, branch_id_t{7}, branch_id_t{5}}; }
+    SECTION("settings leaf has children") { nodes[8].children = {branch_id_t{6}}; }
+    const auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE_FALSE(program);
+    CHECK(program.error().code == failure_code_t::invalid_data);
+}
+TEST_CASE("BMS SKIP is an anchored behavior owned by the nearest case", "[bms-program]") {
+    auto nodes = switch_nodes();
+    auto& arm = std::get<bms_case_scope_t>(nodes[4].value);
+    arm.skips.push_back({.scope = branch_id_t{5}, .after_child = branch_id_t{6}});
+    const auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE(program);
+    CHECK(std::get<bms_case_scope_t>(program->find(branch_id_t{5})->value).skips.front().after_child == branch_id_t{6});
+    CHECK(program->find(branch_id_t{5})->children.size() == 1);
+}
+TEST_CASE("BMS SKIP cannot point outside its case or to another scopes child", "[bms-program]") {
+    auto nodes = switch_nodes();
+    bms_skip_point_t skip{.scope = branch_id_t{5}, .after_child = branch_id_t{6}};
+    SECTION("another case") { skip.scope = branch_id_t{7}; skip.after_child = branch_id_t{8}; }
+    SECTION("outside a case") { skip.scope = branch_id_t{1}; skip.after_child = branch_id_t{2}; }
+    SECTION("foreign anchor") { skip.after_child = branch_id_t{8}; }
+    SECTION("missing scope") { skip.scope = branch_id_t{99}; }
+    std::get<bms_case_scope_t>(nodes[4].value).skips.push_back(skip);
+    const auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE_FALSE(program);
+    CHECK(program.error().code == failure_code_t::invalid_data);
+}
+TEST_CASE("BMS conditional arm chains retain sibling identities without a grouping scope", "[bms-program]") {
+    auto nodes = copy_nodes(nested_program());
+    nodes[2].children.insert(nodes[2].children.end(), {branch_id_t{7}, branch_id_t{9}});
+    nodes.push_back({.id = branch_id_t{7}, .value = bms_else_if_scope_t{branch_id_t{5}, 2}, .children = {branch_id_t{8}}});
+    nodes.push_back({.id = branch_id_t{8}, .value = bms_chart_content_t{}});
+    nodes.push_back({.id = branch_id_t{9}, .value = bms_else_scope_t{branch_id_t{7}}, .children = {branch_id_t{10}}});
+    nodes.push_back({.id = branch_id_t{10}, .value = bms_chart_content_t{}});
+    const auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE(program);
+    CHECK(program->parent(branch_id_t{7}) == branch_id_t{3});
+    CHECK(program->target_chart(branch_id_t{9}) == branch_id_t{10});
+    CHECK(std::get<bms_else_if_scope_t>(program->find(branch_id_t{7})->value).previous_arm == branch_id_t{5});
+}
+TEST_CASE("BMS conditional continuation requires the immediately preceding valid arm", "[bms-program]") {
+    auto nodes = copy_nodes(nested_program());
+    SECTION("wrong predecessor") { nodes[4].value = bms_else_if_scope_t{branch_id_t{4}, 2}; }
+    SECTION("missing predecessor") { nodes[4].value = bms_else_scope_t{branch_id_t{99}}; }
+    const auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE_FALSE(program);
+    CHECK(program.error().code == failure_code_t::invalid_data);
+}

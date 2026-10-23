@@ -30,7 +30,7 @@ struct program_validation_t {
     auto index_children() -> std::optional<failure_t> {
         for (const auto& node : nodes) {
             if (!node.is_scope() && !node.children.empty())
-                return failure_t{failure_code_t::invalid_data, "Chart and Text nodes cannot own children."};
+                return failure_t{failure_code_t::invalid_data, "Only body scopes can own children."};
             if (node.children.size() >= nodes.size())
                 return failure_t{failure_code_t::invalid_data, "BMS scope has too many child references."};
             bool has_chart{};
@@ -48,6 +48,72 @@ struct program_validation_t {
             return failure_t{failure_code_t::invalid_data, "BMS program contains an orphan node."};
         return std::nullopt;
     }
+    auto validate_arm(const bms_program_node_t& node, const bms_program_node_t& parent,
+        std::optional<branch_id_t> previous) const -> std::optional<failure_t> {
+        std::optional<branch_id_t> required;
+        if (const auto* arm = std::get_if<bms_else_if_scope_t>(&node.value)) required = arm->previous_arm;
+        if (const auto* arm = std::get_if<bms_else_scope_t>(&node.value)) required = arm->previous_arm;
+        if (required) {
+            const auto found = indices.find(required->value);
+            if (required != previous || found == indices.end())
+                return failure_t{failure_code_t::invalid_data, "Conditional arms must follow their previous sibling arm."};
+            const auto& value = nodes[found->second].value;
+            if (!std::holds_alternative<bms_if_scope_t>(value) && !std::holds_alternative<bms_else_if_scope_t>(value))
+                return failure_t{failure_code_t::invalid_data, "ELSE/ELSEIF requires an IF/ELSEIF predecessor."};
+        }
+        if (std::holds_alternative<bms_case_scope_t>(node.value) &&
+            !std::holds_alternative<bms_switch_scope_t>(parent.value))
+            return failure_t{failure_code_t::invalid_data, "CASE/DEF requires a SWITCH parent."};
+        return std::nullopt;
+    }
+    auto validate_children(const bms_program_node_t& node) const -> std::optional<failure_t> {
+        std::optional<branch_id_t> previous;
+        bool saw_default{};
+        for (const auto id : node.children) {
+            const auto& child = nodes[indices.at(id.value)];
+            if (auto failure = validate_arm(child, node, previous)) return failure;
+            if (const auto* arm = std::get_if<bms_case_scope_t>(&child.value)) {
+                if (saw_default) return failure_t{failure_code_t::invalid_data, "CASE/DEF cannot follow DEF."};
+                saw_default = !arm->value;
+            }
+            previous = id;
+        }
+        return std::nullopt;
+    }
+    auto validate_skips(const bms_program_node_t& node) const -> std::optional<failure_t> {
+        const auto* arm = std::get_if<bms_case_scope_t>(&node.value);
+        if (!arm) return std::nullopt;
+        for (const auto& skip : arm->skips) {
+            const auto found = indices.find(skip.scope.value);
+            if (found == indices.end() || !nodes[found->second].is_scope())
+                return failure_t{failure_code_t::invalid_data, "SKIP requires a valid containing scope."};
+            const auto& scope = nodes[found->second];
+            if (skip.after_child && std::ranges::find(scope.children, *skip.after_child) == scope.children.end())
+                return failure_t{failure_code_t::invalid_data, "SKIP anchor must be a child of its containing scope."};
+            auto containing = skip.scope;
+            while (containing != node.id) {
+                if (std::holds_alternative<bms_case_scope_t>(nodes[indices.at(containing.value)].value)) break;
+                const auto parent = parents.find(containing.value);
+                if (parent == parents.end()) break;
+                containing = parent->second;
+            }
+            if (containing != node.id)
+                return failure_t{failure_code_t::invalid_data, "SKIP must belong to its nearest containing case."};
+        }
+        return std::nullopt;
+    }
+    auto validate_scope(const bms_program_node_t& node, bool has_random) const -> std::optional<failure_t> {
+        if (auto failure = validate_children(node)) return failure;
+        if (auto failure = validate_skips(node)) return failure;
+        const auto* random = std::get_if<bms_random_scope_t>(&node.value);
+        if (random && random->range <= 0)
+            return failure_t{failure_code_t::invalid_data, "RANDOM requires a positive outcome range."};
+        if ((std::holds_alternative<bms_if_scope_t>(node.value) ||
+             std::holds_alternative<bms_else_if_scope_t>(node.value) ||
+             std::holds_alternative<bms_else_scope_t>(node.value)) && !has_random)
+            return failure_t{failure_code_t::invalid_data, "IF requires a containing RANDOM scope."};
+        return std::nullopt;
+    }
     auto validate_tree() const -> std::optional<failure_t> {
         struct pending_t { std::size_t index, depth; bool has_random; };
         std::vector<pending_t> pending{{*root, 1, false}};
@@ -60,13 +126,10 @@ struct program_validation_t {
             if (!visited.insert(current.index).second)
                 return failure_t{failure_code_t::invalid_data, "BMS program contains a cycle."};
             const auto& node = nodes[current.index];
-            const auto* random = std::get_if<bms_random_scope_t>(&node.value);
-            if (random && random->range <= 0)
-                return failure_t{failure_code_t::invalid_data, "RANDOM requires a positive outcome range."};
-            if (std::holds_alternative<bms_if_scope_t>(node.value) && !current.has_random)
-                return failure_t{failure_code_t::invalid_data, "IF requires a containing RANDOM scope."};
+            if (auto failure = validate_scope(node, current.has_random)) return failure;
+            const auto has_random = current.has_random || std::holds_alternative<bms_random_scope_t>(node.value);
             for (const auto child : node.children)
-                pending.push_back({indices.at(child.value), current.depth + 1, current.has_random || random != nullptr});
+                pending.push_back({indices.at(child.value), current.depth + 1, has_random});
         }
         if (visited.size() != nodes.size())
             return failure_t{failure_code_t::invalid_data, "BMS program has a disconnected cycle."};
@@ -80,6 +143,11 @@ struct program_validation_t {
                 if (text->bytes.size() > limits.maximum_text_bytes - text_bytes)
                     return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its Text byte limit."};
                 text_bytes += text->bytes.size();
+            }
+            if (const auto* arm = std::get_if<bms_case_scope_t>(&node.value)) {
+                if (arm->skips.size() > limits.maximum_content_items - item_count)
+                    return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its case behavior limit."};
+                item_count += arm->skips.size();
             }
             const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
             if (!chart) continue;
@@ -97,7 +165,9 @@ struct program_validation_t {
 
 auto bms_program_node_t::is_scope() const -> bool {
     return std::holds_alternative<bms_root_scope_t>(value) ||
-        std::holds_alternative<bms_random_scope_t>(value) || std::holds_alternative<bms_if_scope_t>(value);
+        std::holds_alternative<bms_random_scope_t>(value) || std::holds_alternative<bms_if_scope_t>(value) ||
+        std::holds_alternative<bms_else_if_scope_t>(value) || std::holds_alternative<bms_else_scope_t>(value) ||
+        std::holds_alternative<bms_switch_scope_t>(value) || std::holds_alternative<bms_case_scope_t>(value);
 }
 auto bms_program_t::from(std::vector<bms_program_node_t> nodes, bms_program_limits_t limits)
     -> result_t<bms_program_t, error_t<failure_code_t>> {
@@ -155,5 +225,12 @@ auto bms_program_t::with_random(branch_id_t parent_id, branch_id_t scope, branch
 auto bms_program_t::with_if(branch_id_t parent_id, branch_id_t scope, branch_id_t chart,
     std::int64_t value, bms_program_limits_t limits) const -> result_t<bms_program_t, error_t<failure_code_t>> {
     return with_scope(parent_id, {.id = scope, .value = bms_if_scope_t{value}}, chart, limits);
+}
+} // namespace wormedit
+
+namespace wormedit {
+auto bms_metadata_definition_t::from(std::string_view command) -> const bms_metadata_definition_t* {
+    const auto found = std::ranges::find(bms_metadata_definitions, command, &bms_metadata_definition_t::command);
+    return found == bms_metadata_definitions.end() ? nullptr : &*found;
 }
 } // namespace wormedit

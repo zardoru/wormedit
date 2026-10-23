@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-733** (2026-10-23): prepared scoped import shares the existing BMS source
+parser and decodes active/inactive declarations, events, exact positions and both hold endpoints.
+Ordered IF chains, separate fixed-selector settings nodes and anchored case SKIP behavior retain
+control meaning without parser-only scope rows. Text keeps encoded bytes and its boundaries;
+duplicate declarations retain separate owners while assets share storage. Malformed/unsupported
+known data refuses the complete prepared value with located diagnostics and original backing.
+Slot provenance stays bounded by retaining source bytes once. GATE and Linux Clang each
+pass **4,657/4,657**; whitespace and **5-TU** complexity pass without increased allowances.
+Final documentation checks pass **5/5**. Focused import/model checks
+pass **390 assertions / 46 cases**; existing BMS checks pass **8,575 / 150**. The legacy
+public document remains authoritative. **T-734 is ready**; no successor implementation is active.
+
 Completed **T-732** (2026-10-23): a prepared `bms_program_t` owns typed Root/RANDOM/IF,
 Chart and Text values with stable IDs, ordered children and derived parent queries.
 Factories supply each scope’s first Chart; target lookup skips Text and nested scopes.
@@ -13,7 +25,7 @@ allowances. Final documentation checks pass **5/5**; focused
 model checks pass **194 assertions / 20 cases**. No live legacy mirror or public runtime
 cutover is enabled. **Question 22 is answered** (2026-10-23): SETRANDOM/SETSWITCH are
 separate settings-only nodes, SKIP is typed case behavior and grammar markers are automatic.
-**T-733 is ready**; T-738 now waits only on T-737. Questions 21, 23 and 24 still gate
+T-733 is complete above; T-738 still waits on T-737. Questions 21, 23 and 24 still gate
 their own later slices. No successor implementation is active.
 
 Completed **T-731** (2026-10-23): the code-free scoped BMS audit maps command families,
@@ -351,14 +363,14 @@ osu! custom-set notes**, and BMSON layered authoring. Existing retained BMSON fu
 remains supported. Question 25 gates the model; no flattened-composite shortcut, hidden BMSON
 generic backing or whole-set migration is approved. Start only when the owner requests it.
 
-Scoped BMS program **T-731/T-732 complete** (2026-10-23; prepared values only, no public cutover):
+Scoped BMS program **T-731–T-733 complete** (2026-10-23; prepared model/import, no public cutover):
 [approved Control/Chart/Text contract](../../docs/chart-editor-plan/editing/bms-scoped-program.md),
 [model/migration T-731–T-737](../../docs/chart-editor-plan/tasks/bms-scoped-model.md), then
 [authoring/integration T-738–T-744](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md).
 The [ownership/transition audit](../../docs/chart-editor-plan/audits/bms-scoped-ownership.md)
 records every modeled family, inactive declarations/hold endpoints, editor entries and exact
 cutover scope. T-732 implements the agreed Root/RANDOM/IF prepared value model.
-**T-733 is ready** after the owner’s question-22 answer; no successor implementation is active.
+T-733 implements the approved prepared import. **T-734 is ready**; no successor implementation is active.
 Questions 21, 23 and 24 still gate range shrinking, selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
 are already settled. This audit does not start dependent implementation or revive deferred work.
 

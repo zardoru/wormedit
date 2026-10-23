@@ -2,7 +2,9 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/result.h>
+#include <array>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 
@@ -85,6 +87,34 @@ struct bms_metadata_declaration_t {
     std::variant<std::string, signed_rational_t> value;
     auto operator==(const bms_metadata_declaration_t&) const -> bool = default;
 };
+struct bms_metadata_definition_t {
+    bms_metadata_field_t field;
+    std::string_view command;
+    auto operator==(const bms_metadata_definition_t&) const -> bool = default;
+    [[nodiscard]] static auto from(std::string_view command) -> const bms_metadata_definition_t*;
+};
+inline constexpr std::array bms_metadata_definitions{
+    bms_metadata_definition_t{bms_metadata_field_t::player, "PLAYER"},
+    bms_metadata_definition_t{bms_metadata_field_t::octave_fp, "OCT/FP"},
+    bms_metadata_definition_t{bms_metadata_field_t::title, "TITLE"},
+    bms_metadata_definition_t{bms_metadata_field_t::subtitle, "SUBTITLE"},
+    bms_metadata_definition_t{bms_metadata_field_t::artist, "ARTIST"},
+    bms_metadata_definition_t{bms_metadata_field_t::subartist, "SUBARTIST"},
+    bms_metadata_definition_t{bms_metadata_field_t::genre, "GENRE"},
+    bms_metadata_definition_t{bms_metadata_field_t::playlevel, "PLAYLEVEL"},
+    bms_metadata_definition_t{bms_metadata_field_t::rank, "RANK"},
+    bms_metadata_definition_t{bms_metadata_field_t::defexrank, "DEFEXRANK"},
+    bms_metadata_definition_t{bms_metadata_field_t::total, "TOTAL"},
+    bms_metadata_definition_t{bms_metadata_field_t::volwav, "VOLWAV"},
+    bms_metadata_definition_t{bms_metadata_field_t::difficulty, "DIFFICULTY"},
+    bms_metadata_definition_t{bms_metadata_field_t::comment, "COMMENT"},
+    bms_metadata_definition_t{bms_metadata_field_t::url, "URL"},
+    bms_metadata_definition_t{bms_metadata_field_t::email, "EMAIL"},
+    bms_metadata_definition_t{bms_metadata_field_t::offset, "OFFSET"},
+    bms_metadata_definition_t{bms_metadata_field_t::stagefile, "STAGEFILE"},
+    bms_metadata_definition_t{bms_metadata_field_t::banner, "BANNER"},
+    bms_metadata_definition_t{bms_metadata_field_t::backbmp, "BACKBMP"},
+    bms_metadata_definition_t{bms_metadata_field_t::preview, "PREVIEW"}};
 using bms_content_value_t = std::variant<bms_note_content_t, bms_hold_endpoint_t,
     bms_bgm_content_t, bms_bga_content_t, bms_timing_definition_t, bms_timing_reference_t,
     bms_direct_bpm_t, bms_measure_length_t, bms_resource_declaration_t, bms_metadata_declaration_t>;
@@ -112,8 +142,43 @@ struct bms_if_scope_t {
     std::int64_t value{1};
     auto operator==(const bms_if_scope_t&) const -> bool = default;
 };
+struct bms_else_if_scope_t {
+    branch_id_t previous_arm;
+    std::int64_t value{};
+    auto operator==(const bms_else_if_scope_t&) const -> bool = default;
+};
+struct bms_else_scope_t {
+    branch_id_t previous_arm;
+    auto operator==(const bms_else_scope_t&) const -> bool = default;
+};
+struct bms_switch_scope_t {
+    std::int64_t value{};
+    auto operator==(const bms_switch_scope_t&) const -> bool = default;
+};
+struct bms_skip_point_t {
+    branch_id_t scope;
+    std::optional<branch_id_t> after_child;
+    source_provenance_t provenance;
+    auto operator==(const bms_skip_point_t&) const -> bool = default;
+};
+struct bms_case_scope_t {
+    // An absent value represents DEF. SKIP stays on the owning case, with an
+    // exact lexical anchor (including inside nested scopes), not a scope node.
+    std::optional<std::int64_t> value;
+    std::vector<bms_skip_point_t> skips;
+    auto operator==(const bms_case_scope_t&) const -> bool = default;
+};
+struct bms_set_random_t {
+    std::int64_t value{};
+    auto operator==(const bms_set_random_t&) const -> bool = default;
+};
+struct bms_set_switch_t {
+    std::int64_t value{};
+    auto operator==(const bms_set_switch_t&) const -> bool = default;
+};
 using bms_program_node_value_t = std::variant<bms_root_scope_t, bms_random_scope_t,
-    bms_if_scope_t, bms_chart_content_t, bms_text_t>;
+    bms_if_scope_t, bms_else_if_scope_t, bms_else_scope_t, bms_switch_scope_t,
+    bms_case_scope_t, bms_set_random_t, bms_set_switch_t, bms_chart_content_t, bms_text_t>;
 struct bms_program_node_t {
     branch_id_t id;
     bms_program_node_value_t value;
@@ -127,6 +192,7 @@ struct bms_program_limits_t {
     std::size_t maximum_depth{256};
     std::size_t maximum_content_items{1'000'000};
     std::size_t maximum_text_bytes{16U * 1024U * 1024U};
+    auto operator==(const bms_program_limits_t&) const -> bool = default;
 };
 
 // Prepared value model only: T-744 activates it as the document's semantic owner.

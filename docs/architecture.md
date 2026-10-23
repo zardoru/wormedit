@@ -51,6 +51,19 @@ Document-only metadata edits may set publication options on `document_edit_effec
 The shared finisher passes them to commit; project settings preserve existing imported-source
 flags without enabling passthrough for sources that were already edited *(T-263)*.
 
+Prepared scoped BMS fixtures use immutable `bms_program_document_t` snapshots in
+`song_document_t::prepared_bms_programs`, separate from production chart vectors until T-744.
+`bms_program_edit_target_t` captures the document stamp, difficulty, scope and exact Chart;
+scope selection resolves its first direct Chart, and stale or inactive targets reject.
+`transaction.stage(bms_program_content_edit_batch_t)` changes authoritative typed content,
+retaining recorded owners for updates/deletions. Cross-scope hold edits require a separate
+explicit operation. The shared publication boundary checks bounded alternative evaluations,
+new collisions and unresolved references before validation and the existing Undo publication.
+Exhausting the evaluation budget rejects the entire edit. Projections remain detached values;
+the prepared difficulty cannot also have an independently writable chart-vector counterpart.
+Runtime event precedence follows program order; original source offsets remain provenance.
+Editor-family adapters are still being routed in T-736; native persistence follows in T-737.
+
 Timing links materialize through `reconcile_timing_links` in the shared publication boundary,
 before document validation and journal/Undo publication. It compares each unchanged active
 association with its previous effective category, detaches actual local writes, then resolves

@@ -21,6 +21,7 @@
 #include <vector>
 
 namespace wormedit {
+struct bms_program_content_edit_batch_t;
 
 // Controller defaults and incomplete command defaults have distinct existing contracts.
 enum class chart_edit_value_default_policy_t { controller, command };
@@ -403,6 +404,11 @@ class document_command_transaction_t {
     // Staged editors hand over their existing snapshot without copying the live document.
     void adopt_document(song_document_t&& document);
     auto chart(chart_id_t id) -> chart_document_t*;
+    // Prepared scoped content uses its semantic owner, never a mutable projection.
+    [[nodiscard]] auto stage(const bms_program_content_edit_batch_t& edit)
+        -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto next_bms_program_item_id(std::size_t count = 1) const
+        -> std::optional<object_id_t>;
     // Returns the current outcome and discards the working snapshot without publication.
     [[nodiscard]] auto finish_without_commit() -> document_command_result_t;
     [[nodiscard]] auto finish_with(document_command_result_t result) -> document_command_result_t;

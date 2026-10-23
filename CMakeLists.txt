@@ -59,6 +59,7 @@ add_library(wormedit_core
     src/core/bms_branch_editor.cpp
     src/core/bms_program.cpp
     src/core/bms_program_projection.cpp
+    src/core/bms_program_edit.cpp
     src/core/bms_branch_view.cpp
     src/core/bmson_lane_mode.cpp
     src/core/bmson_sound_channel_editor.cpp

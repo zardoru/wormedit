@@ -285,6 +285,7 @@ class bms_program_projection_t {
         -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
     [[nodiscard]] auto song() const -> const song_document_t& { return song_; }
     [[nodiscard]] auto active_charts() const -> std::span<const branch_id_t> { return active_charts_; }
+    [[nodiscard]] auto selections() const -> std::span<const branch_selection_t> { return selections_; }
     // Prepared geometry, assets, nodes and content have disjoint nonzero identities.
     // Objects, resources and measure geometry use their stable ID value here.
     // A hold carries both endpoint owners; referenced declarations also contribute.
@@ -295,6 +296,7 @@ class bms_program_projection_t {
     bms_program_projection_t() = default;
     song_document_t song_;
     std::vector<branch_id_t> active_charts_;
+    std::vector<branch_selection_t> selections_;
     std::unordered_map<std::uint64_t, std::vector<bms_program_owner_t>> owners_;
 };
 } // namespace wormedit

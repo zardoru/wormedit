@@ -191,7 +191,7 @@ void program_emission_t::select_projection() {
         active_charts.insert(id);
         active_scopes.insert(*prepared.program.parent(id));
     }
-    for (const auto& choice : projection.value->song().charts.front().active_branch_selection) selected_controls.insert(choice.branch);
+    for (const auto& choice : projection.value->selections()) selected_controls.insert(choice.branch);
 }
 
 auto program_emission_t::byte_limit() const -> std::size_t {

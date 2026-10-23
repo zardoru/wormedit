@@ -11,6 +11,12 @@ namespace {
 struct contribution_t {
     const bms_content_item_t* item;
     bms_program_owner_t owner;
+    std::size_t order{};
+    [[nodiscard]] auto provenance() const -> source_provenance_t {
+        auto value = item->provenance;
+        value.source_order = order + 1;
+        return value;
+    }
 };
 using owner_map_t = std::unordered_map<std::uint64_t, std::vector<bms_program_owner_t>>;
 struct projection_builder_t {
@@ -20,6 +26,7 @@ struct projection_builder_t {
     bool failed{};
     std::vector<contribution_t> active;
     std::vector<branch_id_t> charts;
+    std::vector<branch_selection_t> selections;
     std::map<std::uint64_t, std::int64_t> choices;
     std::set<std::uint64_t> visited;
     std::optional<std::int64_t> pending_random, pending_switch;
@@ -195,7 +202,7 @@ auto projection_builder_t::choice(const bms_program_node_t& node,
         selected = found->second;
         visited.insert(node.id.value);
     }
-    if (selected) chart().active_branch_selection.push_back({node.id, *selected});
+    if (selected) selections.push_back({node.id, *selected});
     return selected;
 }
 
@@ -279,7 +286,9 @@ void projection_builder_t::evaluate(const bms_program_node_t& node,
         }
         charts.push_back(node.id);
         for (const auto& item : content->items)
-            active.push_back({&item, {*prepared.program.parent(node.id), node.id, item.id}});
+            active.push_back({.item = &item,
+                .owner = {.scope = *prepared.program.parent(node.id), .chart = node.id, .item = item.id},
+                .order = active.size()});
         return;
     }
     if (const auto* arm = std::get_if<bms_case_scope_t>(&node.value)) owning_case = arm;
@@ -360,7 +369,7 @@ void projection_builder_t::declaration(contribution_t entry, const bms_metadata_
     if (definition != bms_metadata_definitions.end() && value.field != bms_metadata_field_t::octave_fp) {
         auto& group = song.metadata.format_group_for(format_family_t::bms);
         group.ordered_fields.emplace_back(definition->command, *text);
-        group.ordered_field_source_orders.push_back(entry.item->provenance.source_order);
+        group.ordered_field_source_orders.push_back(entry.order + 1);
     }
 
 }
@@ -465,7 +474,7 @@ auto projection_builder_t::visual(const std::string& identifier, contribution_t 
     song.visual_assets.push_back({.id = asset, .source_path = {}});
     song.resources.push_back({.id = resource, .name = "Missing BMS BMP " + identifier, .asset = asset,
         .roles = {resource_role_t::bga}, .target_identities = {{format_family_t::bms, identifier, "BMP"}},
-        .missing = true, .provenance = entry.item->provenance});
+        .missing = true, .provenance = entry.provenance()});
     missing_bmps.emplace(identifier, resource);
     add_owners(resource.value, entry);
     diagnose(failure_code_t::not_found, "Undeclared BMP reference uses a missing visual placeholder.",
@@ -484,7 +493,7 @@ void projection_builder_t::emit(contribution_t entry, const bms_note_content_t& 
     const auto binding = value.wav ? sound(*value.wav, entry) : std::nullopt;
     chart().measures[measures.at(at->measure.value)].notes.push_back({.id = entry.item->id,
         .position = *at, .lane = value.lane, .kind = value.kind, .sound = binding,
-        .branch = entry.owner.scope, .provenance = entry.item->provenance});
+        .provenance = entry.provenance()});
     add_owners(entry.item->id.value, entry);
     if (value.wav) add_resource_owner(entry.item->id.value, bms_resource_namespace_t::wav, *value.wav);
 }
@@ -495,7 +504,7 @@ void projection_builder_t::emit(contribution_t entry, const bms_bga_content_t& v
     const auto at = position(value.position);
     if (!at) return;
     const auto resource = visual(value.bmp, entry);
-    chart().bga_events.push_back({entry.item->id, *at, resource, value.kind, entry.item->provenance});
+    chart().bga_events.push_back({entry.item->id, *at, resource, value.kind, entry.provenance()});
     add_owners(entry.item->id.value, entry);
     add_resource_owner(entry.item->id.value, bms_resource_namespace_t::bmp, value.bmp);
 }
@@ -503,7 +512,7 @@ void projection_builder_t::emit(contribution_t entry, const bms_timing_definitio
     if (value.identifier || value.kind != bms_timing_definition_kind_t::bpm) return;
     const auto winner = definitions.find({bms_timing_definition_kind_t::bpm, ""});
     if (winner == definitions.end() || winner->second.item != entry.item) return;
-    chart().bpms.push_back({entry.item->id, {prepared.measures.front(), 0}, value.value, entry.item->provenance});
+    chart().bpms.push_back({entry.item->id, {prepared.measures.front(), 0}, value.value, entry.provenance()});
     add_owners(entry.item->id.value, entry);
 }
 void projection_builder_t::emit(contribution_t entry, const bms_direct_bpm_t& value) {
@@ -513,7 +522,7 @@ void projection_builder_t::emit(contribution_t entry, const bms_direct_bpm_t& va
     }
     const auto at = position(value.position);
     if (!at) return;
-    chart().bpms.push_back({entry.item->id, *at, value.value, entry.item->provenance});
+    chart().bpms.push_back({entry.item->id, *at, value.value, entry.provenance()});
     add_owners(entry.item->id.value, entry);
 }
 void projection_builder_t::emit(contribution_t entry, const bms_timing_reference_t& value) {
@@ -528,11 +537,11 @@ void projection_builder_t::emit(contribution_t entry, const bms_timing_reference
     const auto number = std::get<bms_timing_definition_t>(found->second.item->value).value;
     switch (value.kind) {
     case bms_timing_definition_kind_t::bpm:
-        chart().bpms.push_back({entry.item->id, *at, number, entry.item->provenance}); break;
+        chart().bpms.push_back({entry.item->id, *at, number, entry.provenance()}); break;
     case bms_timing_definition_kind_t::stop:
-        chart().pauses.push_back({entry.item->id, *at, pause_kind_t::stop, number, pause_unit_t::bms_stop_ticks, entry.item->provenance}); break;
+        chart().pauses.push_back({entry.item->id, *at, pause_kind_t::stop, number, pause_unit_t::bms_stop_ticks, entry.provenance()}); break;
     case bms_timing_definition_kind_t::scroll:
-        chart().scrolls.push_back({entry.item->id, *at, number, entry.item->provenance}); break;
+        chart().scrolls.push_back({entry.item->id, *at, number, entry.provenance()}); break;
     }
     add_owners(entry.item->id.value, entry);
     add_owners(entry.item->id.value, found->second);
@@ -560,7 +569,7 @@ void projection_builder_t::emit_bgm() {
         if (!at) continue;
         chart().measures[measures.at(at->measure.value)].bgm_events.push_back({.id = entry.item->id,
             .position = *at, .source_lane = prepared.bgm_columns[rank].id, .sound = sound(*value->wav, entry),
-            .structural_slot = value->structural_slot, .branch = entry.owner.scope, .provenance = entry.item->provenance});
+            .structural_slot = value->structural_slot, .provenance = entry.provenance()});
         add_owners(entry.item->id.value, entry);
         add_resource_owner(entry.item->id.value, bms_resource_namespace_t::wav, *value->wav);
         add_owners(prepared.bgm_columns[rank].id.value, entry);
@@ -577,7 +586,7 @@ void projection_builder_t::emit_hold(contribution_t head, contribution_t tail) {
     }
     chart().measures[measures.at(begin.measure.value)].notes.push_back({.id = head.item->id,
         .position = begin, .lane = start.lane, .kind = note_kind_t::hold, .end = finish,
-        .sound = sound(start.wav, head), .branch = head.owner.scope, .provenance = head.item->provenance});
+        .sound = sound(start.wav, head), .provenance = head.provenance()});
     add_owners(head.item->id.value, head);
     add_owners(head.item->id.value, tail);
     add_resource_owner(head.item->id.value, bms_resource_namespace_t::wav, start.wav);
@@ -627,6 +636,7 @@ auto bms_program_projection_t::from(const bms_prepared_program_t& prepared,
     bms_program_projection_t projection;
     projection.song_ = std::move(builder.song);
     projection.active_charts_ = std::move(builder.charts);
+    projection.selections_ = std::move(builder.selections);
     projection.owners_ = std::move(builder.owners);
     return {std::move(projection), std::move(builder.diagnostics)};
 }

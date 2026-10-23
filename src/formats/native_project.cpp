@@ -1410,6 +1410,14 @@ auto migration_diagnostic_code(failure_code_t status)
 auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_outcome_t {
     native_project_write_outcome_t result{};
+    // Temporary: replaced by T-737's versioned scoped-program codec.
+    if (!song.prepared_bms_programs.empty()) {
+        result.diagnostics.push_back({diagnostic_severity_t::error,
+            native_project_diagnostic_code_t::unsupported_version,
+            "prepared scoped BMS programs require the scoped native codec",
+            "$.document.prepared_bms_programs"});
+        return result;
+    }
     if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,

@@ -3,6 +3,7 @@
 #include "chart_object_ids.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/sv_recipe.h>
 
@@ -1842,7 +1843,7 @@ void contextualize_chart_diagnostics(const chart_document_t& chart,
 } // namespace
 
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
-    diagnostic_list_t diagnostics;
+    auto diagnostics = validate_prepared_bms_programs(song);
     auto work = document_validation_work_t{.song = song, .diagnostics = diagnostics};
     validate_song_unique_ids(work);
     collect_song_assets(work);

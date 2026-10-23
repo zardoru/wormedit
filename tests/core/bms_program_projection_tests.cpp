@@ -47,6 +47,14 @@ TEST_CASE("Typed scoped projection matches legacy notes for every mixed control 
     CHECK(note_keys(result.typed.song()) == note_keys(result.legacy));
     CHECK(event_keys(result.typed.song()) == event_keys(result.legacy));
 }
+TEST_CASE("Scoped projections validate without a second legacy control tree", "[bms-program-projection]") {
+    const auto choice = GENERATE(1, 2, 3);
+    auto input = prepared(scoped_source);
+    const auto projection = projected(input, {.selections = {{selectors(input.program).front(), choice}}});
+    CHECK_FALSE(diagnostic_queries::has_errors(validate_document(projection.song())));
+    CHECK(projection.song().charts.front().active_branch_selection.empty());
+    CHECK(projection.selections().size() == 1);
+}
 TEST_CASE("Fixed selector settings project identically to legacy including explicit overrides", "[bms-program-projection]") {
     const auto random = GENERATE(0, 1, 2, 3);
     const auto selection = GENERATE(0, 1, 2, 9);

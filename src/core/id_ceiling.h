@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/bms_program.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -20,7 +21,31 @@ auto visit_declared_id_values(const Values& values, Visitor& visitor) -> bool {
 // Each specialization lists declarations only; references never reserve IDs.
 template<class Id> struct id_declarations_t;
 
+// Prepared BMS projections reserve one disjoint identity space across nodes,
+// content and shared pools. Adapt those typed declarations to the content allocator.
+template<class Visitor> struct bms_identity_visitor_t {
+    Visitor& visitor;
+    template<class Id> auto operator()(Id id) -> bool {
+        return visitor(object_id_t{id.value});
+    }
+};
+
 template<> struct id_declarations_t<object_id_t> {
+    template<class Visitor>
+    static auto visit(const bms_prepared_program_t& prepared, Visitor& visitor) -> bool {
+        bms_identity_visitor_t<Visitor> identities{visitor};
+        if (!visit_declared_id_values(prepared.program.nodes(), identities) ||
+            !visit_declared_id_values(prepared.bgm_columns, identities) ||
+            !visit_declared_id_values(prepared.resources, identities) ||
+            !visit_declared_id_values(prepared.audio_assets, identities) ||
+            !visit_declared_id_values(prepared.visual_assets, identities)) return false;
+        for (const auto id : prepared.measures)
+            if (!identities(id)) return false;
+        for (const auto& node : prepared.program.nodes())
+            if (const auto* chart = std::get_if<bms_chart_content_t>(&node.value))
+                if (!visit_declared_id_values(chart->items, identities)) return false;
+        return true;
+    }
     template<class Visitor>
     static auto visit(const chart_document_t& chart, Visitor& visitor) -> bool {
         if (!visit_declared_id_values(chart.bgm_source_lanes, visitor) ||

@@ -29,6 +29,7 @@
 namespace wormedit {
 
 struct chart_document_t;
+class bms_program_document_t;
 
 inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
 
@@ -955,6 +956,9 @@ struct song_document_t {
     std::vector<generator_recipe_t> generator_recipes;
     std::vector<storyboard_document_t> storyboards;
     std::vector<chart_document_t> charts;
+    // Prepared scoped fixtures only until T-744. These difficulties have no writable
+    // chart-vector counterpart. Immutable semantic snapshots participate in Undo.
+    std::vector<std::shared_ptr<const bms_program_document_t>> prepared_bms_programs;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
     [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;

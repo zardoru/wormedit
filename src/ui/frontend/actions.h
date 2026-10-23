@@ -1,4 +1,5 @@
 #pragma once
+#include "bga_usage.h"
 #include <wormedit/core/metadata_inheritance_types.h>
 #include "timing_links.h"
 #include "audio_slicer.h"
@@ -526,6 +527,7 @@ struct workspace_action_t {
     std::optional<audio_slicer_action_t> audio_slicer;
     wormedit::asset_id_t audio_asset_id;
     wormedit::resource_id_t audio_resource_id;
+    wormedit::ui::bga_usage_activation_t bga_usage;
     wormedit::song_id_t sound_usage_song_id;
     uint64_t sound_usage_document_revision;
     wormedit::resource_id_t sound_usage_resource_id;

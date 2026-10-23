@@ -676,6 +676,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmarks/bookmark_rename_commands.cpp
         ui/compose_bgm_layer_tests.cpp
         ui/sound_usage_event_harness_tests.cpp
+        ui/bga_usage_event_harness_tests.cpp
         sys/sound_drop_transaction_tests.cpp
         ../src/sys/resources/sound_drop_transaction.cpp
         ui/resource_paint_event_harness_tests.cpp
@@ -786,6 +787,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
             sys/bga_dock_runtime_tests.cpp ../src/sys/resources/bga_dock_runtime.cpp
+            ../src/sys/resources/bga_usage_view.cpp
             ../src/sys/app/frame_timing.cpp
             ../src/sys/commands/document_edit_feedback.cpp
             ../src/sys/compose/actions/compose_action_outcome.cpp
@@ -801,6 +803,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_frame_timing_tests
         ../src/sys/resources/bga_dock_runtime.cpp
+        ../src/sys/resources/bga_usage_view.cpp
         ../src/sys/resources/bga_list_view.cpp
         ../src/sys/preferences/external_player.cpp
         ../src/ui/nuklear/chrome/components.cpp
@@ -849,6 +852,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/sound_usage_projection_tests.cpp
         sys/bookmark_chooser_projection_tests.cpp
         sys/sound_usage_actions_tests.cpp
+        sys/bga_usage_view_tests.cpp
+        sys/bga_usage_actions_tests.cpp
+        ../src/sys/resources/bga_usage_actions.cpp
         ../src/sys/resources/sound_usage_actions.cpp
     )
     target_include_directories(wormedit_frame_timing_tests PRIVATE

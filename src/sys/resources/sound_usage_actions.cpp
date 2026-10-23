@@ -1,13 +1,10 @@
-#include <wormedit/core/timing.h>
-#include <wormedit/core/rational.h>
+#include "sys/project/workspace_navigation.h"
 #include "sys/resources/sound_usage_actions.h"
 
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/interaction_dispatch.h>
 
 #include <algorithm>
-#include <array>
-#include <span>
 #include <utility>
 
 namespace wormedit::sys {
@@ -26,37 +23,6 @@ auto row_matches(const wormedit::ui::workspace_action_t& action, const sound_usa
            action.sound_usage_position_valid == position.has_value() &&
            action.sound_usage_measure_id.value == (position ? position->measure.value : 0) &&
            action.sound_usage_row == (position ? position->row : 0);
-}
-
-auto interaction_for_jump(const document_history_t& history, const chart_document_t& chart,
-                          local_position_t position,
-                          const std::optional<editor_interaction_state_t>& previous)
-    -> std::optional<editor_interaction_state_t> {
-    if (previous && previous->chart == chart.id)
-        return previous;
-    const auto& measures = history.indices(chart.id)->measures;
-    const auto* index = measures ? &*measures : nullptr;
-    const auto row = index ? (*index).row_of(position) : std::nullopt;
-    const lane_layout_segment_t* active{};
-    std::uint64_t active_row{};
-    if (row) {
-        for (const auto& segment : chart.lane_layouts) {
-            const auto start = (*index).row_of(segment.position);
-            if (start && *start <= *row && (!active || *start >= active_row)) {
-                active = &segment;
-                active_row = *start;
-            }
-        }
-    }
-    if (!active || active->layout.lanes.empty())
-        return std::nullopt;
-    const auto setup = editor_interaction_state_t::from(
-        history, chart.id, active->layout.lanes.front().id, position,
-        previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators},
-        previous ? previous->active_snap_denominator : 16,
-        previous ? previous->viewport_height_pixels : 1.0);
-    return setup.state;
 }
 
 auto rejection(std::string message) -> sound_usage_action_result_t {
@@ -87,15 +53,12 @@ auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
     if (found == usage.rows.end())
         return rejection("The sound usage is no longer available.");
 
-    auto next_workspace = workspace;
-    auto next_interaction = interaction;
-    const auto revision = history.document.revision;
-    if (!apply_workspace_action(next_workspace, history.document,
-                                workspace_select_chart_action_t{found->chart})
-             .is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        return rejection("The sound usage chart cannot be opened.");
-
     if (!found->position) {
+        auto next_workspace = workspace;
+        if (!apply_workspace_action(next_workspace, history.document,
+                                    workspace_select_chart_action_t{found->chart})
+                 .is_accepted(diagnostic_acceptance_policy_t::require_empty))
+            return rejection("The sound usage chart cannot be opened.");
         if (!apply_workspace_action(
                 next_workspace, history.document,
                 workspace_select_asset_action_t{.asset = usage.asset,
@@ -110,22 +73,10 @@ auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
                                                    found->channel.value, found->clip.value}};
     }
 
-    const auto chart =
-        history.document.find_chart(found->chart);
-    if (chart == nullptr)
-        return rejection("The sound usage chart is unavailable.");
-    auto candidate = interaction_for_jump(history, *chart, *found->position, next_interaction);
-    if (!candidate ||
-        !dispatch_editor_action(history, *candidate,
-                                jump_edit_cursor_action_t{*found->position, revision})
-             .accepted ||
-        !apply_workspace_action(next_workspace, history.document,
-                                workspace_switch_tab_action_t{workspace_tab_t::compose})
-             .is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        return rejection("The sound usage cannot be opened in Compose.");
-
-    workspace = std::move(next_workspace);
-    interaction = std::move(candidate);
+    auto navigation = workspace_navigation_t::from(history, workspace, interaction,
+                                                   found->chart, *found->position);
+    if (!navigation) return rejection("The sound usage cannot be opened in Compose.");
+    std::move(*navigation).apply(workspace, interaction);
     return {.accepted = true, .message = "Moved to sound usage."};
 }
 

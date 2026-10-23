@@ -831,6 +831,9 @@ void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
     *request = {};
+    request->selected_project.value = state.bga_catalog.bga_project_id;
+    request->selected_resource.value = state.bga_catalog.bga_selection.primary;
+    request->find_uses_open = state.bga_catalog.find_uses_open;
     request->visible = state.dock_layout.bga_panel_visible && state.bga_catalog.bga_list_valid;
     request->search = state.bga_catalog.bga_search.data();
     request->first_row = state.bga_catalog.bga_first_row;

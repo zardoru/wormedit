@@ -720,6 +720,7 @@ struct worm_ui_nuklear_compose_state_t {
     } measures_dock;
 
     struct bga_catalog_t {
+        bool find_uses_open{};
         worm_ui_keysound_selection_t bga_selection;
         std::array<char, 64> bga_search{};
         std::uint8_t bga_use_filter{};

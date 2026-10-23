@@ -110,7 +110,10 @@ For BMS charts you can also put sounds into exact `#WAV` slots; see <<bms-slots>
 === BGA images
 
 Drop images onto the *BGA* list in Compose (show it with the BGA list button at the right
-end of the toolbar).
+end of the toolbar). Select an image or video and click *Find uses* to see its BGA events
+across the project's charts, including references through another resource sharing its asset.
+Click a result to open that chart, move the cursor and select the exact event. The list shows
+up to 1,024 uses, ordered by chart, position and BGA lane; it also includes missing resources.
 
 === Song audio
 

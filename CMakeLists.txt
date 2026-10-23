@@ -501,7 +501,9 @@ if(WORMEDIT_BUILD_APP)
         src/sys/resources/sound_list_view.cpp
         src/sys/resources/sound_picker_view.cpp
         src/sys/resources/sound_usage_view.cpp
+        src/sys/resources/bga_usage_view.cpp
         src/sys/resources/sound_usage_actions.cpp
+        src/sys/resources/bga_usage_actions.cpp
         src/sys/compose/actions/compose_measure_commands.cpp
         src/sys/compose/actions/compose_selection_transform.cpp
         src/sys/compose/compose_label_search.cpp

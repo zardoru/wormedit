@@ -15,8 +15,16 @@ preserve the document. GATE passes **4,586/4,586**, whitespace and **20-TU** com
 the resource-assignment execution allowance decreases **17→16**. Native ten-note paint/save
 and one Undo/save change only sample/Clap and revision, without warnings. Actual osu!
 export/reimport retains all ten painted sounds and Clap flags.
-The owner-selected batch continues with **T-102**, committed separately. Clang
-verification follows with this batch.
+Completed **T-102** (2026-10-23): BGA Find uses lists bounded cross-chart image/video
+references across all four BGA lanes, including shared assets. Chosen rows validate their
+revision and complete identity, open the chart and select the exact event without changing
+catalog selection. Sound uses and notification jumps reuse the same view-only navigation owner.
+GATE passes **4,598/4,598**, whitespace and **12-TU** complexity without increased allowances.
+Focused BGA checks pass **98 assertions / 12 cases**; shared navigation regressions pass
+**345 / 23**. Native cross-chart activation and Save leave the entire project payload identical.
+Linux Clang also builds the complete three-card batch and passes **4,598/4,598** tests.
+All three owner-selected cards, **T-161**, **T-54** and **T-102**, are complete with
+separate commits; no sequential follow-up is active.
 
 Completed **T-124**, **T-125** and **T-730 planning** (2026-10-22), with
 separate commits. Six optional per-difficulty metadata overrides preserve inheritance

@@ -1,4 +1,5 @@
 #include "sys/resources/bga_dock_runtime.h"
+#include "sys/resources/bga_usage_view.h"
 #include "sys/app/thread_priority.h"
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_job.h>
@@ -43,6 +44,18 @@ struct bga_dock_runtime_t::state_t {
         std::filesystem::path, std::string, std::size_t, std::size_t, bool, bool, resource_use_filter_t>,
         bga_list_view_t> catalog;
     const bga_list_view_t* list{};
+    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, resource_id_t>,
+                  ui::bga_usage_view_t> usage;
+    void build_usage_view(const song_document_t& document, const ui::bga_dock_request_t& request,
+                          ui::compose_view_t& view, std::uint64_t generation) {
+        if (!request.visible || !request.find_uses_open || request.selected_project != document.id) {
+            view.bga_usage = {};
+            return;
+        }
+        view.bga_usage = usage.get_or_build(
+            std::tuple{&document, document_stamp_t::from(document), generation, request.selected_resource},
+            [&] { return bga_usage_view_t::from(document, request.selected_resource); });
+    }
     std::uint64_t session_generation{};
     std::string search;
     song_id_t project;
@@ -104,6 +117,7 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     const wormedit::ui::bga_dock_request_t& request, wormedit::ui::compose_view_t& view,
     std::uint64_t session_generation) {
     auto& state = *state_;
+    state.build_usage_view(document, request, view, session_generation);
     if (state.project != document.id || state.session_generation != session_generation) {
         state.thumbnails.clear(); state.failed.clear(); state.project = document.id;
         state.session_generation = session_generation;

@@ -308,14 +308,16 @@ void worm_ui_nuklear_bga_set_renderer(SDL_Renderer* value) {
 }
 static void sync_bga_document(const wormedit::ui::compose_view_t* view,
                               worm_ui_nuklear_compose_state_t* state, wormedit::ui::workspace_action_t* action) {
-    if (state->bga_catalog.bga_project_id != view->project_id.value || state->bga_catalog.bga_chart_id != view->chart_id.value) {
+    if (state->bga_catalog.bga_project_id != view->project_id.value) {
         state->bga_catalog.bga_selection = {}; state->bga_catalog.bga_search.fill(0); state->bga_catalog.bga_first_row = 0;
         state->bga_catalog.bga_advance_ids.clear();
         state->bga_catalog.bga_project_id = view->project_id.value; state->bga_catalog.bga_chart_id = view->chart_id.value;
         state->bga_catalog.bga_revision = view->document_revision;
         state->bga_catalog.bga_use_filter = 0;
+        state->bga_catalog.find_uses_open = false;
         worm_ui_nuklear_bga_set_renderer(renderer);
     }
+    state->bga_catalog.bga_chart_id = view->chart_id.value;
     if (state->bga_catalog.bga_revision != view->document_revision) {
         state->bga_catalog.bga_revision = view->document_revision;
         const auto all = std::span(view->bga_all_resource_ids);
@@ -323,6 +325,52 @@ static void sync_bga_document(const wormedit::ui::compose_view_t* view,
         if (state->bga_catalog.armed_from_bga_dock && std::ranges::find(all, state->resource_picker.armed_resource_id) == all.end())
             worm_ui_nuklear_pick_draw_source(*state, *action, 0, 0);
     }
+}
+
+namespace {
+void render_bga_usage_rows(nk_context* context, const wormedit::ui::compose_view_t& view,
+                           wormedit::ui::workspace_action_t& action,
+                           const worm_ui_nuklear_compose_state_t& state) {
+    const auto& uses = view.bga_usage;
+    nk_layout_row_dynamic(context, 20, 1);
+    if (uses.song != view.project_id || uses.revision != view.document_revision ||
+        uses.resource.value != state.bga_catalog.bga_selection.primary) {
+        nk_label(context, "Refreshing BGA uses…", NK_TEXT_LEFT);
+        return;
+    }
+    if (!uses.valid) { nk_label(context, "BGA resource unavailable.", NK_TEXT_LEFT); return; }
+    const auto summary = uses.truncated
+        ? "Showing " + std::to_string(uses.rows.size()) + " of " + std::to_string(uses.total_matching) + " uses"
+        : std::to_string(uses.total_matching) + " BGA uses";
+    nk_label(context, summary.c_str(), NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 120, 1);
+    struct nk_list_view list{};
+    if (!nk_list_view_begin(context, &list, "BGA resource uses", NK_WINDOW_BORDER, 26,
+                            static_cast<int>(std::max<std::size_t>(1, uses.rows.size())))) return;
+    for (auto index = list.begin; index < std::min(list.end, static_cast<int>(uses.rows.size())); ++index) {
+        const auto& row = uses.rows[static_cast<std::size_t>(index)];
+        nk_layout_row_dynamic(context, 24, 1);
+        if (nk_button_label(context, row.label.c_str()) && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE;
+            action.bga_usage = {uses.song, uses.revision, uses.resource, uses.asset, row.target};
+        }
+        if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, row.label.c_str());
+    }
+    if (uses.rows.empty()) { nk_layout_row_dynamic(context, 24, 1); nk_label(context, "No BGA uses.", NK_TEXT_LEFT); }
+    nk_list_view_end(&list);
+}
+void render_bga_usage(nk_context* context, const wormedit::ui::compose_view_t& view,
+                      wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state,
+                      bool blocked) {
+    const auto available = (state.bga_catalog.bga_selection.primary != 0 || state.bga_catalog.find_uses_open) &&
+                           !blocked && !view.input_occluded;
+    if (!available) nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 26, 1);
+    if (nk_button_label(context, state.bga_catalog.find_uses_open ? "Hide uses" : "Find uses") && available)
+        state.bga_catalog.find_uses_open = !state.bga_catalog.find_uses_open;
+    if (state.bga_catalog.find_uses_open) render_bga_usage_rows(context, view, action, state);
+    if (!available) nk_widget_disable_end(context);
+}
 }
 
 void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui::compose_view_t* view,
@@ -350,7 +398,8 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
     wormedit::ui::nuklear::render_catalog_header(context,
         wormedit::ui::nuklear::catalog_layout_t::bga);
     const auto height = wormedit::ui::layout::remaining_content_height(context,
-        {.minimum = 60.0f, .reserved = view->bga_ids_available ? 45.0f : 5.0f});
+        {.minimum = 60.0f, .reserved = (view->bga_ids_available ? 45.0f : 5.0f) + 30.0f +
+                    (state->bga_catalog.find_uses_open ? 148.0f : 0.0f)});
     const auto block_list_pointer = state->bga_catalog.bga_renumber_confirmation_open ||
                                     state->bga_catalog.bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
@@ -370,6 +419,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const wormedit::ui:
         nk_list_view_end(&list);
     }
     if (block_list_pointer) nk_widget_disable_end(context);
+    render_bga_usage(context, *view, *action, *state, block_list_pointer);
     if (view->bga_ids_available)
         wormedit::ui::nuklear::render_catalog_capacity(context,
             {.used = view->bga_ids_used, .total = view->bga_ids_total,

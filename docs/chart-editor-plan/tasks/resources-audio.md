@@ -42,24 +42,23 @@ stale-plan check (rule 9) first.
 
 ## T-102 Navigate to a resource's uses
 
-- **Status:** partial (sound-resource navigation completed by T-364; visual/BGA-resource navigation remains)
+- **Status:** done
 - **Done so far:** T-364 added bounded cross-chart sound-use projection and activation from the
   Sounds tab, covering note/BGM references, shared assets, source-only channel/clip references,
   stale/deleted results and exact positioned jumps. Production regressions live in
   `tests/sys/sound_usage_projection_tests.cpp`, `tests/sys/sound_usage_actions_tests.cpp` and
   `tests/ui/sound_usage_event_harness_tests.cpp`.
-- **Remaining:** Add the corresponding use list and activation for image/video resources and BGA
-  events from the BGA dock. Reuse the T-364 result identity/navigation contract rather than reviving
-  the retired inspector catalog path. Recheck whether explicit Next/Previous controls add value once
-  the bounded list is visible; T-364 activates a chosen row directly.
+- **Coordinator scope (2026-10-23):** use the current `src/sys/resources/` paths for the new BGA usage owners. Extend `bga_dock_runtime.cpp/.h`, frontend action/project/runtime headers and the new `src/ui/frontend/bga_usage.h`, frontend request export, application routing, and their existing test targets, the shared `tests/support/bga_usage_fixture.h`, and the BGA workflow in `docs/manual/chapters/getting-started.adoc`, and the shared navigation owner in `docs/architecture.md`. Share bounded collection with sound projection and chart-position navigation with sound and notification activation through new `resource_usage_collector.h` and `sys/project/workspace_navigation.h`; update those consuming files. These support the existing view-only outcome. Chosen rows provide direct navigation, so separate Next/Previous controls are unnecessary.
+- **Completion (2026-10-23):** the BGA dock offers bounded cross-chart Find uses for image/video resources, all four event lanes and shared-asset references. Revision and full target identity are revalidated before opening the chart, moving the cursor and selecting the exact event; catalog selection survives navigation. Direct row activation makes separate Next/Previous controls unnecessary.
+- **Verification:** GATE passes **4,598/4,598**, whitespace and **12-TU** complexity with no increased allowances. Focused BGA projection/action checks pass **84 assertions / 9 cases**, frontend checks **14 / 3**, and shared sound/notification navigation regressions **345 / 23**. Isolated native activation reaches the other chart's exact Layer event, retains resource selection and leaves the entire saved project payload identical (revision **4→4**). Linux Clang builds the complete three-card batch and passes **4,598/4,598** tests.
 - **Outcome:** Sounds and BGA resources each offer a bounded **Find uses** list across project charts;
   activating a positioned note/BGM/BGA result opens its chart and moves the cursor to it, while a
   source-only sound result selects its source without inventing a chart position.
 - **Read first:** `src/sys/resources/sound_usage_view.cpp`; `src/sys/resources/sound_usage_actions.cpp`;
   `src/sys/resources/bga_list_view.cpp`; `src/ui/nuklear/compose/compose_bga_panel.cpp`;
   `src/sys/compose/input/compose_input.cpp` (BGA event selection/navigation).
-- **Files owned:** new `src/sys/bga_usage_view.h`, `src/sys/bga_usage_view.cpp`, new
-  `src/sys/bga_usage_actions.h`, `src/sys/bga_usage_actions.cpp`,
+- **Files owned:** new `src/sys/resources/bga_usage_view.h`, `src/sys/resources/bga_usage_view.cpp`, new
+  `src/sys/resources/bga_usage_actions.h`, `src/sys/resources/bga_usage_actions.cpp`,
   `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_bga_panel.cpp`,
   `src/ui/nuklear/compose/compose_state.h`, `src/sys/app/application_frame_view.cpp`,
   `src/sys/compose/input/compose_input.cpp`, new `tests/sys/bga_usage_view_tests.cpp`, new

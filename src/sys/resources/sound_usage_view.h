@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/resources/resource_usage_collector.h"
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/command.h>
@@ -49,6 +50,6 @@ class sound_usage_cache_t {
     keyed_cache_t<std::tuple<document_stamp_t, resource_id_t, std::uint64_t>, sound_usage_view_t> projection_;
 };
 
-inline constexpr std::size_t sound_usage_projection_limit = 1024;
+inline constexpr std::size_t sound_usage_projection_limit = resource_usage_projection_limit;
 
 } // namespace wormedit::sys

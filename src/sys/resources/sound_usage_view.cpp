@@ -1,7 +1,6 @@
 #include "sys/resources/sound_usage_view.h"
 
 #include <algorithm>
-#include <queue>
 #include <tuple>
 #include <unordered_map>
 
@@ -11,46 +10,7 @@ namespace {
 using usage_order_t = std::tuple<std::size_t, bool, std::size_t, std::uint64_t, unsigned,
                                  std::uint64_t, std::uint64_t, std::uint64_t>;
 
-struct usage_candidate_t {
-    usage_order_t order;
-    sound_usage_row_t row;
-};
-
-struct latest_first_t {
-    auto operator()(const usage_candidate_t& left, const usage_candidate_t& right) const -> bool {
-        return left.order < right.order;
-    }
-};
-
-struct usage_collector_t {
-    std::priority_queue<usage_candidate_t, std::vector<usage_candidate_t>, latest_first_t> latest;
-    std::size_t total{};
-
-    void add(sound_usage_row_t row, usage_order_t order) {
-        ++total;
-        if (latest.size() < sound_usage_projection_limit) {
-            latest.push({std::move(order), std::move(row)});
-        } else if (order < latest.top().order) {
-            latest.pop();
-            latest.push({std::move(order), std::move(row)});
-        }
-    }
-
-    auto ordered_rows() -> std::vector<sound_usage_row_t> {
-        std::vector<usage_candidate_t> candidates;
-        candidates.reserve(latest.size());
-        while (!latest.empty()) {
-            candidates.push_back(latest.top());
-            latest.pop();
-        }
-        std::ranges::sort(candidates, {}, &usage_candidate_t::order);
-        std::vector<sound_usage_row_t> rows;
-        rows.reserve(candidates.size());
-        for (auto& candidate : candidates)
-            rows.push_back(std::move(candidate.row));
-        return rows;
-    }
-};
+using usage_collector_t = resource_usage_collector_t<sound_usage_row_t, usage_order_t>;
 
 auto resource_assets(const song_document_t& document)
     -> std::unordered_map<std::uint64_t, std::uint64_t> {

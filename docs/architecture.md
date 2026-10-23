@@ -93,6 +93,12 @@ visual decoding, resource-copy and inspection requests, and conversion previews 
 and queue/progress services retain their domain lifecycles and publication rules; see
 [async task scheduling](async-task-scheduling.md).
 
+Cross-chart sound/BGA use activation and notification jumps build a detached
+`workspace_navigation_t` in `src/sys/project/workspace_navigation.h`. It opens the chart and
+moves the cursor through normal workspace and editor actions before publishing both view states.
+Usage activation revalidates the projected revision and exact target identity first; BGA activation
+also selects that event before publication. No document command is involved.
+
 Compose input batches retain the admitted geometry revision. Lane-key events additionally carry
 a chart stamp advanced only by their own accepted synchronous edits, before feedback callbacks.
 This permits chord releases in one frame without treating the first note's commit as an external

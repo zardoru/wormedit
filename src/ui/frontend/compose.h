@@ -1,4 +1,5 @@
 #pragma once
+#include "bga_usage.h"
 #include "compose_measure_lane.h"
 #include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
@@ -697,6 +698,9 @@ struct compose_bga_row_view_t {
 
 namespace wormedit::ui {
 struct bga_dock_request_t {
+    song_id_t selected_project;
+    resource_id_t selected_resource;
+    bool find_uses_open{};
     bool visible{};
     bool ids_available{};
     std::string_view search;
@@ -1216,6 +1220,7 @@ struct compose_view_t {
     bool bga_move_preview_valid{};
     wormedit::object_id_t bga_move_preview_event_id{};
     double bga_move_preview_y_pixels{};
+    bga_usage_view_t bga_usage;
     std::vector<wormedit::ui::compose_bga_row_view_t> bga_rows;
     size_t bga_total_matching, bga_first_row;
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;

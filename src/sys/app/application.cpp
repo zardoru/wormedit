@@ -44,6 +44,7 @@
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/resources/sound_import_staging.h"
 #include "sys/resources/sound_usage_actions.h"
+#include "sys/resources/bga_usage_actions.h"
 #include "sys/compose/actions/compose_bga_actions.h"
 #include "sys/resources/bga_dock_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
@@ -1467,6 +1468,19 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
         previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return setup.state;
+}
+
+void dispatch_bga_usage_jump(const wormedit::ui::workspace_action_t& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction,
+    wormedit::notification_sink_t& notifications) {
+    wormedit::ui::bga_dock_request_t request{};
+    worm_ui_frontend_bga_dock_request(&request);
+    const auto error = wormedit::sys::dispatch_bga_usage_action(
+        action, request, history, workspace, interaction);
+    post_callback_feedback(notifications,
+        error ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::hint,
+        wormedit::notification_source_t::input, error ? *error : "Moved to BGA usage.");
 }
 
 auto dispatch_sound_usage_jump(const wormedit::ui::workspace_action_t& action,
@@ -3085,6 +3099,9 @@ struct application_t::implementation_t {
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
                        action, application_command_state, platform.notification_sink)) {
             // Typed producer callbacks already publish this transport outcome.
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
+            dispatch_bga_usage_jump(
+                action, history, workspace, compose_interaction_state, platform.notification_sink);
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             static_cast<void>(dispatch_sound_usage_jump(
                 action, history, workspace, compose_interaction_state, platform.notification_sink));

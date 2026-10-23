@@ -1,3 +1,4 @@
+#include "sys/project/workspace_navigation.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/interaction_dispatch.h>
@@ -146,43 +147,6 @@ auto notification_history_runtime_t::apply(const wormedit::ui::notification_acti
     default: return false;
     }
 }
-namespace {
-auto target_lane(const chart_document_t& chart, const chart_indices_t& indices,
-                 local_position_t position) -> lane_id_t {
-    const auto* index = indices.measures ? &*indices.measures : nullptr;
-    if (!index) return {};
-    const auto row = (*index).row_of(position);
-    if (!row) return {};
-    const lane_layout_segment_t* active{};
-    std::uint64_t active_row{};
-    for (const auto& segment : chart.lane_layouts) {
-        const auto start = (*index).row_of(segment.position);
-        if (start && *start <= *row && (!active || *start >= active_row)) {
-            active = &segment;
-            active_row = *start;
-        }
-    }
-    if (!active || active->layout.lanes.empty()) return {};
-    return active->layout.lanes.front().id;
-}
-
-auto navigation_interaction(const document_history_t& history,
-                             const notification_history_target_t& target,
-                             const std::optional<editor_interaction_state_t>& previous)
-    -> std::optional<editor_interaction_state_t> {
-    if (previous && previous->chart == target.chart) return previous;
-    const auto chart = history.document.find_chart(target.chart);
-    if (chart == nullptr) return std::nullopt;
-    const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
-                                : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
-    const auto lane = target_lane(*chart, *history.indices(chart->id), target.position);
-    auto setup = editor_interaction_state_t::from(history, target.chart, lane,
-        target.position, snaps, previous ? previous->active_snap_denominator : 16,
-        previous ? previous->viewport_height_pixels : 1.0);
-    return std::move(setup.state);
-}
-} // namespace
-
 auto go_to_notification(const notification_center_t& center, notification_id_t id,
                         document_history_t& history, workspace_controller_t& workspace,
                         std::optional<editor_interaction_state_t>& interaction)
@@ -193,22 +157,10 @@ auto go_to_notification(const notification_center_t& center, notification_id_t i
     if (target.availability != WORM_UI_NOTIFICATION_TARGET_POSITION)
         return target.availability == WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL
             ? "Sin posición en el chart" : "Target no longer exists";
-    auto candidate = navigation_interaction(history, target, interaction);
-    if (!candidate) return "Target cannot be opened";
-    auto next_workspace = workspace;
-    const auto revision = history.document.revision;
-    auto opened = apply_workspace_action(next_workspace, history.document,
-                                workspace_select_chart_action_t{target.chart});
-    if (opened.is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        opened = apply_workspace_action(next_workspace, history.document,
-                                workspace_switch_tab_action_t{workspace_tab_t::compose});
-    if (!opened.is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        return "Target cannot be opened";
-    if (!dispatch_editor_action(history, *candidate,
-                                jump_edit_cursor_action_t{target.position, revision}))
-        return "Target cannot be opened";
-    workspace = std::move(next_workspace);
-    interaction = std::move(candidate);
+    auto navigation = workspace_navigation_t::from(history, workspace, interaction,
+                                                   target.chart, target.position);
+    if (!navigation) return "Target cannot be opened";
+    std::move(*navigation).apply(workspace, interaction);
     return std::nullopt;
 }
 } // namespace wormedit::sys

@@ -2629,6 +2629,53 @@ TEST_CASE("SV recipe inputs select, resize and move the span, run commands and r
     CHECK(dispatch_paste_action(fixture, missing) == "The SV recipe no longer exists.");
 }
 
+TEST_CASE("Recipe duplication input publishes one adjacent copy and inspector entry",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    auto duplicate = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001,
+        static_cast<std::uint8_t>(ui::compose_recipe_command_t::duplicate));
+    CHECK(dispatch_paste_action(fixture, duplicate) == "SV recipe duplicated.");
+    REQUIRE(fixture.history.undo.size() == 1);
+    fixture.project();
+    const auto& entries = fixture.flattened.view.compose.recipe_entries;
+    REQUIRE(entries.size() == 2);
+    CHECK(entries[0].id == recipe_id_t{7001});
+    CHECK(entries[1].id == fixture.history.document.charts.front().sv_recipes.back().id);
+    test::check_stale_action_message(dispatch_paste_action(fixture, duplicate), "Compose input");
+}
+
+TEST_CASE("Recipe order inputs project stored order and undo restores it",
+          "[sys][recipe-areas]") {
+    auto song = recipe_test_song();
+    auto second = song.charts.front().sv_recipes.front();
+    second.id = recipe_id_t{7002};
+    song.charts.front().sv_recipes.push_back(second);
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    auto earlier = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7002,
+        static_cast<std::uint8_t>(ui::compose_recipe_command_t::earlier));
+    CHECK(dispatch_paste_action(fixture, earlier) == "SV recipe reordered.");
+    fixture.project();
+    const auto& entries = fixture.flattened.view.compose.recipe_entries;
+    CHECK(entries == std::vector<ui::compose_recipe_entry_view_t>{
+        {.id = recipe_id_t{7002}, .label = "1. rise"}, {.id = recipe_id_t{7001}, .label = "2. rise"}});
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(fixture.history.document.charts.front().sv_recipes.front().id == recipe_id_t{7001});
+}
+
+TEST_CASE("Recipe boundary and unknown inputs preserve the stored recipe list",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    auto boundary = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001,
+        static_cast<std::uint8_t>(ui::compose_recipe_command_t::earlier));
+    CHECK(dispatch_paste_action(fixture, boundary) == "SV recipe is already at the order boundary.");
+    auto unknown = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 255);
+    CHECK(dispatch_paste_action(fixture, unknown) == "Unknown SV recipe command.");
+    CHECK(fixture.history.undo.empty());
+}
+
 TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over the retained area",
           "[sys][recipe-areas]") {
     compose_test_fixture_t fixture{recipe_test_song()};

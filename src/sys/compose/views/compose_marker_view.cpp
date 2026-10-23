@@ -601,6 +601,16 @@ void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
     }
 }
 
+void build_compose_recipe_entries(wormedit::ui::compose_view_t& view,
+                                  const wormedit::chart_document_t& chart) {
+    view.recipe_entries.clear();
+    for (const auto& recipe : chart.sv_recipes) {
+        auto label = std::to_string(view.recipe_entries.size() + 1) + ". " + recipe.name;
+        if (!recipe.enabled) label += " (off)";
+        view.recipe_entries.push_back({.id = recipe.id, .label = std::move(label)});
+    }
+}
+
 void populate_compose_recipe_areas(
     frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
@@ -609,6 +619,7 @@ void populate_compose_recipe_areas(
     const recipe_form_outcome_t* preview) {
     view.recipe_areas.clear();
     view.recipe_graph_points.clear();
+    build_compose_recipe_entries(view, chart);
 
     if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;

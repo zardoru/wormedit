@@ -144,13 +144,12 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-161 Manage SV recipes in a list
 
-- **Status:** partial (Enable and Delete landed with T-323; Duplicate and ordering remain)
+- **Status:** done (2026-10-23)
 - **Done so far:** Recipe spans in Compose have an Enable/Disable action and Delete action, each
   routed through the shared edit transaction with stale identity. Selection and editing live in the
   Compose SV lane and inspector; the old Timing pane no longer exists.
-- **Remaining:** Add Duplicate and explicit composition-order controls to the Compose recipe
-  workflow. First confirm how overlapping recipes expose their order without recreating a separate
-  Timing-pane list; keep every operation one undoable command.
+- **Implementation scope (2026-10-23):** coordinator extends ownership to `src/sys/compose/input/compose_timing_input.cpp`, `src/sys/compose/views/compose_marker_view.cpp`, `src/sys/compose/views/compose_scene_view.cpp`, and `memory/chart-editor-status/resume.md` for existing input routing, full-chart ordered selector projection/reset and completion evidence. The Compose inspector selector lists stored evaluation order including overlapping/offscreen recipes, with Earlier/Later controls; no separate Timing pane.
+- **Completion (2026-10-23):** the inspector lists all chart recipes in stored evaluation order, including overlapping/offscreen spans; Duplicate preserves the complete definition beside its source with a fresh global ID, and Earlier/Later publish one undoable move with disabled boundary buttons. The context menu also offers Duplicate. Existing stamped input and edit runners reject stale, unknown, missing, full-capacity and exhausted-ID requests. GATE passes **4,577/4,577**, whitespace and **9-TU** complexity without increased allowances (`/tmp/t161-gate3.log`). Focused core/input/frontend families pass **702/107/34 assertions** in **70/6/2 cases**. Isolated native Duplicate/save and Undo/save prove adjacent IDs 7001/7003/7002 then 7001/7002, complete definitions and unchanged eight-note/BPM content (`/tmp/t161-native-duplicated.png`). The shared imported-source edit flag changes normally. Eight new test bodies were reviewed within this card; broader test review remains T-644.
 - **Outcome:** the Compose recipe workflow exposes Enable, Duplicate, Delete and explicit
   composition-order controls for the chart's SV/SCROLLS/SPEEDS recipes, each as one command.
 - **Read first:** `include/wormedit/core/sv_recipe.h`, `src/sys/compose/actions/compose_recipe_actions.cpp`,
@@ -160,7 +159,9 @@ Stage 7 from [later work](../stages/later.md) and the
   `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_recipe_menu.cpp`,
   `src/ui/nuklear/compose/compose_recipe_form.cpp`, `tests/sys/frame_timing_tests.cpp`,
   `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
-  this card.
+  `src/sys/compose/input/compose_timing_input.cpp`, `src/sys/compose/views/compose_marker_view.cpp`,
+  `src/sys/compose/views/compose_scene_view.cpp`, `src/ui/nuklear/compose/compose_recipe_form.h`,
+  `memory/chart-editor-status/resume.md`, this card.
 - **Steps:** 1. Stale-plan check: choose a compact order affordance for overlapping Compose spans.
   2. Add core Duplicate and move commands with tests. 3. Wire the actions through the existing
   recipe command path and cover stale identity, one Undo and disabled boundary moves.

@@ -9005,3 +9005,63 @@ TEST_CASE("Project selection bar duplicates the selection and confirms its delet
     }
     expect_lane_key(applied);
 }
+
+namespace {
+auto recipe_management_song() -> song_document_t {
+    auto song = t422_song();
+    const auto measure = song.charts.front().measures.front().id;
+    sv_recipe_t first{.id = recipe_id_t{7001}, .name = "first",
+        .range = {{measure, 0}, {measure, 480}}, .curve = sv_recipe_curve_t::constant};
+    auto second = first;
+    second.id = recipe_id_t{7002};
+    second.name = "second";
+    song.charts.front().sv_recipes = {first, second};
+    return song;
+}
+void prepare_recipe_inspector(t422_fixture_t& fixture) {
+    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
+    fixture.project();
+    (void)fixture.harness.frame();
+}
+auto click_recipe(nuklear_event_harness_t& harness, const char* text,
+                   WormUiComposeInputKind kind = WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND)
+    -> std::optional<workspace_action_snapshot_t> {
+    // The Quantize section also has Earlier/Later buttons; recipe controls are first.
+    const auto label = std::ranges::find(harness.drawn_text_bounds(), std::string_view{text},
+                                         &wormedit::ui::testing_drawn_text_view_t::text);
+    REQUIRE(label != harness.drawn_text_bounds().end());
+    for (const auto& frame : wormedit::test::click_at(harness,
+            label->x + label->width * 0.5f, label->y + label->height * 0.5f))
+        if (std::ranges::any_of(frame.get().compose_inputs, [kind](const auto& input) { return input.kind == kind; }))
+            return frame;
+    return std::nullopt;
+}
+}
+TEST_CASE("Compose recipe inspector duplicates and disables the first order boundary",
+          "[ui][event-harness][recipe-areas]") {
+    t422_fixture_t fixture{recipe_management_song()};
+    prepare_recipe_inspector(fixture);
+    CHECK_FALSE(click_recipe(fixture.harness, "Earlier"));
+    const auto duplicated = click_recipe(fixture.harness, "Duplicate");
+    REQUIRE(duplicated);
+    CHECK(fixture.dispatch(*duplicated) == "SV recipe duplicated.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 3);
+}
+TEST_CASE("Compose recipe selector exposes overlapping recipes and their evaluation order",
+          "[ui][event-harness][recipe-areas]") {
+    t422_fixture_t fixture{recipe_management_song()};
+    prepare_recipe_inspector(fixture);
+    (void)click_button(fixture.harness, "1. first");
+    (void)fixture.harness.frame();
+    const auto selection = click_recipe(fixture.harness, "2. second", WORM_UI_COMPOSE_INPUT_RECIPE_SELECT);
+    REQUIRE(selection);
+    CHECK(fixture.dispatch(*selection) == "SV recipe selected.");
+    fixture.project();
+    (void)fixture.harness.frame();
+    CHECK_FALSE(click_recipe(fixture.harness, "Later"));
+    const auto earlier = click_recipe(fixture.harness, "Earlier");
+    REQUIRE(earlier);
+    CHECK(fixture.dispatch(*earlier) == "SV recipe reordered.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.front().id == recipe_id_t{7002});
+}

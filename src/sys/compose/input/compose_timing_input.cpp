@@ -311,15 +311,38 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     const auto recipe_id = recipe->id;
     const auto chart_id = chart->id;
     const auto enabled = recipe->enabled;
-    sv_recipe_edit_action_t action =
-        wormedit::delete_edit_t<wormedit::sv_recipe_t>{.chart = chart_id, .id = recipe_id};
-    accepted = "SV recipe deleted.";
-    if (command == 0) {
+    if (command > static_cast<std::uint8_t>(ui::compose_recipe_command_t::later))
+        return "Unknown SV recipe command.";
+    sv_recipe_edit_action_t action;
+    switch (static_cast<ui::compose_recipe_command_t>(command)) {
+    case ui::compose_recipe_command_t::toggle_enabled:
         action = set_sv_recipe_enabled_action_t{chart_id, recipe_id, !enabled};
         accepted = enabled ? "SV recipe disabled." : "SV recipe enabled.";
-    } else if (command == 1) {
+        break;
+    case ui::compose_recipe_command_t::materialize:
         action = materialize_sv_recipe_action_t{chart_id, recipe_id};
         accepted = "SV recipe materialized into events.";
+        break;
+    case ui::compose_recipe_command_t::remove:
+        action = delete_edit_t<sv_recipe_t>{.chart = chart_id, .id = recipe_id};
+        accepted = "SV recipe deleted.";
+        break;
+    case ui::compose_recipe_command_t::duplicate:
+        action = duplicate_sv_recipe_action_t{.chart = chart_id, .id = recipe_id};
+        accepted = "SV recipe duplicated.";
+        break;
+    case ui::compose_recipe_command_t::earlier:
+    case ui::compose_recipe_command_t::later: {
+        const auto index = static_cast<std::size_t>(recipe - chart->sv_recipes.data());
+        const bool earlier = static_cast<ui::compose_recipe_command_t>(command) ==
+                             ui::compose_recipe_command_t::earlier;
+        if ((earlier && index == 0) || (!earlier && index + 1 == chart->sv_recipes.size()))
+            return "SV recipe is already at the order boundary.";
+        action = reorder_sv_recipe_action_t{.chart = chart_id, .id = recipe_id,
+                                            .new_index = earlier ? index - 1 : index + 1};
+        accepted = "SV recipe reordered.";
+        break;
+    }
     }
     const auto edited = apply_sv_recipe_edit(
         context.environment.document.history, action);
@@ -328,7 +351,8 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
     result.diagnostics = edited.diagnostics;
     if (!edited.applied)
         accepted = "SV recipe command rejected.";
-    if (edited.applied && command != 0)
+    if (edited.applied && (command == static_cast<std::uint8_t>(ui::compose_recipe_command_t::remove) ||
+                           command == static_cast<std::uint8_t>(ui::compose_recipe_command_t::materialize)))
         context.environment.commands.project.timing_recipe.recipe_selected = 0;
     return std::nullopt;
 }

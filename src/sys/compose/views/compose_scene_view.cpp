@@ -689,6 +689,7 @@ bool initialize_compose_view_state(
     view.dead_spans.clear();
     view.kiai_spans.clear();
     view.recipe_areas.clear();
+    view.recipe_entries.clear();
     view.speed_spans.clear();
     view.recipe_graph_points.clear();
     view.sv_graph_points.clear();

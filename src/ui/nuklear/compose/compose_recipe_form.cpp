@@ -3,6 +3,7 @@
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -166,12 +167,62 @@ void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_act
     action.compose_recipe_form = state.recipe_editor.recipe_edit_form;
 }
 
+void queue_recipe_input(const wormedit::ui::compose_view_t& view,
+                        wormedit::ui::workspace_action_t& action, wormedit::recipe_id_t id,
+                        WormUiComposeInputKind kind, wormedit::ui::compose_recipe_command_t command = {}) {
+    append_compose_input(&action, kind, 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, id.value, 0, false,
+                         wormedit::timing_lane_kind_t::scroll, view.chart_id.value, view.document_revision);
+    if (!action.compose_inputs.empty())
+        action.compose_inputs.back().span_edge = static_cast<std::uint8_t>(command);
+}
+
+void render_recipe_order(const ComposeInspectorContext& inspector) {
+    const auto& view = *inspector.view;
+    auto* context = inspector.context;
+    if (view.recipe_entries.empty()) return;
+    const auto selected = std::ranges::find(view.recipe_entries, view.recipe_form.recipe_id,
+                                            &wormedit::ui::compose_recipe_entry_view_t::id);
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Recipe evaluation order", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 24, 1);
+    const bool has_selection = selected != view.recipe_entries.end();
+    const auto offset = has_selection ? std::size_t{0} : std::size_t{1};
+    static std::vector<const char*> names;
+    names.resize(view.recipe_entries.size() + offset);
+    if (!has_selection) names[0] = "Select recipe";
+    for (std::size_t i = 0; i < view.recipe_entries.size(); ++i)
+        names[i + offset] = view.recipe_entries[i].label.c_str();
+    const auto current = has_selection ? static_cast<int>(selected - view.recipe_entries.begin()) : 0;
+    const auto choice = wormedit::ui::chrome::safe_combo(context, names.data(),
+        static_cast<int>(names.size()), current, 24, nk_vec2(nk_widget_width(context), 200));
+    if (choice != current && choice >= static_cast<int>(offset))
+        queue_recipe_input(view, *inspector.action, view.recipe_entries[choice - offset].id,
+                           WORM_UI_COMPOSE_INPUT_RECIPE_SELECT);
+    if (selected == view.recipe_entries.end()) return;
+    using command = wormedit::ui::compose_recipe_command_t;
+    nk_layout_row_dynamic(context, 24, 3);
+    if (nk_button_label(context, "Duplicate"))
+        queue_recipe_input(view, *inspector.action, selected->id, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, command::duplicate);
+    const bool first = selected == view.recipe_entries.begin();
+    if (first) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Earlier"))
+        queue_recipe_input(view, *inspector.action, selected->id, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, command::earlier);
+    if (first) nk_widget_disable_end(context);
+    const bool last = selected + 1 == view.recipe_entries.end();
+    if (last) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Later"))
+        queue_recipe_input(view, *inspector.action, selected->id, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, command::later);
+    if (last) nk_widget_disable_end(context);
+}
+
 } // namespace
 
 void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     const auto& view = *inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
+    render_recipe_order(inspector);
     if (!view.recipe_form.visible) {
         state.recipe_editor.recipe_edit_id = 0;
         state.recipe_editor.recipe_edit_dirty = false;

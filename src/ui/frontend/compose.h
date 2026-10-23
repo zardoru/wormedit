@@ -150,6 +150,16 @@ struct compose_sv_graph_point_view_t {
    continuous line normalized to the visible range: graph_count vertices starting at graph_first
    in the view's recipe_graph_points. */
 namespace wormedit::ui {
+enum class compose_recipe_command_t : std::uint8_t {
+    toggle_enabled, materialize, remove, duplicate, earlier, later
+};
+
+struct compose_recipe_entry_view_t {
+    wormedit::recipe_id_t id{};
+    std::string label;
+    auto operator==(const compose_recipe_entry_view_t&) const -> bool = default;
+};
+
 struct compose_recipe_area_view_t {
     wormedit::ui::compose_rect_t bounds{};
     wormedit::recipe_id_t recipe_id{};
@@ -1244,6 +1254,7 @@ struct compose_view_t {
     std::vector<wormedit::ui::compose_speed_span_view_t> speed_spans;
     wormedit::ui::compose_recipe_form_view_t recipe_form{};
     std::vector<wormedit::ui::compose_recipe_area_view_t> recipe_areas;
+    std::vector<wormedit::ui::compose_recipe_entry_view_t> recipe_entries;
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> recipe_graph_points;
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> sv_graph_points;
     double sv_graph_minimum{};

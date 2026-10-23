@@ -15,7 +15,7 @@ chrome::ContextMenu menu{.title = "SV recipe actions"};
 std::uint64_t menu_recipe{};
 
 // Command ids carried in ui::compose_input_action_t::span_edge by RECIPE_COMMAND.
-enum recipe_command_t : std::uint8_t { toggle_enabled = 0, materialize = 1, remove = 2 };
+using recipe_command_t = wormedit::ui::compose_recipe_command_t;
 
 void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
                    recipe_command_t command) {
@@ -24,7 +24,7 @@ void queue_command(const wormedit::ui::compose_view_t& view, wormedit::ui::works
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu_recipe, 0, false,
                          wormedit::timing_lane_kind_t::scroll, view.chart_id.value, view.document_revision);
     if (action.compose_inputs.size() != 0)
-        action.compose_inputs[action.compose_inputs.size() - 1].span_edge = command;
+        action.compose_inputs[action.compose_inputs.size() - 1].span_edge = static_cast<std::uint8_t>(command);
 }
 
 void menu_entry(nk_context* context, const char* title, const char* disabled_reason,
@@ -50,14 +50,15 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view, 
     const auto current = wormedit::ui::chrome::PopupContextStamp::from(view, menu_recipe);
     if (!chrome::context_menu_begin(menu, context, current,
                                     nk_vec2(chrome::context_menu_width,
-                                            chrome::context_menu_height(3))))
+                                            chrome::context_menu_height(4))))
         return;
     menu_entry(context, area->enabled ? "Disable recipe" : "Enable recipe", nullptr, view, action,
-               toggle_enabled);
+               recipe_command_t::toggle_enabled);
     menu_entry(context, "Materialize into events",
                area->evaluable ? nullptr : "This recipe cannot be evaluated yet", view, action,
-               materialize);
-    menu_entry(context, "Delete recipe", nullptr, view, action, remove);
+               recipe_command_t::materialize);
+    menu_entry(context, "Duplicate recipe", nullptr, view, action, recipe_command_t::duplicate);
+    menu_entry(context, "Delete recipe", nullptr, view, action, recipe_command_t::remove);
     chrome::context_menu_end(menu, context);
 }
 

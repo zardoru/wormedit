@@ -1412,3 +1412,56 @@ TEST_CASE("Prepared emitted postprocess is consumed once by composition", "[core
     REQUIRE_FALSE(compiled.value.points.empty());
     CHECK(compiled.value.points.front().value == Catch::Approx(6));
 }
+
+TEST_CASE("Duplicate retains a recipe's full definition beside its source with a fresh global ID",
+          "[unit][sv-recipe][history]") {
+    auto song = make_recipe_song();
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {2, 1}, {4, 1});
+    recipe.enabled = false;
+    recipe.postprocess.push_back(sv_recipe_postprocess_t{.value = {3, 2}});
+    song.charts.front().sv_recipes = {recipe, make_constant_recipe(recipe_id_t{21}, measure_id_t{11}, measure_id_t{12}, {1, 1})};
+    auto other = make_recipe_chart();
+    other.id = chart_id_t{50};
+    other.measures = {{.id = measure_id_t{51}}, {.id = measure_id_t{52}}};
+    other.sv_recipes = {make_constant_recipe(recipe_id_t{100}, measure_id_t{51}, measure_id_t{52}, {1, 1})};
+    song.charts.push_back(other);
+    auto history = document_history_t::from(song);
+    REQUIRE(apply_sv_recipe_edit(history, duplicate_sv_recipe_action_t{.chart = chart_id_t{10}, .id = recipe.id}));
+    const auto& recipes = history.document.charts.front().sv_recipes;
+    auto expected = recipe;
+    expected.id = recipe_id_t{101};
+    CHECK(recipes == std::vector<sv_recipe_t>{recipe, expected, song.charts.front().sv_recipes[1]});
+    CHECK(history.document.charts[1].sv_recipes == other.sv_recipes);
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().sv_recipes == song.charts.front().sv_recipes);
+}
+
+namespace {
+void check_duplicate_rejection(song_document_t song, recipe_id_t id, diagnostic_code_t code) {
+    auto history = document_history_t::from(song);
+    const auto revision = history.document.revision;
+    const auto result = apply_sv_recipe_edit(history, duplicate_sv_recipe_action_t{.chart = chart_id_t{10}, .id = id});
+    CHECK_FALSE(result.applied);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == code);
+    CHECK(history.document.revision == revision);
+    CHECK(history.document.charts.front().sv_recipes == song.charts.front().sv_recipes);
+    CHECK(history.undo.empty());
+}
+}
+TEST_CASE("Duplicate rejects a full recipe chart", "[unit][sv-recipe]") {
+    auto song = make_recipe_song();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    for (std::size_t i = 0; i < maximum_sv_recipes_per_chart; ++i) {
+        recipe.id = recipe_id_t{20 + i};
+        song.charts.front().sv_recipes.push_back(recipe);
+    }
+    check_duplicate_rejection(std::move(song), recipe_id_t{20}, diagnostic_code_t::invalid_resolution);
+}
+TEST_CASE("Duplicate rejects an exhausted recipe ID sequence", "[unit][sv-recipe]") {
+    auto song = make_recipe_song();
+    const auto id = recipe_id_t{std::numeric_limits<std::uint64_t>::max()};
+    song.charts.front().sv_recipes.push_back(make_constant_recipe(id, measure_id_t{11}, measure_id_t{12}, {1, 1}));
+    check_duplicate_rejection(std::move(song), id, diagnostic_code_t::invalid_id);
+}

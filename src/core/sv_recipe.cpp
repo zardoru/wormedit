@@ -1653,6 +1653,21 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     context.changed = true;
 }
 
+void apply_recipe_operation(sv_recipe_edit_context_t& context, chart_document_t& chart,
+                            const duplicate_sv_recipe_action_t& edit) {
+    const auto* source = recipe_by_id(chart, edit.id);
+    const auto index = static_cast<std::size_t>(source - chart.sv_recipes.data());
+    auto copy = *source;
+    copy.id = {};
+    apply_recipe_operation(context, insert_edit_t<sv_recipe_t>{.chart = edit.chart, .value = copy});
+    if (!context.changed) return;
+    auto& recipes = chart.sv_recipes;
+    // Insert beside the source while retaining all existing recipes' relative order.
+    std::rotate(recipes.begin() + static_cast<std::ptrdiff_t>(index + 1),
+                recipes.end() - 1, recipes.end());
+    context.label = "Duplicate SV recipe";
+}
+
 void apply_recipe_operation(sv_recipe_edit_context_t& context,
                             const wormedit::update_edit_t<wormedit::sv_recipe_t>& edit) {
     const auto* chart = editable_recipe_chart(context, edit.chart);

@@ -206,6 +206,11 @@ template <> struct chart_edit_value_traits_t<sv_recipe_t> {
     using delete_options_type = std::monostate;
 };
 
+struct duplicate_sv_recipe_action_t {
+    chart_id_t chart;
+    recipe_id_t id;
+};
+
 struct reorder_sv_recipe_action_t {
     chart_id_t chart;
     recipe_id_t id;
@@ -287,7 +292,7 @@ struct materialize_sv_recipe_action_t {
 
 using sv_recipe_edit_action_t = std::variant<
     wormedit::insert_edit_t<wormedit::sv_recipe_t>, wormedit::update_edit_t<wormedit::sv_recipe_t>,
-    wormedit::delete_edit_t<wormedit::sv_recipe_t>, reorder_sv_recipe_action_t,
+    wormedit::delete_edit_t<wormedit::sv_recipe_t>, duplicate_sv_recipe_action_t, reorder_sv_recipe_action_t,
     set_sv_recipe_enabled_action_t, move_sv_recipe_range_action_t, materialize_sv_recipe_action_t>;
 
 // Every recipe edit is revision checked and published through shared document

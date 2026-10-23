@@ -2,6 +2,14 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-161** (2026-10-23): Compose has an ordered recipe selector,
+Duplicate and Earlier/Later controls, preserving complete definitions, stable identities
+and one Undo per command. Overlapping and offscreen recipes remain accessible.
+GATE passes **4,577/4,577**, whitespace and **9-TU** complexity without increased
+allowances. Native Duplicate/save and Undo/save preserve all eight notes and BPM.
+The owner-selected batch continues with **T-54**, then **T-102**, each committed
+separately. Clang verification follows with this batch.
+
 Completed **T-124**, **T-125** and **T-730 planning** (2026-10-22), with
 separate commits. Six optional per-difficulty metadata overrides preserve inheritance
 versus explicit empty, commit atomically and round-trip in native schema 12. Metadata

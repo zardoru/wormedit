@@ -1,18 +1,18 @@
 # Task cards for BMS scope node authoring
 
 [Back to cards](../tasks.md). Contract: [BMS scoped program authoring](../editing/bms-scoped-program.md).
-Prerequisites are in [model and migration](bms-scoped-model.md). Questions 21–24 are
-explicit gates, not permission to invent a destructive default. T-744 owns public activation.
+Prerequisites are in [model and migration](bms-scoped-model.md). Question 22 is answered;
+questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-738 Add Control Chart and Text nodes in selected scopes
 
-- **Status:** blocked-on-user
-- **Prerequisites:** T-737; [question 22](../decisions/open-questions.md) for non-body control directives.
+- **Status:** blocked-on T-737
+- **Prerequisites:** T-737; [question 22](../decisions/open-questions.md) answered 2026-10-23.
 - **Outcome:** typed commands insert valid control scopes, Chart children and opaque Text at explicit ordered positions, including an empty/new Root.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `include/wormedit/core/bms_program.h`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`.
 - **Files owned:** `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, new `tests/core/bms_program_authoring_tests.cpp`, `tests/CMakeLists.txt`, this card.
 - **Steps:**
-  1. STOP until question 22 is answered and prerequisites pass; use its explicit distinction between editable scopes and grammar markers.
+  1. After T-737, use the approved distinction between body scopes, separate SETRANDOM/SETSWITCH settings-only nodes, typed case SKIP behavior and automatic grammar markers.
   2. Add typed insertion requests with stable parent/anchor IDs and grammar-aware factories; every new scope receives its first empty Chart automatically.
   3. Add bounded Text insertion/editing through the existing parser classification; refuse attempts to hide modeled/control commands in opaque Text without a semantic owner.
   4. Test empty Root, nested RANDOM/IF and supported switch/fixed forms, several Chart siblings, ordered comments, invalid parent/anchor, limits and one-step Undo/Redo.

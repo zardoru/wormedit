@@ -7,7 +7,7 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 ## T-731 Specify scoped semantic ownership and the migration boundary
 
 - **Status:** done (2026-10-23)
-- **Audit:** [command-family ownership, editor routes and one-way cutover](../audits/bms-scoped-ownership.md). Source trace covers inactive declarations, cross-scope hold contributors, current first-active WAV/BMP versus later-valid timing definitions, fresh/add/duplicate difficulty creation, native-only state and all retained-tree consumers. Questions 21–24 remain open; no runtime changes or new product defaults.
+- **Audit:** [command-family ownership, editor routes and one-way cutover](../audits/bms-scoped-ownership.md). Source trace covers inactive declarations, cross-scope hold contributors, current first-active WAV/BMP versus later-valid timing definitions, fresh/add/duplicate difficulty creation, native-only state and all retained-tree consumers. Questions 21, 23 and 24 remain open; question 22 was subsequently answered. No runtime changes were made by the audit.
 - **Outcome:** a reviewed ownership map names the authoritative owner and migration rule for every modeled BMS command family and every editor entry path.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/document.h`, `src/core/bms_branch_editor.cpp`, `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`.
 - **Files owned:** new `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/tasks/bms-scoped-model.md`, `docs/chart-editor-plan/tasks/bms-scoped-authoring.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `memory/chart-editor-status/resume.md`.
@@ -25,7 +25,7 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 ## T-732 Define ordered Control Chart and Text program values
 
 - **Status:** done (2026-10-23; agreed Root/RANDOM/IF prepared value model)
-- **Value model (2026-10-23):** `bms_program_t` owns immutable validated nodes. Ordered child IDs are the sole parent/order authority; parent/index maps are derived. Existing `branch_id_t` identifies all program nodes, while content has unique `object_id_t` identities across every Chart. Typed note/hold-endpoint, BGM/BGA, timing declaration/reference, measure-length, resource and metadata values retain inactive meaning; rational measure fractions address the difficulty’s shared geometry. Factories create Root/RANDOM/IF plus an empty Chart, require caller-supplied stable IDs and reject without modifying the input value. The model deliberately performs structural/identity/budget validation only; evaluation, musical/resource validation and native-only edit adapters remain T-733–T-737. No live document field or writable legacy mirror is added; directive mapping and questions 21–24 remain open.
+- **Value model (2026-10-23):** `bms_program_t` owns immutable validated nodes. Ordered child IDs are the sole parent/order authority; parent/index maps are derived. Existing `branch_id_t` identifies all program nodes, while content has unique `object_id_t` identities across every Chart. Typed note/hold-endpoint, BGM/BGA, timing declaration/reference, measure-length, resource and metadata values retain inactive meaning; rational measure fractions address the difficulty’s shared geometry. Factories create Root/RANDOM/IF plus an empty Chart, require caller-supplied stable IDs and reject without modifying the input value. The model deliberately performs structural/identity/budget validation only; evaluation, musical/resource validation and native-only edit adapters remain T-733–T-737. No live document field or writable legacy mirror is added; question 22 subsequently settles directive mapping, while questions 21, 23 and 24 remain open.
 - **Outcome:** a typed scoped program can represent Root, nested control scopes, several Chart children and ordered Text blocks with validated stable identities.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/chart_object_ids.h`.
 - **Files owned:** new `include/wormedit/core/bms_program.h`, new `src/core/bms_program.cpp`, `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/document.cpp`, new `tests/core/bms_program_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card, `src/core/id_ceiling.h`, `src/core/chart_object_ids.h`, `memory/chart-editor-status/resume.md` (completion/next-card status only).
@@ -42,16 +42,17 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 
 ## T-733 Decode modeled content in every BMS scope
 
-- **Status:** blocked-on-user
-- **Prerequisites:** T-732; [question 22](../decisions/open-questions.md) for complete source-directive to scoped-node mapping.
+- **Status:** ready (T-732 complete; question 22 answered 2026-10-23)
+- **Prerequisites:** T-732 (done); [question 22](../decisions/open-questions.md) (answered: separate SETRANDOM/SETSWITCH settings nodes, typed case SKIP behavior and automatic structural markers).
 - **Outcome:** a prepared program contains typed active and inactive content while retaining only comments and semantically unknown commands as Text.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, `tests/fixtures/bms/control-flow-mixed.bms`.
-- **Files owned:** `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, new `src/formats/bms_program_import.cpp`, `include/wormedit/core/bms_program.h`, new `tests/formats/bms_program_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
+- **Files owned:** `src/formats/bms.cpp`, `include/wormedit/formats/bms.h`, new `src/formats/bms_program_import.cpp`, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `tests/core/bms_program_tests.cpp` (extend the prepared value grammar for the approved directive mapping), new `tests/formats/bms_program_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
 - **Steps:**
-  1. STOP until question 22's node mapping is answered; reuse the existing parser/codec and T-731 command classification to decode typed declarations and events in every scope without requiring each outcome to be selected first.
-  2. Segment ordered content into Chart/Text/control nodes without moving text across boundaries; preserve exact rows, scoped definitions and both hold endpoints.
-  3. Retain malformed/unsupported constructs with diagnostics and safe backing; never discard recognized inactive commands before they have equivalent typed owners.
-  4. Test nested selectors, inactive WAV/BPM/STOP definitions, adjacent comments, repeated channels, encoding limits and empty scopes through the prepared import adapter.
+  1. Extend the prepared values/validation for the approved body scopes, separate SETRANDOM/SETSWITCH settings nodes and typed case stop-fallthrough behavior; settings-only nodes have no Chart children and grouping/closing markers are structural syntax.
+  2. Reuse the existing parser/codec and T-731 command classification to decode typed declarations and events in every scope without requiring each outcome to be selected first.
+  3. Segment ordered content into Chart/Text/control nodes without moving text across boundaries; preserve exact rows, scoped definitions and both hold endpoints.
+  4. Retain malformed/unsupported constructs with diagnostics and safe backing; never discard recognized inactive commands before they have equivalent typed owners.
+  5. Test nested selectors, inactive WAV/BPM/STOP definitions, adjacent comments, repeated channels, encoding limits and empty scopes through the prepared import adapter.
 - **Invariants:** import is lossless across all retained outcomes; known commands are not mislabeled Text as a migration shortcut.
 - **Reject/failure behavior:** failed preparation leaves the legacy document authoritative and untouched; no partial program is published.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-import]'`.

@@ -3,7 +3,11 @@
 T-731, source audit completed 2026-10-23 against `799fa6b`. This is a design and
 source review, not implementation or semantic-test evidence. The
 [approved contract](../editing/bms-scoped-program.md) governs the decisions below;
-[questions 21–24](../decisions/open-questions.md) remain unanswered. No native files
+[questions 21–24](../decisions/open-questions.md) were unanswered at the audited revision.
+**Decision update (2026-10-23):** question 22 is now answered: fixed selectors are
+separate settings-only nodes without Chart children, SKIP is typed case behavior,
+and grouping/closing markers are structural syntax. T-733 is ready; the remaining
+question-22 references below record the original audit boundary. No native files
 or runtime code change in this card.
 
 ## Current authority and consumers

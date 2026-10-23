@@ -11,13 +11,15 @@ content retains exact positions and separate hold endpoint contributions. GATE a
 Clang each pass **4,631/4,631**; whitespace and **2-TU** complexity pass without increased
 allowances. Final documentation checks pass **5/5**; focused
 model checks pass **194 assertions / 20 cases**. No live legacy mirror or public runtime
-cutover is enabled. **T-733 remains blocked on question 22** (complete directive mapping);
-questions 21, 23 and 24 still gate their own later slices. No successor is active.
+cutover is enabled. **Question 22 is answered** (2026-10-23): SETRANDOM/SETSWITCH are
+separate settings-only nodes, SKIP is typed case behavior and grammar markers are automatic.
+**T-733 is ready**; T-738 now waits only on T-737. Questions 21, 23 and 24 still gate
+their own later slices. No successor implementation is active.
 
 Completed **T-731** (2026-10-23): the code-free scoped BMS audit maps command families,
 active/inactive ownership, every editor entry family and the one-way native/public cutover.
 Dependent cards now name the traced supporting files. Documentation checks pass **5/5**
-and whitespace passes. Questions 21–24 still gate their dependent slices.
+and whitespace passes. Questions 21, 23 and 24 still gate their dependent slices; question 22 is answered.
 No runtime or song-document changes; no successor implementation is active.
 
 Completed **T-228** (2026-10-23): Compose has one right dock for Inspector, Sounds,
@@ -356,9 +358,8 @@ Scoped BMS program **T-731/T-732 complete** (2026-10-23; prepared values only, n
 The [ownership/transition audit](../../docs/chart-editor-plan/audits/bms-scoped-ownership.md)
 records every modeled family, inactive declarations/hold endpoints, editor entries and exact
 cutover scope. T-732 implements the agreed Root/RANDOM/IF prepared value model.
-**T-733 is blocked on question 22**; no successor implementation is active.
-Questions 21–24 gate range shrinking, non-body directive presentation,
-selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
+**T-733 is ready** after the owner’s question-22 answer; no successor implementation is active.
+Questions 21, 23 and 24 still gate range shrinking, selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
 are already settled. This audit does not start dependent implementation or revive deferred work.
 
 Completed **T-703** (2026-10-20): Lane Keys is available from Options → Input & shortcuts

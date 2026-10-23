@@ -26,8 +26,10 @@ Root
       └─ Chart D                   ← explicit alternative edit target
 ```
 
-- Root is the outermost scope. Every control node in the scoped model, including
-  RANDOM, owns a scope with at least one Chart node and may contain several.
+- Root is the outermost scope. Every body scope in the scoped model, including
+  RANDOM, owns at least one Chart node and may contain several. `SETRANDOM` and
+  `SETSWITCH` are separate settings-only nodes; they introduce no body and have no
+  Chart children (owner clarification, 2026-10-23).
 - A Chart node is an editable content container within one project difficulty,
   **not another difficulty**. Nodes use the difficulty's musical coordinates;
   sibling order is BMS program order, not concatenated playback time.
@@ -64,6 +66,7 @@ line numbers and byte offsets are provenance, not node identities or ownership.
 | Kind | Authoritative meaning | Export responsibility |
 |---|---|---|
 | Control scope | Control kind, parameters, ordered children | Emit the authored control structure, including inactive arms |
+| Fixed-selector settings node | SETRANDOM/SETSWITCH kind and editable fixed value; no body | Emit in authored program order with existing selector semantics |
 | Chart content | Typed events and definitions with one scoped owner | Serialize current semantic values in that scope |
 | Text | Ordered opaque text and encoding provenance | Preserve comments and unknown commands without interpreting them |
 
@@ -117,8 +120,12 @@ node identities, content, order, target selection validity and projection behavi
 starts with an empty Chart child; a new Chart or Text node is a sibling content
 node. Empty scopes and newly authored projects must work without a selected raw
 source line. Grammar-aware factories expose only valid placements and required
-parameters. Non-body directive presentation is [question 22](../decisions/open-questions.md);
-that mapping must not create an unapproved exception to the Chart-child invariant.
+parameters. [Question 22](../decisions/open-questions.md) is answered: `SETRANDOM`
+and `SETSWITCH` are separate selectable settings nodes in program order; `SKIP`
+is typed stop-fallthrough behavior on its case, preserving its execution position
+and existing profile semantics. Grouping and closing markers are automatic structural
+syntax. Only actual body scopes receive Chart children; settings nodes do not
+create executable bodies. Their settings are authored data, separate from preview choices.
 
 **Change RANDOM range:** validate a positive supported integer and preserve node
 identity and child order. Do not create/delete arms as a side effect. The behavior
@@ -182,5 +189,6 @@ the panel, destructive dialogs and target indication; run GATE at every implemen
 card and documentation checks for the initial audit.
 
 This plan is authorization to prepare implementation tasks, not a claim that the
-model or UI has landed. T-731 is the first executable audit. Questions 21–24 block
-only the cards that depend on those policies; they do not reopen the agreed contract.
+model or UI has landed. T-731 and T-732 are complete. Question 22 is answered (2026-10-23); questions 21,
+23 and 24 still block only their dependent slices. The fixed-selector clarification
+does not settle range shrinking, selector unwrap or scope/preview interaction.

@@ -51,6 +51,16 @@ Document-only metadata edits may set publication options on `document_edit_effec
 The shared finisher passes them to commit; project settings preserve existing imported-source
 flags without enabling passthrough for sources that were already edited *(T-263)*.
 
+Timing links materialize through `reconcile_timing_links` in the shared publication boundary,
+before document validation and journal/Undo publication. It compares each unchanged active
+association with its previous effective category, detaches actual local writes, then resolves
+sources in dependency order with measure layouts first. Exact mappings and stable local IDs
+belong to the timing-link owner. A failed mapping, missing source or capacity failure rejects the
+entire initiating edit and its propagation. Detached transaction previews use this same path;
+Undo/Redo restore already resolved snapshots. Domain edits contain no link lifecycle plumbing.
+Explicit link/detach/relink edits stage through the same transaction and require confirmation
+before replacing local category data.
+
 Live history may attach `document_publication_observer_t` through the autosave loop.
 The shared commit and Undo/Redo boundaries acknowledge the previous journal record
 before publishing another edit, then capture the accepted post-state with its prior

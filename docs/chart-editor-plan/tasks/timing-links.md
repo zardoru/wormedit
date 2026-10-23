@@ -23,10 +23,12 @@ Each card records supporting ownership before extending it.
 
 ## T-752 Resolve timing links through the shared transaction
 
-- **Status:** ready (T-751 complete 2026-10-22)
+- **Status:** done (2026-10-22; shared publication propagation, local detachment and stamped link operations)
+- **Verified (2026-10-22):** GATE and Linux Clang each pass **4,529/4,529** (`/tmp/t752-gate.log`, `/tmp/t752-clang.log`), plus whitespace and **4-TU** complexity without increased allowances. Focused checks pass **166 assertions / 27 cases** (`/tmp/t752-focused-current.log`; the gesture setup was subsequently extracted without removing assertions). The 17 added cases cover direct source commands, stable target/recipe IDs, category-local and recipe-output detachment, confirmation, Link/Detach/Relink, chains, exact rollback, one-step Undo/Redo, compound edits, no-ops/rejection, detached preview, the beat-fit proposal path, stale admission, source deletion, duplication, reused-ID collisions and a zero-record budget. Measure-layout changes needing content remapping and clock/provenance compatibility remain T-753; no UI is claimed.
+- **Supporting ownership (coordinator, 2026-10-22):** `include/wormedit/core/timing_links_types.h` adds the pure link-operation payload; new `src/core/timing_links_internal.h` owns the single category-to-event collection visitor used by comparison and propagation. `memory/chart-editor-status/resume.md` advances this sequence after verification. Stable typed identity allocation reuses `src/core/id_ceiling.h`; no parallel ID scanner or domain-specific publication runner is added.
 - **Outcome:** accepted local edits detach only affected linked categories while source edits atomically propagate to all compatible dependents, with complete Undo/Redo.
 - **Read first:** `docs/architecture.md`; `include/wormedit/core/command.h`; `src/core/command.cpp`; `include/wormedit/core/proposal.h`; `src/core/interaction_edit_commit.h`.
-- **Files owned:** `include/wormedit/core/timing_links.h`, `src/core/timing_links.cpp`, `tests/core/timing_links_tests.cpp`, `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/core/command_tests.cpp`, `docs/architecture.md`, this card.
+- **Files owned:** `include/wormedit/core/timing_links_types.h`, new `src/core/timing_links_internal.h`, `memory/chart-editor-status/resume.md`, `include/wormedit/core/timing_links.h`, `src/core/timing_links.cpp`, `tests/core/timing_links_tests.cpp`, `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/core/command_tests.cpp`, `docs/architecture.md`, this card.
 - **Steps:** 1. Audit every publication route, detached preview and chart deletion/duplication owner. 2. Detect actual category changes at the shared boundary; preserve links for no-op/failed/preview/cancelled work. 3. Add stamped link/detach/relink operations with explicit discard confirmation and fresh local identities. 4. Resolve dependencies and validate once before outer publication; recipe target changes detach both affected categories. 5. Guard source deletion and preserve duplication links without self-links. 6. Prove propagation, chained sources, multi-category isolation, stale/cancel rejection and one-step Undo/Redo.
 - **Invariants:** domain edits contain no repeated link lifecycle code; source propagation and initiating edit share one journal/Undo publication; unrelated categories and charts remain unchanged.
 - **Reject/failure behavior:** rejected dependent resolution, unconfirmed local-data loss or deleting a live source rolls back the entire outer transaction.
@@ -35,7 +37,7 @@ Each card records supporting ownership before extending it.
 
 ## T-753 Preserve local content when linked measure layouts and clocks change
 
-- **Status:** blocked-on T-752
+- **Status:** ready (T-752 complete 2026-10-22)
 - **Outcome:** effective timing snapshots preserve local objects through exact linked measure-layout changes and diagnose incompatible source clocks/provenance before publication.
 - **Read first:** `src/core/measure_editor.cpp`; `src/core/chart_position_storage.h`; `src/core/timing_reposition.cpp`; `include/wormedit/core/timing.h`; `docs/chart-editor-plan/document-model.md`.
 - **Files owned:** `include/wormedit/core/timing_links.h`, `src/core/timing_links.cpp`, `tests/core/timing_links_tests.cpp`, `src/core/measure_editor.cpp`, `src/core/chart_position_storage.h`, `src/core/timing.cpp`, `tests/core/measure_editor_tests.cpp`, `tests/core/timing_tests.cpp`, this card.

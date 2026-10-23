@@ -9,6 +9,15 @@
 namespace wormedit {
 enum class timing_category_t { bpm, scroll, speed, kiai, stop, delay, warp, anchor, offset, measures, count };
 inline constexpr auto timing_category_count = static_cast<std::size_t>(timing_category_t::count);
+enum class timing_link_operation_t { link, detach, relink, count };
+struct timing_link_request_t {
+    timing_category_t category{timing_category_t::bpm};
+    timing_link_operation_t operation{timing_link_operation_t::link};
+    chart_id_t source;
+    bool discard_confirmed{};
+    auto operator==(const timing_link_request_t&) const -> bool = default;
+};
+
 template<class Id> struct timing_link_identity_t {
     Id source;
     Id target;

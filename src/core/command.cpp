@@ -1,4 +1,5 @@
 #include <wormedit/core/command.h>
+#include <wormedit/core/timing_links.h>
 #include <wormedit/core/timing.h>
 
 #include <wormedit/core/virtual_canvas.h>
@@ -178,6 +179,8 @@ static auto commit_validated_document(document_history_t& history, song_document
 
     // Direct publication and chart replacement can carry slots from an older snapshot.
     proposed.reset_chart_indices();
+    result.diagnostics = reconcile_timing_links(history.document, proposed);
+    if (diagnostic_queries::has_errors(result.diagnostics)) return result;
     proposed.revision = history.next_revision;
     if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
     sync_virtual_tails(proposed);

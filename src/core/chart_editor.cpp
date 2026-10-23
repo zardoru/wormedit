@@ -111,10 +111,21 @@ void visit_projections(Chart& chart, Visit& visit) {
 }
 
 template<class Chart, class Visit>
+void visit_timing_link_ids(Chart& chart, Visit& visit) {
+    for (auto& link : chart.timing_links.categories) {
+        if (!link) continue;
+        for (auto& identity : link->objects) visit(identity.target);
+        for (auto& identity : link->recipes) visit(identity.target);
+        for (auto& identity : link->measures) visit(identity.target);
+    }
+}
+
+template<class Chart, class Visit>
 void visit_chart_ids(Chart& chart, Visit& visit) {
     visit(chart.id);
     visit_measures(chart, visit); visit_layouts(chart, visit); visit_timing(chart, visit);
     visit_annotations(chart, visit); visit_projections(chart, visit);
+    visit_timing_link_ids(chart, visit);
 }
 
 auto maximum_chart_id(const song_document_t& document) -> std::uint64_t {

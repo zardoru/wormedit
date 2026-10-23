@@ -1,6 +1,7 @@
 #pragma once
 #include <wormedit/core/document.h>
 #include <wormedit/core/catalogs.h>
+#include <wormedit/core/command.h>
 
 namespace wormedit {
 struct timing_category_info_t {
@@ -42,5 +43,15 @@ struct timing_position_map_t {
         measure_chart_end_policy_t end = measure_chart_end_policy_t::reject) const -> std::optional<local_position_t>;
     [[nodiscard]] auto span(position_span_t source_span) const -> std::optional<position_span_t>;
 };
+struct timing_link_limits_t {
+    std::size_t maximum_materialized_records{default_maximum_chart_objects};
+};
+// The publication runner calls this once on its private working document.
+[[nodiscard]] auto reconcile_timing_links(const song_document_t& before, song_document_t& proposed,
+    timing_link_limits_t limits = {}) -> diagnostic_list_t;
+[[nodiscard]] auto stage_timing_link_edit(document_command_transaction_t& transaction, chart_id_t chart,
+    const timing_link_request_t& request) -> attempt_t<document_edit_effect_t>;
+[[nodiscard]] auto apply_timing_link_edit(document_history_t& history, const chart_stamp_t& stamp,
+    const timing_link_request_t& request) -> document_command_result_t;
 [[nodiscard]] auto validate_timing_links(const song_document_t& song) -> diagnostic_list_t;
 } // namespace wormedit

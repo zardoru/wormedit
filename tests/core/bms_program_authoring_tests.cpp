@@ -253,3 +253,197 @@ TEST_CASE("Hidden fixed-selector settings validate their implicit outcomes", "[b
     check_refused(history, result, diagnostic_code_t::invalid_binding, original_snapshot);
     CHECK(history.undo.empty());
 }
+
+namespace {
+template<class Value> auto nodes_of(const document_history_t& history) -> std::vector<branch_id_t> {
+    std::vector<branch_id_t> ids;
+    for (const auto& node : program(history).nodes()) if (std::holds_alternative<Value>(node.value)) ids.push_back(node.id);
+    return ids;
+}
+auto apply_move(document_history_t& history, bms_program_move_t move) -> bms_program_move_report_t {
+    const auto before = program(history);
+    auto proposed = bms_program_move_edit_t::propose(history.document, difficulty, move);
+    for (const auto& diagnostic : proposed.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(proposed.value);
+    const auto report = proposed.value->payload.report;
+    const auto result = apply_proposal(history, *proposed.value);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    for (const auto& node : before.nodes()) CHECK(program(history).find(node.id)->value == node.value);
+    return report;
+}
+auto selected_move_history(std::string_view source) -> document_history_t {
+    auto input = prepared(source);
+    bms_program_evaluation_t evaluation;
+    for (const auto id : selectors(input.program)) evaluation.selections.push_back({.branch = id, .selected_value = 1});
+    auto selected = bms_program_document_t::from(difficulty, std::move(input), std::move(evaluation));
+    REQUIRE(selected.value);
+    return document_history_t::from(song_document_t{.id = song_id_t{9001},
+        .prepared_bms_programs = {std::move(*selected.value)}});
+}
+void check_move_refused(document_history_t& history, bms_program_move_t move,
+    diagnostic_code_t expected = diagnostic_code_t::invalid_id) {
+    const auto original = snapshot(history);
+    const auto undo_count = history.undo.size();
+    const auto proposed = bms_program_move_edit_t::propose(history.document, difficulty, move);
+    CHECK_FALSE(proposed.value);
+    REQUIRE_FALSE(proposed.diagnostics.empty());
+    CHECK(proposed.diagnostics.front().code == expected);
+    CHECK(snapshot(history) == original);
+    CHECK(history.undo.size() == undo_count);
+}
+} // namespace
+
+TEST_CASE("Scoped moves reorder Chart and Text siblings without rebasing content", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#00011:01\n; ordered\n#00112:01\n");
+    const auto root = program(history).root();
+    const auto charts = nodes_of<bms_chart_content_t>(history);
+    const auto text = nodes_of<bms_text_t>(history).front();
+    const auto before = program(history);
+    const auto report = apply_move(history, {.node = charts.back(), .parent = root});
+    CHECK(report.subtree == std::vector<branch_id_t>{charts.back()});
+    CHECK(report.potentially_affected_charts.size() == charts.size());
+    CHECK_FALSE(report.potentially_affected_definitions.empty());
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+    apply_move(history, {.node = text, .parent = root, .after = charts.back()});
+    CHECK(program(history).find(root)->children[1] == text);
+    CHECK(write(history).find("; ordered") != std::string::npos);
+}
+TEST_CASE("Scoped move preparation reports a changed preview without publishing", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#00011:01\n; boundary\n#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n");
+    const auto chart = *program(history).target_chart(program(history).root());
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    insert(history, program(history).root(), bms_chart_content_t{}, nodes_of<bms_random_scope_t>(history).front());
+    const auto original = snapshot(history);
+    const auto undo_count = history.undo.size();
+    const auto proposed = bms_program_move_edit_t::propose(history.document, difficulty, {.node = chart, .parent = arm});
+    REQUIRE(proposed.value);
+    CHECK(snapshot(history) == original);
+    CHECK(history.undo.size() == undo_count);
+    const auto& report = proposed.value->payload.report;
+    CHECK(std::ranges::find(report.before_active_charts, chart) != report.before_active_charts.end());
+    CHECK(std::ranges::find(report.after_active_charts, chart) == report.after_active_charts.end());
+}
+TEST_CASE("Scoped moves carry nested controls comments holds and scoped declarations", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#WAV02 b.wav\n; travels\n#00051:0202\n#ENDIF\n#ENDRANDOM\n");
+    const auto root = program(history).root();
+    const auto moving = nodes_of<bms_random_scope_t>(history).front();
+    const auto destination = insert(history, root, bms_random_scope_t{.range = 2}, moving);
+    const auto before = program(history);
+    const auto report = apply_move(history, {.node = moving, .parent = destination});
+    CHECK(report.subtree.size() > 4);
+    CHECK(program(history).parent(moving) == destination);
+    CHECK(write(history).find("; travels") != std::string::npos);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+    const auto reloaded = parse_native_project(snapshot(history));
+    REQUIRE(reloaded.value);
+    CHECK(reloaded.value->find_bms_program(difficulty)->prepared().program == after);
+}
+TEST_CASE("Scoped moves reject cycles Root leaf parents foreign anchors and the last Chart", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n");
+    const auto root = program(history).root();
+    const auto random = nodes_of<bms_random_scope_t>(history).front();
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto chart = *program(history).target_chart(root);
+    const auto mode = GENERATE(0, 1, 2, 3, 4, 5);
+    bms_program_move_t move{.node = random, .parent = root};
+    if (mode == 0) move.node = root;
+    if (mode == 1) move.parent = arm;
+    if (mode == 2) move.parent = chart;
+    if (mode == 3) move.after = *program(history).target_chart(arm);
+    if (mode == 4) move = {.node = chart, .parent = arm};
+    if (mode == 5) move.after = random;
+    check_move_refused(history, move);
+}
+TEST_CASE("Scoped moves never rebind IF CASE or anchored SKIP", "[bms-program-authoring]") {
+    const auto mode = GENERATE(0, 1, 2);
+    auto history = history_from(mode == 0 ?
+        "#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n#RANDOM 2\n#ENDRANDOM\n" :
+        "#SWITCH 2\n#CASE 1\n; anchor\n#SKIP\n#ENDSW\n#SWITCH 2\n#DEF\n#ENDSW\n");
+    if (mode == 0) {
+        check_move_refused(history, {.node = nodes_of<bms_if_scope_t>(history).front(),
+            .parent = nodes_of<bms_random_scope_t>(history).back()});
+    } else if (mode == 1) {
+        check_move_refused(history, {.node = nodes_of<bms_case_scope_t>(history).front(),
+            .parent = nodes_of<bms_switch_scope_t>(history).back()});
+    } else {
+        check_move_refused(history, {.node = nodes_of<bms_text_t>(history).front(),
+            .parent = program(history).root()});
+    }
+}
+TEST_CASE("Scoped moves preserve IF continuation adjacency", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 2\n#IF 1\n#ELSE\n#ENDIF\n#ENDRANDOM\n");
+    check_move_refused(history, {.node = nodes_of<bms_if_scope_t>(history).front(),
+        .parent = nodes_of<bms_random_scope_t>(history).front(),
+        .after = nodes_of<bms_else_scope_t>(history).front()});
+}
+TEST_CASE("Scoped moves reject unresolved references in hidden outcomes", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n; boundary\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00012:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto declaration = *program(history).target_chart(program(history).root());
+    insert(history, program(history).root(), bms_chart_content_t{}, nodes_of<bms_random_scope_t>(history).front());
+    check_move_refused(history, {.node = declaration, .parent = nodes_of<bms_if_scope_t>(history).front()},
+        diagnostic_code_t::dangling_resource);
+}
+TEST_CASE("Scoped moves refuse unproven fixed-selector rebinding and allow Text order", "[bms-program-authoring]") {
+    auto history = history_from("#SETRANDOM 1\n; movable\n#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n");
+    const auto root = program(history).root();
+    const auto random = nodes_of<bms_random_scope_t>(history).front();
+    const auto fixed = nodes_of<bms_set_random_t>(history).front();
+    check_move_refused(history, {.node = fixed, .parent = root, .after = random});
+    const auto text = nodes_of<bms_text_t>(history).front();
+    apply_move(history, {.node = fixed, .parent = root, .after = text});
+    apply_move(history, {.node = text, .parent = root, .after = random});
+    const auto& children = program(history).find(root)->children;
+    CHECK(*(std::ranges::find(children, random) + 1) == text);
+}
+TEST_CASE("Scoped move proposals expire after another edit and unchanged order has no Undo", "[bms-program-authoring]") {
+    auto history = history_from("; movable\n");
+    const auto root = program(history).root();
+    const auto chart = *program(history).target_chart(root);
+    const auto text = nodes_of<bms_text_t>(history).front();
+    auto proposed = bms_program_move_edit_t::propose(history.document, difficulty, {.node = text, .parent = root, .after = chart});
+    REQUIRE(proposed.value);
+    insert(history, root, bms_chart_content_t{});
+    const auto original = snapshot(history);
+    check_refused(history, apply_proposal(history, *proposed.value), diagnostic_code_t::invalid_id, original);
+    const auto undo_count = history.undo.size();
+    bms_program_move_proposal_t unchanged{.stamp = chart_stamp_t::from(history, difficulty),
+        .payload = {.move = {.node = chart, .parent = root, .after = text}}};
+    CHECK_FALSE(apply_proposal(history, unchanged).applied);
+    CHECK(history.undo.size() == undo_count);
+}
+TEST_CASE("Scoped moves reject hidden collisions and broken cross-owner holds", "[bms-program-authoring]") {
+    const auto hold = GENERATE(false, true);
+    auto history = selected_move_history(hold ?
+        "#WAV01 a.wav\n#00051:01\n#RANDOM 2\n#IF 1\n#00151:01\n#ELSE\n#00151:01\n#ENDIF\n#ENDRANDOM\n" :
+        "#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto moving = *program(history).target_chart(arm);
+    insert(history, arm, bms_chart_content_t{}, moving);
+    check_move_refused(history, {.node = moving, .parent = program(history).root()},
+        hold ? diagnostic_code_t::invalid_binding : diagnostic_code_t::collision);
+}
+TEST_CASE("Scoped moves respect the resulting graph depth limit", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 2\n#ENDRANDOM\n#RANDOM 2\n#ENDRANDOM\n");
+    const auto randoms = nodes_of<bms_random_scope_t>(history);
+    const auto original = snapshot(history);
+    const auto proposal = bms_program_move_edit_t::propose(history.document, difficulty,
+        {.node = randoms.front(), .parent = randoms.back()}, {.maximum_depth = 3});
+    CHECK_FALSE(proposal.value);
+    REQUIRE_FALSE(proposal.diagnostics.empty());
+    CHECK(proposal.diagnostics.front().code == diagnostic_code_t::invalid_id);
+    CHECK(snapshot(history) == original);
+}
+TEST_CASE("Scoped CASE subtree reorder retains anchored SKIP and authored output order", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#SWITCH 2\n#CASE 1\n#00011:01\n#SKIP\n#CASE 2\n#00112:01\n#SKIP\n#DEF\n#ENDSW\n");
+    const auto selector = nodes_of<bms_switch_scope_t>(history).front();
+    const auto cases = nodes_of<bms_case_scope_t>(history);
+    const auto before = program(history);
+    apply_move(history, {.node = cases[1], .parent = selector});
+    const auto output = write(history);
+    CHECK(output.find("#CASE 2") < output.find("#CASE 1"));
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}

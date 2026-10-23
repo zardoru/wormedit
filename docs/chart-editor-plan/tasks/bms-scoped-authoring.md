@@ -66,10 +66,11 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-740 Move whole program subtrees in ordered scopes
 
-- **Status:** ready
+- **Status:** done (2026-10-23)
 - **Outcome:** one transaction moves a Control, Chart or Text subtree to an explicit valid parent/position while retaining its identities and ordered content.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_program.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, `docs/references/bms-control-flow.md`.
-- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/core/bms_program.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/core/bms_program.cpp`, `include/wormedit/core/bms_program.h`, `tests/core/bms_program_authoring_tests.cpp`, `memory/chart-editor-status/resume.md`, this card.
+- **Supporting ownership:** add the immutable move request/factory to `include/wormedit/core/bms_program.h`, alongside graph construction and insertion; advance the resume entry after verification. Stale-plan search found only legacy leaf-body swaps, not scoped subtree moves. The prepared transaction/proposal runners and bounded publication validator already own staging, stamps, projection validation and Undo.
 - **Steps:**
   1. Add an ordered move proposal identifying source subtree, destination scope and insertion anchor; describe affected definitions/projections before applying it.
   2. Reject cycles, invalid grammar, a surviving scope losing its last Chart, unresolved resources and invalid affected projections; do not silently rebind selectors or rebase rows.
@@ -79,9 +80,36 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-authoring]'`.
 - **Out of scope:** copying/moving individual selected notes (T-93), drag/drop gestures (panel commands in T-743 provide the first UI).
 
+- **Implementation:** the immutable graph move preserves node/value identities and musical positions while changing only ordered parent child lists. Stamped proposals preview through the shared transaction and bounded publication validator; their report describes the subtree, all potentially affected Charts/declarations, and selected-projection Chart order before/after. IF and CASE selector owners remain unchanged; IF chains and anchored SKIP remain valid. Fixed-selector programs require unchanged control order/containment to prove bindings: Chart/Text moves and control shifts across only content can proceed, while unproven control rebinding refuses explicitly. Report construction lives on `bms_program_move_report_t::from`; conditional binding lookup lives on `bms_program_t::conditional_selector`. No implicit SKIP repair or musical rebasing occurs.
+- **Test-value checkpoint:** scoped subtree movement/shared graph and proposal owners; baseline is T-738’s 12 authoring cases. Reviewed all 12 new bodies for observable ordering, complete value/ID preservation, read-only preview, legal nesting with comments/holds/declarations, refusal diagnostics/atomicity, selector/SKIP ownership, hidden collisions/references/holds, stale/no-op publication, depth caps and native reload. Inherited families remain conservatively retained, not re-audited; no whole-suite value claim. GCC evidence is 990 assertions / 24 authoring cases and 4,937 / 155 combined BMS cases; full GATE and complexity are green. Clang matches both focused runs and the full 4,808-test suite; evidence below.
+
+- **GCC verification (2026-10-23):** final `scripts/gate.sh --jobs 4` log `/tmp/t740-gate-reviewed.log` (details `/tmp/wormedit-gate.H3xJom`); explicit header consumers `/tmp/t740-header-reviewed.log`; focused logs `/tmp/t740-authoring-reviewed.log` and `/tmp/t740-focused-reviewed.log`. Real output tails:
+
+  ```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4808
+  gate: passed
+  complexity: passed (3 translation units)
+  complexity: passed (46 translation units)
+  All tests passed (990 assertions in 24 test cases)
+  All tests passed (4937 assertions in 155 test cases)
+  ```
+
+- **Clang and review (2026-10-23):** affected-target `cmake --build build-clang --parallel 6` succeeds with one linker and no warnings in this rebuild (`/tmp/t740-clang-reviewed-build.log`); full `ctest --test-dir build-clang -j 4 --output-on-failure` passes (`/tmp/t740-clang-ctest.log`). Focused logs `/tmp/t740-clang-authoring.log` and `/tmp/t740-clang-focused.log` match GCC. Reviewed the code-style checklist: immutable graph ownership, type-owned report construction and selector query, shared proposal/transaction/publication runners, aggregate fields and value equality, bounded helpers and no increased complexity allowances. AST-aware renames used `clang-refactor`, followed by leftover searches. The initial fixture assumed empty Undo after setup; the final check compares the retained count. Real output tails:
+
+  ```text
+  100% tests passed out of 4808
+  All tests passed (990 assertions in 24 test cases)
+  All tests passed (4937 assertions in 155 test cases)
+  ```
+- **Handoff:** T-741 is ready for confirmed subtree deletion; T-739 remains blocked on question 21. No successor implementation is active. Production activation remains T-744.
+
 ## T-741 Delete scoped subtrees through explicit confirmation
 
-- **Status:** blocked-on T-740
+- **Status:** ready
 - **Outcome:** confirmed deletion removes exactly the named subtree and its Chart/Text contents, while Cancel and stale confirmation leave the program intact.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/sys/compose/actions/compose_measure_commands.cpp`, `tests/core/bms_program_authoring_tests.cpp`.
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.

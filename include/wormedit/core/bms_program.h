@@ -213,6 +213,13 @@ struct bms_program_limits_t {
     auto operator==(const bms_program_limits_t&) const -> bool = default;
 };
 
+struct bms_program_move_t {
+    branch_id_t node;
+    branch_id_t parent;
+    std::optional<branch_id_t> after;
+    auto operator==(const bms_program_move_t&) const -> bool = default;
+};
+
 // Prepared value model only: T-744 activates it as the document's semantic owner.
 // Musical/resource validation belongs to the projection/edit adapters, not this
 // graph constructor. No live document contains a separately writable mirror.
@@ -234,10 +241,13 @@ class bms_program_t {
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_text(branch_id_t node, bms_text_t text,
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_move(const bms_program_move_t& move, bms_program_limits_t limits = {}) const
+        -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto root() const -> branch_id_t { return nodes_[root_index_].id; }
     [[nodiscard]] auto nodes() const -> std::span<const bms_program_node_t> { return nodes_; }
     [[nodiscard]] auto find(branch_id_t id) const -> const bms_program_node_t*;
     [[nodiscard]] auto parent(branch_id_t id) const -> std::optional<branch_id_t>;
+    [[nodiscard]] auto conditional_selector(branch_id_t id) const -> std::optional<branch_id_t>;
     [[nodiscard]] auto target_chart(branch_id_t id) const -> std::optional<branch_id_t>;
     auto operator==(const bms_program_t&) const -> bool = default;
   private:

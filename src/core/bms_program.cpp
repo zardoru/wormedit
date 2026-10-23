@@ -255,6 +255,72 @@ auto bms_program_t::with_text(branch_id_t id, bms_text_t text, bms_program_limit
     nodes[indices_.at(id.value)].value = std::move(text);
     return from(std::move(nodes), limits);
 }
+auto bms_program_t::conditional_selector(branch_id_t id) const -> std::optional<branch_id_t> {
+    const auto* node = find(id);
+    if (!node) return std::nullopt;
+    if (std::holds_alternative<bms_case_scope_t>(node->value)) return parent(id);
+    if (!node->is_if_arm()) return std::nullopt;
+    for (auto ancestor = parent(id); ancestor; ancestor = parent(*ancestor))
+        if (std::holds_alternative<bms_random_scope_t>(find(*ancestor)->value)) return ancestor;
+    return std::nullopt;
+}
+namespace {
+struct control_position_t {
+    branch_id_t node;
+    std::optional<branch_id_t> parent;
+    auto operator==(const control_position_t&) const -> bool = default;
+};
+auto build_control_positions(const bms_program_t& program) -> std::vector<control_position_t> {
+    std::vector<control_position_t> result;
+    std::vector<branch_id_t> pending{program.root()};
+    while (!pending.empty()) {
+        const auto* node = program.find(pending.back());
+        pending.pop_back();
+        if (std::holds_alternative<bms_chart_content_t>(node->value) || std::holds_alternative<bms_text_t>(node->value)) continue;
+        result.push_back({.node = node->id, .parent = program.parent(node->id)});
+        pending.insert(pending.end(), node->children.rbegin(), node->children.rend());
+    }
+    return result;
+}
+auto validate_move_bindings(const bms_program_t& before, const bms_program_t& after)
+    -> std::optional<error_t<failure_code_t>> {
+    bool has_fixed{};
+    for (const auto& node : before.nodes()) {
+        if (node.is_if_arm() && before.conditional_selector(node.id) != after.conditional_selector(node.id))
+            return error_t{failure_code_t::invalid_request, "Move would rebind an IF arm to a different RANDOM selector."};
+        if (std::holds_alternative<bms_case_scope_t>(node.value) &&
+            before.conditional_selector(node.id) != after.conditional_selector(node.id))
+            return error_t{failure_code_t::invalid_request, "Move would rebind a CASE/DEF to a different SWITCH selector."};
+        has_fixed |= std::holds_alternative<bms_set_random_t>(node.value) || std::holds_alternative<bms_set_switch_t>(node.value);
+    }
+    if (has_fixed && build_control_positions(before) != build_control_positions(after))
+        return error_t{failure_code_t::unsupported,
+            "Move changes control order or containment in a fixed-selector program; unchanged selector bindings cannot be proven."};
+    return std::nullopt;
+}
+} // namespace
+
+auto bms_program_t::with_move(const bms_program_move_t& move, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto old_parent = parent(move.node);
+    const auto* destination = find(move.parent);
+    if (!old_parent || !destination || !destination->is_scope())
+        return std::unexpected(error_t{failure_code_t::not_found, "Move requires a non-Root source and an existing body scope destination."});
+    for (auto ancestor = std::optional{move.parent}; ancestor; ancestor = parent(*ancestor))
+        if (*ancestor == move.node)
+            return std::unexpected(error_t{failure_code_t::invalid_request, "Move cannot place a subtree inside itself."});
+    if (move.after == move.node || (move.after && std::ranges::find(destination->children, *move.after) == destination->children.end()))
+        return std::unexpected(error_t{failure_code_t::invalid_request, "Move anchor must be another direct child of the destination."});
+    auto nodes = nodes_;
+    std::erase(nodes[indices_.at(old_parent->value)].children, move.node);
+    auto& children = nodes[indices_.at(move.parent.value)].children;
+    const auto position = move.after ? std::ranges::find(children, *move.after) + 1 : children.begin();
+    children.insert(position, move.node);
+    auto proposed = from(std::move(nodes), limits);
+    if (!proposed) return proposed;
+    if (const auto failure = validate_move_bindings(*this, *proposed)) return std::unexpected(*failure);
+    return proposed;
+}
 auto bms_program_t::with_scope(branch_id_t parent_id, bms_program_node_t scope,
     branch_id_t chart, bms_program_limits_t limits) const -> result_t<bms_program_t, error_t<failure_code_t>> {
     const auto* containing = find(parent_id);

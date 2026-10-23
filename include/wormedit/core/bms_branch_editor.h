@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/bms_program.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_branch_selection.h>
@@ -40,6 +41,31 @@ struct bms_program_skip_command_t {
     bms_program_text_command_t request) -> document_command_result_t;
 [[nodiscard]] auto apply_bms_program_skip_command(document_history_t& history,
     bms_program_skip_command_t request) -> document_command_result_t;
+
+struct bms_program_move_report_t {
+    [[nodiscard]] static auto from(const bms_program_document_t& owner, branch_id_t subtree)
+        -> std::optional<bms_program_move_report_t>;
+    branch_id_t source_parent;
+    std::vector<branch_id_t> subtree;
+    // Conservative impact envelope: declarations can change later bindings anywhere.
+    std::vector<branch_id_t> potentially_affected_charts;
+    std::vector<object_id_t> potentially_affected_definitions;
+    std::vector<branch_id_t> before_active_charts;
+    std::vector<branch_id_t> after_active_charts;
+    auto operator==(const bms_program_move_report_t&) const -> bool = default;
+};
+struct bms_program_move_edit_t {
+    static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Move BMS subtree"};
+    bms_program_move_t move;
+    bms_program_limits_t limits;
+    bms_program_move_report_t report;
+    [[nodiscard]] static auto propose(const song_document_t& song, chart_id_t difficulty,
+        bms_program_move_t move, bms_program_limits_t limits = {})
+        -> attempt_t<proposal_t<bms_program_move_edit_t>>;
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>& scope) const -> attempt_t<std::string>;
+    auto operator==(const bms_program_move_edit_t&) const -> bool = default;
+};
+using bms_program_move_proposal_t = proposal_t<bms_program_move_edit_t>;
 
 struct bms_branch_statement_command_payload_t {
     std::vector<bms_branch_statement_edit_diagnostic_t> format_diagnostics;

@@ -2,6 +2,20 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-740** (2026-10-23): stamped proposals move whole Control, Chart and Text
+subtrees at explicit parent/anchor positions while preserving IDs, values and exact musical
+positions. Read-only preparation reports the subtree, potentially affected Charts/declarations
+and selected-projection Chart order. Shared publication checks bounded outcomes; cycles, invalid
+grammar/anchors, losing the last Chart, selector rebinding, invalid SKIP, hidden collisions,
+missing references and broken holds refuse atomically. Fixed-selector programs require unchanged
+control order/containment to prove bindings; unproven control moves refuse. Undo/Redo and native
+reload preserve the moved graph. GCC GATE and Linux Clang each pass **4,808/4,808**; authoring
+passes **990 assertions / 24 cases**, and the combined BMS families pass **4,937 / 155** on both.
+Complexity passes for **three changed TUs** and **46 explicit header consumers**, without
+increased allowances. **T-741 is ready** for confirmed subtree deletion. T-739 still needs
+question 21; no successor implementation is active. Public activation stays with T-744.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-740-move-whole-program-subtrees-in-ordered-scopes).
+
 Completed **T-738** (2026-10-23): typed commands insert body scopes with their first empty
 Chart, additional Chart siblings, fixed-selector settings and ordered Text at stable parent/anchor
 positions. Text editing shares export’s parser/codec classification; modeled/control commands,
@@ -11,7 +25,7 @@ including hidden scopes. Undo/Redo and native reload retain identities and conte
 Linux Clang each pass **4,796/4,796**; focused authoring passes **615 assertions / 12 cases** and
 the combined retained/new families pass **4,562 / 143** on both compilers. Complexity passes for
 **five changed TUs** and **46 explicit header consumers** without increased allowances.
-**T-740 is ready** for subtree movement. T-739 still needs question 21’s range-shrink policy;
+**T-740 is complete above**. T-739 still needs question 21’s range-shrink policy;
 no successor implementation is active. Production activation stays with T-744.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-738-add-control-chart-and-text-nodes-in-selected-scopes).
 

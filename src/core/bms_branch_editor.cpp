@@ -1209,3 +1209,64 @@ auto apply_bms_program_skip_command(document_history_t& history, bms_program_ski
         }, "Add BMS SKIP"));
 }
 } // namespace wormedit
+
+namespace wormedit {
+auto bms_program_move_report_t::from(const bms_program_document_t& owner, branch_id_t subtree)
+    -> std::optional<bms_program_move_report_t> {
+    const auto& program = owner.prepared().program;
+    const auto parent = program.parent(subtree);
+    if (!parent) return std::nullopt;
+    bms_program_move_report_t report{.source_parent = *parent};
+    std::vector<branch_id_t> pending{subtree};
+    while (!pending.empty()) {
+        const auto* node = program.find(pending.back());
+        pending.pop_back();
+        report.subtree.push_back(node->id);
+        pending.insert(pending.end(), node->children.rbegin(), node->children.rend());
+    }
+    for (const auto& node : program.nodes()) {
+        const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+        if (!chart) continue;
+        report.potentially_affected_charts.push_back(node.id);
+        for (const auto& item : chart->items)
+            if (std::holds_alternative<bms_resource_declaration_t>(item.value) ||
+                std::holds_alternative<bms_timing_definition_t>(item.value) ||
+                std::holds_alternative<bms_metadata_declaration_t>(item.value) ||
+                std::holds_alternative<bms_measure_length_t>(item.value))
+                report.potentially_affected_definitions.push_back(item.id);
+    }
+    const auto projection = owner.build_projection();
+    if (!projection.value) return std::nullopt;
+    const auto charts = projection.value->active_charts();
+    report.before_active_charts.assign(charts.begin(), charts.end());
+    return report;
+}
+
+auto bms_program_move_edit_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) const -> attempt_t<std::string> {
+    auto staged = stage_program(scope.transaction(), scope.captured_stamp().chart,
+        [&](const bms_program_t& program) { return program.with_move(move, limits); }, "Move BMS subtree");
+    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+    return {.value = staged.value->changed ? std::optional{std::move(staged.value->command_label)} : std::nullopt,
+        .diagnostics = std::move(staged.diagnostics)};
+}
+auto bms_program_move_edit_t::propose(const song_document_t& song, chart_id_t difficulty,
+    bms_program_move_t move, bms_program_limits_t limits) -> attempt_t<bms_program_move_proposal_t> {
+    auto proposal = bms_program_move_proposal_t::from(chart_stamp_t::from(song, difficulty),
+        bms_program_move_edit_t{.move = move, .limits = limits});
+    bms_program_move_report_t report;
+    const auto checked = document_command_transaction_t::preview(song, [&](document_history_t& preview) {
+        auto result = apply_proposal(preview, proposal);
+        if (result.applied) {
+            const auto& before = *song.find_bms_program(difficulty);
+            report = *bms_program_move_report_t::from(before, move.node);
+            const auto projection = preview.document.find_bms_program(difficulty)->build_projection();
+            const auto charts = projection.value->active_charts();
+            report.after_active_charts.assign(charts.begin(), charts.end());
+        }
+        return result;
+    });
+    if (!checked.applied) return {.diagnostics = checked.diagnostics};
+    proposal.payload.report = std::move(report);
+    return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
+}
+} // namespace wormedit

@@ -3,7 +3,7 @@
 
 namespace wormedit::bms_writer_detail {
 inline constexpr std::size_t maximum_bms_channel_slots = 500'000;
-inline constexpr std::size_t maximum_bms_line_bytes = 1024U * 1024U;
+inline constexpr std::size_t maximum_bms_line_bytes = bms_text_t::maximum_line_bytes;
 // Shared BMS representation rules. T-744 retires the legacy retained-tree
 // adapter, while the scoped writer continues to use these numeric/codec owners.
 struct write_failure_t {

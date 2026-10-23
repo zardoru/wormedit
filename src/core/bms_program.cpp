@@ -219,19 +219,49 @@ auto bms_program_t::target_chart(branch_id_t id) const -> std::optional<branch_i
         if (std::holds_alternative<bms_chart_content_t>(find(child)->value)) return child;
     return std::nullopt;
 }
+auto bms_program_t::with_node(branch_id_t parent_id, std::optional<branch_id_t> after,
+    bms_program_node_t node, std::optional<branch_id_t> first_chart, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto* containing = find(parent_id);
+    if (!containing || !containing->is_scope())
+        return std::unexpected(error_t{failure_code_t::invalid_data, "Insertion requires an existing body scope parent."});
+    if (!node.children.empty() || std::holds_alternative<bms_root_scope_t>(node.value) ||
+        node.is_scope() != first_chart.has_value())
+        return std::unexpected(error_t{failure_code_t::invalid_data, "New scopes require exactly one fresh Chart; Root cannot be inserted."});
+    auto offset = std::size_t{};
+    if (after) {
+        const auto anchor = std::ranges::find(containing->children, *after);
+        if (anchor == containing->children.end())
+            return std::unexpected(error_t{failure_code_t::not_found, "Insertion anchor is not a child of the selected parent."});
+        offset = static_cast<std::size_t>(anchor - containing->children.begin()) + 1;
+    }
+    const auto added = first_chart ? 2U : 1U;
+    if (added > limits.maximum_nodes || nodes_.size() > limits.maximum_nodes - added)
+        return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Inserted nodes exceed the program node limit."});
+    auto nodes = nodes_;
+    auto& children = nodes[indices_.at(parent_id.value)].children;
+    children.insert(children.begin() + static_cast<std::ptrdiff_t>(offset), node.id);
+    if (first_chart) node.children.push_back(*first_chart);
+    nodes.push_back(std::move(node));
+    if (first_chart) nodes.push_back({.id = *first_chart, .value = bms_chart_content_t{}});
+    return from(std::move(nodes), limits);
+}
+auto bms_program_t::with_text(branch_id_t id, bms_text_t text, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto* node = find(id);
+    if (!node || !std::holds_alternative<bms_text_t>(node->value))
+        return std::unexpected(error_t{failure_code_t::not_found, "Text edit requires an existing Text node."});
+    auto nodes = nodes_;
+    nodes[indices_.at(id.value)].value = std::move(text);
+    return from(std::move(nodes), limits);
+}
 auto bms_program_t::with_scope(branch_id_t parent_id, bms_program_node_t scope,
     branch_id_t chart, bms_program_limits_t limits) const -> result_t<bms_program_t, error_t<failure_code_t>> {
     const auto* containing = find(parent_id);
     if (!containing || !containing->is_scope())
         return std::unexpected(error_t{failure_code_t::invalid_data, "A new BMS scope requires an existing scope parent."});
-    if (limits.maximum_nodes < 2 || nodes_.size() > limits.maximum_nodes - 2)
-        return std::unexpected(error_t{failure_code_t::capacity_exceeded, "BMS scope and its Chart exceed the node limit."});
-    auto nodes = nodes_;
-    nodes[indices_.at(parent_id.value)].children.push_back(scope.id);
-    scope.children = {chart};
-    nodes.push_back(std::move(scope));
-    nodes.push_back({.id = chart, .value = bms_chart_content_t{}});
-    return from(std::move(nodes), limits);
+    const auto after = containing->children.empty() ? std::nullopt : std::optional{containing->children.back()};
+    return with_node(parent_id, after, std::move(scope), chart, limits);
 }
 auto bms_program_t::with_random(branch_id_t parent_id, branch_id_t scope, branch_id_t chart,
     std::int64_t range, bms_program_limits_t limits) const -> result_t<bms_program_t, error_t<failure_code_t>> {

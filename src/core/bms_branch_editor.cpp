@@ -1,4 +1,5 @@
 #include <wormedit/core/bms_branch_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <algorithm>
 #include <ranges>
@@ -1126,4 +1127,85 @@ auto apply_bms_branch_leaf_move_command(document_history_t& history,
     return leaf_move(history, *chart, request);
 }
 
+} // namespace wormedit
+
+namespace wormedit {
+namespace {
+using authored_program_t = result_t<bms_program_t, error_t<failure_code_t>>;
+template<class Edit>
+auto stage_program(document_command_transaction_t& transaction, chart_id_t difficulty, Edit edit,
+    std::string label) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        const auto* owner = song.find_bms_program(difficulty);
+        if (!owner) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "No scoped BMS program exists for this difficulty.")}};
+        auto program = edit(owner->prepared().program);
+        if (!program) return {.diagnostics = {error(diagnostic_code_t::invalid_id, program.error().message)}};
+        if (owner->prepared().program == *program) return {.value = document_edit_effect_t{}};
+        auto prepared = owner->prepared();
+        prepared.program = std::move(*program);
+        auto updated = bms_program_document_t::from(difficulty, std::move(prepared), owner->evaluation());
+        if (!updated.value || !updated.ok()) {
+            const auto message = updated.diagnostics.empty() ? "The authored program cannot be projected." :
+                updated.diagnostics.front().message;
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, message)}};
+        }
+        const auto found = std::ranges::find_if(song.prepared_bms_programs,
+            [&](const auto& item) { return item->difficulty() == difficulty; });
+        *found = std::move(*updated.value);
+        return {.value = document_edit_effect_t{.changed = true, .command_label = std::move(label)}};
+    });
+}
+auto validate_insert_value(const bms_program_insert_value_t& value) -> std::optional<std::string> {
+    if (const auto* chart = std::get_if<bms_chart_content_t>(&value); chart && !chart->items.empty())
+        return "A new Chart must be empty; content uses the scoped content editor.";
+    if (const auto* arm = std::get_if<bms_case_scope_t>(&value); arm && !arm->skips.empty())
+        return "New cases start without SKIP; author behavior with a stable case anchor.";
+    if (const auto* text = std::get_if<bms_text_t>(&value)) {
+        const auto checked = validate_bms_program_text(*text);
+        if (!checked) return checked.error().message;
+    }
+    return std::nullopt;
+}
+} // namespace
+
+auto apply_bms_program_insert_command(document_history_t& history, bms_program_insert_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Add BMS node");
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) -> authored_program_t {
+            if (const auto message = validate_insert_value(request.value))
+                return std::unexpected(error_t{failure_code_t::invalid_request, *message});
+            bms_program_node_t node{.value = std::visit([](const auto& value) -> bms_program_node_value_t { return value; }, request.value)};
+            const auto first = transaction.next_bms_program_item_id(node.is_scope() ? 2 : 1);
+            if (!first) return std::unexpected(error_t{failure_code_t::capacity_exceeded, "No fresh BMS node identities are available."});
+            node.id = branch_id_t{first->value};
+            const auto chart = node.is_scope() ? std::optional{branch_id_t{first->value + 1}} : std::nullopt;
+            return program.with_node(request.parent, request.after, std::move(node), chart, request.limits);
+        }, "Add BMS node"));
+}
+auto apply_bms_program_text_command(document_history_t& history, bms_program_text_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Edit BMS Text");
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) -> authored_program_t {
+            const auto checked = validate_bms_program_text(request.text);
+            if (!checked) return std::unexpected(checked.error());
+            return program.with_text(request.node, std::move(request.text), request.limits);
+        }, "Edit BMS Text"));
+}
+auto apply_bms_program_skip_command(document_history_t& history, bms_program_skip_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Add BMS SKIP");
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) -> authored_program_t {
+            const auto* node = program.find(request.case_node);
+            if (!node || !std::holds_alternative<bms_case_scope_t>(node->value))
+                return std::unexpected(error_t{failure_code_t::not_found, "SKIP requires an existing CASE/DEF owner."});
+            auto nodes = std::vector<bms_program_node_t>(program.nodes().begin(), program.nodes().end());
+            auto& arm = std::get<bms_case_scope_t>(std::ranges::find(nodes, request.case_node, &bms_program_node_t::id)->value);
+            if (std::ranges::find(arm.skips, request.skip) != arm.skips.end()) return program;
+            arm.skips.push_back(std::move(request.skip));
+            return bms_program_t::from(std::move(nodes), request.limits);
+        }, "Add BMS SKIP"));
+}
 } // namespace wormedit

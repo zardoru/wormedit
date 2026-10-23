@@ -1,10 +1,45 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/bms_program.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_branch_selection.h>
 
 namespace wormedit {
+
+// Structural authoring targets are independent of the visible preview/edit Chart.
+using bms_program_insert_value_t = std::variant<bms_random_scope_t, bms_if_scope_t,
+    bms_else_if_scope_t, bms_else_scope_t, bms_switch_scope_t, bms_case_scope_t,
+    bms_set_random_t, bms_set_switch_t, bms_chart_content_t, bms_text_t>;
+struct bms_program_insert_command_t {
+    chart_stamp_t stamp;
+    branch_id_t parent;
+    // Null inserts at the beginning. Otherwise insert immediately after this child.
+    std::optional<branch_id_t> after;
+    bms_program_insert_value_t value;
+    bms_program_limits_t limits;
+    auto operator==(const bms_program_insert_command_t&) const -> bool = default;
+};
+struct bms_program_text_command_t {
+    chart_stamp_t stamp;
+    branch_id_t node;
+    bms_text_t text;
+    bms_program_limits_t limits;
+    auto operator==(const bms_program_text_command_t&) const -> bool = default;
+};
+struct bms_program_skip_command_t {
+    chart_stamp_t stamp;
+    branch_id_t case_node;
+    bms_skip_point_t skip;
+    bms_program_limits_t limits;
+    auto operator==(const bms_program_skip_command_t&) const -> bool = default;
+};
+[[nodiscard]] auto apply_bms_program_insert_command(document_history_t& history,
+    bms_program_insert_command_t request) -> document_command_result_t;
+[[nodiscard]] auto apply_bms_program_text_command(document_history_t& history,
+    bms_program_text_command_t request) -> document_command_result_t;
+[[nodiscard]] auto apply_bms_program_skip_command(document_history_t& history,
+    bms_program_skip_command_t request) -> document_command_result_t;
 
 struct bms_branch_statement_command_payload_t {
     std::vector<bms_branch_statement_edit_diagnostic_t> format_diagnostics;

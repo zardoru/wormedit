@@ -6,11 +6,12 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-738 Add Control Chart and Text nodes in selected scopes
 
-- **Status:** ready
+- **Status:** done (2026-10-23)
 - **Prerequisites:** T-737; [question 22](../decisions/open-questions.md) answered 2026-10-23.
 - **Outcome:** typed commands insert valid control scopes, Chart children and opaque Text at explicit ordered positions, including an empty/new Root.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `include/wormedit/core/bms_program.h`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`.
-- **Files owned:** `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, new `tests/core/bms_program_authoring_tests.cpp`, `tests/CMakeLists.txt`, this card.
+- **Files owned:** `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `src/core/bms_program_edit.cpp`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, new `tests/core/bms_program_authoring_tests.cpp`, `tests/CMakeLists.txt`, `include/wormedit/formats/bms.h`, `src/formats/bms_program_writer.cpp`, `src/formats/bms_writer_internal.h`, `memory/chart-editor-status/resume.md`, this card.
+- **Supporting ownership:** reuse the writer’s parser/codec policy through a public Text validation seam in `bms.h` / `bms_program_writer.cpp`; keep the existing writer line limit as an alias of the Text-owned limit in `bms_writer_internal.h`, and advance the resume entry after verification. Extend shared publication in `src/core/bms_program_edit.cpp` to validate implicit fixed-selector outcomes as well as explicit preview overrides, including hidden scopes. Existing append-only RANDOM/IF factories and legacy raw-source commands do not satisfy ordered typed insertion.
 - **Steps:**
   1. After T-737, use the approved distinction between body scopes, separate SETRANDOM/SETSWITCH settings-only nodes, typed case SKIP behavior and automatic grammar markers.
   2. Add typed insertion requests with stable parent/anchor IDs and grammar-aware factories; every new scope receives its first empty Chart automatically.
@@ -20,6 +21,32 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 - **Reject/failure behavior:** stale targets, invalid syntax/placement or encoding failure reject atomically with a named reason.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-authoring]'`.
 - **Out of scope:** RANDOM range changes (T-739), movement/deletion/unwrap (T-740–T-742), widgets (T-743).
+- **Implementation:** explicit parent/after-child requests insert typed body scopes, empty Charts, fixed settings and encoded Text without a source-line selection. The shared immutable graph constructor checks grammar/anchors/budgets and creates the first Chart for every new body. Text editing shares export’s parser/codec classifier; anchored SKIP is authored on its existing case. History-wide identity reservation and the shared staged transaction provide atomic publication and Undo/Redo. Publication includes implicit fixed-selector outcomes in its existing bounded budget, so preview overrides cannot conceal invalid settings in hidden scopes. Production activation remains T-744.
+- **Test-value checkpoint:** scoped node authoring/shared graph and transaction owners; baseline is T-737’s existing model/edit/writer/migration families. Reviewed all 12 new test bodies for observable ordered content, grammar, Text ownership/encoding, fixed selectors/SKIP, refusal atomicity, Undo/Redo, reserved IDs and persistence. Existing family bodies were retained conservatively, not re-audited; passing counts make no whole-suite value claim. Focused GCC evidence is 615 assertions / 12 authoring cases; the retained model/edit/writer/migration families plus authoring pass 4,562 assertions / 143 cases. Shared publication’s hidden fixed-selector checks cover both RANDOM and SWITCH. Clang passes the same focused families and the full 4,796-test suite; evidence below.
+
+- **GCC verification (2026-10-23):** final `scripts/gate.sh --jobs 4` log `/tmp/t738-gate3.log` (details `/tmp/wormedit-gate.zS5muT`); explicit header consumers `/tmp/t738-header-complexity-final.log`; focused `/tmp/t738-authoring-final.log` and `/tmp/t738-focused-final.log`. Real output tails:
+
+  ```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4796
+  gate: passed
+  complexity: passed (5 translation units)
+  complexity: passed (46 translation units)
+  All tests passed (615 assertions in 12 test cases)
+  All tests passed (4562 assertions in 143 test cases)
+  ```
+
+- **Clang and review (2026-10-23):** `cmake --build build-clang --parallel 6` succeeds with one linker and no warnings in this affected-target rebuild (`/tmp/t738-clang-build.log`); `ctest --test-dir build-clang -j 4 --output-on-failure` passes (`/tmp/t738-clang-ctest.log`). Focused logs `/tmp/t738-clang-authoring.log` and `/tmp/t738-clang-focused.log` match GCC. Reviewed the code-style checklist: shared graph/parser/transaction owners, one Text line-limit fact, aggregate initialization, value equality and bounded helpers; no complexity allowances increased. Initial checks exposed test snapshot comparisons and oversized assertion bodies; final checks above use corrected snapshots and cohesive shared test checks. Real output tails:
+
+  ```text
+  100% tests passed out of 4796
+  All tests passed (615 assertions in 12 test cases)
+  All tests passed (4562 assertions in 143 test cases)
+  ```
+- **Handoff:** T-740 is ready; T-739 remains blocked on question 21. No successor implementation is active.
 
 ## T-739 Edit RANDOM outcome ranges without implicit arm edits
 
@@ -39,7 +66,7 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-740 Move whole program subtrees in ordered scopes
 
-- **Status:** blocked-on T-738
+- **Status:** ready
 - **Outcome:** one transaction moves a Control, Chart or Text subtree to an explicit valid parent/position while retaining its identities and ordered content.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_program.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, `docs/references/bms-control-flow.md`.
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/core/bms_program.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.

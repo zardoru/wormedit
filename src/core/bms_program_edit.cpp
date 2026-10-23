@@ -508,15 +508,27 @@ auto evaluation_candidates(const bms_program_document_t& owner, std::size_t maxi
     std::vector<bms_program_evaluation_t> candidates(1);
     if (!maximum) return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
         "Scoped publication needs an evaluation budget."});
-    for (const auto& node : owner.prepared().program.nodes()) {
+    const auto nodes = owner.prepared().program.nodes();
+    const auto has_fixed_random = std::ranges::any_of(nodes, [](const auto& node) {
+        return std::holds_alternative<bms_set_random_t>(node.value);
+    });
+    const auto has_fixed_switch = std::ranges::any_of(nodes, [](const auto& node) {
+        return std::holds_alternative<bms_set_switch_t>(node.value);
+    });
+    for (const auto& node : nodes) {
         auto values = selector_values(owner.prepared().program, node, maximum);
         if (!values) return std::unexpected(values.error());
         if (values->empty()) continue;
-        if (values->size() > maximum / candidates.size())
+        const auto include_implicit = (has_fixed_random && std::holds_alternative<bms_random_scope_t>(node.value)) ||
+            (has_fixed_switch && std::holds_alternative<bms_switch_scope_t>(node.value));
+        if (values->size() + static_cast<std::size_t>(include_implicit) > maximum / candidates.size())
             return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
                 "Scoped edit exceeds its bounded evaluation budget."});
         std::vector<bms_program_evaluation_t> expanded;
         for (const auto& candidate : candidates) {
+            // Leaving this choice unset exercises authored SETRANDOM/SETSWITCH.
+            // Explicit preview choices override settings and cannot prove them valid.
+            if (include_implicit) expanded.push_back(candidate);
             for (const auto value : *values) {
                 auto evaluation = candidate;
                 evaluation.selections.push_back({node.id, value});
@@ -529,7 +541,7 @@ auto evaluation_candidates(const bms_program_document_t& owner, std::size_t maxi
 }
 
 // Reuse the evaluator's reachability checks instead of reimplementing IF/SWITCH
-// interpretation. Content edits cannot change control flow or selector settings.
+// interpretation for content and structural authoring edits.
 auto reachable_evaluation(const bms_program_document_t& owner, bms_program_evaluation_t evaluation)
     -> bms_program_evaluation_t {
     const auto projection = bms_program_projection_t::from(owner.prepared(), evaluation);

@@ -140,6 +140,7 @@ struct bms_chart_content_t {
     auto operator==(const bms_chart_content_t&) const -> bool = default;
 };
 struct bms_text_t {
+    static constexpr std::size_t maximum_line_bytes = 1024U * 1024U;
     std::string bytes;
     text_encoding_t encoding{text_encoding_t::unknown};
     auto operator==(const bms_text_t&) const -> bool = default;
@@ -227,6 +228,12 @@ class bms_program_t {
     [[nodiscard]] auto with_if(branch_id_t parent, branch_id_t scope, branch_id_t chart,
         std::int64_t value, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
+    // Null anchor means the beginning of the parent's ordered children.
+    [[nodiscard]] auto with_node(branch_id_t parent, std::optional<branch_id_t> after,
+        bms_program_node_t node, std::optional<branch_id_t> first_chart = {},
+        bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_text(branch_id_t node, bms_text_t text,
+        bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto root() const -> branch_id_t { return nodes_[root_index_].id; }
     [[nodiscard]] auto nodes() const -> std::span<const bms_program_node_t> { return nodes_; }
     [[nodiscard]] auto find(branch_id_t id) const -> const bms_program_node_t*;

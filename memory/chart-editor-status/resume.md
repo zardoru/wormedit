@@ -2,6 +2,19 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-738** (2026-10-23): typed commands insert body scopes with their first empty
+Chart, additional Chart siblings, fixed-selector settings and ordered Text at stable parent/anchor
+positions. Text editing shares export’s parser/codec classification; modeled/control commands,
+invalid encodings, grammar/anchor errors and caps refuse atomically. SKIP stays anchored case
+behavior. Shared publication checks implicit fixed-selector outcomes as well as preview overrides,
+including hidden scopes. Undo/Redo and native reload retain identities and content. GCC GATE and
+Linux Clang each pass **4,796/4,796**; focused authoring passes **615 assertions / 12 cases** and
+the combined retained/new families pass **4,562 / 143** on both compilers. Complexity passes for
+**five changed TUs** and **46 explicit header consumers** without increased allowances.
+**T-740 is ready** for subtree movement. T-739 still needs question 21’s range-shrink policy;
+no successor implementation is active. Production activation stays with T-744.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-738-add-control-chart-and-text-nodes-in-selected-scopes).
+
 Completed **T-737** (2026-10-23): native schema v14 saves/reloads scoped programs,
 including inactive content, exact native positions, nested identities, annotations/layers,
 Text bytes and preview choices. Shared assets use one serialized catalog value. The codec
@@ -13,7 +26,7 @@ owner until T-744. GCC GATE and Linux Clang each pass **4,784/4,784**; migration
 **519 assertions / 19 cases** on each compiler. Complexity passes for **seven changed TUs**
 and a separate **30-TU header-consumer** check without increased allowances. Broad Clang
 builds retain initializer warnings in unchanged audio/UI tests.
-**T-738 is ready** for typed Control/Chart/Text insertion; no successor implementation is active.
+**T-738 is complete above**; native persistence remains the verified prerequisite for authoring.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-model.md#t-737-persist-scoped-programs-and-migrate-legacy-native-data).
 
 Completed **T-736** (2026-10-23): prepared editor commands and gestures resolve one

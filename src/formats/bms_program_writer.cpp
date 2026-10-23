@@ -239,9 +239,13 @@ void program_emission_t::statement(std::string token, std::string value, bool co
 
 void program_emission_t::text(const bms_text_t& value) {
     flush();
-    auto decoded = decode_bms_text(value.bytes, value.encoding);
-    if (!decoded || !text_util::is_valid_utf8(*decoded) || decoded->find('\0') != std::string::npos)
-        fail(bms_write_diagnostic_code_t::unrepresentable_text, "Scoped Text cannot be decoded losslessly.", "$.program.Text");
+    auto decoded = validate_bms_program_text(value, source_proof ? options.maximum_output_bytes : maximum_bms_line_bytes);
+    if (!decoded) {
+        const auto code = decoded.error().code == failure_code_t::invalid_request ? bms_write_diagnostic_code_t::invalid_document :
+            decoded.error().code == failure_code_t::capacity_exceeded ? bms_write_diagnostic_code_t::resource_limit :
+            bms_write_diagnostic_code_t::unrepresentable_text;
+        fail(code, decoded.error().message, "$.program.Text");
+    }
     std::size_t start{};
     while (start < decoded->size()) {
         auto end = decoded->find_first_of("\r\n", start);
@@ -249,13 +253,9 @@ void program_emission_t::text(const bms_text_t& value) {
         const auto raw = std::string_view(*decoded).substr(start, end - start);
         const auto statement = bms_source_statement_t::from(raw);
         const auto& token = statement.token;
-        const auto resource = token.size() == 5 && (token.starts_with("WAV") || token.starts_with("BMP"));
-        if (token == "BPM" || (statement.measure_channel && statement.measure_channel->second == "02") || statement.is_control() || statement.is_builtin_channel() || statement.is_playable() || resource ||
-            bms_metadata_definition_t::from(token) || bms_timing_directive_t::from(token))
-            fail(bms_write_diagnostic_code_t::invalid_document, "Modeled commands cannot be emitted from a Text node.", "$.program.Text");
         if (options.format.profile == bms_export_profile_t::lr2_compatible && !is_lr2_command(token))
             fail(bms_write_diagnostic_code_t::lossy_transform, "LR2 cannot represent this Text command.", "$.program.Text");
-        if (++lines > options.maximum_lines || (!source_proof && raw.size() > maximum_bms_line_bytes))
+        if (++lines > options.maximum_lines)
             fail(bms_write_diagnostic_code_t::resource_limit, "Scoped Text line limit exceeded.", "$.program.Text");
         start = end;
         if (start < decoded->size() && (*decoded)[start++] == '\r' && start < decoded->size() && (*decoded)[start] == '\n') ++start;
@@ -547,5 +547,38 @@ auto write_bms_program(const bms_prepared_program_t& prepared, bms_program_write
         result.diagnostics.push_back({diagnostic_severity_t::error, failure.code, failure.message, failure.path});
     }
     return result;
+}
+} // namespace wormedit
+
+namespace wormedit {
+namespace {
+auto has_modeled_text_statement(std::string_view raw) -> bool {
+    const auto statement = bms_source_statement_t::from(raw);
+    const auto& token = statement.token;
+    const auto resource = token.size() == 5 && (token.starts_with("WAV") || token.starts_with("BMP"));
+    return token == "BPM" || (statement.measure_channel && statement.measure_channel->second == "02") ||
+        statement.is_control() || statement.is_builtin_channel() || statement.is_playable() || resource ||
+        bms_metadata_definition_t::from(token) || bms_timing_directive_t::from(token);
+}
+} // namespace
+auto validate_bms_program_text(const bms_text_t& text, std::size_t maximum_line_bytes) -> result_t<std::string, error_t<failure_code_t>> {
+    if (text.bytes.size() > bms_program_limits_t{}.maximum_text_bytes)
+        return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Text exceeds the byte limit."});
+    auto decoded = decode_bms_text(text.bytes, text.encoding);
+    if (!decoded || !text_util::is_valid_utf8(*decoded) || decoded->find('\0') != std::string::npos)
+        return std::unexpected(error_t{failure_code_t::invalid_data, "Scoped Text cannot be decoded losslessly."});
+    std::size_t start{};
+    while (start < decoded->size()) {
+        auto end = decoded->find_first_of("\r\n", start);
+        if (end == std::string::npos) end = decoded->size();
+        const auto raw = std::string_view(*decoded).substr(start, end - start);
+        if (has_modeled_text_statement(raw))
+            return std::unexpected(error_t{failure_code_t::invalid_request, "Modeled/control commands require semantic nodes, not Text."});
+        if (raw.size() > maximum_line_bytes)
+            return std::unexpected(error_t{failure_code_t::capacity_exceeded, "Scoped Text line limit exceeded."});
+        start = end;
+        if (start < decoded->size() && (*decoded)[start++] == '\r' && start < decoded->size() && (*decoded)[start] == '\n') ++start;
+    }
+    return std::move(*decoded);
 }
 } // namespace wormedit

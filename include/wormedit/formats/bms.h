@@ -174,6 +174,11 @@ struct bms_branch_statement_delete_t {
                                                         bms_branch_statement_delete_t deletion)
     -> bms_branch_statement_edit_result_t;
 
+// Decode and classify opaque Text using the same policy as scoped export.
+[[nodiscard]] auto validate_bms_program_text(const bms_text_t& text,
+    std::size_t maximum_line_bytes = bms_text_t::maximum_line_bytes)
+    -> result_t<std::string, error_t<failure_code_t>>;
+
 // ASCII and UTF-8 are always available. Legacy encodings depend on the conversion
 // backend provided by the build and host; unsupported requests fail explicitly.
 [[nodiscard]] auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool;

@@ -286,6 +286,20 @@ struct note_paint_gesture_preview_t {
     auto operator==(const note_paint_gesture_preview_t&) const -> bool = default;
 };
 
+struct pending_resource_paint_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::resource_paint;
+    static constexpr auto revision_message = "keysound paint update requires an active gesture";
+    std::optional<resource_id_t> resource;
+    std::optional<osu_hitsample_t> hitsample;
+    std::shared_ptr<const std::vector<editor_selection_object_t>> targets;
+    std::unordered_set<std::uint64_t> visited;
+    [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_resource_paint_gesture_action_t&)
+        -> diagnosed_t<std::optional<pending_resource_paint_gesture_t>>;
+    [[nodiscard]] auto revise(editor_edit_context_t&, object_id_t) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const pending_resource_paint_gesture_t&) const -> bool = default;
+};
+
 struct pending_semantic_layer_paint_gesture_t {
     static constexpr auto kind = editor_gesture_kind_t::semantic_paint;
     static constexpr auto revision_message = "semantic-layer paint update requires an active gesture";
@@ -386,6 +400,7 @@ using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t
                                       proposal_t<pending_bar_line_move_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_resource_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_editor_area_selection_t, document_stamp_t>,
                                       proposal_t<pending_space_range_selection_t, document_stamp_t>,
                                       proposal_t<hold_gesture_t, document_stamp_t>>;
@@ -407,7 +422,8 @@ using active_gesture_preview_t = std::variant<
     return std::visit([viewport_scroll_pixels, area_anchor_policy, &range_preview](const auto& proposal) -> std::optional<active_gesture_preview_t> {
         if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_note_paint_gesture_t>)
             return note_paint_gesture_preview_t{.stamp = proposal.stamp, .targets = proposal.payload.targets};
-        else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_semantic_layer_paint_gesture_t>)
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_semantic_layer_paint_gesture_t> ||
+                           std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_resource_paint_gesture_t>)
             return std::nullopt;
         else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_editor_area_selection_t>)
             return editor_area_selection_preview_t::from(proposal.payload, proposal.stamp,

@@ -631,6 +631,10 @@ bool initialize_compose_view_state(
                                            : wormedit::default_pixels_per_standard_measure;
     const auto notes_editable =
         wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
+    view.resource_paint_available = false;
+    view.resource_paint_has_sample = false;
+    view.resource_paint_mode_active = notes_editable &&
+        application_state.project.compose_gesture.resource_paint_mode_active;
     view.draw_source_kind = application_state.project.compose_gesture.draw_source_kind;
     view.draw_source_id.value = application_state.project.compose_gesture.draw_source_id;
     view.draw_source_label = ui::no_draw_sound_resource_label;

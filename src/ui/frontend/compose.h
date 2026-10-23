@@ -1081,6 +1081,9 @@ struct compose_view_t {
     size_t semantic_layer_target_row{};
     bool note_paint_mode_active{};
     bool semantic_layer_paint_mode_active{};
+    bool resource_paint_mode_active{};
+    bool resource_paint_available{};
+    bool resource_paint_has_sample{};
     bool semantic_layer_gesture_active{};
     size_t selected_note_count{};
     wormedit::object_id_t keyboard_context_note_id; // First selected note, including offscreen multi-selection.

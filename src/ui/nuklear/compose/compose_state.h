@@ -306,6 +306,8 @@ struct worm_ui_nuklear_compose_state_t {
             layer_chip_reveal_id{};
         std::uint8_t source_chip_reveal_kind{};
         bool semantic_layer_paint_pointer_active{};
+        bool resource_paint_pointer_active{};
+        double resource_paint_last_x{}, resource_paint_last_y{};
     } pointer_capture;
 
     struct bmson_input_t {

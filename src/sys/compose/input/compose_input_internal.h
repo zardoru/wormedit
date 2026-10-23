@@ -978,6 +978,25 @@ auto handle_empty_semantic_layer_paint_target(const wormedit::ui::compose_input_
 auto handle_inactive_semantic_layer_paint(compose_gesture_context_t& context)
     -> compose_input_family_result_t;
 
+auto apply_resource_paint_input(const wormedit::ui::compose_input_action_t& input,
+    compose_gesture_context_t& context, wormedit::object_id_t note) -> compose_input_family_result_t;
+
+template <typename HitTargetAt>
+auto dispatch_resource_paint_gesture(const wormedit::ui::compose_input_action_t& input,
+    compose_gesture_context_t& context, HitTargetAt&& hit_target_at) -> compose_input_family_result_t {
+    const auto* chart = context.environment.document.history.document.find_chart(context.state.chart);
+    const auto view = compose_view_for_state(context.environment.document.history, context.state);
+    if (!chart || !view || !context.environment.commands.project.compose_gesture.resource_paint_mode_active) {
+        (void)wormedit::dispatch_editor_action(context.environment.document.history, context.state,
+            wormedit::cancel_editor_gesture_action_t{});
+        return compose_input_family_result_t::from("Keysound painting is no longer active.");
+    }
+    if (input.object_id) return apply_resource_paint_input(input, context, input.object_id);
+    const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
+    return apply_resource_paint_input(input, context,
+        target && target->note ? *target->note : wormedit::object_id_t{});
+}
+
 template <typename HitTargetAt, typename BgmEventAt>
 auto dispatch_semantic_layer_paint_gesture(const wormedit::ui::compose_input_action_t& input,
                                            compose_gesture_context_t& context,
@@ -1146,6 +1165,10 @@ auto dispatch_compose_gesture_input(const wormedit::ui::compose_input_action_t& 
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE:
         return dispatch_alt_pointer_gesture(input, context, hit_target_at, position_at_compose_y,
                                             cache);
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_RELEASE:
+        return dispatch_resource_paint_gesture(input, context, hit_target_at);
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:

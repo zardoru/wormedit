@@ -46,6 +46,7 @@ auto application_command_disabled_by_timing_focus(application_command_kind_t kin
     -> bool {
     using kind_t = application_command_kind_t;
     switch (kind) {
+    case kind_t::audio_paint_hitsound:
     case kind_t::edit_tool_draw:
     case kind_t::edit_tool_layer:
     case kind_t::edit_toggle_quantize_preview:
@@ -1045,6 +1046,10 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Pick an unlocked visible layer in the Layers dock.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
+    if (kind == command_kind_t::audio_paint_hitsound &&
+        !context.environment.editor.commands.project.compose_gesture.can_paint(
+            context.environment.document.history.document, *state))
+        return compose_action_outcome_t::blocked("Arm a Sample resource or choose osu! hitsounds before painting.");
     if (state->is_pending()) {
         const auto canceled =
             wormedit::dispatch_editor_action(context.environment.document.history, *state,
@@ -1055,6 +1060,8 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
                                                   notification_source_t::edit);
     }
     context.environment.editor.commands.project.compose_gesture.bga_draw_stroke.reset();
+    context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active =
+        kind == command_kind_t::audio_paint_hitsound;
     context.environment.editor.commands.project.compose_gesture.note_paint_mode_active =
         kind == command_kind_t::edit_tool_draw;
     context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active =
@@ -1073,7 +1080,8 @@ auto hitsound_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from("Hitsound palette updated.", notification_severity_t::hint);
     }
     if (!context.command.hitsound) return compose_action_outcome_t::blocked("Invalid hitsound command.");
-    return apply_compose_hitsound(context.environment.document.history, *state, *context.command.hitsound);
+    return apply_compose_hitsound(context.environment.document.history, *state, *context.command.hitsound,
+        context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active);
 }
 
 auto note_kind_command(command_context_t& context) -> command_result_t {
@@ -1086,6 +1094,7 @@ auto note_kind_command(command_context_t& context) -> command_result_t {
         wormedit::arm_note_kind(context.environment.document.history, *state,
                                 static_cast<wormedit::note_kind_t>(*context.command.note_kind));
     if (result.accepted) {
+        context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active = false;
         context.environment.editor.commands.project.compose_gesture.note_paint_mode_active = true;
         context.environment.editor.commands.project.compose_gesture
             .semantic_layer_paint_mode_active = false;
@@ -1208,6 +1217,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::history_redo:
         return {.operation = history_command,
                 .feedback_order = compose_feedback_order_t::before_rebind};
+    case command_kind_t::audio_paint_hitsound:
     case command_kind_t::edit_tool_select:
     case command_kind_t::edit_tool_draw:
     case command_kind_t::edit_tool_layer:
@@ -1319,7 +1329,6 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::workspace_lane_keys:
     case command_kind_t::timing_tap_assistant:
     case command_kind_t::timing_tap:
-    case command_kind_t::audio_paint_hitsound:
     case command_kind_t::audio_toggle_click_audition:
     case command_kind_t::audio_toggle_playback_audition:
     case command_kind_t::workspace_command_menu:

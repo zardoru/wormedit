@@ -61,6 +61,12 @@ Undo/Redo restore already resolved snapshots. Domain edits contain no link lifec
 Explicit link/detach/relink edits stage through the same transaction and require confirmation
 before replacing local category data.
 
+Keysound painting collects existing note identities through the gesture runner, then stages the
+optional catalog assignment and armed osu! hitsample in one transaction. Ordinary resource
+assignment shares `stage_resource_assignment`; painting never invokes committing commands on
+scratch histories. Locked/hidden/conditional notes are skipped, and retained-source conflicts
+reject the entire stroke.
+
 Live history may attach `document_publication_observer_t` through the autosave loop.
 The shared commit and Undo/Redo boundaries acknowledge the previous journal record
 before publishing another edit, then capture the accepted post-state with its prior

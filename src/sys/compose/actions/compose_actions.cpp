@@ -54,11 +54,11 @@
 
 namespace wormedit::sys {
 auto apply_compose_hitsound(document_history_t& history, editor_interaction_state_t& state,
-                            hitsound_change_t change) -> compose_action_outcome_t {
+                            hitsound_change_t change, bool arm_only) -> compose_action_outcome_t {
     if (!change.is_valid()) return compose_action_outcome_t::blocked("Invalid hitsound edit.");
     if (state.active_gesture)
         return compose_action_outcome_t::blocked("Finish the current gesture before editing hitsounds.");
-    const auto notes = editor_quantize_selection(state).notes;
+    const auto notes = arm_only ? std::vector<object_id_t>{} : editor_quantize_selection(state).notes;
     if (notes.empty()) {
         state.armed_hitsample = changed_hitsample(state.armed_hitsample.value_or(osu_hitsample_t{}), change);
         return compose_action_outcome_t::from("Next-note hitsounds updated.", notification_severity_t::hint);
@@ -456,6 +456,10 @@ auto select_compose_tool_action_t::validate(compose_action_context_t& context) c
                                              application_state.project.semantic_layer.semantic_layer_target))
         return compose_action_outcome_t::blocked(
             "Pick an unlocked visible layer in the Layers dock.", notification_source_t::edit);
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL &&
+        !application_state.project.compose_gesture.can_paint(
+            context.environment.document.history.document, context.state))
+        return compose_action_outcome_t::blocked("Arm a Sample resource before keysound painting.");
     return std::nullopt;
 }
 
@@ -467,6 +471,8 @@ auto select_compose_tool_action_t::perform(compose_action_context_t& context) co
     (void)dispatch_editor_action(context.environment.document.history, context.state,
                                  cancel_editor_gesture_action_t{});
     application_state.project.compose_gesture.bga_draw_stroke.reset();
+    application_state.project.compose_gesture.resource_paint_mode_active =
+        action.compose_action == WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;
     application_state.project.compose_gesture.note_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
     application_state.project.compose_gesture.semantic_layer_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
     return compose_action_outcome_t::from("Compose tool selected.", notification_severity_t::info,
@@ -596,6 +602,7 @@ struct toggle_compose_note_paint_action_t {
             if (!result.accepted)
                 return compose_action_outcome_t::from(std::move(result), "Compose gesture canceled.");
         }
+        application_state.project.compose_gesture.resource_paint_mode_active = false;
         application_state.project.compose_gesture.note_paint_mode_active = !application_state.project.compose_gesture.note_paint_mode_active;
         if (application_state.project.compose_gesture.note_paint_mode_active)
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
@@ -638,6 +645,7 @@ struct toggle_compose_timing_focus_action_t {
         application_state.project.compose_view.compose_timing_focus = !application_state.project.compose_view.compose_timing_focus;
         if (application_state.project.compose_view.compose_timing_focus) {
             // Timing focus never edits notes, so leave any note tool.
+            application_state.project.compose_gesture.resource_paint_mode_active = false;
             application_state.project.compose_gesture.note_paint_mode_active = false;
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         }
@@ -2079,7 +2087,10 @@ auto toggle_semantic_layer_paint_mode_action_t::perform(compose_action_context_t
             notification_source_t::edit);
     }
     app.project.compose_gesture.semantic_layer_paint_mode_active = !app.project.compose_gesture.semantic_layer_paint_mode_active;
-    if (app.project.compose_gesture.semantic_layer_paint_mode_active) app.project.compose_gesture.note_paint_mode_active = false;
+    if (app.project.compose_gesture.semantic_layer_paint_mode_active) {
+        app.project.compose_gesture.resource_paint_mode_active = false;
+        app.project.compose_gesture.note_paint_mode_active = false;
+    }
     return compose_action_outcome_t::from(
         app.project.compose_gesture.semantic_layer_paint_mode_active
             ? "Semantic-layer paint mode enabled."
@@ -3130,6 +3141,8 @@ constexpr auto local_route_entries = std::array{
                            .operation = run_routed_compose_action<compose_scroll_action_t, 1>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RESET_VIEW,
                            .operation = run_routed_compose_action<reset_compose_view_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL,
+                           .operation = run_routed_compose_action<select_compose_tool_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_TOOL,
                            .operation = run_routed_compose_action<select_compose_tool_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DRAW_TOOL,
@@ -3456,7 +3469,8 @@ auto perform_routed_compose_action(compose_action_context_t& context,
 auto perform_compose_view_action(compose_action_context_t& context) -> compose_action_outcome_t {
     if (context.action.compose_hitsound)
         return apply_compose_hitsound(context.environment.document.history, context.state,
-                                       *context.action.compose_hitsound);
+                                       *context.action.compose_hitsound,
+            context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active);
     const auto* route = compose_action_route_t::find(context.action.compose_action);
     if (auto blocked = process_compose_action_boundary(context, route))
         return std::move(*blocked);

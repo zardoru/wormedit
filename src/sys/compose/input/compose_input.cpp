@@ -879,6 +879,30 @@ void arm_compose_note_layers(wormedit::editor_interaction_state_t& state,
         state.armed_note_layers.reset();
 }
 
+auto apply_resource_paint_input(const wormedit::ui::compose_input_action_t& input,
+    compose_gesture_context_t& context, wormedit::object_id_t note) -> compose_input_family_result_t {
+    using namespace wormedit;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_BEGIN) {
+        const auto& source = context.environment.commands.project.compose_gesture;
+        const auto resource = source.draw_source_kind == 1 && source.draw_source_id
+            ? std::optional{resource_id_t{source.draw_source_id}} : std::nullopt;
+        const auto* chart = context.environment.document.history.document.find_chart(context.state.chart);
+        const auto hitsample = chart && context.state.has_hitsound_palette(chart->source_family)
+            ? std::optional{context.state.armed_hitsample.value_or(osu_hitsample_t{})} : std::nullopt;
+        if (!resource && !hitsample) return compose_input_family_result_t::from("Arm a Sample resource or choose osu! hitsounds before painting.");
+        context.result = dispatch_editor_action(context.environment.document.history, context.state,
+            begin_resource_paint_gesture_action_t{.resource = resource, .hitsample = hitsample, .note = note});
+        context.accepted = "Keysound paint stroke started.";
+    } else {
+        const bool release = input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_RELEASE;
+        context.result = dispatch_editor_action(context.environment.document.history, context.state,
+            update_resource_paint_gesture_action_t{.note = note,
+                .operation = release ? proposal_operation_t::apply : proposal_operation_t::revise});
+        context.accepted = release ? "Keysound paint stroke released." : "Keysound paint preview updated.";
+    }
+    return compose_input_family_result_t::continue_with_result();
+}
+
 auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {
     return app.project.compose_gesture.semantic_layer_paint_mode_active &&
            app.project.semantic_layer.semantic_layer_target.has_value() && !app.project.semantic_layer.semantic_layer_target_none;
@@ -1643,6 +1667,9 @@ auto dispatch_unhandled_compose_input(const wormedit::ui::compose_input_action_t
 // Inputs that create, move, or reassign notes; Timing focus rejects them.
 auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     switch (kind) {
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_RELEASE:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:

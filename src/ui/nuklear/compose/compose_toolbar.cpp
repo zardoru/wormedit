@@ -161,6 +161,23 @@ static void render_measure_lane_toggles(const ComposeToolbarContext& toolbar) {
         request(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }
 
+static auto resource_brush_tool_count(const wormedit::ui::compose_view_t& view) -> int {
+    return view.timing_focus ? 0 : 1;
+}
+
+static void render_resource_brush_tool(const ComposeToolbarContext& toolbar) {
+    if (resource_brush_tool_count(*toolbar.view) == 0) return;
+    auto* context = toolbar.context;
+    const auto* view = toolbar.view;
+    auto* action = toolbar.action;
+    if (!view->resource_paint_available) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines,
+            "Paint keysounds / osu! hitsounds", view->resource_paint_mode_active}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;
+    if (!view->resource_paint_available) nk_widget_disable_end(context);
+}
+
 static void render_tool_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -168,14 +185,15 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
     const bool paint_disabled = !view->scene_available || view->timing_focus;
     if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
-            "Select (Alt+1)", !view->note_paint_mode_active && !view->semantic_layer_paint_mode_active}.render(context) &&
-        (view->note_paint_mode_active || view->semantic_layer_paint_mode_active) && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+            "Select (Alt+1)", !view->note_paint_mode_active && !view->semantic_layer_paint_mode_active && !view->resource_paint_mode_active}.render(context) &&
+        (view->note_paint_mode_active || view->semantic_layer_paint_mode_active || view->resource_paint_mode_active) && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, paint_disabled ? "Draw unavailable: choose an editable chart outside Timing focus" : "Draw (Alt+2): place current source; right-drag erases",
             view->note_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
     render_layer_tool(toolbar, paint_disabled);
+    render_resource_brush_tool(toolbar);
     if (paint_disabled) nk_widget_disable_end(context);
     if (!view->scene_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::grid,
@@ -640,7 +658,7 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     nk_layout_row_static(toolbar.context, 30, 30, 1);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
             "Select (Alt+1)", !toolbar.view->note_paint_mode_active &&
-                !toolbar.view->semantic_layer_paint_mode_active}
+                !toolbar.view->semantic_layer_paint_mode_active && !toolbar.view->resource_paint_mode_active}
             .render(toolbar.context) &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
@@ -729,7 +747,8 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
-    layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0),
+    layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0) +
+                               resource_brush_tool_count(*toolbar.view),
                            6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
                            toolbar.view->timing_focus);
     render_navigation_group(toolbar);

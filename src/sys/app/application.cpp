@@ -663,7 +663,7 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const auto layer_ready = tools_ready &&
         layer_tool_target_editable(chart, application.project.semantic_layer.semantic_layer_target);
     (void)update_command_state(registry, command_id_t{"edit.tool_select"}, compose_ready,
-                                compose_ready && !paint_active && !layer_active);
+                                compose_ready && !paint_active && !layer_active && !application.project.compose_gesture.resource_paint_mode_active);
     (void)update_command_state(registry, command_id_t{"edit.tool_draw"}, tools_ready,
                               tools_ready && paint_active);
     (void)update_command_state(registry, command_id_t{"edit.tool_layer"}, layer_ready,
@@ -761,6 +761,15 @@ auto project_export_available(const wormedit::chart_document_t* chart,
     const application_command_state_t& application) -> bool {
     return chart && !application.project.clipboard.paste_session &&
         (!compose || !compose->is_pending());
+}
+
+void refresh_resource_paint_command(wormedit::command_registry_t& registry,
+    const wormedit::document_history_t& history,
+    const std::optional<wormedit::editor_interaction_state_t>& state,
+    const application_command_state_t& application, bool compose_ready) {
+    (void)wormedit::update_command_state(registry, {"audio.paint_hitsound"},
+        compose_ready && application.project.compose_gesture.can_paint(history.document, *state),
+        application.project.compose_gesture.resource_paint_mode_active);
 }
 
 void refresh_application_command_states(
@@ -883,7 +892,7 @@ void refresh_application_command_states(
     }
     refresh_semantic_membership_commands(registry, compose_ready, target_valid,
                                           application_state, compose_state);
-    set("audio.paint_hitsound", false);
+    refresh_resource_paint_command(registry, history, compose_state, application_state, compose_ready);
     set("audio.toggle_click_audition", true, application_state.preferences.editor_preferences.audition_on_click);
     set("audio.toggle_playback_audition", true, application_state.preferences.editor_preferences.audition_on_playback);
     wormedit::sys::apply_timing_focus_command_policy(

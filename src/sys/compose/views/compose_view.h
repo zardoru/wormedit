@@ -717,6 +717,22 @@ struct application_command_state_t {
             uint64_t draw_source_id{};
             bool note_paint_mode_active{};
             bool semantic_layer_paint_mode_active{};
+            bool resource_paint_mode_active{};
+            [[nodiscard]] auto can_paint(const wormedit::song_document_t& document,
+                const wormedit::editor_interaction_state_t& state) const -> bool {
+                const auto* chart = document.find_chart(state.chart);
+                return chart && (sample_resource(document).has_value() ||
+                    state.has_hitsound_palette(chart->source_family));
+            }
+            [[nodiscard]] auto sample_resource(const wormedit::song_document_t& document) const
+                -> std::optional<wormedit::resource_id_t> {
+                if (draw_source_kind != 1) return std::nullopt;
+                wormedit::document_command_result_t eligibility;
+                const auto id = wormedit::resource_id_t{draw_source_id};
+                if (!wormedit::validate_resource_role(document, id, wormedit::resource_role_t::sample, eligibility))
+                    return std::nullopt;
+                return id;
+            }
         } compose_gesture;
 
         struct semantic_layer_state_t {

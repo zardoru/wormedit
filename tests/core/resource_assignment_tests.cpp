@@ -4,6 +4,7 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/interaction_types.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -2249,4 +2250,120 @@ TEST_CASE("resource asset allocation applies one cap to all three catalogs",
     CHECK(next_resource_asset_id(song) == asset_id_t{12});
     song.visual_assets.push_back({.id = asset_id_t{17}});
     CHECK_FALSE(next_resource_asset_id(song));
+}
+
+namespace {
+auto paint_content(song_document_t song) -> std::string {
+    song.revision = 1;
+    auto encoded = write_native_project(song);
+    REQUIRE(encoded.value);
+    return *encoded.value;
+}
+auto paint_song() -> song_document_t {
+    auto song = assignment_song();
+    auto& notes = song.charts.front().measures.front().notes;
+    const auto prototype = notes.front();
+    notes.clear();
+    for (std::uint64_t i = 0; i < 10; ++i) {
+        auto note = prototype;
+        note.id = object_id_t{100 + i};
+        note.position.row = i * 60;
+        notes.push_back(note);
+    }
+    return song;
+}
+auto paint_state(const document_history_t& history) -> editor_interaction_state_t {
+    constexpr std::array<std::uint64_t, 1> snaps{4};
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{2}, lane_id_t{1},
+        {measure_id_t{3}, 0}, snaps, 4, 600);
+    REQUIRE(setup.state);
+    return std::move(*setup.state);
+}
+void collect_paint_stroke(document_history_t& history, editor_interaction_state_t& state,
+                           std::optional<resource_id_t> resource, std::optional<osu_hitsample_t> hitsample) {
+    REQUIRE(dispatch_editor_action(history, state, begin_resource_paint_gesture_action_t{
+        .resource = resource, .hitsample = hitsample, .note = object_id_t{100}}).accepted);
+    for (std::uint64_t id = 100; id < 110; ++id)
+        REQUIRE(dispatch_editor_action(history, state,
+            update_resource_paint_gesture_action_t{.note = object_id_t{id}}).accepted);
+}
+auto release_paint_stroke(document_history_t& history, editor_interaction_state_t& state)
+    -> editor_interaction_result_t {
+    return dispatch_editor_action(history, state, update_resource_paint_gesture_action_t{
+        .operation = proposal_operation_t::apply});
+}
+}
+
+TEST_CASE("Keysound paint changes ten deduplicated notes and osu metadata in one Undo",
+          "[unit][core][resources][resource-paint]") {
+    auto history = document_history_t::from(paint_song());
+    auto state = paint_state(history);
+    const auto original = paint_content(history.document);
+    auto expected = history.document;
+    const auto sample = osu_hitsample_t{.clap = true, .normal_set = osu_sample_set_t::soft};
+    for (auto& note : expected.charts.front().measures.front().notes) { note.sound = resource_id_t{2}; note.osu_hitsample = sample; }
+    collect_paint_stroke(history, state, resource_id_t{2}, sample);
+    CHECK(paint_content(history.document) == original);
+    REQUIRE(release_paint_stroke(history, state).document_changed);
+    CHECK(paint_content(history.document) == paint_content(expected));
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(paint_content(history.document) == original);
+}
+
+TEST_CASE("Hitsound-only paint clears osu additions while retaining each note's catalog sample",
+          "[unit][core][resources][resource-paint]") {
+    auto song = paint_song();
+    for (auto& note : song.charts.front().measures.front().notes)
+        note.osu_hitsample = osu_hitsample_t{.whistle = true, .finish = true};
+    auto history = document_history_t::from(song);
+    auto state = paint_state(history);
+    auto expected = song;
+    for (auto& note : expected.charts.front().measures.front().notes) note.osu_hitsample = osu_hitsample_t{};
+    collect_paint_stroke(history, state, std::nullopt, osu_hitsample_t{});
+    REQUIRE(release_paint_stroke(history, state).document_changed);
+    CHECK(paint_content(history.document) == paint_content(expected));
+}
+
+TEST_CASE("Keysound paint skips locked notes and preserves unrelated BGM and BGA",
+          "[unit][core][resources][resource-paint]") {
+    auto song = paint_song();
+    song.charts.front().semantic_layers = {{.id = layer_id_t{70}, .name = "Locked", .locked = true}};
+    song.charts.front().measures.front().notes.front().semantic_layers = {layer_id_t{70}};
+    auto expected = song;
+    auto& expected_notes = expected.charts.front().measures.front().notes;
+    for (std::size_t i = 1; i < expected_notes.size(); ++i) expected_notes[i].sound = resource_id_t{2};
+    auto history = document_history_t::from(song);
+    auto state = paint_state(history);
+    collect_paint_stroke(history, state, resource_id_t{2}, std::nullopt);
+    REQUIRE(release_paint_stroke(history, state).document_changed);
+    CHECK(paint_content(history.document) == paint_content(expected));
+}
+
+TEST_CASE("A failed catalog reassignment rolls back a combined hitsound paint stroke",
+          "[unit][core][resources][resource-paint]") {
+    auto song = deletion_reference_song();
+    auto history = document_history_t::from(song);
+    auto state = paint_state(history);
+    REQUIRE(dispatch_editor_action(history, state, begin_resource_paint_gesture_action_t{
+        .resource = resource_id_t{2}, .hitsample = osu_hitsample_t{.clap = true}, .note = object_id_t{10}}).accepted);
+    const auto result = release_paint_stroke(history, state);
+    CHECK_FALSE(result.document_changed);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    CHECK(paint_content(history.document) == paint_content(song));
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("A missing armed sample rejects hitsound painting without dropping the sample request",
+          "[unit][core][resources][resource-paint]") {
+    auto history = document_history_t::from(paint_song());
+    auto state = paint_state(history);
+    const auto before = paint_content(history.document);
+    const auto result = dispatch_editor_action(history, state, begin_resource_paint_gesture_action_t{
+        .resource = resource_id_t{5}, .hitsample = osu_hitsample_t{.clap = true}, .note = object_id_t{100}});
+    CHECK_FALSE(result.accepted);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::dangling_resource);
+    CHECK(paint_content(history.document) == before);
 }

@@ -364,6 +364,10 @@ struct move_virtual_bms_bgm_event_action_t {
 // Assigns one catalog resource to an explicit typed note/BGM/BGA selection.
 // BMSON objects linked to retained sound-channel events cannot be rebound to
 // another resource without editing their source channel. A no-op adds no history.
+[[nodiscard]] auto stage_resource_assignment(document_command_transaction_t& transaction,
+    const assign_resource_action_t& action, resource_assignment_limits_t limits = {})
+    -> attempt_t<document_edit_effect_t>;
+
 [[nodiscard]] auto apply_resource_assignment(document_history_t& history,
                                              const assign_resource_action_t& action,
                                              resource_assignment_limits_t limits = {})

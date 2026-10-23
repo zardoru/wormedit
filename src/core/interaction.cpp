@@ -1924,6 +1924,24 @@ template <> struct editor_action_handler_t<release_alt_pointer_hold_gesture_acti
     }
 };
 
+template <> struct editor_action_handler_t<begin_resource_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+    static auto perform(editor_action_context_t& dispatch, const begin_resource_paint_gesture_action_t& request)
+        -> editor_interaction_result_t {
+        return begin_gesture<pending_resource_paint_gesture_t>(dispatch.edit, request);
+    }
+};
+template <> struct editor_action_handler_t<update_resource_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+    static auto perform(editor_action_context_t& dispatch, const update_resource_paint_gesture_action_t& request)
+        -> editor_interaction_result_t {
+        if (!request.pointer_captured) return cancel_pointer_gesture(dispatch.edit);
+        if (request.operation == proposal_operation_t::apply)
+            return apply_gesture<pending_resource_paint_gesture_t>(dispatch.edit, request.note);
+        return revise_gesture<pending_resource_paint_gesture_t>(dispatch.edit, request.note);
+    }
+};
+
 template <> struct editor_action_handler_t<begin_semantic_layer_paint_gesture_action_t> {
     static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
 

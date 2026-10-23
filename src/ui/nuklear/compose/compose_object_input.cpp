@@ -156,7 +156,7 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
            !input.compose_note_double_click_in_view && !input.compose_pointer_captured &&
            !state.note_move.note_move_candidate_active && !state.area_selection.area_selection_candidate_active &&
-           !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active;
+           !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active && !view.resource_paint_mode_active;
 }
 
 static bool open_bga_stack_for_event(const wormedit::ui::compose_view_t& view, std::uint64_t event_id) {
@@ -459,7 +459,7 @@ static auto bmson_marker_move_can_start(const ComposePointerEventContext& input,
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
            state.bmson_input.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
            state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
-           !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active &&
+           !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active && !view.resource_paint_mode_active &&
            selected_bgm_drag_reference(input) != 0;
 }
 
@@ -488,55 +488,115 @@ auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
     return true;
 }
 
-void append_layer_brush_begin(const ComposePointerEventContext& input) {
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
-                         input.paint_anchor_x, input.paint_anchor_y);
-    if (!state.input_queue.action_overflowed)
-        input.action->compose_inputs[input.action->compose_inputs.size() - 1].paint_intent =
-            (input.pointer_modifiers & SDL_KMOD_ALT) != 0 ? 2 : 1;
+namespace {
+auto resource_paint_intersects(const wormedit::ui::compose_rect_t& bounds,
+    double x0, double y0, double x1, double y1) -> bool {
+    const SDL_FRect rect{static_cast<float>(bounds.left), static_cast<float>(bounds.top),
+        static_cast<float>(bounds.right - bounds.left), static_cast<float>(bounds.bottom - bounds.top)};
+    auto begin_x = static_cast<float>(x0), begin_y = static_cast<float>(y0);
+    auto end_x = static_cast<float>(x1), end_y = static_cast<float>(y1);
+    return SDL_GetRectAndLineIntersectionFloat(&rect, &begin_x, &begin_y, &end_x, &end_y);
+}
+void queue_resource_paint_target(const ComposePointerEventContext& input,
+    const wormedit::ui::compose_rect_t& bounds, wormedit::object_id_t id) {
+    if (state.input_queue.action_overflowed || !resource_paint_intersects(bounds,
+        state.pointer_capture.resource_paint_last_x, state.pointer_capture.resource_paint_last_y,
+        input.pointer_x, input.pointer_y)) return;
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_UPDATE,
+                         input.pointer_x, input.pointer_y);
+    if (!state.input_queue.action_overflowed) input.action->compose_inputs.back().object_id = id;
+}
+void queue_resource_paint_pointer(const ComposePointerEventContext& input, std::size_t phase) {
+    if (phase == 0) {
+        state.pointer_capture.resource_paint_last_x = input.pointer_started_x;
+        state.pointer_capture.resource_paint_last_y = input.pointer_started_y;
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_BEGIN,
+                             input.pointer_started_x, input.pointer_started_y);
+    }
+    for (const auto& note : input.view->note_endpoints)
+        queue_resource_paint_target(input, note.bounds, note.note_id);
+    for (const auto& hold : input.view->hold_bodies)
+        queue_resource_paint_target(input, hold.bounds, hold.note_id);
+    state.pointer_capture.resource_paint_last_x = input.pointer_x;
+    state.pointer_capture.resource_paint_last_y = input.pointer_y;
+    if (phase == 2 && !state.input_queue.action_overflowed)
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_RELEASE,
+                             input.pointer_x, input.pointer_y);
 }
 
-auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& input,
-                                                 bool& paint_pointer_consumed) -> bool {
-    if (compose_area_pointer_consumed()) return true;
-    const auto& view = *input.view;
-    auto* action = input.action;
-    if (!state.input_queue.action_overflowed && state.pointer_capture.semantic_layer_paint_pointer_active) {
-        if (!input.window_focused || !view.scene_available ||
-            !view.semantic_layer_paint_mode_active || input.shortcut_event_count != 0 ||
-            (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) != 0 ||
+struct object_paint_pointer_t {
+    bool& active;
+    bool enabled{};
+    bool accepts_bgm{};
+    bool can_start_empty{};
+    SDL_Keymod allowed_modifiers{SDL_KMOD_NONE};
+    std::array<WormUiComposeInputKind, 3> kinds;
+
+    void queue(const ComposePointerEventContext& input, std::size_t phase) const {
+        if (can_start_empty) { queue_resource_paint_pointer(input, phase); return; }
+        append_compose_input(input.action, kinds[phase],
+            phase == 0 ? input.paint_anchor_x : input.paint_pointer_x,
+            phase == 0 ? input.paint_anchor_y : input.paint_pointer_y);
+        if (phase == 0 && !state.input_queue.action_overflowed)
+            input.action->compose_inputs.back().paint_intent = (input.pointer_modifiers & SDL_KMOD_ALT) != 0 ? 2 : 1;
+    }
+    auto has_target(const ComposePointerEventContext& input) const -> bool {
+        return can_start_empty || compose_point_hits_note(input.view, input.paint_anchor_x, input.paint_anchor_y) ||
+            (accepts_bgm && compose_bgm_event_at(input.view, input.paint_anchor_x, input.paint_anchor_y) != 0);
+    }
+    void revise(const ComposePointerEventContext& input) const {
+        const auto& view = *input.view;
+        if (!input.window_focused || !view.scene_available || !enabled ||
+            input.shortcut_event_count != 0 ||
+            (input.pointer_modifiers & input.any_pointer_modifier & ~allowed_modifiers) != 0 ||
             (!input.left_down && !input.left_released)) {
-            append_compose_cancel_once(action);
-            state.pointer_capture.semantic_layer_paint_pointer_active = false;
+            append_compose_cancel_once(input.action);
+            active = false;
         } else if (input.left_released) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
-                                 input.paint_pointer_x, input.paint_pointer_y);
-            state.pointer_capture.semantic_layer_paint_pointer_active = false;
+            queue(input, 2);
+            active = false;
         } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE,
-                                 input.paint_pointer_x, input.paint_pointer_y);
+            queue(input, 1);
+        }
+    }
+
+    auto process(const ComposePointerEventContext& input, bool& consumed) const -> bool {
+        if (compose_area_pointer_consumed()) return true;
+        if (state.input_queue.action_overflowed) return false;
+        if (active) { consumed = true; revise(input); return true; }
+        if (!input.view->scene_available || !enabled || !input.pointer_started_in_view ||
+            !input.window_focused || input.shortcut_event_count != 0 ||
+            (input.pointer_modifiers & input.any_pointer_modifier & ~allowed_modifiers) != 0 ||
+            state.pointer_capture.pointer_hold_active || state.range_selection.lane_hold_active ||
+            state.area_selection.area_selection_active || state.area_selection.area_selection_candidate_active)
+            return false;
+        consumed = true;
+        if (can_start_empty && !input.pointer_started_in_note_field) return true;
+        if (has_target(input)) {
+            queue(input, 0);
+            active = !state.input_queue.action_overflowed && input.left_down;
+            if (!state.input_queue.action_overflowed && !input.left_down) queue(input, 2);
         }
         return true;
     }
-    if (!state.input_queue.action_overflowed && view.scene_available &&
-        view.semantic_layer_paint_mode_active && input.pointer_started_in_view &&
-        input.window_focused && input.shortcut_event_count == 0 &&
-        (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) == 0 &&
-        !state.pointer_capture.pointer_hold_active && !state.range_selection.lane_hold_active && !state.area_selection.area_selection_active &&
-        !state.area_selection.area_selection_candidate_active) {
-        paint_pointer_consumed = true;
-        if (compose_point_hits_note(&view, input.paint_anchor_x, input.paint_anchor_y) ||
-            compose_bgm_event_at(&view, input.paint_anchor_x, input.paint_anchor_y) != 0) {
-            append_layer_brush_begin(input);
-            state.pointer_capture.semantic_layer_paint_pointer_active = !state.input_queue.action_overflowed && input.left_down;
-            if (!state.input_queue.action_overflowed && !input.left_down)
-                append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
-                                     input.paint_pointer_x, input.paint_pointer_y);
-        }
-        return true;
-    }
-    return false;
+};
 }
+
+auto process_resource_paint_pointer(const ComposePointerEventContext& input, bool& consumed) -> bool {
+    return object_paint_pointer_t{.active = state.pointer_capture.resource_paint_pointer_active,
+        .enabled = input.view->resource_paint_mode_active, .can_start_empty = true,
+        .kinds = {WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_BEGIN, WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_UPDATE,
+                  WORM_UI_COMPOSE_INPUT_RESOURCE_PAINT_RELEASE}}.process(input, consumed);
+}
+
+auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& input, bool& consumed) -> bool {
+    return object_paint_pointer_t{.active = state.pointer_capture.semantic_layer_paint_pointer_active,
+        .enabled = input.view->semantic_layer_paint_mode_active, .accepts_bgm = true,
+        .allowed_modifiers = SDL_KMOD_ALT,
+        .kinds = {WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE,
+                  WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE}}.process(input, consumed);
+}
+
 
 // The BGM source lane under a Draw press. On a BMSON chart only packed (non-stem) columns
 // resolve here; stem lanes keep their own point capture and are never drawn as strokes.

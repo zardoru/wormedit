@@ -132,6 +132,7 @@ static auto compose_gesture_registry() -> const auto& {
         {&state.bmson_input.bmson_marker_move_active, reset_bmson_marker_move_capture},
         {&state.bmson_input.bmson_marker_move_candidate_active},
         {&state.pointer_capture.semantic_layer_paint_pointer_active},
+        {&state.pointer_capture.resource_paint_pointer_active},
         {&state.range_selection.space_range_hold_active, reset_range_capture},
         {&state.note_move.note_move_active},
         {&state.note_move.note_move_candidate_active},
@@ -583,6 +584,11 @@ static void cancel_disabled_compose_paint_modes(const wormedit::ui::compose_view
         append_compose_cancel_once(action);
         clear_note_paint_capture();
         reset_draw_right_capture();
+    }
+    if (state.pointer_capture.resource_paint_pointer_active &&
+        (!window_focused || !view->scene_available || !view->resource_paint_mode_active || view->input_occluded)) {
+        append_compose_cancel_once(action);
+        state.pointer_capture.resource_paint_pointer_active = false;
     }
     if (state.pointer_capture.semantic_layer_paint_pointer_active &&
         (!window_focused || !view->scene_available || !view->semantic_layer_paint_mode_active)) {

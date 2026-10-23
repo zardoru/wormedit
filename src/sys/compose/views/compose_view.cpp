@@ -344,6 +344,7 @@ auto begin_compose_paste(application_command_state_t& application_state,
         session.clipboard = *application_state.project.clipboard.chart_clipboard;
     }
     application_state.project.compose_gesture.note_paint_mode_active = false;
+    application_state.project.compose_gesture.resource_paint_mode_active = false;
     application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
     build_compose_paste_preview(session, history, *source, state.cursor);
     application_state.project.clipboard.paste_session = std::move(session);
@@ -1910,7 +1911,8 @@ void build_compose_lane_key_view(
 
 void populate_compose_hitsounds(const wormedit::chart_document_t& chart,
     const wormedit::editor_interaction_state_t& state, wormedit::ui::compose_view_t& view) {
-    const auto selected = wormedit::editor_quantize_selection(state).notes;
+    const auto selected = view.resource_paint_mode_active ? std::vector<wormedit::object_id_t>{}
+        : wormedit::editor_quantize_selection(state).notes;
     std::unordered_set<std::uint64_t> ids;
     for (const auto id : selected) ids.insert(id.value);
     std::vector<wormedit::osu_hitsample_t> samples;
@@ -1936,6 +1938,12 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     view.audition_on_click = application_state.preferences.editor_preferences.audition_on_click;
     view.area_band_alpha = application_state.preferences.editor_preferences.area_band_alpha;
     view.armed_note_kind = retained_state->armed_note_kind;
+    view.resource_paint_available = wormedit::ui::compose_notes_editable(compose_mode_of(application_state)) &&
+        application_state.project.compose_gesture.can_paint(history.document, *retained_state);
+    if (!view.resource_paint_available)
+        application_state.project.compose_gesture.resource_paint_mode_active = false;
+    view.resource_paint_mode_active = application_state.project.compose_gesture.resource_paint_mode_active;
+    view.resource_paint_has_sample = application_state.project.compose_gesture.sample_resource(history.document).has_value();
     populate_compose_hitsounds(chart, *retained_state, view);
     view.allowed_note_kind_mask = 0;
     for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
@@ -2464,6 +2472,9 @@ void populate_bgm_only_compose_projection(
     view.paste_ghosts.clear();
     view.allowed_note_kind_mask = 0;
     view.note_paint_mode_active = false;
+    view.resource_paint_mode_active = false;
+    view.resource_paint_available = false;
+    view.resource_paint_has_sample = false;
     view.semantic_layer_paint_mode_active = false;
 }
 

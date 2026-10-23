@@ -56,6 +56,19 @@ chart; kbd:[Ctrl+Alt] + click does it for the whole chart.
 * *Play sound on click* (in the command menu, kbd:[Ctrl+Shift+P]) plays each note's sound when you
 click it.
 
+== Painting sounds on existing notes
+
+Double-click a Sample in Compose's Sounds dock to arm it. Choose *Paint keysounds / osu!
+hitsounds* (the audio-lines tool), or *Paint Hitsound / Keysound* from the command menu.
+Drag across existing notes or holds, then release: the whole stroke is one Undo step.
+Fast drags include notes crossed between pointer events; the brush never places or moves notes.
+Locked, hidden and conditional notes are skipped.
+
+When the osu! hitsound palette is shown, its controls arm the brush even when notes are selected.
+The stroke applies those settings together with the armed sample. Without an armed sample,
+it paints only hitsounds and keeps each note's catalog assignment. Escape cancels the current
+stroke; press it with no active stroke to return to Select. Losing focus cancels the stroke.
+
 == Sound tags
 
 On the *Sounds* tab, select a sound to edit its properties. Type a tag and click *Add tag*

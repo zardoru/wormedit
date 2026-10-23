@@ -2198,27 +2198,30 @@ auto scan_resource_assignment_targets(chart_document_t& chart, resource_assignme
     return false;
 }
 
+auto stage_resource_assignment(document_command_transaction_t& transaction,
+    const assign_resource_action_t& action, resource_assignment_limits_t limits)
+    -> attempt_t<document_edit_effect_t> {
+    return transaction.stage(action.chart, "resource assignment refers to an unknown chart",
+        [&](chart_document_t& chart, song_document_t& document) -> attempt_t<document_edit_effect_t> {
+            document_command_result_t result;
+            auto selected = validate_resource_assignment_selection(document, action, limits, result);
+            if (!selected) return {.diagnostics = std::move(result.diagnostics)};
+            std::vector<std::uint8_t> occurrences(selected->size());
+            resource_assignment_scan_t scan{*selected, action.resource, limits.maximum_chart_objects,
+                                            occurrences, result};
+            if (!prepare_assigned_bga_kinds(document, chart, scan) ||
+                !scan_resource_assignment_targets(chart, scan))
+                return {.diagnostics = std::move(result.diagnostics)};
+            return {.value = document_edit_effect_t{.changed = scan.changed,
+                .command_label = "Assign resource to selection"}};
+        });
+}
+
 auto apply_resource_assignment(document_history_t& history,
                                const assign_resource_action_t& action,
                                resource_assignment_limits_t limits) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    auto selected = validate_resource_assignment_selection(history.document, action, limits, result);
-    if (!selected) return result;
     auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    const auto chart = proposed.find_chart(action.chart);
-    if (!action.chart || chart == nullptr) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource assignment refers to an unknown chart");
-        return result;
-    }
-    std::vector<std::uint8_t> occurrences(selected->size());
-    resource_assignment_scan_t scan{*selected, action.resource, limits.maximum_chart_objects,
-                                    occurrences, result};
-    if (!prepare_assigned_bga_kinds(proposed, *chart, scan)) return result;
-    if (!scan_resource_assignment_targets(*chart, scan)) return result;
-    if (!scan.changed) return result;
-    return transaction.commit("Assign resource to selection");
+    return transaction.finish_execution(stage_resource_assignment(transaction, action, limits));
 }
 
 } // namespace wormedit

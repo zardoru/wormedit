@@ -260,6 +260,8 @@ static bool process_compose_escape(const auto& key_event,
                                    wormedit::ui::workspace_action_t* action) {
     if (key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return false;
     const auto pending = has_compose_gesture_capture();
+    if (!pending && view->resource_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     cancel_compose_gestures(action);
     state.bga_interaction.bga_stack_open = false;
     state.bmson_input.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
@@ -270,7 +272,7 @@ static bool process_compose_escape(const auto& key_event,
 
 static void process_compose_lane_key(const auto& key_event, const wormedit::ui::compose_view_t* view,
                                     wormedit::ui::workspace_action_t* action) {
-    if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
+    if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view)) || view->resource_paint_mode_active) return;
     if (!view->note_paint_mode_active && view->selected_note_count == 0 &&
         view->selected_bgm_event_count == 0) return;
     for (size_t binding_index = 0; binding_index < view->lane_key_bindings.size();
@@ -355,7 +357,8 @@ static void process_compose_key_event(const auto& key_event, const wormedit::ui:
     if (process_compose_horizontal_tab_key(key_event, *view, action, pointer_paint_mode_active)) return;
     if (process_compose_navigation_key(key_event, view, action, pointer_paint_mode_active)) return;
     if (view->paste_active || view->semantic_layer_paint_mode_active ||
-        state.pointer_capture.note_paint_pointer_active || state.pointer_capture.semantic_layer_paint_pointer_active) return;
+        state.pointer_capture.note_paint_pointer_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
+        state.pointer_capture.resource_paint_pointer_active) return;
     if ((key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
                                 SDL_KMOD_LEVEL5)) != 0)
         return;

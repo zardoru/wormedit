@@ -36,7 +36,7 @@ document_adoption | src/core/note_move.cpp | 1 | Existing detached payload publi
 scratch_history | src/core/note_placement.cpp | 2 | Legacy detached edit/preview composition; audited migration debt.
 document_adoption | src/core/note_placement.cpp | 3 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 scratch_history | src/core/resource_assignment.cpp | 7 | Legacy detached edit/preview composition; audited migration debt.
-working_document | src/core/resource_assignment.cpp | 17 | Existing domain access to working data; migrate chart acquisition through the runner.
+working_document | src/core/resource_assignment.cpp | 16 | Existing domain access to working data; migrate chart acquisition through the runner.
 document_adoption | src/core/resource_assignment.cpp | 7 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 working_document | src/core/semantic_layer_editor.cpp | 3 | Existing domain access to working data; migrate chart acquisition through the runner.
 working_document | src/core/sound_groups.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.

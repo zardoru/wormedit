@@ -7,8 +7,16 @@ Duplicate and Earlier/Later controls, preserving complete definitions, stable id
 and one Undo per command. Overlapping and offscreen recipes remain accessible.
 GATE passes **4,577/4,577**, whitespace and **9-TU** complexity without increased
 allowances. Native Duplicate/save and Undo/save preserve all eight notes and BPM.
-The owner-selected batch continues with **T-54**, then **T-102**, each committed
-separately. Clang verification follows with this batch.
+Completed **T-54** (2026-10-23): keysound painting supports armed samples,
+osu! hitsounds and combined strokes. Swept pointer capture visits existing notes/holds
+without placement, and release stages both sound changes in one Undo. Locked/hidden
+notes stay unchanged; cancellation, missing samples and retained-source conflicts
+preserve the document. GATE passes **4,586/4,586**, whitespace and **20-TU** complexity;
+the resource-assignment execution allowance decreases **17→16**. Native ten-note paint/save
+and one Undo/save change only sample/Clap and revision, without warnings. Actual osu!
+export/reimport retains all ten painted sounds and Clap flags.
+The owner-selected batch continues with **T-102**, committed separately. Clang
+verification follows with this batch.
 
 Completed **T-124**, **T-125** and **T-730 planning** (2026-10-22), with
 separate commits. Six optional per-difficulty metadata overrides preserve inheritance

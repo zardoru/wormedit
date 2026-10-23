@@ -3443,11 +3443,20 @@ void fit_chip_source(ToolChip& chip, const nk_user_font* font, const char* text,
     std::memcpy(chip.source.data() + prefix, "…", 3);
 }
 
+void set_paint_chip_source(ToolChip& chip, const wormedit::ui::compose_view_t& view,
+                           const char*& source) {
+    if (!view.resource_paint_mode_active) return;
+    chip.prefix = view.resource_paint_has_sample
+        ? (view.hitsounds.visible ? "Keysound + osu! · " : "Keysound · ") : "Hitsounds · ";
+    chip.suffix = " · paint existing notes";
+    if (!view.resource_paint_has_sample) { source = "osu! hitsound palette"; chip.warning = false; }
+}
+
 auto tool_chip(nk_context* context, const wormedit::ui::compose_view_t& view, struct nk_rect field) -> ToolChip {
     ToolChip chip;
     const auto* font = context->style.font;
     const auto available = field.w - 24.0f;
-    if (!font || available < 64 || field.h < 54 || (!view.note_paint_mode_active && !view.semantic_layer_paint_mode_active))
+    if (!font || available < 64 || field.h < 54 || (!view.note_paint_mode_active && !view.semantic_layer_paint_mode_active && !view.resource_paint_mode_active))
         return chip;
     chip.layer = view.semantic_layer_paint_mode_active;
     chip.prefix = chip.layer ? "Layer · "
@@ -3458,6 +3467,7 @@ auto tool_chip(nk_context* context, const wormedit::ui::compose_view_t& view, st
         : chip.layer ? " · Alt+drag removes" : " · right-drag erases";
     chip.warning = !chip.layer && view.draw_source_missing;
     const auto* source = chip.layer ? view.semantic_layer_target.name.data() : view.draw_source_label.c_str();
+    set_paint_chip_source(chip, view, source);
     if (!source) source = chip.layer ? "Pick a layer" : wormedit::ui::no_draw_sound_resource_label;
     const auto prefix_width = chip_text_width(font, chip.prefix);
     const auto suffix_width = chip_text_width(font, chip.suffix);
@@ -3484,6 +3494,7 @@ void reveal_chip_sound(const wormedit::ui::compose_view_t& view) {
 }
 
 void reveal_chip_source(const wormedit::ui::compose_view_t& view, bool layer) {
+    if (view.resource_paint_mode_active && !view.resource_paint_has_sample) return;
     state.pointer_capture.source_chip_reveal_kind = 0;
     state.pointer_capture.source_chip_reveal_id = state.pointer_capture.layer_chip_reveal_id = 0;
     state.keysound_catalog.keysound_reveal_primary = state.bga_catalog.bga_reveal_primary = false;
@@ -3518,7 +3529,9 @@ void draw_compose_tool_chip(nk_context* context, const wormedit::ui::compose_vie
     nk_push_scissor(canvas, field);
     const auto text = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
     wormedit::ui::lucide::draw(context, nk_rect(chip.bounds.x + 4, chip.bounds.y + 3, 24, 24),
-        chip.layer ? wormedit::ui::lucide::Glyph::layers : wormedit::ui::lucide::Glyph::paintbrush, text);
+        chip.layer ? wormedit::ui::lucide::Glyph::layers
+                   : view.resource_paint_mode_active ? wormedit::ui::lucide::Glyph::audio_lines
+                                                     : wormedit::ui::lucide::Glyph::paintbrush, text);
     auto bounds = nk_rect(chip.bounds.x + 32, chip.bounds.y + 7, chip.bounds.w - 36, 16);
     nk_draw_text(canvas, bounds, chip.prefix, static_cast<int>(std::strlen(chip.prefix)),
                  context->style.font, nk_rgba(0,0,0,0), text);

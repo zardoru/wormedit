@@ -79,6 +79,7 @@ add_library(wormedit_core
     src/core/bmson_layer_defaults.cpp
     src/core/format_field_schema.cpp
     src/core/grid.cpp
+    src/core/resource_paint_gesture.cpp
     src/core/interaction.cpp
     src/core/note_placement.cpp
     src/core/note_move.cpp

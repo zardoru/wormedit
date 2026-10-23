@@ -21,7 +21,7 @@ struct hold_start_t;
 struct editor_interaction_result_t;
 
 enum class editor_gesture_kind_t {
-    hold, duration, move, paint, semantic_paint, area, range
+    hold, duration, move, paint, semantic_paint, area, range, resource_paint
 };
 
 [[nodiscard]] auto editor_bga_visible_lane_mask(const chart_document_t& chart,

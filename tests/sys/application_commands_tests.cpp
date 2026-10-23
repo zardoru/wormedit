@@ -2582,7 +2582,7 @@ TEST_CASE("Timing focus policy controls production registry enablement and refus
     apply_timing_focus_command_policy(compose_registry, true);
     application_command_state_t state;
     state.project.compose_view.compose_timing_focus = true;
-    CHECK(check_timing_focus_registry_policy(registry, timing_registry, state) == 7);
+    CHECK(check_timing_focus_registry_policy(registry, timing_registry, state) == 8);
     check_compose_registry_policy(registry, compose_registry);
 
     state.project.compose_view.compose_timing_focus = false;
@@ -2624,6 +2624,26 @@ TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note
     check_transient_transport(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
     check_transient_transport(fixture.fixture.history.document.revision == revision);
     check_transient_transport(fixture.fixture.history.undo.empty());
+}
+
+TEST_CASE("Keysound painter arms osu hitsounds without editing selected notes",
+          "[unit][sys][resource-paint]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    enable_native_hitsounds(fixture);
+    const auto original = write_native_project(fixture.fixture.history.document).value;
+    fixture.compose_state->selected_notes = {fixture.fixture.history.document.charts.front().measures.front().notes.front().id};
+    require_transient_transport(fixture.invoke(application_command_kind_t::audio_paint_hitsound).value);
+    const auto edited = invoke_application_command(
+        {.kind = application_command_kind_t::hitsound_edit, .hitsound = hitsound_change_t{.field = hitsound_field_t::clap}},
+        fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
+        fixture.application_state, fixture.sink);
+    require_transient_transport(edited.value);
+    CHECK(fixture.compose_state->armed_hitsample->clap);
+    CHECK(write_native_project(fixture.fixture.history.document).value == original);
+    CHECK(fixture.fixture.history.undo.empty());
+    require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_select).value);
+    CHECK_FALSE(fixture.application_state.project.compose_gesture.resource_paint_mode_active);
 }
 
 TEST_CASE("Draw shortcut rejects a retained interaction without editable chart geometry",

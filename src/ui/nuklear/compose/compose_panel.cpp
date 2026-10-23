@@ -1078,6 +1078,7 @@ static auto process_compose_owned_popups(const ComposePanelRenderContext& panel,
 }
 
 static void process_compose_draw_tools(const ComposePointerEventContext& input, bool& consumed) {
+    if (process_resource_paint_pointer(input, consumed)) return;
     if (process_semantic_layer_paint_pointer(input, consumed)) return;
     const auto right_consumed = !consumed && process_draw_right_pointer(input);
     consumed |= right_consumed;

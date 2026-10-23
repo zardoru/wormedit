@@ -216,7 +216,7 @@ ComposeViewportCursor collect_compose_viewport_inputs(
         state.pointer_capture.note_paint_pointer_active || state.note_move.note_move_active || state.note_move.note_move_candidate_active ||
         state.area_selection.area_selection_active || state.area_selection.area_selection_candidate_active ||
         state.bmson_input.bmson_razor_pointer_active || state.bmson_input.bmson_marker_move_active ||
-        state.bmson_input.bmson_marker_move_candidate_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
+        state.bmson_input.bmson_marker_move_candidate_active || state.pointer_capture.semantic_layer_paint_pointer_active || state.pointer_capture.resource_paint_pointer_active ||
         state.inline_timing.inline_timing_open || state.timing_drag.timing_stage_drag_active || state.timing_drag.kiai_drag_active ||
         state.timing_drag.recipe_drag_active || compose_recipe_menu_open() ||
         state.timing_marker.timing_marker_candidate_active || state.timing_marker.timing_marker_drag_active ||

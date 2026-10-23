@@ -1080,6 +1080,8 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
     case editor_gesture_kind_t::paint:
         return is_gesture_action<update_note_paint_gesture_action_t,
                                  end_note_paint_gesture_action_t>(action);
+    case editor_gesture_kind_t::resource_paint:
+        return is_gesture_action<update_resource_paint_gesture_action_t>(action);
     case editor_gesture_kind_t::semantic_paint:
         return is_gesture_action<update_semantic_layer_paint_gesture_action_t>(action);
     case editor_gesture_kind_t::area:
@@ -1103,6 +1105,8 @@ auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
         return "finish or cancel the active note move gesture first";
     case editor_gesture_kind_t::paint:
         return "finish or cancel the active note paint gesture first";
+    case editor_gesture_kind_t::resource_paint:
+        return "finish or cancel the active keysound paint gesture first";
     case editor_gesture_kind_t::semantic_paint:
         return "finish or cancel the active semantic-layer paint gesture first";
     case editor_gesture_kind_t::area:
@@ -1133,6 +1137,7 @@ auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
                              release_lane_key_hold_gesture_action_t, end_note_paint_gesture_action_t,
                              update_semantic_layer_paint_gesture_action_t,
                              update_editor_area_selection_action_t>(action) ||
+           is_applying_action<update_resource_paint_gesture_action_t>(action) ||
            is_applying_action<update_note_duration_gesture_action_t>(action) ||
            is_applying_action<update_note_move_gesture_action_t>(action) ||
            (state.gesture<wormedit::pending_space_range_selection_t>() &&

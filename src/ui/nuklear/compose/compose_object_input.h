@@ -12,6 +12,8 @@ auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                                  bool paint_pointer_consumed) -> bool;
 auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool;
+auto process_resource_paint_pointer(const ComposePointerEventContext& input,
+                                    bool& paint_pointer_consumed) -> bool;
 auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& input,
                                           bool& paint_pointer_consumed) -> bool;
 void process_note_paint_pointer(const ComposePointerEventContext& input,

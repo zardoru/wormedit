@@ -264,6 +264,20 @@ struct update_semantic_layer_paint_gesture_action_t {
     proposal_operation_t operation{proposal_operation_t::revise};
 };
 
+struct begin_resource_paint_gesture_action_t {
+    std::optional<resource_id_t> resource;
+    std::optional<osu_hitsample_t> hitsample;
+    object_id_t note;
+    bool pointer_captured{true};
+    auto operator==(const begin_resource_paint_gesture_action_t&) const -> bool = default;
+};
+struct update_resource_paint_gesture_action_t {
+    object_id_t note;
+    bool pointer_captured{true};
+    proposal_operation_t operation{proposal_operation_t::revise};
+    auto operator==(const update_resource_paint_gesture_action_t&) const -> bool = default;
+};
+
 enum class editor_gesture_cancel_reason_t {
     escape,
     focus_lost,
@@ -329,7 +343,8 @@ using editor_interaction_action_t = std::variant<
     begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
     begin_bar_line_move_gesture_action_t, update_bar_line_move_gesture_action_t,
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
-    end_note_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,
+    end_note_paint_gesture_action_t, begin_resource_paint_gesture_action_t,
+    update_resource_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,
     update_semantic_layer_paint_gesture_action_t, begin_editor_area_selection_action_t,
     update_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
     space_range_selection_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,

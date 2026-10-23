@@ -14,7 +14,7 @@
 
 namespace wormedit::sys {
 auto apply_compose_hitsound(document_history_t& history, editor_interaction_state_t& state,
-                            hitsound_change_t change) -> compose_action_outcome_t;
+                            hitsound_change_t change, bool arm_only = false) -> compose_action_outcome_t;
 
 auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action,
                                   const compose_action_inputs_t& environment,

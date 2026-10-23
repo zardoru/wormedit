@@ -168,3 +168,28 @@ Zero denominators, non-finite values and target-forbidden results reject the bat
 
 *Toggle Metronome* (command menu) clicks on every beat during playback. *Timing Settings* sets its
 volume and count-in.
+
+[#timing-links]
+== Timing links between difficulties
+
+Open *Metadata → Timing links* to choose another chart in the same project as a timing source.
+Each category has its own source: BPM, SV/scroll, SPEEDS, Kiai, stops, delays, warps, anchors,
+audio offset and measure layout. Scroll and speed recipes follow their output category.
+
+Choose a source and press *Link*. Replacing local data asks for confirmation. A linked category
+follows accepted source edits. Editing that category locally creates a *Local override* and
+remembers its source; other categories keep following their own sources. *Relink* replaces the
+local override with the source's current timing after confirmation. *Detach* keeps the current
+timing and forgets the association. Each action can be undone.
+
+The *New chart* button in Project opens the category source choices for the new difficulty.
+Leave a category *Independent* for local timing, or choose the chart it should follow. Creating
+the difficulty and its selected links is one Undo step. Cancel discards these choices.
+
+Measure links preserve local notes, holds, BGM, BGA, layout segments and beat markers at their
+exact musical beats; audio-time markers keep their audio positions. Charts keep their own
+measure identities and row resolution. An edit that cannot map exactly, would lose local
+content, or needs unsupported retained-source timing changes is rejected for the whole linked
+update. Sample anchors require a known, unambiguous project music clock. Detach dependents
+before deleting a source chart. Native projects preserve links; interchange exports contain the
+resolved timing.

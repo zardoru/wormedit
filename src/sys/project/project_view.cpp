@@ -5,6 +5,7 @@
 #include <wormedit/core/rational.h>
 
 #include <wormedit/core/timing.h>
+#include <wormedit/core/timing_links.h>
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/project_settings.h>
 #include <wormedit/core/preferences.h>
@@ -140,9 +141,9 @@ auto apply_project_chart_command(document_history_t& history,
     if (action.kind == project_chart_command_kind_t::reorder)
         return reorder_project_chart(history, action);
     if (action.kind == project_chart_command_kind_t::create) {
-        auto created = history.document.charts.empty()
-                           ? apply_new_chart_command(history, make_bms_7k_profile(), format_family_t::native_project, defaults)
-                           : apply_add_chart_command(history, action.chart, defaults);
+        auto created = !action.chart
+                           ? apply_new_chart_command(history, make_bms_7k_profile(), format_family_t::native_project, defaults, action.timing_sources)
+                           : apply_add_chart_command(history, action.chart, defaults, action.timing_sources);
         return {.command = std::move(created.command), .open_chart = created.payload.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
@@ -206,7 +207,7 @@ void publish_row_error(project_chart_runtime_t& runtime, const wormedit::ui::pro
 auto project_chart_command_t::from(const ui::project_chart_action_t& action,
                                   std::optional<chart_id_t> active_chart)
     -> result_t<project_chart_command_t, std::string> {
-    project_chart_command_t command{.expected_revision = action.document_revision,
+    project_chart_command_t command{.timing_sources = action.timing_sources, .expected_revision = action.document_revision,
         .chart = action.chart_id, .target_chart = action.target_chart_id,
         .insert_after = action.insert_after, .selected_charts = action.selected_chart_ids};
     switch (action.kind) {
@@ -220,7 +221,7 @@ auto project_chart_command_t::from(const ui::project_chart_action_t& action,
     case WORM_UI_PROJECT_CHART_REORDER: command.kind = project_chart_command_kind_t::reorder; break;
     default: return std::unexpected("Project chart action is invalid.");
     }
-    if (command.kind == project_chart_command_kind_t::create && active_chart)
+    if (command.kind == project_chart_command_kind_t::create && !command.chart && active_chart)
         command.chart = *active_chart;
     if (command.kind != project_chart_command_kind_t::batch_metadata) return command;
     if (action.selected_chart_ids.empty() ||
@@ -484,6 +485,11 @@ void wormedit::ui::setup_view_t::refill(sys::project_chart_runtime_t& runtime,
             projected.output_incompatibility_reasons[family] = row.output_incompatibility_reasons[family];
     }
     song_id = document.id;
+    timing_categories.resize(wormedit::timing_categories.size());
+    for (std::size_t index = 0; index < timing_categories.size(); ++index) {
+        timing_categories[index].category = wormedit::timing_categories[index].kind;
+        timing_categories[index].label = wormedit::timing_categories[index].label;
+    }
     document_revision = document.revision;
     session_generation = runtime.session_generation;
     output_suggestions.clear();

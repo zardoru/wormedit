@@ -473,7 +473,7 @@ auto update_link(chart_document_t& chart, const song_document_t& song, const tim
         return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Timing source must be another chart in this project.")}};
     if (current && current->source == source && !current->is_local_override)
         return {.value = document_edit_effect_t{.command_label = "Link timing"}};
-    if ((!current || current->is_local_override) && has_category_content(chart, request.category) && !request.discard_confirmed)
+    if (timing_categories[static_cast<std::size_t>(request.category)].requires_link_confirmation(chart) && !request.discard_confirmed)
         return {.diagnostics = {error(diagnostic_code_t::unsupported_feature, "Confirm replacing this category's local timing before linking.")}};
     if (!current || current->source != source) current = timing_category_link_t{.source = source};
     current->is_local_override = false;
@@ -518,5 +518,9 @@ auto apply_timing_link_edit(document_history_t& history, const chart_stamp_t& st
 }
 auto validate_timing_links(const song_document_t& song) -> diagnostic_list_t {
     return validate_links(song, true);
+}
+auto timing_category_info_t::requires_link_confirmation(const chart_document_t& chart) const -> bool {
+    const auto& link = chart.timing_links.value(kind);
+    return link ? link->is_local_override : has_category_content(chart, kind);
 }
 } // namespace wormedit

@@ -596,3 +596,36 @@ TEST_CASE("Metadata inheritance dispatch is stamped atomic and undoable", "[sys]
     SECTION("fresh") { check_fresh_inheritance_dispatch(fixture, action); }
     SECTION("stale") { check_stale_inheritance_dispatch(fixture, action); }
 }
+namespace {
+auto timing_link_dispatch_action(metadata_notification_fixture_t& fixture) -> ui::workspace_action_t {
+    const auto source = apply_new_chart_command(fixture.history);
+    REQUIRE(source.payload.chart);
+    fixture.history.document.charts.back().beat_zero_audio_offset_seconds = {1, 4};
+    fixture.history = document_history_t::from(std::move(fixture.history.document));
+    const auto binding = workspace_controller_t::from(fixture.history);
+    wormedit::test::require_workspace_result(binding);
+    fixture.workspace = *binding.value;
+    return {.timing_link = {.requested = true,
+        .context = {.project = fixture.history.document.id, .chart = fixture.history.document.charts.front().id,
+            .revision = fixture.history.document.revision},
+        .request = {.category = timing_category_t::offset, .source = *source.payload.chart}}};
+}
+}
+TEST_CASE("Timing link UI dispatch publishes through the shared finisher and Undo", "[sys][timing-links]") {
+    metadata_notification_fixture_t fixture;
+    const auto action = timing_link_dispatch_action(fixture);
+    REQUIRE(fixture.dispatch(action));
+    check_metadata_notification(fixture.history.undo.size() == 1);
+    check_metadata_notification(fixture.history.document.charts.front().beat_zero_audio_offset_seconds == signed_rational_t{1, 4});
+    check_metadata_notification(fixture.history.document.charts.front().timing_links.value(timing_category_t::offset)->source == action.timing_link.request.source);
+    require_metadata_notification(undo_document_command(fixture.history));
+    check_metadata_notification(!fixture.history.document.charts.front().timing_links.value(timing_category_t::offset));
+}
+TEST_CASE("Timing link dispatch rejects actions from a previous project session", "[sys][timing-links]") {
+    metadata_notification_fixture_t fixture;
+    auto action = timing_link_dispatch_action(fixture);
+    ++action.timing_link.context.session_generation;
+    REQUIRE(fixture.dispatch(action));
+    check_metadata_notification(fixture.history.undo.empty());
+    check_metadata_notification(!fixture.history.document.charts.front().timing_links.value(timing_category_t::offset));
+}

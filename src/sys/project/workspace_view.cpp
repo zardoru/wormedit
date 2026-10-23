@@ -1170,7 +1170,7 @@ void metadata_view_t::reset() {
         copy_preview_source, channel_map_preview_message, lane_profile_preview_message,
         audio_waveform_columns, search_tags, format_fields,
         format_targets, output_groups, channel_map_lanes,
-        lane_profile_choices, chart_choices, format_families.entries, inheritance);
+        lane_profile_choices, chart_choices, format_families.entries, inheritance, timing_links);
     title.clear();
     artist.clear();
     chart_name.clear();

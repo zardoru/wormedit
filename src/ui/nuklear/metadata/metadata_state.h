@@ -1,6 +1,8 @@
 #pragma once
 #include "ui/field/rect.h"
 #include "ui/nuklear/chrome/file_dialog_slot.h"
+#include "ui/nuklear/chrome/dialog.h"
+#include "ui/nuklear/chrome/popup_lifecycle.h"
 
 #include "ui/frontend.h"
 
@@ -36,9 +38,29 @@ class metadata_inheritance_draft_t {
     std::array<metadata_inheritance_row_draft_t, wormedit::inherited_metadata_field_count> rows_;
 };
 
+class metadata_timing_link_draft_t {
+  public:
+    void synchronize(const wormedit::ui::metadata_view_t&);
+    void update_release(nk_context*);
+    [[nodiscard]] auto source_for(wormedit::timing_category_t category) -> wormedit::chart_id_t& {
+        return selected_.sources.at(static_cast<std::size_t>(category));
+    }
+    [[nodiscard]] auto owns_input() const -> bool { return confirmation_.owns_input(); }
+    void request(const wormedit::ui::metadata_view_t&, const wormedit::ui::timing_link_category_view_t&,
+        wormedit::timing_link_operation_t, wormedit::ui::workspace_action_t&);
+    void render_confirmation(nk_context*, const wormedit::ui::metadata_view_t&, wormedit::ui::workspace_action_t&);
+  private:
+    std::optional<wormedit::ui::timing_link_context_t> context_;
+    wormedit::timing_link_selection_t selected_;
+    wormedit::ui::timing_link_action_t pending_;
+    wormedit::ui::chrome::retained_popup_t confirmation_;
+    wormedit::ui::chrome::Dialog dialog_;
+};
+
 struct worm_ui_nuklear_metadata_state_t {
     static constexpr std::size_t visible_tag_count = 64;
     metadata_inheritance_draft_t inheritance;
+    metadata_timing_link_draft_t timing_links;
 
     std::uint64_t buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t buffer_chart_id{};

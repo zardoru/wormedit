@@ -13,6 +13,7 @@
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/core/timing_links.h>
 
 #include <algorithm>
 #include <charconv>
@@ -389,6 +390,27 @@ auto lane_profile_family_targets(const chart_document_t& chart) -> std::vector<l
     return lane_profile_family_targets_impl(chart);
 }
 
+namespace {
+auto dispatch_timing_link(const ui::timing_link_action_t& action, const metadata_action_inputs_t& environment,
+    bool timing_locked, const notification_sink_t& notifications) -> std::string {
+    auto& history = environment.document.history;
+    document_command_result_t result;
+    if (action.context.session_generation != environment.session_generation ||
+        environment.document.workspace.selected_chart != action.context.chart)
+        result = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::invalid_binding, stale_action_message("Timing link"));
+    else if (timing_locked)
+        result = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature, "Timing links are unavailable while timing is locked.");
+    else result = apply_timing_link_edit(history,
+        {.document = {.project = action.context.project, .revision = action.context.revision}, .chart = action.context.chart},
+        action.request);
+    auto feedback = publish_metadata_edit(std::move(result), environment.document.workspace, history);
+    if (feedback.severity == notification_severity_t::success) feedback.message = "Timing link updated.";
+    notifications.post(feedback.severity, notification_source_t::edit, feedback.message);
+    return std::move(feedback.message);
+}
+}
 auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool resource_copy_busy, bool export_busy, bool post_notifications)
@@ -402,6 +424,7 @@ auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
     const notification_sink_t notifications =
         post_notifications ? environment.document.notifications : notification_sink_t::muted();
 
+    if (action.timing_link.requested) return dispatch_timing_link(action.timing_link, environment, timing_locked, notifications);
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
         auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);
         notifications.post(feedback.severity, notification_source_t::edit, feedback.message);

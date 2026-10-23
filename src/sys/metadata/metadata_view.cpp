@@ -4,6 +4,7 @@
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/timing_links.h>
 
 #include <algorithm>
 #include <ranges>
@@ -228,6 +229,30 @@ void populate_metadata_chart_choices(frontend_workspace_view_t& flattened,
     }
 }
 
+void populate_metadata_timing_links(frontend_workspace_view_t& flattened, const document_history_t& history) {
+    auto& metadata = flattened.view.metadata;
+    metadata.timing_link_context = {.project = history.document.id, .chart = metadata.chart_id,
+        .revision = history.document.revision, .session_generation = flattened.query_session_generation};
+    const auto* chart = metadata.has_chart ? history.document.find_chart(metadata.chart_id) : nullptr;
+    if (!chart) { metadata.timing_links.clear(); return; }
+    metadata.timing_links.resize(timing_categories.size());
+    for (std::size_t index = 0; index < timing_categories.size(); ++index) {
+        const auto& category = timing_categories[index];
+        const auto& link = chart->timing_links.value(category.kind);
+        auto& row = metadata.timing_links[index];
+        row.category = category.kind;
+        row.label = category.label;
+        row.source = link ? link->source : chart_id_t{};
+        row.is_local_override = link && link->is_local_override;
+        row.requires_confirmation = category.requires_link_confirmation(*chart);
+        row.status = link ? link->is_local_override ? "Local override: " : "Linked: " : "Local";
+        if (link) {
+            const auto* source = history.document.find_chart(link->source);
+            row.status += source ? source->metadata.name : "Missing source";
+        }
+    }
+}
+
 auto metadata_output_path_text(frontend_workspace_view_t& flattened,
                                const output_group_t& group, std::size_t index)
     -> const metadata_output_path_text_t& {
@@ -297,6 +322,7 @@ void populate_metadata_view_projection(
     populate_metadata_channel_map_preview(flattened, metadata_drop);
     populate_metadata_lane_profile(flattened, history, metadata_drop);
     populate_metadata_chart_choices(flattened, history);
+    populate_metadata_timing_links(flattened, history);
 
 
 }

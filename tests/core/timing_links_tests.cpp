@@ -853,3 +853,34 @@ TEST_CASE("All timing categories follow one source and a local Kiai edit detache
     CHECK(history.document.charts.front().kiai.front().enabled);
     require_valid_links(history.document);
 }
+TEST_CASE("Relink requires confirmation for a deliberate zero offset override", "[core][timing-links][transaction]") {
+    auto song = timing_link_song();
+    song.charts.front().beat_zero_audio_offset_seconds = {1, 4};
+    auto history = document_history_t::from(std::move(song));
+    const auto request = timing_link_request_t{.category = timing_category_t::offset, .source = chart_id_t{10}};
+    require_timing_command(apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}), request));
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.back().beat_zero_audio_offset_seconds = {};
+    require_timing_command(transaction.commit("Set local offset to zero"));
+    const auto relink = apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
+        {.category = timing_category_t::offset, .operation = timing_link_operation_t::relink});
+    CHECK_FALSE(relink.applied);
+    CHECK(history.document.charts.back().timing_links.value(timing_category_t::offset)->is_local_override);
+    CHECK(history.document.charts.back().beat_zero_audio_offset_seconds.numerator == 0);
+    CHECK(history.undo.size() == 2);
+    CHECK(timing_categories[static_cast<std::size_t>(timing_category_t::offset)].requires_link_confirmation(history.document.charts.back()));
+    require_timing_command(apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
+        {.category = timing_category_t::offset, .operation = timing_link_operation_t::relink, .discard_confirmed = true}));
+    CHECK(history.document.charts.back().beat_zero_audio_offset_seconds == signed_rational_t{1, 4});
+}
+TEST_CASE("Relink requires confirmation after local timing events were deliberately cleared", "[core][timing-links][transaction]") {
+    auto history = document_history_t::from(timing_link_song());
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.back().bpms.clear();
+    require_timing_command(transaction.commit("Clear local BPM timing"));
+    CHECK_FALSE(edit_timing_link(history, timing_link_operation_t::relink).applied);
+    CHECK(history.document.charts.back().bpms.empty());
+    CHECK(history.document.charts.back().timing_links.value(timing_category_t::bpm)->is_local_override);
+    require_timing_command(edit_timing_link(history, timing_link_operation_t::relink, true));
+    CHECK(history.document.charts.back().bpms.front().beats_per_minute == signed_rational_t{120, 1});
+}

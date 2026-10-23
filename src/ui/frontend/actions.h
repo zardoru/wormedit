@@ -1,5 +1,6 @@
 #pragma once
 #include <wormedit/core/metadata_inheritance_types.h>
+#include "timing_links.h"
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
 #include "workspace_types.h"
@@ -478,6 +479,7 @@ struct timing_target_t {
 
 namespace wormedit::ui {
 struct workspace_action_t {
+    timing_link_action_t timing_link;
     wormedit::ui::file_jobs_action_t file_jobs;
     std::string menu_command_id;
     bool compose_menu_command;

@@ -586,3 +586,36 @@ TEST_CASE("Batch duplication rolls back earlier copies when later IDs are exhaus
     expect_chart(history.undo.empty());
     expect_chart(write_native_project(history.document).value == before);
 }
+TEST_CASE("New difficulties inherit only selected designated timing sources in one Undo step", "[core][chart-editor][timing-links]") {
+    auto song = chart_song();
+    song.charts.front().bpms.front().beats_per_minute = {180, 1};
+    timing_link_selection_t timing;
+    timing.sources[static_cast<std::size_t>(timing_category_t::bpm)] = chart_id_t{2};
+    timing.sources[static_cast<std::size_t>(timing_category_t::measures)] = chart_id_t{2};
+    auto history = document_history_t::from(std::move(song));
+    const auto created = apply_add_chart_command(history, chart_id_t{2}, nullptr, timing);
+    require_chart(created.command.applied);
+    require_chart(created.payload.chart.has_value());
+    const auto& target = history.document.charts.back();
+    expect_chart(target.bpms.front().beats_per_minute == signed_rational_t{180, 1});
+    expect_chart(target.timing_links.value(timing_category_t::bpm)->source == chart_id_t{2});
+    expect_chart(target.timing_links.value(timing_category_t::measures)->source == chart_id_t{2});
+    expect_chart(!target.timing_links.value(timing_category_t::scroll));
+    expect_chart(target.measures.size() == 2);
+    expect_chart(target.measures.front().notes.empty());
+    expect_chart(history.undo.size() == 1);
+    require_chart(undo_document_command(history));
+    expect_chart(history.document.charts.size() == 1);
+    require_chart(redo_document_command(history));
+    expect_chart(history.document.charts.back().id == *created.payload.chart);
+}
+TEST_CASE("Missing selected creation timing sources reject without adding a chart", "[core][chart-editor][timing-links]") {
+    auto history = document_history_t::from(chart_song());
+    timing_link_selection_t timing;
+    timing.sources[static_cast<std::size_t>(timing_category_t::offset)] = chart_id_t{999};
+    const auto created = apply_add_chart_command(history, chart_id_t{2}, nullptr, timing);
+    expect_chart(!created.command.applied);
+    expect_chart(!created.payload.chart);
+    expect_chart(history.document.charts.size() == 1);
+    expect_chart(history.undo.empty());
+}

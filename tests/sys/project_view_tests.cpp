@@ -553,3 +553,28 @@ TEST_CASE("Selection-bar chart actions route the complete selected IDs atomicall
     expect_project(history.document.charts.size() == (erase ? 1 : 5));
     expect_project(history.undo.size() == 1);
 }
+TEST_CASE("Project chart creation carries stable timing sources and the selected template", "[unit][project-view][timing-links]") {
+    auto song = project_song();
+    const auto source = song.charts.front().id;
+    ui::project_chart_action_t action{.kind = WORM_UI_PROJECT_CHART_NEW, .document_revision = song.revision,
+        .chart_id = source};
+    action.timing_sources.sources[static_cast<std::size_t>(timing_category_t::bpm)] = source;
+    const auto command = project_chart_command_t::from(action, chart_id_t{999});
+    require_project(command.has_value());
+    expect_project(command->chart == source);
+    expect_project(command->timing_sources == action.timing_sources);
+    auto history = document_history_t::from(std::move(song));
+    const auto result = apply_project_chart_command(history, *command);
+    require_project(result.command.applied);
+    expect_project(history.document.charts.back().timing_links.value(timing_category_t::bpm)->source == source);
+}
+TEST_CASE("Project chart creation projects the exhaustive timing category choices", "[unit][project-view][timing-links]") {
+    auto song = project_song();
+    project_chart_runtime_t runtime{17};
+    ui::setup_view_t view{.visible = true};
+    view.refill(runtime, song);
+    require_project(view.timing_categories.size() == timing_category_count);
+    expect_project(view.timing_categories.front().category == timing_category_t::bpm);
+    expect_project(view.timing_categories.back().category == timing_category_t::measures);
+    expect_project(view.session_generation == 17);
+}

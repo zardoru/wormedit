@@ -10,6 +10,13 @@ namespace wormedit {
 enum class timing_category_t { bpm, scroll, speed, kiai, stop, delay, warp, anchor, offset, measures, count };
 inline constexpr auto timing_category_count = static_cast<std::size_t>(timing_category_t::count);
 enum class timing_link_operation_t { link, detach, relink, count };
+struct timing_link_selection_t {
+    std::array<chart_id_t, timing_category_count> sources{};
+    [[nodiscard]] auto source(timing_category_t category) const -> chart_id_t {
+        return sources.at(static_cast<std::size_t>(category));
+    }
+    auto operator==(const timing_link_selection_t&) const -> bool = default;
+};
 struct timing_link_request_t {
     timing_category_t category{timing_category_t::bpm};
     timing_link_operation_t operation{timing_link_operation_t::link};

@@ -2195,7 +2195,7 @@ struct application_t::implementation_t {
     auto metadata_inputs() -> metadata_action_inputs_t {
         return {document_inputs(),
                 {views.metadata_drop, jobs.metadata_asset_runtime, jobs.resource_copy_scheduler},
-                session.project_identity.asset_base};
+                session.project_identity.asset_base, views.project_chart_runtime.session_generation};
     }
     auto frontend_inputs() -> frontend_event_inputs_t {
         return {document_inputs(), views.metadata_drop, session.project_identity,

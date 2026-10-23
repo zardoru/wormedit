@@ -77,6 +77,7 @@ struct metadata_action_inputs_t {
     document_edit_inputs_t document;
     metadata_import_inputs_t import;
     const std::filesystem::path& asset_base;
+    std::uint64_t session_generation{};
 };
 struct frontend_event_inputs_t {
     document_edit_inputs_t document;

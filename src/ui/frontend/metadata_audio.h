@@ -2,6 +2,7 @@
 #include "audio_slicer.h"
 #include "catalog.h"
 #include "project.h"
+#include "timing_links.h"
 #include <wormedit/core/metadata_limits.h>
 #include <wormedit/core/metadata_inheritance_types.h>
 #include <array>
@@ -108,6 +109,8 @@ struct metadata_inheritance_field_view_t {
     auto operator==(const metadata_inheritance_field_view_t&) const -> bool = default;
 };
 struct metadata_view_t {
+    timing_link_context_t timing_link_context;
+    std::vector<timing_link_category_view_t> timing_links;
     wormedit::ui::kind_catalog_view_t<wormedit::format_family_t> format_families;
     bool visible;
     bool song_fields_editable;

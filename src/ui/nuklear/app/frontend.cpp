@@ -44,6 +44,7 @@
 #include "ui/nuklear/render/image_quad.h"
 #include "ui/nuklear/metadata/metadata_panel.h"
 #include "ui/nuklear/metadata/metadata_state.h"
+#include "ui/nuklear/metadata/metadata_timing_links_section.h"
 #include "ui/nuklear/app/command_menu.h"
 #include "ui/nuklear/audio/player_preview.h"
 #include "ui/nuklear/project/setup_panel.h"
@@ -257,7 +258,7 @@ static void reset_project_dialog() {
 
 static bool project_dialog_active() {
     std::lock_guard lock{g_project_dialog.mutex};
-    return g_project_dialog.active || worm_ui_nuklear_setup_popup_owns_input();
+    return g_project_dialog.active || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input();
 }
 
 static bool nuklear_text_entry_active(void);
@@ -516,7 +517,7 @@ static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool
     if (!action) {
         return;
     }
-    action->shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input()
+    action->shortcut_events.resize((g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input() || metadata_timing_links_own_input()
                                        ? 0 : g_shortcut_event_count);
     for (size_t index = 0; index < action->shortcut_events.size(); ++index) {
         action->shortcut_events[index] = g_shortcut_events[index];
@@ -2738,7 +2739,7 @@ static bool external_project_modal_active(const wormedit::ui::workspace_view_t& 
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open ||
-           !view.pending_bms_encoding_path.empty();
+           !view.pending_bms_encoding_path.empty() || metadata_timing_links_own_input();
 }
 
 static bool project_modal_active(const wormedit::ui::workspace_view_t& view) {
@@ -3324,6 +3325,7 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1]);
     render_file_job(frame.view.file_jobs.preview, file_job_titles[2], frame.action.file_jobs.cancel_preview, jobs[2]);
     worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
+    render_metadata_timing_link_confirmation(g_context, frame.view.metadata, frame.action);
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
     if (frame.view.project_loaded &&
         worm_ui_nuklear_render_chart_import_dialog(g_context, frame.view.chart_import, frame.action,
@@ -3476,6 +3478,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
     consume_project_file_dialog(action);
+    if (g_context && view) synchronize_metadata_timing_links(g_context, view->metadata);
     consume_pending_save_request(view, action);
     if (!g_context || (!g_window && !g_headless) || !view) {
         worm_ui_nuklear_compose_state().layer_editor.layer_creation_request.reset();

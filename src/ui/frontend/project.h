@@ -1,4 +1,5 @@
 #pragma once
+#include "timing_links.h"
 #include "common.h"
 #include "catalog.h"
 #include <wormedit/core/vocabulary.h>
@@ -238,6 +239,7 @@ typedef enum WormUiProjectChartActionKind {
 
 namespace wormedit::ui {
 struct project_chart_action_t {
+    timing_link_selection_t timing_sources;
     WormUiProjectChartActionKind kind{};
     std::uint64_t document_revision{}, session_generation{};
     wormedit::chart_id_t chart_id;
@@ -324,6 +326,7 @@ struct project_settings_action_t {
     std::string text;
 };
 struct setup_view_t {
+    std::vector<timing_link_category_view_t> timing_categories;
     kind_catalog_view_t<wormedit::format_family_t> output_families;
     bool visible{};
     wormedit::song_id_t song_id;
@@ -336,12 +339,14 @@ struct setup_view_t {
     project_settings_view_t settings;
 
     void reset() {
+        auto retained_timing_categories = std::move(timing_categories);
         auto families = std::move(output_families);
         auto retained_charts = std::move(charts);
         auto groups = std::move(output_groups);
         auto suggestions = std::move(output_suggestions);
         for (auto& group : groups) group.reset();
         *this = {};
+        timing_categories = std::move(retained_timing_categories);
         output_families = std::move(families);
         charts = std::move(retained_charts);
         output_groups = std::move(groups);

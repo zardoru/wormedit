@@ -66,6 +66,7 @@ struct project_chart_table_view_t {
 
 enum class project_chart_command_kind_t { create, duplicate, erase, move_up, move_down, open, batch_metadata, reorder };
 struct project_chart_command_t {
+    timing_link_selection_t timing_sources;
     [[nodiscard]] static auto from(const ui::project_chart_action_t&,
                                    std::optional<chart_id_t> active_chart = {})
         -> result_t<project_chart_command_t, std::string>;

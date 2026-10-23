@@ -46,6 +46,9 @@ struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
 };
 
 struct project_panel_state_t {
+    std::optional<wormedit::ui::chrome::PopupContextStamp> creation_stamp;
+    wormedit::timing_link_selection_t creation_timing;
+    wormedit::ui::chrome::Dialog creation_dialog;
     std::optional<std::uint64_t> settings_revision;
     std::array<char, wormedit::maximum_project_path_bytes + 1> audio_directory{}, visual_directory{};
     project_metadata_popup_t metadata_popup;
@@ -593,6 +596,49 @@ void render_chart_row(nk_context* context, const wormedit::ui::setup_view_t& vie
     }
 }
 
+void render_creation_sources(nk_context* context, const wormedit::ui::setup_view_t& view) {
+    for (const auto& category : view.timing_categories) {
+        auto& source = project_state.creation_timing.sources.at(static_cast<std::size_t>(category.category));
+        const auto selected = std::ranges::find(view.charts, source, &wormedit::ui::project_chart_row_view_t::chart_id);
+        nk_layout_row_dynamic(context, 26, 2);
+        nk_label(context, category.label.c_str(), NK_TEXT_LEFT);
+        const std::string_view label = selected == view.charts.end() ? "Independent" : selected->name;
+        if (!wormedit::ui::chrome::safe_combo_begin_label(context, label.data(), nk_vec2(300, 220))) continue;
+        nk_layout_row_dynamic(context, 24, 1);
+        if (nk_combo_item_label(context, "Independent", NK_TEXT_LEFT)) source = {};
+        for (const auto& chart : view.charts)
+            if (nk_combo_item_text(context, chart.name.data(), static_cast<int>(chart.name.size()), NK_TEXT_LEFT)) source = chart.chart_id;
+        wormedit::ui::chrome::safe_combo_end(context);
+    }
+}
+void render_creation_dialog(nk_context* context, const wormedit::ui::setup_view_t& view,
+    wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    if (!project_state.creation_stamp) return;
+    if (!popup_context_matches(*project_state.creation_stamp, PopupContextStamp::from(view, view.selected_chart_id.value))) {
+        project_state.creation_stamp.reset();
+        project_state.creation_timing = {};
+        project_state.release_pending = true;
+        return;
+    }
+    auto& dialog = project_state.creation_dialog;
+    if (dialog_begin(dialog, context, "New chart timing", "New chart", {.width = 560, .enter_confirms = false})) {
+        dialog_text(dialog, context, "Select timing sources for the new difficulty. Independent categories keep local timing.", context->style.text.color);
+        render_creation_sources(context, view);
+        dialog_footer_begin(dialog, context, 2);
+        if (dialog_button(dialog, context, "Create", DialogButtonRole::primary)) {
+            publish_chart_action(view, action, WORM_UI_PROJECT_CHART_NEW, view.selected_chart_id.value);
+            action.project_chart.timing_sources = project_state.creation_timing;
+        }
+        (void)dialog_button(dialog, context, "Cancel", DialogButtonRole::secondary);
+    }
+    if (dialog_end(dialog, context) != DialogResult::none) {
+        project_state.creation_stamp.reset();
+        project_state.creation_timing = {};
+        project_state.release_pending = true;
+    }
+}
+
 void render_project_charts(nk_context* context, const wormedit::ui::setup_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (project_state.selection.song != view.song_id.value ||
         project_state.selection.session_generation != view.session_generation) project_state = {};
@@ -614,8 +660,11 @@ void render_project_charts(nk_context* context, const wormedit::ui::setup_view_t
                                      "Add difficulties from another chart file"}.render(context) &&
         action.chart_import.kind == WORM_UI_CHART_IMPORT_NONE)
         action.chart_import.kind = WORM_UI_CHART_IMPORT_BEGIN;
-    if (wormedit::ui::chrome::Button{"+", wormedit::ui::chrome::ButtonKind::primary, "New chart"}.render(context))
-        publish_chart_action(view, action, WORM_UI_PROJECT_CHART_NEW, 0);
+    if (wormedit::ui::chrome::Button{"+", wormedit::ui::chrome::ButtonKind::primary, "New chart"}.render(context)) {
+        project_state.creation_stamp = wormedit::ui::chrome::PopupContextStamp::from(view, view.selected_chart_id.value);
+        project_state.creation_timing = {};
+        project_state.creation_dialog = {};
+    }
     (void)wormedit::ui::chrome::context_menu_update(project_state.row_menu, context);
     (void)wormedit::ui::chrome::popup_update_release_pending(context, project_state.release_pending);
     // The table fills the panel's row, not the whole window: a one-column row supplies that width.
@@ -1281,7 +1330,7 @@ bool worm_ui_nuklear_project_chart_shortcut(const wormedit::ui::setup_view_t& vi
 }
 
 bool worm_ui_nuklear_setup_popup_owns_input() {
-    return project_state.selection.pending_delete != 0 || !project_state.delete_selection.empty() ||
+    return project_state.creation_stamp.has_value() || project_state.selection.pending_delete != 0 || !project_state.delete_selection.empty() ||
         project_state.metadata_popup.owns_input() || project_state.release_pending ||
         project_state.group_editor_open || project_state.group_delete_pending ||
         project_state.membership_chart != 0 ||
@@ -1411,6 +1460,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const wormedit::ui::setup_view_t& view,
                                          wormedit::ui::workspace_action_t& action) {
     if (!view.visible) return;
+    render_creation_dialog(context, view, action);
     render_delete_confirmation(context, view, action);
     render_output_group_editor(context, view, action);
     render_output_group_delete(context, view, action);

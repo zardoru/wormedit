@@ -8,6 +8,7 @@ struct timing_category_info_t {
     timing_category_t kind;
     std::string_view label;
     bool changes_retained_bms_timing;
+    [[nodiscard]] auto requires_link_confirmation(const chart_document_t&) const -> bool;
     [[nodiscard]] static constexpr auto for_recipe(sv_recipe_output_t output) -> timing_category_t {
         switch (output) {
         case sv_recipe_output_t::sv:

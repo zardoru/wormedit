@@ -2,6 +2,7 @@
 #include <wormedit/core/preferences.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/timing_links.h>
 
 #include <wormedit/formats/stepmania.h>
 
@@ -196,8 +197,37 @@ auto check_chart_selection(const document_history_t& history, std::span<const ch
     return std::nullopt;
 }
 
+auto prepare_creation_timing_extent(const song_document_t& song, chart_document_t& chart,
+    const timing_link_selection_t& timing) -> std::optional<diagnostic_t> {
+    for (const auto& category : timing_categories) {
+        const auto source_id = timing.source(category.kind);
+        if (!source_id) continue;
+        const auto* source = song.find_chart(source_id);
+        if (!source) return error(diagnostic_code_t::invalid_id, "A selected timing source no longer exists.");
+        if (category.kind == timing_category_t::offset) continue;
+        const auto map = timing_position_map_t::from(*source, chart);
+        if (!map) return map.error().front();
+        const auto rows = map->rows(map->source.total_rows);
+        if (!rows || (*rows > 0 && !extend_chart_to_row(chart, *rows - 1)))
+            return error(diagnostic_code_t::invalid_resolution, "The new chart cannot cover the selected timing sources exactly on its grid.");
+    }
+    return std::nullopt;
+}
+auto stage_creation_timing(document_command_transaction_t& transaction, chart_id_t chart,
+    const timing_link_selection_t& timing) -> diagnostic_list_t {
+    for (const auto& category : timing_categories) {
+        const auto source = timing.source(category.kind);
+        if (!source) continue;
+        auto staged = stage_timing_link_edit(transaction, chart,
+            {.category = category.kind, .source = source, .discard_confirmed = true});
+        if (!staged.value) return std::move(staged.diagnostics);
+    }
+    return {};
+}
+
 auto commit_empty_chart(document_history_t& history, lane_input_profile_t profile,
-    format_family_t source_family, std::uint64_t divisions, signed_rational_t offset)
+    format_family_t source_family, std::uint64_t divisions, signed_rational_t offset,
+    const timing_link_selection_t& timing)
     -> duplicate_chart_result_t {
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
@@ -215,6 +245,8 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
         stream && !extend_chart_to_audio_end(chart, *stream))
         return {.command = document_command_transaction_t::rejection(history.document.revision,
             diagnostic_code_t::invalid_measure, "new chart cannot cover the linked music/BGM duration")};
+    if (const auto issue = prepare_creation_timing_extent(history.document, chart, timing))
+        return {.command = {.revision = history.document.revision, .diagnostics = {*issue}}};
     chart_id_remap_t remap{.next = ceiling + 1};
     visit_chart_ids(chart, remap);
     if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
@@ -222,6 +254,8 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     proposed.charts.push_back(std::move(chart));
+    const auto diagnostics = stage_creation_timing(transaction, id, timing);
+    if (!diagnostics.empty()) return {.command = {.revision = history.document.revision, .diagnostics = diagnostics}};
     auto result = transaction.commit("New chart");
     const auto applied = result.applied;
     return {.command = std::move(result), .payload = {.chart = applied ? std::optional{id} : std::nullopt}};
@@ -231,14 +265,14 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
 
 auto apply_new_chart_command(document_history_t& history,
     lane_input_profile_t profile, format_family_t source_family,
-    const default_lane_keys_t* defaults) -> duplicate_chart_result_t {
+    const default_lane_keys_t* defaults, const timing_link_selection_t& timing) -> duplicate_chart_result_t {
     if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source_family,
-        default_divisions_per_standard_measure, {});
+        default_divisions_per_standard_measure, {}, timing);
 }
 
 auto apply_add_chart_command(document_history_t& history,
-    chart_id_t template_chart, const default_lane_keys_t* defaults) -> duplicate_chart_result_t {
+    chart_id_t template_chart, const default_lane_keys_t* defaults, const timing_link_selection_t& timing) -> duplicate_chart_result_t {
     if (auto invalid = check_chart(history, template_chart))
         return {.command = std::move(*invalid)};
     const auto source = history.document.find_chart(template_chart);
@@ -251,7 +285,7 @@ auto apply_add_chart_command(document_history_t& history,
     });
     if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source->source_family,
-        source->divisions_per_standard_measure, source->beat_zero_audio_offset_seconds);
+        source->divisions_per_standard_measure, source->beat_zero_audio_offset_seconds, timing);
 }
 
 auto apply_duplicate_chart_command(document_history_t& history,

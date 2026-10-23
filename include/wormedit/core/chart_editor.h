@@ -18,12 +18,12 @@ using duplicate_chart_result_t = command_result_with_t<duplicate_chart_payload_t
 // No chart content or output-group membership is copied from an existing chart.
 [[nodiscard]] auto apply_new_chart_command(document_history_t& history, lane_input_profile_t profile = make_bms_7k_profile(),
     format_family_t source_family = format_family_t::native_project,
-    const default_lane_keys_t* defaults = nullptr) -> duplicate_chart_result_t;
+    const default_lane_keys_t* defaults = nullptr, const timing_link_selection_t& timing = {}) -> duplicate_chart_result_t;
 
 // Templates only the initial lane profile, resolution and exact audio offset.
 // Uses the same audio-extent rule as a new chart; source content is never cloned.
 [[nodiscard]] auto apply_add_chart_command(document_history_t& history, chart_id_t template_chart,
-    const default_lane_keys_t* defaults = nullptr) -> duplicate_chart_result_t;
+    const default_lane_keys_t* defaults = nullptr, const timing_link_selection_t& timing = {}) -> duplicate_chart_result_t;
 
 [[nodiscard]] auto apply_duplicate_chart_command(document_history_t& history, chart_id_t chart) -> duplicate_chart_result_t;
 [[nodiscard]] auto apply_delete_chart_command(document_history_t& history, chart_id_t chart) -> document_command_result_t;

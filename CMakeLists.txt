@@ -155,6 +155,7 @@ add_library(wormedit_core
     src/formats/bms_clipboard.cpp
     src/formats/bms_branch_selection.cpp
     src/formats/bms_writer.cpp
+    src/formats/bms_program_writer.cpp
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
     src/formats/conversion.cpp

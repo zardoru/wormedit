@@ -2,6 +2,19 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-735** (2026-10-23): `write_bms_program` serializes the full typed
+program, including inactive declarations/events, Text, automatic IF grouping and anchored SKIP.
+Default output is independent of preview choices. Exact-value signatures verify read-only
+source passthrough; stale flags cannot hide typed edits or asset relinks. Explicit flattening
+uses the shared projection, resolved reachable choices and the selected loss policy.
+BGM padding/columns, exact channel grids, empty measures and supported encodings round-trip;
+unrepresentable values, unsupported profile content and caps return no partial output.
+GATE and Linux Clang each pass **4,712/4,712**; whitespace and **9-TU** complexity pass
+without increased allowances. Focused writer checks pass **2,482 assertions / 33 cases**,
+including all 18 built-in profiles. Documentation checks pass **5/5**; the measured zero
+frontend-action ceremony allowance tightens **2→0**. The legacy public owner remains
+authoritative until T-744. **T-736 is ready**; no successor implementation is active.
+
 Completed **T-734** (2026-10-23): detached typed-program evaluation derives playable
 notes/holds, timing, scoped resources, exact measure geometry and active BGM columns.
 Root/common content, nested IF chains, fixed selectors and switch fallthrough match
@@ -12,7 +25,7 @@ return no candidate; stale hidden owner lookup refuses. GATE and Linux Clang eac
 **4,679/4,679**; whitespace and **7-TU** complexity pass without increased allowances.
 Focused projection checks pass **2,148 assertions / 22 cases**, including all 18 built-in
 profile fixtures. Final documentation checks pass **5/5**. The legacy public owner remains
-authoritative until T-744. **T-735 is ready**; no successor implementation is active.
+authoritative until T-744. **T-735 is complete above; T-736 is ready**; no successor implementation is active.
 
 Completed **T-733** (2026-10-23): prepared scoped import shares the existing BMS source
 parser and decodes active/inactive declarations, events, exact positions and both hold endpoints.
@@ -24,7 +37,7 @@ Slot provenance stays bounded by retaining source bytes once. GATE and Linux Cla
 pass **4,657/4,657**; whitespace and **5-TU** complexity pass without increased allowances.
 Final documentation checks pass **5/5**. Focused import/model checks
 pass **390 assertions / 46 cases**; existing BMS checks pass **8,575 / 150**. The legacy
-public document remains authoritative. **T-734 is complete above; T-735 is ready**; no successor implementation is active.
+public document remains authoritative. **T-734 and T-735 are complete above**; no successor implementation is active.
 
 Completed **T-732** (2026-10-23): a prepared `bms_program_t` owns typed Root/RANDOM/IF,
 Chart and Text values with stable IDs, ordered children and derived parent queries.

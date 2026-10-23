@@ -186,6 +186,12 @@ struct bms_program_node_t {
     // The sole parent/order authority; parent lookup is derived on construction.
     std::vector<branch_id_t> children;
     [[nodiscard]] auto is_scope() const -> bool;
+    [[nodiscard]] auto is_if_continuation() const -> bool {
+        return std::holds_alternative<bms_else_if_scope_t>(value) || std::holds_alternative<bms_else_scope_t>(value);
+    }
+    [[nodiscard]] auto is_if_arm() const -> bool {
+        return std::holds_alternative<bms_if_scope_t>(value) || is_if_continuation();
+    }
     auto operator==(const bms_program_node_t&) const -> bool = default;
 };
 struct bms_program_limits_t {

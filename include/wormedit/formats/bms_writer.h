@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/bms_program.h>
 #include <wormedit/formats/bms_export_profile.h>
 
 #include <cstddef>
@@ -84,5 +85,28 @@ using bms_write_outcome_t = attempt_t<std::string, std::vector<bms_write_diagnos
 // updating the retained source bytes and all later source identities atomically.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_outcome_t;
+
+// Prepared scoped export only; T-744 activates this owner publicly. Preserving
+// all scopes is independent of evaluation choices. Flattening is explicit and
+// governed by loss_policy, using the shared playable projection.
+struct bms_program_write_options_t {
+    bms_write_options_t format;
+    bms_program_evaluation_t evaluation;
+    loss_policy_t loss_policy{loss_policy_t::reject};
+    // Optional read-only import backing. Passthrough verifies typed equivalence
+    // against these bytes, so a stale unchanged flag cannot discard an edit.
+    std::optional<encoding_provenance_t> source;
+    bms_program_limits_t program_limits;
+    std::size_t maximum_input_objects{1'000'000};
+    std::size_t maximum_output_bytes{16U * 1024U * 1024U};
+    std::size_t maximum_lines{262'144};
+    [[nodiscard]] auto can_verify_source() const -> bool {
+        return source && source->unchanged_since_import && source->original_bytes &&
+            format.preserve_unchanged_source && !format.output_encoding &&
+            format.branch_policy == bms_branch_policy_t::preserve_tree;
+    }
+};
+[[nodiscard]] auto write_bms_program(const bms_prepared_program_t& prepared,
+    bms_program_write_options_t options = {}) -> bms_write_outcome_t;
 
 } // namespace wormedit

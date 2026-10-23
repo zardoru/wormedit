@@ -1,4 +1,5 @@
 #include "bms_timing_directive.h"
+#include "bms_channel.h"
 #include "bms_program_import_internal.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
@@ -612,11 +613,8 @@ auto node_source_line(const bms_control_node_t& node) -> source_line_t {
 }
 
 auto bms_bga_kind_for_channel(std::string_view channel) -> std::optional<visual_event_kind_t> {
-    if (channel == "04") return visual_event_kind_t::background;
-    if (channel == "06") return visual_event_kind_t::poor;
-    if (channel == "07") return visual_event_kind_t::layer;
-    if (channel == "0A") return visual_event_kind_t::layer2;
-    return std::nullopt;
+    const auto* entry = bms_bga_channel_t::from(channel);
+    return entry ? std::optional{entry->kind} : std::nullopt;
 }
 
 struct bms_channel_materializer_t {
@@ -3923,7 +3921,10 @@ auto delete_bms_inactive_branch_statement(const song_document_t& song,
 
 namespace wormedit {
 auto bms_source_statement_t::from(const bms_control_node_t& node) -> bms_source_statement_t {
-    const auto parsed = parse_line(node.original_text);
+    return from(std::string_view{node.original_text});
+}
+auto bms_source_statement_t::from(std::string_view line) -> bms_source_statement_t {
+    const auto parsed = parse_line(line);
     const auto token = text_util::ascii_upper(parsed.token);
     return {.token = token, .value = parsed.semantic_value, .separator = parsed.separator,
             .measure_channel = parse_measure_command(token)};

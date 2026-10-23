@@ -1,5 +1,6 @@
 #include <wormedit/core/metadata_inheritance.h>
 #include "bms_timing_directive.h"
+#include "bms_writer_internal.h"
 #include <wormedit/core/catalogs.h>
 #include "text_codec_result.h"
 #include <wormedit/core/bms36.h>
@@ -36,14 +37,9 @@
 #endif
 
 namespace wormedit {
-namespace {
-
-struct write_failure_t {
-    bms_write_diagnostic_code_t code;
-    std::string message;
-    std::string path;
-};
-
+namespace bms_writer_detail {
+using text_util::ascii_upper;
+using checked_math::checked_lcm;
 [[noreturn]] auto fail(bms_write_diagnostic_code_t code, std::string message, std::string path)
     -> void {
     throw write_failure_t{code, std::move(message), std::move(path)};
@@ -154,23 +150,6 @@ auto base36_id(std::size_t value) -> std::string {
     return result;
 }
 
-auto bms_identity(const resource_entry_t& resource, std::string_view name_space)
-    -> std::optional<std::string> {
-    const auto identity =
-        std::ranges::find_if(resource.target_identities, [&](const auto& candidate) {
-            return candidate.family == format_family_t::bms &&
-                   candidate.namespace_name == name_space;
-        });
-    if (identity == resource.target_identities.end() || identity->identifier.size() != 2) {
-        return std::nullopt;
-    }
-    auto result = text_util::ascii_upper(identity->identifier);
-    if (!is_base36_digit(result[0]) || !is_base36_digit(result[1]) || result == "00") {
-        return std::nullopt;
-    }
-    return result;
-}
-
 auto has_line_break_or_nul(std::string_view value) -> bool {
     return std::ranges::any_of(value, [](char character) {
         return character == '\r' || character == '\n' || character == '\0';
@@ -180,23 +159,6 @@ auto has_line_break_or_nul(std::string_view value) -> bool {
 auto has_edge_whitespace(std::string_view value) -> bool {
     return !value.empty() && (std::isspace(static_cast<unsigned char>(value.front())) != 0 ||
                               std::isspace(static_cast<unsigned char>(value.back())) != 0);
-}
-
-auto is_safe_metadata_token(std::string_view token) -> bool {
-    if (token.empty() || !((token.front() >= 'A' && token.front() <= 'Z') ||
-                           (token.front() >= 'a' && token.front() <= 'z'))) {
-        return false;
-    }
-    return std::ranges::all_of(token, [](char character) {
-        return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
-               (character >= '0' && character <= '9') || character == '_';
-    });
-}
-
-using text_util::ascii_upper;
-
-auto trim_ascii_whitespace(std::string_view text) -> std::string_view {
-    return text_util::trim(text, text_util::ascii_whitespace);
 }
 
 auto generated_or_channel_token(std::string_view token) -> bool {
@@ -219,30 +181,6 @@ auto generated_or_channel_token(std::string_view token) -> bool {
     return upper.size() == 5 && upper[0] >= '0' && upper[0] <= '9' && upper[1] >= '0' &&
            upper[1] <= '9' && upper[2] >= '0' && upper[2] <= '9' && is_base36(upper[3]) &&
            is_base36(upper[4]);
-}
-
-using text_util::is_valid_utf8;
-
-struct bms_source_t {
-    std::shared_ptr<const std::vector<std::byte>> bytes;
-    text_encoding_t encoding{};
-    auto operator==(const bms_source_t&) const -> bool = default;
-    static auto from(const song_document_t& song, const chart_document_t& chart, bool unchanged)
-        -> std::optional<bms_source_t> {
-        for (const auto* groups : {&chart.metadata.format_groups, &song.metadata.format_groups})
-            for (const auto& group : *groups)
-                if (group.family == format_family_t::bms && group.encoding.original_bytes &&
-                    (!unchanged || group.encoding.unchanged_since_import))
-                    return bms_source_t{.bytes = group.encoding.original_bytes,
-                        .encoding = group.encoding.user_override.value_or(group.encoding.detected)};
-        return std::nullopt;
-    }
-};
-
-auto source_provenance_bytes(const song_document_t& song, const chart_document_t& chart)
-    -> std::shared_ptr<const std::vector<std::byte>> {
-    const auto source = bms_source_t::from(song, chart, false);
-    return source ? source->bytes : nullptr;
 }
 
 auto encode_bms_text(std::string_view utf8, text_encoding_t encoding) -> std::string {
@@ -293,42 +231,6 @@ auto is_lr2_command(std::string_view command) -> bool {
         "BPM", "PLAYLEVEL", "RANK", "DEFEXRANK", "TOTAL", "VOLWAV", "STAGEFILE", "BANNER",
         "BACKBMP", "COMMENT", "DIFFICULTY", "LNTYPE", "LNOBJ", "BGA", "PATH_WAV", "MIDIFILE"};
     return std::ranges::find(classic, command) != classic.end();
-}
-
-void validate_lr2_statement(const bms_control_node_t& node) {
-    if (node.kind == bms_control_kind_t::raw_statement &&
-        !is_lr2_command(ascii_upper(node.command_token)))
-        fail(bms_write_diagnostic_code_t::lossy_transform,
-             "lr2_compatible cannot represent #" + node.command_token,
-             "$.charts[].bms_control_tree[" + std::to_string(node.source_order) + "]");
-    if (node.kind == bms_control_kind_t::switch_block || node.kind == bms_control_kind_t::set_switch ||
-        node.kind == bms_control_kind_t::skip)
-        fail(bms_write_diagnostic_code_t::lossy_transform,
-             "lr2_compatible cannot represent SWITCH/SETSWITCH/SKIP control flow", "$.charts[].bms_control_tree");
-    for (const auto& child : node.children) validate_lr2_statement(child);
-}
-
-void validate_bms_profile(const song_document_t& song, const chart_document_t& chart,
-    const bms_write_options_t& options) {
-    if (options.profile != bms_export_profile_t::lr2_compatible) return;
-    if (options.output_encoding && *options.output_encoding != text_encoding_t::cp932)
-        fail(bms_write_diagnostic_code_t::unsupported_encoding,
-             "lr2_compatible requires CP932 output", "$.output_encoding");
-    if (!chart.scrolls.empty() || chart.beat_zero_audio_offset_seconds.numerator != 0)
-        fail(bms_write_diagnostic_code_t::lossy_transform,
-             "lr2_compatible cannot represent scroll changes or the editor OFFSET extension", "$.charts[]");
-    const auto validate_groups = [](const auto& groups) {
-        for (const auto& group : groups) if (group.family == format_family_t::bms)
-            for (const auto& [token, value] : group.ordered_fields) {
-                (void)value;
-                if (!is_lr2_command(ascii_upper(token)))
-                    fail(bms_write_diagnostic_code_t::lossy_transform,
-                         "lr2_compatible cannot represent #" + token, "$.metadata.format_groups[].ordered_fields");
-            }
-    };
-    validate_groups(song.metadata.format_groups);
-    validate_groups(chart.metadata.format_groups);
-    if (chart.bms_control_tree) validate_lr2_statement(*chart.bms_control_tree);
 }
 
 auto exact_decimal(std::uint64_t numerator, std::uint64_t denominator, std::string path)
@@ -399,6 +301,142 @@ auto exact_decimal(signed_rational_t value, std::string path) -> std::string {
                          std::move(path));
 }
 
+auto encode_bms_channel_line(const channel_line_t& line,
+                             const bms_write_options_t& options) -> std::string {
+    std::uint64_t slot_count = std::max<std::uint64_t>(line.minimum_slots, 1);
+    for (const auto& note : line.notes) {
+        const auto slots = checked_lcm(slot_count, note.denominator);
+        if (!slots || *slots > options.max_slots_per_line || *slots > maximum_bms_channel_slots)
+            fail(bms_write_diagnostic_code_t::resource_limit,
+                 "exact note positions require too many BMS subdivision slots",
+                 "$.charts[].measures[].notes");
+        slot_count = *slots;
+    }
+    if (slot_count == 0 || slot_count > options.max_slots_per_line || slot_count > maximum_bms_channel_slots)
+        fail(bms_write_diagnostic_code_t::resource_limit,
+             "BMS channel line exceeds the configured subdivision limit",
+             "$.charts[].measures[].notes");
+    std::vector<std::string> cells(static_cast<std::size_t>(slot_count), "00");
+    std::vector<bool> occupied(static_cast<std::size_t>(slot_count), false);
+    for (const auto& note : line.notes) {
+        const auto multiplier = slot_count / note.denominator;
+        if (note.numerator > std::numeric_limits<std::uint64_t>::max() / multiplier)
+            fail(bms_write_diagnostic_code_t::unrepresentable_number,
+                 "note subdivision index overflows the BMS channel grid", note.path);
+        const auto slot = note.numerator * multiplier;
+        if (slot >= slot_count || occupied[static_cast<std::size_t>(slot)])
+            fail(bms_write_diagnostic_code_t::duplicate_event,
+                 "two events occupy the same BMS channel slot", note.path);
+        occupied[static_cast<std::size_t>(slot)] = true;
+        cells[static_cast<std::size_t>(slot)] = note.object_id;
+    }
+    std::string payload;
+    payload.reserve(cells.size() * 2);
+    for (const auto& cell : cells) payload += cell;
+    const auto prefix = line.measure < 10 ? std::string("00")
+                         : line.measure < 100 ? std::string("0")
+                                              : std::string();
+    return "#" + prefix + std::to_string(line.measure) + line.channel + ":" + payload;
+}
+
+} // namespace bms_writer_detail
+namespace {
+using bms_writer_detail::write_failure_t;
+using bms_writer_detail::fail;
+using bms_writer_detail::warn;
+using bms_writer_detail::is_base36_digit;
+using bms_writer_detail::base36_id;
+using bms_writer_detail::has_line_break_or_nul;
+using bms_writer_detail::has_edge_whitespace;
+using bms_writer_detail::generated_or_channel_token;
+using bms_writer_detail::bms_source_t;
+using bms_writer_detail::encode_bms_text;
+using bms_writer_detail::write_retained_bms_source;
+using bms_writer_detail::is_lr2_command;
+using bms_writer_detail::exact_decimal;
+using bms_writer_detail::exact_signed_decimal;
+using bms_writer_detail::note_slot_t;
+using bms_writer_detail::channel_line_t;
+using bms_writer_detail::encode_bms_channel_line;
+
+auto bms_identity(const resource_entry_t& resource, std::string_view name_space)
+    -> std::optional<std::string> {
+    const auto identity =
+        std::ranges::find_if(resource.target_identities, [&](const auto& candidate) {
+            return candidate.family == format_family_t::bms &&
+                   candidate.namespace_name == name_space;
+        });
+    if (identity == resource.target_identities.end() || identity->identifier.size() != 2) {
+        return std::nullopt;
+    }
+    auto result = text_util::ascii_upper(identity->identifier);
+    if (!is_base36_digit(result[0]) || !is_base36_digit(result[1]) || result == "00") {
+        return std::nullopt;
+    }
+    return result;
+}
+
+auto is_safe_metadata_token(std::string_view token) -> bool {
+    if (token.empty() || !((token.front() >= 'A' && token.front() <= 'Z') ||
+                           (token.front() >= 'a' && token.front() <= 'z'))) {
+        return false;
+    }
+    return std::ranges::all_of(token, [](char character) {
+        return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+               (character >= '0' && character <= '9') || character == '_';
+    });
+}
+
+using text_util::ascii_upper;
+
+auto trim_ascii_whitespace(std::string_view text) -> std::string_view {
+    return text_util::trim(text, text_util::ascii_whitespace);
+}
+
+using text_util::is_valid_utf8;
+
+auto source_provenance_bytes(const song_document_t& song, const chart_document_t& chart)
+    -> std::shared_ptr<const std::vector<std::byte>> {
+    const auto source = bms_source_t::from(song, chart, false);
+    return source ? source->bytes : nullptr;
+}
+
+void validate_lr2_statement(const bms_control_node_t& node) {
+    if (node.kind == bms_control_kind_t::raw_statement &&
+        !is_lr2_command(ascii_upper(node.command_token)))
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent #" + node.command_token,
+             "$.charts[].bms_control_tree[" + std::to_string(node.source_order) + "]");
+    if (node.kind == bms_control_kind_t::switch_block || node.kind == bms_control_kind_t::set_switch ||
+        node.kind == bms_control_kind_t::skip)
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent SWITCH/SETSWITCH/SKIP control flow", "$.charts[].bms_control_tree");
+    for (const auto& child : node.children) validate_lr2_statement(child);
+}
+
+void validate_bms_profile(const song_document_t& song, const chart_document_t& chart,
+    const bms_write_options_t& options) {
+    if (options.profile != bms_export_profile_t::lr2_compatible) return;
+    if (options.output_encoding && *options.output_encoding != text_encoding_t::cp932)
+        fail(bms_write_diagnostic_code_t::unsupported_encoding,
+             "lr2_compatible requires CP932 output", "$.output_encoding");
+    if (!chart.scrolls.empty() || chart.beat_zero_audio_offset_seconds.numerator != 0)
+        fail(bms_write_diagnostic_code_t::lossy_transform,
+             "lr2_compatible cannot represent scroll changes or the editor OFFSET extension", "$.charts[]");
+    const auto validate_groups = [](const auto& groups) {
+        for (const auto& group : groups) if (group.family == format_family_t::bms)
+            for (const auto& [token, value] : group.ordered_fields) {
+                (void)value;
+                if (!is_lr2_command(ascii_upper(token)))
+                    fail(bms_write_diagnostic_code_t::lossy_transform,
+                         "lr2_compatible cannot represent #" + token, "$.metadata.format_groups[].ordered_fields");
+            }
+    };
+    validate_groups(song.metadata.format_groups);
+    validate_groups(chart.metadata.format_groups);
+    if (chart.bms_control_tree) validate_lr2_statement(*chart.bms_control_tree);
+}
+
 auto parse_positive_timing_value(std::string_view text) -> std::optional<signed_rational_t> {
     const auto parsed = parse_measure_length(text);
     if (!parsed.has_value() ||
@@ -411,22 +449,6 @@ auto parse_positive_timing_value(std::string_view text) -> std::optional<signed_
 }
 
 using checked_math::checked_lcm;
-
-struct note_slot_t {
-    std::uint64_t numerator{};
-    std::uint64_t denominator{1};
-    std::string object_id;
-    std::string path;
-};
-
-struct channel_line_t {
-    std::size_t measure{};
-    std::string channel;
-    std::vector<note_slot_t> notes;
-    // Subdivision of the source line the events came from, so `00` padding
-    // survives edits instead of collapsing to the coarsest exact grid.
-    std::uint64_t minimum_slots{1};
-};
 
 struct hold_endpoint_t {
     std::uint64_t row{};
@@ -2185,9 +2207,6 @@ struct bgm_export_context_t {
 auto exported_bgm_audio_id(const bgm_export_context_t& context, resource_id_t resource,
                            std::string_view path) -> std::string;
 
-auto encode_bms_channel_line(const channel_line_t& line,
-                             const bms_write_options_t& options) -> std::string;
-
 void clear_converted_branch_slot(const source_provenance_t& provenance,
                                  const channel_slot_field_t& field,
                                  bgm_export_context_t& context, std::string_view path) {
@@ -2820,44 +2839,6 @@ auto emit_metadata_header(metadata_output_context_t context) -> std::vector<std:
         context.output.emplace_back("#PLAYLEVEL " + std::to_string(*context.playlevel));
     append_explicit_metadata(context);
     return context.output;
-}
-
-auto encode_bms_channel_line(const channel_line_t& line,
-                             const bms_write_options_t& options) -> std::string {
-    std::uint64_t slot_count = std::max<std::uint64_t>(line.minimum_slots, 1);
-    for (const auto& note : line.notes) {
-        const auto slots = checked_lcm(slot_count, note.denominator);
-        if (!slots || *slots > options.max_slots_per_line || *slots > 500'000)
-            fail(bms_write_diagnostic_code_t::resource_limit,
-                 "exact note positions require too many BMS subdivision slots",
-                 "$.charts[].measures[].notes");
-        slot_count = *slots;
-    }
-    if (slot_count == 0 || slot_count > options.max_slots_per_line || slot_count > 500'000)
-        fail(bms_write_diagnostic_code_t::resource_limit,
-             "BMS channel line exceeds the configured subdivision limit",
-             "$.charts[].measures[].notes");
-    std::vector<std::string> cells(static_cast<std::size_t>(slot_count), "00");
-    std::vector<bool> occupied(static_cast<std::size_t>(slot_count), false);
-    for (const auto& note : line.notes) {
-        const auto multiplier = slot_count / note.denominator;
-        if (note.numerator > std::numeric_limits<std::uint64_t>::max() / multiplier)
-            fail(bms_write_diagnostic_code_t::unrepresentable_number,
-                 "note subdivision index overflows the BMS channel grid", note.path);
-        const auto slot = note.numerator * multiplier;
-        if (slot >= slot_count || occupied[static_cast<std::size_t>(slot)])
-            fail(bms_write_diagnostic_code_t::duplicate_event,
-                 "two events occupy the same BMS channel slot", note.path);
-        occupied[static_cast<std::size_t>(slot)] = true;
-        cells[static_cast<std::size_t>(slot)] = note.object_id;
-    }
-    std::string payload;
-    payload.reserve(cells.size() * 2);
-    for (const auto& cell : cells) payload += cell;
-    const auto prefix = line.measure < 10 ? std::string("00")
-                         : line.measure < 100 ? std::string("0")
-                                              : std::string();
-    return "#" + prefix + std::to_string(line.measure) + line.channel + ":" + payload;
 }
 
 void append_bms_bpm_header(const chart_document_t& chart, bool can_project_timing,

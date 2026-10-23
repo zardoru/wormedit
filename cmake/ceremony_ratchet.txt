@@ -17,7 +17,7 @@ local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_
 
 # T-722: only the two retained project drop/replacement adapters construct frontend actions in sys.
 # This lexical guard does not prove whether a construction is a legitimate boundary adapter.
-sys_frontend_action_builder | 2 | src/sys | WormUiWorkspaceAction [A-Za-z_][A-Za-z0-9_]*[{][}]
+sys_frontend_action_builder | 0 | src/sys | WormUiWorkspaceAction [A-Za-z_][A-Za-z0-9_]*[{][}]
 
 # The two whitespace classes below contain a literal tab: rows are data, not quoted CMake strings.
 # Cursor writes belong to the helpers in interaction_cursor_pose.h (the existing owner writes count here).

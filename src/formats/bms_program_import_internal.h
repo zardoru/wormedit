@@ -14,6 +14,7 @@ struct bms_source_statement_t {
     char separator{};
     std::optional<std::pair<std::size_t, std::string>> measure_channel;
     [[nodiscard]] static auto from(const bms_control_node_t& node) -> bms_source_statement_t;
+    [[nodiscard]] static auto from(std::string_view line) -> bms_source_statement_t;
     [[nodiscard]] auto positive_number() const -> std::optional<signed_rational_t>;
     [[nodiscard]] auto measure_length() const -> std::optional<rational_t>;
     [[nodiscard]] auto is_control() const -> bool;

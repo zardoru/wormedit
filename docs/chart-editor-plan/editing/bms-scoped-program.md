@@ -78,7 +78,8 @@ equivalent scoped semantic owner. Migration may keep a read-only legacy backing
 until that equivalence is proven. It must never silently omit inactive content,
 duplicate it into both owners, or relabel it as unknown Text to evade migration.
 
-T-731 records a command-family ownership table for notes/holds, BGM/BGA, timing,
+[T-731’s ownership audit](../audits/bms-scoped-ownership.md) records the command-family
+owners, exact editor entries, identity/geometry rules and one-way cutover for notes/holds, BGM/BGA, timing,
 measure geometry, metadata and resource definitions. Asset identity and storage
 can remain shared, but a scoped WAV/BMP declaration and the asset it references
 are different facts. Resource lookup must preserve the selected BMS profile's

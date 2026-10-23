@@ -2,6 +2,12 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-731** (2026-10-23): the code-free scoped BMS audit maps command families,
+active/inactive ownership, every editor entry family and the one-way native/public cutover.
+Dependent cards now name the traced supporting files. Documentation checks pass **5/5**
+and whitespace passes. **T-732 is ready**; questions 21–24 still gate their dependent slices.
+No runtime or song-document changes; no successor implementation is active.
+
 Completed **T-228** (2026-10-23): Compose has one right dock for Inspector, Sounds,
 Images, Measures, Layers and Markers, with independent scrolling and up to two stacked panes.
 The strip selects, hides and reorders panels; width and split handles retain bounded application
@@ -331,14 +337,16 @@ osu! custom-set notes**, and BMSON layered authoring. Existing retained BMSON fu
 remains supported. Question 25 gates the model; no flattened-composite shortcut, hidden BMSON
 generic backing or whole-set migration is approved. Start only when the owner requests it.
 
-Scoped BMS program **plan written** (2026-10-20; implementation not started):
+Scoped BMS program **T-731 audit complete** (2026-10-23; runtime implementation not started):
 [approved Control/Chart/Text contract](../../docs/chart-editor-plan/editing/bms-scoped-program.md),
 [model/migration T-731–T-737](../../docs/chart-editor-plan/tasks/bms-scoped-model.md), then
 [authoring/integration T-738–T-744](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md).
-When implementation is requested, start with T-731's ownership/transition audit, not the old
-raw-statement panel. Questions 21–24 gate range shrinking, non-body directive presentation,
+The [ownership/transition audit](../../docs/chart-editor-plan/audits/bms-scoped-ownership.md)
+records every modeled family, inactive declarations/hold endpoints, editor entries and exact
+cutover scope. **T-732 is ready** for the agreed Root/RANDOM/IF value model; no successor
+implementation is started by this audit. Questions 21–24 gate range shrinking, non-body directive presentation,
 selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
-are already settled. This planning request does not start implementation or revive T-729/T-730.
+are already settled. This audit does not start dependent implementation or revive deferred work.
 
 Completed **T-703** (2026-10-20): Lane Keys is available from Options → Input & shortcuts
 and the command menu. Stage cards, a physical keyboard map, presets and validated capture save

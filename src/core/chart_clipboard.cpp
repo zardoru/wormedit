@@ -49,7 +49,7 @@ auto selected_kiai_boundaries(const song_document_t& document,
                               const editor_interaction_state_t& state, object_id_t head)
     -> std::optional<std::vector<editor_selection_object_t>> {
     if (!head) return std::vector<editor_selection_object_t>{};
-    const auto chart = document.find_chart(state.chart);
+    const auto chart = document.read_chart(state.chart);
     if (chart == nullptr) return std::nullopt;
     const auto indexed = measure_index_t::from(*chart);
     if (!indexed) return std::nullopt;
@@ -189,7 +189,7 @@ auto chart_clipboard_t::from(const song_document_t& document,
     const document_stamp_t stamp{.project = document.id, .revision = expected_revision};
     if (!stamp.is_current(document))
         return std::unexpected(stale_action_message("Chart selection copy"));
-    const auto chart = document.find_chart(state.chart);
+    const auto chart = document.read_chart(state.chart);
     if (chart == nullptr)
         return std::unexpected(std::string{"The selected chart no longer exists."});
     auto selected = selected_objects(state);
@@ -712,7 +712,14 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     if (count == 0 || count > maximum_objects)
         return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", stamp, std::move(result.report)));
     auto proposed = document;
-    const auto chart = proposed.find_chart(chart_id);
+    const auto* source_chart = document.read_chart(chart_id);
+    auto scoped_chart = source_chart ? *source_chart : chart_document_t{};
+    const bool scoped = !document.find_chart(chart_id) && source_chart;
+    auto* chart = scoped ? &scoped_chart : proposed.find_chart(chart_id);
+    if (scoped && (!clipboard.bar_lines.empty() ||
+        std::ranges::any_of(clipboard.objects, [](const auto& object) { return object.stem.has_value(); })))
+        return std::unexpected(chart_paste_diagnostic_t::from(
+            "Scoped paste cannot change measure geometry or retained stem channels.", stamp, std::move(result.report)));
     if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", stamp, std::move(result.report)));
     const auto original = measure_index_t::from(*chart);
     const auto row = original ? original->row_of(anchor) : std::nullopt;
@@ -732,6 +739,12 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     }
     if (const auto problem = apply_stem_run_rules(document, *chart, *indexed, result.stem_events))
         return std::unexpected(chart_paste_diagnostic_t::from(*problem, stamp, std::move(result.report)));
+    if (scoped) {
+        if (!result.report.new_bgm_lanes.empty())
+            return std::unexpected(chart_paste_diagnostic_t::from(
+                "Scoped paste requires existing BGM columns.", stamp, std::move(result.report)));
+        return result;
+    }
     for (const auto& object : result.report.objects) append_paste_object(*chart, object);
     append_stem_events(*chart, result.stem_events);
     const auto diagnostics = validate_document(proposed);
@@ -758,7 +771,8 @@ auto chart_paste_proposal_t::propose(const song_document_t& document, chart_id_t
 
 auto chart_paste_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
     const chart_clipboard_t& clipboard, local_position_t anchor) const -> chart_paste_outcome_t {
-    const auto captured = chart_stamp_t::from(scope.source_document(), scope.captured_stamp().chart);
+    auto captured = chart_stamp_t::from(scope.source_document(), scope.captured_stamp().chart);
+    captured.document.bms_target = scope.captured_stamp().document.bms_target;
     return proposal_t<chart_paste_proposal_t>::from(captured, from(scope, clipboard, anchor));
 }
 
@@ -772,6 +786,17 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
     if (report.objects.empty() && report.bar_line_rows.empty()) return {};
     if (!transaction.source_chart(stamp.chart))
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
+    if (transaction.has_bms_program(stamp.chart)) {
+        if (!report.bar_line_rows.empty() || !report.new_bgm_lanes.empty() || !stem_events.empty())
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "Scoped paste cannot change shared geometry or retained stem channels.")}};
+        std::vector<bms_native_event_t> additions;
+        for (const auto& object : report.objects)
+            std::visit([&](const auto& value) { additions.push_back(value); }, object);
+        auto staged = transaction.stage_bms_native_events(stamp.chart, {}, additions, "Paste chart objects");
+        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+        return {.value = "Paste chart objects"};
+    }
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(stamp.chart);
     chart->bgm_source_lanes.insert(chart->bgm_source_lanes.end(),
@@ -786,7 +811,7 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
 
 auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
                           const chart_clipboard_t& clipboard, local_position_t anchor) -> document_command_result_t {
-    const auto captured = chart_stamp_t::from(history.document, chart_id);
+    const auto captured = chart_stamp_t::from(history, chart_id);
     const proposal_read_scope_t<chart_stamp_t> scope{history.document, captured};
     auto prepared = chart_paste_proposal_t::from(scope, clipboard, anchor);
     if (!prepared) {

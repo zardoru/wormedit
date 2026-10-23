@@ -217,6 +217,7 @@ struct semantic_layer_t {
     color_rgba_t color;
     bool visible{true};
     bool locked{false};
+    auto operator==(const semantic_layer_t&) const -> bool = default;
 };
 
 struct note_t {
@@ -234,6 +235,7 @@ struct note_t {
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
     std::optional<osu_hitsample_t> osu_hitsample;
+    auto operator==(const note_t&) const -> bool = default;
 };
 
 struct bgm_event_t {
@@ -251,6 +253,7 @@ struct bgm_event_t {
     source_provenance_t provenance;
     std::vector<layer_id_t> semantic_layers;
     std::optional<local_position_t> end{};
+    auto operator==(const bgm_event_t&) const -> bool = default;
 };
 
 struct measure_chunk_t {
@@ -450,6 +453,7 @@ struct bookmark_t {
     marker_anchor_t anchor{marker_anchor_t::beat};
     std::optional<local_position_t> position;
     std::optional<std::int64_t> audio_milliseconds;
+    auto operator==(const bookmark_t&) const -> bool = default;
 };
 
 struct section_t {
@@ -458,6 +462,7 @@ struct section_t {
     marker_anchor_t anchor{marker_anchor_t::beat};
     std::optional<position_span_t> beat_span;
     std::optional<std::pair<std::int64_t, std::int64_t>> audio_millisecond_span;
+    auto operator==(const section_t&) const -> bool = default;
 };
 
 struct bga_event_t {
@@ -466,6 +471,7 @@ struct bga_event_t {
     resource_id_t resource;
     visual_event_kind_t kind{visual_event_kind_t::background};
     source_provenance_t provenance;
+    auto operator==(const bga_event_t&) const -> bool = default;
 };
 
 enum class asset_kind_t {
@@ -536,6 +542,7 @@ struct audio_clip_t {
     asset_id_t source;
     std::uint64_t begin_frame{};
     std::optional<std::uint64_t> end_frame;
+    auto operator==(const audio_clip_t&) const -> bool = default;
 };
 
 struct sound_channel_event_t {
@@ -546,6 +553,7 @@ struct sound_channel_event_t {
     bool continuation{false};
     bool playable{true};
     source_provenance_t provenance;
+    auto operator==(const sound_channel_event_t&) const -> bool = default;
 };
 
 struct sound_channel_t {
@@ -553,6 +561,7 @@ struct sound_channel_t {
     std::string name;
     audio_clip_t source_clip;
     std::vector<sound_channel_event_t> events;
+    auto operator==(const sound_channel_t&) const -> bool = default;
 };
 
 enum class bms_control_kind_t {
@@ -961,6 +970,10 @@ struct song_document_t {
     std::vector<std::shared_ptr<const bms_program_document_t>> prepared_bms_programs;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
+    [[nodiscard]] auto find_bms_program(chart_id_t id) const -> const bms_program_document_t*;
+    // Read-only prepared projections are available to domain planning; mutable
+    // find_chart deliberately continues to resolve authored legacy charts only.
+    [[nodiscard]] auto read_chart(chart_id_t id) const -> const chart_document_t*;
     [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;

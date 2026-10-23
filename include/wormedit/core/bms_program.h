@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/bms_native_content.h>
 #include <wormedit/core/result.h>
 #include <wormedit/core/lane_profiles.h>
 #include <array>
@@ -13,10 +14,17 @@ namespace wormedit {
 
 // Authored positions refer to the difficulty's shared measures. A rational measure
 // fraction preserves inactive source slots before a projection chooses its row grid.
-struct bms_program_position_t {
-    measure_id_t measure;
-    rational_t fraction;
-    auto operator==(const bms_program_position_t&) const -> bool = default;
+struct bms_note_attributes_t {
+    std::vector<layer_id_t> semantic_layers;
+    std::optional<std::string> label;
+    std::optional<osu_hitsample_t> osu_hitsample;
+    [[nodiscard]] static auto from(const note_t& note) -> bms_note_attributes_t {
+        return {.semantic_layers = note.semantic_layers, .label = note.label, .osu_hitsample = note.osu_hitsample};
+    }
+    [[nodiscard]] auto is_empty() const -> bool {
+        return semantic_layers.empty() && !label && !osu_hitsample;
+    }
+    auto operator==(const bms_note_attributes_t&) const -> bool = default;
 };
 struct bms_note_content_t {
     bms_program_position_t position;
@@ -24,6 +32,7 @@ struct bms_note_content_t {
     note_kind_t kind{note_kind_t::tap};
     std::optional<std::string> wav;
     std::optional<unsigned int> mine_value;
+    bms_note_attributes_t attributes{};
     auto operator==(const bms_note_content_t&) const -> bool = default;
 };
 // Endpoints remain separate authored contributions, even if evaluation pairs
@@ -32,6 +41,7 @@ struct bms_hold_endpoint_t {
     bms_program_position_t position;
     lane_id_t lane;
     std::string wav;
+    bms_note_attributes_t attributes{};
     auto operator==(const bms_hold_endpoint_t&) const -> bool = default;
 };
 struct bms_bgm_content_t {
@@ -39,6 +49,7 @@ struct bms_bgm_content_t {
     object_id_t column;
     std::optional<std::string> wav;
     std::size_t structural_slot{};
+    std::vector<layer_id_t> semantic_layers{};
     auto operator==(const bms_bgm_content_t&) const -> bool = default;
 };
 struct bms_bga_content_t {
@@ -71,7 +82,6 @@ struct bms_measure_length_t {
     rational_t length;
     auto operator==(const bms_measure_length_t&) const -> bool = default;
 };
-enum class bms_resource_namespace_t { wav, bmp };
 struct bms_resource_declaration_t {
     bms_resource_namespace_t name_space{bms_resource_namespace_t::wav};
     std::string identifier;
@@ -118,7 +128,7 @@ inline constexpr std::array bms_metadata_definitions{
     bms_metadata_definition_t{bms_metadata_field_t::preview, "PREVIEW"}};
 using bms_content_value_t = std::variant<bms_note_content_t, bms_hold_endpoint_t,
     bms_bgm_content_t, bms_bga_content_t, bms_timing_definition_t, bms_timing_reference_t,
-    bms_direct_bpm_t, bms_measure_length_t, bms_resource_declaration_t, bms_metadata_declaration_t>;
+    bms_direct_bpm_t, bms_measure_length_t, bms_resource_declaration_t, bms_metadata_declaration_t, bms_native_content_t>;
 struct bms_content_item_t {
     object_id_t id;
     bms_content_value_t value;
@@ -243,6 +253,8 @@ struct bms_prepared_program_t {
     std::vector<resource_entry_t> resources;
     std::vector<audio_asset_t> audio_assets;
     std::vector<visual_asset_t> visual_assets;
+    std::vector<semantic_layer_t> semantic_layers;
+    std::vector<sound_layer_default_t> sound_layer_defaults;
 };
 
 struct bms_program_evaluation_t {

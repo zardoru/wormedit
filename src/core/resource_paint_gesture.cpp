@@ -1,6 +1,7 @@
 #include "interaction_edit_commit.h"
 #include "interaction_internal.h"
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/bms_program_edit.h>
 
 namespace wormedit {
 auto pending_resource_paint_gesture_t::begin(editor_edit_context_t& context,
@@ -13,8 +14,16 @@ auto pending_resource_paint_gesture_t::begin(editor_edit_context_t& context,
         (request.hitsample && !request.hitsample->is_valid()))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Keysound paint requires a valid sample or hitsound palette")}};
     document_command_result_t eligibility;
-    if (request.resource && !validate_resource_role(context.history.document, *request.resource, resource_role_t::sample, eligibility))
-        return {.diagnostics = std::move(eligibility.diagnostics)};
+    if (request.resource) {
+        const auto* program = context.history.document.find_bms_program(context.state.chart);
+        const auto projection = program ? program->build_projection()
+            : attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
+        if (program && !projection.value) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "Scoped keysound paint cannot evaluate its sample catalog.")}};
+        const auto& catalog = projection.value ? projection.value->song() : context.history.document;
+        if (!validate_resource_role(catalog, *request.resource, resource_role_t::sample, eligibility))
+            return {.diagnostics = std::move(eligibility.diagnostics)};
+    }
     pending_resource_paint_gesture_t pending{.resource = request.resource, .hitsample = request.hitsample,
         .targets = std::make_shared<std::vector<editor_selection_object_t>>()};
     auto diagnostics = pending.revise(context, request.note);
@@ -49,16 +58,21 @@ auto pending_resource_paint_gesture_t::apply(editor_edit_context_t& context) con
         if (!assigned.value) return {.diagnostics = assigned.diagnostics};
     }
     if (hitsample) {
-        const auto painted = transaction.stage(context.state.chart, "Keysound paint chart no longer exists",
-            [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
+        const auto edit = [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
                 for (const auto& target : *targets) {
                     auto* note = chart.find_note(target.id);
                     if (!note) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                         "Keysound paint target no longer exists", target.id)}};
                     note->osu_hitsample = *hitsample;
                 }
-                return {.value = document_edit_effect_t{.command_label = "Paint keysounds"}};
-            });
+                return {.value = document_edit_effect_t{.changed = true, .command_label = "Paint keysounds"}};
+            };
+        std::vector<object_id_t> ids;
+        for (const auto& target : *targets) ids.push_back(target.id);
+        const auto painted = transaction.has_bms_program(context.state.chart)
+            ? transaction.stage_bms_native_objects(context.state.chart, ids, bms_existing_edit_kind_t::update, edit)
+            : transaction.stage(context.state.chart, "Keysound paint chart no longer exists",
+                [&](chart_document_t& chart, song_document_t&) { return edit(chart); });
         if (!painted.value) return {.diagnostics = painted.diagnostics};
     }
     return commit_editor_edit(context, transaction,

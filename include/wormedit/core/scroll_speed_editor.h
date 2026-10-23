@@ -32,6 +32,10 @@ struct timing_scroll_value_t {
 };
 
 using scroll_edit_value_t = positioned_edit_value_t<timing_scroll_value_t>;
+template<> struct chart_edit_native_collection_t<scroll_edit_value_t> {
+    static constexpr auto member = &chart_document_t::scrolls;
+};
+
 
 struct timing_speed_value_t {
     signed_rational_t multiplier{1, 1};
@@ -55,6 +59,10 @@ struct timing_speed_value_t {
 };
 
 using speed_edit_value_t = positioned_edit_value_t<timing_speed_value_t>;
+template<> struct chart_edit_native_collection_t<speed_edit_value_t> {
+    static constexpr auto member = &chart_document_t::speeds;
+};
+
 
 using scroll_speed_edit_action_t =
     std::variant<wormedit::insert_edit_t<wormedit::scroll_edit_value_t>,

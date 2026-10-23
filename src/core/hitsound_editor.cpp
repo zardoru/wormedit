@@ -98,6 +98,11 @@ auto apply_hitsound_edit(document_history_t& history, chart_id_t chart,
                          std::span<const object_id_t> notes, hitsound_change_t change)
     -> document_command_result_t {
     document_command_transaction_t transaction{history};
+    if (transaction.has_bms_program(chart))
+        return transaction.finish_execution(transaction.stage_bms_native_objects(chart, notes,
+            bms_existing_edit_kind_t::update,
+            [&](chart_document_t& target) { return edit_hitsounds(target, notes, change); }),
+            command_noop_policy_t::accept_without_diagnostics);
     return transaction.finish_execution(transaction.stage(chart, "Hitsound chart is unavailable",
         [&](chart_document_t& target, song_document_t&) { return edit_hitsounds(target, notes, change); }),
         command_noop_policy_t::accept_without_diagnostics);

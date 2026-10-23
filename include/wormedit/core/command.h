@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/quantize.h>
+#include <wormedit/core/bms_native_content.h>
 #include <wormedit/core/result.h>
 #include <wormedit/core/selection_history.h>
 
@@ -22,6 +23,16 @@
 
 namespace wormedit {
 struct bms_program_content_edit_batch_t;
+struct bms_program_edit_target_t;
+struct document_history_t;
+// Session selection and captured requests use the same stable semantic key.
+struct bms_program_target_key_t {
+    chart_id_t difficulty;
+    branch_id_t chart;
+    auto operator==(const bms_program_target_key_t&) const -> bool = default;
+};
+template<class Value> struct chart_edit_native_collection_t {};
+
 
 // Controller defaults and incomplete command defaults have distinct existing contracts.
 enum class chart_edit_value_default_policy_t { controller, command };
@@ -32,6 +43,7 @@ template <typename Value> struct chart_edit_value_traits_t {
 };
 
 template <typename Value> struct insert_edit_t {
+    using value_type = Value;
     chart_id_t chart;
     Value value;
     auto operator==(const insert_edit_t&) const -> bool = default;
@@ -56,6 +68,7 @@ template <typename Value> struct insert_edit_t {
 };
 
 template <typename Value> struct update_edit_t {
+    using value_type = Value;
     chart_id_t chart;
     typename chart_edit_value_traits_t<Value>::id_type id;
     Value value;
@@ -81,6 +94,7 @@ template <typename Value> struct update_edit_t {
 };
 
 template <typename Value> struct delete_edit_t {
+    using value_type = Value;
     chart_id_t chart;
     typename chart_edit_value_traits_t<Value>::id_type id;
     [[no_unique_address]] typename chart_edit_value_traits_t<Value>::delete_options_type options{};
@@ -156,6 +170,9 @@ enum class document_identity_policy_t { project_and_revision, revision_only };
 struct document_stamp_t {
     song_id_t project;
     std::uint64_t revision{};
+    std::optional<bms_program_target_key_t> bms_target;
+
+    [[nodiscard]] static auto from(const document_history_t& history) noexcept -> document_stamp_t;
 
     // Revision-only captures have no project identity; callers use the clock query.
     [[nodiscard]] static auto from(std::uint64_t revision) noexcept -> document_stamp_t;
@@ -171,6 +188,8 @@ struct chart_stamp_t {
     chart_id_t chart;
 
     [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
+        -> chart_stamp_t;
+    [[nodiscard]] static auto from(const document_history_t& history, chart_id_t chart) noexcept
         -> chart_stamp_t;
     [[nodiscard]] auto is_identity_current(const song_document_t& document,
                                             chart_id_t selected) const noexcept -> bool;
@@ -227,6 +246,7 @@ struct document_history_t {
     std::optional<std::uint64_t> saved_revision;
     std::size_t maximum_undo_entries{128};
     editor_selection_history_t selections;
+    std::optional<bms_program_target_key_t> bms_edit_target;
     std::uint64_t next_history_sequence{1};
     document_publication_observer_t publications;
 
@@ -372,6 +392,13 @@ concept chart_edit_operation =
         { operation.postvalidate(chart, document) } -> std::convertible_to<bool>;
     });
 
+enum class bms_existing_edit_kind_t { update, erase };
+
+struct bms_native_edit_effect_t {
+    document_edit_effect_t effect;
+    std::optional<bms_native_event_t> event;
+};
+
 // A synchronous command owns its working document only after the first edit.
 // Stamped construction creates a rejected transaction when the capture is stale.
 class document_command_transaction_t {
@@ -406,6 +433,23 @@ class document_command_transaction_t {
     auto chart(chart_id_t id) -> chart_document_t*;
     // Prepared scoped content uses its semantic owner, never a mutable projection.
     [[nodiscard]] auto stage(const bms_program_content_edit_batch_t& edit)
+        -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto has_bms_program(chart_id_t difficulty) const -> bool;
+    [[nodiscard]] auto bms_target(chart_id_t difficulty, std::optional<object_id_t> existing = {}) const
+        -> result_t<bms_program_edit_target_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto stage_bms_native_objects(chart_id_t difficulty,
+        std::span<const object_id_t> objects, bms_existing_edit_kind_t kind,
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+        -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto stage_bms_layer_settings(chart_id_t difficulty,
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+        -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto stage_bms_bgm_column(chart_id_t difficulty) -> attempt_t<object_id_t>;
+    [[nodiscard]] auto stage_bms_native_events(chart_id_t difficulty,
+        std::span<const object_id_t> removals, std::span<const bms_native_event_t> additions,
+        std::string label) -> attempt_t<std::vector<object_id_t>>;
+    [[nodiscard]] auto stage_bms_native_edit(chart_id_t difficulty, std::optional<object_id_t> existing,
+        const std::function<attempt_t<bms_native_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto next_bms_program_item_id(std::size_t count = 1) const
         -> std::optional<object_id_t>;
@@ -445,6 +489,9 @@ class document_command_transaction_t {
         using result_type = std::invoke_result_t<Edit&, chart_document_t&, song_document_t&>;
         return stage([&](song_document_t& proposed) -> result_type {
             auto* target = proposed.find_chart(id);
+            if (!target && proposed.find_bms_program(id))
+                return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                    "This chart operation requires an explicit scoped semantic adapter.")}};
             if (!id || !target ||
                 (requires_unique_chart &&
                  std::ranges::count(proposed.charts, id, &chart_document_t::id) != 1)) {
@@ -484,8 +531,69 @@ class document_command_transaction_t {
         document_command_transaction_t& transaction;
         const Limits& limits;
 
+        template<class Edit>
+        auto prepare_operation(Operation& operation, chart_document_t& chart, const Edit& edit) const -> bool {
+            for (const auto& cap : operation.event_caps(chart, edit)) {
+                if (cap.count > cap.maximum) {
+                    wormedit::reject(transaction.outcome_, diagnostic_code_t::invalid_resolution,
+                        std::string(cap.message));
+                    return false;
+                }
+            }
+            if constexpr (requires { operation.prepare(chart); }) return operation.prepare(chart);
+            return true;
+        }
+
+        template<class Edit>
+        static auto native_operation_effect(Operation& operation, chart_document_t& chart, const Edit& edit)
+            -> document_edit_effect_t {
+            if constexpr (std::is_void_v<decltype(operation(chart, edit))>) {
+                operation(chart, edit);
+                return {.changed = operation.changed, .command_label = operation.command_label};
+            } else {
+                auto result = operation(chart, edit);
+                return {.changed = result.changed, .command_label = std::move(result.command_label)};
+            }
+        }
+
+        template<class Edit>
+        static auto native_event(const chart_document_t& chart, const Edit& edit, bool changed)
+            -> std::optional<bms_native_event_t> {
+            if constexpr (requires { edit.value; }) {
+                constexpr auto member = chart_edit_native_collection_t<typename Edit::value_type>::member;
+                const auto& events = chart.*member;
+                if constexpr (requires { edit.id; }) {
+                    const auto found = std::ranges::find(events, edit.id,
+                        &std::remove_cvref_t<decltype(events)>::value_type::id);
+                    if (found != events.end()) return *found;
+                } else if (changed && !events.empty()) return events.back();
+            }
+            return std::nullopt;
+        }
+
+        template<class Edit>
+        auto stage_native(const Edit& edit) const -> attempt_t<document_edit_effect_t> {
+            std::optional<object_id_t> existing;
+            if constexpr (requires { edit.id; }) existing = edit.id;
+            return transaction.stage_bms_native_edit(edit.chart, existing,
+                [&](chart_document_t& chart) -> attempt_t<bms_native_edit_effect_t> {
+                    Operation operation{{transaction.outcome_, limits}};
+                    if (!prepare_operation(operation, chart, edit)) return {};
+                    const auto effect = native_operation_effect(operation, chart, edit);
+                    if (diagnostic_queries::has_errors(transaction.outcome_.diagnostics)) return {};
+                    if constexpr (requires { operation.postvalidate_native(chart); }) {
+                        if (!operation.postvalidate_native(chart)) return {};
+                    }
+                    return {.value = bms_native_edit_effect_t{.effect = effect,
+                        .event = native_event(chart, edit, effect.changed)}};
+                });
+        }
+
         template <class Edit>
         auto operator()(const Edit& edit) const -> attempt_t<document_edit_effect_t> {
+            if constexpr (requires { chart_edit_native_collection_t<typename Edit::value_type>::member; }) {
+                if (transaction.has_bms_program(edit.chart)) return stage_native(edit);
+            }
             constexpr bool unique = [] {
                 if constexpr (requires { Operation::requires_unique_chart; })
                     return Operation::requires_unique_chart;
@@ -496,18 +604,7 @@ class document_command_transaction_t {
                 [&](chart_document_t& chart,
                     song_document_t& document) -> attempt_t<document_edit_effect_t> {
                     Operation operation{{transaction.outcome_, limits}};
-                    for (const auto& cap : operation.event_caps(chart, edit)) {
-                        if (cap.count > cap.maximum) {
-                            wormedit::reject(transaction.outcome_,
-                                             diagnostic_code_t::invalid_resolution,
-                                             std::string(cap.message));
-                            return {};
-                        }
-                    }
-                    if constexpr (requires { operation.prepare(chart); }) {
-                        if (!operation.prepare(chart))
-                            return {};
-                    }
+                    if (!prepare_operation(operation, chart, edit)) return {};
                     if constexpr (std::is_void_v<decltype(operation(chart, edit))>) {
                         operation(chart, edit);
                         return transaction.stage_effect(operation, operation, chart, document);
@@ -551,6 +648,8 @@ class document_command_transaction_t {
     std::optional<song_document_t> document_;
     document_command_result_t outcome_;
     bool finished_{};
+    std::optional<bms_program_target_key_t> bms_target_;
+    std::optional<bms_program_target_key_t> bms_write_owner_;
 };
 
 

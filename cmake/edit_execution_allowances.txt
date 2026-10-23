@@ -29,7 +29,6 @@ document_adoption | src/core/lane_profile_switch.cpp | 1 | Existing detached pay
 working_document | src/core/lane_transform.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
 working_document | src/core/measure_editor.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
 working_document | src/core/metadata_editor.cpp | 2 | Existing domain access to working data; migrate chart acquisition through the runner.
-working_document | src/core/note_label_editor.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
 scratch_history | src/core/note_move.cpp | 3 | Legacy detached edit/preview composition; audited migration debt.
 working_document | src/core/note_move.cpp | 2 | Existing domain access to working data; migrate chart acquisition through the runner.
 document_adoption | src/core/note_move.cpp | 1 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.

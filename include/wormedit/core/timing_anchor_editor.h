@@ -24,6 +24,10 @@ struct timing_anchor_value_t {
 };
 
 using timing_anchor_edit_value_t = positioned_edit_value_t<timing_anchor_value_t>;
+template<> struct chart_edit_native_collection_t<timing_anchor_edit_value_t> {
+    static constexpr auto member = &chart_document_t::timing_anchors;
+};
+
 
 using timing_anchor_edit_action_t =
     std::variant<wormedit::insert_edit_t<wormedit::timing_anchor_edit_value_t>,

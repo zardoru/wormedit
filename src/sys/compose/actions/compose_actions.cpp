@@ -3549,7 +3549,7 @@ auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action
         !action.compose_area_clear_requested && !action.compose_hitsound) return {};
     const bool metadata_path_action = resource_path_tab_action(action, workspace.active_tab);
     const chart_stamp_t stamp{
-        .document = {history.document.id, action.compose_input_document_revision},
+        .document = {.project = history.document.id, .revision = action.compose_input_document_revision},
         .chart = action.compose_input_chart_id};
     if ((workspace.active_tab != workspace_tab_t::compose && !metadata_path_action) ||
         !workspace.selected_chart ||

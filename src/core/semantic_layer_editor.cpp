@@ -2,6 +2,7 @@
 #include "../core/text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <algorithm>
 #include <cmath>
@@ -753,6 +754,38 @@ auto apply_semantic_layer_action(song_document_t& proposed,
         action);
 }
 
+struct scoped_semantic_editor_t {
+    document_command_transaction_t& transaction;
+    const semantic_layer_edit_limits_t& limits;
+
+    template<class Edit> auto edit(chart_document_t& chart, const Edit& value) -> attempt_t<document_edit_effect_t> {
+        document_command_result_t result;
+        if (chart.semantic_layers.size() > limits.maximum_layers || !validate_layer_ids(chart, result) ||
+            !validate_layer_names(chart, limits, result)) {
+            if (result.diagnostics.empty()) result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                "Selected chart exceeds the semantic layer cap."));
+            return {.diagnostics = std::move(result.diagnostics)};
+        }
+        const auto outcome = apply_typed_semantic_edit(chart, value, limits, result);
+        if (!result.diagnostics.empty()) return {.diagnostics = std::move(result.diagnostics)};
+        return {.value = document_edit_effect_t{.changed = outcome.changed, .command_label = outcome.label}};
+    }
+    template<class Edit> auto operator()(const Edit& value) -> attempt_t<document_edit_effect_t> {
+        const auto apply = [&](chart_document_t& chart) { return edit(chart, value); };
+        if constexpr (requires { value.notes; value.bgm_events; }) {
+            auto objects = value.notes;
+            objects.insert(objects.end(), value.bgm_events.begin(), value.bgm_events.end());
+            return transaction.stage_bms_native_objects(value.chart, objects, bms_existing_edit_kind_t::update, apply);
+        } else {
+            if constexpr (std::same_as<Edit, delete_edit_t<semantic_layer_edit_value_t>>) {
+                if (value.options.remove_from_notes) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                    "Scoped layer deletion cannot implicitly remove memberships across semantic owners.")}};
+            }
+            return transaction.stage_bms_layer_settings(value.chart, apply);
+        }
+    }
+};
+
 } // namespace
 
 auto semantic_layer_palette_window_t::from(const chart_document_t& chart,
@@ -829,6 +862,9 @@ auto apply_semantic_layer_edit(document_history_t& history,
         return result;
     }
     auto transaction = document_command_transaction_t(history);
+    const auto chart = std::visit([](const auto& edit) { return edit.chart; }, action);
+    if (transaction.has_bms_program(chart))
+        return transaction.finish_execution(std::visit(scoped_semantic_editor_t{transaction, limits}, action));
     auto& proposed = transaction.document();
     auto outcome = apply_semantic_layer_action(proposed, action, limits, result);
     if (!result.diagnostics.empty() || !outcome.changed) {
@@ -929,6 +965,18 @@ auto apply_sound_layer_defaults(document_history_t& history,
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     auto transaction = document_command_transaction_t(history);
+    if (transaction.has_bms_program(action.chart)) {
+        const auto projection = history.document.find_bms_program(action.chart)->build_projection();
+        if (!projection.value) return transaction.reject(diagnostic_code_t::invalid_id, "Scoped sound layers have no source catalog.");
+        return transaction.finish_execution(transaction.stage_bms_layer_settings(action.chart,
+            [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+                if (!validate_sound_layer_defaults_request(projection.value->song(), chart, action, result))
+                    return {.diagnostics = result.diagnostics};
+                const auto changed = write_sound_layer_defaults(chart, action);
+                return {.value = document_edit_effect_t{.changed = changed,
+                    .command_label = action.layers.empty() ? "Clear sound layers" : "Set sound layers"}};
+            }));
+    }
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {

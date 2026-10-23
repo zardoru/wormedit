@@ -98,7 +98,7 @@ runtime::audio_slicer_t::audio_slicer_t(task_scheduler_t& scheduler, notificatio
         "Slicing capacity exceeded.", "Slicing returned no result.", async_job_destruction_policy_t::release) {}
 auto runtime::audio_slicer_t::start(const song_document_t& document, const ui::audio_slicer_action_t& action,
     const std::filesystem::path& base) -> async_job_start_outcome_t {
-    const chart_stamp_t stamp{{action.project, action.revision}, action.chart};
+    const chart_stamp_t stamp{.document = {.project = action.project, .revision = action.revision}, .chart = action.chart};
     const auto* chart = document.find_chart(action.chart);
     const auto resource = std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
     const auto* asset = document.find_audio_asset(action.asset);

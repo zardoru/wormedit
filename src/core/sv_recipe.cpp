@@ -1107,7 +1107,7 @@ auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output
 
 auto sv_recipe_draft_t::validate_target(const song_document_t& document, chart_id_t selected,
     proposal_operation_t) const -> result_t<const chart_document_t*, diagnostic_t> {
-    const auto* chart = document.find_chart(selected);
+    const auto* chart = document.read_chart(selected);
     if (!chart)
         return std::unexpected(error(diagnostic_code_t::invalid_id,
             "SV recipe draft refers to an unknown chart"));
@@ -1126,7 +1126,7 @@ auto sv_recipe_draft_t::preview_candidate() const -> sv_recipe_t {
 auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t chart_id,
                            sv_recipe_t candidate, bool timing_locked) -> proposal_outcome_t<sv_recipe_draft_t> {
     proposal_outcome_t<sv_recipe_draft_t> outcome;
-    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history.document, chart_id),
+    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history, chart_id),
         sv_recipe_draft_t{.candidate = std::move(candidate)});
     auto& draft = pending.payload;
     if (timing_locked) {
@@ -1134,7 +1134,7 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                      std::string(begin_locked_message)));
         return outcome;
     }
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (chart == nullptr || !chart_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart"));
@@ -1157,7 +1157,7 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                                     recipe_id_t recipe_id, bool timing_locked)
     -> proposal_outcome_t<sv_recipe_draft_t> {
     proposal_outcome_t<sv_recipe_draft_t> outcome;
-    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history.document, chart_id),
+    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history, chart_id),
         sv_recipe_draft_t{.existing_recipe = recipe_id});
     auto& draft = pending.payload;
     if (timing_locked) {
@@ -1165,7 +1165,7 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                      std::string(begin_locked_message)));
         return outcome;
     }
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (chart == nullptr || !chart_id || !recipe_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart or recipe"));
@@ -1442,7 +1442,7 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
     -> proposal_outcome_t<sv_recipe_range_drag_t> {
     proposal_outcome_t<sv_recipe_range_drag_t> outcome;
     proposal_t<sv_recipe_range_drag_t> pending{
-        .stamp = chart_stamp_t::from(history.document, chart_id),
+        .stamp = chart_stamp_t::from(history, chart_id),
         .payload = {.recipe = recipe_id, .handle = handle,
                     .snap = snap}};
     auto& drag = pending.payload;
@@ -1451,7 +1451,7 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
             "SV recipe range dragging is unavailable while timing is locked"));
         return outcome;
     }
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (!chart || !recipe_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
             "SV recipe range drag refers to an unknown chart or recipe"));
@@ -1527,7 +1527,7 @@ auto sv_recipe_range_drag_t::validate_target(const song_document_t& document, ch
     proposal_operation_t operation) const -> result_t<const chart_document_t*, diagnostic_t> {
     // The numeric editor owns Apply target validation after the captured no-op check.
     if (operation == proposal_operation_t::apply) return nullptr;
-    const auto* chart = document.find_chart(selected);
+    const auto* chart = document.read_chart(selected);
     if (!chart)
         return std::unexpected(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
     return chart;
@@ -1581,7 +1581,7 @@ struct sv_recipe_edit_context_t {
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> const chart_document_t* {
-    const auto chart = context.transaction.current_document().find_chart(id);
+    const auto chart = context.transaction.current_document().read_chart(id);
     if (!id || chart == nullptr) {
         reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
@@ -1807,10 +1807,62 @@ void sv_recipe_edit_context_t::operator()(const Edit& edit) {
 }
 
 
+struct scoped_recipe_editor_t {
+    document_command_transaction_t& transaction;
+
+    auto change(chart_id_t chart, std::optional<object_id_t> existing, sv_recipe_t value)
+        -> attempt_t<document_edit_effect_t> {
+        const auto next = transaction.next_bms_program_item_id();
+        value.id = recipe_id_t{existing ? existing->value : next.value_or(object_id_t{}).value};
+        return transaction.stage_bms_native_edit(chart, existing,
+            [&](chart_document_t& target) -> attempt_t<bms_native_edit_effect_t> {
+                if (!existing && target.sv_recipes.size() >= maximum_sv_recipes_per_chart)
+                    return {.diagnostics = {error(diagnostic_code_t::invalid_resolution, "Selected chart exceeds the SV recipe cap.")}};
+                auto diagnostics = validate_sv_recipe(target, value);
+                if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+                return {.value = bms_native_edit_effect_t{.effect = {.changed = true,
+                    .command_label = "Edit SV recipe"}, .event = value}};
+            });
+    }
+    auto operator()(const insert_edit_t<sv_recipe_t>& edit) -> attempt_t<document_edit_effect_t> {
+        return change(edit.chart, {}, edit.value);
+    }
+    auto operator()(const update_edit_t<sv_recipe_t>& edit) -> attempt_t<document_edit_effect_t> {
+        return change(edit.chart, object_id_t{edit.id.value}, edit.value);
+    }
+    auto operator()(const delete_edit_t<sv_recipe_t>& edit) -> attempt_t<document_edit_effect_t> {
+        return transaction.stage_bms_native_edit(edit.chart, object_id_t{edit.id.value},
+            [](chart_document_t&) -> attempt_t<bms_native_edit_effect_t> {
+                return {.value = bms_native_edit_effect_t{.effect = {.changed = true,
+                    .command_label = "Delete SV recipe"}}};
+            });
+    }
+    template<class Edit> auto operator()(const Edit& edit) -> attempt_t<document_edit_effect_t> {
+        if constexpr (std::same_as<Edit, move_sv_recipe_range_action_t> ||
+            std::same_as<Edit, set_sv_recipe_enabled_action_t>) {
+            const auto* chart = transaction.current_document().read_chart(edit.chart);
+            const auto* source = chart ? recipe_by_id(*chart, edit.id) : nullptr;
+            if (!source) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped recipe is unavailable.")}};
+            auto value = *source;
+            if constexpr (std::same_as<Edit, move_sv_recipe_range_action_t>) value.range = edit.range;
+            else value.enabled = edit.enabled;
+            return change(edit.chart, object_id_t{edit.id.value}, std::move(value));
+        } else return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped recipe reorder, duplication and materialization require an explicit semantic operation.")}};
+    }
+};
+
 auto sv_recipe_edit_t::apply(document_edit_scope_t& scope) const
     -> diagnosed_t<std::optional<std::string>> {
     auto& transaction = scope.transaction();
     auto& result = transaction.outcome();
+    const auto chart = std::visit([](const auto& edit) { return edit.chart; }, action);
+    if (transaction.has_bms_program(chart)) {
+        auto staged = std::visit(scoped_recipe_editor_t{transaction}, action);
+        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+        if (!staged.value->changed) return {};
+        return {.value = std::move(staged.value->command_label)};
+    }
     sv_recipe_edit_context_t context{.transaction = transaction, .label = {}, .changed = false};
     std::visit(context, action);
     if (!result.diagnostics.empty() || !context.changed) return {};

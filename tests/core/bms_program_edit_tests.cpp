@@ -1,6 +1,20 @@
 #include "../support/bms_program_fixture.h"
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/pause_warp_editor.h>
+#include <wormedit/core/scroll_speed_editor.h>
+#include <wormedit/core/marker_editor.h>
+#include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/hitsound_editor.h>
+#include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/timing_lane_controller.h>
+#include <wormedit/core/note_to_bgm.h>
+#include <wormedit/core/time_shift.h>
+#include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/formats/native_project.h>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -393,5 +407,437 @@ TEST_CASE("Alternative SWITCH validation reaches DEF when zero and one are named
     CHECK_FALSE(result);
     REQUIRE_FALSE(result.diagnostics.empty());
     CHECK(result.diagnostics.front().code == diagnostic_code_t::collision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Scoped BPM commands use selected semantic Charts through the shared runner", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto chosen = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = chosen.chart};
+    const auto root = target(history).chart;
+    const auto root_before = content(history, root);
+    const auto result = apply_bpm_edit(history, insert_edit_t<bpm_edit_value_t>{.chart = difficulty,
+        .value = {.position = {owner(history).prepared().measures.front(), 0},
+            .settings = {.beats_per_minute = {180, 1}}}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(content(history, root) == root_before);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, chosen.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped timing commands cover native timing categories without a writable projection", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto position = local_position_t{owner(history).prepared().measures.front(), 1};
+    const auto family = GENERATE(0, 1, 2, 3, 4);
+    document_command_result_t result;
+    if (family == 0) result = apply_pause_warp_edit(history, insert_edit_t<pause_edit_value_t>{
+        .chart = difficulty, .value = {.position = position,
+            .settings = {.duration = {1, 4}, .source_unit = pause_unit_t::seconds, .kind = pause_kind_t::delay}}});
+    if (family == 1) result = apply_scroll_speed_edit(history, insert_edit_t<scroll_edit_value_t>{
+        .chart = difficulty, .value = {.position = position, .settings = {.multiplier = {-1, 2}}}});
+    if (family == 2) result = apply_scroll_speed_edit(history, insert_edit_t<speed_edit_value_t>{
+        .chart = difficulty, .value = {.position = position, .settings = {.multiplier = {2, 1}}}});
+    if (family == 3) result = apply_marker_edit(history, insert_edit_t<kiai_edit_value_t>{
+        .chart = difficulty, .value = {.position = position, .settings = {.enabled = true}}});
+    if (family == 4) result = apply_marker_edit(history, insert_edit_t<bookmark_edit_value_t>{
+        .chart = difficulty, .value = {.label = "Scoped bookmark", .position = position}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(history.document.charts.empty());
+    CHECK(history.undo.size() == 1);
+    CHECK(std::get<bms_native_content_t>(content(history, target(history).chart).back().value).positions().size() == 1);
+}
+
+TEST_CASE("Scoped timing updates retain their original Chart after selection changes", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto initial = target(history);
+    const auto position = local_position_t{owner(history).prepared().measures.front(), 0};
+    REQUIRE(apply_bpm_edit(history, insert_edit_t<bpm_edit_value_t>{.chart = difficulty,
+        .value = {.position = position, .settings = {.beats_per_minute = {180, 1}}}}).applied);
+    const auto id = content(history, initial.chart).back().id;
+    history.bms_edit_target = {.difficulty = difficulty,
+        .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    REQUIRE(apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{.chart = difficulty, .id = id,
+        .value = {.position = position, .settings = {.beats_per_minute = {210, 1}}}}).applied);
+    CHECK(content(history, initial.chart).back().id == id);
+    CHECK(history.undo.size() == 2);
+}
+
+TEST_CASE("Captured scoped timing insertion retains its Chart when the session selection changes", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto original = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = original.chart};
+    const auto stamp = document_stamp_t::from(history);
+    history.bms_edit_target.reset();
+    document_command_transaction_t transaction(history, stamp, "Captured scoped timing");
+    const auto result = apply_scroll_speed_edit(transaction, insert_edit_t<speed_edit_value_t>{
+        .chart = difficulty, .value = {.position = {owner(history).prepared().measures.front(), 0},
+            .settings = {.multiplier = {2, 1}}}});
+    REQUIRE(result.applied);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, original.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Native scoped events preserve exact fractions through projection grid changes", "[bms-program-edit]") {
+    auto history = history_from();
+    auto projection = owner(history).build_projection();
+    REQUIRE(projection.value);
+    auto geometry = projection.value->song().charts.front();
+    geometry.divisions_per_standard_measure = 192;
+    const auto measure = geometry.measures.front().id;
+    const auto native = bms_native_content_t::from(warp_event_t{.id = object_id_t{99999},
+        .span = {{measure, 1}, {measure, 3}}}, geometry);
+    REQUIRE(native);
+    geometry.divisions_per_standard_measure = 384;
+    const auto rebuilt = native->build_event(object_id_t{50000}, geometry);
+    REQUIRE(rebuilt);
+    CHECK(std::get<warp_event_t>(*rebuilt).span == position_span_t{{measure, 2}, {measure, 6}});
+    CHECK(std::get<warp_event_t>(*rebuilt).id == object_id_t{50000});
+}
+
+namespace {
+auto scoped_state(document_history_t& history) -> editor_interaction_state_t {
+    const auto* chart = history.document.read_chart(difficulty);
+    REQUIRE(chart);
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = editor_interaction_state_t::from(history, difficulty,
+        owner(history).prepared().lane_profile->layout.lanes.front().id,
+        {chart->measures.front().id, 0}, snaps, 4);
+    for (const auto& diagnostic : setup.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(setup);
+    return std::move(*setup.state);
+}
+}
+TEST_CASE("Actual scoped tap dispatch inserts into the selected Chart and supports Undo", "[bms-program-edit]") {
+    auto history = history_from();
+    auto state = scoped_state(history);
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto result = dispatch_editor_action(history, state, place_tap_action_t{
+        .position = {chart->measures.front().id, chart->divisions_per_standard_measure / 2}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.accepted);
+    CHECK(result.document_changed);
+    CHECK(content(history, selected.chart).back().id == result.created_note);
+    CHECK(undo_document_command(history));
+}
+
+TEST_CASE("Actual scoped hold dispatch keeps its captured Chart after selection changes", "[bms-program-edit]") {
+    auto history = history_from();
+    auto state = scoped_state(history);
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto begin = local_position_t{chart->measures.front().id, chart->divisions_per_standard_measure / 4};
+    const auto end = local_position_t{begin.measure, chart->divisions_per_standard_measure * 3 / 4};
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{.position = begin}).accepted);
+    history.bms_edit_target.reset();
+    const auto result = dispatch_editor_action(history, state, commit_hold_action_t{.position = end});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.accepted);
+    CHECK(content(history, selected.chart).back().id == result.created_note);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped resource placement creates notes BGM and BGA through their domain command", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto kind = GENERATE(resource_placement_kind_t::sample_note,
+        resource_placement_kind_t::bgm_event, resource_placement_kind_t::bga_background);
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto role = kind == resource_placement_kind_t::bga_background ? resource_role_t::bga : resource_role_t::sample;
+    const auto& resources = owner(history).prepared().resources;
+    const auto resource = std::ranges::find_if(resources, [role](const auto& value) {
+        return std::ranges::find(value.roles, role) != value.roles.end();
+    });
+    REQUIRE(resource != resources.end());
+    const auto result = apply_resource_placement(history, {.chart = difficulty, .resource = resource->id,
+        .position = {chart->measures.front().id, chart->divisions_per_standard_measure / 2},
+        .lane = owner(history).prepared().lane_profile->layout.lanes.front().id, .kind = kind});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, selected.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped object edits preserve symbolic WAV resolution across alternatives", "[bms-program-edit]") {
+    auto history = history_from("#BPM 120\n#00011:01\n#RANDOM 2\n#IF 1\n#WAV01 a.wav\n#ELSE\n#WAV01 b.wav\n#ENDIF\n#ENDRANDOM\n");
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto id = chart->measures.front().notes.front().id;
+    const auto original_sound = chart->measures.front().notes.front().sound;
+    const std::array ids{id};
+    REQUIRE(apply_hitsound_edit(history, difficulty, ids, {.field = hitsound_field_t::clap, .value = 1}).applied);
+    const auto& value = std::get<bms_note_content_t>(std::ranges::find(content(history, target(history).chart), id, &bms_content_item_t::id)->value);
+    REQUIRE(value.wav);
+    CHECK(*value.wav == "01");
+    auto alternative = owner(history).evaluation();
+    alternative.selections.front().selected_value = 2;
+    const auto projection = bms_program_projection_t::from(owner(history).prepared(), alternative);
+    REQUIRE(projection.value);
+    const auto& note = projection.value->song().charts.front().measures.front().notes.front();
+    CHECK(note.sound != original_sound);
+    CHECK(note.osu_hitsample->clap);
+}
+
+TEST_CASE("Native scoped recipes retain an exact exclusive chart boundary", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto last = chart->measures.back().id;
+    const auto native = bms_native_content_t::from(sv_recipe_t{.name = "Scoped recipe",
+        .range = {{chart->measures.front().id, 0}, {last, chart->divisions_per_standard_measure}}}, *chart);
+    REQUIRE(native);
+    REQUIRE(insert(history, target(history), *native).applied);
+    const auto projection = owner(history).build_projection();
+    REQUIRE(projection.value);
+    CHECK(projection.value->song().charts.front().sv_recipes.size() == 1);
+    CHECK(projection.value->song().charts.front().sv_recipes.front().range.end.measure == last);
+}
+
+TEST_CASE("Native scoped sound channels retain child identities and exact event positions", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto at = local_position_t{chart->measures.front().id, chart->divisions_per_standard_measure / 2};
+    const auto native = bms_native_content_t::from(sound_channel_t{.id = object_id_t{70000},
+        .name = "Scoped stem", .source_clip = {.id = clip_id_t{70001}, .source = asset_id_t{70002}},
+        .events = {{.id = object_id_t{70003}, .position = at, .lane = lane_id_t{1}}}}, *chart);
+    REQUIRE(native);
+    CHECK(native->declared_ids() == std::vector<object_id_t>{object_id_t{70001}, object_id_t{70003}});
+    const auto event = native->build_event(object_id_t{70004}, *chart);
+    REQUIRE(event);
+    CHECK(std::get<sound_channel_t>(*event).events.front().position == at);
+    CHECK(std::get<sound_channel_t>(*event).id == object_id_t{70004});
+}
+
+TEST_CASE("Scoped insertions reject a selected owner from another difficulty", "[bms-program-edit]") {
+    auto history = history_from();
+    history.bms_edit_target = {.difficulty = chart_id_t{99999}, .chart = target(history).chart};
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto result = apply_bpm_edit(history, insert_edit_t<bpm_edit_value_t>{.chart = difficulty,
+        .value = {.position = {owner(history).prepared().measures.front(), 0},
+            .settings = {.beats_per_minute = {180, 1}}}});
+    CHECK_FALSE(result.applied);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Scoped metadata appends a typed declaration to the selected Chart", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto result = apply_metadata_edit(history, edit_format_metadata_field_action_t{
+        .target = {.chart = difficulty, .family = format_family_t::bms},
+        .name = "TITLE", .value = "Selected title"});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(std::get<bms_metadata_declaration_t>(content(history, selected.chart).back().value).field == bms_metadata_field_t::title);
+    CHECK(owner(history).build_projection().value->song().metadata.title == "Selected title");
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped recipe creation uses the domain editor and selected semantic owner", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto result = apply_sv_recipe_edit(history, insert_edit_t<sv_recipe_t>{.chart = difficulty,
+        .value = {.name = "Selected recipe", .range = {{chart->measures.front().id, 0},
+            {chart->measures.front().id, chart->divisions_per_standard_measure / 2}}}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, selected.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped timing previews retain their captured insertion Chart", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    auto preview = timing_lane_pseudonote_preview_t::propose(history, difficulty,
+        timing_lane_pseudonote_state_t{.kind = timing_lane_kind_t::speed,
+            .position = {owner(history).prepared().measures.front(), 0},
+            .value = timing_speed_value_t{.multiplier = {2, 1}}}, false);
+    REQUIRE(preview.value);
+    history.bms_edit_target.reset();
+    const auto result = apply_proposal(history, preview, false);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, selected.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped Kiai areas create both boundaries in the selected Chart", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto result = apply_marker_edit(history, edit_kiai_span_action_t{.chart = difficulty,
+        .edit = {.rows = std::pair<std::uint64_t, std::uint64_t>{1, 2}}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(owner(history).build_projection().value->song().charts.front().kiai.size() == 2);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped conversion retains object identity and semantic ownership", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto note = chart->measures.front().notes.front();
+    const auto origin = bms_program_edit_target_t::from(history.document, difficulty, note.id);
+    REQUIRE(origin);
+    history.bms_edit_target = {.difficulty = difficulty,
+        .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    const std::array ids{note.id};
+    const auto moved = move_notes_to_bgm(history, difficulty, ids, std::nullopt);
+    for (const auto& diagnostic : moved.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(moved.applied);
+    CHECK(history.document.read_chart(difficulty)->find_bgm_event(note.id));
+    CHECK(bms_program_edit_target_t::from(history.document, difficulty, note.id)->chart == origin->chart);
+    REQUIRE(move_bgm_events_to_lane(history, difficulty, ids, note.lane).applied);
+    CHECK(history.document.read_chart(difficulty)->find_note(note.id));
+}
+
+TEST_CASE("Scoped selection shifts and quantization use recorded owners", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto note = chart->measures.front().notes.front();
+    const auto origin = bms_program_edit_target_t::from(history.document, difficulty, note.id);
+    REQUIRE(origin);
+    history.bms_edit_target = {.difficulty = difficulty,
+        .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    REQUIRE(apply_shift_selection(history, {.chart = difficulty, .notes = {note.id}, .rows = 1}).command.applied);
+    const auto result = apply_quantize_command(history, difficulty, {.divisions = 4,
+        .allow_resolution_promotion = true, .selection = quantize_selection_t{.notes = {note.id}}});
+    for (const auto& diagnostic : result.command.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    CHECK(result.command.diagnostics.empty());
+    CHECK(bms_program_edit_target_t::from(history.document, difficulty, note.id)->chart == origin->chart);
+}
+
+TEST_CASE("Scoped layer definitions and object membership have separate appropriate owners", "[bms-program-edit]") {
+    auto history = history_from();
+    REQUIRE(apply_semantic_layer_edit(history, insert_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+        .value = {.name = "Prepared layer", .color = {.red = 1.0, .alpha = 1.0}}}).applied);
+    const auto* chart = history.document.read_chart(difficulty);
+    REQUIRE(chart->semantic_layers.size() == 1);
+    const auto layer = chart->semantic_layers.front().id;
+    const auto note = chart->measures.front().notes.front().id;
+    REQUIRE(apply_semantic_layer_edit(history, semantic_layer_membership_edit_t{.chart = difficulty,
+        .layer = layer, .notes = {note}}).applied);
+    CHECK(history.document.read_chart(difficulty)->find_note(note)->semantic_layers == std::vector{layer});
+    CHECK(owner(history).prepared().semantic_layers.front().id == layer);
+}
+
+TEST_CASE("Scoped offset edits create a typed declaration and retain it after selection changes", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    REQUIRE(apply_audio_offset_edit(history, difficulty, {1, 4}).applied);
+    history.bms_edit_target.reset();
+    REQUIRE(apply_audio_offset_edit(history, difficulty, {1, 2}).applied);
+    CHECK(history.document.read_chart(difficulty)->beat_zero_audio_offset_seconds == signed_rational_t{1, 2});
+    CHECK(std::get<bms_metadata_declaration_t>(content(history, selected.chart).back().value).field == bms_metadata_field_t::offset);
+}
+
+TEST_CASE("Scoped gesture captures reject another project even at the same revision", "[bms-program-edit]") {
+    auto history = history_from();
+    auto state = scoped_state(history);
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto begin = local_position_t{chart->measures.front().id, chart->divisions_per_standard_measure / 4};
+    const auto end = local_position_t{begin.measure, chart->divisions_per_standard_measure * 3 / 4};
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{.position = begin}).accepted);
+    const auto before = history.document.prepared_bms_programs.front();
+    history.document.id = song_id_t{99999};
+    const auto result = dispatch_editor_action(history, state, commit_hold_action_t{.position = end});
+    CHECK_FALSE(result.accepted);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Moving scoped timing references preserves alternative definition values", "[bms-program-edit]") {
+    auto history = history_from("#BPM 120\n#00108:01\n#RANDOM 2\n#IF 1\n#BPM01 180\n#ELSE\n#BPM01 240\n#ENDIF\n#ENDRANDOM\n");
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto event = *std::ranges::find(chart->bpms, signed_rational_t{180, 1}, &bpm_event_t::beats_per_minute);
+    REQUIRE(apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{.chart = difficulty, .id = event.id,
+        .value = {.position = {event.position.measure, 1}, .settings = {.beats_per_minute = event.beats_per_minute}}}).applied);
+    const auto& items = content(history, target(history).chart);
+    CHECK(std::holds_alternative<bms_timing_reference_t>(std::ranges::find(items, event.id, &bms_content_item_t::id)->value));
+    auto evaluation = owner(history).evaluation();
+    evaluation.selections.front().selected_value = 2;
+    const auto projection = bms_program_projection_t::from(owner(history).prepared(), evaluation);
+    REQUIRE(projection.value);
+    CHECK(std::ranges::find(projection.value->song().charts.front().bpms, event.id, &bpm_event_t::id)->beats_per_minute == signed_rational_t{240, 1});
+}
+
+TEST_CASE("Annotating imported scoped holds retains both endpoint identities and WAV values", "[bms-program-edit]") {
+    auto history = history_from("#WAV01 a.wav\n#WAV02 b.wav\n#BPM 120\n#00051:0102\n");
+    const auto id = history.document.read_chart(difficulty)->measures.front().notes.front().id;
+    const auto endpoint_count = content(history, target(history).chart).size();
+    const std::array ids{id};
+    REQUIRE(apply_hitsound_edit(history, difficulty, ids, {.field = hitsound_field_t::clap, .value = 1}).applied);
+    const auto& items = content(history, target(history).chart);
+    CHECK(items.size() == endpoint_count);
+    std::vector<std::string> values;
+    for (const auto& item : items)
+        if (const auto* endpoint = std::get_if<bms_hold_endpoint_t>(&item.value)) values.push_back(endpoint->wav);
+    CHECK(values == std::vector<std::string>{"01", "02"});
+    CHECK(history.document.read_chart(difficulty)->find_note(id)->osu_hitsample->clap);
+}
+
+TEST_CASE("Actual scoped note drags retain the recorded owner after selection changes", "[bms-program-edit]") {
+    auto history = history_from();
+    auto state = scoped_state(history);
+    const auto* chart = history.document.read_chart(difficulty);
+    const auto note = chart->measures.front().notes.front();
+    state.active_lane = note.lane;
+    const auto origin = bms_program_edit_target_t::from(history.document, difficulty, note.id);
+    REQUIRE(origin);
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{.reference_note = note.id}).accepted);
+    history.bms_edit_target = {.difficulty = difficulty,
+        .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    const auto result = dispatch_editor_action(history, state, update_note_move_gesture_action_t{
+        .reference_position = {note.position.measure, chart->divisions_per_standard_measure / 2},
+        .reference_lane = note.lane, .operation = proposal_operation_t::apply});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.accepted);
+    CHECK(bms_program_edit_target_t::from(history.document, difficulty, note.id)->chart == origin->chart);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Scoped recipe drafts capture their insertion Chart", "[bms-program-edit]") {
+    auto history = history_from();
+    const auto selected = target(history, node_id<bms_if_scope_t>(history));
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
+    const auto* chart = history.document.read_chart(difficulty);
+    auto draft = sv_recipe_draft_t::propose(history, difficulty, sv_recipe_t{.name = "Captured recipe",
+        .range = {{chart->measures.front().id, 0},
+            {chart->measures.front().id, chart->divisions_per_standard_measure / 2}}}, false);
+    REQUIRE(draft.value);
+    history.bms_edit_target.reset();
+    const auto result = apply_proposal(history, *draft.value);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    CHECK(std::holds_alternative<bms_native_content_t>(content(history, selected.chart).back().value));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Root scoped proposals reject a foreign legacy project at the same revision", "[bms-program-edit]") {
+    auto history = history_from();
+    auto preview = timing_lane_pseudonote_preview_t::propose(history, difficulty,
+        timing_lane_pseudonote_state_t{.kind = timing_lane_kind_t::speed,
+            .position = {owner(history).prepared().measures.front(), 0},
+            .value = timing_speed_value_t{.multiplier = {2, 1}}}, false);
+    REQUIRE(preview.value);
+    auto foreign = history.document;
+    foreign.id = song_id_t{99999};
+    foreign.charts = {*history.document.read_chart(difficulty)};
+    foreign.resources = owner(history).prepared().resources;
+    foreign.audio_assets = owner(history).prepared().audio_assets;
+    foreign.visual_assets = owner(history).prepared().visual_assets;
+    foreign.prepared_bms_programs.clear();
+    history = document_history_t::from(std::move(foreign));
+    const auto result = apply_proposal(history, preview, false);
+    CHECK_FALSE(result.applied);
+    CHECK(history.document.charts.front().speeds.empty());
     CHECK(history.undo.empty());
 }

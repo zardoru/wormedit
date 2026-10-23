@@ -87,6 +87,10 @@ struct program_emission_t {
     void emit(const bms_measure_length_t& value);
     void emit(const bms_resource_declaration_t& value);
     void emit(const bms_metadata_declaration_t& value);
+    void emit(const bms_native_content_t&) {
+        fail(bms_write_diagnostic_code_t::unsupported_feature,
+            "Native-only scoped content requires a compatible output format.", "$.program.native_content");
+    }
     auto channel(lane_id_t lane, note_kind_t kind) const -> std::string;
     auto measure_index(measure_id_t id) -> std::size_t;
     void prepare_line(std::size_t measure, std::string channel, std::optional<object_id_t> column, rational_t fraction);
@@ -115,6 +119,10 @@ void program_emission_t::account_input(std::size_t size) {
 }
 
 void program_emission_t::index_inputs() {
+    if (!prepared.semantic_layers.empty() || !prepared.sound_layer_defaults.empty())
+        fail(bms_write_diagnostic_code_t::unsupported_feature,
+            "Native scoped layer settings require a compatible output format.", "$.program.layers");
+
     if (prepared.program.nodes().size() > options.program_limits.maximum_nodes || prepared.measures.empty() || prepared.measures.size() > 1000)
         fail(bms_write_diagnostic_code_t::resource_limit, "Scoped node/measure limits exceeded.", "$.program");
     account_input(prepared.resources.size());
@@ -365,6 +373,8 @@ auto program_emission_t::channel(lane_id_t id, note_kind_t kind) const -> std::s
     return identifier(*value);
 }
 void program_emission_t::emit(const bms_note_content_t& value) {
+    if (!value.attributes.is_empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
+        "Native note annotations require a compatible output format.", "$.program.notes.attributes");
     if (value.kind == note_kind_t::hold) fail(bms_write_diagnostic_code_t::invalid_document, "Holds require separate authored endpoints.", "$.program.notes");
     std::string object;
     if (value.kind == note_kind_t::mine) {
@@ -378,9 +388,13 @@ void program_emission_t::emit(const bms_note_content_t& value) {
     slot(value.position, channel(value.lane, value.kind), std::move(object));
 }
 void program_emission_t::emit(const bms_hold_endpoint_t& value) {
+    if (!value.attributes.is_empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
+        "Native note annotations require a compatible output format.", "$.program.notes.attributes");
     slot(value.position, channel(value.lane, note_kind_t::hold), identifier(value.wav));
 }
 void program_emission_t::emit(const bms_bgm_content_t& value) {
+    if (!value.semantic_layers.empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
+        "Native BGM annotations require a compatible output format.", "$.program.BGM.layers");
     if (!value.column || !bgm_columns.contains(value.column)) fail(bms_write_diagnostic_code_t::invalid_document, "BGM requires a line identity.", "$.program.BGM");
     slot(value.position, "01", value.wav ? identifier(*value.wav) : "00", value.column, value.structural_slot);
 }

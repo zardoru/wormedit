@@ -353,7 +353,7 @@ auto beat_interval_drag_t::propose(const song_document_t& document, chart_id_t c
         result.diagnostics.push_back(*precondition);
         return result;
     }
-    const auto selected = document.find_chart(chart);
+    const auto selected = document.read_chart(chart);
     if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit refers to an unknown chart"));
@@ -374,7 +374,7 @@ auto beat_interval_drag_t::propose(const song_document_t& document, chart_id_t c
                                      std::uint32_t sample_rate, bool timing_locked)
     -> beat_interval_drag_outcome_t {
     beat_interval_drag_outcome_t result;
-    const auto selected = document.find_chart(chart);
+    const auto selected = document.read_chart(chart);
     if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit refers to an unknown chart"));
@@ -397,7 +397,7 @@ auto beat_interval_drag_t::revise(const proposal_read_scope_t<chart_stamp_t>& sc
     const auto& stamp = scope.captured_stamp();
     const auto& drag = *this;
     beat_interval_drag_outcome_t result;
-    const auto chart = document.find_chart(stamp.chart);
+    const auto chart = document.read_chart(stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "beat fit chart is unavailable"));
@@ -438,7 +438,7 @@ auto beat_interval_drag_t::prepare_snapped_revision(const proposal_read_scope_t<
     const auto& document = scope.source_document();
     const auto& stamp = scope.captured_stamp();
     const auto& drag = *this;
-    auto chart = document.find_chart(stamp.chart);
+    auto chart = document.read_chart(stamp.chart);
     if (chart == nullptr) return {.value = std::move(updated), .diagnostics = {}};
     const auto candidate = chart_with_anchor_bpm(*chart, drag, target_bpm);
     if (!candidate) return {.value = std::move(updated), .diagnostics = {}};

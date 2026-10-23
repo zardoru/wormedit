@@ -37,6 +37,13 @@ struct section_edit_value_t {
     auto operator==(const section_edit_value_t&) const -> bool = default;
 };
 
+template<> struct chart_edit_native_collection_t<bookmark_edit_value_t> {
+    static constexpr auto member = &chart_document_t::bookmarks;
+};
+template<> struct chart_edit_native_collection_t<section_edit_value_t> {
+    static constexpr auto member = &chart_document_t::sections;
+};
+
 struct timing_kiai_value_t {
     bool enabled{true};
     std::uint32_t retained_effect_bits{};
@@ -56,6 +63,10 @@ struct timing_kiai_value_t {
 };
 
 using kiai_edit_value_t = positioned_edit_value_t<timing_kiai_value_t>;
+template<> struct chart_edit_native_collection_t<kiai_edit_value_t> {
+    static constexpr auto member = &chart_document_t::kiai;
+};
+
 
 // Creates, resizes, moves or deletes one whole Kiai area, merging overlaps (see
 // apply_kiai_span_edit). One undoable command.

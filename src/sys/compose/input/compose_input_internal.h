@@ -590,8 +590,8 @@ struct compose_input_context_t {
     }
 
     auto is_input_current() const -> bool {
-        return is_input_current({.document = {environment.document.history.document.id,
-                                              ui_action.compose_input_document_revision},
+        return is_input_current({.document = {.project = environment.document.history.document.id,
+                                              .revision = ui_action.compose_input_document_revision},
                                  .chart = ui_action.compose_input_chart_id});
     }
 

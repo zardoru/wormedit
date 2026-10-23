@@ -2444,7 +2444,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
     if (!state.is_pending())
         state.scratch_on_right = application_state.scratch_on_right;
     const chart_stamp_t stamp{
-        .document = {history.document.id, ui_action.compose_input_document_revision},
+        .document = {.project = history.document.id, .revision = ui_action.compose_input_document_revision},
         .chart = ui_action.compose_input_chart_id};
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id.value ||

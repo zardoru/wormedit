@@ -408,6 +408,11 @@ auto apply_import_groups(song_document_t& song, const bulk_sound_import_action_t
 auto apply_bulk_sound_import(document_history_t& history,
                              const bulk_sound_import_action_t& action)
     -> document_command_result_t {
+    if (!history.document.prepared_bms_programs.empty())
+        return document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Prepared scoped sound imports require an explicit shared-pool edit.");
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (!validate_batch(action, result)) return result;
     const auto identifiers = assigned_bms_ids(history.document, action, result);

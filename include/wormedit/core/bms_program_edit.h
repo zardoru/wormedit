@@ -12,6 +12,8 @@ class bms_program_document_t {
     [[nodiscard]] static auto from(chart_id_t difficulty, bms_prepared_program_t prepared,
         bms_program_evaluation_t evaluation = {})
         -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] auto read_resource(resource_id_t id) const -> const resource_entry_t*;
+    [[nodiscard]] auto read_chart() const -> const chart_document_t*;
     [[nodiscard]] auto difficulty() const -> chart_id_t { return difficulty_; }
     [[nodiscard]] auto prepared() const -> const bms_prepared_program_t& { return prepared_; }
     [[nodiscard]] auto evaluation() const -> const bms_program_evaluation_t& { return evaluation_; }
@@ -25,6 +27,7 @@ class bms_program_document_t {
     chart_id_t difficulty_;
     bms_prepared_program_t prepared_;
     bms_program_evaluation_t evaluation_;
+    mutable std::optional<song_document_t> view_;
 };
 
 struct bms_program_edit_target_t {

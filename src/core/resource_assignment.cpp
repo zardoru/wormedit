@@ -1,4 +1,5 @@
 #include <wormedit/core/bms36.h>
+#include <wormedit/core/bms_program_edit.h>
 #include "chart_object_ids.h"
 #include "text_util.h"
 #include <wormedit/core/measure_editor.h>
@@ -379,9 +380,21 @@ auto bms_identifier_capacity(const song_document_t& document, std::string_view n
     return result;
 }
 
+namespace {
+auto prepared_catalog_rejection(const document_history_t& history)
+    -> std::optional<document_command_result_t> {
+    if (history.document.prepared_bms_programs.empty()) return std::nullopt;
+    return document_command_transaction_t::rejection(history.document.revision,
+        diagnostic_code_t::unsupported_feature,
+        "Prepared scoped catalogs require an explicit shared-pool edit; public catalog migration follows separately.");
+}
+} // namespace
+
 auto apply_bms_identifier_renumber(document_history_t& history,
                                    const renumber_bms_identifiers_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto& ns = action.name_space;
     if (ns != "WAV" && ns != "BMP") {
@@ -650,8 +663,73 @@ auto place_bga_background(resource_placement_context_t& context) -> bool {
     return true;
 }
 
+namespace {
+auto prepare_scoped_bgm_column(document_command_transaction_t& transaction,
+    const place_resource_action_t& action, const chart_document_t& chart,
+    local_position_t position) -> bool {
+    if (action.kind != resource_placement_kind_t::bgm_event || action.source_lane) return true;
+    const auto is_occupied = [&](object_id_t lane) {
+        for (const auto& measure : chart.measures)
+            for (const auto& event : measure.bgm_events)
+                if (event.position == position && event.source_lane == lane) return true;
+        return false;
+    };
+    if (std::ranges::any_of(chart.bgm_source_lanes,
+        [&](const auto& lane) { return !is_occupied(lane.id); })) return true;
+    return transaction.stage_bms_bgm_column(action.chart).value.has_value();
+}
+
+auto stage_scoped_resource_placement(document_command_transaction_t& transaction,
+    const place_resource_action_t& request) -> attempt_t<document_edit_effect_t> {
+    const auto* owner = transaction.current_document().find_bms_program(request.chart);
+    auto projection = owner->build_projection();
+    if (!projection.value) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "Scoped resource placement cannot evaluate its source.")}};
+    const auto& catalog = projection.value->song();
+    auto action = request;
+    if (!validate_placement_resource(catalog, action, transaction.outcome())) return {};
+    if (action.kind == resource_placement_kind_t::bga_background) {
+        action.bga_kind = resolve_bga_resource_kind(catalog, action.resource,
+            action.bga_kind.value_or(visual_event_kind_t::background), transaction.outcome());
+        if (!action.bga_kind) return {};
+    }
+    const auto& source = catalog.charts.front();
+    const auto index = measure_index_t::from(source);
+    const auto position = index ? snap_position_or_exact(source, *index, action.position, action.snap) : std::nullopt;
+    if (!position) return {.diagnostics = {error(diagnostic_code_t::invalid_measure,
+        "Scoped placement position is unavailable.")}};
+    if (!prepare_scoped_bgm_column(transaction, action, source, *position)) return {};
+    return transaction.stage_bms_native_edit(action.chart, {},
+        [&](chart_document_t& chart) -> attempt_t<bms_native_edit_effect_t> {
+            const auto first = transaction.next_bms_program_item_id();
+            auto* measure = chart.find_measure(position->measure);
+            if (!first || !measure) return {};
+            resource_placement_context_t placement{transaction.outcome(), chart, *measure, *index,
+                action, *position, *index->row_of(*position), *first};
+            std::optional<bms_native_event_t> event;
+            switch (action.kind) {
+            case resource_placement_kind_t::sample_note:
+                if (place_sample_note(placement)) event = measure->notes.back();
+                break;
+            case resource_placement_kind_t::bgm_event:
+                if (place_bgm_event(placement)) event = measure->bgm_events.back();
+                break;
+            case resource_placement_kind_t::bga_background:
+                if (place_bga_background(placement)) event = chart.bga_events.back();
+                break;
+            }
+            if (!event) return {};
+            return {.value = bms_native_edit_effect_t{.effect = {.changed = true,
+                .command_label = "Place resource"}, .event = std::move(event)}};
+        });
+}
+} // namespace
+
 auto apply_resource_placement(document_history_t& history,
                               const place_resource_action_t& action) -> document_command_result_t {
+    auto scoped = document_command_transaction_t(history);
+    if (scoped.has_bms_program(action.chart))
+        return scoped.finish_execution(stage_scoped_resource_placement(scoped, action));
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (!validate_placement_resource(history.document, action, result)) return result;
     auto resolved_action = action;
@@ -683,6 +761,31 @@ auto apply_resource_placement(document_history_t& history,
 }
 
 namespace {
+auto commit_scoped_bga_stroke(document_command_transaction_t& transaction, chart_id_t difficulty,
+    const chart_document_t& chart, const measure_index_t& index,
+    std::span<const resolved_bga_stroke_target_t> targets, std::optional<resource_id_t> resource,
+    bool erase) -> document_command_result_t {
+    std::map<std::pair<std::uint64_t, std::size_t>, object_id_t> occupied;
+    for (const auto& event : chart.bga_events) {
+        const auto row = index.row_of(event.position);
+        const auto lane = editor_bga_lane_index(event.kind);
+        if (row && lane) occupied.emplace(std::pair{*row, *lane}, event.id);
+    }
+    std::vector<object_id_t> removals;
+    std::vector<bms_native_event_t> additions;
+    for (const auto& target : targets) {
+        const auto found = occupied.find({target.row, target.lane});
+        if (erase && found != occupied.end()) removals.push_back(found->second);
+        if (!erase && found == occupied.end())
+            additions.push_back(bga_event_t{.position = target.position,
+                .resource = *resource, .kind = target.kind});
+    }
+    if (removals.empty() && additions.empty()) return transaction.finish_without_commit();
+    auto staged = transaction.stage_bms_native_events(difficulty, removals, additions, "Paint BGA events");
+    if (!staged.value || !staged.ok()) return transaction.finish_without_commit();
+    return transaction.commit("Paint BGA events");
+}
+
 auto run_apply_bga_stroke(document_command_transaction_t& transaction,
                       chart_id_t chart_id, std::optional<resource_id_t> resource,
                       std::span<const bga_stroke_target_t> targets, bool erase)
@@ -694,13 +797,17 @@ auto run_apply_bga_stroke(document_command_transaction_t& transaction,
                "BGA stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = source.find_chart(chart_id);
+    const auto* scoped_owner = source.find_bms_program(chart_id);
+    const auto projection = scoped_owner ? scoped_owner->build_projection()
+        : attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
+    const auto& catalog = projection.value ? projection.value->song() : source;
+    const auto source_chart = source.read_chart(chart_id);
     if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGA stroke chart is missing");
         return result;
     }
     const auto asset_kind = erase ? std::optional<asset_kind_t>{}
-                                  : resolve_bga_stroke_resource(source, resource, result);
+                                  : resolve_bga_stroke_resource(catalog, resource, result);
     if (!erase && !asset_kind) return result;
     const auto built = measure_index_t::from(*source_chart);
     if (!built) {
@@ -710,6 +817,8 @@ auto run_apply_bga_stroke(document_command_transaction_t& transaction,
     auto resolved = resolve_bga_stroke_targets(*built, targets, asset_kind, erase, result);
     if (!resolved) return result;
     if (resolved->empty()) return result;
+    if (scoped_owner)
+        return commit_scoped_bga_stroke(transaction, chart_id, *source_chart, *built, *resolved, resource, erase);
     const auto chart_offset = static_cast<std::size_t>(source_chart - source.charts.data());
     return commit_bga_stroke_targets(transaction, chart_offset, *built, *resolved, resource, erase);
 }
@@ -885,6 +994,29 @@ auto commit_bgm_stroke_draw(document_command_transaction_t& transaction, std::si
 } // namespace
 
 namespace {
+auto commit_scoped_bgm_stroke(document_command_transaction_t& transaction, chart_id_t difficulty,
+    const chart_document_t& chart, const measure_index_t& index, object_id_t lane,
+    std::span<const bgm_stroke_cell_t> cells, std::optional<resource_id_t> resource,
+    bool erase) -> document_command_result_t {
+    const auto occupied = bgm_stroke_lane_events(chart, index, lane);
+    std::vector<object_id_t> removals;
+    std::vector<bms_native_event_t> additions;
+    for (const auto& cell : cells) {
+        const auto found = occupied.find(cell.row);
+        if (erase && found != occupied.end()) removals.push_back(found->second->id);
+        if (erase) continue;
+        if (found != occupied.end()) {
+            if (found->second->sound != resource)
+                return transaction.reject(diagnostic_code_t::collision,
+                    "A different sound occupies this scoped BGM lane and row.");
+        } else additions.push_back(bgm_event_t{.position = cell.position, .source_lane = lane, .sound = resource});
+    }
+    if (removals.empty() && additions.empty()) return transaction.finish_without_commit();
+    auto staged = transaction.stage_bms_native_events(difficulty, removals, additions, "Paint BGM events");
+    if (!staged.value || !staged.ok()) return transaction.finish_without_commit();
+    return transaction.commit("Paint BGM events");
+}
+
 auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
                       chart_id_t chart_id, object_id_t source_lane,
                       std::optional<resource_id_t> resource,
@@ -897,7 +1029,11 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
                "BGM stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = source.find_chart(chart_id);
+    const auto* scoped_owner = source.find_bms_program(chart_id);
+    const auto projection = scoped_owner ? scoped_owner->build_projection()
+        : attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
+    const auto& catalog = projection.value ? projection.value->song() : source;
+    const auto source_chart = source.read_chart(chart_id);
     if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGM stroke chart is missing");
         return result;
@@ -906,7 +1042,7 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
         return apply_bmson_packed_stroke(transaction, chart_id, source_lane,
                                          resource, targets, erase);
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
-    if (!erase && !validate_bgm_stroke_resource(source, *source_chart, resource, result))
+    if (!erase && !validate_bgm_stroke_resource(catalog, *source_chart, resource, result))
         return result;
     const auto built = measure_index_t::from(*source_chart);
     if (!built) {
@@ -915,6 +1051,8 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
     }
     const auto cells = resolve_bgm_stroke_cells(*built, targets, result);
     if (!cells || cells->empty()) return result;
+    if (scoped_owner)
+        return commit_scoped_bgm_stroke(transaction, chart_id, *source_chart, *built, source_lane, *cells, resource, erase);
     const auto chart_offset = static_cast<std::size_t>(source_chart - source.charts.data());
     return erase ? commit_bgm_stroke_erase(transaction, chart_offset, *built, source_lane, *cells)
                  : commit_bgm_stroke_draw(transaction, chart_offset, *built, source_lane, *resource,
@@ -1361,6 +1499,8 @@ auto next_eligible_placement_resource(const song_document_t& document,
 
 auto apply_resource_creation(document_history_t& history,
                              const create_resource_action_t& action) -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (history.document.resources.size() >= 100'000 || !text_util::is_valid_bounded_text(action.name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
@@ -1607,6 +1747,8 @@ auto relink_primary_music(document_history_t& history, const resource_entry_t& m
 auto apply_resource_asset_import(document_history_t& history,
                                  const import_resource_asset_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto paths = validate_import_source_paths(action, result);
     if (!paths || !validate_import_source_geometry(action, result)) return result;
@@ -1803,6 +1945,8 @@ auto bms_wav_slot_owner(const song_document_t& document, std::size_t slot) -> bm
 auto apply_bms_wav_slot_assignment(document_history_t& history,
                                    const assign_bms_wav_slot_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto value = decode_supported_wav_identifier(action.identifier);
     if (!value) {
@@ -1837,6 +1981,8 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
 auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
                                          const assign_bms_wav_slot_batch_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto first_slot = decode_supported_wav_identifier(action.first_identifier);
     if (!first_slot) {
@@ -1862,6 +2008,8 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
 auto apply_primary_music_set(document_history_t& history,
                              import_resource_asset_action_t action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (!action.audio_stream) {
         reject(result, diagnostic_code_t::invalid_id, "song audio requires probed stream geometry");
@@ -1878,6 +2026,8 @@ auto apply_primary_music_set(document_history_t& history,
 auto apply_resource_asset_relink(document_history_t& history,
                                  const relink_resource_asset_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
@@ -1998,6 +2148,8 @@ auto count_resource_references(const song_document_t& document) -> resource_refe
 auto apply_resource_sound_metadata(document_history_t& history,
                                    const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto resource = std::ranges::find(history.document.resources, action.resource,
                                             &resource_entry_t::id);
@@ -2038,6 +2190,8 @@ auto apply_resource_sound_metadata(document_history_t& history,
 auto apply_resource_deletions(document_history_t& history,
                               std::span<const resource_id_t> resources)
     -> document_command_result_t {
+    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (resources.empty() || resources.size() > maximum_resource_deletions) {
         reject(result, diagnostic_code_t::invalid_resolution,
@@ -2201,6 +2355,30 @@ auto scan_resource_assignment_targets(chart_document_t& chart, resource_assignme
 auto stage_resource_assignment(document_command_transaction_t& transaction,
     const assign_resource_action_t& action, resource_assignment_limits_t limits)
     -> attempt_t<document_edit_effect_t> {
+    if (transaction.has_bms_program(action.chart)) {
+        std::vector<object_id_t> ids;
+        for (const auto& object : action.objects) ids.push_back(object.id);
+        const auto* owner = transaction.current_document().find_bms_program(action.chart);
+        const auto projection = owner->build_projection();
+        if (!projection.value) {
+            (void)transaction.reject(diagnostic_code_t::invalid_id, "Scoped resource assignment cannot evaluate its source.");
+            return {.diagnostics = transaction.outcome().diagnostics};
+        }
+        const auto& catalog = projection.value->song();
+        return transaction.stage_bms_native_objects(action.chart, ids, bms_existing_edit_kind_t::update,
+            [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+                document_command_result_t result;
+                auto selected = validate_resource_assignment_selection(catalog, action, limits, result);
+                if (!selected) return {.diagnostics = std::move(result.diagnostics)};
+                std::vector<std::uint8_t> occurrences(selected->size());
+                resource_assignment_scan_t scan{*selected, action.resource, limits.maximum_chart_objects,
+                    occurrences, result};
+                if (!prepare_assigned_bga_kinds(catalog, chart, scan) || !scan_resource_assignment_targets(chart, scan))
+                    return {.diagnostics = std::move(result.diagnostics)};
+                return {.value = document_edit_effect_t{.changed = scan.changed,
+                    .command_label = "Assign resource to selection"}};
+            });
+    }
     return transaction.stage(action.chart, "resource assignment refers to an unknown chart",
         [&](chart_document_t& chart, song_document_t& document) -> attempt_t<document_edit_effect_t> {
             document_command_result_t result;

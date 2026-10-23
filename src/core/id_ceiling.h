@@ -38,12 +38,20 @@ template<> struct id_declarations_t<object_id_t> {
             !visit_declared_id_values(prepared.bgm_columns, identities) ||
             !visit_declared_id_values(prepared.resources, identities) ||
             !visit_declared_id_values(prepared.audio_assets, identities) ||
-            !visit_declared_id_values(prepared.visual_assets, identities)) return false;
+            !visit_declared_id_values(prepared.visual_assets, identities) ||
+            !visit_declared_id_values(prepared.semantic_layers, identities)) return false;
         for (const auto id : prepared.measures)
             if (!identities(id)) return false;
-        for (const auto& node : prepared.program.nodes())
-            if (const auto* chart = std::get_if<bms_chart_content_t>(&node.value))
-                if (!visit_declared_id_values(chart->items, identities)) return false;
+        for (const auto& node : prepared.program.nodes()) {
+            const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+            if (!chart) continue;
+            if (!visit_declared_id_values(chart->items, identities)) return false;
+            for (const auto& item : chart->items) {
+                const auto* native = std::get_if<bms_native_content_t>(&item.value);
+                if (!native) continue;
+                for (const auto id : native->declared_ids()) if (!identities(id)) return false;
+            }
+        }
         return true;
     }
     template<class Visitor>

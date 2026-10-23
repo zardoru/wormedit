@@ -13,6 +13,11 @@
 #include <utility>
 
 namespace wormedit {
+auto document_stamp_t::from(const document_history_t& history) noexcept -> document_stamp_t {
+    return {.project = history.document.id, .revision = history.document.revision,
+        .bms_target = history.bms_edit_target};
+}
+
 auto document_stamp_t::from(std::uint64_t revision) noexcept -> document_stamp_t {
     return {.project = {}, .revision = revision};
 }
@@ -32,7 +37,18 @@ auto document_stamp_t::is_current(const song_document_t& document,
 }
 
 auto chart_stamp_t::from(const song_document_t& document, chart_id_t chart) noexcept -> chart_stamp_t {
-    return {.document = document_stamp_t::from(document), .chart = chart};
+    chart_stamp_t result{.document = document_stamp_t::from(document), .chart = chart};
+    if (const auto* owner = document.find_bms_program(chart)) {
+        const auto root = owner->prepared().program.target_chart(owner->prepared().program.root());
+        if (root) result.document.bms_target = {.difficulty = chart, .chart = *root};
+    }
+    return result;
+}
+
+auto chart_stamp_t::from(const document_history_t& history, chart_id_t chart) noexcept -> chart_stamp_t {
+    auto result = from(history.document, chart);
+    if (history.bms_edit_target) result.document.bms_target = history.bms_edit_target;
+    return result;
 }
 
 auto chart_stamp_t::is_identity_current(const song_document_t& current,
@@ -149,13 +165,13 @@ auto document_history_t::indices_storage(const chart_document_t& chart) const
 }
 
 auto document_history_t::indices(chart_id_t id) const -> const chart_indices_t* {
-    const auto* chart = document.find_chart(id);
+    const auto* chart = document.read_chart(id);
     return chart ? indices_storage(*chart).get() : nullptr;
 }
 
 auto document_history_t::indices_snapshot(chart_id_t id) const
     -> std::shared_ptr<const chart_indices_t> {
-    const auto* chart = document.find_chart(id);
+    const auto* chart = document.read_chart(id);
     return chart ? indices_storage(*chart) : std::shared_ptr<const chart_indices_t>{};
 }
 
@@ -217,12 +233,15 @@ auto commit_document_command(document_history_t& history, song_document_t propos
 }
 
 document_command_transaction_t::document_command_transaction_t(document_history_t& history)
-    : history_(history), outcome_{.revision = history.document.revision} {}
+    : history_(history), outcome_{.revision = history.document.revision},
+      bms_target_(history.bms_edit_target) {}
 
 document_command_transaction_t::document_command_transaction_t(document_history_t& history,
     const document_stamp_t& stamp, std::string_view label, document_identity_policy_t policy,
     diagnostic_code_t stale_code)
     : document_command_transaction_t(history) {
+    bms_target_ = stamp.bms_target;
+    if (stamp.bms_target && stamp.project) policy = document_identity_policy_t::project_and_revision;
     if (!stamp.is_current(source_document(), policy)) {
         outcome_ = rejection(source_document().revision, stale_code, stale_action_message(label));
         finished_ = true;
@@ -260,7 +279,7 @@ auto document_command_transaction_t::outcome() const noexcept -> const document_
 }
 
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
-    const auto found = history_.document.find_chart(id);
+    const auto found = history_.document.read_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
@@ -357,8 +376,39 @@ void merge_recent_undo_records(document_history_t& history, std::size_t count, s
     history.undo.push_back(std::move(merged));
 }
 
+namespace {
+auto apply_scoped_quantize(document_history_t& history, chart_id_t difficulty,
+    const quantize_request_t& request) -> quantize_command_result_t {
+    quantize_command_result_t result{.command = {.revision = history.document.revision}};
+    document_command_transaction_t transaction(history);
+    if (!request.selection) {
+        result.command = transaction.reject(diagnostic_code_t::unsupported_feature,
+            "Scoped quantization requires an explicit note/BGM selection.");
+        return result;
+    }
+    auto objects = request.selection->notes;
+    objects.insert(objects.end(), request.selection->bgm_events.begin(), request.selection->bgm_events.end());
+    auto staged = transaction.stage_bms_native_objects(difficulty, objects, bms_existing_edit_kind_t::update,
+        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+            if (!chart.sound_channels.empty()) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "Scoped quantization cannot rewrite retained sound-channel timing.")}};
+            auto plan = quantization_plan_t::from(chart, request);
+            result.payload.resolution_moves = std::move(plan.value.resolution_moves);
+            result.payload.quantized_moves = std::move(plan.value.quantized_moves);
+            result.payload.promoted_from = plan.value.promoted_from;
+            result.payload.promoted_to = plan.value.promoted_to;
+            if (!plan.value.chart) return {.diagnostics = std::move(plan.diagnostics)};
+            chart = std::move(*plan.value.chart);
+            return {.value = document_edit_effect_t{.changed = true, .command_label = "Quantize selection"}};
+        });
+    result.command = transaction.finish_execution(std::move(staged), command_noop_policy_t::accept_without_diagnostics);
+    return result;
+}
+} // namespace
+
 auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
                             const quantize_request_t& request) -> quantize_command_result_t {
+    if (history.document.find_bms_program(chart_id)) return apply_scoped_quantize(history, chart_id, request);
     quantize_command_result_t result;
     result.command.revision = history.document.revision;
     const auto chart = history.document.find_chart(chart_id);

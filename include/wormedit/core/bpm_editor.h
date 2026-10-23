@@ -54,6 +54,10 @@ struct timing_bpm_value_t {
 };
 
 using bpm_edit_value_t = positioned_edit_value_t<timing_bpm_value_t>;
+template<> struct chart_edit_native_collection_t<bpm_edit_value_t> {
+    static constexpr auto member = &chart_document_t::bpms;
+};
+
 using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 
 // Mutates one chart BPM event through shared document history. Local positions

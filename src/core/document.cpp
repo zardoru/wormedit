@@ -69,6 +69,22 @@ auto find_measure_object(Chart& chart, Id id, Member member)
     return nullptr;
 }
 } // namespace
+auto song_document_t::find_bms_program(chart_id_t id) const -> const bms_program_document_t* {
+    const bms_program_document_t* result{};
+    for (const auto& owner : prepared_bms_programs) {
+        if (!owner || owner->difficulty() != id) continue;
+        if (result) return nullptr;
+        result = owner.get();
+    }
+    return result;
+}
+
+auto song_document_t::read_chart(chart_id_t id) const -> const chart_document_t* {
+    if (const auto* chart = find_chart(id)) return chart;
+    const auto* owner = find_bms_program(id);
+    return owner ? owner->read_chart() : nullptr;
+}
+
 auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
 auto song_document_t::find_chart(chart_id_t id) const -> const chart_document_t* { return find_id(charts, id); }
 

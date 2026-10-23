@@ -67,8 +67,11 @@ private:
 
 template<class Gesture>
 void capture_gesture(editor_edit_context_t& context, Gesture&& gesture) {
+    auto stamp = context.gesture_capture.value_or(chart_stamp_t::from(context.history, context.state.chart).document);
+    stamp.revision = context.history.document.revision;
+    if (!stamp.bms_target) stamp = document_stamp_t::from(stamp.revision);
     context.state.active_gesture = proposal_t<std::remove_cvref_t<Gesture>, document_stamp_t>{
-        .stamp = document_stamp_t::from(context.history.document.revision),
+        .stamp = std::move(stamp),
         .payload = std::forward<Gesture>(gesture)};
 }
 
@@ -102,12 +105,14 @@ template<class Gesture>
         context.state.clear();
         return editor_interaction_result_t{.diagnostics = std::move(diagnostics)};
     }
+    auto applying = context;
+    applying.gesture_capture = *context.state.gesture_stamp<Gesture>();
     auto gesture = std::move(*context.state.gesture<Gesture>());
     context.state.clear();
-    auto result = gesture.apply(context);
+    auto result = gesture.apply(applying);
     if constexpr (requires { gesture.has_pending(); }) {
         if (result && gesture.has_pending()) {
-            capture_gesture(context, std::move(gesture));
+            capture_gesture(applying, std::move(gesture));
             auto refreshed = editor_interaction_result_t::from(context.history, context.state);
             result.view = std::move(refreshed.view);
         }

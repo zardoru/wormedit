@@ -382,6 +382,11 @@ auto plan_chart_import(const song_document_t& target, const song_document_t& sou
 auto apply_chart_import(document_history_t& history,
                         const song_document_t& source, const chart_import_paths_t& paths,
                         std::span<const chart_id_t> selected) -> chart_import_result_t {
+    if (!history.document.prepared_bms_programs.empty() || !source.prepared_bms_programs.empty())
+        return {.command = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Prepared scoped imports require full-program and shared-pool identity remapping.")};
+
     auto transaction = document_command_transaction_t(history);
     chart_import_result_t result{.command = transaction.outcome(), .payload = {}};
     if (selected.empty()) {

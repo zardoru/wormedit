@@ -2,21 +2,23 @@
 
 ## Active queue (2026-10-23)
 
-**T-736 is in progress.** The prepared transaction foundation adds stable stamped
-scope/Chart targets, immutable semantic snapshots in existing Undo/Redo, typed content
-batches and history-safe item allocation. Publication validates bounded alternative
-evaluations and rejects new collisions, unresolved references and budget exhaustion.
-Legacy public documents remain authoritative until T-744. Editor-family adapters,
-gesture/proposal capture, native-only content and their final verification are still outstanding;
-this is not T-736 completion. See its card for the current supporting ownership.
-The prepared foundation passes GATE and Linux Clang **4,739/4,739** each, focused scoped
-edits **405 assertions / 26 cases**, and combined edit/projection/writer checks
-**5,056 assertions / 82 cases** on both compilers. Changed-C++ complexity and eight additional
-header consumers pass without increased allowances. The broad Clang rebuild reports
-existing audio-target designated-initializer warnings; the final incremental rebuild is clean.
-Runtime event precedence now follows program order without changing authored provenance;
-detached selector choices no longer borrow legacy control-tree fields. Native persistence
-explicitly refuses prepared owners until T-737, which remains blocked on T-736.
+Completed **T-736** (2026-10-23): prepared editor commands and gestures resolve one
+stable semantic Chart through the shared transaction. Captured targets survive selection
+changes and terminal gesture cleanup; existing objects retain their owners. Exact native
+content, nested identities, layer pools and symbolic references remain authoritative without
+a writable projected-chart mirror. Notes/holds, resources, paste, timing/Kiai, recipes,
+metadata/offsets, selected transforms, hitsounds/labels and layers use the prepared adapters;
+unsupported broad rewrites refuse atomically. Publication checks bounded alternatives and
+publishes one Undo record. Imported timing references and both hold endpoint WAVs survive edits.
+GCC GATE and Linux Clang full CTest each pass **4,765/4,765**; focused scoped edits pass
+**705 assertions / 52 cases**. Complexity passes for **34 changed translation units** and
+**eight additional header consumers**, without increased allowances. One Clang callback-timing
+audio failure at 12 test workers passed three isolated repetitions and the complete final suite
+at four workers. Broad audio-target builds retain designated-initializer warnings.
+Native persistence explicitly refuses prepared owners until **T-737, now ready**; no successor
+implementation is active. Public document activation remains T-744. Supporting ownership,
+capability boundaries and verification logs are recorded on the
+[completed card](../../docs/chart-editor-plan/tasks/bms-scoped-model.md#t-736-resolve-chart-edits-to-one-scoped-semantic-owner).
 
 Completed **T-735** (2026-10-23): `write_bms_program` serializes the full typed
 program, including inactive declarations/events, Text, automatic IF grouping and anchored SKIP.
@@ -29,7 +31,7 @@ GATE and Linux Clang each pass **4,712/4,712**; whitespace and **9-TU** complexi
 without increased allowances. Focused writer checks pass **2,482 assertions / 33 cases**,
 including all 18 built-in profiles. Documentation checks pass **5/5**; the measured zero
 frontend-action ceremony allowance tightens **2→0**. The legacy public owner remains
-authoritative until T-744. **T-736 is in progress above**; no successor implementation is active.
+authoritative until T-744. **T-736 is complete above; T-737 is ready**; no successor implementation is active.
 
 Completed **T-734** (2026-10-23): detached typed-program evaluation derives playable
 notes/holds, timing, scoped resources, exact measure geometry and active BGM columns.

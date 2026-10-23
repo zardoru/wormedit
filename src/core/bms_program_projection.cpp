@@ -1,5 +1,6 @@
 #include <wormedit/core/bms_program.h>
 #include "checked_math.h"
+#include "bms_native_content_internal.h"
 #include <wormedit/core/rational.h>
 
 #include <map>
@@ -52,6 +53,8 @@ struct projection_builder_t {
     auto index_inputs() -> bool;
     auto index_program(std::size_t& count) -> bool;
     auto index_pools(std::size_t& count) -> bool;
+    auto index_layer_defaults(std::size_t& count) -> bool;
+    auto index_native(const bms_content_item_t& item, std::size_t& count) -> bool;
     auto observe_id(std::uint64_t id) -> bool;
     void evaluate(const bms_program_node_t& node, std::optional<std::int64_t> random,
         bool* stopped, const bms_case_scope_t* owning_case, std::size_t depth);
@@ -77,6 +80,7 @@ struct projection_builder_t {
     auto visual(const std::string& identifier, contribution_t entry) -> resource_id_t;
     void add_owners(std::uint64_t id, contribution_t entry);
     void add_resource_owner(std::uint64_t id, bms_resource_namespace_t ns, const std::string& identifier);
+    void emit(contribution_t entry, const bms_native_content_t& value);
     void emit(contribution_t entry, const bms_note_content_t& value);
     void emit(contribution_t entry, const bms_hold_endpoint_t& value);
     void emit(contribution_t entry, const bms_bga_content_t& value);
@@ -108,6 +112,16 @@ auto projection_builder_t::observe_id(std::uint64_t id) -> bool {
     return false;
 }
 
+auto projection_builder_t::index_native(const bms_content_item_t& item, std::size_t& count) -> bool {
+    const auto* native = std::get_if<bms_native_content_t>(&item.value);
+    if (!native) return true;
+    const auto ids = native->declared_ids();
+    if (!checked_math::account_size(count, ids.size(), limits.maximum_input_items) ||
+        !checked_math::account_size(count, native->positions().size(), limits.maximum_input_items)) return false;
+    for (const auto id : ids) if (!observe_id(id.value)) return false;
+    return true;
+}
+
 auto projection_builder_t::index_program(std::size_t& count) -> bool {
     for (const auto& node : prepared.program.nodes()) {
         if (!observe_id(node.id.value)) return false;
@@ -119,8 +133,36 @@ auto projection_builder_t::index_program(std::size_t& count) -> bool {
         if (!content) continue;
         if (!checked_math::account_size(count, content->items.size(), limits.maximum_input_items)) return false;
         for (const auto& item : content->items) {
-            if (!observe_id(item.id.value)) return false;
+            if (!observe_id(item.id.value) || !index_native(item, count)) return false;
             if (const auto* bga = std::get_if<bms_bga_content_t>(&item.value)) missing_bmp_ids.try_emplace(bga->bmp);
+        }
+    }
+    return true;
+}
+
+auto projection_builder_t::index_layer_defaults(std::size_t& count) -> bool {
+    std::set<layer_id_t> layers;
+    for (const auto& layer : prepared.semantic_layers) layers.insert(layer.id);
+    std::set<resource_id_t> resources_with_defaults;
+    for (const auto& defaults : prepared.sound_layer_defaults) {
+        const auto resource = catalog.find(defaults.resource.value);
+        if (resource == catalog.end() || defaults.layers.empty() || !resources_with_defaults.insert(defaults.resource).second) {
+            diagnose(failure_code_t::invalid_data, "Layer defaults require distinct known sounds and nonempty memberships.");
+            return false;
+        }
+        if (!std::ranges::any_of(resource->second->roles, [](resource_role_t role) {
+            return role == resource_role_t::sample || role == resource_role_t::bgm;
+        })) {
+            diagnose(failure_code_t::invalid_data, "Layer defaults require an audio sample resource.");
+            return false;
+        }
+        if (!checked_math::account_size(count, defaults.layers.size(), limits.maximum_input_items)) return false;
+        std::set<layer_id_t> memberships;
+        for (const auto id : defaults.layers) {
+            if (!layers.contains(id) || !memberships.insert(id).second) {
+                diagnose(failure_code_t::invalid_data, "Layer defaults require distinct known layer identities.");
+                return false;
+            }
         }
     }
     return true;
@@ -128,10 +170,11 @@ auto projection_builder_t::index_program(std::size_t& count) -> bool {
 
 auto projection_builder_t::index_pools(std::size_t& count) -> bool {
     const std::array sizes{prepared.measures.size(), prepared.resources.size(), prepared.audio_assets.size(),
-        prepared.visual_assets.size(), prepared.bgm_columns.size()};
+        prepared.visual_assets.size(), prepared.bgm_columns.size(), prepared.semantic_layers.size(), prepared.sound_layer_defaults.size()};
     for (const auto size : sizes) if (!checked_math::account_size(count, size, limits.maximum_input_items)) return false;
     for (const auto id : prepared.measures) if (!observe_id(id.value)) return false;
     for (const auto& lane : prepared.bgm_columns) if (!observe_id(lane.id.value)) return false;
+    for (const auto& layer : prepared.semantic_layers) if (!observe_id(layer.id.value)) return false;
     for (const auto& resource : prepared.resources) {
         if (!observe_id(resource.id.value)) return false;
         catalog.emplace(resource.id.value, &resource);
@@ -144,7 +187,7 @@ auto projection_builder_t::index_pools(std::size_t& count) -> bool {
         if (!observe_id(asset.id.value)) return false;
         assets.emplace(asset.id.value, bms_resource_namespace_t::bmp);
     }
-    return true;
+    return index_layer_defaults(count);
 }
 
 auto projection_builder_t::index_inputs() -> bool {
@@ -191,6 +234,7 @@ auto projection_builder_t::prepare() -> bool {
     }
     song.audio_assets = prepared.audio_assets;
     song.visual_assets = prepared.visual_assets;
+    chart().semantic_layers = prepared.semantic_layers;
     return true;
 }
 
@@ -378,6 +422,9 @@ void projection_builder_t::collect_declarations() {
     // Graph order is the program order, including explicitly reordered/new Charts.
     // Source offsets are provenance only and never decide semantic precedence.
     for (const auto entry : active) std::visit([&](const auto& value) { declaration(entry, value); }, entry.item->value);
+    for (const auto& defaults : prepared.sound_layer_defaults)
+        if (std::ranges::find(song.resources, defaults.resource, &resource_entry_t::id) != song.resources.end())
+            chart().sound_layer_defaults.push_back(defaults);
     chart().metadata.name = song.metadata.title;
     chart().metadata.author = song.metadata.artist;
 
@@ -399,10 +446,19 @@ auto projection_builder_t::promote(rational_t length, rational_t fraction) -> bo
     return true;
 }
 
-auto content_position(const bms_content_item_t& item) -> std::optional<bms_program_position_t> {
-    return std::visit([](const auto& value) -> std::optional<bms_program_position_t> {
-        if constexpr (requires { value.position; }) return value.position;
-        else return std::nullopt;
+struct content_position_t {
+    bms_program_position_t position;
+    bool allows_chart_end{};
+};
+auto content_positions(const bms_content_item_t& item) -> std::vector<content_position_t> {
+    return std::visit([](const auto& value) -> std::vector<content_position_t> {
+        if constexpr (requires { value.position; }) return {{.position = value.position}};
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, bms_native_content_t>) {
+            std::vector<content_position_t> result;
+            for (std::size_t i = 0; i < value.positions().size(); ++i)
+                result.push_back({.position = value.positions()[i], .allows_chart_end = value.allows_chart_end(i)});
+            return result;
+        } else return {};
     }, item.value);
 }
 
@@ -414,18 +470,22 @@ auto projection_builder_t::build_geometry() -> bool {
         }
     }
     for (const auto entry : active) {
-        const auto source = content_position(*entry.item);
-        if (!source) continue;
-        const auto found = measures.find(source->measure.value);
-        if (found == measures.end() || !source->fraction.denominator || source->fraction.numerator >= source->fraction.denominator) {
+        for (const auto source : content_positions(*entry.item)) {
+        const auto at = source.position;
+        const auto found = measures.find(at.measure.value);
+        const bool is_end = source.allows_chart_end && at.measure == prepared.measures.back();
+        if (found == measures.end() || !at.fraction.denominator ||
+            at.fraction.numerator > at.fraction.denominator ||
+            (at.fraction.numerator == at.fraction.denominator && !is_end)) {
             diagnose(failure_code_t::invalid_geometry, "Content position is outside a shared measure.", entry.owner.chart, entry.item->id);
             return false;
         }
-        if (!promote(chart().measures[found->second].definition.length, source->fraction)) {
+        if (!promote(chart().measures[found->second].definition.length, at.fraction)) {
             diagnose(failure_code_t::capacity_exceeded, "Content grid exceeds the exact resolution limit.", entry.owner.chart, entry.item->id);
             return false;
         }
     }
+        }
     for (const auto& measure : chart().measures) {
         if (!measure_capacity_t::from(chart().divisions_per_standard_measure, measure.definition)) {
             diagnose(failure_code_t::invalid_geometry, "Measure capacity cannot be represented exactly.");
@@ -482,6 +542,35 @@ auto projection_builder_t::visual(const std::string& identifier, contribution_t 
     return resource;
 }
 
+void projection_builder_t::emit(contribution_t entry, const bms_native_content_t& value) {
+    const auto event = value.build_event(entry.item->id, chart());
+    if (!event) {
+        diagnose(failure_code_t::invalid_geometry, "Native content cannot use the exact projected grid.", entry.owner.chart, entry.item->id);
+        return;
+    }
+    std::visit([&](auto native) {
+        using value_type = std::remove_cvref_t<decltype(native)>;
+        if constexpr (requires { native.provenance; }) native.provenance = entry.provenance();
+        if (const auto& reference = value.resource_reference()) {
+            if constexpr (requires { native.sound; }) native.sound = sound(reference->identifier, entry);
+            else if constexpr (std::same_as<value_type, bga_event_t>) native.resource = visual(reference->identifier, entry);
+            add_resource_owner(entry.item->id.value, reference->name_space, reference->identifier);
+        }
+        if constexpr (std::same_as<value_type, note_t>) {
+            if (!is_lane(native.lane, entry)) return;
+            chart().measures[measures.at(native.position.measure.value)].notes.push_back(std::move(native));
+        } else if constexpr (std::same_as<value_type, bgm_event_t>) {
+            const auto column = std::ranges::find(prepared.bgm_columns, native.source_lane, &bgm_source_lane_t::id);
+            if (column != prepared.bgm_columns.end() &&
+                std::ranges::find(chart().bgm_source_lanes, column->id, &bgm_source_lane_t::id) == chart().bgm_source_lanes.end())
+                chart().bgm_source_lanes.push_back(*column);
+            chart().measures[measures.at(native.position.measure.value)].bgm_events.push_back(std::move(native));
+        } else native_events<value_type>(chart()).push_back(std::move(native));
+    }, *event);
+    add_owners(entry.item->id.value, entry);
+    for (const auto id : value.declared_ids()) add_owners(id.value, entry);
+}
+
 void projection_builder_t::emit(contribution_t entry, const bms_note_content_t& value) {
     if (!is_lane(value.lane, entry)) return;
     const auto at = position(value.position);
@@ -493,7 +582,8 @@ void projection_builder_t::emit(contribution_t entry, const bms_note_content_t& 
     const auto binding = value.wav ? sound(*value.wav, entry) : std::nullopt;
     chart().measures[measures.at(at->measure.value)].notes.push_back({.id = entry.item->id,
         .position = *at, .lane = value.lane, .kind = value.kind, .sound = binding,
-        .provenance = entry.provenance()});
+        .semantic_layers = value.attributes.semantic_layers, .label = value.attributes.label,
+        .provenance = entry.provenance(), .osu_hitsample = value.attributes.osu_hitsample});
     add_owners(entry.item->id.value, entry);
     if (value.wav) add_resource_owner(entry.item->id.value, bms_resource_namespace_t::wav, *value.wav);
 }
@@ -563,17 +653,23 @@ void projection_builder_t::emit_bgm() {
             diagnose(failure_code_t::not_found, "BGM content has no shared column identity.", entry.owner.chart, entry.item->id);
             return;
         }
-        if (chart().bgm_source_lanes.size() <= rank) chart().bgm_source_lanes.push_back(prepared.bgm_columns[rank]);
+        if (std::ranges::find(chart().bgm_source_lanes, prepared.bgm_columns[rank].id,
+            &bgm_source_lane_t::id) == chart().bgm_source_lanes.end())
+            chart().bgm_source_lanes.push_back(prepared.bgm_columns[rank]);
         if (!value->wav) continue;
         const auto at = position(value->position);
         if (!at) continue;
         chart().measures[measures.at(at->measure.value)].bgm_events.push_back({.id = entry.item->id,
             .position = *at, .source_lane = prepared.bgm_columns[rank].id, .sound = sound(*value->wav, entry),
-            .structural_slot = value->structural_slot, .provenance = entry.provenance()});
+            .structural_slot = value->structural_slot, .provenance = entry.provenance(),
+            .semantic_layers = value->semantic_layers});
         add_owners(entry.item->id.value, entry);
         add_resource_owner(entry.item->id.value, bms_resource_namespace_t::wav, *value->wav);
         add_owners(prepared.bgm_columns[rank].id.value, entry);
     }
+    std::ranges::sort(chart().bgm_source_lanes, [](const auto& left, const auto& right) {
+        return std::tie(left.source_order, left.id) < std::tie(right.source_order, right.id);
+    });
 }
 
 void projection_builder_t::emit_hold(contribution_t head, contribution_t tail) {
@@ -586,7 +682,8 @@ void projection_builder_t::emit_hold(contribution_t head, contribution_t tail) {
     }
     chart().measures[measures.at(begin.measure.value)].notes.push_back({.id = head.item->id,
         .position = begin, .lane = start.lane, .kind = note_kind_t::hold, .end = finish,
-        .sound = sound(start.wav, head), .provenance = head.provenance()});
+        .sound = sound(start.wav, head), .semantic_layers = start.attributes.semantic_layers,
+        .label = start.attributes.label, .provenance = head.provenance(), .osu_hitsample = start.attributes.osu_hitsample});
     add_owners(head.item->id.value, head);
     add_owners(head.item->id.value, tail);
     add_resource_owner(head.item->id.value, bms_resource_namespace_t::wav, start.wav);

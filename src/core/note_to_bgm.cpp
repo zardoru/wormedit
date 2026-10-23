@@ -1,6 +1,7 @@
 #include "bmson_sound_channel_editor_internal.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/note_to_bgm.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/lane_profile_switch.h>
@@ -412,11 +413,46 @@ auto note_to_bgm_allocation_t::from(const chart_document_t& chart,
     return plan_allocation(chart, resources, notes, preferred_lane, policy);
 }
 
+namespace {
+auto stage_scoped_notes_to_bgm(document_command_transaction_t& transaction, chart_id_t difficulty,
+    std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane, note_to_bgm_policy_t policy)
+    -> attempt_t<document_edit_effect_t> {
+    if (notes.empty() || notes.size() > 4096) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "Scoped BGM conversion requires 1 to 4096 notes.")}};
+    const auto* source = transaction.current_document().read_chart(difficulty);
+    for (const auto id : notes) {
+        const auto* note = source ? source->find_note(id) : nullptr;
+        if (!note || note->label || note->osu_hitsample ||
+            (note->kind != note_kind_t::tap && note->kind != note_kind_t::hold))
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "Scoped BGM conversion cannot discard note annotations or special note kinds.", id)}};
+    }
+    const auto* program = transaction.current_document().find_bms_program(difficulty);
+    auto plan = plan_allocation(*source, program->prepared().resources, notes, preferred_lane, policy);
+    if (!plan.diagnostics.empty()) return {.diagnostics = std::move(plan.diagnostics)};
+    for (auto& lane : plan.value.new_lanes) {
+        const auto created = transaction.stage_bms_bgm_column(difficulty);
+        if (!created.value || !created.ok()) return {.diagnostics = created.diagnostics};
+        for (auto& assignment : plan.value.assignments)
+            if (assignment.lane == lane.id) assignment.lane = *created.value;
+        const auto& column = transaction.current_document().find_bms_program(difficulty)->prepared().bgm_columns.back();
+        lane = {.id = column.id, .name = column.name, .source_order = column.source_order};
+    }
+    return transaction.stage_bms_native_objects(difficulty, notes, bms_existing_edit_kind_t::update,
+        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+            if (!apply_plan(chart, plan.value)) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                "Scoped BGM conversion could not apply its typed allocation.")}};
+            return {.value = document_edit_effect_t{.changed = true, .command_label = "Move notes to BGM"}};
+        });
+}
+} // namespace
+
 auto stage_move_notes_to_bgm(document_command_transaction_t& transaction, chart_id_t chart_id,
                              std::span<const object_id_t> notes,
                              std::optional<object_id_t> preferred_lane, note_to_bgm_policy_t policy)
     -> attempt_t<document_edit_effect_t> {
     return transaction.stage([&](song_document_t&) -> attempt_t<document_edit_effect_t> {
+        if (transaction.has_bms_program(chart_id)) return stage_scoped_notes_to_bgm(transaction, chart_id, notes, preferred_lane, policy);
         if (notes.empty() || notes.size() > 4096)
             return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                           "note move to BGM needs 1 to 4096 notes")}};
@@ -573,17 +609,22 @@ auto restore_bgm_events(document_command_transaction_t& transaction, chart_docum
 } // namespace
 
 auto stage_move_bgm_events_to_lane(document_command_transaction_t& transaction, chart_id_t chart_id,
-                                   std::span<const object_id_t> events, lane_id_t lane)
-    -> attempt_t<document_edit_effect_t> {
+    std::span<const object_id_t> events, lane_id_t lane) -> attempt_t<document_edit_effect_t> {
     return transaction.stage([&](song_document_t&) -> attempt_t<document_edit_effect_t> {
         if (events.empty() || events.size() > 4096 || !lane)
-            return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                          "BGM move needs 1 to 4096 events and a lane")}};
-        return transaction.stage(
-            chart_id, "BGM move refers to an unknown chart",
-            [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
-                return restore_bgm_events(transaction, chart, events, lane);
-            });
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGM move needs 1 to 4096 events and a lane")}};
+        if (transaction.has_bms_program(chart_id))
+            return transaction.stage_bms_native_objects(chart_id, events, bms_existing_edit_kind_t::update,
+                [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+                    for (const auto id : events) {
+                        const auto* event = chart.find_bgm_event(id);
+                        if (!event || event->sound_channel_event) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                            "Scoped BGM restoration cannot detach retained stem points.", id)}};
+                    }
+                    return restore_bgm_events(transaction, chart, events, lane);
+                });
+        return transaction.stage(chart_id, "BGM move refers to an unknown chart",
+            [&](chart_document_t& chart, song_document_t&) { return restore_bgm_events(transaction, chart, events, lane); });
     });
 }
 

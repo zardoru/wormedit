@@ -1,6 +1,8 @@
 #include "../core/text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/core/resource_file_copy.h>
 
 #include <algorithm>
@@ -315,6 +317,121 @@ auto apply_metadata_operation(metadata_edit_context_t& context, const Edit& edit
     apply_metadata_action(context, edit);
 }
 
+auto scoped_metadata_owners(const bms_program_document_t& program) -> std::vector<bms_program_owner_t> {
+    std::vector<bms_program_owner_t> result;
+    const auto projection = program.build_projection();
+    if (!projection.value) return result;
+    for (const auto chart : projection.value->active_charts()) {
+        const auto& content = std::get<bms_chart_content_t>(program.prepared().program.find(chart)->value);
+        for (const auto& item : content.items) {
+            const auto* metadata = std::get_if<bms_metadata_declaration_t>(&item.value);
+            if (metadata && std::holds_alternative<std::string>(metadata->value) &&
+                metadata->field != bms_metadata_field_t::octave_fp)
+                result.push_back({.scope = *program.prepared().program.parent(chart), .chart = chart, .item = item.id});
+        }
+    }
+    return result;
+}
+
+auto scoped_metadata_value(const edit_format_metadata_field_action_t& edit,
+    const metadata_edit_limits_t& limits) -> attempt_t<bms_metadata_declaration_t> {
+    diagnostic_list_t diagnostics;
+    if (!validate_field(edit.name, edit.value, limits, diagnostics)) return {.diagnostics = std::move(diagnostics)};
+    const auto* definition = bms_metadata_definition_t::from(text_util::ascii_upper(edit.name));
+    if (!definition) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+        "Scoped metadata requires a recognized typed BMS declaration.")}};
+    bms_metadata_declaration_t value{.field = definition->field, .value = edit.value};
+    if (value.field == bms_metadata_field_t::player || value.field == bms_metadata_field_t::offset) {
+        const auto numeric = parse_exact_decimal(edit.value);
+        if (!numeric) return {.diagnostics = {error(diagnostic_code_t::invalid_rational, "Scoped metadata needs an exact number.")}};
+        value.value = *numeric;
+    }
+    return {.value = std::move(value)};
+}
+
+auto is_scoped_metadata_within_limits(const bms_program_document_t& program,
+    const metadata_edit_limits_t& limits) -> bool {
+    std::size_t total{}, count{};
+    for (const auto& node : program.prepared().program.nodes()) {
+        const auto* content = std::get_if<bms_chart_content_t>(&node.value);
+        if (!content) continue;
+        for (const auto& item : content->items) {
+            const auto* metadata = std::get_if<bms_metadata_declaration_t>(&item.value);
+            if (!metadata) continue;
+            if (++count > limits.maximum_fields_per_group) return false;
+            const auto* text = std::get_if<std::string>(&metadata->value);
+            if (text && (!is_valid_bounded_text(*text, limits.maximum_field_value_bytes) ||
+                !checked_add(total, text->size(), limits.maximum_total_metadata_bytes))) return false;
+        }
+    }
+    return true;
+}
+
+struct scoped_metadata_editor_t {
+    document_command_transaction_t& transaction;
+    const document_history_t& history;
+    const metadata_edit_limits_t& limits;
+
+    template<class Edit> static auto existing_item(const Edit& edit,
+        std::span<const bms_program_owner_t> fields)
+        -> result_t<std::optional<object_id_t>, error_t<failure_code_t>> {
+        bool insert{};
+        if constexpr (std::same_as<Edit, edit_format_metadata_field_action_t>)
+            insert = edit.mode == format_metadata_field_mode_t::insert;
+        if (edit.target.family != format_family_t::bms ||
+            (insert ? edit.index != fields.size() : edit.index >= fields.size()))
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::unsupported,
+                "Scoped metadata needs an existing typed field or an append in its BMS group."});
+        if (insert) return std::optional<object_id_t>{};
+        return std::optional{fields[edit.index].item};
+    }
+    auto target(chart_id_t difficulty, std::optional<object_id_t> existing) const
+        -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
+        if (existing) return bms_program_edit_target_t::from(history.document, difficulty, *existing);
+        const auto selection = history.bms_edit_target;
+        if (selection && selection->difficulty != difficulty)
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict,
+                "Selected metadata owner belongs to another difficulty."});
+        return bms_program_edit_target_t::from(history.document, difficulty,
+            selection ? std::optional{selection->chart} : std::nullopt);
+    }
+    template<class Edit> auto make_batch(bms_program_edit_target_t destination, const Edit& edit,
+        std::span<const bms_program_owner_t> fields, std::optional<object_id_t> existing)
+        -> attempt_t<bms_program_content_edit_batch_t> {
+        bms_program_content_edit_batch_t batch{.target = destination, .label = "Edit scoped metadata"};
+        if constexpr (std::same_as<Edit, erase_format_metadata_field_action_t>)
+            batch.edits.push_back(bms_program_content_delete_t{.owner = fields[edit.index]});
+        else {
+            const auto value = scoped_metadata_value(edit, limits);
+            if (!value.value || !value.ok()) return {.diagnostics = value.diagnostics};
+            if (existing) batch.edits.push_back(bms_program_content_update_t{.owner = fields[edit.index], .value = *value.value});
+            else {
+                const auto id = transaction.next_bms_program_item_id();
+                if (!id) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped metadata identities are exhausted.")}};
+                batch.edits.push_back(bms_program_content_insert_t{.item = {.id = *id, .value = *value.value}});
+            }
+        }
+        return {.value = std::move(batch)};
+    }
+    template<class Edit> auto apply(const Edit& edit) -> document_command_result_t {
+        const auto difficulty = *edit.target.chart;
+        const auto* program = transaction.current_document().find_bms_program(difficulty);
+        const auto fields = scoped_metadata_owners(*program);
+        const auto existing = existing_item(edit, fields);
+        if (!existing) return transaction.reject(diagnostic_code_t::unsupported_feature, existing.error().message);
+        const auto destination = target(difficulty, *existing);
+        if (!destination) return transaction.reject(diagnostic_code_t::invalid_id, destination.error().message);
+        const auto batch = make_batch(*destination, edit, fields, *existing);
+        if (!batch.value || !batch.ok()) return transaction.finish_with({.revision = history.document.revision,
+            .diagnostics = batch.diagnostics});
+        auto staged = transaction.stage(*batch.value);
+        const auto* proposed = transaction.current_document().find_bms_program(difficulty);
+        if (staged.value && !is_scoped_metadata_within_limits(*proposed, limits))
+            return transaction.reject(diagnostic_code_t::unsupported_feature, "Scoped metadata exceeds its bounded field or byte cap.");
+        return transaction.finish_execution(std::move(staged), command_noop_policy_t::accept_without_diagnostics);
+    }
+};
+
 } // namespace
 
 auto output_path_from_drop(const std::filesystem::path& project_directory,
@@ -440,6 +557,14 @@ auto apply_metadata_edit(document_history_t& history,
                          const metadata_edit_action_t& action, metadata_edit_limits_t limits)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
+    const auto scoped = std::visit([&](const auto& edit) -> std::optional<document_command_result_t> {
+        if constexpr (requires { edit.target.chart; }) {
+            if (edit.target.chart && history.document.find_bms_program(*edit.target.chart))
+                return scoped_metadata_editor_t{transaction, history, limits}.apply(edit);
+        }
+        return std::nullopt;
+    }, action);
+    if (scoped) return *scoped;
     auto& result = transaction.outcome();
     if (limits.maximum_total_metadata_bytes == 0) {
         result.diagnostics.push_back(

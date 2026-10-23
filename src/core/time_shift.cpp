@@ -491,9 +491,34 @@ auto stage_shift_selection(song_document_t& document, const shift_selection_acti
     return result;
 }
 
+auto apply_scoped_shift_selection(document_history_t& history,
+    const shift_selection_action_t& action, time_shift_limits_t limits) -> time_shift_result_t {
+    time_shift_result_t result{.command = {.revision = history.document.revision}};
+    if (action.rows == 0) return result;
+    auto objects = action.notes;
+    objects.insert(objects.end(), action.bgm_events.begin(), action.bgm_events.end());
+    document_command_transaction_t transaction(history);
+    if (!action.bar_lines.empty() || objects.size() > limits.maximum_selected_objects) {
+        result.command = transaction.reject(diagnostic_code_t::unsupported_feature,
+            "Scoped selection shifts require bounded existing objects and unchanged shared geometry.");
+        return result;
+    }
+    auto staged = transaction.stage_bms_native_objects(action.chart, objects, bms_existing_edit_kind_t::update,
+        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+            auto moved = moved_ids_t::from(action);
+            if (!shift_selected_objects(chart, action, moved, result) || !settle_shifted_chart(chart, result))
+                return {.diagnostics = result.command.diagnostics};
+            return {.value = document_edit_effect_t{.changed = result.payload.moved_objects != 0,
+                .command_label = "Shift selection"}};
+        });
+    result.command = transaction.finish_execution(std::move(staged), command_noop_policy_t::accept_without_diagnostics);
+    return result;
+}
+
 auto apply_shift_selection(document_history_t& history,
                            const shift_selection_action_t& action, time_shift_limits_t limits)
     -> time_shift_result_t {
+    if (history.document.find_bms_program(action.chart)) return apply_scoped_shift_selection(history, action, limits);
     auto proposed = history.document;
     auto result = stage_shift_selection(proposed, action, limits);
     return commit_shift(history, std::move(proposed), result, "Shift selection");

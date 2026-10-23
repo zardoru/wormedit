@@ -1,5 +1,6 @@
 #include "../core/checked_math.h"
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/measure_editor.h>
 
 #include <algorithm>
@@ -61,7 +62,7 @@ auto audio_offset_drag_t::propose(const song_document_t& document, chart_id_t ch
         result.diagnostics.push_back(std::move(*locked));
         return result;
     }
-    const auto* selected = document.find_chart(chart);
+    const auto* selected = document.read_chart(chart);
     if (!chart || selected == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "audio offset drag refers to an unknown chart"));
@@ -90,7 +91,7 @@ auto audio_offset_drag_t::revise(const proposal_read_scope_t<chart_stamp_t>& sco
     const auto& drag = *this;
     const auto& document = scope.source_document();
     const auto& stamp = scope.captured_stamp();
-    const auto* selected = document.find_chart(stamp.chart);
+    const auto* selected = document.read_chart(stamp.chart);
     if (selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -113,6 +114,37 @@ auto audio_offset_drag_t::revise(const proposal_read_scope_t<chart_stamp_t>& sco
 }
 
 namespace {
+auto winning_scoped_offset(const bms_program_document_t& program) -> std::optional<object_id_t> {
+    std::optional<object_id_t> result;
+    const auto projection = program.build_projection();
+    if (!projection.value) return result;
+    for (const auto chart : projection.value->active_charts())
+        for (const auto& item : std::get<bms_chart_content_t>(program.prepared().program.find(chart)->value).items)
+            if (const auto* metadata = std::get_if<bms_metadata_declaration_t>(&item.value);
+                metadata && metadata->field == bms_metadata_field_t::offset) result = item.id;
+    return result;
+}
+
+auto stage_scoped_audio_offset(document_command_transaction_t& transaction, chart_id_t difficulty,
+    signed_rational_t offset) -> attempt_t<document_edit_effect_t> {
+    const auto* program = transaction.current_document().find_bms_program(difficulty);
+    const auto* chart = program->read_chart();
+    if (chart && chart->beat_zero_audio_offset_seconds == offset) return {.value = document_edit_effect_t{}};
+    const auto existing = winning_scoped_offset(*program);
+    const auto target = transaction.bms_target(difficulty, existing);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    const auto value = bms_metadata_declaration_t{.field = bms_metadata_field_t::offset, .value = offset};
+    bms_program_content_edit_batch_t batch{.target = *target, .label = "Set audio offset"};
+    if (existing) batch.edits.push_back(bms_program_content_update_t{.owner = {
+        .scope = target->scope, .chart = target->chart, .item = *existing}, .value = value});
+    else {
+        const auto id = transaction.next_bms_program_item_id();
+        if (!id) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped offset identities are exhausted.")}};
+        batch.edits.push_back(bms_program_content_insert_t{.item = {.id = *id, .value = value}});
+    }
+    return transaction.stage(batch);
+}
+
 struct audio_offset_edit_t {
     chart_id_t chart;
     signed_rational_t offset;
@@ -126,6 +158,12 @@ struct audio_offset_edit_t {
         if (offset.denominator == 0)
             return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
                 "audio offset must be an exact signed rational")}};
+        if (transaction.has_bms_program(chart)) {
+            auto staged = stage_scoped_audio_offset(transaction, chart, offset);
+            if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+            if (!staged.value->changed) return {};
+            return {.value = std::move(staged.value->command_label)};
+        }
         auto& proposed = transaction.document();
         const auto selected = proposed.find_chart(chart);
         if (!chart || selected == nullptr)

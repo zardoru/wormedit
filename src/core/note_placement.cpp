@@ -236,6 +236,19 @@ auto chart_note_ids(const chart_document_t& chart) -> std::unordered_set<std::ui
 
 namespace wormedit {
 using namespace interaction_detail;
+auto stage_scoped_note_paint(document_command_transaction_t& transaction, chart_id_t chart,
+    const note_paint_plan_t& plan, const note_t& defaults) -> attempt_t<std::vector<object_id_t>> {
+    std::vector<bms_native_event_t> additions;
+    for (const auto& addition : plan.additions) {
+        auto note = defaults;
+        note.position = addition.position;
+        note.lane = addition.lane;
+        additions.push_back(std::move(note));
+    }
+    return transaction.stage_bms_native_events(chart, plan.removals, additions,
+        additions.empty() ? "Remove notes" : "Paint notes");
+}
+
 constexpr auto virtual_row_placement_label = "Place note in virtual BMS measure";
 
 auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
@@ -303,6 +316,10 @@ auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows, const pending_hold_t* captured) -> editor_interaction_result_t {
+    if (context.history.document.find_bms_program(context.state.chart))
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped virtual placement requires an exact shared-measure edit.")}};
+
     auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
@@ -344,6 +361,10 @@ auto commit_virtual_hold(editor_edit_context_t& context,
 auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t {
+    if (context.history.document.find_bms_program(context.state.chart))
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped virtual placement requires an exact shared-measure edit.")}};
+
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual hold"))
         return *invalid;
     auto rows = resolve_virtual_hold_rows(context, action);
@@ -398,6 +419,10 @@ auto validate_virtual_tap_sample(const editor_edit_context_t& context,
 auto place_virtual_bms_tap(editor_edit_context_t& context,
                            const place_virtual_bms_tap_action_t& action)
     -> editor_interaction_result_t {
+    if (context.history.document.find_bms_program(context.state.chart))
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped virtual placement requires an exact shared-measure edit.")}};
+
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual tap"))
         return *invalid;
     if (auto invalid = validate_virtual_tap_sample(context, action.sample))
@@ -544,6 +569,17 @@ auto stage_editor_tap(editor_edit_context_t& context, document_command_transacti
     if (const auto* failure = std::get_if<diagnostic_list_t>(&planned))
         return attempt_t<editor_edit_effect_t>{.diagnostics = *failure};
     const auto& plan = std::get<note_paint_plan_t>(planned);
+    if (transaction.has_bms_program(state.chart)) {
+        const auto staged = stage_scoped_note_paint(transaction, state.chart, plan,
+            note_t{.kind = state.armed_note_kind, .sound = action.sound,
+                .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{}),
+                .osu_hitsample = state.armed_hitsample});
+        if (!staged.value || !staged.ok()) return {.diagnostics = staged.diagnostics};
+        const auto created = staged.value->empty() ? std::optional<object_id_t>{}
+            : std::optional{staged.value->front()};
+        return {.value = editor_edit_effect_t{.label = created ? "Place note" : "Remove note",
+            .cursor = *target, .created_note = created}};
+    }
     auto prepared =
         prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
                                     action.sound, state.armed_note_layers, action.source_geometry);

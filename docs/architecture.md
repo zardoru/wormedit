@@ -62,7 +62,31 @@ new collisions and unresolved references before validation and the existing Undo
 Exhausting the evaluation budget rejects the entire edit. Projections remain detached values;
 the prepared difficulty cannot also have an independently writable chart-vector counterpart.
 Runtime event precedence follows program order; original source offsets remain provenance.
-Editor-family adapters are still being routed in T-736; native persistence follows in T-737.
+Prepared editor commands share the same typed-operation runner. It validates a detached
+command proposal and extracts the explicitly named event or object IDs into a semantic
+batch; it never publishes an edited projection or infers owners from source order.
+`read_chart` supplies an immutable prepared view for planning; mutable `find_chart` still
+resolves only authored legacy charts. A generic chart operation without a scoped adapter
+rejects explicitly. Native additions retain exact measure fractions, symbolic WAV/BMP
+references and nested identities; layer definitions/defaults remain difficulty settings.
+Position-only timing edits retain their definition references. Imported note/hold annotations
+remain on typed BMS content, and hold edits retain both endpoint identities and WAV values.
+New BGM columns and semantic batches use the complete prepared/history identity ceiling.
+A transaction cannot implicitly write multiple semantic Charts.
+
+Session target selection stays outside document history. Gesture and proposal stamps pin
+that selection, including through terminal gesture cleanup and continuation after a
+partial chord commit. Changing the session selection cannot retarget a captured insert;
+existing-object updates resolve their recorded owner. Project/revision captures reject
+another project even when its revision happens to match.
+
+Notes/holds, resource placement/strokes/assignment, clipboard content, timing points and
+Kiai spans, recipes, scoped metadata/offsets, selected moves/resize/delete/quantize/shift,
+hitsounds, labels and layer edits route through these shared prepared boundaries.
+Shared geometry, retained-stem rewrites, broad catalog/import/duplication operations and
+other unadapted operations keep atomic capability refusals. Production activation remains
+T-744; native persistence follows in T-737. Unsupported native BMS export and prepared
+native serialization fail explicitly instead of dropping authored data.
 
 Timing links materialize through `reconcile_timing_links` in the shared publication boundary,
 before document validation and journal/Undo publication. It compares each unchanged active

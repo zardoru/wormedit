@@ -135,6 +135,23 @@ struct program_validation_t {
             return failure_t{failure_code_t::invalid_data, "BMS program has a disconnected cycle."};
         return std::nullopt;
     }
+    auto validate_content_ids(const bms_chart_content_t& chart,
+        std::unordered_set<std::uint64_t>& identities, std::size_t& count) const -> std::optional<failure_t> {
+        for (const auto& item : chart.items) {
+            if (!item.id || !identities.insert(item.id.value).second)
+                return failure_t{failure_code_t::invalid_data, "BMS content IDs must be nonzero and unique across all Charts."};
+            const auto* native = std::get_if<bms_native_content_t>(&item.value);
+            if (!native) continue;
+            const auto children = native->declared_ids();
+            if (children.size() > limits.maximum_content_items - count)
+                return failure_t{failure_code_t::capacity_exceeded, "Native scoped content exceeds its child limit."};
+            count += children.size();
+            for (const auto id : children)
+                if (!id || !identities.insert(id.value).second)
+                    return failure_t{failure_code_t::invalid_data, "Native child IDs must be nonzero and unique."};
+        }
+        return std::nullopt;
+    }
     auto validate_content() const -> std::optional<failure_t> {
         std::unordered_set<std::uint64_t> identities;
         std::size_t text_bytes{}, item_count{};
@@ -154,9 +171,7 @@ struct program_validation_t {
             if (chart->items.size() > limits.maximum_content_items - item_count)
                 return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its content item limit."};
             item_count += chart->items.size();
-            for (const auto& item : chart->items)
-                if (!item.id || !identities.insert(item.id.value).second)
-                    return failure_t{failure_code_t::invalid_data, "BMS content IDs must be nonzero and unique across all Charts."};
+            if (auto failure = validate_content_ids(*chart, identities, item_count)) return failure;
         }
         return std::nullopt;
     }

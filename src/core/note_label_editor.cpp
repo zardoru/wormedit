@@ -147,84 +147,52 @@ auto validate_note_label_request(const set_note_label_action_t& action,
     return true;
 }
 
+auto stage_note_labels(chart_document_t& chart, const set_note_label_action_t& action,
+    const note_label_edit_limits_t& limits) -> attempt_t<document_edit_effect_t> {
+    std::unordered_set<std::uint64_t> requested;
+    for (const auto id : action.notes) {
+        if (!id) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "note-label edit uses the reserved zero note ID")}};
+        if (!requested.insert(id.value).second)
+            return {.diagnostics = {error(diagnostic_code_t::duplicate_id,
+                "note-label edit contains the same note identity more than once")}};
+    }
+    auto indexed = index_requested_notes(chart, requested, limits.maximum_chart_objects);
+    if (indexed.over_limit)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+            "selected chart exceeds the note-label object scan cap")}};
+    bool changed{};
+    for (const auto id : action.notes) {
+        const auto found = indexed.notes.find(id.value);
+        const auto count = indexed.occurrences.at(id.value);
+        if (count == 0 || found == indexed.notes.end())
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "note-label edit refers to an unknown note")}};
+        if (count != 1) return {.diagnostics = {error(diagnostic_code_t::duplicate_id,
+            "note-label edit contains an ambiguous note identity")}};
+        changed = changed || found->second->label != action.label;
+        found->second->label = action.label;
+    }
+    if (!changed) return {.value = document_edit_effect_t{}};
+    if (!total_label_bytes(chart, limits.maximum_total_label_bytes))
+        return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+            "note labels exceed the configured aggregate byte cap")}};
+    return {.value = document_edit_effect_t{.changed = changed,
+        .command_label = action.label ? "Set note label" : "Clear note label"}};
+}
+
 } // namespace
 
 auto apply_note_label_edit(document_history_t& history,
-                           const set_note_label_action_t& action, note_label_edit_limits_t limits)
-    -> document_command_result_t {
+    const set_note_label_action_t& action, note_label_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    if (!validate_note_label_request(action, limits, result)) {
-        return result;
-    }
-
-    auto transaction = document_command_transaction_t(history);
-
-    auto& proposed = transaction.document();
-    const auto chart = proposed.find_chart(action.chart);
-    if (!action.chart || chart == nullptr) {
-        reject(result, diagnostic_code_t::invalid_id, "note-label edit refers to an unknown chart");
-        return result;
-    }
-
-    std::unordered_set<std::uint64_t> requested;
-    requested.reserve(action.notes.size());
-    for (const auto id : action.notes) {
-        if (!id) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "note-label edit uses the reserved zero note ID");
-            return result;
-        }
-        if (!requested.insert(id.value).second) {
-            reject(result, diagnostic_code_t::duplicate_id,
-                   "note-label edit contains the same note identity more than once");
-            return result;
-        }
-    }
-    auto indexed = index_requested_notes(*chart, requested, limits.maximum_chart_objects);
-    if (indexed.over_limit) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "selected chart exceeds the note-label object scan cap");
-        return result;
-    }
-
-    std::vector<note_t*> notes;
-    notes.reserve(action.notes.size());
-    for (const auto id : action.notes) {
-        const auto chart_occurrences = indexed.occurrences.at(id.value);
-        if (chart_occurrences == 0) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "note-label edit refers to an unknown note");
-            return result;
-        }
-        if (chart_occurrences != 1) {
-            reject(result, diagnostic_code_t::duplicate_id,
-                   "note-label edit contains an ambiguous note identity");
-            return result;
-        }
-        const auto found_note = indexed.notes.find(id.value);
-        if (found_note == indexed.notes.end()) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "note-label edit refers to an unknown note");
-            return result;
-        }
-        notes.push_back(found_note->second);
-    }
-
-    const auto changed =
-        std::ranges::any_of(notes, [&](const auto* note) { return note->label != action.label; });
-    if (!changed) {
-        return result;
-    }
-    for (auto* note : notes) {
-        note->label = action.label;
-    }
-    if (!total_label_bytes(*chart, limits.maximum_total_label_bytes).has_value()) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "note labels exceed the configured aggregate byte cap");
-        return result;
-    }
-    return transaction.commit(action.label.has_value() ? "Set note label"
-                                                            : "Clear note label");
+    if (!validate_note_label_request(action, limits, result)) return result;
+    document_command_transaction_t transaction(history);
+    const auto edit = [&](chart_document_t& chart) { return stage_note_labels(chart, action, limits); };
+    auto staged = transaction.has_bms_program(action.chart)
+        ? transaction.stage_bms_native_objects(action.chart, action.notes, bms_existing_edit_kind_t::update, edit)
+        : transaction.stage(action.chart, "note-label edit refers to an unknown chart",
+            [&](chart_document_t& chart, song_document_t&) { return edit(chart); });
+    return transaction.finish_execution(std::move(staged));
 }
 
 auto find_notes_by_label(const chart_document_t& chart, std::string_view text)

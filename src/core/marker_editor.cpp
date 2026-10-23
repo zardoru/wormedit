@@ -4,6 +4,7 @@
 #include "position_validation.h"
 #include "timing_event_internal.h"
 #include <wormedit/core/marker_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <algorithm>
 #include <limits>
@@ -168,6 +169,9 @@ struct marker_edit_context_t : chart_edit_context_t<marker_edit_limits_t> {
         return true;
     }
     auto postvalidate(const chart_document_t& chart, song_document_t&) -> bool {
+        return postvalidate_native(chart);
+    }
+    auto postvalidate_native(const chart_document_t& chart) -> bool {
         if (is_marker_text_within_limit(chart, limits))
             return true;
         reject(result, diagnostic_code_t::unsupported_feature,
@@ -423,18 +427,73 @@ void marker_edit_context_t::operator()(chart_document_t& chart,
     context.command_label = "Edit kiai area";
 }
 
+auto append_scoped_kiai_change(bms_program_content_edit_batch_t& batch,
+    const chart_document_t& geometry, const kiai_event_t& event, bool insert) -> bool {
+    const auto value = bms_native_content_t::from(event, geometry);
+    if (!value) return false;
+    if (insert) batch.edits.push_back(bms_program_content_insert_t{.item = {.id = event.id, .value = *value}});
+    else batch.edits.push_back(bms_program_content_update_t{.owner = {
+        .scope = batch.target.scope, .chart = batch.target.chart, .item = event.id}, .value = *value});
+    return true;
+}
+
+auto make_scoped_kiai_batch(document_command_transaction_t& transaction,
+    const edit_kiai_span_action_t& edit, const marker_edit_limits_t& limits)
+    -> attempt_t<bms_program_content_edit_batch_t> {
+    if (!marker_edit_context_t::has_valid_limits(limits)) return {.diagnostics = {error(
+        diagnostic_code_t::invalid_resolution, std::string(marker_edit_context_t::invalid_limits_message))}};
+    const auto target = transaction.bms_target(edit.chart, edit.edit.head);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    const auto* original = transaction.current_document().read_chart(edit.chart);
+    const auto index = original ? measure_index_t::from(*original) : result_t<measure_index_t, diagnostic_list_t>{std::unexpected(diagnostic_list_t{})};
+    if (!index) return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped Kiai requires exact measure geometry.")}};
+    auto chart = *original;
+    const auto first = transaction.next_bms_program_item_id();
+    std::uint64_t allocated{};
+    const auto allocate = [&]() -> std::optional<object_id_t> {
+        if (!first || allocated > std::numeric_limits<std::uint64_t>::max() - first->value) return std::nullopt;
+        return object_id_t{first->value + allocated++};
+    };
+    if (const auto failure = apply_kiai_span_edit(chart, *index, edit.edit, allocate, limits.maximum_kiai_events))
+        return {.diagnostics = {error(diagnostic_code_t::invalid_resolution, *failure)}};
+    bms_program_content_edit_batch_t batch{.target = *target, .label = "Edit kiai area"};
+    for (const auto& before : original->kiai) {
+        const auto after = std::ranges::find(chart.kiai, before.id, &kiai_event_t::id);
+        if (after == chart.kiai.end()) batch.edits.push_back(bms_program_content_delete_t{.owner = {
+            .scope = target->scope, .chart = target->chart, .item = before.id}});
+        else if (*after != before && !append_scoped_kiai_change(batch, chart, *after, false))
+            return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped Kiai boundary is inexact.")}};
+    }
+    for (const auto& after : chart.kiai)
+        if (std::ranges::find(original->kiai, after.id, &kiai_event_t::id) == original->kiai.end() &&
+            !append_scoped_kiai_change(batch, chart, after, true))
+            return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped Kiai boundary is inexact.")}};
+    return {.value = std::move(batch)};
+}
+
+auto stage_marker_edit(document_command_transaction_t& transaction, const marker_edit_action_t& action,
+    const marker_edit_limits_t& limits) -> attempt_t<document_edit_effect_t> {
+    const auto* span = std::get_if<edit_kiai_span_action_t>(&action);
+    if (span && transaction.has_bms_program(span->chart)) {
+        const auto batch = make_scoped_kiai_batch(transaction, *span, limits);
+        if (!batch.value || !batch.ok()) return {.diagnostics = batch.diagnostics};
+        return transaction.stage(*batch.value);
+    }
+    return transaction.stage<marker_edit_context_t>(action, limits);
+}
+
 } // namespace
 
 auto apply_marker_edit(document_history_t& history, const marker_edit_action_t& action,
                        marker_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t(history).execute<marker_edit_context_t>(action,
-                                                                                        limits);
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_marker_edit(transaction, action, limits));
 }
 
 auto apply_marker_edit(document_command_transaction_t& transaction,
                        const marker_edit_action_t& action, marker_edit_limits_t limits)
     -> document_command_result_t {
-    return transaction.execute<marker_edit_context_t>(action, limits);
+    return transaction.finish_execution(stage_marker_edit(transaction, action, limits));
 }
 
 } // namespace wormedit

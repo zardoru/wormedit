@@ -239,7 +239,7 @@ auto timing_lane_pseudonote_preview_t::validate_initial_state(timing_lane_pseudo
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, "timing pseudo-note uses an empty chart ID"));
         return false;
     }
-    const auto* chart = history.document.find_chart(outcome.captured_stamp().chart);
+    const auto* chart = history.document.read_chart(outcome.captured_stamp().chart);
     if (chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -355,7 +355,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
     initial.existing_event.reset();
     initial.normalize_value();
     timing_lane_pseudonote_outcome_t outcome{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart), .payload = {.report = std::move(initial)}}};
+        .stamp = chart_stamp_t::from(history, chart), .payload = {.report = std::move(initial)}}};
     const auto is_accepted = validate_initial_state(outcome, history, timing_locked);
     outcome.begin(is_accepted);
     return outcome;
@@ -366,7 +366,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
     const auto kind = target.kind;
     const auto event = target.event;
     timing_lane_pseudonote_outcome_t outcome{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart),
+        .stamp = chart_stamp_t::from(history, chart),
         .payload = {.report = {.kind = kind, .existing_event = event}}}};
     outcome.begin(load_initial_event(outcome, history, timing_locked));
     return outcome;
@@ -390,7 +390,7 @@ auto timing_lane_pseudonote_preview_t::load_initial_event(timing_lane_pseudonote
                "existing timing event uses a reserved zero ID"));
         return false;
     }
-    const auto* target_chart = history.document.find_chart(chart);
+    const auto* target_chart = history.document.read_chart(chart);
     if (target_chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -422,7 +422,7 @@ auto timing_lane_pseudonote_preview_t::load_initial_event(timing_lane_pseudonote
 auto timing_lane_pseudonote_preview_t::validate_target(const song_document_t& document,
     chart_id_t selected, proposal_operation_t, const timing_lane_revision_t& request) const
     -> result_t<const chart_document_t*, diagnostic_t> {
-    const auto* chart = document.find_chart(selected);
+    const auto* chart = document.read_chart(selected);
     if (!chart) {
         const auto message = std::holds_alternative<local_position_t>(request)
             ? "existing timing event no longer matches the staged target"
@@ -482,6 +482,11 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                   std::span<const timing_lane_event_ref_t> events,
                                   std::int64_t row_delta,
                                   bool timing_locked) -> document_command_result_t {
+    if (history.document.find_bms_program(chart_id))
+        return document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Scoped timing groups require an explicit owner-aware batch; individual event edits are available.");
+
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
@@ -494,7 +499,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group move refers to an unknown chart")};
@@ -622,7 +627,7 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     if (kind == timing_lane_kind_t::bpm &&
-        is_fixed_initial_bpm(*history.document.find_chart(chart), event)) {
+        is_fixed_initial_bpm(*history.document.read_chart(chart), event)) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "the initial BPM cannot be deleted")};
         return result;
@@ -664,6 +669,11 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
                                     std::span<const timing_lane_event_ref_t> events, bool timing_locked)
     -> document_command_result_t {
+    if (history.document.find_bms_program(chart_id))
+        return document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Scoped timing groups require an explicit owner-aware batch; individual event edits are available.");
+
     document_command_result_t result{.revision = history.document.revision};
     constexpr std::size_t maximum_group_events = 4096;
     if (timing_locked) {
@@ -676,7 +686,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group deletion refers to an unknown chart")};

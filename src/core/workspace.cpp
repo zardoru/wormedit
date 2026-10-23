@@ -1146,7 +1146,7 @@ struct workspace_action_visitor_t {
 auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
                                      const workspace_action_t& action) -> dispatch_outcome_t {
     dispatch_outcome_t result{};
-    const document_stamp_t binding{workspace.song, workspace.document_revision};
+    const document_stamp_t binding{.project = workspace.song, .revision = workspace.document_revision};
     if (!binding.is_current(document)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   stale_action_message("Workspace action"));

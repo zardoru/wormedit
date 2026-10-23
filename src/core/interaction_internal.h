@@ -1040,6 +1040,8 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
                              const std::optional<std::vector<layer_id_t>>& armed_layers,
                              std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t>;
+auto stage_scoped_note_paint(document_command_transaction_t& transaction, chart_id_t chart,
+    const note_paint_plan_t& plan, const note_t& defaults) -> attempt_t<std::vector<object_id_t>>;
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
                                  const note_paint_plan_t& plan, note_kind_t kind,
                                  std::optional<resource_id_t> sound,

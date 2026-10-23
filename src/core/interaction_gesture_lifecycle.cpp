@@ -3,6 +3,7 @@
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/bms_program_edit.h>
 namespace wormedit {
 using namespace interaction_detail;
 
@@ -91,7 +92,7 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
 void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                                   pending_note_move_gesture_t& pending) {
     if (plan.staged_bgm_document) {
-        const auto* destination = (*plan.staged_bgm_document).find_chart(context.state.chart);
+        const auto* destination = (*plan.staged_bgm_document).read_chart(context.state.chart);
         for (const auto& lane : destination->bgm_source_lanes)
             if (std::ranges::find(context.scope.chart.bgm_source_lanes, lane.id,
                                   &bgm_source_lane_t::id) ==
@@ -101,6 +102,11 @@ void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_mov
     }
     if (plan.bgm_moves.empty() || (plan.notes.empty() && plan.bgm_moves.size() == 1))
         return;
+    if (context.history.document.find_bms_program(context.state.chart)) {
+        pending.bgm_diagnostics.push_back("Scoped mixed BGM moves require an explicit semantic batch.");
+        pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
+        return;
+    }
     auto proposed = context.history.document;
     auto* chart = proposed.find_chart(context.state.chart);
     const auto note_failure = relocate_moved_notes(*chart, plan, context.history, context.state);
@@ -444,6 +450,13 @@ auto is_paint_sample_resource(const song_document_t& document, resource_id_t id)
            std::ranges::find(found->roles, resource_role_t::sample) != found->roles.end();
 }
 
+auto is_paint_sample_resource(const editor_edit_context_t& context, resource_id_t id) -> bool {
+    const auto* program = context.history.document.find_bms_program(context.state.chart);
+    if (!program) return is_paint_sample_resource(context.history.document, id);
+    const auto projection = program->build_projection();
+    return projection.value && is_paint_sample_resource(projection.value->song(), id);
+}
+
 auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
                                        const begin_note_paint_gesture_action_t& request)
     -> diagnosed_t<std::optional<pending_note_paint_gesture_t>> {
@@ -461,7 +474,7 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
         return {.diagnostics = {error(diagnostic_code_t::invalid_hold,
                                         "pointer capture is required to begin note painting")}};
     if (intent != note_paint_intent_t::erase && sound &&
-        !is_paint_sample_resource(context.history.document, *sound))
+        !is_paint_sample_resource(context, *sound))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")}};
     const auto resolved =
@@ -557,7 +570,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     }
     // A stroke may visit two lanes at one pulse; retain only its final
     // assignment.
-    const auto* chart = scratch.document.find_chart(chart_id);
+    const auto* chart = scratch.document.read_chart(chart_id);
     std::erase_if(notes, [&](const auto id) { return !(*chart).find_note(id); });
     std::ranges::sort(notes);
     notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
@@ -649,6 +662,19 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
                 error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")}};
     if (plan.additions.empty() && plan.removals.empty())
         return editor_interaction_result_t::from(context.history, state);
+    if (document_command_transaction_t(context.history).has_bms_program(state.chart)) {
+        return run_editor_edit(context, [&](document_command_transaction_t& transaction)
+            -> attempt_t<editor_edit_effect_t> {
+            auto staged = stage_scoped_note_paint(transaction, state.chart, plan,
+                note_t{.kind = pending.note_kind, .sound = pending.sound,
+                    .semantic_layers = pending.layers.value_or(std::vector<layer_id_t>{}),
+                    .osu_hitsample = pending.hitsample});
+            if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+            return {.value = editor_edit_effect_t{.label = "Paint notes",
+                .selection = std::move(*staged.value), .cursor = pending.last_position,
+                .lane = pending.last_lane}};
+        });
+    }
     auto prepared = prepare_note_paint_document(
         context.history, state.chart, plan, pending.note_kind, pending.sound, pending.layers,
         pending.source_geometry);
@@ -671,10 +697,19 @@ auto hold_start_t::validate_sound(const song_document_t& document) const -> diag
     return {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")};
 }
 
+auto validate_scoped_hold_sound(const editor_edit_context_t& context, const hold_start_t& start)
+    -> diagnostic_list_t {
+    const auto* program = context.history.document.find_bms_program(context.state.chart);
+    if (!program) return start.validate_sound(context.history.document);
+    const auto projection = program->build_projection();
+    if (!projection.value) return {error(diagnostic_code_t::invalid_id, "Scoped hold cannot evaluate its sample catalog.")};
+    return start.validate_sound(projection.value->song());
+}
+
 auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& start)
     -> diagnosed_t<std::optional<pending_hold_t>> {
     if (start.source) {
-        auto diagnostics = start.validate_sound(context.history.document);
+        auto diagnostics = validate_scoped_hold_sound(context, start);
         if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     }
     if (start.source == hold_gesture_source_t::keyboard_lane && context.state.virtual_bms_cursor_row)
@@ -690,7 +725,7 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
     const auto* position = std::get_if<local_position_t>(&resolved);
     if (!position) return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
     if (!start.source) {
-        auto diagnostics = start.validate_sound(context.history.document);
+        auto diagnostics = validate_scoped_hold_sound(context, start);
         if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     }
     const auto plan = plan_hold_placement<hold_preview_removals_t>(context.scope.chart,
@@ -955,6 +990,26 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
                                .created_note = created});
 }
 
+auto apply_scoped_hold(editor_edit_context_t& context, const pending_hold_t& pending,
+    const hold_placement_plan_t& placement, local_position_t snapped) -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction)
+        -> attempt_t<editor_edit_effect_t> {
+        std::vector<bms_native_event_t> additions;
+        if (placement.adds_note)
+            additions.push_back(note_t{.position = placement.head, .lane = pending.lane,
+                .kind = placement.tail ? held_note_kind(pending.kind) : pending.kind,
+                .end = placement.tail, .sound = pending.sound,
+                .semantic_layers = pending.layers.value_or(std::vector<layer_id_t>{}),
+                .osu_hitsample = pending.hitsample});
+        auto staged = transaction.stage_bms_native_events(context.state.chart, placement.removals,
+            additions, "Place hold note");
+        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+        return {.value = editor_edit_effect_t{.label = "Place hold note", .cursor = snapped,
+            .lane = pending.lane, .created_note = staged.value->empty()
+                ? std::optional<object_id_t>{} : std::optional{staged.value->front()}}};
+    });
+}
+
 auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t position,
     std::optional<bmson_source_geometry_t> geometry) const -> editor_interaction_result_t {
     auto& history = context.history;
@@ -975,7 +1030,7 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
         return editor_interaction_result_t{
             .diagnostics = {error(diagnostic_code_t::invalid_hold,
                                   "Move to a different row to finish the Hold or Roll gesture.")}};
-    if (pending.sound && !is_paint_sample_resource(history.document, *pending.sound))
+    if (pending.sound && !is_paint_sample_resource(context, *pending.sound))
         return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")}};
     const auto plan = plan_hold_placement(context.scope.chart, context.scope.measures, pending.lane,
@@ -983,6 +1038,8 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     const auto& placement = std::get<hold_placement_plan_t>(plan);
+    if (document_command_transaction_t(history).has_bms_program(state.chart))
+        return apply_scoped_hold(context, pending, placement, *snapped);
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
     auto transaction = document_command_transaction_t(history);

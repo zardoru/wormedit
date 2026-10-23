@@ -33,7 +33,7 @@ struct editor_edit_effect_t {
         }
         if (changed && state.active_gesture)
             std::visit(
-                [revision](auto& gesture) { gesture.stamp = document_stamp_t::from(revision); },
+                [revision](auto& gesture) { gesture.stamp.revision = revision; },
                 *state.active_gesture);
     }
 
@@ -133,7 +133,12 @@ struct prepared_editor_edit_t {
 template <class Stage>
 [[nodiscard]] auto prepare_editor_edit(editor_edit_context_t& context, Stage stage)
     -> attempt_t<prepared_editor_edit_t> {
-    auto transaction = document_command_transaction_t(context.history);
+    auto stamp = context.gesture_capture.value_or(chart_stamp_t::from(context.history, context.state.chart).document);
+    if (context.state.active_gesture)
+        std::visit([&](const auto& gesture) { stamp = gesture.stamp; }, *context.state.active_gesture);
+    const auto identity = stamp.bms_target && stamp.project ? document_identity_policy_t::project_and_revision
+        : document_identity_policy_t::revision_only;
+    auto transaction = document_command_transaction_t(context.history, stamp, "Editor gesture", identity);
     auto staged = stage(transaction);
     if (!staged.value || !staged.ok())
         return {.diagnostics = std::move(staged.diagnostics)};

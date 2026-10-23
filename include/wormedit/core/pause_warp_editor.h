@@ -27,6 +27,10 @@ struct timing_pause_value_t {
 };
 
 using pause_edit_value_t = positioned_edit_value_t<timing_pause_value_t>;
+template<> struct chart_edit_native_collection_t<pause_edit_value_t> {
+    static constexpr auto member = &chart_document_t::pauses;
+};
+
 
 struct timing_warp_value_t {
     local_position_t end;
@@ -47,6 +51,10 @@ struct timing_warp_value_t {
 };
 
 using warp_edit_value_t = positioned_edit_value_t<timing_warp_value_t>;
+template<> struct chart_edit_native_collection_t<warp_edit_value_t> {
+    static constexpr auto member = &chart_document_t::warps;
+};
+
 
 using pause_warp_edit_action_t = std::variant<wormedit::insert_edit_t<wormedit::pause_edit_value_t>,
                                               wormedit::update_edit_t<wormedit::pause_edit_value_t>,

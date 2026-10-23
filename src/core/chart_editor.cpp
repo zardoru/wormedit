@@ -266,6 +266,11 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
 auto apply_new_chart_command(document_history_t& history,
     lane_input_profile_t profile, format_family_t source_family,
     const default_lane_keys_t* defaults, const timing_link_selection_t& timing) -> duplicate_chart_result_t {
+    if (!history.document.prepared_bms_programs.empty())
+        return {.command = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Prepared scoped difficulty creation requires full-program identity remapping.")};
+
     if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source_family,
         default_divisions_per_standard_measure, {}, timing);
@@ -295,6 +300,11 @@ auto apply_duplicate_chart_command(document_history_t& history,
 
 auto apply_duplicate_charts_command(document_history_t& history,
     std::span<const chart_id_t> charts) -> duplicate_chart_result_t {
+    if (!history.document.prepared_bms_programs.empty())
+        return {.command = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::unsupported_feature,
+            "Prepared scoped difficulty creation requires full-program identity remapping.")};
+
     if (auto invalid = check_chart_selection(history, charts)) return {.command = std::move(*invalid)};
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())

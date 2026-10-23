@@ -22,6 +22,8 @@ struct editor_edit_context_t {
     // Only dispatch supplies this boundary result. Direct callers remain uncached.
     std::optional<std::uint64_t> dispatch_capture_revision{};
 
+    std::optional<document_stamp_t> gesture_capture{};
+
     // Dispatched gestures defer feedback until the outer action boundary has finished cleanup.
     void ensure_failure_view(editor_interaction_result_t& result) const {
         if (!dispatch_capture_revision) result.ensure_view(history, state);

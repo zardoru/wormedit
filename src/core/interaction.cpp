@@ -270,7 +270,7 @@ auto is_valid_viewport(const chart_document_t& chart, const measure_index_t& ind
 auto resolve_view_geometry(const document_history_t& history,
                            const editor_interaction_state_t& state, const measure_index_t* retained)
     -> std::variant<view_geometry_t, diagnostic_list_t> {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.document.read_chart(state.chart);
     if (!chart)
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_id, "editor interaction refers to an unknown chart")};
@@ -577,7 +577,7 @@ static auto follow_editor_playhead_impl(document_history_t& history,
                                         local_position_t position, double target_scroll,
                                         double following_anchor_fraction, double cursor_subrow)
     -> editor_interaction_result_t {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.document.read_chart(state.chart);
     if (!chart || !geometry.index || !std::isfinite(target_scroll) ||
         !std::isfinite(following_anchor_fraction) || !std::isfinite(cursor_subrow) ||
         following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || state.is_pending())
@@ -636,7 +636,7 @@ auto editor_interaction_state_t::from(const document_history_t& history, chart_i
                                       std::uint64_t requested_snap_denominator,
                                       double viewport_height_pixels) -> editor_interaction_setup_t {
     editor_interaction_setup_t result;
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.document.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "editor interaction refers to an unknown chart"));
@@ -691,7 +691,7 @@ auto recover_editor_interaction(const document_history_t& history,
                                 const editor_interaction_state_t& previous)
     -> editor_interaction_setup_t {
     editor_interaction_setup_t result;
-    const auto* chart = history.document.find_chart(previous.chart);
+    const auto* chart = history.document.read_chart(previous.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                            "editor interaction refers to an unknown chart"));
@@ -917,9 +917,40 @@ auto erase_editor_selection_objects(chart_document_t& chart,
     return removed;
 }
 
+auto stage_scoped_editor_delete(editor_edit_context_t& context,
+    document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+    auto collected = collect_delete_ids(context.state);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected)) return {.diagnostics = *diagnostics};
+    auto ids = std::get<editor_delete_ids_t>(std::move(collected));
+    if (!ids.bar_lines.empty()) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+        "Scoped deletion cannot remove shared measure geometry.")}};
+    if (!ids.total()) {
+        for (const auto& measure : context.scope.chart.measures)
+            for (const auto& note : measure.notes)
+                if (note.position == context.state.cursor && note.lane == context.state.active_lane)
+                    ids.notes.insert(note.id.value);
+    }
+    std::vector<object_id_t> objects;
+    const auto append = [&](const auto& family) {
+        for (const auto id : family) objects.push_back(object_id_t{id});
+    };
+    append(ids.notes); append(ids.bgm_events); append(ids.bookmarks); append(ids.sections); append(ids.bga_events);
+    auto staged = transaction.stage_bms_native_objects(context.state.chart, objects, bms_existing_edit_kind_t::erase,
+        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+            const auto removed = erase_editor_selection_objects(chart, context.state, ids);
+            if (removed != ids.total()) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                "Scoped deletion did not resolve every selected object.")}};
+            return {.value = document_edit_effect_t{.changed = removed != 0, .command_label = "Delete chart objects"}};
+        });
+    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+    return {.value = editor_edit_effect_t{.label = "Delete chart objects",
+        .has_document_changes = staged.value->changed, .selection = clear_editor_selection_t{}}};
+}
+
 auto stage_editor_delete(editor_edit_context_t& context,
                          document_command_transaction_t& transaction)
     -> attempt_t<editor_edit_effect_t> {
+    if (transaction.has_bms_program(context.state.chart)) return stage_scoped_editor_delete(context, transaction);
     return transaction.stage(
         context.state.chart, "delete refers to an unknown chart",
         [&](chart_document_t& chart, song_document_t&) -> attempt_t<editor_edit_effect_t> {
@@ -1429,7 +1460,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
         scratch, state.chart, *stem, target, lane, geometry);
     if (!inserted)
         return inserted.diagnostics;
-    const auto* chart = scratch.document.find_chart(state.chart);
+    const auto* chart = scratch.document.read_chart(state.chart);
     for (const auto& measure : chart->measures)
         for (const auto& note : measure.notes)
             if (note.position == target && note.lane == lane)
@@ -1482,6 +1513,10 @@ auto keyboard_entry_plan_t::from(editor_edit_context_t& context, const hold_star
 }
 
 auto keyboard_entry_plan_t::apply(editor_edit_context_t& context) const -> editor_interaction_result_t {
+    if (context.history.document.find_bms_program(context.state.chart))
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped keyboard replacement requires an explicit owner-aware replacement.")}};
+
     const auto* original = occupant ? context.scope.chart.find_note(*occupant) : nullptr;
     if (occupant && !original)
         return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Lane-key entry target no longer exists", *occupant)}};
@@ -1696,7 +1731,7 @@ auto is_note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bo
 
 static auto arm_note_kind_impl(const document_history_t& history, editor_interaction_state_t& state,
                                note_kind_t kind) -> editor_interaction_result_t {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.document.read_chart(state.chart);
     if (!chart || !is_note_kind_allowed(*chart, kind))
         return editor_interaction_result_t{
             .diagnostics = {error(diagnostic_code_t::invalid_binding,
@@ -2231,7 +2266,7 @@ struct editor_action_dispatch_t {
             return result_type{
                 .diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                       "this edit requires a materialized cursor measure")}};
-        const auto* chart = history.document.find_chart(state.chart);
+        const auto* chart = history.document.read_chart(state.chart);
         if (chart && !is_note_kind_allowed(*chart, state.armed_note_kind))
             state.armed_note_kind = note_kind_t::tap;
         const auto initial_view = make_view(history, state);
@@ -2323,7 +2358,7 @@ static auto select_editor_scope_impl(document_history_t& history, editor_interac
                                      editor_selection_scope_t scope, bool invert,
                                      std::optional<local_position_t> from)
     -> editor_interaction_result_t {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.document.read_chart(state.chart);
     if (!chart)
         return editor_interaction_result_t{
             .diagnostics = {

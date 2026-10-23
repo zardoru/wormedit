@@ -6,7 +6,7 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-738 Add Control Chart and Text nodes in selected scopes
 
-- **Status:** blocked-on T-737
+- **Status:** ready
 - **Prerequisites:** T-737; [question 22](../decisions/open-questions.md) answered 2026-10-23.
 - **Outcome:** typed commands insert valid control scopes, Chart children and opaque Text at explicit ordered positions, including an empty/new Root.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `include/wormedit/core/bms_program.h`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`.

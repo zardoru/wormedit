@@ -85,8 +85,15 @@ Kiai spans, recipes, scoped metadata/offsets, selected moves/resize/delete/quant
 hitsounds, labels and layer edits route through these shared prepared boundaries.
 Shared geometry, retained-stem rewrites, broad catalog/import/duplication operations and
 other unadapted operations keep atomic capability refusals. Production activation remains
-T-744; native persistence follows in T-737. Unsupported native BMS export and prepared
-native serialization fail explicitly instead of dropping authored data.
+T-744. Native schema v14 persists prepared scoped snapshots with stable payload tags,
+exact fractions and opaque Text bytes. Shared project assets are referenced once; conflicting
+values reject. The codec reuses bounded alternative publication validation, preserving
+existing missing bindings while checking graph/geometry beyond the selected outcome.
+Explicit legacy migration proves the retained-source chart witness, carries note annotations
+and layer settings into their typed owners, preserves shared assets and allocates above
+current/Undo/Redo identities. Unsupported native rewrites or malformed retained source refuse
+without changing the legacy snapshot. Ordinary legacy native loading keeps its existing
+owner until T-744; unsupported native BMS export still fails instead of dropping data.
 
 Timing links materialize through `reconcile_timing_links` in the shared publication boundary,
 before document validation and journal/Undo publication. It compares each unchanged active

@@ -2,12 +2,14 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/bms_program.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
 
 namespace wormedit {
 
@@ -31,6 +33,41 @@ template<class Visitor> struct bms_identity_visitor_t {
 };
 
 template<> struct id_declarations_t<object_id_t> {
+    template<class Visitor>
+    static auto visit(const song_document_t& song, Visitor& visitor) -> bool {
+        bms_identity_visitor_t<Visitor> identities{visitor};
+        if (!identities(song.id) || !visit_declared_id_values(song.audio_assets, identities) ||
+            !visit_declared_id_values(song.visual_assets, identities) ||
+            !visit_declared_id_values(song.resources, identities) ||
+            !visit_declared_id_values(song.midi_assets, identities) ||
+            !visit_declared_id_values(song.generator_recipes, identities) ||
+            !visit_declared_id_values(song.storyboards, identities) ||
+            !visit_declared_id_values(song.sound_groups, identities)) return false;
+        for (const auto& chart : song.charts)
+            if (!visit_chart_domain(chart, visitor)) return false;
+        for (const auto& owner : song.prepared_bms_programs)
+            if (owner && (!identities(owner->difficulty()) || !visit(owner->prepared(), visitor))) return false;
+        return true;
+    }
+    template<class Visitor>
+    static auto visit_chart_domain(const chart_document_t& chart, Visitor& visitor) -> bool {
+        bms_identity_visitor_t<Visitor> identities{visitor};
+        if (!identities(chart.id) || !visit(chart, visitor) ||
+            !visit_declared_id_values(chart.measures, identities) ||
+            !visit_declared_id_values(chart.semantic_layers, identities) ||
+            !visit_declared_id_values(chart.sv_recipes, identities)) return false;
+        for (const auto& channel : chart.sound_channels)
+            if (!identities(channel.source_clip.id)) return false;
+        std::vector<const bms_control_node_t*> pending;
+        if (chart.bms_control_tree) pending.push_back(&*chart.bms_control_tree);
+        while (!pending.empty()) {
+            const auto* node = pending.back();
+            pending.pop_back();
+            if (!identities(node->id)) return false;
+            for (const auto& child : node->children) pending.push_back(&child);
+        }
+        return true;
+    }
     template<class Visitor>
     static auto visit(const bms_prepared_program_t& prepared, Visitor& visitor) -> bool {
         bms_identity_visitor_t<Visitor> identities{visitor};

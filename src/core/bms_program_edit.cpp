@@ -51,12 +51,7 @@ auto resolve_native_target(const song_document_t& document, chart_id_t difficult
 }
 
 auto maximum_program_id(const song_document_t& document) -> std::uint64_t {
-    id_ceiling_t<object_id_t> ceiling;
-    for (const auto& owner : document.prepared_bms_programs) {
-        if (!owner) continue;
-        (void)id_declarations_t<object_id_t>::visit(owner->prepared(), ceiling);
-    }
-    return ceiling.maximum;
+    return id_ceiling_t<object_id_t>::from(document).maximum;
 }
 
 auto endpoint_owners(const bms_program_document_t& owner,

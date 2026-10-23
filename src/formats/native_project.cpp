@@ -3,8 +3,12 @@
 #include <wormedit/formats/native_project.h>
 
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/bms_program_edit.h>
+#include "../core/bms_native_content_internal.h"
 
 #include "native_project_migrations.h"
+#include <wormedit/formats/bms.h>
+#include "../core/id_ceiling.h"
 
 #include <nlohmann/json.hpp>
 
@@ -822,6 +826,8 @@ void from_json(const json& value, project_settings_t& settings) {
         settings.visual_asset_directory = value["visual_asset_directory"].get<std::string>();
 }
 
+#include "native_project_bms_codec.inc"
+
 void to_json(json& value, const song_document_t& song) {
     value = json{{"schema_version", song.schema_version},
                  {"id", song.id},
@@ -838,6 +844,16 @@ void to_json(json& value, const song_document_t& song) {
                  {"output_groups", song.output_groups},
                  {"quantization_presets", song.quantization_presets}};
     if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
+    if (!song.prepared_bms_programs.empty()) {
+        value["prepared_bms_programs"] = json::array();
+        for (const auto& owner : song.prepared_bms_programs) {
+            if (!owner) throw std::invalid_argument("Null scoped BMS owner.");
+            json snapshot = *owner;
+            write_bms_asset_references(snapshot, "audio_assets", song.audio_assets);
+            write_bms_asset_references(snapshot, "visual_assets", song.visual_assets);
+            value["prepared_bms_programs"].push_back(std::move(snapshot));
+        }
+    }
 }
 
 void from_json(const json& value, song_document_t& song) {
@@ -856,6 +872,16 @@ void from_json(const json& value, song_document_t& song) {
     value.at("output_groups").get_to(song.output_groups);
     value.at("quantization_presets").get_to(song.quantization_presets);
     song.sound_groups = value.value("sound_groups", std::vector<sound_group_t>{});
+    song.prepared_bms_programs.clear();
+    if (value.contains("prepared_bms_programs")) {
+        const auto& owners = value.at("prepared_bms_programs");
+        if (!owners.is_array()) throw std::invalid_argument("Scoped BMS owners must be an array.");
+        for (auto owner : owners) {
+            read_bms_asset_references(owner, "audio_assets", song.audio_assets);
+            read_bms_asset_references(owner, "visual_assets", song.visual_assets);
+            song.prepared_bms_programs.push_back(read_bms_program_document(owner));
+        }
+    }
 }
 
 namespace {
@@ -1042,6 +1068,56 @@ auto is_valid_chart_enum_domains(const chart_document_t& chart, std::size_t maxi
             is_valid_control_node(*chart.bms_control_tree, maximum_depth));
 }
 
+template<class Value> auto is_valid_bms_content_domains(const Value& value, std::size_t maximum_depth) -> bool {
+    if constexpr (std::same_as<Value, bms_native_content_t>) {
+        return std::visit([&](const auto& event) {
+            chart_document_t chart;
+            chart.measures.emplace_back();
+            native_events<std::remove_cvref_t<decltype(event)>>(chart).push_back(event);
+            return is_valid_chart_enum_domains(chart, maximum_depth);
+        }, value.payload());
+    } else if constexpr (std::same_as<Value, bms_note_content_t>) {
+        return is_enum_at_most(value.kind, note_kind_t::fake);
+    } else if constexpr (std::same_as<Value, bms_bga_content_t>) {
+        return is_enum_at_most(value.kind, visual_event_kind_t::layer2);
+    } else if constexpr (std::same_as<Value, bms_timing_definition_t> || std::same_as<Value, bms_timing_reference_t>) {
+        return is_enum_at_most(value.kind, bms_timing_definition_kind_t::scroll);
+    } else if constexpr (std::same_as<Value, bms_resource_declaration_t>) {
+        return is_enum_at_most(value.name_space, bms_resource_namespace_t::bmp);
+    } else if constexpr (std::same_as<Value, bms_metadata_declaration_t>) {
+        return is_enum_at_most(value.field, bms_metadata_field_t::preview);
+    } else return true;
+}
+auto is_valid_bms_node_domains(const bms_program_node_t& node, std::size_t maximum_depth) -> bool {
+    if (const auto* text = std::get_if<bms_text_t>(&node.value))
+        return is_enum_at_most(text->encoding, text_encoding_t::windows_1252);
+    if (const auto* arm = std::get_if<bms_case_scope_t>(&node.value))
+        return std::ranges::all_of(arm->skips, [](const auto& skip) { return is_valid_provenance(skip.provenance); });
+    const auto* content = std::get_if<bms_chart_content_t>(&node.value);
+    if (!content) return true;
+    return std::ranges::all_of(content->items, [&](const auto& item) {
+        return is_valid_provenance(item.provenance) && std::visit([&](const auto& value) {
+            return is_valid_bms_content_domains(value, maximum_depth);
+        }, item.value);
+    });
+}
+auto is_valid_bms_owner_domains(const bms_program_document_t& owner, std::size_t maximum_depth) -> bool {
+    const auto& prepared = owner.prepared();
+    song_document_t pools{.audio_assets = prepared.audio_assets, .visual_assets = prepared.visual_assets,
+        .resources = prepared.resources};
+    chart_document_t layout;
+    if (prepared.lane_profile) {
+        layout.lane_layouts.push_back({.layout = prepared.lane_profile->layout});
+        layout.input_profile = prepared.lane_profile->input;
+    }
+    return is_valid_resource_enum_domains(pools) && is_valid_chart_layout_domains(layout) &&
+        std::ranges::all_of(pools.visual_assets, [](const auto& asset) {
+            return is_enum_at_most(asset.kind, asset_kind_t::midi);
+        }) && std::ranges::all_of(prepared.program.nodes(), [&](const auto& node) {
+            return is_valid_bms_node_domains(node, maximum_depth);
+        });
+}
+
 auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
     if (!std::ranges::all_of(song.metadata.format_groups, is_valid_metadata) ||
         !is_valid_resource_enum_domains(song) ||
@@ -1069,6 +1145,8 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
     }
     return std::ranges::all_of(song.charts, [&](const auto& chart) {
         return is_valid_chart_enum_domains(chart, maximum_depth);
+    }) && std::ranges::all_of(song.prepared_bms_programs, [&](const auto& owner) {
+        return owner && is_valid_bms_owner_domains(*owner, maximum_depth);
     });
 }
 
@@ -1385,6 +1463,26 @@ auto is_json_nodes_within(const json& root, std::size_t maximum_nodes, std::size
 
 
 
+auto native_graph_diagnostics(const song_document_t& song) -> diagnostic_list_t {
+    auto diagnostics = validate_document(song);
+    if (song.prepared_bms_programs.empty() || diagnostic_queries::has_errors(diagnostics)) return diagnostics;
+    auto probe = song;
+    for (auto& owner : probe.prepared_bms_programs) {
+        auto copy = bms_program_document_t::from(owner->difficulty(), owner->prepared(), owner->evaluation());
+        if (!copy.value || !copy.ok()) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_binding, "Scoped native validation cannot rebuild its owner."));
+            return diagnostics;
+        }
+        owner = std::move(*copy.value);
+    }
+    // Reuse the bounded publication validator with equal semantic before/after
+    // values: pre-existing missing bindings/collisions stay intact, while every
+    // reachable alternative still receives graph and exact-geometry validation.
+    auto alternatives = validate_bms_program_publication(song, probe);
+    diagnostics.insert(diagnostics.end(), alternatives.begin(), alternatives.end());
+    return diagnostics;
+}
+
 auto graph_diagnostic_text(const diagnostic_t& diagnostic) -> std::string {
     auto message = diagnostic.message;
     if (diagnostic.object.has_value()) {
@@ -1410,14 +1508,6 @@ auto migration_diagnostic_code(failure_code_t status)
 auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_outcome_t {
     native_project_write_outcome_t result{};
-    // Temporary: replaced by T-737's versioned scoped-program codec.
-    if (!song.prepared_bms_programs.empty()) {
-        result.diagnostics.push_back({diagnostic_severity_t::error,
-            native_project_diagnostic_code_t::unsupported_version,
-            "prepared scoped BMS programs require the scoped native codec",
-            "$.document.prepared_bms_programs"});
-        return result;
-    }
     if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
@@ -1432,7 +1522,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
     if (!result.ok()) {
         return result;
     }
-    const auto validation = validate_document(song);
+    const auto validation = native_graph_diagnostics(song);
     for (const auto& diagnostic : validation) {
         if (diagnostic.severity == diagnostic_severity_t::error) {
             result.diagnostics.push_back({diagnostic.severity,
@@ -1483,6 +1573,8 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
     }
     return result;
 }
+
+#include "native_project_bms_migration.inc"
 
 auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
     return native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
@@ -1579,7 +1671,7 @@ auto build_native_project_parse(std::string_view bytes, native_project_limits_t 
             return result;
         }
         (void)normalize_legacy_bms_bgm(song);
-        const auto validation = validate_document(song);
+        const auto validation = native_graph_diagnostics(song);
         for (const auto& diagnostic : validation) {
             if (diagnostic.severity == diagnostic_severity_t::error) {
                 result.diagnostics.push_back({diagnostic.severity,

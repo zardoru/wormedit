@@ -1,5 +1,6 @@
 #include <wormedit/core/bms_native_content.h>
 #include <wormedit/core/rational.h>
+#include <algorithm>
 #include "bms_native_content_internal.h"
 #include "chart_position_storage.h"
 
@@ -107,5 +108,30 @@ auto bms_native_content_t::build_event(object_id_t id, const chart_document_t& g
     }, event);
     if (!valid || index != positions_.size()) return std::nullopt;
     return event;
+}
+
+auto bms_native_content_t::from(bms_native_event_t payload,
+    std::vector<bms_program_position_t> positions,
+    std::optional<bms_native_resource_reference_t> reference) -> std::optional<bms_native_content_t> {
+    if (std::ranges::any_of(positions, [](const auto& position) {
+        return !position.measure || !position.fraction.denominator ||
+            position.fraction.numerator > position.fraction.denominator;
+    })) return std::nullopt;
+    auto canonical = payload;
+    if (reference && (!clear_resolved_reference(canonical, *reference) || canonical != payload))
+        return std::nullopt;
+    std::size_t count{};
+    bool valid = true;
+    std::visit([&](auto& value) {
+        if (value.id) valid = false;
+        if constexpr (requires { value.branch; }) if (value.branch) valid = false;
+        auto container = event_container(value);
+        for_each_chart_position(container, [&](local_position_t& position, measure_chart_end_policy_t) {
+            if (position != local_position_t{}) valid = false;
+            ++count;
+        });
+    }, canonical);
+    if (!valid || count != positions.size()) return std::nullopt;
+    return bms_native_content_t{std::move(payload), std::move(positions), std::move(reference)};
 }
 } // namespace wormedit

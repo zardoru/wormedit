@@ -2,6 +2,20 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-737** (2026-10-23): native schema v14 saves/reloads scoped programs,
+including inactive content, exact native positions, nested identities, annotations/layers,
+Text bytes and preview choices. Shared assets use one serialized catalog value. The codec
+reuses bounded alternative validation beyond the selected outcome. Explicit legacy preparation
+preserves project data and shared asset metadata and allocates above current/Undo/Redo IDs;
+unsupported chart/catalog rewrites, ambiguous annotation mapping, missing backing and malformed
+retained source refuse without changing the original. Normal legacy loading keeps its existing
+owner until T-744. GCC GATE and Linux Clang each pass **4,784/4,784**; migration checks pass
+**519 assertions / 19 cases** on each compiler. Complexity passes for **seven changed TUs**
+and a separate **30-TU header-consumer** check without increased allowances. Broad Clang
+builds retain initializer warnings in unchanged audio/UI tests.
+**T-738 is ready** for typed Control/Chart/Text insertion; no successor implementation is active.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-model.md#t-737-persist-scoped-programs-and-migrate-legacy-native-data).
+
 Completed **T-736** (2026-10-23): prepared editor commands and gestures resolve one
 stable semantic Chart through the shared transaction. Captured targets survive selection
 changes and terminal gesture cleanup; existing objects retain their owners. Exact native
@@ -15,8 +29,7 @@ GCC GATE and Linux Clang full CTest each pass **4,765/4,765**; focused scoped ed
 **eight additional header consumers**, without increased allowances. One Clang callback-timing
 audio failure at 12 test workers passed three isolated repetitions and the complete final suite
 at four workers. Broad audio-target builds retain designated-initializer warnings.
-Native persistence explicitly refuses prepared owners until **T-737, now ready**; no successor
-implementation is active. Public document activation remains T-744. Supporting ownership,
+Native persistence was handed to **T-737, complete above**. Public document activation remains T-744. Supporting ownership,
 capability boundaries and verification logs are recorded on the
 [completed card](../../docs/chart-editor-plan/tasks/bms-scoped-model.md#t-736-resolve-chart-edits-to-one-scoped-semantic-owner).
 

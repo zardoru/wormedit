@@ -368,12 +368,15 @@ TEST_CASE("Existing hidden items cannot acquire a visible ancestor target", "[bm
     CHECK(resolved.error().code == failure_code_t::unavailable);
 }
 
-TEST_CASE("The legacy native codec refuses prepared owners rather than dropping them", "[bms-program-edit]") {
+TEST_CASE("The native codec retains the prepared semantic owner", "[bms-program-edit]") {
     const auto history = history_from();
     const auto written = write_native_project(history.document);
-    CHECK_FALSE(written.value);
-    REQUIRE_FALSE(written.diagnostics.empty());
-    CHECK(written.diagnostics.front().code == native_project_diagnostic_code_t::unsupported_version);
+    REQUIRE(written.value);
+    const auto read = parse_native_project(*written.value);
+    REQUIRE(read.value);
+    REQUIRE(read.value->prepared_bms_programs.size() == 1);
+    CHECK(read.value->charts.empty());
+    CHECK(read.value->prepared_bms_programs.front()->prepared().program == owner(history).prepared().program);
 }
 
 TEST_CASE("Appended scoped timing follows program order without rewriting authored provenance", "[bms-program-edit]") {

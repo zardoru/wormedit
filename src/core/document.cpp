@@ -1753,6 +1753,8 @@ auto validate_song_output_groups(document_validation_work_t& work) -> void {
             chart_ids.insert(chart.id.value);
         }
     }
+    for (const auto& owner : work.song.prepared_bms_programs)
+        if (owner && owner->difficulty()) chart_ids.insert(owner->difficulty().value);
     for (const auto& group : work.song.output_groups) {
         for (const auto chart : group.charts) {
             if (!chart || !chart_ids.contains(chart.value)) {

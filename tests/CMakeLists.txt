@@ -201,6 +201,7 @@ add_executable(wormedit_core_tests
     formats/bms_clipboard_tests.cpp
     formats/bms_writer_tests.cpp
     formats/bms_program_writer_tests.cpp
+    formats/bms_program_migration_tests.cpp
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
     formats/conversion_tests.cpp

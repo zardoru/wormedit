@@ -276,7 +276,14 @@ auto migrate_v12_to_v13(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 12> released_migrations{{
+auto migrate_v13_to_v14(nlohmann::json& document) -> std::string {
+    // Legacy ownership remains authoritative until the explicit T-744 cutover.
+    if (document.contains("prepared_bms_programs"))
+        return "schema 13 cannot contain scoped BMS owners";
+    return {};
+}
+
+constexpr std::array<migration_t, 13> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -289,6 +296,7 @@ constexpr std::array<migration_t, 12> released_migrations{{
     {10, &migrate_v10_to_v11},
     {11, &migrate_v11_to_v12},
     {12, &migrate_v12_to_v13},
+    {13, &migrate_v13_to_v14},
 }};
 
 } // namespace

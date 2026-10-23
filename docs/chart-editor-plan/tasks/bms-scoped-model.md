@@ -130,10 +130,37 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 
 ## T-737 Persist scoped programs and migrate legacy native data
 
-- **Status:** ready
+- **Status:** done (2026-10-23; prepared persistence/migration, public activation stays T-744)
 - **Outcome:** versioned native codecs migrate legacy active and inactive BMS data into one scoped program and reload it without identity or semantic loss.
+- **Supporting ownership (2026-10-23):** `src/formats/native_project_bms_codec.inc` and `src/formats/native_project_bms_migration.inc` share the native codec’s existing JSON serializers; `include/wormedit/core/bms_native_content.h` and `src/core/bms_native_content.cpp` restore validated canonical native payloads without a second position authority. `tests/core/bms_program_edit_tests.cpp` replaces the temporary codec refusal with a reload assertion. `docs/architecture.md` and `memory/chart-editor-status/resume.md` record the persistence boundary and completion. New migration implementation files and their CMake registration may be split from the existing native codec within this outcome.
+- **Supporting ownership (migration identities, 2026-10-23):** `src/core/id_ceiling.h` and `src/core/bms_program_edit.cpp` extend the shared reservation query across legacy, prepared and history snapshots, so migration cannot reuse a native or Redo identity.
+- **Supporting ownership (completion status, 2026-10-23):** `docs/chart-editor-plan/tasks/bms-scoped-authoring.md` changes only T-738’s prerequisite status after verification; `docs/chart-editor-plan/audits/bms-scoped-ownership.md` records the inspected v13 baseline and v14 codec boundary.
+- **Migration boundaries:** explicit preparation accepts a complete retained-source chart witness plus supported note/BGM annotations and sound-layer settings. Missing source backing, changed geometry/timing/event data, changed resource bindings, ambiguous annotation owners or malformed retained syntax refuse atomically. Shared asset identity/runtime metadata and unrelated native project data are preserved. Ordinary legacy loading remains available; this card does not activate production scoped editing.
+- **Schema decision:** the inspected baseline table ended at v13; v14 adds optional scoped snapshots. The public legacy reader retains legacy ownership until T-744. Explicit migration uses prepared import and rejects any legacy state whose exact equivalence cannot be established, leaving the original snapshot unchanged.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`.
-- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/formats/native_project.h`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.h`, `src/formats/native_project_migrations.cpp`, new `tests/formats/bms_program_migration_tests.cpp`, `tests/CMakeLists.txt`, this card, `tests/core/command_journal_tests.cpp`, `tests/formats/native_project_storage_tests.cpp`.
+- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/formats/native_project.h`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.h`, `src/formats/native_project_migrations.cpp`, new `tests/formats/bms_program_migration_tests.cpp`, `tests/CMakeLists.txt`, this card, `tests/core/command_journal_tests.cpp`, `tests/formats/native_project_storage_tests.cpp`, `include/wormedit/core/bms_native_content.h`, `src/core/bms_native_content.cpp`, `src/core/id_ceiling.h`, `src/core/bms_program_edit.cpp`, new `src/formats/native_project_bms_codec.inc`, new `src/formats/native_project_bms_migration.inc`, `tests/core/bms_program_edit_tests.cpp`, `docs/architecture.md`, `memory/chart-editor-status/resume.md`, `docs/chart-editor-plan/tasks/bms-scoped-authoring.md` (T-738 status only), `docs/chart-editor-plan/audits/bms-scoped-ownership.md` (schema boundary only).
+- **Completed (2026-10-23):** v14 stores typed scoped nodes/content, exact native positions, annotations, nested identities, layer pools, Text bytes and preview choices. Shared assets serialize once as catalog references. Loading validates tags, shape, enum domains and bounded reachable alternatives through the shared publication validator. Explicit legacy preparation preserves native project data and shared asset metadata, remaps above current/Undo/Redo identities and removes the writable legacy Chart counterpart only in the detached accepted proposal.
+- **Test-value checkpoint:** the scoped native codec/migration family adds 19 reviewed case bodies to the 4,765-case baseline and updates one prepared-edit wiring case. Coverage targets typed payload preservation, malformed input, explicit migration/refusal, shared identities and recovery/Undo contracts. The inherited suite is retained without a whole-suite value or nonredundancy claim.
+- **Verification (2026-10-23):** GCC GATE and Linux Clang full CTest each pass **4,784/4,784**. Focused migration checks pass **519 assertions / 19 cases** on both compilers; combined migration/edit checks pass **1,226 assertions / 71 cases** on GCC. Complexity passes for **seven changed translation units** and a separate **30-TU header-consumer** check, without increased allowances. The broad Clang build retains initializer warnings in unchanged audio/UI test files.
+- **Evidence:** `/tmp/t737-gate3.log`, `/tmp/wormedit-gate.6NSger`, `/tmp/t737-clang-build.log`, `/tmp/t737-clang-ctest.log`, `/tmp/t737-final-gcc-migration.log`, `/tmp/t737-final-clang-migration.log`, `/tmp/t737-final-focused2.log` and `/tmp/t737-header-complexity.log`.
+
+Final GCC GATE tail:
+
+```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4784
+gate: passed
+```
+
+Focused migration tail (GCC and Clang):
+
+```text
+All tests passed (519 assertions in 19 test cases)
+```
+
 - **Steps:**
   1. Select the next schema from the actual migration table; specify one serialized owner for program nodes, Chart content, Text and scoped declarations.
   2. Build the migration using prepared import/projection/routing adapters, preserving all inactive data, shared assets, exact positions and stable/remapped identities across history.

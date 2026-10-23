@@ -34,6 +34,12 @@ class bms_native_content_t {
         std::optional<bms_native_resource_reference_t> reference = {})
         -> std::optional<bms_native_content_t>;
     [[nodiscard]] auto positions() const -> std::span<const bms_program_position_t> { return positions_; }
+    [[nodiscard]] auto payload() const -> const bms_native_event_t& { return event_; }
+    // Restore the canonical native payload and its sole exact position authority.
+    [[nodiscard]] static auto from(bms_native_event_t payload,
+        std::vector<bms_program_position_t> positions,
+        std::optional<bms_native_resource_reference_t> reference)
+        -> std::optional<bms_native_content_t>;
     [[nodiscard]] auto build_event(object_id_t id, const chart_document_t& geometry) const
         -> std::optional<bms_native_event_t>;
     [[nodiscard]] auto has_same_payload(const bms_native_content_t& other) const -> bool {

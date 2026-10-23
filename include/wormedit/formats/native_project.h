@@ -9,6 +9,7 @@
 #include <vector>
 
 namespace wormedit {
+struct document_history_t;
 
 enum class native_project_diagnostic_code_t {
     malformed_json,
@@ -43,5 +44,10 @@ using native_project_parse_outcome_t = attempt_t<song_document_t, std::vector<na
 // the document published in the result.
 [[nodiscard]] auto parse_native_project(std::string_view bytes, native_project_limits_t limits = {})
     -> native_project_parse_outcome_t;
+
+// Prepared, one-way migration only until T-744. Returns a detached proposal;
+// unsupported or unprovable legacy state leaves the complete original untouched.
+[[nodiscard]] auto prepare_native_bms_migration(document_history_t& history,
+    chart_id_t chart, native_project_limits_t limits = {}) -> native_project_parse_outcome_t;
 
 } // namespace wormedit

@@ -1143,7 +1143,11 @@ auto stage_program(document_command_transaction_t& transaction, chart_id_t diffi
         if (owner->prepared().program == *program) return {.value = document_edit_effect_t{}};
         auto prepared = owner->prepared();
         prepared.program = std::move(*program);
-        auto updated = bms_program_document_t::from(difficulty, std::move(prepared), owner->evaluation());
+        auto evaluation = owner->evaluation();
+        std::erase_if(evaluation.selections, [&](const auto& selection) {
+            return !prepared.program.find(selection.branch);
+        });
+        auto updated = bms_program_document_t::from(difficulty, std::move(prepared), std::move(evaluation));
         if (!updated.value || !updated.ok()) {
             const auto message = updated.diagnostics.empty() ? "The authored program cannot be projected." :
                 updated.diagnostics.front().message;
@@ -1217,13 +1221,9 @@ auto bms_program_move_report_t::from(const bms_program_document_t& owner, branch
     const auto parent = program.parent(subtree);
     if (!parent) return std::nullopt;
     bms_program_move_report_t report{.source_parent = *parent};
-    std::vector<branch_id_t> pending{subtree};
-    while (!pending.empty()) {
-        const auto* node = program.find(pending.back());
-        pending.pop_back();
-        report.subtree.push_back(node->id);
-        pending.insert(pending.end(), node->children.rbegin(), node->children.rend());
-    }
+    auto contents = bms_program_subtree_t::from(program, subtree);
+    if (!contents) return std::nullopt;
+    report.subtree = std::move(contents->nodes);
     for (const auto& node : program.nodes()) {
         const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
         if (!chart) continue;
@@ -1267,6 +1267,37 @@ auto bms_program_move_edit_t::propose(const song_document_t& song, chart_id_t di
     });
     if (!checked.applied) return {.diagnostics = checked.diagnostics};
     proposal.payload.report = std::move(report);
+    return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
+}
+} // namespace wormedit
+
+namespace wormedit {
+auto bms_program_delete_edit_t::validate_capture(const chart_stamp_t& stamp) const -> diagnostic_list_t {
+    if (stamp == stamp_) return {};
+    return {error(diagnostic_code_t::invalid_id, "Deletion confirmation does not match its prepared project, revision and difficulty.")};
+}
+auto bms_program_delete_edit_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
+    bms_program_delete_decision_t decision) const -> attempt_t<std::string> {
+    if (decision != bms_program_delete_decision_t::confirm) return {};
+    auto staged = stage_program(scope.transaction(), scope.captured_stamp().chart,
+        [&](const bms_program_t& program) { return program.without_subtree(summary_.root, limits_); }, "Delete BMS subtree");
+    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+    return {.value = staged.value->changed ? std::optional{std::move(staged.value->command_label)} : std::nullopt,
+        .diagnostics = std::move(staged.diagnostics)};
+}
+auto bms_program_delete_edit_t::propose(const song_document_t& song, chart_id_t difficulty,
+    branch_id_t node, bms_program_limits_t limits) -> attempt_t<bms_program_delete_proposal_t> {
+    const auto* owner = song.find_bms_program(difficulty);
+    if (!owner) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "No scoped BMS program exists for this difficulty.")}};
+    auto summary = bms_program_subtree_t::from(owner->prepared().program, node);
+    if (!summary) return {.diagnostics = {error(diagnostic_code_t::invalid_id, summary.error().message)}};
+    const auto stamp = chart_stamp_t::from(song, difficulty);
+    auto proposal = bms_program_delete_proposal_t::from(stamp,
+        bms_program_delete_edit_t(stamp, std::move(*summary), limits));
+    const auto checked = document_command_transaction_t::preview(song, [&](document_history_t& preview) {
+        return apply_proposal(preview, proposal, bms_program_delete_decision_t::confirm);
+    });
+    if (!checked.applied) return {.diagnostics = checked.diagnostics};
     return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
 }
 } // namespace wormedit

@@ -109,10 +109,11 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-741 Delete scoped subtrees through explicit confirmation
 
-- **Status:** ready
+- **Status:** done (2026-10-23)
 - **Outcome:** confirmed deletion removes exactly the named subtree and its Chart/Text contents, while Cancel and stale confirmation leave the program intact.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/sys/compose/actions/compose_measure_commands.cpp`, `tests/core/bms_program_authoring_tests.cpp`.
-- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `src/core/command.cpp`, `docs/architecture.md`, `memory/chart-editor-status/resume.md`, this card.
+- **Supporting ownership:** put subtree queries and immutable removal on the program model (`bms_program.h` / `bms_program.cpp`), reuse that query for move reports, and reconcile deleted session targets in `src/core/command.cpp` across Commit/Undo/Redo. Keep `docs/architecture.md` true and advance the resume entry after verification. Stale-plan search found no prepared subtree deletion; retained-source deletion and measure removal do not satisfy this outcome.
 - **Steps:**
   1. Prepare a typed deletion summary with stable subtree identity, revision and counts of descendant scopes, Charts, Text and semantic content.
   2. Apply only the confirmed proposal through the shared transaction; remove descendants, validate affected projections and resolve a deleted current target to the surviving parent's first Chart.
@@ -122,6 +123,33 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 - **Reject/failure behavior:** failed/canceled confirmation publishes nothing; a structural failure rolls back the whole subtree change.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-authoring]'`.
 - **Out of scope:** confirmation widgets (T-743), unwrapping (T-742), project difficulty deletion (existing chart-management workflow).
+
+- **Implementation:** a shared subtree query reports scopes, Charts, encoded Text, fixed settings and semantic content (typed entries, nested native identities and case SKIP behavior). The private deletion payload retains the original stamp and exact node summary; only an explicit typed Confirm decision stages removal, and retargeted confirmation envelopes reject. Shared publication validates all bounded outcomes, preserves catalogs and removes evaluation choices only for deleted selectors. Commit/Undo/Redo repair a deleted session target through its previous ancestry; valid targets stay selected and unknown ancestry clears. Session selection remains outside semantic Undo. Root/final-Chart removal, dangling IF/SKIP, unresolved references and partial holds refuse without mutation. No implicit SKIP repair, unwrapping or catalog collection occurs.
+- **Test-value checkpoint:** subtree deletion/shared graph, proposal and publication owners; baseline is T-740’s 24 authoring cases. Reviewed all 12 new bodies for typed counts, exact subtree/sibling preservation, catalog preservation, Cancel, stale/forged confirmation, target repair and selection validity through Undo/Redo, structural/semantic refusals and native reload. Existing family bodies were retained conservatively, not re-audited; counts do not establish whole-suite value. GCC evidence is 1,338 assertions / 36 authoring cases and 5,285 / 167 combined BMS cases. Full GATE and complexity pass; Clang matches the focused runs and full 4,820-test suite; evidence below.
+
+- **GCC verification (2026-10-23):** final `scripts/gate.sh --jobs 4` log `/tmp/t741-gate-final.log` (details `/tmp/wormedit-gate.eOZM9x`); explicit header consumers `/tmp/t741-header-complexity.log`; focused logs `/tmp/t741-authoring-final.log` and `/tmp/t741-focused-final.log`. Real output tails:
+
+  ```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4820
+  gate: passed
+  complexity: passed (4 translation units)
+  complexity: passed (46 translation units)
+  All tests passed (1338 assertions in 36 test cases)
+  All tests passed (5285 assertions in 167 test cases)
+  ```
+
+- **Clang and review (2026-10-23):** affected-target `cmake --build build-clang --parallel 6` succeeds with one linker and no warnings in this rebuild (`/tmp/t741-clang-build.log`); `ctest --test-dir build-clang -j 4 --output-on-failure` passes (`/tmp/t741-clang-ctest.log`). Focused logs `/tmp/t741-clang-authoring.log` and `/tmp/t741-clang-focused.log` match GCC. Reviewed the code-style checklist: type-owned shared subtree query, immutable graph mutation, private confirmation identity, shared publication/Undo target reconciliation, documented runner semantics, named aggregate fields and bounded helpers. No complexity allowances increased. Initial catalog comparisons used types without equality and were replaced with native catalog snapshots; oversized test assertion blocks were consolidated. One initial clang-tidy crash did not recur in stable reruns or the final gate/header checks; none were skipped. Real output tails:
+
+  ```text
+  100% tests passed out of 4820
+  All tests passed (1338 assertions in 36 test cases)
+  All tests passed (5285 assertions in 167 test cases)
+  ```
+- **Handoff:** T-739, T-742 and T-743 retain their user-decision gates (questions 21, 23 and 24). No successor implementation is active. Confirmation widgets remain T-743 and production activation remains T-744.
 
 ## T-742 Unwrap controls as an explicit structural operation
 

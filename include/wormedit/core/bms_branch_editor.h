@@ -67,6 +67,27 @@ struct bms_program_move_edit_t {
 };
 using bms_program_move_proposal_t = proposal_t<bms_program_move_edit_t>;
 
+enum class bms_program_delete_decision_t { cancel, confirm };
+class bms_program_delete_edit_t {
+  public:
+    static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Delete BMS subtree"};
+    [[nodiscard]] static auto propose(const song_document_t& song, chart_id_t difficulty,
+        branch_id_t node, bms_program_limits_t limits = {})
+        -> attempt_t<proposal_t<bms_program_delete_edit_t>>;
+    [[nodiscard]] auto summary() const -> const bms_program_subtree_t& { return summary_; }
+    [[nodiscard]] auto validate_capture(const chart_stamp_t& stamp) const -> diagnostic_list_t;
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>& scope,
+        bms_program_delete_decision_t decision) const -> attempt_t<std::string>;
+    auto operator==(const bms_program_delete_edit_t&) const -> bool = default;
+  private:
+    bms_program_delete_edit_t(chart_stamp_t stamp, bms_program_subtree_t summary, bms_program_limits_t limits)
+        : stamp_(stamp), summary_(std::move(summary)), limits_(limits) {}
+    chart_stamp_t stamp_;
+    bms_program_subtree_t summary_;
+    bms_program_limits_t limits_;
+};
+using bms_program_delete_proposal_t = proposal_t<bms_program_delete_edit_t>;
+
 struct bms_branch_statement_command_payload_t {
     std::vector<bms_branch_statement_edit_diagnostic_t> format_diagnostics;
 };

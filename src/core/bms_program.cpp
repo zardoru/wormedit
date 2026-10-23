@@ -321,6 +321,47 @@ auto bms_program_t::with_move(const bms_program_move_t& move, bms_program_limits
     if (const auto failure = validate_move_bindings(*this, *proposed)) return std::unexpected(*failure);
     return proposed;
 }
+auto bms_program_subtree_t::from(const bms_program_t& program, branch_id_t root)
+    -> result_t<bms_program_subtree_t, error_t<failure_code_t>> {
+    if (!program.find(root))
+        return std::unexpected(error_t{failure_code_t::not_found, "Subtree requires an existing BMS node."});
+    bms_program_subtree_t result{.root = root, .parent = program.parent(root)};
+    std::vector<branch_id_t> pending{root};
+    while (!pending.empty()) {
+        const auto* node = program.find(pending.back());
+        pending.pop_back();
+        result.nodes.push_back(node->id);
+        pending.insert(pending.end(), node->children.rbegin(), node->children.rend());
+        if (const auto* arm = std::get_if<bms_case_scope_t>(&node->value))
+            result.content_items += arm->skips.size();
+        if (node->is_scope()) ++result.scopes;
+        else if (const auto* chart = std::get_if<bms_chart_content_t>(&node->value)) {
+            ++result.charts;
+            result.content_items += chart->items.size();
+            for (const auto& item : chart->items)
+                if (const auto* native = std::get_if<bms_native_content_t>(&item.value))
+                    result.content_items += native->declared_ids().size();
+        } else if (const auto* text = std::get_if<bms_text_t>(&node->value)) {
+            ++result.texts;
+            result.text_bytes += text->bytes.size();
+        } else ++result.settings;
+    }
+    return result;
+}
+auto bms_program_t::without_subtree(branch_id_t id, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto subtree = bms_program_subtree_t::from(*this, id);
+    if (!subtree) return std::unexpected(subtree.error());
+    if (!subtree->parent)
+        return std::unexpected(error_t{failure_code_t::invalid_request, "Root cannot be removed as a subtree."});
+    std::unordered_set<std::uint64_t> removed;
+    for (const auto node : subtree->nodes) removed.insert(node.value);
+    auto nodes = nodes_;
+    std::erase(nodes[indices_.at(subtree->parent->value)].children, id);
+    std::erase_if(nodes, [&](const auto& node) { return removed.contains(node.id.value); });
+    return from(std::move(nodes), limits);
+}
+
 auto bms_program_t::with_scope(branch_id_t parent_id, bms_program_node_t scope,
     branch_id_t chart, bms_program_limits_t limits) const -> result_t<bms_program_t, error_t<failure_code_t>> {
     const auto* containing = find(parent_id);

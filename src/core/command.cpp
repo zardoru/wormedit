@@ -184,6 +184,35 @@ void mark_document_saved(document_history_t& history) noexcept {
     history.saved_revision = history.document.revision;
 }
 
+namespace {
+// Session selection is outside semantic Undo; repair only dangling prepared IDs.
+void reconcile_bms_edit_target(document_history_t& history, const song_document_t& before) {
+    if (!history.bms_edit_target) return;
+    if (before.id != history.document.id) {
+        history.bms_edit_target.reset();
+        return;
+    }
+    auto& target = *history.bms_edit_target;
+    const auto* current = history.document.find_bms_program(target.difficulty);
+    if (!current) {
+        history.bms_edit_target.reset();
+        return;
+    }
+    const auto& program = current->prepared().program;
+    if (program.target_chart(target.chart) == target.chart) return;
+    const auto* previous = before.find_bms_program(target.difficulty);
+    auto ancestor = previous ? previous->prepared().program.parent(target.chart) : std::nullopt;
+    while (ancestor) {
+        if (const auto chart = program.target_chart(*ancestor)) {
+            target.chart = *chart;
+            return;
+        }
+        ancestor = previous->prepared().program.parent(*ancestor);
+    }
+    history.bms_edit_target.reset();
+}
+} // namespace
+
 static auto commit_validated_document(document_history_t& history, song_document_t&& proposed,
                              std::string label, document_command_options_t options)
     -> document_command_result_t {
@@ -216,6 +245,7 @@ static auto commit_validated_document(document_history_t& history, song_document
         .sequence = history.next_history_sequence++,
     };
     history.document = record.after;
+    reconcile_bms_edit_target(history, record.before);
     history.undo.push_back(std::move(record));
     history.publications.notify(history.document, history.undo.back().before.revision, history.undo.back().label);
     trim_undo_history(history);
@@ -478,6 +508,7 @@ auto undo_document_command(document_history_t& history) -> bool {
     auto record = std::move(history.undo.back());
     history.undo.pop_back();
     history.document = record.before;
+    reconcile_bms_edit_target(history, record.after);
     history.publications.notify(history.document, record.after.revision, "Undo");
     history.redo.push_back(std::move(record));
     return true;
@@ -491,6 +522,7 @@ auto redo_document_command(document_history_t& history) -> bool {
     auto record = std::move(history.redo.back());
     history.redo.pop_back();
     history.document = record.after;
+    reconcile_bms_edit_target(history, record.before);
     history.publications.notify(history.document, record.before.revision, "Redo");
     history.undo.push_back(std::move(record));
     trim_undo_history(history);

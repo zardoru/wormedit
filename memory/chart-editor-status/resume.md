@@ -2,6 +2,21 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-741** (2026-10-23): typed, immutable deletion proposals summarize the exact
+subtree, scopes, Charts, Text, fixed settings and semantic content, including native children and
+case SKIP behavior. Explicit Confirm uses the original project/revision/difficulty/node identity;
+Cancel, stale/forged envelopes and invalid structures publish nothing. Removal preserves sibling
+values and catalogs, drops choices only for removed selectors and validates bounded outcomes.
+Commit/Undo/Redo reconcile deleted targets to the nearest surviving parent's first Chart;
+valid session targets remain selected and unknown ancestry clears instead of guessing Root.
+Selection stays outside semantic Undo. Root/final-Chart deletion, dangling IF/SKIP, unresolved
+references and partial holds refuse. GCC GATE and Linux Clang each pass **4,820/4,820**;
+authoring passes **1,338 assertions / 36 cases** and combined BMS families **5,285 / 167** on both.
+Complexity passes for **four changed TUs** and **46 explicit header consumers** without increased
+allowances. **T-739, T-742 and T-743 remain blocked on user decisions** (questions 21, 23 and 24);
+no successor implementation is active. Confirmation UI remains T-743; public activation T-744.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-741-delete-scoped-subtrees-through-explicit-confirmation).
+
 Completed **T-740** (2026-10-23): stamped proposals move whole Control, Chart and Text
 subtrees at explicit parent/anchor positions while preserving IDs, values and exact musical
 positions. Read-only preparation reports the subtree, potentially affected Charts/declarations
@@ -12,7 +27,7 @@ control order/containment to prove bindings; unproven control moves refuse. Undo
 reload preserve the moved graph. GCC GATE and Linux Clang each pass **4,808/4,808**; authoring
 passes **990 assertions / 24 cases**, and the combined BMS families pass **4,937 / 155** on both.
 Complexity passes for **three changed TUs** and **46 explicit header consumers**, without
-increased allowances. **T-741 is ready** for confirmed subtree deletion. T-739 still needs
+increased allowances. **T-741 is complete above**. T-739 still needs
 question 21; no successor implementation is active. Public activation stays with T-744.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-740-move-whole-program-subtrees-in-ordered-scopes).
 

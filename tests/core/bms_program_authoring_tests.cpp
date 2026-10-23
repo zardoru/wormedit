@@ -5,6 +5,7 @@
 #include <wormedit/formats/native_project.h>
 #include <catch2/generators/catch_generators.hpp>
 #include <algorithm>
+#include <nlohmann/json.hpp>
 
 using namespace wormedit;
 using namespace wormedit::test::bms_program;
@@ -444,6 +445,197 @@ TEST_CASE("Scoped CASE subtree reorder retains anchored SKIP and authored output
     apply_move(history, {.node = cases[1], .parent = selector});
     const auto output = write(history);
     CHECK(output.find("#CASE 2") < output.find("#CASE 1"));
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}
+
+namespace {
+constexpr auto deletion_source = "#WAV01 a.wav\n#RANDOM 2\n#IF 1\n; delete text\n#WAV02 b.wav\n#00011:02\n#ENDIF\n#ENDRANDOM\n; keep\n#00112:01\n";
+void check_bms_target(const document_history_t& history, branch_id_t expected) {
+    REQUIRE(history.bms_edit_target);
+    CHECK(history.bms_edit_target->chart == expected);
+    CHECK(program(history).find(expected));
+}
+auto prepare_delete(const document_history_t& history, branch_id_t node) -> bms_program_delete_proposal_t {
+    const auto original = snapshot(history);
+    const auto undo_count = history.undo.size();
+    const auto target = history.bms_edit_target;
+    auto prepared = bms_program_delete_edit_t::propose(history.document, difficulty, node);
+    for (const auto& diagnostic : prepared.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(prepared.value);
+    CHECK(snapshot(history) == original);
+    CHECK(history.undo.size() == undo_count);
+    CHECK(history.bms_edit_target == target);
+    return std::move(*prepared.value);
+}
+auto catalog_snapshot(const document_history_t& history) -> nlohmann::json {
+    const auto encoded = nlohmann::json::parse(snapshot(history));
+    const auto& document = encoded.at("document");
+    const auto& scoped = document.at("prepared_bms_programs").at(0);
+    nlohmann::json result;
+    for (const auto* field : {"resources", "audio_assets", "visual_assets"}) {
+        result["shared"][field] = document.at(field);
+        result["scoped"][field] = scoped.at(field);
+    }
+    return result;
+}
+void check_deleted_subtree(const bms_program_t& before, const bms_program_t& after,
+    const bms_program_subtree_t& summary) {
+    auto expected = std::vector<bms_program_node_t>(before.nodes().begin(), before.nodes().end());
+    std::erase_if(expected, [&](const auto& node) {
+        return std::ranges::find(summary.nodes, node.id) != summary.nodes.end();
+    });
+    const auto parent = std::ranges::find(expected, *summary.parent, &bms_program_node_t::id);
+    REQUIRE(parent != expected.end());
+    std::erase(parent->children, summary.root);
+    CHECK(std::ranges::equal(expected, after.nodes()));
+}
+void check_delete_refused(const document_history_t& history, branch_id_t node,
+    diagnostic_code_t code = diagnostic_code_t::invalid_id) {
+    const auto original = snapshot(history);
+    const auto target = history.bms_edit_target;
+    const auto proposed = bms_program_delete_edit_t::propose(history.document, difficulty, node);
+    CHECK_FALSE(proposed.value);
+    REQUIRE_FALSE(proposed.diagnostics.empty());
+    CHECK(proposed.diagnostics.front().code == code);
+    CHECK(snapshot(history) == original);
+    CHECK(history.bms_edit_target == target);
+}
+} // namespace
+
+TEST_CASE("Scoped deletion previews complete typed counts without publishing", "[bms-program-authoring]") {
+    const auto history = selected_move_history(deletion_source);
+    const auto random = nodes_of<bms_random_scope_t>(history).front();
+    const auto proposed = prepare_delete(history, random);
+    const auto& summary = proposed.payload.summary();
+    CHECK(summary.root == random);
+    CHECK(summary.parent == program(history).root());
+    CHECK(summary.nodes.size() == 5);
+    const auto counts = std::array{summary.scopes, summary.charts, summary.texts,
+        summary.settings, summary.content_items, summary.text_bytes};
+    CHECK(counts == std::array<std::size_t, 6>{2, 2, 1, 0, 2, 14});
+}
+TEST_CASE("Confirmed scoped deletion removes exactly its subtree and retains assets", "[bms-program-authoring]") {
+    auto history = selected_move_history(deletion_source);
+    const auto before = program(history);
+    const auto catalog = snapshot(history);
+    auto proposed = prepare_delete(history, nodes_of<bms_random_scope_t>(history).front());
+    const auto pools = catalog_snapshot(history);
+    const auto result = apply_proposal(history, proposed, bms_program_delete_decision_t::confirm);
+    REQUIRE(result.applied);
+    check_deleted_subtree(before, program(history), proposed.payload.summary());
+    CHECK(catalog_snapshot(history) == pools);
+    CHECK(owner(history).evaluation().selections.empty());
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+    REQUIRE(undo_document_command(history));
+    CHECK(snapshot(history) == catalog);
+}
+TEST_CASE("Canceling scoped deletion changes neither document target nor history", "[bms-program-authoring]") {
+    auto history = selected_move_history(deletion_source);
+    const auto random = nodes_of<bms_random_scope_t>(history).front();
+    history.bms_edit_target = {.difficulty = difficulty, .chart = *program(history).target_chart(random)};
+    auto proposed = prepare_delete(history, random);
+    const auto original = snapshot(history);
+    const auto selected = history.bms_edit_target;
+    const auto undo_count = history.undo.size();
+    CHECK_FALSE(apply_proposal(history, proposed, bms_program_delete_decision_t::cancel).applied);
+    CHECK(snapshot(history) == original);
+    CHECK(history.bms_edit_target == selected);
+    CHECK(history.undo.size() == undo_count);
+}
+TEST_CASE("Scoped deletion repairs a deleted target through Commit Undo and Redo", "[bms-program-authoring]") {
+    auto history = selected_move_history(deletion_source);
+    const auto random = nodes_of<bms_random_scope_t>(history).front();
+    const auto selected = *program(history).target_chart(nodes_of<bms_if_scope_t>(history).front());
+    const auto fallback = *program(history).target_chart(program(history).root());
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected};
+    auto proposed = prepare_delete(history, random);
+    REQUIRE(apply_proposal(history, proposed, bms_program_delete_decision_t::confirm).applied);
+    check_bms_target(history, fallback);
+    REQUIRE(undo_document_command(history));
+    CHECK(program(history).find(selected));
+    check_bms_target(history, fallback);
+    history.bms_edit_target->chart = selected;
+    REQUIRE(redo_document_command(history));
+    check_bms_target(history, fallback);
+}
+TEST_CASE("Scoped deletion retains unrelated targets and chooses the first surviving Chart", "[bms-program-authoring]") {
+    auto history = history_from("; split\n");
+    const auto root = program(history).root();
+    const auto surviving = *program(history).target_chart(root);
+    const auto removed = insert(history, root, bms_chart_content_t{}, nodes_of<bms_text_t>(history).front());
+    const auto mode = GENERATE(0, 1, 2);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = mode == 0 ? surviving : mode == 1 ? removed : branch_id_t{99999}};
+    auto proposed = prepare_delete(history, removed);
+    REQUIRE(apply_proposal(history, proposed, bms_program_delete_decision_t::confirm).applied);
+    const auto expected = mode == 2 ? std::nullopt : std::optional{bms_program_target_key_t{
+        .difficulty = difficulty, .chart = surviving}};
+    CHECK(history.bms_edit_target == expected);
+    CHECK(program(history).target_chart(root) == surviving);
+}
+TEST_CASE("Scoped deletion refuses Root missing nodes and the last surviving Chart", "[bms-program-authoring]") {
+    auto history = history_from();
+    const auto mode = GENERATE(0, 1, 2);
+    const auto root = program(history).root();
+    const auto node = mode == 0 ? root : mode == 1 ? *program(history).target_chart(root) : branch_id_t{99999};
+    history.bms_edit_target = {.difficulty = difficulty, .chart = *program(history).target_chart(root)};
+    check_delete_refused(history, node);
+}
+TEST_CASE("Scoped deletion refuses dangling IF continuations and SKIP anchors", "[bms-program-authoring]") {
+    const auto skip = GENERATE(false, true);
+    auto history = history_from(skip ? "#SWITCH 2\n#CASE 1\n; anchored\n#SKIP\n#ENDSW\n" :
+        "#RANDOM 2\n#IF 1\n#ELSE\n#ENDIF\n#ENDRANDOM\n");
+    const auto node = skip ? nodes_of<bms_text_t>(history).front() : nodes_of<bms_if_scope_t>(history).front();
+    check_delete_refused(history, node);
+}
+TEST_CASE("Scoped deletion refuses hidden unresolved references atomically", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n; split\n#RANDOM 2\n#IF 1\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto root = program(history).root();
+    const auto declarations = *program(history).target_chart(root);
+    insert(history, root, bms_chart_content_t{}, nodes_of<bms_random_scope_t>(history).front());
+    check_delete_refused(history, declarations, diagnostic_code_t::dangling_resource);
+}
+TEST_CASE("Scoped deletion refuses a partial cross-owner hold without selection repair", "[bms-program-authoring]") {
+    auto history = selected_move_history("#WAV01 a.wav\n#00051:01\n#RANDOM 1\n#IF 1\n#00151:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto tail = *program(history).target_chart(arm);
+    insert(history, arm, bms_chart_content_t{}, tail);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = tail};
+    check_delete_refused(history, tail);
+}
+TEST_CASE("Scoped deletion confirmation rejects stale and forged stamps", "[bms-program-authoring]") {
+    auto history = selected_move_history(deletion_source);
+    auto proposed = prepare_delete(history, nodes_of<bms_random_scope_t>(history).front());
+    insert(history, program(history).root(), bms_chart_content_t{});
+    const auto original = snapshot(history);
+    check_refused(history, apply_proposal(history, proposed, bms_program_delete_decision_t::confirm),
+        diagnostic_code_t::invalid_id, original);
+    proposed.stamp = chart_stamp_t::from(history, difficulty);
+    check_refused(history, apply_proposal(history, proposed, bms_program_delete_decision_t::confirm),
+        diagnostic_code_t::invalid_id, original);
+}
+TEST_CASE("Scoped deletion of Text and fixed settings is exact and persists natively", "[bms-program-authoring]") {
+    auto history = history_from("#SETRANDOM 1\n; comment\n#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n");
+    const auto setting = GENERATE(false, true);
+    const auto node = setting ? nodes_of<bms_set_random_t>(history).front() : nodes_of<bms_text_t>(history).front();
+    auto proposed = prepare_delete(history, node);
+    const auto before = program(history);
+    REQUIRE(apply_proposal(history, proposed, bms_program_delete_decision_t::confirm).applied);
+    check_deleted_subtree(before, program(history), proposed.payload.summary());
+    const auto parsed = parse_native_project(snapshot(history));
+    REQUIRE(parsed.ok());
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->find_bms_program(difficulty)->prepared().program == program(history));
+}
+TEST_CASE("Scoped deletion removes a whole CASE with its typed SKIP behavior", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#SWITCH 2\n#CASE 1\n#00011:01\n#SKIP\n#CASE 2\n#00112:01\n#SKIP\n#DEF\n#ENDSW\n");
+    const auto before = program(history);
+    auto proposed = prepare_delete(history, nodes_of<bms_case_scope_t>(history).front());
+    CHECK(proposed.payload.summary().content_items == 2);
+    REQUIRE(apply_proposal(history, proposed, bms_program_delete_decision_t::confirm).applied);
+    check_deleted_subtree(before, program(history), proposed.payload.summary());
+    CHECK(write(history).find("#CASE 1") == std::string::npos);
     const auto after = program(history);
     check_history_round_trip(history, before, after);
 }

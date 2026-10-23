@@ -74,6 +74,14 @@ remain on typed BMS content, and hold edits retain both endpoint identities and 
 New BGM columns and semantic batches use the complete prepared/history identity ceiling.
 A transaction cannot implicitly write multiple semantic Charts.
 
+Prepared structural deletion previews the complete typed subtree and requires an explicit
+confirmation tied to its original project, revision, difficulty and node. It removes only
+that subtree, retains shared pools, and drops evaluation choices only for removed selectors.
+Commit, Undo and Redo reconcile dangling prepared target IDs before publication observers:
+walk the previous ancestry to the nearest surviving scope and choose its first Chart.
+A valid session target remains selected through semantic Undo; history does not restore
+an old selection. Missing difficulties, projects or previous ancestry clear the target instead.
+
 Session target selection stays outside document history. Gesture and proposal stamps pin
 that selection, including through terminal gesture cleanup and continuation after a
 partial chord commit. Changing the session selection cannot retarget a captured insert;

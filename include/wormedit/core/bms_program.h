@@ -220,6 +220,17 @@ struct bms_program_move_t {
     auto operator==(const bms_program_move_t&) const -> bool = default;
 };
 
+class bms_program_t;
+struct bms_program_subtree_t {
+    [[nodiscard]] static auto from(const bms_program_t& program, branch_id_t root)
+        -> result_t<bms_program_subtree_t, error_t<failure_code_t>>;
+    branch_id_t root;
+    std::optional<branch_id_t> parent;
+    std::vector<branch_id_t> nodes;
+    std::size_t scopes{}, charts{}, texts{}, settings{}, content_items{}, text_bytes{};
+    auto operator==(const bms_program_subtree_t&) const -> bool = default;
+};
+
 // Prepared value model only: T-744 activates it as the document's semantic owner.
 // Musical/resource validation belongs to the projection/edit adapters, not this
 // graph constructor. No live document contains a separately writable mirror.
@@ -242,6 +253,8 @@ class bms_program_t {
     [[nodiscard]] auto with_text(branch_id_t node, bms_text_t text,
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_move(const bms_program_move_t& move, bms_program_limits_t limits = {}) const
+        -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto without_subtree(branch_id_t node, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto root() const -> branch_id_t { return nodes_[root_index_].id; }
     [[nodiscard]] auto nodes() const -> std::span<const bms_program_node_t> { return nodes_; }

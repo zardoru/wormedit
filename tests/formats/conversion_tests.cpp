@@ -4,8 +4,12 @@
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
+#include <wormedit/core/timing.h>
+#include <wormedit/core/sv_recipe.h>
+#include "../support/timing_links_fixture.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -752,4 +756,134 @@ TEST_CASE("Cancelled conversion returns no artifacts", "[unit][format][conversio
     REQUIRE(converted.slice_plans.empty());
     REQUIRE(converted.asset_copies.empty());
     REQUIRE(converted.diagnostics.front().code == wormedit::conversion_diagnostic_code_t::cancelled);
+}
+namespace {
+auto linked_export_fixture(wormedit::format_family_t target) -> wormedit::test::timing_links_fixture_t {
+    if (target == wormedit::format_family_t::stepmania) {
+        return wormedit::test::timing_links_fixture_t::from(wormedit::make_stepmania_pump_single_profile());
+    }
+    if (target == wormedit::format_family_t::osu_mania) {
+        const auto profile = wormedit::make_osu_mania_profile(4);
+        REQUIRE(profile);
+        return wormedit::test::timing_links_fixture_t::from(*profile);
+    }
+    return wormedit::test::timing_links_fixture_t::from();
+}
+auto reimport_linked_output(std::string_view output, wormedit::format_family_t target,
+    wormedit::stepmania_profile_t profile) -> std::optional<wormedit::song_document_t> {
+    const auto bytes = std::as_bytes(std::span{output.data(), output.size()});
+    if (target == wormedit::format_family_t::bms)
+        return wormedit::parse_bms_bytes(bytes, {.lane_profile_id = "bme-7k-outside-scratch"}).value.song;
+    if (target == wormedit::format_family_t::bmson) return wormedit::parse_bmson_bytes(bytes).value;
+    if (target == wormedit::format_family_t::stepmania)
+        return wormedit::parse_stepmania_bytes(bytes, {.profile = profile,
+            .source_timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps}).value;
+    return wormedit::parse_osu_mania_bytes(bytes).value;
+}
+void check_reimported_link_clock(const wormedit::song_document_t& song) {
+    REQUIRE(song.charts.size() == 1);
+    const auto& chart = song.charts.front();
+    const auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(timing.value);
+    CHECK(timing.value->seconds_at(chart.divisions_per_standard_measure / 4).seconds == wormedit::signed_rational_t{2, 5});
+    CHECK(chart.timing_links == wormedit::timing_links_t{});
+}
+auto check_linked_conversion_output(const wormedit::conversion_outcome_t& converted,
+    wormedit::format_family_t target, wormedit::stepmania_profile_t profile) -> wormedit::song_document_t {
+    std::string messages;
+    for (const auto& diagnostic : converted.diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    const auto& output = converted.value.outputs.front();
+    CHECK(output.reimport_validated);
+    const auto parsed = reimport_linked_output(output.bytes, target, profile);
+    REQUIRE(parsed);
+    check_reimported_link_clock(*parsed);
+    return *parsed;
+}
+}
+TEST_CASE("Interchange exports reimport linked timing as the resolved clock without native associations", "[format][conversion][timing-links]") {
+    using namespace wormedit;
+    const auto [target, profile] = GENERATE(Catch::Generators::table<format_family_t, stepmania_profile_t>({
+        {format_family_t::bms, stepmania_profile_t::ssc},
+        {format_family_t::bmson, stepmania_profile_t::ssc},
+        {format_family_t::stepmania, stepmania_profile_t::sm},
+        {format_family_t::stepmania, stepmania_profile_t::ssc},
+        {format_family_t::osu_mania, stepmania_profile_t::ssc}}));
+    CAPTURE(target, profile);
+    auto fixture = linked_export_fixture(target);
+    REQUIRE(fixture.set_bpm(fixture.source_id, {150, 1}).applied);
+    const auto before = write_native_project(fixture.history.document).value;
+    conversion_request_t request{.target = target, .chart = fixture.target_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::bms) request.target_profile = "bme-7k-outside-scratch";
+    if (target == format_family_t::stepmania)
+        request.stepmania = stepmania_export_policy_t{.file_profile = profile, .timing_syntax = stepmania_timing_syntax_t::native_warps};
+    const auto converted = conversion_result_t::from(fixture.history.document, request);
+    check_linked_conversion_output(converted, target, profile);
+    CHECK(write_native_project(fixture.history.document).value == before);
+}
+namespace {
+void add_linked_scroll_recipe(wormedit::test::timing_links_fixture_t& fixture, std::uint64_t end_row) {
+    using namespace wormedit;
+    document_command_transaction_t transaction{fixture.history};
+    const auto& source = fixture.source();
+    transaction.document().find_chart(fixture.source_id)->sv_recipes.push_back({.id = recipe_id_t{90001},
+        .name = "Linked constant scroll", .range = {.begin = {.measure = source.measures.front().id},
+            .end = {.measure = source.measures.front().id, .row = end_row}},
+        .output = sv_recipe_output_t::scrolls, .curve = sv_recipe_curve_t::constant,
+        .parameters = {.value_from = {2, 1}, .value_to = {2, 1}}});
+    const auto staged = stage_timing_link_edit(transaction, fixture.target_id,
+        {.category = timing_category_t::scroll, .source = fixture.source_id});
+    REQUIRE(staged.value);
+    REQUIRE(transaction.commit("Prepare linked recipe export").applied);
+}
+void check_reimported_recipe_scroll(const wormedit::song_document_t& song) {
+    REQUIRE_FALSE(song.charts.front().scrolls.empty());
+    CHECK(song.charts.front().scrolls.front().multiplier == wormedit::signed_rational_t{2, 1});
+    CHECK(song.charts.front().sv_recipes.empty());
+}
+}
+TEST_CASE("Linked recipe exports bake the effective source values while keeping live recipes and links", "[format][conversion][timing-links]") {
+    using namespace wormedit;
+    const auto target = GENERATE(format_family_t::stepmania, format_family_t::osu_mania);
+    auto fixture = linked_export_fixture(target);
+    REQUIRE(fixture.set_bpm(fixture.source_id, {150, 1}).applied);
+    add_linked_scroll_recipe(fixture, fixture.source().divisions_per_standard_measure / 2);
+    const auto before = write_native_project(fixture.history.document).value;
+    const auto prepared = sv_recipe_prepared_t::from(fixture.target(), fixture.target().sv_recipes.front());
+    REQUIRE(prepared.ok());
+    CHECK(prepared.value.value_at(fixture.target().divisions_per_standard_measure / 4) == 2.0L);
+    conversion_request_t request{.target = target, .chart = fixture.target_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::stepmania)
+        request.stepmania = stepmania_export_policy_t{.file_profile = stepmania_profile_t::ssc,
+            .timing_syntax = stepmania_timing_syntax_t::native_warps};
+    const auto converted = conversion_result_t::from(fixture.history.document, request);
+    const auto parsed = check_linked_conversion_output(converted, target, stepmania_profile_t::ssc);
+    check_reimported_recipe_scroll(parsed);
+    CHECK(write_native_project(fixture.history.document).value == before);
+}
+TEST_CASE("Unsupported linked recipe export returns no outputs and leaves live timing unchanged", "[format][conversion][timing-links]") {
+    using namespace wormedit;
+    auto fixture = test::timing_links_fixture_t::from();
+    add_linked_scroll_recipe(fixture, fixture.source().divisions_per_standard_measure / 2);
+    const auto before = write_native_project(fixture.history.document).value;
+    const auto converted = conversion_result_t::from(fixture.history.document,
+        {.target = format_family_t::bms, .target_profile = "bme-7k-outside-scratch", .chart = fixture.target_id});
+    CHECK_FALSE(converted.ok());
+    CHECK(converted.value.outputs.empty());
+    CHECK(write_native_project(fixture.history.document).value == before);
+}
+TEST_CASE("Inexact linked recipe export endpoints reject without rounding or mutating the source", "[format][conversion][timing-links]") {
+    using namespace wormedit;
+    auto fixture = linked_export_fixture(format_family_t::stepmania);
+    add_linked_scroll_recipe(fixture, fixture.source().divisions_per_standard_measure);
+    const auto before = write_native_project(fixture.history.document).value;
+    const auto converted = conversion_result_t::from(fixture.history.document,
+        {.target = format_family_t::stepmania, .stepmania = stepmania_export_policy_t{
+            .file_profile = stepmania_profile_t::ssc, .timing_syntax = stepmania_timing_syntax_t::native_warps},
+            .chart = fixture.target_id});
+    CHECK_FALSE(converted.ok());
+    CHECK(converted.value.outputs.empty());
+    CHECK(write_native_project(fixture.history.document).value == before);
 }

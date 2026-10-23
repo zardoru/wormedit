@@ -895,6 +895,8 @@ auto bake_selected_chart(const song_document_t& song, const chart_document_t& se
     -> chart_document_t {
     song_document_t validation_song = song;
     validation_song.charts = {selected};
+    // The selected chart retains its effective timing, while its source stays in the project.
+    validation_song.charts.front().timing_links = {};
     const auto validation = validate_document(validation_song);
     if (!validation.empty())
         fail(bmson_write_diagnostic_code_t::invalid_document,

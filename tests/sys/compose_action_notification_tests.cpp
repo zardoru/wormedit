@@ -3,6 +3,7 @@
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"
+#include "../support/timing_links_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/compose/actions/compose_actions.h"
@@ -18,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/notifications.h>
@@ -2270,14 +2272,35 @@ TEST_CASE("Find fitting snap rejects empty stale and gesturing selection", "[uni
     check_action(f.history.undo.empty());
 }
 
+namespace {
+auto configure_linked_project_export(action_notification_fixture_t& fixture) -> chart_id_t {
+    auto linked = test::timing_links_fixture_t::from();
+    const auto source = linked.source_id;
+    const auto target = linked.target_id;
+    fixture.history = std::move(linked.history);
+    const auto binding = workspace_controller_t::from(fixture.history);
+    test::require_workspace_result(binding);
+    fixture.workspace = *binding.value;
+    fixture.workspace.selected_chart = target;
+    fixture.state.chart = target;
+    return source;
+}
+}
 TEST_CASE("Project export rejects stale stamps and reports missing paths without Compose state",
-          "[unit][sys][project-access]") {
+          "[unit][sys][project-access][timing-links]") {
     const bool stale = GENERATE(false, true);
     action_notification_fixture_t fixture;
+    const auto source = configure_linked_project_export(fixture);
     fixture.workspace.active_tab = workspace_tab_t::setup;
     std::optional<editor_interaction_state_t> state;
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
-    if (stale) ++action.compose_input_project_id.value;
+    if (stale) {
+        const auto& event = fixture.history.document.find_chart(source)->bpms.front();
+        require_action(apply_bpm_edit(fixture.history, update_edit_t<bpm_edit_value_t>{.chart = source, .id = event.id,
+            .value = bpm_edit_value_t::from(event.position, timing_bpm_value_t{.beats_per_minute = {150, 1}})}).applied);
+    }
+    const auto before = write_native_project(fixture.history.document).value;
+    const auto undo_entries = fixture.history.undo.size();
     require_action(fixture.dispatch_workspace(action, state));
     const auto entries = fixture.entries();
     const std::string_view expected = stale ? "project, chart or document revision changed" : "saved native project";
@@ -2286,7 +2309,8 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
         return entry.message.find(expected) != std::string::npos;
     }));
     check_action(!state);
-    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.undo.size() == undo_entries);
+    check_action(write_native_project(fixture.history.document).value == before);
     check_action(!fixture.export_runtime.is_busy());
 }
 

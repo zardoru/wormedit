@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-## Active queue (2026-10-22)
+## Active queue (2026-10-23)
 
 Completed **T-124**, **T-125** and **T-730 planning** (2026-10-22), with
 separate commits. Six optional per-difficulty metadata overrides preserve inheritance
@@ -13,19 +13,20 @@ clean rows without discarding unrelated drafts. GATE and Linux Clang each pass
 allowances. Isolated native edit/save/Undo verifies flags, unchanged shared title and
 eight notes/BPM, and byte-identical copied audio.
 
-**Active:** the owner resumed timing-link implementation on 2026-10-22. Work through
-[T-751–T-755](../../docs/chart-editor-plan/tasks/timing-links.md) in order, with separate
-verified commits. **T-751–T-754 are complete**: schema-13 source identities and exact
-snapshot validation, shared transaction propagation, category-local detachment, stable
-IDs, exact measure-layout remapping and clock/provenance compatibility. Metadata has
-per-category source/status controls and stamped discard confirmation, including zero
-and deliberately cleared overrides. New chart creation carries selected category sources
-in one transaction. GATE and Linux Clang each pass **4,561/4,561**, with **16-TU**
-complexity and whitespace passing without increased allowances. Focused checks pass
-458 assertions in 49 core cases and 72 assertions in eight event-harness cases.
-Isolated native saves verify links, local override/relink, selected BPM/layout creation
-and exact whole-document restoration by one Undo. Next is **T-755**, final save/reopen,
-journal recovery and interchange publication proof.
+Completed **T-751–T-755** (2026-10-23), with separate verified commits. Schema 13
+retains designated timing sources, exact mappings and resolved snapshots. All ten
+categories propagate through the shared transaction; local writes detach only their
+category, and confirmed Relink protects zero and deliberately cleared overrides.
+Measure links preserve local content exactly. Metadata exposes the controls, and
+New chart creation carries selected links in one Undo step. Native save/reopen,
+checkpointed/torn journal replay, crash/restart recovery and supported interchange
+exports retain the same effective timing and failure atomicity. BMS/BMSON validation
+copies omit native source edges without changing the live project. GATE and Linux
+Clang each pass **4,569/4,569**, with **7-TU** complexity and whitespace passing without
+increased allowances. The focused family passes 788 assertions in 68 cases. Native
+recovery Save As/reopen matches the single propagated journal snapshot exactly;
+CLI SSC round-trip preserves 180 BPM, offset 3/4 and eight notes without native links.
+No further timing-link implementation card remains in the selected batch.
 The recorded choices
 are designated charts as sources, all timing categories and measure layouts, exact
 same-project mapping, category-local detachment and selected links inherited by new

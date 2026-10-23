@@ -12,7 +12,7 @@ are implemented. Crash-marker backends remain planned.
 
 ## Recovery artifacts
 
-Recovery always serializes the versioned native project document, even when the session began from a standalone BMS, SM/SSC, osu!mania, BMSON, or later Quaver file. This retains multiple difficulties, editor metadata, semantic layers, selections needed for recovery, format provenance, and generator recipes that an interchange file cannot carry.
+Recovery always serializes the versioned native project document, even when the session began from a standalone BMS, SM/SSC, osu!mania, BMSON, or later Quaver file. This retains multiple difficulties, editor metadata, semantic layers, selections needed for recovery, format provenance, and generator recipes that an interchange file cannot carry. Timing links retain their designated source identities, local overrides, identity mappings and resolved data in this same native payload.
 
 For a saved native project, the primary autosave is adjacent to it and named `<project-filename>.bak`. An untitled or import-only session uses `<stable-project-id>.bak` in the platform application-recovery directory and records the original source path. External audio/image/video assets are referenced with identity hashes rather than copied every five minutes.
 
@@ -64,6 +64,13 @@ sequence. Each record's SHA-256 covers its payload and metadata. Full post-state
 represent replacement deltas, so replay covers every command family without a second
 command serializer. Audio and other external assets remain referenced; relative paths
 are anchored on the worker using the same recovery target as autosave.
+
+A timing-source edit and all propagated dependents form one journal record. Local
+overrides, remembered sources, relinking and Undo restore complete resolved snapshots;
+replay does not rerun propagation. A torn final record leaves the preceding complete
+graph available, and autosave cursors cover the whole propagated publication. The
+[timing-link verification](../chart-editor-plan/tasks/timing-links.md) checks native
+save/reopen, checkpointed replay, truncation and isolated crash/restart recovery.
 
 Serialization and file publication run through `async_job_t` on the autosave scheduler.
 Before accepting another publication, the history boundary waits for the previous

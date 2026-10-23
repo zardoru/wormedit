@@ -881,6 +881,8 @@ void validate_normalized_write_input(const song_document_t& song, const chart_do
     auto scope = song;
     scope.charts.clear();
     scope.charts.push_back(chart);
+    // Interchange validates the resolved chart, without native-only source edges.
+    scope.charts.front().timing_links = {};
     scope.output_groups.clear();
     const auto validation = validate_document(scope);
     const auto error = std::ranges::find_if(validation, [](const auto& item) {

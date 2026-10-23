@@ -156,11 +156,12 @@ serialize project links or silently flatten unsupported target semantics. Retain
 BMS conditionals/projections and osu! absolute-time measure partitions need explicit
 compatibility checks rather than generic vector copying.
 
-The bounded implementation sequence is [T-751–T-755](tasks/timing-links.md): model,
-exact mapping and persistence; shared transaction propagation and local detachment;
-measure/clock compatibility and consumer verification; category controls and creation
-links; then end-to-end recovery/export proof. This design does not claim runtime links
-are already implemented.
+The bounded implementation sequence [T-751–T-755](tasks/timing-links.md) is complete
+(2026-10-23): native persistence and exact mappings, shared transaction propagation,
+local-content/clock compatibility, category controls and selected creation links, and
+recovery/export verification. Interchange writers validate their selected effective
+chart without native source edges to charts outside that private validation scope;
+the live project and its resolved snapshots remain unchanged.
 
 ### Beat-zero and audio offsets
 

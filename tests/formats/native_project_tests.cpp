@@ -4,6 +4,9 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_storage.h>
+#include "../support/timing_links_fixture.h"
+#include "../support/temporary_directory.h"
 
 #include "formats/native_project_migrations.h"
 
@@ -1760,4 +1763,46 @@ TEST_CASE("native projects retain ordered recipe stages and migrate empty pipeli
     const auto migrated = wormedit::parse_native_project(legacy.dump());
     REQUIRE(migrated.value);
     CHECK(migrated.value->charts.front().sv_recipes.front().postprocess.empty());
+}
+namespace {
+auto reopen_linked_native(const std::filesystem::path& path) -> wormedit::song_document_t {
+    const auto bytes = read_binary(path);
+    const auto parsed = wormedit::parse_native_project(std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+    REQUIRE(parsed.ok());
+    REQUIRE(parsed.value);
+    return *parsed.value;
+}
+void check_reopened_link_override(const wormedit::test::timing_links_fixture_t& fixture,
+    const wormedit::timing_links_t& links) {
+    CHECK(fixture.target().timing_links == links);
+    CHECK(fixture.source().bpms.front().beats_per_minute == wormedit::signed_rational_t{150, 1});
+    CHECK(fixture.target().bpms.front().beats_per_minute == wormedit::signed_rational_t{160, 1});
+}
+}
+TEST_CASE("Native file publication reopens local timing overrides with their current designated source", "[format][native-project][timing-links]") {
+    auto fixture = wormedit::test::timing_links_fixture_t::from();
+    REQUIRE(fixture.set_bpm(fixture.source_id, {150, 1}).applied);
+    REQUIRE(fixture.set_bpm(fixture.target_id, {160, 1}).applied);
+    const auto links = fixture.target().timing_links;
+    auto directory = wormedit::test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "linked.wormedit";
+    REQUIRE(wormedit::create_native_project_file(path, fixture.history.document).value);
+    fixture.history = wormedit::document_history_t::from(reopen_linked_native(path));
+    check_reopened_link_override(fixture, links);
+    REQUIRE(fixture.relink().applied);
+    CHECK(fixture.target().bpms.front().beats_per_minute == wormedit::signed_rational_t{150, 1});
+}
+TEST_CASE("Invalid timing-link publication preserves the existing native file and live links", "[format][native-project][timing-links]") {
+    auto fixture = wormedit::test::timing_links_fixture_t::from();
+    auto directory = wormedit::test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "linked.wormedit";
+    REQUIRE(wormedit::create_native_project_file(path, fixture.history.document).value);
+    const auto before = read_binary(path);
+    auto invalid = fixture.history.document;
+    invalid.find_chart(fixture.target_id)->timing_links.value(wormedit::timing_category_t::bpm)->source = wormedit::chart_id_t{99999};
+    CHECK_FALSE(wormedit::create_native_project_file(path, invalid).value);
+    CHECK(read_binary(path) == before);
+    CHECK(fixture.target().timing_links.value(wormedit::timing_category_t::bpm)->source == fixture.source_id);
 }

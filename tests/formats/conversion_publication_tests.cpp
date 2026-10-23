@@ -1,5 +1,8 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
+#include <wormedit/formats/native_project.h>
+#include <wormedit/formats/bmson.h>
+#include "../support/timing_links_fixture.h"
 #include "sys/app/application_defaults.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -789,4 +792,64 @@ TEST_CASE("Automatic export music is copied only inside atomic staging", "[unit]
     require_publication(static_cast<bool>(published.published));
     require_publication(static_cast<bool>(read(temporary.path / "exports/assets/music.wav") == "audio"));
     require_publication(static_cast<bool>(read(temporary.path / "exports/song.bmson") == "{}"));
+}
+namespace {
+void register_link_publication_asset(wormedit::test::timing_links_fixture_t& fixture, const std::filesystem::path& directory) {
+    std::ofstream(directory / "tone.wav") << "sample";
+    fixture.history.document.audio_assets.push_back({.id = wormedit::asset_id_t{90001}, .source_path = "tone.wav"});
+    fixture.history.document.resources.push_back({.id = wormedit::resource_id_t{90002}, .name = "Sample",
+        .asset = wormedit::asset_id_t{90001}, .roles = {wormedit::resource_role_t::sample}});
+}
+auto prepare_link_publication(const wormedit::test::timing_links_fixture_t& fixture,
+    const wormedit::conversion_request_t& request) -> wormedit::conversion_result_t {
+    auto prepared = wormedit::conversion_result_t::from(fixture.history.document, request);
+    std::string messages;
+    for (const auto& diagnostic : prepared.diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    REQUIRE(prepared.ok());
+    return wormedit::conversion_result_t::from(std::move(prepared));
+}
+void check_preserved_link_publication(const wormedit::conversion_publication_outcome_t& outcome,
+    const std::filesystem::path& output, std::string_view previous,
+    const wormedit::test::timing_links_fixture_t& fixture, const std::optional<std::string>& native) {
+    check_publication(!outcome.ok());
+    check_publication(!outcome.value.published);
+    check_publication(read(output) == previous);
+    check_publication(read(output.parent_path() / "assets/tone.wav") == "sample");
+    check_publication(wormedit::write_native_project(fixture.history.document).value == native);
+}
+}
+TEST_CASE("Linked timing export retains old files and live links when asset copy or file publication fails", "[format][publication][timing-links]") {
+    using namespace wormedit;
+    temporary_directory_t temporary;
+    auto fixture = test::timing_links_fixture_t::from();
+    register_link_publication_asset(fixture, temporary.path);
+    const output_group_t group{.family = format_family_t::bmson, .charts = {fixture.target_id}, .relative_output_path = "exports"};
+    const conversion_request_t request{.target = format_family_t::bmson, .chart = fixture.target_id,
+        .loss_policy = loss_policy_t::warn, .overwrite = true,
+        .staged_assets = {{.asset = asset_id_t{90001}, .relative_path = "assets/tone.wav"}}};
+    conversion_publication_options_t options;
+    options.pending_assets.push_back({.project_directory = temporary.path, .source_path = "tone.wav", .asset = asset_id_t{90001}});
+    const auto initial = prepare_link_publication(fixture, request);
+    require_publication(create_conversion_group(temporary.path, group, request, initial, options).value.published);
+    const auto output = temporary.path / "exports" / initial.outputs.front().suggested_filename;
+    const auto previous = read(output);
+    require_publication(fixture.set_bpm(fixture.source_id, {180, 1}).applied);
+    const auto updated = prepare_link_publication(fixture, request);
+    const auto native = write_native_project(fixture.history.document).value;
+    require_publication(std::filesystem::remove(temporary.path / "tone.wav"));
+    const auto missing_asset = create_conversion_group(temporary.path, group, request, updated, options);
+    check_preserved_link_publication(missing_asset, output, previous, fixture, native);
+    std::ofstream(temporary.path / "tone.wav") << "sample";
+    options.allow_stage = [](conversion_publication_stage_t stage) { return stage != conversion_publication_stage_t::write_output; };
+    const auto failed_write = create_conversion_group(temporary.path, group, request, updated, options);
+    check_preserved_link_publication(failed_write, output, previous, fixture, native);
+    options.allow_stage = {};
+    require_publication(create_conversion_group(temporary.path, group, request, updated, options).value.published);
+    const auto bytes = read(output);
+    check_publication(bytes != previous);
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    require_publication(parsed.value.has_value());
+    check_publication(parsed.value->charts.front().bpms.front().beats_per_minute == signed_rational_t{180, 1});
+    check_publication(write_native_project(fixture.history.document).value == native);
 }

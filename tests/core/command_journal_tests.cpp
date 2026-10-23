@@ -4,7 +4,9 @@
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
 #include "../support/temporary_directory.h"
+#include "../support/timing_links_fixture.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <fstream>
 #include <iterator>
 #include <nlohmann/json.hpp>
@@ -449,4 +451,57 @@ TEST_CASE("Journal wrapper nesting is bounded before native payload decoding", "
     CHECK(read.value.stopped_by_limit);
     REQUIRE_FALSE(read.diagnostics.empty());
     CHECK(read.diagnostics.front().code == native_project_storage_diagnostic_code_t::resource_limit);
+}
+namespace {
+auto run_link_journal_edits(test::timing_links_fixture_t& fixture, native_project_autosave_loop_t& loop,
+    const native_project_autosave_target_t& target, native_project_autosave_loop_t::clock_t::time_point started,
+    bool checkpoint) -> song_document_t {
+    auto baseline = fixture.history.document;
+    REQUIRE(fixture.set_bpm(fixture.source_id, {150, 1}).applied);
+    if (checkpoint) {
+        loop.flush_journal();
+        baseline = fixture.history.document;
+        (void)loop.tick(fixture.history.document, true, started + std::chrono::minutes{5}, target);
+    }
+    REQUIRE(fixture.set_bpm(fixture.target_id, {160, 1}).applied);
+    REQUIRE(fixture.relink().applied);
+    REQUIRE(undo_document_command(fixture.history));
+    return baseline;
+}
+void check_torn_link_journal(const std::filesystem::path& path, const song_document_t& before_undo, std::size_t records) {
+    auto bytes = read_bytes(path);
+    REQUIRE(bytes.size() > 10);
+    bytes.resize(bytes.size() - 10);
+    const auto read = command_journal_read_t::from(bytes);
+    REQUIRE_FALSE(read.ok());
+    check_recovered(read.value, before_undo.revision, records);
+    CHECK(write_native_project(read.value.snapshot->song).value == write_native_project(before_undo).value);
+}
+}
+TEST_CASE("Journal recovery retains linked source updates local overrides Relink and Undo across autosave cursors", "[core][recovery][timing-links]") {
+    const auto checkpoint = GENERATE(false, true);
+    auto fixture = test::timing_links_fixture_t::from();
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto primary = directory->path() / "linked.wormedit";
+    REQUIRE(create_native_project_file(primary, fixture.history.document).value);
+    task_scheduler_t scheduler{1, 1};
+    const auto started = native_project_autosave_loop_t::clock_t::now();
+    native_project_autosave_loop_t loop{started, scheduler,
+        native_project_document_version_t{fixture.history.document.id, fixture.history.document.revision}};
+    auto target = native_project_autosave_target_t::from(fixture.history.document.id, true, primary, {});
+    target.asset_base = directory->path();
+    loop.observe(fixture.history, target);
+    const auto baseline = run_link_journal_edits(fixture, loop, target, started, checkpoint);
+    loop.flush_journal();
+    const auto scan = checked_scan(primary);
+    const auto& candidate = scan.value.candidates[*scan.value.preferred_recovery_candidate];
+    CHECK(candidate.is_command_journal);
+    const auto read = command_journal_t{candidate.path}.read();
+    const std::size_t records = checkpoint ? 3 : 4;
+    check_valid_recovery(read, fixture.history.document.revision, records);
+    const auto replay = read.value.replay_on(baseline);
+    REQUIRE(replay.ok());
+    CHECK(write_native_project(replay.value).value == write_native_project(fixture.history.document).value);
+    check_torn_link_journal(candidate.path, fixture.history.redo.back().after, records - 1);
 }

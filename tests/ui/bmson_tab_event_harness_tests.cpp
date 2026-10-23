@@ -73,6 +73,7 @@ TEST_CASE("the Sounds dock offers a BMSON tab only for BMSON charts",
           "[unit][frontend-state][event-harness][bmson-tab]") {
     nuklear_event_harness_t harness{1280, 900};
     require_tab(harness.ready());
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     seed_bmson_selection(harness.view().compose, false);
     (void)harness.frame();
     check_tab(harness.drawn_text().find("Razor continue") == std::string::npos);
@@ -89,6 +90,7 @@ TEST_CASE("the razor toggle works from the BMSON tab and the tab falls back on o
           "[unit][frontend-state][event-harness][bmson-tab]") {
     nuklear_event_harness_t harness{1280, 900};
     require_tab(harness.ready());
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     seed_bmson_selection(harness.view().compose, true);
     (void)harness.frame();
     const auto tab = harness.drawn_text_center("BMSON");
@@ -114,6 +116,7 @@ TEST_CASE("razor mode is dropped when another tool activates, even with the BMSO
           "[unit][frontend-state][event-harness][bmson-tab]") {
     nuklear_event_harness_t harness{1280, 900};
     require_tab(harness.ready());
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     seed_bmson_selection(harness.view().compose, true);
     (void)harness.frame();  // A new chart resets Compose state, so arm the razor afterwards.
     auto& state = worm_ui_nuklear_compose_state();
@@ -141,6 +144,7 @@ TEST_CASE("BMSON tab content scrolls to its lower actions when the dock is short
           "[unit][frontend-state][event-harness][bmson-tab]") {
     nuklear_event_harness_t harness{1280, 560};
     require_tab(harness.ready());
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     static const std::array<std::uint64_t, 1> lanes{0};
     static const std::array<std::uint8_t, 1> restarts{0};
     auto& view = harness.view().compose;

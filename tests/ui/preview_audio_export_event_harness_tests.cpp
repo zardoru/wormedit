@@ -16,7 +16,9 @@ void check_preview_request(const wormedit::ui::preview_audio_export_action_t& re
 void open_preview(nuklear_event_harness_t& harness) {
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     auto& view = harness.view().compose;
     view.area_range_available = true;
     view.area_rows_per_measure = 960;

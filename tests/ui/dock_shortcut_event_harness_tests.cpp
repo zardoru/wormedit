@@ -54,14 +54,14 @@ TEST_CASE("Dock shortcut opens Layers in a narrow window without creating a laye
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).value.status ==
                command_dispatch_status_t::invoked);
     const auto action = harness.frame();
-    check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
-    check_dock(!worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
+    check_dock(!worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
     check_dock(harness.drawn_text().find("Layers") != std::string::npos);
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).value.status ==
                command_dispatch_status_t::invoked);
     static_cast<void>(harness.frame());
-    check_dock(!worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
+    check_dock(!worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
 }
 
 TEST_CASE("Dock shortcut creation emits one existing Add layer action with its context stamp",
@@ -88,7 +88,7 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     check_dock(action.get().compose_input_project_id.value == 1);
     check_dock(action.get().compose_input_chart_id.value == 1);
     check_dock(action.get().compose_input_document_revision == 1);
-    check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     check_dock(!worm_ui_nuklear_compose_state().layer_editor.layer_creation_request);
     check_dock(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
@@ -97,13 +97,13 @@ TEST_CASE("Dock shortcut toggles Sounds without opening the Go to sound picker",
           "[frontend-state][event-harness][dock-shortcuts]") {
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
-    const bool visible = worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible;
+    const bool visible = worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds);
     check_dock(press_and_dispatch(harness, SDLK_K, SDL_SCANCODE_K,
         SDL_KMOD_CTRL | SDL_KMOD_SHIFT).value.status == command_dispatch_status_t::invoked);
-    check_dock(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible != visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) != visible);
     check_dock(!worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     check_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
-    check_dock(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible == visible);
+    check_dock(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) == visible);
 }
 
 TEST_CASE("Queued layer creation is discarded on stale contexts focus loss and modal input",
@@ -188,7 +188,7 @@ TEST_CASE("Create layer from a closed populated dock takes priority over list pr
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
     harness.view().compose.semantic_layer_total_count = 200;
-    require_dock(!worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
+    require_dock(!worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
@@ -207,15 +207,15 @@ TEST_CASE("Compact dock shortcuts switch panels and close the active panel", "[f
     auto& state = worm_ui_nuklear_compose_state();
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(state.dock_layout.layers_panel_visible);
+    check_dock(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(state.dock_layout.sounds_panel_visible);
-    check_dock(!state.dock_layout.layers_panel_visible);
+    check_dock(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
+    check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
     static_cast<void>(harness.frame());
-    check_dock(!state.dock_layout.sounds_panel_visible);
-    check_dock(!state.dock_layout.layers_panel_visible);
+    check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
+    check_dock(!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
 }
 
 namespace {

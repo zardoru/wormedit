@@ -237,30 +237,30 @@ static void render_color_view_group(const ComposeToolbarContext& toolbar) {
 
 static void render_panel_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
-    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.dock_layout.inspector_visible),
-            state.dock_layout.inspector_visible ? "Hide inspector" : "Show inspector",
-            state.dock_layout.inspector_visible}.render(context))
-        state.dock_layout.inspector_visible = !state.dock_layout.inspector_visible;
+    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector)),
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector) ? "Hide inspector" : "Show inspector",
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector)}.render(context))
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector));
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::sound_list,
-            state.dock_layout.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
-            state.dock_layout.sounds_panel_visible}.render(context))
-        state.dock_layout.sounds_panel_visible = !state.dock_layout.sounds_panel_visible;
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) ? "Hide sounds list" : "Show sounds list",
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds)}.render(context))
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
     if (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) &&
         wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
             state.dock_layout.branch_panel_visible ? "Hide BMS branches" : "Show BMS branches",
             state.dock_layout.branch_panel_visible}.render(context))
         state.dock_layout.branch_panel_visible = !state.dock_layout.branch_panel_visible;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_list,
-            state.dock_layout.measures_panel_visible ? "Hide measures list" : "Show measures list",
-            state.dock_layout.measures_panel_visible}.render(context))
-        state.dock_layout.measures_panel_visible = !state.dock_layout.measures_panel_visible;
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures) ? "Hide measures list" : "Show measures list",
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures)}.render(context))
+        state.dock_layout.layout.show(wormedit::dock_panel_t::measures, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures));
     if (wormedit::ui::chrome::IconButton{Glyph::layers,
-            state.dock_layout.layers_panel_visible ? "Hide layers" : "Show layers",
-            state.dock_layout.layers_panel_visible}.render(context))
-        state.dock_layout.layers_panel_visible = !state.dock_layout.layers_panel_visible;
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) ? "Hide layers" : "Show layers",
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers)}.render(context))
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
     if (wormedit::ui::chrome::IconButton{Glyph::eye,
-            state.dock_layout.bga_panel_visible ? "Hide BGA list" : "Show BGA list", state.dock_layout.bga_panel_visible}.render(context))
-        state.dock_layout.bga_panel_visible = !state.dock_layout.bga_panel_visible;
+            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images) ? "Hide BGA list" : "Show BGA list", state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images)}.render(context))
+        state.dock_layout.layout.show(wormedit::dock_panel_t::images, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images));
     render_compose_bgm_bar_toggle(toolbar);
 }
 

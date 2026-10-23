@@ -133,7 +133,9 @@ struct timing_drag_fixture_t {
         v.speed_spans = {speed};
         v.recipe_areas = {recipe};
         auto& s = worm_ui_nuklear_compose_state();
-        s.dock_layout.inspector_visible = s.dock_layout.layers_panel_visible = s.dock_layout.sounds_panel_visible = false;
+        s.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        s.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+        s.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
         (void)h.frame();
     }
     auto point(wormedit::timing_lane_kind_t lane, double row_y) -> std::pair<float, float> {
@@ -323,7 +325,9 @@ TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
     v.selected_audio_asset_id.value = 12; v.waveform_overview_sample_rate = 48000;
     v.waveform_overview_total_frames = 480000;
     auto& s = worm_ui_nuklear_compose_state();
-    s.dock_layout.inspector_visible = s.dock_layout.sounds_panel_visible = s.dock_layout.layers_panel_visible = false;
+    s.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    s.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    s.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     (void)h.frame();
     constexpr auto x = 351.0f, y = 120.0f;
     (void)h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});

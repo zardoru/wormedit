@@ -49,10 +49,10 @@ auto escape_key() -> SDL_Event {
 
 void hide_compose_docks() {
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = false;
-    state.dock_layout.bga_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
 }
 
 // This driver retains its fixed-array result for the BGA input queries.
@@ -296,7 +296,7 @@ auto prepare_initial_profile_picker(nuklear_event_harness_t& harness)
     view.lane_profile_current = -1;
     for (std::size_t index = 0; index < profiles.size(); ++index)
         view.lane_profile_names[index] = profiles[index].layout.display_name;
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     return profiles;
 }
 
@@ -487,10 +487,10 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     nuklear_event_harness_t harness{1280, 800};
     REQUIRE(harness.ready());
     auto& compose_state = worm_ui_nuklear_compose_state();
-    compose_state.dock_layout.inspector_visible = true;
-    compose_state.dock_layout.sounds_panel_visible = true;
-    compose_state.dock_layout.layers_panel_visible = false;
-    compose_state.dock_layout.bga_panel_visible = false;
+    compose_state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
+    compose_state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
+    compose_state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    compose_state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
     auto& view = harness.view().compose;
     view.scene_available = true;
     view.project_id.value = 3;
@@ -766,7 +766,7 @@ TEST_CASE("BGA lane controls reveal every kind without a hidden dropdown", "[eve
     view.bga_lane_count = 0;
     view.bga_ids_available = true;
     (void)harness.frame();
-    worm_ui_nuklear_compose_state().dock_layout.bga_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Show BGA lanes"));
     constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor (miss)"};
@@ -796,7 +796,7 @@ TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][b
     constexpr std::array<std::uint8_t, 4> kinds{0, 2, 5, 1};
     std::ranges::copy(kinds, view.bga_lane_kinds);
     (void)harness.frame();
-    worm_ui_nuklear_compose_state().dock_layout.bga_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Layer 2"));
     REQUIRE(harness.drawn_text_center("Poor (miss)"));
@@ -1156,8 +1156,7 @@ struct dock_stem_fixture_t {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
         hide_compose_docks();
-        state.dock_layout.inspector_visible = true;
-        state.dock_layout.sounds_panel_visible = true;
+        state.dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
         auto& view = harness.view().compose;
         view.scene_available = true;
         view.bmson_tools_available = true;
@@ -1549,7 +1548,7 @@ TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible prof
     view.lane_profile_names.resize(1);
     view.lane_profile_current = -1;
     view.lane_profile_names[0] = "osu!mania 7K";
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     const auto placeholder = open_initial_profile_picker(harness);
     REQUIRE(placeholder);
     const auto selected = scroll_to_profile_and_select(harness, "osu!mania 7K",
@@ -1572,7 +1571,7 @@ struct timing_controls_fixture_t {
         view.waveform_audio_offset_denominator = 1;
         view.waveform_overview_visible_end_fraction = 1;
         view.audio_offset_editable = true;
-        worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+        worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
         (void)harness.frame();
         const auto section = harness.drawn_text_center("Quantize / Snap");
         REQUIRE(section);
@@ -1615,14 +1614,14 @@ TEST_CASE("Timing controls leave the normal toolbar and appear during timing foc
           "[frontend-state][event-harness][timing-controls]") {
     timing_controls_fixture_t f;
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
     (void)f.harness.frame();
     check_bga(!f.harness.drawn_text_center("+0.000 s"));
     f.harness.view().compose.timing_focus = true;
     (void)f.harness.frame();
     check_bga(f.harness.drawn_text_center("+0.000 s").has_value());
     f.harness.view().compose.timing_focus = false;
-    state.dock_layout.inspector_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     const auto snap = f.reveal("BPM snap");
     check_bga(snap.first > 1200);
     check_bga(f.harness.drawn_text_center("Timing Settings...").has_value());
@@ -1655,7 +1654,7 @@ TEST_CASE("Hiding an offset editor owner cancels its draft",
           "[frontend-state][event-harness][timing-controls]") {
     timing_controls_fixture_t f;
     f.edit_offset();
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = false;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
     check_bga(f.harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_bga(!worm_ui_nuklear_compose_state().inline_offset.inline_offset_open);
     f.harness.view().compose.timing_focus = true;
@@ -1741,8 +1740,9 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
     wormedit::ui::compose_semantic_layer_view_t layer{.layer_id={7},.name="Lead",.red=255,
         .assigned_note_count=3,.visible=true,.locked=true};
     auto& view=harness.view().compose;
@@ -1752,7 +1752,8 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     (void)harness.frame();
     const auto row=harness.drawn_text_center("Lead");
     REQUIRE(row);
-    const auto toggled=click(harness,1176,row->second);
+    const auto assist=harness.widget_center("Enable layer assist ticks");
+    const auto toggled=click(harness,assist.first,assist.second);
     check_bga(toggled.front().get().compose_action==WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
     check_bga(toggled.front().get().compose_semantic_layer_id.value==7);
     check_bga(toggled.front().get().compose_input_project_id.value==1);
@@ -1761,13 +1762,13 @@ TEST_CASE("Layers assist icon is independent of lock and sends one stamped sessi
     check_bga(toggled.front().get().compose_inputs.size()==0);
     check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layers[0].assist_tick_enabled=true;
-    (void)harness.frame(std::array{mouse_motion(1176,row->second)});
+    (void)harness.frame(std::array{mouse_motion(assist.first,assist.second)});
     check_bga(harness.drawn_text().find("Disable layer assist ticks")!=std::string::npos);
     view.semantic_layer_assist_available=false;
     (void)harness.frame();
-    check_bga(click(harness,1176,row->second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(click(harness,assist.first,assist.second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
     view.semantic_layer_assist_available=true;
     harness.view().close_confirmation.visible=true;
     (void)harness.frame();
-    check_bga(click(harness,1176,row->second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(click(harness,assist.first,assist.second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
 }

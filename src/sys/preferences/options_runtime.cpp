@@ -78,7 +78,6 @@ void validate_display(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, text_util::is_valid_bounded_text(r.draft.display.theme, maximum_preference_string_bytes), "Theme path is too long or contains a null character.");
     const auto scale = r.draft.display.ui_scale_percent;
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
-    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT, text_util::is_valid_bounded_text(r.draft.layout.dock_layout, maximum_preference_string_bytes), "Layout is too long or contains a null character.");
 }
 void refill_options_validation(options_runtime_t& r, bool& changed) {
     r.diagnostics.clear();
@@ -203,7 +202,7 @@ auto edit_display(program_preferences_t& p, const wormedit::ui::options_action_t
     case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_REDUCED_MOTION: p.display.reduced_motion = a.boolean; return true;
-    case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_LAYOUT: return false; // Retired opaque layout field.
     case WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY: p.display.frame_timing_overlay = a.boolean; return true;
     default: return false;
     }
@@ -390,7 +389,7 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
         .current_field_layout_name = r.current_field_layout_name.c_str(),
         .current_layout_field_scheme = p.display.field_scheme_overrides.contains(r.current_field_layout_key)
             ? p.display.field_scheme_overrides.at(r.current_field_layout_key).c_str() : "",
-        .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
+        .theme = p.display.theme.c_str(),
         .shortcut_profile_path = p.general.shortcut_profile_path.c_str(),
         .selected_player = p.players.selected,
         .status = r.status};

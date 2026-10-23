@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/ui_layout_preferences.h>
 
 #include <wormedit/core/vocabulary.h>
 
@@ -132,7 +133,7 @@ struct minimap_preferences_t {
     auto operator==(const minimap_preferences_t&) const -> bool = default;
 };
 struct layout_preferences_t {
-    std::string dock_layout; // Empty preserves the built-in layout until the docking card applies it.
+    ui_layout_preferences_t dock;
     auto operator==(const layout_preferences_t&) const -> bool = default;
 };
 struct program_preferences_t {

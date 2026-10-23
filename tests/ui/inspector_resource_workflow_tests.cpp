@@ -93,7 +93,7 @@ auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool
     const auto& text = harness.drawn_text();
     return text.find("Sounds  1") != std::string::npos &&
            text.find("Find note label") == std::string::npos &&
-           text.find("Layers  0") == std::string::npos;
+           text.find("Layers  0") != std::string::npos;
 }
 
 auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> std::string_view {
@@ -102,13 +102,13 @@ auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> s
     if (harness.drawn_text().find("Hide sounds list") == std::string::npos)
         return "hover did not identify Hide sounds list";
     (void)harness.click_widget("Hide sounds list");
-    if (state.dock_layout.sounds_panel_visible || state.sounds_dock.sound_list_valid)
+    if (state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) || state.sounds_dock.sound_list_valid)
         return "click did not hide the Sounds dock";
     (void)harness.hover_widget("Show sounds list");
     if (harness.drawn_text().find("Show sounds list") == std::string::npos)
         return "hidden dock did not expose Show sounds list";
     (void)harness.click_widget("Show sounds list");
-    if (!state.dock_layout.sounds_panel_visible || !state.sounds_dock.sound_list_valid)
+    if (!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) || !state.sounds_dock.sound_list_valid)
         return "click did not reopen the Sounds dock hit region";
     return harness.drawn_text().find("Sounds  1") != std::string::npos
         ? std::string_view{} : "reopened dock did not render its Sounds row";
@@ -116,7 +116,7 @@ auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> s
 
 auto wide_layout_restores_optional_docks(nuklear_event_harness_t& harness) -> bool {
     const auto& text = harness.drawn_text();
-    return text.find("Find note label") != std::string::npos &&
+    return text.find("Sounds  1") != std::string::npos &&
            text.find("Layers  0") != std::string::npos;
 }
 
@@ -138,13 +138,13 @@ TEST_CASE("Inspector delegates sample listing and placement to the Sounds dock",
     view.keysounds_available = true;
     view.note_paint_mode_active = true;
     set_resource_fixture(view, resources.data(), resources.size());
-    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)harness.frame();
 
     CHECK(sample_workflow_uses_sounds(harness));
 }
 
-TEST_CASE("Compact Compose layout keeps Sounds available and restores optional docks when widened",
+TEST_CASE("Compact and wide Compose layouts keep the chosen Sounds and Layers pair",
           "[frontend-state][event-harness][inspector-resources][compact]") {
     const std::array<wormedit::ui::compose_keysound_row_view_t, 1> sounds{{
         {.resource_id = wormedit::resource_id_t{40}, .slot = "", .name = "kick.wav"}}};
@@ -156,7 +156,8 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         view.keysounds.resize(view.keysound_total_count = sounds.size());
         view.keysounds_available = true;
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.layers_panel_visible = true;
+        state.dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         (void)compact.frame();
         CHECK(compact_layout_keeps_sound_picker(compact));
         const auto toggle_status = compact_toolbar_sounds_toggle_status(compact);
@@ -171,7 +172,8 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         view.keysounds.assign(std::begin(sounds), std::end(sounds));
         view.keysounds.resize(view.keysound_total_count = sounds.size());
         view.keysounds_available = true;
-        worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible = true;
+        worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
+        worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         (void)wide.frame();
         CHECK(wide_layout_restores_optional_docks(wide));
     }

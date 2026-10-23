@@ -798,11 +798,11 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
     std::array<wormedit::ui::compose_semantic_layer_view_t, 2> layers{{
-        {.layer_id = {7}, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
+        {.layer_id = {7}, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true, .locked = true},
         {.layer_id = {9}, .name = "Hidden", .blue = 255, .assigned_note_count = 2, .visible = false},
     }};
     auto& view = harness.view().compose;
@@ -820,9 +820,9 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     (void)harness.frame();
     const auto hidden_row = harness.drawn_text_center("Hidden");
     REQUIRE(hidden_row.has_value());
-    const auto eye = click_at(harness, 1200, hidden_row->second);
+    const auto eye = harness.click_widget("Show layer");
     check_layer_row_action(eye[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 9);
-    const auto lock = click_at(harness, 1225, hidden_row->second);
+    const auto lock = harness.click_widget("Lock layer");
     check_layer_row_action(lock[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, 9);
 }
 
@@ -831,9 +831,9 @@ TEST_CASE("Layers dock No layer row requests clear assignment without eye or loc
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
     auto& view = harness.view().compose;
     view.semantic_layer_unassigned_note_count = 4;
     view.selected_note_count = 2;
@@ -893,9 +893,9 @@ struct layer_menu_fixture_t {
     layer_menu_fixture_t() {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.inspector_visible = false;
-        state.dock_layout.sounds_panel_visible = false;
-        state.dock_layout.layers_panel_visible = true;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         state.input_queue.color_view = worm_ui_nuklear_compose_color_view_t::normal;
         auto& view = harness.view().compose;
         view.semantic_layers.assign(layers.begin(), layers.end());
@@ -930,11 +930,12 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
     const auto hide = click_at(fixture.harness, hide_center->first, hide_center->second);
     check_layer_row_action(hide.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
     fixture.layers.front().visible = false;
+    fixture.harness.view().compose.semantic_layers.front().visible = false;
     fixture.harness.view().compose.semantic_layer_target = fixture.layers.front();
     ++fixture.harness.view().compose.document_revision;
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
-    const auto eye = click_at(fixture.harness, 1200, 233);
+    const auto eye = fixture.harness.click_widget("Show layer");
     check_layer_row_action(eye.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
 }
 
@@ -1033,7 +1034,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
     (void)fixture.harness.frame();
     fixture.open();
-    worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible = false;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.close_pending);
@@ -1071,7 +1072,9 @@ TEST_CASE("Layer row Rename editor keeps its captured ID after target and window
     fixture.harness.view().compose.semantic_layers = {fixture.layers.back()};
     fixture.harness.view().compose.semantic_layer_first_row = 1;
     fixture.harness.view().compose.semantic_layers.resize(1);
-    const auto applied = click_at(fixture.harness, 1100, 253);
+    const auto apply_center = fixture.harness.drawn_text_center("Apply");
+    REQUIRE(apply_center);
+    const auto applied = click_at(fixture.harness, apply_center->first, apply_center->second);
     check_layer_row_action(applied.front(), WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER, 7);
     check_layer_menu(std::string{applied.front().get().compose_semantic_layer_name} == "Renamed");
     check_layer_menu(!state.layer_editor.semantic_layer_name_editor_visible);
@@ -1091,7 +1094,9 @@ struct note_menu_fixture_t {
     void initialize() {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
         auto& view = harness.view().compose;
         view.hold_bodies = {note};
         view.note_menu_layers.assign(layers.begin(), layers.end());
@@ -1150,8 +1155,10 @@ TEST_CASE("Note actions expose a nonclickable Shift lane-key move hint",
     (void)fixture.harness.frame();
     const auto viewport = compose_canvas_viewport_for_testing();
     REQUIRE(viewport.has_value());
+    const auto strip = wormedit::ui::dock_geometry_t::from(viewport->width, viewport->height,
+        worm_ui_nuklear_compose_state().dock_layout.layout, {}).reserved_width;
     const auto opened = right_click_at(fixture.harness,
-        viewport->x + viewport->width - 3, viewport->y + viewport->height - 3);
+        viewport->x + viewport->width - strip - 20, viewport->y + viewport->height - 3);
     CHECK(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
     CHECK(compose_note_menu_open());
     constexpr std::string_view hint{"Shift + lane key moves one, then deselects"};
@@ -1434,7 +1441,7 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
     view.keysounds_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     state.resource_picker.auto_increment_on_place = true;
     view.note_paint_mode_active = true;
     (void)harness.frame();
@@ -1467,7 +1474,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     view.bga_advance_ids.assign(std::begin(ids), std::end(ids)); view.bga_advance_ids.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     REQUIRE(state.bga_catalog.bga_list_valid);
     check_bga_dock(harness.drawn_text().find("clip.png") != std::string::npos);
@@ -1486,7 +1493,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     (void)harness.frame();
     check_bga_dock(state.pointer_capture.draw_source_id == 1400);
     check_bga_dock(state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
-    state.dock_layout.bga_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
     (void)harness.frame();
     CHECK_FALSE(state.bga_catalog.bga_list_valid);
 }
@@ -1508,7 +1515,7 @@ TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to
     view.measure_row_ids.assign(ids.begin(), ids.end());
     view.measure_rows.resize(rows.size());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.measures_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::measures, true);
     state.measures_dock.measure_selection = {};
     (void)harness.frame();
     const auto second = harness.drawn_text_center("2    3/4    3/4");
@@ -1697,7 +1704,7 @@ TEST_CASE("BGA renumber release does not select the covered image",
     view.bga_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     state.bga_catalog.bga_renumber_confirmation_open = true;
     state.bga_catalog.bga_renumber_project = view.project_id.value;
@@ -1764,7 +1771,7 @@ TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
     view.bga_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     state.bga_catalog.bga_renumber_confirmation_open = true;
     state.bga_catalog.bga_renumber_project = view.project_id.value;
@@ -1992,7 +1999,7 @@ void configure_sound_slots(nuklear_event_harness_t& harness, const sound_slots_f
     view.sound_slot_total_matching = 1295;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     state.keysound_filters.keysound_slots_mode = enabled;
     view.sound_slots_mode = enabled;
     (void)harness.frame();
@@ -2362,8 +2369,9 @@ TEST_CASE("Sounds clear selection hover remains readable near the application ri
     harness.view().compose.keysounds_available = true;
     static_cast<void>(harness.frame());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
-    state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     static_cast<void>(harness.frame());
     REQUIRE(state.sounds_dock.sound_list_valid);
     const auto title = harness.drawn_text_center("Sounds  0  ·  0 selected");
@@ -2404,7 +2412,7 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     view.lane_key_bindings.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)harness.frame();
     const auto row = harness.drawn_text_center("kick.wav");
     require_lane_key_sound(row);
@@ -2456,7 +2464,7 @@ TEST_CASE("Selecting a converted BMSON stem arms lane-key entry without a double
     view.lane_key_bindings.resize(1);
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)harness.frame();
     const auto center = harness.drawn_text_center("converted.wav");
     require_lane_key_sound(center);
@@ -3024,7 +3032,7 @@ void t422_suppress_note_actions() {
 void t422_suppress_actual_text_editor() {
     t422_fixture_t fixture{t422_song()};
     const auto bytes = t422_native_bytes(fixture.history.document);
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)fixture.harness.frame();
     const auto header = fixture.harness.drawn_text_center("Find note label");
     REQUIRE(header.has_value());
@@ -3068,7 +3076,7 @@ TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statement
     view.branch_outline_available = true;
     view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
     view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)harness.frame();
     (void)harness.frame();
     const auto& text = harness.drawn_text();
@@ -3139,7 +3147,7 @@ TEST_CASE("BMS branch outline buttons emit create, remove and leaf move actions"
     view.branch_outline_available = true;
     view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
     view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)harness.frame();
     (void)harness.frame();
 
@@ -3210,7 +3218,7 @@ void check_keysound_edit_action(const wormedit::ui::options_action_t& edited) {
 TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options][budget][event-harness]") {
     nuklear_event_harness_t harness{1280, 900};
     harness.view().options = {.visible = true, .revision = 91, .category = WORM_UI_OPTIONS_AUDIO,
-        .keysound_budget_mib = 512, .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        .keysound_budget_mib = 512, .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     // Memory follows the device/mix controls; scroll the actual Options page to its lower fields.
     SDL_Event wheel{};
@@ -3236,7 +3244,7 @@ TEST_CASE("Input shortcuts page lists rows and Change requests a capture", "[opt
     nuklear_event_harness_t harness{1280, 900};
     static const wormedit::ui::shortcut_row_view_t rows[]{{"play", "Play", "Space", false}, {"undo", "Undo", "Ctrl+Z", true}};
     harness.view().options = {.visible = true, .revision = 33, .category = WORM_UI_OPTIONS_INPUT,
-        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
+        .theme = "", .shortcut_profile_path = "", .status = "",
         .shortcut_rows = {std::begin(rows), std::end(rows)}};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Undo"));
@@ -3256,7 +3264,7 @@ TEST_CASE("Key presses during a shortcut capture reach the frame's shortcut even
     nuklear_event_harness_t harness{1280, 900};
     static const wormedit::ui::shortcut_row_view_t rows[]{{"play", "Play", "Space", false}};
     harness.view().options = {.visible = true, .revision = 34, .category = WORM_UI_OPTIONS_INPUT,
-        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
+        .theme = "", .shortcut_profile_path = "", .status = "",
         .shortcut_rows = {std::begin(rows), std::end(rows)}, .shortcut_capturing = true, .shortcut_capture_command_id = "play"};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Press a chord..."));
@@ -3399,7 +3407,7 @@ TEST_CASE("Sound dock row sets the Draw source without activating a brush",
     view.keysounds_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)harness.frame();
     const auto row = harness.drawn_text_center("kick.wav");
     REQUIRE(row.has_value());
@@ -3426,7 +3434,7 @@ TEST_CASE("BGA dock row carries its source payload without enabling resource pla
     view.bga_search = "";
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     REQUIRE(state.bga_catalog.bga_list_valid);
     const auto clip = harness.drawn_text_center("clip.png");
@@ -3695,8 +3703,9 @@ void seed_quantize_controls(nuklear_event_harness_t& harness) {
     view.quantize_preview_halfway_notes = 2;
     view.quantize_preview_holds = 1;
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = true;
-    state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
 }
 
 void check_quantize_settings(const wormedit::ui::workspace_action_t& action, std::uint64_t grid,
@@ -3810,10 +3819,10 @@ void check_quantize_ghost_initial_state(nuklear_event_harness_t& harness) {
 void check_quantize_ghost_visibility(nuklear_event_harness_t& harness,
                                     wormedit::ui::compose_view_t& view) {
     auto& inspector_state = worm_ui_nuklear_compose_state();
-    inspector_state.dock_layout.inspector_visible = false;
+    inspector_state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
     (void)harness.frame();
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
-    inspector_state.dock_layout.inspector_visible = true;
+    inspector_state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)harness.frame();
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
@@ -4089,7 +4098,7 @@ TEST_CASE("Quantize popups close for a hidden inspector tab switch and lost focu
     seed_quantize_presets(harness);
     open_quantize_preset_menu(harness);
     SECTION("hidden inspector") {
-        worm_ui_nuklear_compose_state().dock_layout.inspector_visible = false;
+        worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
     }
     SECTION("tab switch") {
         harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
@@ -4175,8 +4184,10 @@ struct move_event_fixture_t {
     explicit move_event_fixture_t(bool hide_panels = false) {
         if (hide_panels) {
             auto& state = worm_ui_nuklear_compose_state();
-            state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
-            state.dock_layout.bga_panel_visible = false;
+            state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+            state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+            state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+            state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
         }
         expect_lane_key(harness.ready());
         const std::array motion{mouse_motion(300, 400)};
@@ -4283,8 +4294,10 @@ struct bgm_draw_fixture_t {
     explicit bgm_draw_fixture_t(bool bmson = false, bool stem = false) {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
-        state.dock_layout.bga_panel_visible = false;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
         auto& view = harness.view().compose;
         view.scene_available = true;
         view.note_paint_mode_active = true;
@@ -4455,8 +4468,10 @@ struct stem_edge_fixture_t {
     stem_edge_fixture_t() {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
-        state.dock_layout.bga_panel_visible = false;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
         state.pointer_capture.draw_source_kind = 0;
         state.pointer_capture.draw_source_id = {0};
         harness.view().project_id.value = 123;
@@ -4793,7 +4808,7 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     song.charts[0].measures[0].notes[0].sound = resource_id_t{2};
     t422_fixture_t fixture{std::move(song)};
     auto& ui = worm_ui_nuklear_compose_state();
-    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     const std::array rows{wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{1}, .slot = "01", .name = "kick"},
         wormedit::ui::compose_keysound_row_view_t{.resource_id = wormedit::resource_id_t{2}, .slot = "02", .name = "snare"}};
     const std::array<std::uint64_t, 2> resources{1, 2};
@@ -4842,7 +4857,7 @@ TEST_CASE("Appearance field colors picker emits the selected scheme as a typed d
     load(themes);
     nuklear_event_harness_t harness{1280,900};
     harness.view().options={.visible=true,.revision=92,.category=WORM_UI_OPTIONS_DISPLAY,
-        .field_scheme="wormedit",.theme="",.dock_layout="",.shortcut_profile_path="",.status=""};
+        .field_scheme="wormedit",.theme="",.shortcut_profile_path="",.status=""};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Default field skin"));
     const auto picker=harness.drawn_text_center("Wormedit");
@@ -5723,7 +5738,7 @@ TEST_CASE("Appearance scratch dropdown emits a typed independent stage override"
     nuklear_event_harness_t harness{1280, 900};
     harness.view().options = {.visible = true, .revision = 93, .category = WORM_UI_OPTIONS_DISPLAY,
         .p1_scratch_position = 1, .p2_scratch_position = 0,
-        .field_scheme = "wormedit", .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        .field_scheme = "wormedit", .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Single / P1 scratch position"));
     REQUIRE(harness.drawn_text_center("P2 scratch position"));
@@ -5746,7 +5761,7 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
           "[options][dialog][resize][event-harness]") {
     nuklear_event_harness_t harness{1600, 1000};
     harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
-        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
     wormedit::ui::testing_rect_view_t before{};
@@ -5890,7 +5905,7 @@ TEST_CASE("Options custom grippy header moves the tool and preserves its close a
           "[options][dialog][options-drag][event-harness]") {
     nuklear_event_harness_t harness{1600, 1000};
     harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
-        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
     wormedit::ui::testing_rect_view_t before{};
@@ -5918,7 +5933,7 @@ TEST_CASE("Options header movement cancels on focus loss and while hidden",
     for (const auto lose_focus : {true, false}) {
         nuklear_event_harness_t harness{1600, 1000};
         harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
-            .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+            .theme = "", .shortcut_profile_path = "", .status = ""};
         (void)harness.frame();
         (void)harness.frame();
         const auto title = harness.drawn_text_center("Options");
@@ -5986,7 +6001,7 @@ TEST_CASE("Appearance chooses a layout skin and can restore default inheritance"
         .field_scheme = "wormedit", .current_field_layout_key = "bms-dp5",
         .current_field_layout_name = "BMS DP5 / 10K", .current_layout_field_scheme = "",
         .current_field_layout_lanes = {lanes.begin(), lanes.end()},
-        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        .theme = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
     click_skin_label(harness, "Use default");
@@ -6110,10 +6125,10 @@ TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", 
     view.keysound_fallbacks.resize(fallbacks.size());
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.bga_panel_visible = false;
-    state.dock_layout.layers_panel_visible = false;
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)harness.frame();
     const auto row = harness.drawn_text_center("missing.wav");
     REQUIRE(row);
@@ -6260,7 +6275,9 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
         .marker_left_fraction = 0, .marker_right_fraction = 1, .lane = lane, .short_label = "123.45"};
     view.timing_markers = {marker};
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
     (void)harness.frame();
     const auto viewport = compose_canvas_viewport_for_testing();
     REQUIRE(viewport);
@@ -6302,7 +6319,9 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
     timing.stage_lane = wormedit::timing_lane_kind_t::scroll;
     timing.stage_existing_object_id = wormedit::object_id_t{991};
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
     (void)harness.frame();
     const auto viewport = compose_canvas_viewport_for_testing();
     REQUIRE(viewport);
@@ -6767,16 +6786,16 @@ TEST_CASE("Compose reports the canvas width left uncovered by side docks",
     nuklear_event_harness_t harness{1600, 900};
     section_import_require(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     auto covered = harness.frame();
     expect_draw(covered.get().compose_input_editor_right_pixels > 0);
     expect_draw(covered.get().compose_input_editor_right_pixels <
                 covered.get().compose_input_viewport_width_pixels);
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = false;
-    state.dock_layout.bga_panel_visible = false;
-    state.dock_layout.measures_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::measures, false);
     const auto open = harness.frame();
     expect_draw(open.get().compose_input_editor_right_pixels > covered.get().compose_input_editor_right_pixels);
     expect_draw(open.get().compose_input_editor_right_pixels <= open.get().compose_input_viewport_width_pixels);
@@ -6794,8 +6813,8 @@ TEST_CASE("SpecialStyle rightmost note remains pickable with side docks open",
     fixture.interaction->selected_notes.clear();
     fixture.interaction->selected_objects.clear();
     auto& ui = worm_ui_nuklear_compose_state();
-    ui.dock_layout.inspector_visible = true;
-    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
+    ui.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     for (int frame = 0; frame < 3; ++frame) {
         fixture.project();
         (void)fixture.dispatch(fixture.harness.frame());
@@ -7086,7 +7105,7 @@ TEST_CASE("Timing focus projects the same Move to BGM capability as its command"
 TEST_CASE("Measure insert buttons emit the registered guarded verb",
           "[frontend-state][event-harness][gesture-verbs]") {
     nuklear_event_harness_t harness{1600, 2600};
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)harness.frame();
     const auto tree = harness.drawn_text_center("Measure at cursor");
     REQUIRE(tree);
@@ -7499,7 +7518,7 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
     v.selected_note_label_note_id.value = 7; v.selected_assigned_resource_id.value = 41;
     v.resources = {resource}; v.resources.resize(v.resource_total_count = 1);
     (void)h.frame();
-    auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.sounds_panel_visible = true;
+    auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     (void)h.frame();
     const auto center = h.drawn_text_center("arm.wav");
     expect_t422(center.has_value());
@@ -7523,7 +7542,9 @@ TEST_CASE("Context replacement shares pointer resource-role rejection",
     f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
     f.project();
     auto& s = worm_ui_nuklear_compose_state();
-    s.dock_layout.inspector_visible = s.dock_layout.sounds_panel_visible = s.dock_layout.layers_panel_visible = false;
+    s.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    s.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    s.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     (void)f.harness.frame();
     // A BGM stem can supply this armed sound through the shared Draw source input.
     s.pointer_capture.draw_source_kind = 1; s.pointer_capture.draw_source_id = {2};
@@ -7559,13 +7580,13 @@ TEST_CASE("BGA chart switches disarm the complete source even with its dock hidd
     v.bga_rows = {row}; v.bga_rows.resize(v.bga_total_matching = 1);
     v.bga_advance_ids.assign(ids.begin(), ids.end()); v.bga_matching_ids = v.bga_advance_ids; v.bga_advance_ids.resize(1); v.bga_search = "";
     (void)h.frame();
-    auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.bga_panel_visible = true;
+    auto& s = worm_ui_nuklear_compose_state(); s.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)h.frame();
     const auto center = h.drawn_text_center("switch.png");
     expect_t422(center.has_value());
     (void)click_at(h, center->first, center->second, true);
     expect_t422(s.resource_picker.armed_resource_id == 1400 && s.bga_catalog.armed_from_bga_dock && s.pointer_capture.draw_source_kind == 2);
-    s.dock_layout.bga_panel_visible = false;
+    s.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
     ++v.chart_id.value; ++h.view().selected_chart_id.value;
     const auto changed = h.frame();
     expect_t422(s.resource_picker.armed_resource_id == 0 && !s.bga_catalog.armed_from_bga_dock && !s.keysound_catalog.armed_from_sounds_dock);
@@ -8157,7 +8178,7 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     nuklear_event_harness_t harness{1280, 900};
     expect_t422(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     expect_t422(state.bga_catalog.bga_list_valid);
     sound_drop_transaction_t transaction;
@@ -8370,8 +8391,8 @@ TEST_CASE("WAV and BMP renumber toolbar gestures share stamped confirmation",
     view.keysounds_available = view.keysound_ids_available = view.bga_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.sounds_panel_visible = !bga;
-    state.dock_layout.bga_panel_visible = bga;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, !bga);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, bga);
     (void)harness.frame();
     const auto x = bga ? state.bga_catalog.bga_list_x + 6 * 38 + 17 : state.sounds_dock.sound_list_x + 9 * 29 + 13;
     const auto y = bga ? state.bga_catalog.bga_list_y + 24 + 13 : state.sounds_dock.sound_list_y + 52 + 13;
@@ -8403,7 +8424,7 @@ TEST_CASE("BGA renumber retains closing release until a quiet frame",
     view.bga_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     (void)click_at(harness, state.bga_catalog.bga_list_x + 6 * 38 + 17, state.bga_catalog.bga_list_y + 24 + 13);
     expect_t422(state.bga_catalog.bga_renumber_confirmation_open);
@@ -8424,7 +8445,7 @@ TEST_CASE("Hidden BGA renumber release is serviced without rendering the panel",
     view.bga_ids_available = true;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     (void)click_at(harness, state.bga_catalog.bga_list_x + 6 * 38 + 17, state.bga_catalog.bga_list_y + 24 + 13);
     expect_t422(state.bga_catalog.bga_renumber_confirmation_open);
@@ -8434,7 +8455,7 @@ TEST_CASE("Hidden BGA renumber release is serviced without rendering the panel",
     (void)harness.frame();
     expect_t422(!state.bga_catalog.bga_renumber_confirmation_open);
     expect_t422(state.bga_catalog.bga_renumber_release_pending);
-    state.dock_layout.bga_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
     const auto release = mouse_button(false, press.button.x, press.button.y);
     (void)harness.frame(std::span{&release, 1});
     (void)harness.frame();
@@ -9019,7 +9040,7 @@ auto recipe_management_song() -> song_document_t {
     return song;
 }
 void prepare_recipe_inspector(t422_fixture_t& fixture) {
-    worm_ui_nuklear_compose_state().dock_layout.inspector_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     fixture.application.project.timing_recipe.recipe_selected = 7001;
     fixture.project();
     (void)fixture.harness.frame();

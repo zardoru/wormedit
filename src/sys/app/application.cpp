@@ -369,6 +369,7 @@ using wormedit::sys::external_player_runtime_t;
 void initialize_program_preferences(wormedit::sys::program_preferences_runtime_t& preferences,
     application_command_state_t& state,
     wormedit::notification_sink_t& notifications) {
+    worm_ui_frontend_set_dock_layout(preferences.preferences.layout.dock);
     state.preferences.minimap_click_moves_paused_playhead = preferences.preferences.minimap.click_moves_paused_playhead;
     state.preferences.editor_preferences = preferences.preferences.editor;
     state.preferences.default_lane_keys = preferences.preferences.default_lane_keys;
@@ -501,6 +502,7 @@ void consume_shortcut_capture(shortcut_editor_runtime_t& editor, wormedit::ui::w
 void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& runtime,
     const application_command_state_t& state, wormedit::notification_sink_t& notifications) {
     auto candidate = runtime.preferences;
+    if (!worm_ui_frontend_dock_layout_is_editing()) candidate.layout.dock = worm_ui_frontend_dock_layout();
     const bool minimap_changed = candidate.minimap.click_moves_paused_playhead !=
                                 state.preferences.minimap_click_moves_paused_playhead;
     candidate.minimap.click_moves_paused_playhead = state.preferences.minimap_click_moves_paused_playhead;
@@ -3933,6 +3935,8 @@ struct application_t::implementation_t {
             platform.notification_sink.post(*preferences.options_runtime.notification);
         if (!accepted)
             return;
+        if (action.kind == WORM_UI_OPTIONS_APPLY && preferences.options_runtime.category == WORM_UI_OPTIONS_DISPLAY)
+            worm_ui_frontend_set_dock_layout(preferences.program_preferences.preferences.layout.dock);
         if (preferences.options_runtime.category == WORM_UI_OPTIONS_INPUT)
             commands.preferences.default_lane_keys = preferences.program_preferences.preferences.default_lane_keys;
         if (preferences.options_runtime.category == WORM_UI_OPTIONS_GENERAL)

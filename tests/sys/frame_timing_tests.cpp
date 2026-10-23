@@ -7204,12 +7204,10 @@ TEST_CASE("Options identifies malformed UTF8 in each display text field", "[sys]
     runtime.category = WORM_UI_OPTIONS_DISPLAY;
     runtime.draft.display.field_scheme = "\x80";
     runtime.draft.display.theme = "\x80";
-    runtime.draft.layout.dock_layout = "\x80";
     (void)wormedit::ui::options_view_t::from(runtime);
-    CHECK(runtime.diagnostics.size() == 3);
+    CHECK(runtime.diagnostics.size() == 2);
     check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME);
     check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_THEME);
-    check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_LAYOUT);
 }
 TEST_CASE("Options identifies malformed UTF8 in the shortcut profile path", "[sys][shared-text]") {
     options_runtime_t runtime;

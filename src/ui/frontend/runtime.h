@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/ui_layout_preferences.h>
 #include "actions.h"
 
 #include <string>
@@ -150,3 +151,7 @@ bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);
 
 // Opens the searchable registry command menu when workspace input is available.
 bool worm_ui_frontend_open_command_menu(void);
+
+void worm_ui_frontend_set_dock_layout(const wormedit::ui_layout_preferences_t& layout);
+[[nodiscard]] auto worm_ui_frontend_dock_layout() -> const wormedit::ui_layout_preferences_t&;
+[[nodiscard]] bool worm_ui_frontend_dock_layout_is_editing();

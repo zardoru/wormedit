@@ -457,8 +457,11 @@ void render_toolbar(const SoundsPanel& panel) {
     const auto spacing = context->style.window.spacing;
     const auto pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                            nk_vec2(2.0f, spacing.y)) != 0;
+    const auto columns = panel.view->keysound_ids_available ? 11 : 9;
+    const auto available_width = nk_window_get_content_region(context).w;
+    const auto cell_width = std::clamp((available_width - 2.0f * (columns - 1)) / columns, 16.0f, 27.0f);
     nk_layout_row_template_begin(context, 27);
-    IconButton::layout_columns(context, panel.view->keysound_ids_available ? 11 : 9, 27.0f);
+    IconButton::layout_columns(context, columns, cell_width);
     nk_layout_row_template_end(context);
 
     if (IconButton{Glyph::minus, wormedit::ui::no_draw_sound_resource_tooltip, state.pointer_capture.draw_source_kind == 0}.render(context))

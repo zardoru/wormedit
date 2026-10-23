@@ -65,8 +65,8 @@ auto action_point(const nuklear_event_harness_t& harness, std::string_view state
 void show_dock(nuklear_event_harness_t& harness, bool images) {
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false; state.dock_layout.layers_panel_visible = false;
-    state.dock_layout.sounds_panel_visible = !images; state.dock_layout.bga_panel_visible = images;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false); state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, !images); state.dock_layout.layout.show(wormedit::dock_panel_t::images, images);
     state.dock_layout.sounds_preview_on_click = false;
     (void)harness.frame();
 }

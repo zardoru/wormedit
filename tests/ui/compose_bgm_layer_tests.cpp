@@ -46,9 +46,9 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined ob
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
     wormedit::ui::compose_semantic_layer_view_t layer{
         .layer_id = {7}, .name = "Verse", .red = 80,
         .assigned_note_count = 3, .visible = true,
@@ -74,9 +74,9 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = false;
-    state.dock_layout.layers_panel_visible = false;
-    state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
     auto& view = harness.view().compose;
     view.semantic_layer_paint_mode_active = true;
     view.semantic_layer_target = {.layer_id = {7}, .name = "Verse", .visible = true};
@@ -118,7 +118,9 @@ TEST_CASE("Alt Layer stroke emits remove intent and releases over BGM",
     nuklear_event_harness_t harness{1280, 900};
     require_layer_brush(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
     auto& view = harness.view().compose;
     view.semantic_layer_paint_mode_active = true;
     view.semantic_layer_target = {.layer_id = {7}, .name = "Verse", .visible = true};
@@ -162,8 +164,9 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     nuklear_event_harness_t harness{1280, 900};
     require_layer_brush(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.layers_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
     wormedit::ui::compose_semantic_layer_view_t layer{.layer_id = {7}, .name = "Verse", .visible = true};
     auto& view = harness.view().compose;
     view.semantic_layers = {layer};
@@ -183,8 +186,10 @@ namespace {
 void initialize_chip(nuklear_event_harness_t& harness, uint8_t kind, uint64_t id,
                      const char* label) {
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
-    state.dock_layout.bga_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
     auto& view = harness.view().compose;
     view.note_paint_mode_active = true;
     view.keysounds_available = true;
@@ -223,7 +228,7 @@ TEST_CASE("Draw chip opens a hidden Sounds dock and waits for the exact unrestri
     (void)harness.frame();
     wormedit::ui::keysound_dock_request_t request{};
     worm_ui_frontend_keysound_dock_request(&request);
-    check_layer_brush(state.dock_layout.sounds_panel_visible && state.keysound_catalog.keysound_selection.primary == 179);
+    check_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) && state.keysound_catalog.keysound_selection.primary == 179);
     check_layer_brush(request.primary_resource_id == wormedit::resource_id_t{179} && !request.slots_mode);
     check_layer_brush(request.automatic_search.empty() && !request.group_filter_active);
     check_layer_brush(request.include_ungrouped && request.layer_filter_kind == wormedit::keysound_layer_filter_kind_t::any);
@@ -265,7 +270,7 @@ TEST_CASE("Draw chip opens hidden BGA and retains reveal until its exact off-pag
     (void)harness.frame();
     wormedit::ui::bga_dock_request_t request{};
     worm_ui_frontend_bga_dock_request(&request);
-    check_layer_brush(state.dock_layout.bga_panel_visible && state.bga_catalog.bga_selection.primary == 501);
+    check_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images) && state.bga_catalog.bga_selection.primary == 501);
     check_layer_brush(request.search.empty() && state.pointer_capture.source_chip_reveal_id == 501);
     std::array<uint64_t, 80> ids{};
     for (std::size_t index = 0; index < ids.size(); ++index) ids[index] = index + 100;
@@ -319,12 +324,12 @@ TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an
     check_chip_inputs_empty(click_chip(harness, "Drums 99"));
     const auto revealed = harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
-    check_layer_brush(state.dock_layout.layers_panel_visible && state.pointer_capture.layer_chip_reveal_id == 0);
+    check_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) && state.pointer_capture.layer_chip_reveal_id == 0);
     check_layer_brush(revealed.get().compose_semantic_layer_first_row > 8);
-    state.dock_layout.layers_panel_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
     view.semantic_layer_target = {.name = "Pick a layer"};
     check_chip_inputs_empty(click_chip(harness, "Pick a layer"));
-    check_no_layer_brush(state.dock_layout.layers_panel_visible);
+    check_no_layer_brush(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
 }
 
 TEST_CASE("Tool chip leaves outside canvas presses available and missing source does not paint",
@@ -344,7 +349,7 @@ TEST_CASE("Tool chip leaves outside canvas presses available and missing source 
     harness.view().compose.draw_source_label = "missing source";
     harness.view().compose.draw_source_missing = true;
     check_chip_inputs_empty(click_chip(harness, "missing source"));
-    check_no_layer_brush(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
+    check_no_layer_brush(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
     check_chip_inputs_empty(click_at(harness, 300, 400));
 }
 
@@ -357,7 +362,7 @@ TEST_CASE("A short Compose viewport never exposes an invisible tool-chip hit tar
     check_no_layer_brush(harness.drawn_text_center("0A sample").has_value());
     (void)click_at(harness, 250, 170);
     check_no_layer_brush(worm_ui_nuklear_compose_state().pointer_capture.tool_chip_pointer_active);
-    check_no_layer_brush(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
+    check_no_layer_brush(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
 }
 
 TEST_CASE("BMSON armed source chip distinguishes stems and packed keysounds",
@@ -372,5 +377,5 @@ TEST_CASE("BMSON armed source chip distinguishes stems and packed keysounds",
     (void)harness.frame();
     check_layer_brush(harness.drawn_text().find(stem ? "Draw stem" : "Draw packed keysound") != std::string::npos);
     check_chip_inputs_empty(click_chip(harness, "voice.wav"));
-    check_layer_brush(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
+    check_layer_brush(worm_ui_nuklear_compose_state().dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
 }

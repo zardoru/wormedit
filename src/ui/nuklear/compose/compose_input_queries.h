@@ -14,7 +14,7 @@ struct compose_input_queries_t {
     const worm_ui_nuklear_compose_state_t& state;
 
     auto is_canvas_input_blocked() const -> bool {
-        return is_canvas_popup_blocked() || has_bookmark_rename();
+        return is_canvas_popup_blocked() || has_bookmark_rename() || state.dock_layout.pointer.is_active();
     }
 
     auto is_canvas_hover_blocked() const -> bool {

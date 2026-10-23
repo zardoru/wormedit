@@ -131,7 +131,7 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     (void)harness.frame();
 
     auto& state = worm_ui_nuklear_compose_state();
-    state.dock_layout.bga_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
     (void)harness.frame();
     // Match chart-model dimensions to the actual first-frame editor viewport.
     // Keep the lane in the visible editor area, left of the floating dock.

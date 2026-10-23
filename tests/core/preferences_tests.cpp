@@ -82,7 +82,8 @@ TEST_CASE("Program preferences round trip every section without project data", "
     values.players.players[0] = {"Player \"one\"", "C:\\Music\\player.exe", "\"<filename>\"", "<measure>", "stop"};
     values.players.selected = 2;
     values.minimap.click_moves_paused_playhead = true;
-    values.layout.dock_layout = "left:resources,right:inspector";
+    values.layout.dock.set_width(410);
+    values.layout.dock.activate(dock_panel_t::images, false);
     const auto encoded = serialize_program_preferences(values);
     require_preference(encoded.has_value());
     const auto parsed = preferences_parse_effect_t::from(*encoded);
@@ -166,7 +167,7 @@ TEST_CASE("Program preferences refuse serializing invalid in-memory values", "[u
     values.players.selected = 100;
     expect_preference(!serialize_program_preferences(values));
     values = program_preferences_t::with_defaults();
-    values.layout.dock_layout = std::string(maximum_preference_string_bytes + 1, 'x');
+    values.display.theme = std::string(maximum_preference_string_bytes + 1, 'x');
     expect_preference(!serialize_program_preferences(values));
 }
 
@@ -178,6 +179,11 @@ TEST_CASE("Program preferences files round trip atomically and reject invalid re
     expect_preference(!missing.contents.is_success() && missing.contents.warnings.empty());
     auto values = program_preferences_t::with_defaults();
     values.minimap.click_moves_paused_playhead = true;
+    values.layout.dock.activate(dock_panel_t::images, false);
+    values.layout.dock.show(dock_panel_t::markers);
+    values.layout.dock.reorder(dock_panel_t::markers, 0);
+    values.layout.dock.set_width(460);
+    values.layout.dock.set_split(0.65f);
     require_preference(static_cast<bool>(save_program_preferences_atomic(path, values)));
     auto loaded = load_program_preferences(path);
     expect_preference(loaded.contents.succeeded && !loaded.missing && loaded.contents.preferences == values);

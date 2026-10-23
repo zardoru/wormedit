@@ -98,7 +98,7 @@ struct options_view_t {
     std::string_view field_scheme, current_field_layout_key, current_field_layout_name;
     std::string_view current_layout_field_scheme;
     std::vector<wormedit::ui::compose_lane_view_t> current_field_layout_lanes;
-    std::string_view theme, dock_layout, shortcut_profile_path;
+    std::string_view theme, shortcut_profile_path;
     std::vector<external_player_definition_view_t> players;
     std::size_t selected_player{};
     std::vector<options_diagnostic_view_t> diagnostics;

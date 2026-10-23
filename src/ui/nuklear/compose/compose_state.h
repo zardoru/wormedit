@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/nuklear/dock.h"
 #include "ui/nuklear/chrome/file_dialog_slot.h"
 
 #include "ui/frontend.h"
@@ -602,20 +603,18 @@ struct worm_ui_nuklear_compose_state_t {
     } snap_grid;
 
     struct dock_layout_t {
-        bool inspector_visible{true};
+        wormedit::ui_layout_preferences_t layout;
+        wormedit::ui::dock_pointer_t pointer;
+        bookmark_chooser_state_t markers;
         // Keysound listbox (compose_sounds_panel.cpp).
-        bool sounds_panel_visible{true};
-        bool layers_panel_visible{};
         bool compact_dock_layout{};
         bool sounds_layers_open{};
         // The Sounds dock's selected tab; non-BMSON charts always show Sounds.
         bool sounds_dock_bmson_tab{};
         // Sounds-panel preview-on-click is distinct from editor placement audition.
         bool sounds_preview_on_click{true};
-        bool bga_panel_visible{};
         // Measures dock: selection by measure ID, the typed meter, and the IDs staged for one
         // action.
-        bool measures_panel_visible{};
         // The BMS branch dock on the left of the field: wanted by the user, and the width it took
         // last frame.
         bool branch_panel_visible{true};

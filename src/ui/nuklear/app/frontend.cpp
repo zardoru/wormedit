@@ -143,9 +143,10 @@ static void shutdown_stem_resize_cursor() {
     g_stem_resize_cursor_applied = g_stem_resize_cursor_attempted = false;
 }
 
-static void clear_inactive_stem_resize_cursor(const wormedit::ui::workspace_view_t& view, bool focused) {
+static void clear_inactive_compose_controls(const wormedit::ui::workspace_view_t& view, bool focused) {
     if (!g_compose_area_shortcuts_active || !focused || view.compose.input_occluded) {
         apply_stem_resize_cursor(false);
+        worm_ui_nuklear_compose_state().dock_layout.pointer = {};
     }
 }
 static int g_headless_width;
@@ -834,7 +835,7 @@ void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request
     request->selected_project.value = state.bga_catalog.bga_project_id;
     request->selected_resource.value = state.bga_catalog.bga_selection.primary;
     request->find_uses_open = state.bga_catalog.find_uses_open;
-    request->visible = state.dock_layout.bga_panel_visible && state.bga_catalog.bga_list_valid;
+    request->visible = state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images) && state.bga_catalog.bga_list_valid;
     request->search = state.bga_catalog.bga_search.data();
     request->first_row = state.bga_catalog.bga_first_row;
     request->row_limit = state.bga_catalog.bga_row_limit;
@@ -844,8 +845,11 @@ void worm_ui_frontend_bga_dock_request(wormedit::ui::bga_dock_request_t* request
 
 void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_request_t* request) {
     if (!request) return;
-    const auto& chooser = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser;
-    *request = {chooser.first_row, chooser.row_limit, chooser.open, {}};
+    const auto& compose = worm_ui_nuklear_compose_state();
+    const auto& popup = compose.bookmark_ui.bookmark_chooser;
+    const auto& chooser = popup.open ? popup : compose.dock_layout.markers;
+    const auto visible = popup.open || compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::markers);
+    *request = {chooser.first_row, chooser.row_limit, visible, {}};
     std::copy(chooser.query.begin(), chooser.query.end(), request->query);
 }
 
@@ -1113,21 +1117,21 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
         compose.document_context.last_document_revision != revision) return false;
     switch (command) {
     case WORM_UI_COMPOSE_DOCK_OPEN_LAYERS:
-        compose.dock_layout.layers_panel_visible = !compose.dock_layout.layers_panel_visible;
-        if (compose.dock_layout.layers_panel_visible && compose.dock_layout.compact_dock_layout)
-            compose.dock_layout.sounds_panel_visible = false;
+        compose.dock_layout.layout.show(wormedit::dock_panel_t::layers, !compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
+        if (compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) && compose.dock_layout.compact_dock_layout)
+            compose.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
         return true;
     case WORM_UI_COMPOSE_DOCK_CREATE_LAYER:
-        compose.dock_layout.layers_panel_visible = true;
+        compose.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         // Compact Compose has room for one dock; reveal the requested Layers dock.
-        if (compose.dock_layout.compact_dock_layout) compose.dock_layout.sounds_panel_visible = false;
+        if (compose.dock_layout.compact_dock_layout) compose.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
         if (command == WORM_UI_COMPOSE_DOCK_CREATE_LAYER)
             compose.layer_editor.layer_creation_request = {project_id, chart_id, revision};
         return true;
     case WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS:
-        compose.dock_layout.sounds_panel_visible = !compose.dock_layout.sounds_panel_visible;
-        if (compose.dock_layout.sounds_panel_visible && compose.dock_layout.compact_dock_layout)
-            compose.dock_layout.layers_panel_visible = false;
+        compose.dock_layout.layout.show(wormedit::dock_panel_t::sounds, !compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
+        if (compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) && compose.dock_layout.compact_dock_layout)
+            compose.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
         compose.dock_layout.sounds_dock_bmson_tab = false;
         return true;
     }
@@ -1761,8 +1765,8 @@ static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& v
         nuklear_text_entry_active() || g_ime_composition_active, g_frame_timing_visible);
     const auto& compose = worm_ui_nuklear_compose_state();
     for (auto& item : g_workspace_menu) {
-        if (item.action == MenuAction::sounds) item.checked = compose.dock_layout.sounds_panel_visible;
-        if (item.action == MenuAction::layers) item.checked = compose.dock_layout.layers_panel_visible;
+        if (item.action == MenuAction::sounds) item.checked = compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds);
+        if (item.action == MenuAction::layers) item.checked = compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers);
     }
 }
 
@@ -1840,7 +1844,7 @@ static void close_unavailable_inline_offset(const wormedit::ui::workspace_view_t
     const bool available = g_window_focused && view.project_loaded &&
         view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible &&
         view.compose.audio_offset_editable && !view.options.visible && !project_modal_active(view) &&
-        (compose.inline_offset.inline_offset_in_inspector ? compose.dock_layout.inspector_visible && !view.compose.timing_focus
+        (compose.inline_offset.inline_offset_in_inspector ? compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector) && !view.compose.timing_focus
                                             : view.compose.timing_focus) &&
         compose.inline_offset.inline_offset_chart_id == view.compose.chart_id.value &&
         compose.inline_offset.inline_offset_revision == view.compose.document_revision;
@@ -3558,7 +3562,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspac
     worm_ui_nuklear_prepare_compose_panel(&view->compose,
                                           compose_tab_active && !project_modal_active(*view), g_window_focused,
                                           &action);
-    clear_inactive_stem_resize_cursor(*view, g_window_focused);
+    clear_inactive_compose_controls(*view, g_window_focused);
 
     worm_ui_nuklear_audio_state().sound_list_valid = false;
     worm_ui_nuklear_compose_state().sounds_dock.sound_list_valid = false;
@@ -3786,4 +3790,14 @@ bool worm_ui_frontend_open_command_menu(void) {
         command_menu_dialog_blocked() ||
         wormedit::ui::chrome::context_menu_keyboard_owned()) return false;
     return open_command_menu();
+}
+
+void worm_ui_frontend_set_dock_layout(const wormedit::ui_layout_preferences_t& layout) {
+    worm_ui_nuklear_compose_state().dock_layout.layout = layout;
+}
+auto worm_ui_frontend_dock_layout() -> const wormedit::ui_layout_preferences_t& {
+    return worm_ui_nuklear_compose_state().dock_layout.layout;
+}
+bool worm_ui_frontend_dock_layout_is_editing() {
+    return worm_ui_nuklear_compose_state().dock_layout.pointer.is_active();
 }

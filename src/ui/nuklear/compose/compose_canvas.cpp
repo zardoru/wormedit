@@ -3482,7 +3482,7 @@ auto tool_chip(nk_context* context, const wormedit::ui::compose_view_t& view, st
 }
 
 void reveal_chip_sound(const wormedit::ui::compose_view_t& view) {
-    state.dock_layout.sounds_panel_visible = true;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, true);
     state.dock_layout.sounds_dock_bmson_tab = false;
     state.keysound_filters.keysound_slots_mode = false;
     state.keysound_catalog.keysound_search.fill(0);
@@ -3502,7 +3502,7 @@ void reveal_chip_source(const wormedit::ui::compose_view_t& view, bool layer) {
     state.pointer_capture.chip_reveal_chart = view.chart_id.value;
     if (layer) {
         if (!view.semantic_layer_target.layer_id.value) return;
-        state.dock_layout.layers_panel_visible = true;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         state.pointer_capture.layer_chip_reveal_id = view.semantic_layer_target.layer_id.value;
         return;
     }
@@ -3511,7 +3511,7 @@ void reveal_chip_source(const wormedit::ui::compose_view_t& view, bool layer) {
     state.pointer_capture.source_chip_reveal_id = view.draw_source_id.value;
     if (view.draw_source_kind == 1) reveal_chip_sound(view);
     else if (view.draw_source_kind == 2) {
-        state.dock_layout.bga_panel_visible = true;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::images, true);
         state.bga_catalog.bga_search.fill(0);
         state.bga_catalog.bga_selection.primary = view.draw_source_id.value;
         state.bga_catalog.bga_selection.selected = {view.draw_source_id.value};

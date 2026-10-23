@@ -14,9 +14,9 @@ struct resource_brush_fixture_t {
     resource_brush_fixture_t() {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.inspector_visible = false;
-        state.dock_layout.sounds_panel_visible = false;
-        state.dock_layout.layers_panel_visible = false;
+        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
         auto& view = harness.view().compose;
         view.resource_paint_mode_active = view.resource_paint_available = true;
         view.resource_paint_has_sample = true;

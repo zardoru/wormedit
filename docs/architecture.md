@@ -93,6 +93,13 @@ visual decoding, resource-copy and inspection requests, and conversion previews 
 and queue/progress services retain their domain lifecycles and publication rules; see
 [async task scheduling](async-task-scheduling.md).
 
+Compose's right dock uses `ui_layout_preferences_t` as its sole visibility/order/size owner.
+`src/ui/nuklear/dock.cpp` handles the strip, split and width captures; `compose_panel.cpp` wraps
+existing panel renderers in independent scrolling groups. The typed record is stored under
+`layout.compose_dock` in the existing atomic application preferences file. Drag captures defer
+publication until release; hiding Compose or losing input cancels capture without a late click.
+Markers embeds the same bounded bookmark-list controls and projection as the popup chooser.
+
 Cross-chart sound/BGA use activation and notification jumps build a detached
 `workspace_navigation_t` in `src/sys/project/workspace_navigation.h`. It opens the chart and
 moves the cursor through normal workspace and editor actions before publishing both view states.

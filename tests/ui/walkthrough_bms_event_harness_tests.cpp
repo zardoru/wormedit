@@ -193,7 +193,7 @@ void check_imported_slots(walkthrough_t& flow, resource_id_t sound) {
     check_step(identities.front().namespace_name == "WAV");
     check_step(identities.front().identifier == "01");
     auto& ui = worm_ui_nuklear_compose_state();
-    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     (void)flow.harness.frame();
     check_step(flow.harness.view().compose.keysound_ids_available);
     (void)click_text(flow.harness, "BMS slots");
@@ -317,7 +317,7 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     require_step(view.keysounds.size() == 1);
     check_step(std::string_view{view.keysounds[0].slot.c_str()} == "01");
     auto& ui = worm_ui_nuklear_compose_state();
-    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     (void)flow.harness.frame();
     // The dock clips long names; the slot cell is part of the same sound row.
     const auto armed = click_text(flow.harness, view.keysounds[0].slot.c_str(), true);
@@ -503,7 +503,7 @@ void refresh_sound_dock(walkthrough_t& flow) {
 
 void show_slot_dock(walkthrough_t& flow) {
     auto& ui = worm_ui_nuklear_compose_state();
-    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     ui.dock_layout.sounds_preview_on_click = false;
     refresh_sound_dock(flow);
     (void)click_text(flow.harness, "BMS slots");
@@ -600,7 +600,7 @@ TEST_CASE("BMS walkthrough arming slot 05 does not redirect automatic picked or 
     const auto file_count = GENERATE(std::size_t{1}, std::size_t{2});
     walkthrough_t flow{make_initial_document(song_id_t{1})};
     const auto armed = assign_initial_slot(flow, 5);
-    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = true;
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::sounds, false);
     refresh_sound_dock(flow);
     const auto clicks = click_text(flow.harness, "05", true);
     for (const auto& snapshot : clicks) (void)flow.dispatch(snapshot);
@@ -684,7 +684,7 @@ TEST_CASE("BMS walkthrough clears explicit slot imports on mode chart and projec
     select_import_slot(flow, "0A  (empty)");
     const auto duplicate = apply_duplicate_chart_command(flow.history, *flow.workspace.value->selected_chart);
     require_step(duplicate.command.applied);
-    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = false;
+    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
     flow.workspace.value->selected_chart = duplicate.payload.chart;
     refresh_sound_dock(flow);
     check_false_step(sound_drop_origin(flow).slot_explicit);

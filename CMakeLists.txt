@@ -122,6 +122,7 @@ add_library(wormedit_core
     src/core/shortcut_profile_storage.cpp
     src/core/atomic_file_storage.cpp
     src/core/preferences.cpp
+    src/core/ui_layout_preferences.cpp
     src/core/project_settings.cpp
     src/core/lane_keys.cpp
     src/core/shortcut_profile_startup.cpp
@@ -441,6 +442,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_timing_input.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_object_input.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/dock.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/compare_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_resources.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_state.cpp"

@@ -79,8 +79,11 @@ struct lifecycle_fixture_t {
         configure_auxiliary();
         (void)harness.frame();
         auto& ui = worm_ui_nuklear_compose_state();
-        ui.dock_layout.inspector_visible = ui.dock_layout.sounds_panel_visible = ui.dock_layout.layers_panel_visible = false;
-        ui.dock_layout.bga_panel_visible = ui.dock_layout.measures_panel_visible = false;
+        ui.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
+        ui.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        ui.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
+        ui.dock_layout.layout.show(wormedit::dock_panel_t::images, false);
+        ui.dock_layout.layout.show(wormedit::dock_panel_t::measures, false);
         (void)harness.frame();
         lifecycle_require(worm_ui_frontend_compose_viewport_for_testing(&rect));
         x = screen_x(500); y = screen_y(300);

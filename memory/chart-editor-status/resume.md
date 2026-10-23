@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-228** (2026-10-23): Compose has one right dock for Inspector, Sounds,
+Images, Measures, Layers and Markers, with independent scrolling and up to two stacked panes.
+The strip selects, hides and reorders panels; width and split handles retain bounded application
+preferences across projects and restarts. Pointer cancellation prevents late canvas actions,
+and atomic preference publication waits for release. Sounds keeps all toolbar controls reachable
+at the minimum width; Markers reuses bookmark search and stamped navigation.
+GATE and Linux Clang each pass **4,611/4,611**; whitespace and **31-TU** complexity pass
+without increased allowances. Focused dock checks pass **95 assertions / 13 cases**. Isolated native one/two-pane and fresh-launch
+checks restore the exact layout, defer publication during held drags and leave the complete
+saved project unchanged at revision 4. The selected card is complete; no sequential follow-up
+is active.
+
 Completed **T-161** (2026-10-23): Compose has an ordered recipe selector,
 Duplicate and Earlier/Later controls, preserving complete definitions, stable identities
 and one Undo per command. Overlapping and offscreen recipes remain accessible.

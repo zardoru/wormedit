@@ -228,3 +228,19 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
     return true;
 }
+
+void worm_ui_nuklear_render_bookmark_list(nk_context* context,
+    const wormedit::ui::bookmark_chooser_view_t& view, wormedit::ui::workspace_action_t* action,
+    bookmark_chooser_state_t& state) {
+    if (state.project_id != view.project_id.value || state.chart_id != view.chart_id.value) state = {};
+    state.project_id = view.project_id.value;
+    state.chart_id = view.chart_id.value;
+    state.document_revision = view.document_revision;
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::markers)].title.data(), NK_TEXT_LEFT);
+    if (render_search(context, view, state)) render_rows(context, view, *action, state);
+    else {
+        nk_layout_row_dynamic(context, 24, 1);
+        nk_label(context, "Updating markers…", NK_TEXT_LEFT);
+    }
+}

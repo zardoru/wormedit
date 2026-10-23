@@ -202,7 +202,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.note_label.label_chart_id = 42;
     state.note_label.note_label[0] = 'x';
     state.layer_editor.semantic_layer_color_editor_visible = true;
-    state.dock_layout.inspector_visible = false;
+    state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
     state.resource_picker.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.resource_picker.resource_search[0] = 'x';
     state.resource_picker.armed_resource_id = 42;
@@ -233,7 +233,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.note_label.label_chart_id == std::numeric_limits<std::uint64_t>::max());
     CHECK(state.note_label.note_label[0] == '\0');
     CHECK_FALSE(state.layer_editor.semantic_layer_color_editor_visible);
-    CHECK(state.dock_layout.inspector_visible);
+    CHECK(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector));
     CHECK(state.resource_picker.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
     CHECK(state.resource_picker.resource_search[0] == '\0');
     CHECK(state.resource_picker.armed_resource_id == 0);

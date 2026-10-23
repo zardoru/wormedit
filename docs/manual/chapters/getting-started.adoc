@@ -107,10 +107,20 @@ together* option keeps the group's BMS `#WAV` numbers next to each other.
 
 For BMS charts you can also put sounds into exact `#WAV` slots; see <<bms-slots>>.
 
+=== Compose dock
+
+The narrow strip at the right of Compose opens Inspector, Sounds, Images, Measures, Layers and
+Markers. Click a panel button to show it alone; click the sole active panel again to hide it.
+Hold kbd:[Shift] while clicking to add or remove a second panel. Adding a third replaces the lower
+pane. Each pane scrolls independently. Drag buttons along the strip to reorder them and the
+visible panes. Drag the dock's left edge to change its width, or the divider between panes to
+change their split. The layout is saved in application preferences and restored across projects
+and restarts. Markers provides the same search and navigation as the bookmark chooser.
+
 === BGA images
 
-Drop images onto the *BGA* list in Compose (show it with the BGA list button at the right
-end of the toolbar). Select an image or video and click *Find uses* to see its BGA events
+Drop images onto the *Images* (BGA) list in Compose (show it from the right dock strip). Select an
+image or video and click *Find uses* to see its BGA events
 across the project's charts, including references through another resource sharing its asset.
 Click a result to open that chart, move the cursor and select the exact event. The list shows
 up to 1,024 uses, ordered by chart, position and BGA lane; it also includes missing resources.

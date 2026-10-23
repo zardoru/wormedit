@@ -12,9 +12,9 @@ struct bga_uses_ui_t {
     bga_uses_ui_t() {
         REQUIRE(harness.ready());
         auto& state = worm_ui_nuklear_compose_state();
-        state.dock_layout.bga_panel_visible = true;
-        state.dock_layout.sounds_panel_visible = false;
-        state.dock_layout.layers_panel_visible = false;
+        state.dock_layout.layout.activate(wormedit::dock_panel_t::images, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, false);
+        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, false);
         (void)harness.frame();
         auto& view = harness.view().compose;
         view.bga_all_resource_ids = {20};

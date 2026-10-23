@@ -7,6 +7,7 @@ namespace wormedit {
 struct timing_category_info_t {
     timing_category_t kind;
     std::string_view label;
+    bool changes_retained_bms_timing;
     [[nodiscard]] static constexpr auto for_recipe(sv_recipe_output_t output) -> timing_category_t {
         switch (output) {
         case sv_recipe_output_t::sv:
@@ -17,16 +18,16 @@ struct timing_category_info_t {
     }
 };
 inline constexpr std::array timing_categories{
-    timing_category_info_t{timing_category_t::bpm, "BPM"},
-    timing_category_info_t{timing_category_t::scroll, "SV / scroll"},
-    timing_category_info_t{timing_category_t::speed, "SPEEDS"},
-    timing_category_info_t{timing_category_t::kiai, "Kiai"},
-    timing_category_info_t{timing_category_t::stop, "Stops"},
-    timing_category_info_t{timing_category_t::delay, "Delays"},
-    timing_category_info_t{timing_category_t::warp, "Warps"},
-    timing_category_info_t{timing_category_t::anchor, "Timing anchors"},
-    timing_category_info_t{timing_category_t::offset, "Audio offset"},
-    timing_category_info_t{timing_category_t::measures, "Measure layout"},
+    timing_category_info_t{timing_category_t::bpm, "BPM", true},
+    timing_category_info_t{timing_category_t::scroll, "SV / scroll", false},
+    timing_category_info_t{timing_category_t::speed, "SPEEDS", false},
+    timing_category_info_t{timing_category_t::kiai, "Kiai", false},
+    timing_category_info_t{timing_category_t::stop, "Stops", true},
+    timing_category_info_t{timing_category_t::delay, "Delays", true},
+    timing_category_info_t{timing_category_t::warp, "Warps", true},
+    timing_category_info_t{timing_category_t::anchor, "Timing anchors", false},
+    timing_category_info_t{timing_category_t::offset, "Audio offset", false},
+    timing_category_info_t{timing_category_t::measures, "Measure layout", true},
 };
 static_assert(is_catalog_exhaustive(timing_categories, timing_category_count));
 

@@ -1,8 +1,11 @@
 #include <wormedit/core/timing_links.h>
 #include "checked_math.h"
+#include "chart_position_storage.h"
 #include "id_ceiling.h"
 #include "timing_links_internal.h"
 #include <wormedit/core/command.h>
+#include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/timing.h>
 #include <algorithm>
 #include <numeric>
 #include <ranges>
@@ -145,6 +148,81 @@ auto has_cycle(const song_document_t& song, timing_category_t category) -> bool 
     }
     return false;
 }
+auto link_provenance_error(const chart_document_t& source, const chart_document_t& target,
+    const timing_category_info_t& category) -> std::optional<diagnostic_t> {
+    if ((source.bms_control_tree && source.bms_control_tree->has_control_flow()) ||
+        (target.bms_control_tree && target.bms_control_tree->has_control_flow()))
+        return error(diagnostic_code_t::unsupported_feature, "Retained conditional BMS timing must be normalized before linking.");
+    if (category.changes_retained_bms_timing && (target.bms_control_tree || !target.bms_bpm_projections.empty() ||
+        !target.bms_pause_projections.empty() || !target.bms_measure_length_projections.empty()))
+        return error(diagnostic_code_t::unsupported_feature, "Timing links cannot rewrite retained BMS timing projections; use a normalized target chart.");
+    return std::nullopt;
+}
+struct linked_anchor_clock_t {
+    std::uint32_t sample_rate{};
+    std::uint64_t frame_count{};
+    static auto from(const song_document_t& song) -> result_t<linked_anchor_clock_t, diagnostic_t> {
+        const audio_asset_t* selected{};
+        for (const auto& resource : song.resources) {
+            if (!resource.has_role(resource_role_t::music)) continue;
+            const auto* asset = song.find_audio_asset(resource.asset);
+            if (!asset || asset->stream.sample_rate == 0 || !asset->stream.frame_count)
+                return std::unexpected(error(diagnostic_code_t::unsupported_feature, "Linked sample anchors require a known project music clock."));
+            if (selected && selected->id != asset->id)
+                return std::unexpected(error(diagnostic_code_t::unsupported_feature, "Linked sample anchors require one unambiguous project music asset."));
+            selected = asset;
+        }
+        if (!selected) return std::unexpected(error(diagnostic_code_t::unsupported_feature, "Linked sample anchors require a registered project music clock."));
+        return linked_anchor_clock_t{.sample_rate = selected->stream.sample_rate, .frame_count = *selected->stream.frame_count};
+    }
+};
+auto link_anchor_error(const song_document_t& song, const chart_document_t& source, timing_category_t category)
+    -> std::optional<diagnostic_t> {
+    if (category != timing_category_t::anchor || source.timing_anchors.empty()) return std::nullopt;
+    const auto clock = linked_anchor_clock_t::from(song);
+    if (!clock) return clock.error();
+    if (std::ranges::any_of(source.timing_anchors, [&](const auto& anchor) { return anchor.source_sample_frame > clock->frame_count; }))
+        return error(diagnostic_code_t::row_out_of_range, "Linked sample anchors exceed the registered music clock extent.");
+    return std::nullopt;
+}
+auto link_recipe_grid_error(const chart_document_t& source, const chart_document_t& target, timing_category_t category)
+    -> std::optional<diagnostic_t> {
+    if (category != timing_category_t::scroll && category != timing_category_t::speed) return std::nullopt;
+    const auto map = timing_position_map_t::from(source, target);
+    if (!map) return map.error().front();
+    if (target.divisions_per_standard_measure % source.divisions_per_standard_measure == 0) return std::nullopt;
+    for (const auto& recipe : source.sv_recipes) {
+        if (!recipe.enabled || timing_category_info_t::for_recipe(recipe.output) != category) continue;
+        auto sampling = recipe;
+        // Script values do not affect a fixed sampling schedule. Reuse the built-in
+        // sampler to prove those coordinates without executing a script here.
+        if (sampling.curve == sv_recipe_curve_t::lua_expression && sampling.sampling.mode == sv_recipe_sampling_mode_t::fixed) {
+            sampling.curve = sv_recipe_curve_t::constant;
+            sampling.parameters = {};
+            sampling.expression_source.clear();
+            sampling.postprocess.clear();
+        }
+        const auto prepared = sv_recipe_prepared_t::from(source, sampling);
+        if (!prepared.ok()) return error(diagnostic_code_t::unsupported_feature,
+            "This recipe needs a source-compatible target grid before its sample positions can be linked exactly.");
+        for (const auto& point : prepared.value.samples().points)
+            if (!map->rows(point.absolute_row)) return error(diagnostic_code_t::invalid_resolution,
+                "A linked recipe sample needs rounding on the target grid; increase its resolution.");
+    }
+    return std::nullopt;
+}
+void validate_absolute_grid_clocks(const song_document_t& song, diagnostic_list_t& diagnostics) {
+    std::set<chart_id_t> linked;
+    for (const auto& chart : song.charts)
+        for (const auto& association : chart.timing_links.categories)
+            if (association && !association->is_local_override) { linked.insert(chart.id); linked.insert(association->source); }
+    for (const auto& chart : song.charts) {
+        if (chart.source_family != format_family_t::osu_mania || !linked.contains(chart.id)) continue;
+        const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
+        if (!timing.value) diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "Chart " + std::to_string(chart.id.value) + " has an absolute-time grid without a usable resolved timing clock."));
+    }
+}
 void validate_link(const song_document_t& song, const chart_document_t& target,
     const timing_category_info_t& category, const timing_category_link_t& link, diagnostic_list_t& diagnostics, bool check_snapshots) {
     const auto report = [&](diagnostic_code_t code, std::string_view message) {
@@ -157,8 +235,15 @@ void validate_link(const song_document_t& song, const chart_document_t& target,
     if (!are_valid_identities(link.objects) || !are_valid_identities(link.recipes) || !are_valid_identities(link.measures)) {
         report(diagnostic_code_t::invalid_id, "identity mapping is invalid or ambiguous."); return;
     }
-    if (check_snapshots && !link.is_local_override && !snapshot_matches(*source, target, category.kind, link))
+    if (link.is_local_override) return;
+    if (const auto issue = link_provenance_error(*source, target, category)) { report(issue->code, issue->message); return; }
+    if (!check_snapshots) return;
+    if (!snapshot_matches(*source, target, category.kind, link)) {
         report(diagnostic_code_t::unsupported_feature, "stored timing does not exactly match its source.");
+        return;
+    }
+    if (const auto issue = link_anchor_error(song, *source, category.kind)) report(issue->code, issue->message);
+    if (const auto issue = link_recipe_grid_error(*source, target, category.kind)) report(issue->code, issue->message);
 }
 auto has_links(const song_document_t& song) -> bool {
     return std::ranges::any_of(song.charts, [](const auto& chart) {
@@ -261,13 +346,54 @@ auto copy_recipes(const song_document_t& song, const chart_document_t& source, c
     link.recipes = std::move(identities);
     return std::nullopt;
 }
-auto copy_layout(const chart_document_t& source, const chart_document_t& target, timing_category_link_t& link)
+struct linked_measure_layout_t {
+    std::vector<measure_chunk_t> measures;
+    std::vector<timing_link_identity_t<measure_id_t>> identities;
+    static auto from(const chart_document_t& source, const chart_document_t& target, const timing_category_link_t& link)
+        -> result_t<linked_measure_layout_t, diagnostic_t> {
+        auto previous = link.measures;
+        if (previous.empty())
+            for (std::size_t index = 0; index < std::min(source.measures.size(), target.measures.size()); ++index)
+                previous.push_back({.source = source.measures[index].id, .target = target.measures[index].id});
+        auto allocator = timing_identity_allocator_t<measure_id_t>::from(target, target.measures, previous);
+        linked_measure_layout_t result;
+        for (const auto& measure : source.measures) {
+            const auto id = allocator.assign(measure.id, previous);
+            if (!id) return std::unexpected(error(diagnostic_code_t::invalid_id, "Linked measure identities are exhausted."));
+            result.measures.push_back({.id = *id, .definition = measure.definition});
+            result.identities.push_back({.source = measure.id, .target = *id});
+        }
+        return result;
+    }
+};
+auto remap_local_layout_content(chart_document_t& target, const timing_position_map_t& map) -> bool {
+    bool valid = true;
+    const auto local_category = [&](timing_category_t category) {
+        const auto& link = target.timing_links.value(category);
+        return !link || link->is_local_override;
+    };
+    for_each_chart_position(target, [&](local_position_t& position, measure_chart_end_policy_t end) {
+        const auto mapped = map.position(position, end);
+        if (mapped) position = *mapped;
+        else valid = false;
+    }, local_category);
+    return valid;
+}
+auto copy_layout(const chart_document_t& source, chart_document_t& target, timing_category_link_t& link)
     -> std::optional<diagnostic_t> {
-    if (!std::ranges::equal(source.measures, target.measures, [](const auto& left, const auto& right) { return left.definition == right.definition; }))
-        return error(diagnostic_code_t::unsupported_feature, "The linked measure layout requires an exact local-content remap.");
-    link.objects.clear(); link.recipes.clear(); link.measures.clear();
-    for (std::size_t index = 0; index < source.measures.size(); ++index)
-        link.measures.push_back({.source = source.measures[index].id, .target = target.measures[index].id});
+    auto layout = linked_measure_layout_t::from(source, target, link);
+    if (!layout) return layout.error();
+    chart_document_t geometry{.id = target.id, .divisions_per_standard_measure = target.divisions_per_standard_measure,
+        .measures = std::move(layout->measures)};
+    const auto map = timing_position_map_t::from(target, geometry);
+    if (!map) return map.error().front();
+    if (!remap_local_layout_content(target, *map)) return error(diagnostic_code_t::row_out_of_range,
+        "The linked measure layout cannot preserve all local content exactly within its extent.");
+    auto previous = std::move(target.measures);
+    target.measures = std::move(geometry.measures);
+    diagnostic_list_t diagnostics;
+    if (!rehome_measure_objects(target, previous, diagnostics)) return diagnostics.front();
+    link.objects.clear(); link.recipes.clear(); link.measures = std::move(layout->identities);
     return std::nullopt;
 }
 auto materialized_record_count(const chart_document_t& source, timing_category_t category) -> std::size_t {
@@ -363,6 +489,7 @@ auto validate_links(const song_document_t& song, bool check_snapshots) -> diagno
         for (const auto& category : timing_categories)
             if (const auto& link = chart.timing_links.value(category.kind))
                 validate_link(song, chart, category, *link, diagnostics, check_snapshots);
+    if (check_snapshots && !diagnostic_queries::has_errors(diagnostics)) validate_absolute_grid_clocks(song, diagnostics);
     return diagnostics;
 }
 }

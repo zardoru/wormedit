@@ -1,4 +1,5 @@
 #include "chart_object_ids.h"
+#include "chart_position_storage.h"
 #include "timing_arithmetic.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/core/measure_editor.h>
@@ -70,50 +71,6 @@ void shift_projections_for_delete(chart_document_t& chart, std::size_t removed_i
     }
 }
 
-enum class free_position_kind_t { hold_end, other };
-
-// Visits every positioned object that is stored outside the per-measure note and
-// BGM buckets, plus the hold ends of the bucketed notes.
-template <typename Chart, typename Visit>
-void for_each_free_position(Chart& chart, Visit&& visit) {
-    const auto ends = [&](auto& objects) {
-        for (auto& object : objects)
-            if (object.end) visit(*object.end, free_position_kind_t::hold_end);
-    };
-    for (auto& measure : chart.measures) {
-        ends(measure.notes);
-        ends(measure.bgm_events);
-    }
-    const auto other = [&](auto& values) {
-        for (auto& value : values) visit(value.position, free_position_kind_t::other);
-    };
-    other(chart.bpms);
-    other(chart.pauses);
-    other(chart.scrolls);
-    other(chart.speeds);
-    other(chart.kiai);
-    other(chart.timing_anchors);
-    other(chart.bga_events);
-    for (auto& warp : chart.warps) {
-        visit(warp.span.begin, free_position_kind_t::other);
-        visit(warp.span.end, free_position_kind_t::other);
-    }
-    for (auto& bookmark : chart.bookmarks) {
-        if (bookmark.position) visit(*bookmark.position, free_position_kind_t::other);
-    }
-    for (auto& section : chart.sections) {
-        if (!section.beat_span) continue;
-        visit(section.beat_span->begin, free_position_kind_t::other);
-        visit(section.beat_span->end, free_position_kind_t::other);
-    }
-    for (auto& channel : chart.sound_channels) {
-        for (auto& event : channel.events) {
-            visit(event.position, free_position_kind_t::other);
-            if (event.end) visit(*event.end, free_position_kind_t::other);
-        }
-    }
-}
-
 auto has_bms_control_flow(const chart_document_t& chart) -> bool {
     return chart.bms_control_tree.has_value() || !chart.bms_bpm_projections.empty() ||
            !chart.bms_pause_projections.empty();
@@ -179,7 +136,7 @@ void delete_contained_bga(chart_document_t& chart, measure_id_t removed,
 void retarget_free_positions(chart_document_t& chart, measure_id_t removed,
                              std::optional<measure_id_t> next,
                              measure_removal_proposal_t& proposal) {
-    for_each_free_position(chart, [&](local_position_t& position, free_position_kind_t kind) {
+    for_each_free_position(chart, [&](local_position_t& position, position_role_t kind) {
         if (position.measure != removed) return;
         if (!next) {
             proposal.diagnostics.push_back(error(
@@ -187,7 +144,7 @@ void retarget_free_positions(chart_document_t& chart, measure_id_t removed,
                 "the last measure holds positioned objects that have no later measure to move to"));
             return;
         }
-        if (kind == free_position_kind_t::hold_end && position.row > 0)
+        if (kind == position_role_t::note_end && position.row > 0)
             ++proposal.shortened_holds;
         else
             ++proposal.moved_positions;
@@ -393,7 +350,7 @@ auto lift_bucketed_objects(chart_document_t& chart, const measure_index_t& index
 auto collect_free_rows(chart_document_t& chart, const measure_index_t& index,
                        std::vector<rowed_free_t>& free_rows) -> bool {
     auto ok = true;
-    for_each_free_position(chart, [&](local_position_t& position, free_position_kind_t) {
+    for_each_free_position(chart, [&](local_position_t& position, position_role_t) {
         const auto row = index.row_of(position);
         if (!row) ok = false;
         else free_rows.push_back({&position, *row});
@@ -773,14 +730,14 @@ auto is_conversion_timing_blocked(const chart_document_t& chart, const measure_i
 auto is_conversion_points_clear(const chart_document_t& chart, const measure_index_t& index,
                              const pause_range_t& range) -> bool {
     bool clear = true;
-    const auto visit = [&](const local_position_t& position, free_position_kind_t) {
+    const auto visit = [&](const local_position_t& position, position_role_t) {
         const auto row = index.row_of(position);
         if (!row || (range.has_row(*row) && !is_conversion_configuration(chart, &position))) clear = false;
     };
     for_each_free_position(chart, visit);
     for (const auto& measure : chart.measures) {
-        for (const auto& note : measure.notes) visit(note.position, free_position_kind_t::other);
-        for (const auto& bgm : measure.bgm_events) visit(bgm.position, free_position_kind_t::other);
+        for (const auto& note : measure.notes) visit(note.position, position_role_t::point);
+        for (const auto& bgm : measure.bgm_events) visit(bgm.position, position_role_t::point);
     }
     for (const auto& layout : chart.lane_layouts) {
         const auto row = index.row_of(layout.position);
@@ -1115,7 +1072,7 @@ auto has_measure_positioned_objects(const chart_document_t& chart, measure_id_t 
         }))
         return true;
     bool found = false;
-    for_each_free_position(chart, [&](const local_position_t& position, free_position_kind_t) {
+    for_each_free_position(chart, [&](const local_position_t& position, position_role_t) {
         found = found || position.measure == measure;
     });
     return found;

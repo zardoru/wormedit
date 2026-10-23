@@ -1,7 +1,14 @@
 #include <wormedit/core/timing_links.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/timing.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/bms.h>
+#include <wormedit/formats/osu_mania.h>
+#include <fstream>
+#include <iterator>
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 #include <limits>
@@ -117,11 +124,11 @@ TEST_CASE("Linked scroll recipes map spans and fixed row steps with stable recip
     auto& source = song.charts.front();
     auto& target = song.charts.back();
     source.sv_recipes.push_back({.id = recipe_id_t{31}, .name = "Scroll", .range = {
-        .begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 960}},
+        .begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 480}},
         .output = sv_recipe_output_t::scrolls, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
     auto recipe = source.sv_recipes.front();
     recipe.id = recipe_id_t{32};
-    recipe.range = {.begin = {.measure = measure_id_t{21}, .row = 0}, .end = {.measure = measure_id_t{22}, .row = 480}};
+    recipe.range = {.begin = {.measure = measure_id_t{21}, .row = 0}, .end = {.measure = measure_id_t{22}, .row = 240}};
     recipe.sampling.fixed_step_rows = 120;
     target.sv_recipes.push_back(recipe);
     target.timing_links.value(timing_category_t::scroll) = timing_category_link_t{.source = source.id,
@@ -384,7 +391,7 @@ TEST_CASE("Relinking avoids target IDs reused by unrelated local objects", "[cor
 namespace {
 void add_source_scroll_recipe(song_document_t& song) {
     song.charts.front().sv_recipes.push_back({.id = recipe_id_t{41}, .name = "Linked scroll",
-        .range = {.begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 960}},
+        .range = {.begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 480}},
         .output = sv_recipe_output_t::scrolls, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
 }
 void link_scroll_recipe(document_history_t& history) {
@@ -423,5 +430,426 @@ TEST_CASE("Changing a local recipe output detaches both affected linked categori
     CHECK(history.document.charts.back().timing_links.value(timing_category_t::speed)->is_local_override);
     CHECK(history.document.charts.front().sv_recipes.front().output == sv_recipe_output_t::scrolls);
     CHECK(history.undo.size() == 2);
+    require_valid_links(history.document);
+}
+namespace {
+auto local_layout_song() -> song_document_t {
+    auto song = timing_link_song();
+    add_linked_origin_bpm(song);
+    const auto profile = make_bms_7k_profile();
+    auto& target = song.charts.back();
+    const auto lane = profile.layout.lanes.front().id;
+    target.lane_layouts = {{.id = object_id_t{100}, .position = {.measure = measure_id_t{21}, .row = 0}, .layout = profile.layout},
+        {.id = object_id_t{101}, .position = {.measure = measure_id_t{21}, .row = 360}, .layout = profile.layout}};
+    target.input_profile = profile.input;
+    song.audio_assets.push_back({.id = asset_id_t{500}, .source_path = "sample.wav",
+        .stream = {.sample_rate = 48'000, .channels = 2, .frame_count = 192'000, .seekable = true}});
+    song.resources.push_back({.id = resource_id_t{502}, .name = "Sample", .asset = asset_id_t{500}, .roles = {resource_role_t::sample}});
+    song.visual_assets.push_back({.id = asset_id_t{505}, .source_path = "background.png"});
+    song.resources.push_back({.id = resource_id_t{506}, .name = "Background", .asset = asset_id_t{505}, .roles = {resource_role_t::bga}});
+    target.measures.front().notes.push_back({.id = object_id_t{1001}, .position = {.measure = measure_id_t{21}, .row = 300},
+        .lane = lane, .kind = note_kind_t::hold, .end = local_position_t{.measure = measure_id_t{22}, .row = 60},
+        .sound = resource_id_t{502}, .sound_channel_event = object_id_t{503}});
+    target.sound_channels.push_back({.id = object_id_t{504}, .name = "Channel", .source_clip = {
+        .id = clip_id_t{501}, .source = asset_id_t{500}, .end_frame = 48'000},
+        .events = {{.id = object_id_t{503}, .position = {.measure = measure_id_t{21}, .row = 300},
+            .end = local_position_t{.measure = measure_id_t{22}, .row = 60}, .lane = lane}}});
+    target.bgm_source_lanes.push_back({.id = object_id_t{2001}});
+    target.measures.front().bgm_events.push_back({.id = object_id_t{2002},
+        .position = {.measure = measure_id_t{21}, .row = 360}, .source_lane = object_id_t{2001}, .sound = resource_id_t{502},
+        .end = local_position_t{.measure = measure_id_t{22}, .row = 120}});
+    target.bga_events.push_back({.id = object_id_t{2003}, .position = {.measure = measure_id_t{21}, .row = 400}, .resource = resource_id_t{506}});
+    target.bookmarks = {{.id = object_id_t{2004}, .position = local_position_t{.measure = measure_id_t{21}, .row = 320}},
+        {.id = object_id_t{2005}, .anchor = marker_anchor_t::audio_time, .audio_milliseconds = 1500}};
+    target.sections = {{.id = object_id_t{2006}, .beat_span = position_span_t{
+        .begin = {.measure = measure_id_t{21}, .row = 330}, .end = {.measure = measure_id_t{22}, .row = 200}}},
+        {.id = object_id_t{2007}, .anchor = marker_anchor_t::audio_time, .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{500, 900}}};
+    target.scrolls.push_back({.id = object_id_t{2008}, .position = {.measure = measure_id_t{21}, .row = 390}, .multiplier = {3, 2}});
+    target.kiai.push_back({.id = object_id_t{2009}, .position = {.measure = measure_id_t{21}, .row = 410}, .enabled = true});
+    target.pauses = {{.id = object_id_t{2010}, .position = {.measure = measure_id_t{21}, .row = 420}, .duration = {1, 2}},
+        {.id = object_id_t{2011}, .position = {.measure = measure_id_t{21}, .row = 430}, .kind = pause_kind_t::delay, .duration = {1, 4}}};
+    target.warps.push_back({.id = object_id_t{2012}, .span = {
+        .begin = {.measure = measure_id_t{22}, .row = 300}, .end = {.measure = measure_id_t{22}, .row = 360}}});
+    target.speeds.push_back({.id = object_id_t{2013}, .position = {.measure = measure_id_t{21}, .row = 450},
+        .multiplier = {3, 2}, .transition_beats = {1, 1}});
+    target.timing_anchors.push_back({.id = object_id_t{2014}, .position = {.measure = measure_id_t{21}, .row = 470}, .source_sample_frame = 100'000});
+    target.sv_recipes.push_back({.id = recipe_id_t{6001}, .name = "Local recipe", .range = {
+        .begin = {.measure = measure_id_t{21}, .row = 360}, .end = {.measure = measure_id_t{22}, .row = 480}}});
+    target.timing_links.value(timing_category_t::measures) = timing_category_link_t{.source = chart_id_t{10},
+        .measures = {{.source = measure_id_t{11}, .target = measure_id_t{21}}, {.source = measure_id_t{12}, .target = measure_id_t{22}}}};
+    const auto diagnostics = validate_document(song);
+    std::string messages;
+    for (const auto& diagnostic : diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    REQUIRE(diagnostics.empty());
+    return song;
+}
+auto musical_row(const chart_document_t& chart, local_position_t position, measure_chart_end_policy_t end = measure_chart_end_policy_t::reject)
+    -> std::uint64_t {
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index);
+    const auto row = index->row_of(position, end);
+    REQUIRE(row);
+    return *row;
+}
+void split_link_source(document_history_t& history) {
+    document_command_transaction_t transaction{history};
+    auto& measures = transaction.document().charts.front().measures;
+    const auto half = measure_definition_t{.length = {1, 2}, .meter = std::nullopt};
+    measures.front().definition = half;
+    measures.insert(measures.begin() + 1, {.id = measure_id_t{15}, .definition = half});
+    require_timing_command(transaction.commit("Split source layout"));
+}
+void check_local_sound_positions(const chart_document_t& chart) {
+    const auto* note = chart.find_note(object_id_t{1001});
+    REQUIRE(note);
+    CHECK(std::pair{musical_row(chart, note->position), musical_row(chart, *note->end)} == std::pair{300ULL, 540ULL});
+    const auto* bgm = chart.find_bgm_event(object_id_t{2002});
+    REQUIRE(bgm);
+    CHECK(std::pair{musical_row(chart, bgm->position), musical_row(chart, *bgm->end)} == std::pair{360ULL, 600ULL});
+    const auto& channel = chart.sound_channels.front().events.front();
+    CHECK(std::pair{musical_row(chart, channel.position), musical_row(chart, *channel.end)} == std::pair{300ULL, 540ULL});
+}
+void check_local_marker_positions(const chart_document_t& chart) {
+    CHECK(musical_row(chart, chart.bookmarks.front().position.value()) == 320);
+    CHECK(chart.bookmarks.back().audio_milliseconds == 1500);
+    CHECK(std::pair{musical_row(chart, chart.sections.front().beat_span->begin), musical_row(chart, chart.sections.front().beat_span->end)} == std::pair{330ULL, 680ULL});
+    CHECK(chart.sections.back().audio_millisecond_span == std::pair<std::int64_t, std::int64_t>{500, 900});
+    CHECK(musical_row(chart, chart.bga_events.front().position) == 400);
+}
+void check_local_timing_positions(const chart_document_t& chart) {
+    CHECK(musical_row(chart, chart.scrolls.front().position) == 390);
+    CHECK(musical_row(chart, chart.speeds.front().position) == 450);
+    CHECK(musical_row(chart, chart.kiai.front().position) == 410);
+    CHECK(musical_row(chart, chart.timing_anchors.front().position) == 470);
+    CHECK(chart.timing_anchors.front().source_sample_frame == 100'000);
+}
+void check_local_spans(const chart_document_t& chart) {
+    CHECK(std::pair{musical_row(chart, chart.pauses.front().position), musical_row(chart, chart.pauses.back().position)} == std::pair{420ULL, 430ULL});
+    CHECK(std::pair{musical_row(chart, chart.warps.front().span.begin), musical_row(chart, chart.warps.front().span.end)} == std::pair{780ULL, 840ULL});
+    CHECK(std::pair{musical_row(chart, chart.sv_recipes.front().range.begin), musical_row(chart, chart.sv_recipes.front().range.end, measure_chart_end_policy_t::allow)} == std::pair{360ULL, 960ULL});
+    CHECK(musical_row(chart, chart.lane_layouts.back().position) == 360);
+    CHECK(chart.sv_recipes.front().id == recipe_id_t{6001});
+}
+}
+TEST_CASE("Linked source splits preserve all local objects and exclusive recipe endpoints", "[core][timing-links][measure-links]") {
+    auto history = document_history_t::from(local_layout_song());
+    split_link_source(history);
+    const auto& target = history.document.charts.back();
+    CHECK(target.measures.size() == 3);
+    CHECK(target.divisions_per_standard_measure == 480);
+    CHECK(target.measures.front().id == measure_id_t{21});
+    CHECK(target.measures.back().id == measure_id_t{22});
+    check_local_sound_positions(target);
+    check_local_marker_positions(target);
+    check_local_timing_positions(target);
+    check_local_spans(target);
+    require_valid_links(history.document);
+}
+TEST_CASE("Linked layout Undo restores bucket ownership and stable local identities", "[core][timing-links][measure-links]") {
+    auto history = document_history_t::from(local_layout_song());
+    split_link_source(history);
+    CHECK(history.document.charts.back().measures[1].notes.front().id == object_id_t{1001});
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.back().measures.size() == 2);
+    CHECK(history.document.charts.back().measures.front().notes.front().id == object_id_t{1001});
+    check_local_sound_positions(history.document.charts.back());
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.charts.back().measures[1].notes.front().id == object_id_t{1001});
+}
+TEST_CASE("Short linked layouts reject local content loss without changing either chart", "[core][timing-links][measure-links]") {
+    auto history = document_history_t::from(local_layout_song());
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.front().measures.back().definition = {.length = {1, 2}, .meter = std::nullopt};
+    CHECK_FALSE(transaction.commit("Shorten source layout").applied);
+    CHECK(history.document.charts.front().measures.back().definition.length == rational_t{1, 1});
+    CHECK(history.document.charts.back().measures.size() == 2);
+    CHECK(history.undo.empty());
+}
+namespace {
+void register_link_music_clock(song_document_t& song) {
+    song.audio_assets.push_back({.id = asset_id_t{50}, .source_path = "music.wav",
+        .stream = {.sample_rate = 48'000, .channels = 2, .frame_count = 48'000, .seekable = true}});
+    song.resources.push_back({.id = resource_id_t{51}, .name = "Music", .asset = asset_id_t{50}, .roles = {resource_role_t::music}});
+}
+auto anchor_link_song() -> song_document_t {
+    auto song = timing_link_song();
+    song.charts.front().timing_anchors.push_back({.id = object_id_t{40}, .position = {.measure = measure_id_t{11}, .row = 0}, .source_sample_frame = 4800});
+    return song;
+}
+auto link_anchors(document_history_t& history) -> document_command_result_t {
+    return apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
+        {.category = timing_category_t::anchor, .source = chart_id_t{10}});
+}
+auto make_preview_schedule(const chart_document_t& chart) -> preview_schedule_t {
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto schedule = preview_schedule_t::from(chart, *timing.value, {.sample_rate = 48'000, .include_metronome = false});
+    REQUIRE(schedule.value);
+    return *schedule.value;
+}
+}
+TEST_CASE("Linked layout growth preserves production clocks recipes and playback event frames", "[core][timing-links][measure-links]") {
+    auto song = local_layout_song();
+    song.charts.back().sv_recipes.front().parameters.value_to = {2, 1};
+    song.charts.back().sv_recipes.front().postprocess = {{.value = {2, 1}}};
+    auto history = document_history_t::from(std::move(song));
+    const auto before = make_preview_schedule(history.document.charts.back());
+    const auto recipe_before = sv_recipe_prepared_t::from(history.document.charts.back(), history.document.charts.back().sv_recipes.front());
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.front().measures.front().definition = {.length = {2, 1}, .meter = std::nullopt};
+    require_timing_command(transaction.commit("Grow source layout"));
+    const auto& target = history.document.charts.back();
+    const auto after = make_preview_schedule(target);
+    CHECK(std::ranges::equal(before.playable, after.playable, {}, &preview_audio_event_t::playable_sort_key, &preview_audio_event_t::playable_sort_key));
+    CHECK(std::ranges::equal(before.bgm, after.bgm, {}, &preview_audio_event_t::bgm_sort_key, &preview_audio_event_t::bgm_sort_key));
+    CHECK(before.bga == after.bga);
+    const auto recipe_after = sv_recipe_prepared_t::from(target, target.sv_recipes.front());
+    CHECK(recipe_before.value.value_at(600) == recipe_after.value.value_at(600));
+    check_local_sound_positions(target);
+    check_local_spans(target);
+}
+TEST_CASE("Linked layout shortening replaces obsolete derived timing instead of treating it as local content", "[core][timing-links][measure-links]") {
+    auto song = timing_link_song();
+    add_linked_origin_bpm(song);
+    song.charts.back().timing_links.value(timing_category_t::measures) = timing_category_link_t{.source = chart_id_t{10},
+        .measures = {{.source = measure_id_t{11}, .target = measure_id_t{21}}, {.source = measure_id_t{12}, .target = measure_id_t{22}}}};
+    auto history = document_history_t::from(std::move(song));
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.front().measures.pop_back();
+    transaction.document().charts.front().bpms.erase(transaction.document().charts.front().bpms.begin());
+    require_timing_command(transaction.commit("Remove source tail and its derived BPM"));
+    CHECK(history.document.charts.back().measures.size() == 1);
+    CHECK(history.document.charts.back().bpms.size() == 1);
+    CHECK(history.document.charts.back().bpms.front().id == object_id_t{24});
+    require_valid_links(history.document);
+}
+TEST_CASE("Sample anchor links reject unknown and ambiguous project clocks", "[core][timing-links][clock-links]") {
+    auto song = anchor_link_song();
+    SECTION("unknown") {}
+    SECTION("ambiguous") {
+        register_link_music_clock(song);
+        song.audio_assets.push_back({.id = asset_id_t{52}, .source_path = "other.wav",
+            .stream = {.sample_rate = 44'100, .channels = 1, .frame_count = 44'100}});
+        song.resources.push_back({.id = resource_id_t{53}, .name = "Other music", .asset = asset_id_t{52}, .roles = {resource_role_t::music}});
+    }
+    auto history = document_history_t::from(std::move(song));
+    CHECK_FALSE(link_anchors(history).applied);
+    CHECK(history.document.charts.back().timing_anchors.empty());
+    CHECK(history.undo.empty());
+}
+TEST_CASE("Sample anchors retain exact source frames and reject updates outside the shared music extent", "[core][timing-links][clock-links]") {
+    auto song = anchor_link_song();
+    register_link_music_clock(song);
+    auto history = document_history_t::from(std::move(song));
+    require_timing_command(link_anchors(history));
+    CHECK(history.document.charts.back().timing_anchors.front().source_sample_frame == 4800);
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.front().timing_anchors.front().source_sample_frame = 48'001;
+    CHECK_FALSE(transaction.commit("Out-of-clock anchor").applied);
+    CHECK(history.document.charts.front().timing_anchors.front().source_sample_frame == 4800);
+    CHECK(history.document.charts.back().timing_anchors.front().source_sample_frame == 4800);
+    CHECK(history.undo.size() == 1);
+}
+TEST_CASE("Anchor clocks allow resource aliases of one asset and survive native round trips", "[core][timing-links][clock-links]") {
+    auto song = anchor_link_song();
+    register_link_music_clock(song);
+    song.resources.push_back({.id = resource_id_t{52}, .name = "Music alias", .asset = asset_id_t{50}, .roles = {resource_role_t::music}});
+    auto history = document_history_t::from(std::move(song));
+    require_timing_command(link_anchors(history));
+    const auto root = native_link_json(history.document);
+    const auto parsed = parse_native_project(root.dump());
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->charts.back().timing_anchors.front().source_sample_frame == 4800);
+    require_valid_links(*parsed.value);
+}
+TEST_CASE("Adaptive recipe links reject sampled rows that would need target-grid rounding", "[core][timing-links][recipe-links]") {
+    auto song = timing_link_song();
+    add_source_scroll_recipe(song);
+    auto& recipe = song.charts.front().sv_recipes.front();
+    recipe.curve = sv_recipe_curve_t::exponential;
+    recipe.parameters.value_to = {4, 1};
+    recipe.parameters.shape = {2, 1};
+    recipe.sampling = {.mode = sv_recipe_sampling_mode_t::adaptive, .fixed_point_count = std::nullopt,
+        .tolerance = {1, 10'000'000}, .max_points = 256};
+    const auto prepared = sv_recipe_prepared_t::from(song.charts.front(), recipe);
+    REQUIRE(prepared.ok());
+    REQUIRE(std::ranges::any_of(prepared.value.samples().points, [](const auto& point) { return point.absolute_row % 2 != 0; }));
+    auto history = document_history_t::from(std::move(song));
+    const auto result = apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
+        {.category = timing_category_t::scroll, .source = chart_id_t{10}});
+    CHECK_FALSE(result.applied);
+    CHECK(history.document.charts.back().sv_recipes.empty());
+    CHECK(history.undo.empty());
+}
+TEST_CASE("Fixed script recipes link across exact grids without evaluating script values in publication", "[core][timing-links][recipe-links]") {
+    auto song = timing_link_song();
+    add_source_scroll_recipe(song);
+    auto& recipe = song.charts.front().sv_recipes.front();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "1";
+    auto history = document_history_t::from(std::move(song));
+    link_scroll_recipe(history);
+    CHECK(history.document.charts.back().sv_recipes.front().curve == sv_recipe_curve_t::lua_expression);
+    CHECK(history.document.charts.back().sv_recipes.front().expression_source == "1");
+    CHECK(history.document.charts.back().sv_recipes.front().sampling.fixed_step_rows == 120);
+    require_valid_links(history.document);
+}
+TEST_CASE("Chart-end recipe samples reject a coarser grid atomically", "[core][timing-links][recipe-links]") {
+    auto song = timing_link_song();
+    add_source_scroll_recipe(song);
+    song.charts.front().sv_recipes.front().range.end.row = 960;
+    auto history = document_history_t::from(std::move(song));
+    const auto result = apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
+        {.category = timing_category_t::scroll, .source = chart_id_t{10}});
+    CHECK_FALSE(result.applied);
+    CHECK(std::ranges::any_of(result.diagnostics, [](const auto& item) { return item.code == diagnostic_code_t::invalid_resolution; }));
+    CHECK(history.document.charts.back().sv_recipes.empty());
+    CHECK(history.undo.empty());
+}
+namespace {
+auto imported_bms_link_song(bool conditional) -> song_document_t {
+    std::string source = "#PLAYER 1\n#TITLE Base\n#ARTIST Artist\n#BPM 120\n#WAV01 tone.wav\n#00011:01\n";
+    if (conditional) source += "#RANDOM 1\n#IF 1\n#BPM01 150\n#00108:01\n#ENDIF\n#ENDRANDOM\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch", .branch_choices = {{.control_source_order = 6, .selected_value = 1}}});
+    REQUIRE(parsed.ok());
+    REQUIRE(parsed.value.song);
+    return *parsed.value.song;
+}
+void add_native_link_target(song_document_t& song) {
+    chart_document_t target{.id = chart_id_t{9999},
+        .divisions_per_standard_measure = song.charts.front().divisions_per_standard_measure};
+    std::uint64_t next = 10000;
+    for (const auto& measure : song.charts.front().measures)
+        target.measures.push_back({.id = measure_id_t{next++}, .definition = measure.definition});
+    song.charts.push_back(std::move(target));
+}
+auto link_imported_source(document_history_t& history, timing_category_t category) -> document_command_result_t {
+    return apply_timing_link_edit(history, chart_stamp_t::from(history.document, history.document.charts.back().id),
+        {.category = category, .source = history.document.charts.front().id, .discard_confirmed = true});
+}
+auto link_fixture_bytes(std::string_view relative) -> std::vector<std::byte> {
+    std::ifstream input(std::filesystem::path{WORMEDIT_FIXTURE_DIR} / relative, std::ios::binary);
+    REQUIRE(input);
+    const std::string bytes{std::istreambuf_iterator<char>{input}, {}};
+    const auto view = std::as_bytes(std::span{bytes.data(), bytes.size()});
+    return {view.begin(), view.end()};
+}
+}
+TEST_CASE("Flat BMS timing sources can supply normalized target charts", "[core][timing-links][provenance-links]") {
+    auto song = imported_bms_link_song(false);
+    add_native_link_target(song);
+    auto history = document_history_t::from(std::move(song));
+    require_timing_command(link_imported_source(history, timing_category_t::bpm));
+    CHECK(history.document.charts.back().bpms.front().beats_per_minute == signed_rational_t{120, 1});
+    require_valid_links(history.document);
+}
+TEST_CASE("Conditional BMS timing sources require normalization before linking", "[core][timing-links][provenance-links]") {
+    auto song = imported_bms_link_song(true);
+    add_native_link_target(song);
+    auto history = document_history_t::from(std::move(song));
+    CHECK_FALSE(link_imported_source(history, timing_category_t::bpm).applied);
+    CHECK(history.document.charts.back().bpms.empty());
+    CHECK_FALSE(history.document.charts.back().timing_links.value(timing_category_t::bpm));
+    CHECK(history.undo.empty());
+}
+TEST_CASE("Timing links preserve retained target BMS projections on rejection", "[core][timing-links][provenance-links]") {
+    auto song = imported_bms_link_song(false);
+    add_native_link_target(song);
+    std::swap(song.charts.front(), song.charts.back());
+    song.charts.front().bpms.push_back({.id = object_id_t{20000},
+        .position = {.measure = song.charts.front().measures.front().id}, .beats_per_minute = {180, 1}});
+    const auto original = song.charts.back().bpms;
+    auto history = document_history_t::from(std::move(song));
+    const auto before = native_link_json(history.document);
+    CHECK_FALSE(link_imported_source(history, timing_category_t::bpm).applied);
+    CHECK(history.document.charts.back().bpms == original);
+    CHECK(native_link_json(history.document) == before);
+    CHECK(history.undo.empty());
+}
+TEST_CASE("Absolute-time imported sources require a usable resolved clock", "[core][timing-links][clock-links]") {
+    const auto parsed = parse_osu_mania_bytes(link_fixture_bytes("osu/mania-tags-bookmarks-kiai.osu"));
+    REQUIRE(parsed.ok());
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
+    add_native_link_target(song);
+    auto history = document_history_t::from(std::move(song));
+    require_timing_command(link_imported_source(history, timing_category_t::offset));
+    const auto original = history.document.charts.front().bpms;
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.front().bpms.clear();
+    CHECK_FALSE(transaction.commit("Remove absolute source clock").applied);
+    CHECK(history.document.charts.front().bpms == original);
+    CHECK(history.undo.size() == 1);
+}
+namespace {
+auto all_category_link_song() -> song_document_t {
+    auto song = timing_link_song();
+    add_linked_origin_bpm(song);
+    register_link_music_clock(song);
+    add_source_scroll_recipe(song);
+    auto& source = song.charts.front();
+    source.scrolls.push_back({.id = object_id_t{31}, .position = {.measure = measure_id_t{11}, .row = 120}, .multiplier = {2, 1}});
+    source.speeds.push_back({.id = object_id_t{32}, .position = {.measure = measure_id_t{11}, .row = 240},
+        .multiplier = {3, 2}, .transition_beats = {1, 1}});
+    source.kiai.push_back({.id = object_id_t{33}, .position = {.measure = measure_id_t{11}, .row = 360}, .enabled = true});
+    source.pauses = {{.id = object_id_t{34}, .position = {.measure = measure_id_t{11}, .row = 480},
+        .kind = pause_kind_t::stop, .duration = {1, 2}, .source_unit = pause_unit_t::beats},
+        {.id = object_id_t{35}, .position = {.measure = measure_id_t{11}, .row = 600},
+        .kind = pause_kind_t::delay, .duration = {1, 4}}};
+    source.warps.push_back({.id = object_id_t{36}, .span = {
+        .begin = {.measure = measure_id_t{12}, .row = 240}, .end = {.measure = measure_id_t{12}, .row = 360}}});
+    source.timing_anchors.push_back({.id = object_id_t{37}, .position = {.measure = measure_id_t{11}, .row = 0}, .source_sample_frame = 4800});
+    source.beat_zero_audio_offset_seconds = {1, 10};
+    auto speed = source.sv_recipes.front();
+    speed.id = recipe_id_t{42};
+    speed.output = sv_recipe_output_t::speeds;
+    speed.transition_duration = rational_t{1, 1};
+    speed.transition_is_seconds = false;
+    source.sv_recipes.push_back(std::move(speed));
+    return song;
+}
+void link_all_categories(document_history_t& history) {
+    document_command_transaction_t transaction{history};
+    for (const auto& category : timing_categories) {
+        const auto staged = stage_timing_link_edit(transaction, chart_id_t{20},
+            {.category = category.kind, .source = chart_id_t{10}, .discard_confirmed = true});
+        REQUIRE(staged.value);
+    }
+    require_timing_command(transaction.commit("Link all timing categories"));
+}
+}
+namespace {
+void check_all_category_snapshots(const chart_document_t& linked) {
+    CHECK(linked.scrolls.front().position.row == 60);
+    CHECK(linked.speeds.front().position.row == 120);
+    CHECK(linked.pauses.front().source_unit == pause_unit_t::beats);
+    CHECK(linked.pauses.back().kind == pause_kind_t::delay);
+}
+void check_linked_spans_clock_and_recipes(const chart_document_t& linked) {
+    CHECK(linked.warps.front().span.end.row == 180);
+    CHECK(linked.timing_anchors.front().source_sample_frame == 4800);
+    CHECK(linked.beat_zero_audio_offset_seconds == signed_rational_t{1, 10});
+    CHECK(linked.sv_recipes.size() == 2);
+}
+void check_only_kiai_override(const chart_document_t& target) {
+    for (const auto& category : timing_categories) {
+        const auto& association = target.timing_links.value(category.kind);
+        REQUIRE(association);
+        CHECK(association->is_local_override == (category.kind == timing_category_t::kiai));
+    }
+}
+}
+TEST_CASE("All timing categories follow one source and a local Kiai edit detaches only Kiai", "[core][timing-links][transaction]") {
+    auto history = document_history_t::from(all_category_link_song());
+    link_all_categories(history);
+    check_all_category_snapshots(history.document.charts.back());
+    check_linked_spans_clock_and_recipes(history.document.charts.back());
+    document_command_transaction_t transaction{history};
+    transaction.document().charts.back().kiai.front().enabled = false;
+    require_timing_command(transaction.commit("Edit local Kiai"));
+    check_only_kiai_override(history.document.charts.back());
+    CHECK(history.document.charts.front().kiai.front().enabled);
     require_valid_links(history.document);
 }

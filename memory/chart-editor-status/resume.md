@@ -15,13 +15,14 @@ eight notes/BPM, and byte-identical copied audio.
 
 **Active:** the owner resumed timing-link implementation on 2026-10-22. Work through
 [T-751–T-755](../../docs/chart-editor-plan/tasks/timing-links.md) in order, with separate
-verified commits. **T-751 and T-752 are complete**: schema-13 source identities and exact
-snapshot validation, shared transaction propagation, local detachment, confirmed relinking
-and stable local IDs. GATE and Linux Clang each pass **4,529/4,529**, with **4-TU**
-complexity and 166 focused assertions. Source changes, chains, compound edits and the
-beat-fit gesture share one Undo publication; failed/inexact/stale operations preserve
-links and data. Next is **T-753**, exact local-content remapping for linked measure
-layouts and explicit clock/provenance compatibility. No runtime UI is available yet.
+verified commits. **T-751–T-753 are complete**: schema-13 source identities and exact
+snapshot validation, shared transaction propagation, category-local detachment, confirmed
+relinking, stable IDs and exact measure-layout remapping of all local content. Known
+sample clocks, retained BMS provenance, imported osu! clocks and recipe sample grids
+are checked before publication. GATE and Linux Clang each pass **4,545/4,545**, with
+explicit **5-TU** complexity and whitespace passing without increased allowances.
+Next is **T-754**, category controls and selected timing links in chart creation.
+No runtime UI is available yet.
 The recorded choices
 are designated charts as sources, all timing categories and measure layouts, exact
 same-project mapping, category-local detachment and selected links inherited by new

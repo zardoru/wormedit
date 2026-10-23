@@ -2,10 +2,22 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-732** (2026-10-23): a prepared `bms_program_t` owns typed Root/RANDOM/IF,
+Chart and Text values with stable IDs, ordered children and derived parent queries.
+Factories supply each scope’s first Chart; target lookup skips Text and nested scopes.
+Validation rejects invalid roots, duplicate IDs/parents, orphan/cyclic graphs, leaf children,
+missing Charts, invalid agreed grammar and node/depth/content/Text limits. Inactive typed
+content retains exact positions and separate hold endpoint contributions. GATE and Linux
+Clang each pass **4,631/4,631**; whitespace and **2-TU** complexity pass without increased
+allowances. Final documentation checks pass **5/5**; focused
+model checks pass **194 assertions / 20 cases**. No live legacy mirror or public runtime
+cutover is enabled. **T-733 remains blocked on question 22** (complete directive mapping);
+questions 21, 23 and 24 still gate their own later slices. No successor is active.
+
 Completed **T-731** (2026-10-23): the code-free scoped BMS audit maps command families,
 active/inactive ownership, every editor entry family and the one-way native/public cutover.
 Dependent cards now name the traced supporting files. Documentation checks pass **5/5**
-and whitespace passes. **T-732 is ready**; questions 21–24 still gate their dependent slices.
+and whitespace passes. Questions 21–24 still gate their dependent slices.
 No runtime or song-document changes; no successor implementation is active.
 
 Completed **T-228** (2026-10-23): Compose has one right dock for Inspector, Sounds,
@@ -337,14 +349,15 @@ osu! custom-set notes**, and BMSON layered authoring. Existing retained BMSON fu
 remains supported. Question 25 gates the model; no flattened-composite shortcut, hidden BMSON
 generic backing or whole-set migration is approved. Start only when the owner requests it.
 
-Scoped BMS program **T-731 audit complete** (2026-10-23; runtime implementation not started):
+Scoped BMS program **T-731/T-732 complete** (2026-10-23; prepared values only, no public cutover):
 [approved Control/Chart/Text contract](../../docs/chart-editor-plan/editing/bms-scoped-program.md),
 [model/migration T-731–T-737](../../docs/chart-editor-plan/tasks/bms-scoped-model.md), then
 [authoring/integration T-738–T-744](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md).
 The [ownership/transition audit](../../docs/chart-editor-plan/audits/bms-scoped-ownership.md)
 records every modeled family, inactive declarations/hold endpoints, editor entries and exact
-cutover scope. **T-732 is ready** for the agreed Root/RANDOM/IF value model; no successor
-implementation is started by this audit. Questions 21–24 gate range shrinking, non-body directive presentation,
+cutover scope. T-732 implements the agreed Root/RANDOM/IF prepared value model.
+**T-733 is blocked on question 22**; no successor implementation is active.
+Questions 21–24 gate range shrinking, non-body directive presentation,
 selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
 are already settled. This audit does not start dependent implementation or revive deferred work.
 

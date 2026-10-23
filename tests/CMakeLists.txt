@@ -70,6 +70,7 @@ add_executable(wormedit_core_tests
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
     core/bms_branch_editor_tests.cpp
+    core/bms_program_tests.cpp
     core/bmson_sound_channel_editor_tests.cpp
     core/note_to_bgm_tests.cpp
     core/bmson_lane_mode_tests.cpp

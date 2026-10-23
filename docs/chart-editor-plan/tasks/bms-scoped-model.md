@@ -24,10 +24,11 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 
 ## T-732 Define ordered Control Chart and Text program values
 
-- **Status:** ready (T-731 completed 2026-10-23; limited to agreed Root/RANDOM/IF values)
+- **Status:** done (2026-10-23; agreed Root/RANDOM/IF prepared value model)
+- **Value model (2026-10-23):** `bms_program_t` owns immutable validated nodes. Ordered child IDs are the sole parent/order authority; parent/index maps are derived. Existing `branch_id_t` identifies all program nodes, while content has unique `object_id_t` identities across every Chart. Typed note/hold-endpoint, BGM/BGA, timing declaration/reference, measure-length, resource and metadata values retain inactive meaning; rational measure fractions address the difficulty’s shared geometry. Factories create Root/RANDOM/IF plus an empty Chart, require caller-supplied stable IDs and reject without modifying the input value. The model deliberately performs structural/identity/budget validation only; evaluation, musical/resource validation and native-only edit adapters remain T-733–T-737. No live document field or writable legacy mirror is added; directive mapping and questions 21–24 remain open.
 - **Outcome:** a typed scoped program can represent Root, nested control scopes, several Chart children and ordered Text blocks with validated stable identities.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/chart_object_ids.h`.
-- **Files owned:** new `include/wormedit/core/bms_program.h`, new `src/core/bms_program.cpp`, `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/document.cpp`, new `tests/core/bms_program_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card, `src/core/id_ceiling.h`, `src/core/chart_object_ids.h`.
+- **Files owned:** new `include/wormedit/core/bms_program.h`, new `src/core/bms_program.cpp`, `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/core/document.cpp`, new `tests/core/bms_program_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card, `src/core/id_ceiling.h`, `src/core/chart_object_ids.h`, `memory/chart-editor-status/resume.md` (completion/next-card status only).
 - **Steps:**
   1. Add the single program owner and typed node/content values using T-731's map; construction and queries live on their owning types.
   2. Add Root/RANDOM/IF scope factories that supply one empty Chart child, plus stable parent/order and first-Chart queries; leave non-body directive presentation to question 22.
@@ -36,6 +37,7 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 - **Invariants:** node identity is independent of byte spans and list positions; selecting a control resolves its first Chart, not the first child of any kind.
 - **Reject/failure behavior:** invalid construction returns typed diagnostics without publishing partial nodes or identity changes.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program]'`.
+- **Verification results (2026-10-23):** GATE passes build, **4,631/4,631** tests, whitespace and complexity across **2 translation units**, with no new/increased allowances (`/tmp/t732-gate3.log`, `/tmp/wormedit-gate.6vDTGm`). The Linux Clang build and full suite also pass **4,631/4,631** (`/tmp/t732-clang-ctest.log`). Final documentation checks pass **5/5**. Focused `[bms-program]` tests pass **194 assertions / 20 cases** (`/tmp/t732-core-final.log`). Graph, scope factories, ordered targeting, inactive typed payloads, invalid ownership/identity, bounds and rejection atomicity are exercised. No UI/native/persistence behavior is activated by this card.
 - **Out of scope:** parsing (T-733), preview evaluation (T-734), persistence/cutover (T-737/T-744), full directive UI (T-743).
 
 ## T-733 Decode modeled content in every BMS scope

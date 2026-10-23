@@ -63,23 +63,26 @@ Execute prerequisites in order. T-744 owns public cutover and removal of tempora
 
 ## T-734 Derive playable chart projections from scoped programs
 
-- **Status:** ready (T-733 completed 2026-10-23)
+- **Status:** done (2026-10-23; detached prepared projection only, public activation stays T-744)
+- **Implementation:** `bms_program_projection_t::from` evaluates typed controls into a detached const-access cache; evaluation inputs contain no edit target. It resolves active declarations in authored program order (first WAV/BMP, latest timing/measure declarations), maps exact shared positions, ranks active BGM lines and retains both hold endpoints plus referenced declaration owners. Complete-input identity reservation keeps unchanged objects and missing-BMP placeholders stable across outcomes. Owner lookup rejects hidden/stale contributors. No source serialization/reparse or production owner replacement is involved.
 - **Outcome:** the same program and evaluation environment produce a deterministic chart projection with semantic-owner identities on editable objects.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_program.h`, `src/core/bms_branch_view.cpp`, `src/formats/bms_branch_selection.cpp`, `docs/references/bms-control-flow.md`.
-- **Files owned:** `include/wormedit/core/bms_program.h`, new `src/core/bms_program_projection.cpp`, `include/wormedit/core/bms_branch_view.h`, `src/core/bms_branch_view.cpp`, `include/wormedit/formats/bms_branch_selection.h`, `src/formats/bms_branch_selection.cpp`, new `tests/core/bms_program_projection_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
+- **Files owned:** `include/wormedit/core/bms_program.h`, new `src/core/bms_program_projection.cpp`, `include/wormedit/core/bms_branch_view.h`, `src/core/bms_branch_view.cpp`, `include/wormedit/formats/bms_branch_selection.h`, `src/formats/bms_branch_selection.cpp`, new `tests/core/bms_program_projection_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `include/wormedit/formats/bms.h`, `memory/chart-editor-status/resume.md`, this card.
+- **Supporting-file extension (coordinator, 2026-10-23):** move the prepared geometry/asset aggregate from `include/wormedit/formats/bms.h` to its core program owner so pure evaluation has no formats dependency; update `memory/chart-editor-status/resume.md` for the verified handoff. No public import or edit activation.
 - **Steps:**
   1. Evaluate the typed program using existing profile rules for root/common content, RANDOM/IF, fixed selectors and switch fallthrough.
   2. Resolve scoped declarations in BMS program order and derive notes, timing, resources and geometry without a second writable semantic store.
   3. Return stable owner IDs for visible content and bounded diagnostics for inactive/invalid targets; keep edit-target choice separate from evaluation inputs.
   4. Compare all bounded fixture outcomes with the legacy evaluator, including nested scopes, holds, resource overrides and several Chart children.
 - **Invariants:** sibling Chart order does not concatenate musical time; hidden objects cannot be mutated through stale visible selections.
-- **Reject/failure behavior:** invalid/capped evaluation returns diagnostics and does not replace the last accepted document or projection.
+- **Reject/failure behavior:** invalid/capped evaluation returns diagnostics and no candidate, leaving the input and any previously accepted projection unchanged. Duplicate/invalid/unreachable explicit choices, invalid fixed selectors, ambiguous identities, missing declaration assets, invalid geometry and unpaired holds refuse atomically; unresolved event references retain bounded legacy-compatible warning behavior.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-projection]'`.
+- **Verification results (2026-10-23):** GATE passes build, all **4,679/4,679** tests, whitespace and **2-TU** changed-C++ complexity (`/tmp/t734-gate1.log`, `/tmp/wormedit-gate.n7Ghhz`). Its actual tail is `100% tests passed out of 4679` and `gate: passed`. Explicit checks of **5** additional header consumers also pass, with no new/increased allowances (`/tmp/t734-header-complexity.log`). Linux Clang builds without warnings and passes the same **4,679/4,679** tests (`/tmp/t734-clang-build.log`, `/tmp/t734-clang-ctest.log`). Focused projection output is `All tests passed (2148 assertions in 22 test cases)` (`/tmp/t734-focused-final.log`): bounded mixed/fixed/nested control outcomes, 18 built-in profile fixtures, scoped resource/timing precedence, BGM ranking, cross-scope holds, several Chart children, typed edits, stable owners and bounded refusal. Final documentation checks pass **5/5**.
 - **Out of scope:** deciding inactive-scope preview UX (question 24/T-743), scoped writes (T-736), changing the supported BMS profile language.
 
 ## T-735 Serialize complete scoped programs from semantic owners
 
-- **Status:** blocked-on T-734
+- **Status:** ready (T-734 completed 2026-10-23)
 - **Outcome:** default BMS output serializes all scopes and their current typed content, with Text retained in place and no duplicate raw semantic statements.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `include/wormedit/core/bms_program.h`, `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, `tests/formats/bms_writer_tests.cpp`.
 - **Files owned:** `include/wormedit/core/bms_program.h`, `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, new `src/formats/bms_program_writer.cpp`, new `tests/formats/bms_program_writer_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.

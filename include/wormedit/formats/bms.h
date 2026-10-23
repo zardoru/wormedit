@@ -71,17 +71,6 @@ struct bms_parse_payload_t {
 };
 using bms_parse_outcome_t = diagnosed_t<bms_parse_payload_t, std::vector<bms_parse_diagnostic_t>>;
 
-// Prepared import only; production ownership is activated by T-744. Geometry
-// identities and shared assets are separate from the scoped semantic statements.
-struct bms_prepared_program_t {
-    bms_program_t program;
-    std::vector<measure_id_t> measures;
-    std::optional<lane_input_profile_t> lane_profile;
-    std::vector<bgm_source_lane_t> bgm_columns;
-    std::vector<resource_entry_t> resources;
-    std::vector<audio_asset_t> audio_assets;
-    std::vector<visual_asset_t> visual_assets;
-};
 struct bms_program_import_payload_t {
     std::optional<bms_prepared_program_t> prepared;
     encoding_provenance_t encoding;

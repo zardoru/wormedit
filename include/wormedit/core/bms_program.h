@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/result.h>
+#include <wormedit/core/lane_profiles.h>
 #include <array>
 #include <span>
 #include <string_view>
@@ -225,5 +226,69 @@ class bms_program_t {
     std::unordered_map<std::uint64_t, std::size_t> indices_;
     std::unordered_map<std::uint64_t, branch_id_t> parents_;
     std::size_t root_index_{};
+};
+// Prepared import only; production ownership is activated by T-744. Geometry
+// identities and shared assets are separate from the scoped semantic statements.
+struct bms_prepared_program_t {
+    bms_program_t program;
+    std::vector<measure_id_t> measures;
+    std::optional<lane_input_profile_t> lane_profile;
+    std::vector<bgm_source_lane_t> bgm_columns;
+    std::vector<resource_entry_t> resources;
+    std::vector<audio_asset_t> audio_assets;
+    std::vector<visual_asset_t> visual_assets;
+};
+
+struct bms_program_evaluation_t {
+    // Evaluation choices only. Scope/Chart edit targeting is separate state.
+    std::vector<branch_selection_t> selections;
+    auto operator==(const bms_program_evaluation_t&) const -> bool = default;
+};
+struct bms_program_projection_limits_t {
+    std::size_t maximum_nodes{262'144};
+    std::size_t maximum_depth{256};
+    std::size_t maximum_input_items{1'000'000};
+    std::size_t maximum_active_items{1'000'000};
+    std::size_t maximum_diagnostics{256};
+    std::uint64_t maximum_resolution{1'000'000'000};
+    auto operator==(const bms_program_projection_limits_t&) const -> bool = default;
+};
+struct bms_program_owner_t {
+    branch_id_t scope;
+    branch_id_t chart;
+    object_id_t item;
+    auto operator==(const bms_program_owner_t&) const -> bool = default;
+};
+struct bms_program_projection_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    failure_code_t code{failure_code_t::invalid_data};
+    std::string message;
+    branch_id_t node;
+    object_id_t item;
+    [[nodiscard]] auto is_error() const -> bool { return severity == diagnostic_severity_t::error; }
+    auto operator==(const bms_program_projection_diagnostic_t&) const -> bool = default;
+};
+using bms_program_projection_diagnostics_t = std::vector<bms_program_projection_diagnostic_t>;
+
+// Detached derived cache, with const-only access. Never a second writable
+// semantic owner or an implicitly published replacement for the live chart.
+class bms_program_projection_t {
+  public:
+    [[nodiscard]] static auto from(const bms_prepared_program_t& prepared,
+        const bms_program_evaluation_t& evaluation = {}, bms_program_projection_limits_t limits = {})
+        -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] auto song() const -> const song_document_t& { return song_; }
+    [[nodiscard]] auto active_charts() const -> std::span<const branch_id_t> { return active_charts_; }
+    // Prepared geometry, assets, nodes and content have disjoint nonzero identities.
+    // Objects, resources and measure geometry use their stable ID value here.
+    // A hold carries both endpoint owners; referenced declarations also contribute.
+    [[nodiscard]] auto owners(std::uint64_t id) const -> std::span<const bms_program_owner_t>;
+    [[nodiscard]] auto resolve_owner(std::uint64_t id, bms_program_owner_t expected) const
+        -> result_t<bms_program_owner_t, error_t<failure_code_t>>;
+  private:
+    bms_program_projection_t() = default;
+    song_document_t song_;
+    std::vector<branch_id_t> active_charts_;
+    std::unordered_map<std::uint64_t, std::vector<bms_program_owner_t>> owners_;
 };
 } // namespace wormedit

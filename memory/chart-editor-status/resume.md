@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-734** (2026-10-23): detached typed-program evaluation derives playable
+notes/holds, timing, scoped resources, exact measure geometry and active BGM columns.
+Root/common content, nested IF chains, fixed selectors and switch fallthrough match
+bounded legacy outcomes. Program order controls declarations without concatenating Charts;
+stable owner/contributor IDs include both hold endpoints and referenced definitions.
+Invalid/unreachable choices, ambiguous identities, invalid geometry and capped evaluations
+return no candidate; stale hidden owner lookup refuses. GATE and Linux Clang each pass
+**4,679/4,679**; whitespace and **7-TU** complexity pass without increased allowances.
+Focused projection checks pass **2,148 assertions / 22 cases**, including all 18 built-in
+profile fixtures. Final documentation checks pass **5/5**. The legacy public owner remains
+authoritative until T-744. **T-735 is ready**; no successor implementation is active.
+
 Completed **T-733** (2026-10-23): prepared scoped import shares the existing BMS source
 parser and decodes active/inactive declarations, events, exact positions and both hold endpoints.
 Ordered IF chains, separate fixed-selector settings nodes and anchored case SKIP behavior retain
@@ -12,7 +24,7 @@ Slot provenance stays bounded by retaining source bytes once. GATE and Linux Cla
 pass **4,657/4,657**; whitespace and **5-TU** complexity pass without increased allowances.
 Final documentation checks pass **5/5**. Focused import/model checks
 pass **390 assertions / 46 cases**; existing BMS checks pass **8,575 / 150**. The legacy
-public document remains authoritative. **T-734 is ready**; no successor implementation is active.
+public document remains authoritative. **T-734 is complete above; T-735 is ready**; no successor implementation is active.
 
 Completed **T-732** (2026-10-23): a prepared `bms_program_t` owns typed Root/RANDOM/IF,
 Chart and Text values with stable IDs, ordered children and derived parent queries.

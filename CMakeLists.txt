@@ -226,6 +226,7 @@ if(WORMEDIT_ENABLE_LUA)
     add_library(wormedit_scripting
         src/scripting/lua_sandbox.cpp
         src/scripting/lua_curve.cpp
+        src/scripting/lua_document_api.cpp
     )
     add_library(wormedit::scripting ALIAS wormedit_scripting)
     target_include_directories(wormedit_scripting PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

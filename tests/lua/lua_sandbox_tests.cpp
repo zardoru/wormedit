@@ -341,3 +341,43 @@ TEST_CASE("Lua installed invalid numeric arguments close the session", "[lua-san
     REQUIRE_FALSE(sandbox.call_function(std::numeric_limits<double>::infinity(), {}));
     CHECK_FALSE(sandbox.is_open());
 }
+
+TEST_CASE("Lua named snapshots are owned immutable and support bounded indexed iteration", "[lua-sandbox]") {
+    auto sandbox=session();
+    lua_sandbox_context_t context{lua_sandbox_node_t::from("items",lua_sandbox_context_t{
+        {.key=std::int64_t{1},.value=lua_sandbox_value_t{std::int64_t{5}}}})};
+    REQUIRE(sandbox.install_snapshot("snapshot",context));
+    context.clear();
+    CHECK(evaluate(sandbox,"local sum=0; for _,v in ipairs(snapshot.items) do sum=sum+v end; return sum")
+        ==lua_sandbox_value_t{std::int64_t{5}});
+    check_failure(sandbox,"return snapshot.items[3]",failure_code_t::task_failed);
+}
+
+TEST_CASE("Lua structured extraction returns deterministic owned scalar trees", "[lua-sandbox]") {
+    auto sandbox=session();
+    const auto result=sandbox.evaluate_context("return {z=3,a={true,2.5,'x'}}");
+    REQUIRE(result); REQUIRE(result->size()==2);
+    CHECK(std::get<std::string>((*result)[0].key)=="a");
+    const auto& children=std::get<lua_sandbox_context_t>((*result)[0].value);
+    CHECK(children.size()==3);
+}
+
+TEST_CASE("Lua structured extraction rejects cycles unsupported values and nonfinite numbers", "[lua-sandbox]") {
+    const auto source=GENERATE("local t={};t.self=t;return t", "return {function() end}",
+        "return {[true]=1}", "return {0/0}", "return {math.huge}", "return 1");
+    auto sandbox=session();
+    const auto result=sandbox.evaluate_context(source);
+    REQUIRE_FALSE(result); CHECK_FALSE(sandbox.is_open());
+}
+
+TEST_CASE("Lua structured extraction bounds total result storage", "[lua-sandbox]") {
+    auto sandbox=session({.maximum_result_bytes=128});
+    const auto result=sandbox.evaluate_context("return {string.rep('x',129)}");
+    REQUIRE_FALSE(result); CHECK(result.error().code==failure_code_t::capacity_exceeded);
+}
+
+TEST_CASE("Lua structured extraction has a bounded nesting depth", "[lua-sandbox]") {
+    auto sandbox=session();
+    const auto result=sandbox.evaluate_context("local t={};local p=t;for i=1,34 do p[1]={};p=p[1] end;return t");
+    REQUIRE_FALSE(result); CHECK(result.error().code==failure_code_t::invalid_data);
+}

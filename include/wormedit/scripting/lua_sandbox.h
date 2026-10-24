@@ -32,6 +32,10 @@ using lua_sandbox_value_t = std::variant<std::monostate, bool, std::int64_t, dou
 struct lua_sandbox_node_t {
     std::variant<std::string, std::int64_t> key;
     std::variant<lua_sandbox_value_t, std::vector<lua_sandbox_node_t>> value;
+    [[nodiscard]] static auto from(std::string key, lua_sandbox_value_t value) -> lua_sandbox_node_t;
+    [[nodiscard]] static auto from(std::string key, std::vector<lua_sandbox_node_t> children) -> lua_sandbox_node_t;
+    [[nodiscard]] static auto from_unsigned(std::string key, std::uint64_t value) -> lua_sandbox_node_t;
+    auto operator==(const lua_sandbox_node_t&) const -> bool = default;
 };
 using lua_sandbox_context_t = std::vector<lua_sandbox_node_t>;
 
@@ -51,6 +55,14 @@ class lua_sandbox_t {
     // No raw Lua state, host handles or document APIs are exposed. Loading is text-only.
     [[nodiscard]] auto evaluate(std::string_view source)
         -> result_t<lua_sandbox_value_t, error_t<failure_code_t>>;
+    // Install a deeply immutable, Lua-owned global snapshot. No host pointers
+    // survive the protected installation. Numeric lookups outside [1,length+1]
+    // fail when bounded_lookup is enabled; length+1 is the ipairs sentinel.
+    [[nodiscard]] auto install_snapshot(std::string_view name, const lua_sandbox_context_t& context,
+        bool bounded_lookup = true) -> result_t<void, error_t<failure_code_t>>;
+    // Return a bounded owned table tree, without exposing Lua references.
+    [[nodiscard]] auto evaluate_context(std::string_view source, std::string_view chunk_name = "sandbox")
+        -> result_t<lua_sandbox_context_t, error_t<failure_code_t>>;
     // Install once: source returns a closure, or a table whose named factory
     // returns one. Factories receive immutable initialization context. Pure calls
     // reject retained-state changes, including globals and the random stream.

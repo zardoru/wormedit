@@ -37,6 +37,8 @@ struct lua_sandbox_t::implementation_t {
     const lua_sandbox_context_t* call_context{};
     double argument{};
     bool pure{};
+    bool bounded_lookup{};
+    std::string_view snapshot_name;
     static inline char context_metatable_key;
 
 
@@ -214,7 +216,18 @@ struct lua_sandbox_t::implementation_t {
         return 0;
     }
     static auto immutable_index(lua_State* state) -> int {
+        auto& self = context(state);
+        if (!self.consume_instruction()) return luaL_error(state, "%s", self.abort_message);
         lua_getiuservalue(state, 1, 1);
+        lua_getiuservalue(state, 1, 2);
+        const auto bounded = lua_toboolean(state, -1);
+        lua_pop(state, 1);
+        if (bounded && lua_type(state, 2) == LUA_TNUMBER) {
+            const auto length = lua_rawlen(state, -1);
+            if (!lua_isinteger(state, 2) || lua_tointeger(state, 2) < 1 ||
+                static_cast<lua_Unsigned>(lua_tointeger(state, 2)) > length + 1)
+                return luaL_error(state, "snapshot index exceeds its bounds");
+        }
         lua_pushvalue(state, 2);
         lua_rawget(state, -2);
         return 1;
@@ -252,7 +265,9 @@ struct lua_sandbox_t::implementation_t {
     static void push_context(lua_State* state, const lua_sandbox_context_t& nodes, unsigned depth = 0) {
         if (depth > 32) luaL_error(state, "recipe context nesting exceeds limit");
         if (!lua_checkstack(state, 8)) luaL_error(state, "recipe context stack exceeds limit");
-        lua_newuserdatauv(state, 0, 1);
+        lua_newuserdatauv(state, 0, 2);
+        lua_pushboolean(state, context(state).bounded_lookup);
+        lua_setiuservalue(state, -2, 2);
         lua_rawgetp(state, LUA_REGISTRYINDEX, &context_metatable_key);
         lua_setmetatable(state, -2);
         lua_createtable(state, 0, static_cast<int>(nodes.size()));
@@ -277,6 +292,14 @@ struct lua_sandbox_t::implementation_t {
         lua_pushcfunction(state, immutable_pairs); lua_setfield(state, -2, "__pairs");
         lua_pushboolean(state, false); lua_setfield(state, -2, "__metatable");
         lua_rawsetp(state, LUA_REGISTRYINDEX, &context_metatable_key);
+    }
+    static auto install_named_snapshot(lua_State* state) -> int {
+        auto& self = context(state);
+        lua_pushglobaltable(state);
+        lua_pushlstring(state, self.snapshot_name.data(), self.snapshot_name.size());
+        push_context(state, *self.call_context);
+        lua_rawset(state, -3);
+        return 0;
     }
     static auto install(lua_State* state) -> int {
         auto& self = context(state);
@@ -305,7 +328,7 @@ struct lua_sandbox_t::implementation_t {
     }
     static auto run(lua_State* state) -> int {
         auto& self = context(state);
-        self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), "sandbox", "t");
+        self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), self.chunk_name.empty() ? "sandbox" : self.chunk_name.c_str(), "t");
         if (self.load_status != LUA_OK)
             return lua_error(state);
         lua_call(state, 0, 1);
@@ -344,6 +367,69 @@ struct lua_sandbox_t::implementation_t {
         if (status != LUA_OK || !can_continue()) return std::unexpected(error(status));
         return {};
     }
+    struct output_reader_t {
+        implementation_t& owner;
+        std::set<const void*> active;
+        std::size_t bytes{};
+        auto reserve(std::size_t count) -> bool {
+            if (!owner.consume_instruction()) return false;
+            if (count > owner.limits.maximum_result_bytes - bytes) {
+                owner.record_failure(failure_code_t::capacity_exceeded, "Lua result tree exceeds its byte limit.");
+                return false;
+            }
+            bytes += count;
+            return true;
+        }
+        auto key(int index) -> result_t<std::variant<std::string,std::int64_t>,error_t<failure_code_t>> {
+            if (lua_isinteger(owner.state,index)) return static_cast<std::int64_t>(lua_tointeger(owner.state,index));
+            if (lua_type(owner.state,index) != LUA_TSTRING) return std::unexpected(error_t{
+                failure_code_t::invalid_data,"Lua result table keys must be strings or integers."});
+            std::size_t length{};
+            const auto* text=lua_tolstring(owner.state,index,&length);
+            if (!reserve(length)) return std::unexpected(owner.error(LUA_ERRRUN));
+            return std::string(text,length);
+        }
+        auto value(unsigned depth) -> result_t<decltype(lua_sandbox_node_t::value),error_t<failure_code_t>> {
+            if (lua_istable(owner.state,-1)) {
+                auto children=table(-1,depth+1);
+                if (!children) return std::unexpected(children.error());
+                return std::move(*children);
+            }
+            if (lua_type(owner.state,-1)==LUA_TSTRING) {
+                std::size_t length{};
+                (void)lua_tolstring(owner.state,-1,&length);
+                if (!reserve(length)) return std::unexpected(owner.error(LUA_ERRRUN));
+            }
+            auto scalar=owner.result();
+            if (!scalar) return std::unexpected(scalar.error());
+            return std::move(*scalar);
+        }
+        auto table(int index,unsigned depth=0) -> result_t<lua_sandbox_context_t,error_t<failure_code_t>> {
+            if (!lua_istable(owner.state,index)) return std::unexpected(error_t{
+                failure_code_t::invalid_data,"Lua structured result must be a table."});
+            const auto* identity=lua_topointer(owner.state,index);
+            if (depth>32 || active.contains(identity)) return std::unexpected(error_t{
+                failure_code_t::invalid_data,"Lua result tree is cyclic or exceeds its nesting limit."});
+            active.insert(identity);
+            index=lua_absindex(owner.state,index);
+            lua_sandbox_context_t result;
+            lua_pushnil(owner.state);
+            while (lua_next(owner.state,index)) {
+                if (!reserve(sizeof(lua_sandbox_node_t))) { lua_pop(owner.state,2); return std::unexpected(owner.error(LUA_ERRRUN)); }
+                auto entry_key=key(-2);
+                auto entry_value=value(depth);
+                if (!entry_key || !entry_value) {
+                    lua_pop(owner.state,2);
+                    return std::unexpected(!entry_key ? entry_key.error() : entry_value.error());
+                }
+                result.push_back({.key=std::move(*entry_key),.value=std::move(*entry_value)});
+                lua_pop(owner.state,1);
+            }
+            active.erase(identity);
+            std::ranges::sort(result,{},&lua_sandbox_node_t::key);
+            return result;
+        }
+    };
     // Raw inspection only: no metamethods or Lua callbacks. Reserve stack space
     // first; all subsequent API operations merely push existing Lua values.
     struct snapshot_t {
@@ -459,6 +545,17 @@ struct lua_sandbox_t::implementation_t {
 
 };
 
+auto lua_sandbox_node_t::from(std::string key,lua_sandbox_value_t value) -> lua_sandbox_node_t {
+    return {.key=std::move(key),.value=std::move(value)};
+}
+auto lua_sandbox_node_t::from(std::string key,std::vector<lua_sandbox_node_t> children) -> lua_sandbox_node_t {
+    return {.key=std::move(key),.value=std::move(children)};
+}
+auto lua_sandbox_node_t::from_unsigned(std::string key,std::uint64_t value) -> lua_sandbox_node_t {
+    if (value>static_cast<std::uint64_t>(INT64_MAX)) return from(std::move(key),std::to_string(value));
+    return from(std::move(key),static_cast<std::int64_t>(value));
+}
+
 lua_sandbox_t::lua_sandbox_t(std::unique_ptr<implementation_t> implementation)
     : implementation_(std::move(implementation)) {}
 lua_sandbox_t::lua_sandbox_t(lua_sandbox_t&&) noexcept = default;
@@ -506,6 +603,40 @@ auto lua_sandbox_t::evaluate(std::string_view source) -> result_t<lua_sandbox_va
     if (!value) self.close();
     return value;
 }
+auto lua_sandbox_t::install_snapshot(std::string_view name,const lua_sandbox_context_t& context,bool bounded_lookup)
+    -> result_t<void,error_t<failure_code_t>> {
+    if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready,"Lua session is closed."});
+    auto& self=*implementation_;
+    if (name.empty() || name.size()>self.limits.maximum_source_bytes) {
+        self.close();
+        return std::unexpected(error_t{failure_code_t::invalid_request,"Snapshot name is empty or too large."});
+    }
+    self.snapshot_name=name; self.call_context=&context; self.bounded_lookup=bounded_lookup;
+    auto result=self.invoke(implementation_t::install_named_snapshot,0);
+    self.snapshot_name={}; self.call_context=nullptr; self.bounded_lookup=false;
+    lua_settop(self.state,0);
+    if (!result) self.close();
+    return result;
+}
+auto lua_sandbox_t::evaluate_context(std::string_view source,std::string_view chunk_name)
+    -> result_t<lua_sandbox_context_t,error_t<failure_code_t>> {
+    if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready,"Lua session is closed."});
+    auto& self=*implementation_;
+    if (source.size()>self.limits.maximum_source_bytes) self.record_failure(
+        failure_code_t::capacity_exceeded,"Lua source exceeds the source byte limit.");
+    self.source=source; self.chunk_name=chunk_name;
+    const auto invoked=self.invoke(implementation_t::run,1);
+    self.source={}; self.chunk_name.clear();
+    if (!invoked) { self.close(); return std::unexpected(invoked.error()); }
+    if (!lua_checkstack(self.state,512)) {
+        self.close(); return std::unexpected(error_t{failure_code_t::capacity_exceeded,"Cannot reserve Lua result inspection stack."});
+    }
+    implementation_t::output_reader_t reader{.owner=self};
+    auto result=reader.table(-1);
+    lua_settop(self.state,0);
+    if (!result) self.close();
+    return result;
+}
 auto lua_sandbox_t::install_function(std::string_view source, const lua_sandbox_context_t& context,
     std::string_view entry_point, std::string_view chunk_name, bool pure)
     -> result_t<void, error_t<failure_code_t>> {
@@ -521,7 +652,7 @@ auto lua_sandbox_t::install_function(std::string_view source, const lua_sandbox_
     self.call_context = &context;
     self.pure = pure;
     auto result = self.invoke(implementation_t::install, 0);
-    self.source = {}; self.entry_point = {}; self.call_context = nullptr;
+    self.source = {}; self.entry_point = {}; self.call_context = nullptr; self.chunk_name.clear();
     lua_settop(self.state, 0);
     if (!result) self.close();
     return result;

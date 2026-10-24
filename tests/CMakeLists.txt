@@ -597,6 +597,7 @@ if(WORMEDIT_ENABLE_LUA)
         lua/lua_runtime_tests.cpp
         lua/lua_sandbox_tests.cpp
         lua/lua_curve_tests.cpp
+        lua/lua_document_api_tests.cpp
     )
     target_link_libraries(wormedit_lua_tests
         PRIVATE

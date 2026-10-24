@@ -113,14 +113,16 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-158 Give Lua read-only access to the document
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-156)
+- **Status:** done (2026-10-24)
 - **Outcome:** a versioned `wormedit` Lua table exposes selection, measures, timing, lane profile, and MIDI asset data read-only (API version 1).
 - **Read first:** `include/wormedit/scripting/lua_sandbox.h`, `docs/chart-editor-plan/formats-persistence.md` (Lua paragraphs), `docs/chart-editor-plan/decisions/open-questions.md` (question 13).
-- **Files owned:** new `src/scripting/lua_document_api.cpp/.h`, new `tests/lua/lua_document_api_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/scripting/lua_document_api.cpp/.h`, new `tests/lua/lua_document_api_tests.cpp`, `include/wormedit/scripting/lua_sandbox.h`, `src/scripting/lua_sandbox.cpp`, `tests/lua/lua_sandbox_tests.cpp`, `src/scripting/lua_curve.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Parallel ownership (2026-10-24):** document API agent owns the new API, sandbox protected snapshot/structured-result support and Lua curve snapshot-factory reuse. Coordinator owns build/docs wiring. Baseline MIDI only; unanswered question 13 continues to exclude extra MIDI categories.
 - **Steps:** 1. Userdata/table snapshots built before the script runs (no live pointers). 2. Exact rationals as `{num, den}` tables. 3. Tests for each accessor.
 - **Invariants:** scripts cannot mutate the live document.
 - **Reject/failure behavior:** accessing beyond limits raises a Lua error.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^lua\.'`.
+- **Implementation:** owned recursively immutable snapshots preserve exact IDs/rationals and bounded baseline MIDI access. Structured extraction rejects unsupported/cyclic/nonfinite results within the shared sandbox budget. Focused Lua and ASan/LSan/UBSan pass 497 assertions / 68 cases across the integrated batch; T-158 complexity passes five explicit translation units.
 - **Out of scope:** emitting edits (T-159).
 
 ## T-159 Run a Lua generator as a previewable command batch

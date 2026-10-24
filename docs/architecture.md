@@ -561,3 +561,12 @@ binding or native VM serialization crosses the sandbox boundary. T-189 adds prot
 function calls and recursively immutable context userdata; their backing tables never leave the
 proxy. Pure calls inspect bounded reachable closure state and reject retained mutation or opaque
 mutable userdata. The recipe adapter exposes only owned value snapshots and scalar results.
+
+The API-v1 `lua_document_snapshot_t` builds owned, bounded `wormedit` snapshots before running
+Lua. Measures, timing, lane layouts, selection and existing MIDI fields carry exact IDs and
+rationals; no live document pointers enter a VM. The general snapshot exposes modeled MIDI,
+while generator execution filters it to declared inputs at the scripting boundary. Extra MIDI
+categories and file parsing remain separate work. Named snapshots use the sandbox's recursive
+immutable proxies. Structured script results leave Lua only after bounded raw inspection with a reserved Lua
+stack; Lua errors never unwind host-owned result objects. Host construction and extraction
+charge the complete evaluation budget.

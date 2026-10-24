@@ -56,6 +56,7 @@ auto diagnostic_belongs_to_other_chart(const wormedit::song_document_t& document
 } // namespace
 
 void compare_scene_cache_t::panes_t::reset() {
+    playback.reset();
     first_state.reset();
     second_state.reset();
     first_scene = {};
@@ -169,8 +170,8 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
         : workspace.selected_chart.value_or(available.empty() ? wormedit::chart_id_t{}
                                                                : available.front());
     const auto second_id = pair ? pair->second : wormedit::chart_id_t{};
-    const auto* first = history.read_chart(first_id);
-    const auto* second = history.read_chart(second_id);
+    const auto* first = history.document.read_chart(first_id);
+    const auto* second = history.document.read_chart(second_id);
     view.first_chart_id = first_id;
     view.second_chart_id = second_id;
     view.first_difficulty = first ? difficulty_name(*first).c_str() : "No difficulty";
@@ -178,7 +179,8 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
     view.has_two_difficulties = pair.has_value() && first && second;
     view.charts.clear();
     for (const auto* chart : charts)
-        view.charts.push_back({.id = chart->id, .label = difficulty_name(*chart)});
+        if (chart->id != first_id)
+            view.charts.push_back({.id = chart->id, .label = difficulty_name(*chart)});
     if (first) {
         cache_compare_diagnostics(cache, history.document);
         const auto key = std::pair{first->id, history.document.revision};
@@ -206,6 +208,7 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
     auto& panes = cache.panes.get_or_build(
         std::tuple{wormedit::document_stamp_t::from(history.document), first_id, second_id},
         std::mem_fn(&compare_scene_cache_t::panes_t::reset));
+    if (!panes.playback) panes.playback.emplace(wormedit::document_history_t{.document = history.document});
     auto first_app = application_state;
     auto second_app = application_state;
     if (panes.first_state) {
@@ -213,7 +216,7 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
         wormedit::set_viewport_scroll_pixels(*panes.first_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    build_pane_view(first_pane, history, workspace, first_id, panes.first_scene, panes.first_state,
+    build_pane_view(first_pane, *panes.playback, workspace, first_id, panes.first_scene, panes.first_state,
                  first_app, window_width, window_height, first_rows);
     if (panes.first_state) {
         cache.pixels_per_measure = panes.first_state->pixels_per_standard_measure;
@@ -225,7 +228,7 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
         wormedit::set_viewport_scroll_pixels(*panes.second_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    build_pane_view(second_pane, history, workspace, second_id, panes.second_scene, panes.second_state,
+    build_pane_view(second_pane, *panes.playback, workspace, second_id, panes.second_scene, panes.second_state,
                  second_app, window_width, window_height, second_rows);
     view.first_pane = &first_pane.view.compose;
     view.second_pane = &second_pane.view.compose;

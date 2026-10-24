@@ -22,6 +22,9 @@ struct compare_scene_cache_t {
     wormedit::workspace_binding_validation_cache_t binding_validation;
     wormedit::workspace_bms_branch_outline_cache_t branch_outline;
     struct panes_t {
+        // Detached read-only adapter for the Compose projection API. Keep it
+        // per snapshot, without semantic history or the authoring selection.
+        std::optional<wormedit::document_history_t> playback;
         compose_scene_cache_t first_scene, second_scene;
         std::optional<wormedit::editor_interaction_state_t> first_state, second_state;
         void reset();

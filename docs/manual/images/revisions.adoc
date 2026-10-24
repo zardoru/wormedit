@@ -2,6 +2,7 @@
 :shot-area-menu-revision: 851e83b
 :shot-bms-slots-revision: b4d9b5a+dirty
 :shot-command-palette-revision: 851e83b
+:shot-comparison-revision: 6e7fd17+dirty
 :shot-compose-overview-revision: b4d9b5a+dirty
 :shot-keyboard-entry-revision: 851e83b
 :shot-keyboard-hold-revision: 851e83b

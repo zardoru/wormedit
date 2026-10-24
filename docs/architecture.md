@@ -518,3 +518,10 @@ into another transaction to combine edits. The [global execution audit](audits/e
 records remaining legacy sites and distinguishes session creation and detached payloads.
 `architecture.edit_execution` checks every first-party source/header against an exact per-file
 footprint; new files have no allowances, and reductions require lowering the inventory.
+
+Compare/Validate reads complete playback projections rather than the session's selected BMS
+authoring Chart. Its pane cache adapts one detached document snapshot to the existing Compose
+projection API, with no authoring target or semantic Undo records; it never runs chart edits.
+The adapter is rebuilt only when the document/pair cache key changes. Both fields and their
+difference rows therefore share playback choices while the user's authoring selection remains
+untouched. The right-hand picker offers only difficulties other than the active left pane.

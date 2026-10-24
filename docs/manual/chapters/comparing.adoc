@@ -1,0 +1,63 @@
+[#comparing]
+= Comparing and validating difficulties
+
+Use *Compare / Validate* (kbd:[F7]) to inspect two difficulties side by side. The fields are
+read-only and scroll together; yellow bands mark musical positions where their notes or lane
+layouts differ.
+
+== Choose the two difficulties
+
+. Put both difficulties in the same project. In *Project* (kbd:[F1]), use *Import chart…* to
+bring in difficulties from another chart file, or right-click a chart's row and choose
+*Duplicate* to start a variation. Opening another file with *File → Open* replaces the project
+instead.
+. In *Project*, double-click the name of the difficulty you want on the left. This opens it in
+Compose and makes it the active difficulty. Merely ticking its checkbox selects it for batch
+actions; that does not change the active difficulty.
+. Press kbd:[F7], or click the *Compare / Validate* tab.
+. Use the drop-down above the fields to choose the right-hand difficulty. The names above the
+two fields show the pair being compared. To change the left-hand difficulty, open another chart
+from *Project*, then return with kbd:[F7].
+
+With only one difficulty in the project, the tab displays *Choose two difficulties to compare.*
+Validation is still available; add or import another difficulty to show both fields.
+
+.Baseline and Variation: the changed first note and the extra note halfway through the second measure have yellow bands (captured at {shot-comparison-revision})
+image::comparison.png[Two read-only chart fields with synchronized yellow difference bands]
+
+== Read the comparison
+
+Move the mouse over either field and turn the wheel to scroll both fields together. Compare the
+same measure in each pane. To edit a chart, return to *Compose* (kbd:[F4]); clicking a comparison
+field does not place, delete or move notes.
+
+The highlights compare note positions, lanes and kinds, including hold heads and tails, plus lane
+layout changes. Positions align by exact musical measure fractions, even when the difficulties
+use different row resolutions. Yellow bands indicate differences, not validation errors.
+
+Sound assignments, labels and semantic-layer assignments do not affect these highlights. BPM
+changes, other timing events, BGM and BGA are not compared by the yellow bands. Matching fields
+do not prove that two charts sound or export identically. Inspect timing and audio separately
+when checking an arrangement.
+
+For BMS, both panes show the complete difficulty for its current playback choices. Selecting an
+inactive node in the scope tree does not change the comparison into a scope-to-scope diff.
+Change the difficulty's explicit preview choices in Compose if you want to inspect another
+playback outcome, then return to Compare / Validate.
+
+== Follow validation diagnostics
+
+The list above the fields shows document-level diagnostics and diagnostics for the active,
+left-hand difficulty. A diagnostic with a known chart position is clickable: it opens Compose
+and moves the cursor to that position. Entries without a position are informational text.
+
+If the list says *No validation diagnostics.*, no document-validation problems were reported
+for that view. Export-specific compatibility and loss reports are separate; review them when
+exporting to the target format.
+
+== Try it with the example project
+
+The source tree includes `docs/manual/fixtures/comparison/comparison.wormedit`. Open it and
+compare *Baseline* with *Variation*: one note changes lane and another is added halfway through
+the second measure. Choose *Matching copy* in the right-hand picker to see the same notes
+without difference bands. This example has no audio dependencies.

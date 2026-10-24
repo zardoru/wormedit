@@ -43,6 +43,8 @@ include::chapters/measures.adoc[leveloffset=+1]
 
 include::chapters/timing.adoc[leveloffset=+1]
 
+include::chapters/comparing.adoc[leveloffset=+1]
+
 include::chapters/walkthrough-bms.adoc[leveloffset=+1]
 
 include::chapters/walkthrough-osu-stepmania.adoc[leveloffset=+1]

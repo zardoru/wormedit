@@ -1,0 +1,1435 @@
+{
+  "document": {
+    "audio_assets": [],
+    "charts": [
+      {
+        "active_branch_selection": [],
+        "beat_zero_audio_offset_seconds": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bga_events": [],
+        "bgm_source_lanes": [],
+        "bms_bpm_projections": [],
+        "bms_control_tree": null,
+        "bms_measure_length_projections": [],
+        "bms_pause_projections": [],
+        "bookmarks": [],
+        "bpms": [
+          {
+            "beats_per_minute": {
+              "denominator": 1,
+              "numerator": 120
+            },
+            "id": 1,
+            "position": {
+              "measure": 1,
+              "row": 0
+            },
+            "provenance": {
+              "family": 2,
+              "profile": "sm",
+              "source_field": "BPMS",
+              "source_order": 2,
+              "source_spelling": ""
+            }
+          }
+        ],
+        "divisions_per_standard_measure": 960,
+        "id": 1,
+        "input_profile": {
+          "bindings": [
+            {
+              "focused_stage": null,
+              "key": 1,
+              "lane": 2
+            },
+            {
+              "focused_stage": null,
+              "key": 2,
+              "lane": 3
+            },
+            {
+              "focused_stage": null,
+              "key": 3,
+              "lane": 4
+            },
+            {
+              "focused_stage": null,
+              "key": 4,
+              "lane": 5
+            }
+          ],
+          "profile_id": "number-row-default",
+          "requires_focused_stage": false,
+          "stage_count": 1
+        },
+        "kiai": [],
+        "lane_layouts": [
+          {
+            "id": 6,
+            "layout": {
+              "bmson_generic_keys_only": false,
+              "display_name": "dance-single",
+              "lanes": [
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 0,
+                  "glyph": 2,
+                  "id": 2,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Left",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 1,
+                  "glyph": 3,
+                  "id": 3,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Down",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 2,
+                  "glyph": 4,
+                  "id": 4,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Up",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 3,
+                  "glyph": 5,
+                  "id": 5,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Right",
+                  "role": 0,
+                  "stage": 1
+                }
+              ],
+              "profile_id": "stepmania:dance-single",
+              "split_after_column": null,
+              "split_stage": false
+            },
+            "position": {
+              "measure": 1,
+              "row": 0
+            }
+          }
+        ],
+        "measures": [
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 1,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 7,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 1,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 2,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 8,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 2,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 3,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 9,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 3,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 4,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 4,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 5,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 11,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 5,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 6,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 12,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 6,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 7,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 13,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 7,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 8,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 14,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 8,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "author": "",
+          "format_groups": [],
+          "name": "Baseline",
+          "rating": {
+            "denominator": 1,
+            "numerator": 1
+          }
+        },
+        "pauses": [],
+        "scrolls": [],
+        "sections": [],
+        "semantic_layers": [],
+        "sound_channels": [],
+        "source_family": 2,
+        "speeds": [],
+        "sv_recipes": [],
+        "timing_anchors": [],
+        "warps": []
+      },
+      {
+        "active_branch_selection": [],
+        "beat_zero_audio_offset_seconds": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bga_events": [],
+        "bgm_source_lanes": [],
+        "bms_bpm_projections": [],
+        "bms_control_tree": null,
+        "bms_measure_length_projections": [],
+        "bms_pause_projections": [],
+        "bookmarks": [],
+        "bpms": [
+          {
+            "beats_per_minute": {
+              "denominator": 1,
+              "numerator": 120
+            },
+            "id": 10001,
+            "position": {
+              "measure": 10001,
+              "row": 0
+            },
+            "provenance": {
+              "family": 2,
+              "profile": "sm",
+              "source_field": "BPMS",
+              "source_order": 2,
+              "source_spelling": ""
+            }
+          }
+        ],
+        "divisions_per_standard_measure": 960,
+        "id": 2,
+        "input_profile": {
+          "bindings": [
+            {
+              "focused_stage": null,
+              "key": 1,
+              "lane": 2
+            },
+            {
+              "focused_stage": null,
+              "key": 2,
+              "lane": 3
+            },
+            {
+              "focused_stage": null,
+              "key": 3,
+              "lane": 4
+            },
+            {
+              "focused_stage": null,
+              "key": 4,
+              "lane": 5
+            }
+          ],
+          "profile_id": "number-row-default",
+          "requires_focused_stage": false,
+          "stage_count": 1
+        },
+        "kiai": [],
+        "lane_layouts": [
+          {
+            "id": 10006,
+            "layout": {
+              "bmson_generic_keys_only": false,
+              "display_name": "dance-single",
+              "lanes": [
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 0,
+                  "glyph": 2,
+                  "id": 2,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Left",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 1,
+                  "glyph": 3,
+                  "id": 3,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Down",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 2,
+                  "glyph": 4,
+                  "id": 4,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Up",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 3,
+                  "glyph": 5,
+                  "id": 5,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Right",
+                  "role": 0,
+                  "stage": 1
+                }
+              ],
+              "profile_id": "stepmania:dance-single",
+              "split_after_column": null,
+              "split_stage": false
+            },
+            "position": {
+              "measure": 10001,
+              "row": 0
+            }
+          }
+        ],
+        "measures": [
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10001,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10007,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 10001,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10002,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10008,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 10002,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              },
+              {
+                "branch": null,
+                "end": null,
+                "id": 19999,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 10002,
+                  "row": 480
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10003,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10009,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 10003,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10004,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10010,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 10004,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10005,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10011,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 10005,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10006,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10012,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 10006,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10007,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10013,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 10007,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 10008,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10014,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 10008,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "author": "",
+          "format_groups": [],
+          "name": "Variation",
+          "rating": {
+            "denominator": 1,
+            "numerator": 1
+          }
+        },
+        "pauses": [],
+        "scrolls": [],
+        "sections": [],
+        "semantic_layers": [],
+        "sound_channels": [],
+        "source_family": 2,
+        "speeds": [],
+        "sv_recipes": [],
+        "timing_anchors": [],
+        "warps": []
+      },
+      {
+        "active_branch_selection": [],
+        "beat_zero_audio_offset_seconds": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bga_events": [],
+        "bgm_source_lanes": [],
+        "bms_bpm_projections": [],
+        "bms_control_tree": null,
+        "bms_measure_length_projections": [],
+        "bms_pause_projections": [],
+        "bookmarks": [],
+        "bpms": [
+          {
+            "beats_per_minute": {
+              "denominator": 1,
+              "numerator": 120
+            },
+            "id": 20001,
+            "position": {
+              "measure": 20001,
+              "row": 0
+            },
+            "provenance": {
+              "family": 2,
+              "profile": "sm",
+              "source_field": "BPMS",
+              "source_order": 2,
+              "source_spelling": ""
+            }
+          }
+        ],
+        "divisions_per_standard_measure": 960,
+        "id": 3,
+        "input_profile": {
+          "bindings": [
+            {
+              "focused_stage": null,
+              "key": 1,
+              "lane": 2
+            },
+            {
+              "focused_stage": null,
+              "key": 2,
+              "lane": 3
+            },
+            {
+              "focused_stage": null,
+              "key": 3,
+              "lane": 4
+            },
+            {
+              "focused_stage": null,
+              "key": 4,
+              "lane": 5
+            }
+          ],
+          "profile_id": "number-row-default",
+          "requires_focused_stage": false,
+          "stage_count": 1
+        },
+        "kiai": [],
+        "lane_layouts": [
+          {
+            "id": 20006,
+            "layout": {
+              "bmson_generic_keys_only": false,
+              "display_name": "dance-single",
+              "lanes": [
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 0,
+                  "glyph": 2,
+                  "id": 2,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Left",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 1,
+                  "glyph": 3,
+                  "id": 3,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Down",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 2,
+                  "glyph": 4,
+                  "id": 4,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Up",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 3,
+                  "glyph": 5,
+                  "id": 5,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Right",
+                  "role": 0,
+                  "stage": 1
+                }
+              ],
+              "profile_id": "stepmania:dance-single",
+              "split_after_column": null,
+              "split_stage": false
+            },
+            "position": {
+              "measure": 20001,
+              "row": 0
+            }
+          }
+        ],
+        "measures": [
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20001,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20007,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 20001,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20002,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20008,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 20002,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20003,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20009,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 20003,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20004,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20010,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 20004,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20005,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20011,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 20005,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20006,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20012,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 20006,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20007,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20013,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 20007,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20008,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 20014,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 20008,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "author": "",
+          "format_groups": [],
+          "name": "Matching copy",
+          "rating": {
+            "denominator": 1,
+            "numerator": 1
+          }
+        },
+        "pauses": [],
+        "scrolls": [],
+        "sections": [],
+        "semantic_layers": [],
+        "sound_channels": [],
+        "source_family": 2,
+        "speeds": [],
+        "sv_recipes": [],
+        "timing_anchors": [],
+        "warps": []
+      }
+    ],
+    "generator_recipes": [],
+    "id": 1,
+    "metadata": {
+      "artist": "Wormedit manual",
+      "format_groups": [],
+      "ordered_search_tags": [],
+      "title": "Comparing difficulties"
+    },
+    "midi_assets": [],
+    "output_groups": [],
+    "quantization_presets": [],
+    "resources": [],
+    "revision": 0,
+    "schema_version": 6,
+    "storyboards": [],
+    "visual_assets": []
+  },
+  "format": "wormedit-project",
+  "format_version": 1
+}

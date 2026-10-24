@@ -818,6 +818,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        sys/compare_view_tests.cpp
+        ../src/sys/project/compare_view.cpp
         ../src/sys/resources/bga_dock_runtime.cpp
         ../src/sys/resources/bga_usage_view.cpp
         ../src/sys/resources/bga_list_view.cpp

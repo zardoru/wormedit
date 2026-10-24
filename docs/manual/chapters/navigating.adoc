@@ -103,3 +103,6 @@ scroll), then press kbd:[Ctrl+Space] again to select it, or kbd:[Escape] to canc
 
 kbd:[F1] Project, kbd:[F2] Metadata, kbd:[F3] Timing focus (Compose with only timing editable),
 kbd:[F4] Compose, kbd:[F5] Storyboard, kbd:[F6] Audio Slices, kbd:[F7] Compare / Validate.
+
+See <<comparing>> for choosing two difficulties, reading difference bands and following
+validation diagnostics back to Compose.

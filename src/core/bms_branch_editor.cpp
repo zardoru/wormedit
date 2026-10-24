@@ -8,10 +8,90 @@
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 
 namespace wormedit {
 namespace {
 using authored_program_t = result_t<bms_program_t, error_t<failure_code_t>>;
+
+struct note_transfer_selection_t {
+    const bms_program_t& program;
+    const bms_note_transfer_command_t& request;
+    const bms_program_projection_t& projection;
+    const bms_chart_content_t& source;
+    std::set<object_id_t> items;
+
+    auto include_hold(const note_t& note) -> result_t<void, error_t<failure_code_t>> {
+        const auto endpoints = program.hold_endpoints(projection.owners(note.id.value));
+        if (!note.end || endpoints.size() != 2)
+            return std::unexpected(error_t{failure_code_t::conflict, "Note transfer requires both proven hold endpoints."});
+        for (const auto& endpoint : endpoints) {
+            if (endpoint.chart != request.source_chart)
+                return std::unexpected(error_t{failure_code_t::conflict, "Note transfer cannot split a hold across semantic Charts."});
+            items.insert(endpoint.item);
+        }
+        return {};
+    }
+    auto include(object_id_t id) -> result_t<void, error_t<failure_code_t>> {
+        const auto& chart = projection.song().charts.front();
+        const auto* note = chart.find_note(id);
+        const auto item = std::ranges::find(source.items, id, &bms_content_item_t::id);
+        if (!note || item == source.items.end() || chart.is_bms_authoring_read_only(id))
+            return std::unexpected(error_t{failure_code_t::conflict, "Select notes with one complete, editable source Chart."});
+        if (note->sound_channel_event)
+            return std::unexpected(error_t{failure_code_t::conflict, "Note transfer cannot detach retained sound-channel points."});
+        if (std::holds_alternative<bms_hold_endpoint_t>(item->value)) return include_hold(*note);
+        const auto* native = std::get_if<bms_native_content_t>(&item->value);
+        if (!std::holds_alternative<bms_note_content_t>(item->value) &&
+            (!native || !std::holds_alternative<note_t>(native->payload())))
+            return std::unexpected(error_t{failure_code_t::conflict, "The selected item is not an authored note."});
+        items.insert(id);
+        return {};
+    }
+};
+auto selected_transfer_items(const bms_program_document_t& owner, const bms_note_transfer_command_t& request)
+    -> result_t<std::set<object_id_t>, error_t<failure_code_t>> {
+    const auto& program = owner.prepared().program;
+    const auto* source = program.find(request.source_chart);
+    const auto* destination = program.find(request.destination_chart);
+    if (!source || !destination || !std::holds_alternative<bms_chart_content_t>(source->value) ||
+        !std::holds_alternative<bms_chart_content_t>(destination->value) || request.source_chart == request.destination_chart)
+        return std::unexpected(error_t{failure_code_t::conflict, "Note transfer requires two distinct semantic Charts in one difficulty."});
+    if (request.notes.empty() || request.notes.size() > default_maximum_chart_objects)
+        return std::unexpected(error_t{failure_code_t::conflict, "Note transfer needs a bounded, nonempty selection."});
+    if (request.kind != bms_note_transfer_kind_t::move && request.kind != bms_note_transfer_kind_t::copy)
+        return std::unexpected(error_t{failure_code_t::conflict, "Unknown note transfer operation."});
+    const auto projection = owner.build_projection(request.source_chart);
+    if (!projection.value || !projection.ok()) return std::unexpected(error_t{failure_code_t::conflict, "The source Chart cannot be projected."});
+    note_transfer_selection_t selection{.program = program, .request = request,
+        .projection = *projection.value, .source = std::get<bms_chart_content_t>(source->value)};
+    std::set<object_id_t> unique;
+    for (const auto id : request.notes) {
+        if (!unique.insert(id).second) return std::unexpected(error_t{failure_code_t::conflict, "Select each note only once."});
+        const auto included = selection.include(id);
+        if (!included) return std::unexpected(included.error());
+    }
+    return std::move(selection.items);
+}
+auto transfer_items(const bms_program_t& program, const bms_note_transfer_command_t& request,
+    const std::set<object_id_t>& selected, object_id_t first) -> authored_program_t {
+    auto nodes = std::vector<bms_program_node_t>(program.nodes().begin(), program.nodes().end());
+    auto& source = std::get<bms_chart_content_t>(std::ranges::find(nodes, request.source_chart, &bms_program_node_t::id)->value);
+    auto& destination = std::get<bms_chart_content_t>(std::ranges::find(nodes, request.destination_chart, &bms_program_node_t::id)->value);
+    auto next = first.value;
+    for (const auto& item : source.items) {
+        if (!selected.contains(item.id)) continue;
+        auto added = item;
+        if (request.kind == bms_note_transfer_kind_t::copy) {
+            added.id = object_id_t{next++};
+            added.provenance = {};
+        }
+        destination.items.push_back(std::move(added));
+    }
+    if (request.kind == bms_note_transfer_kind_t::move)
+        std::erase_if(source.items, [&](const auto& item) { return selected.contains(item.id); });
+    return bms_program_t::from(std::move(nodes));
+}
 template<class Edit>
 auto stage_program(document_command_transaction_t& transaction, chart_id_t difficulty, Edit edit,
     std::string label, std::optional<bms_program_evaluation_t> evaluation_override = {}) -> attempt_t<document_edit_effect_t> {
@@ -159,6 +239,24 @@ auto apply_bms_program_skip_command(document_history_t& history, bms_program_ski
             arm.skips.push_back(std::move(request.skip));
             return bms_program_t::from(std::move(nodes), request.limits);
         }, "Add BMS SKIP"));
+}
+auto apply_bms_note_transfer_command(document_history_t& history, const bms_note_transfer_command_t& request)
+    -> document_command_result_t {
+    const auto label = request.kind == bms_note_transfer_kind_t::copy ? "Copy notes to BMS Chart" : "Move notes to BMS Chart";
+    document_command_transaction_t transaction(history, request.stamp, label);
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) -> authored_program_t {
+            const auto* owner = transaction.current_document().find_bms_program(request.stamp.chart);
+            const auto selected = selected_transfer_items(*owner, request);
+            if (!selected) return std::unexpected(selected.error());
+            object_id_t first;
+            if (request.kind == bms_note_transfer_kind_t::copy) {
+                const auto allocated = transaction.next_bms_program_item_id(selected->size());
+                if (!allocated) return std::unexpected(error_t{failure_code_t::conflict, "Note transfer identities are exhausted."});
+                first = *allocated;
+            }
+            return transfer_items(program, request, *selected, first);
+        }, label));
 }
 } // namespace wormedit
 

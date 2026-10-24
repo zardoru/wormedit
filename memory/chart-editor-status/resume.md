@@ -26,9 +26,21 @@ five-file refactor recheck) and **seven explicit header consumers**, without inc
 cases**, scope harness **162 / 14**, allocation checks **3,355 / 94**. Inspected isolated
 **1280×720** and **800×700** scope windows, fresh Root creation and explicit-profile public import.
 [Completed card, bounded test review and evidence](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-744-activate-scoped-ownership-and-retire-raw-statement-authority).
-No successor card is active. T-93 cross-scope individual-note transfer and T-287 malformed-flow
-repair remain ready; conditional timing links and unapproved multivoice design remain outside
-this cutover. Keep three memory-capped build workers; run giant Clang consumers singly.
+No successor card is active. T-287 malformed-flow repair remains ready; conditional timing
+links and unapproved multivoice design remain outside this cutover.
+
+Completed **T-93** (2026-10-24): an explicit core command moves or copies selected notes
+between semantic Charts in one scoped BMS difficulty. Imported taps and complete hold pairs,
+fresh annotated native holds, exact positions and unrelated content survive; moves retain IDs
+and copies allocate above current/Undo/Redo identities. Playback choices remain unchanged.
+Mixed owners, unproven/cross-owner holds and hidden collisions refuse atomically. The shared
+publication runner also rejects silent re-pairing of unchanged imported endpoints.
+GCC GATE passes **4,866/4,866**; focused coverage **320 assertions / 10 cases**. Complexity
+passes **three changed TUs** plus **four explicit header consumers**, without increased
+allowances. Native reload and BMS export are covered. A destination-picker UI remains outside
+this core card. [Completed card and bounded test review](../../docs/chart-editor-plan/tasks/bms-branches.md#t-93-move-or-copy-selected-notes-into-another-branch-leaf).
+Use bounded-memory builds with room for the desktop; eight workers fit the current headroom
+under a 12 GiB task cap, while giant Clang consumers may need lower concurrency.
 
 Completed **T-739** (2026-10-23): scalar RANDOM range edits retain all arms and report
 unreachable IF/ELSEIF values without renumbering, deleting bodies or changing nested selectors.

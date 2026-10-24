@@ -88,6 +88,18 @@ remain on typed BMS content, and hold edits retain both endpoint identities and 
 New BGM columns and semantic batches use the complete prepared/history identity ceiling.
 A transaction cannot implicitly write multiple semantic Charts.
 
+The explicit BMS note-transfer command names source and destination Charts within one
+scoped difficulty. It resolves selected notes through the source authoring projection,
+collects both proven imported hold endpoints, then constructs one immutable graph with
+both content lists changed. Moves retain identities; copies allocate above current,
+Undo and Redo identities. Exact positions, attributes and symbolic WAV references remain;
+the destination's ordered declarations supply their usual bindings. Source and playback
+selection do not change. Mixed owners, retained sound-channel points and unproven or
+cross-owner holds reject. Inactive imported endpoint markers still require a complete
+playback witness; this command does not invent a pairing or change preview choices.
+The shared publication runner validates all bounded outcomes, including hidden collisions
+and re-pairing of surviving unchanged imported hold endpoints, and publishes one Undo step. Generic content batches retain their single-Chart restriction.
+
 Prepared RANDOM range edits preserve all nodes and arm values, warn about unreachable
 IF/ELSEIF arms, and clear an invalid explicit preview choice without choosing a replacement.
 Shared evaluation reconciliation removes missing selectors and out-of-range RANDOM choices

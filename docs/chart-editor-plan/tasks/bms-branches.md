@@ -67,20 +67,26 @@ repair work. Atomic refusal of an unprovable legacy migration does not implement
 
 ## T-93 Move or copy selected notes into another branch leaf
 
-- **Status:** ready
-- **Decision (user, 2026-10-03):** Support fresh authored notes and both hold endpoints by reconstructing statement ownership from current serialized BMS. Do not limit the command to imported taps. The earlier one-statement STOP is superseded by this decision.
-- **Implementation audit (2026-10-03):** the original step 1 exposed ownership cases now covered by the decision above. Fresh authored notes have default native provenance and no retained statement identity (`include/wormedit/core/document.h:104`); imported holds retain distinct start/end source statements (`src/formats/bms.cpp:557`, `src/formats/bms_writer.cpp:2082`). Imported taps can identify one line/slot, but limiting the command to those would narrow the outcome. The user approved reconstructing ownership on 2026-10-03 from current serialized BMS to cover fresh notes plus both hold endpoints. No implementation was started.
-- **Outcome:** selected notes that belong to one leaf (or root) can be moved or copied into another leaf as one command.
-- **Read first:** `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/formats/bms_branch_selection.h` (`rematerialize_bms_branch_selection`), `docs/chart-editor-plan/editing/metadata-interop.md` (branch paragraphs).
-- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`.
+- **Status:** done (2026-10-24)
+- **Prerequisites:** T-744 public scoped ownership cutover.
+- **Decision (user, 2026-10-03):** support fresh authored notes and both hold endpoints; do not limit the command to imported taps. Notes from several semantic Charts at once reject.
+- **Scoped reconciliation (coordinator, 2026-10-24):** T-744 retired the serialized-statement authority and rematerialization APIs named by the original card. Preserve its approved product outcome using recorded typed owners, immutable program construction and the existing transaction/publication runner. No serialized-source reconstruction or writable flat mirror is needed. Destination is an explicit semantic Chart within the same difficulty; source selection remains explicit and independent of playback choices. Authored WAV references retain their values and resolve in destination program order, as other scoped edits do.
+- **Outcome:** selected notes belonging to one Chart can be moved or copied into another Chart as one command, including complete imported and fresh authored holds.
+- **Read first:** `docs/architecture.md`, `include/wormedit/core/bms_program_edit.h`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/core/bms_program_edit.cpp`.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `src/core/bms_program_edit.cpp`, `tests/core/bms_note_transfer_tests.cpp`, `tests/CMakeLists.txt`, `docs/chart-editor-plan/tasks/bms-branches.md`, `docs/architecture.md`, `memory/chart-editor-status/resume.md`.
+- **Supporting ownership:** the dedicated test translation unit and its build entry isolate this command's domain coverage; architecture and status record the explicit multi-owner operation. Existing generic single-owner content edits remain unchanged.
+- **Pairing-safety ownership extension (coordinator):** `src/core/bms_program_edit.cpp` keeps surviving, unchanged imported endpoint pairs intact across each bounded publication outcome. The new transfer regression demonstrated that interleaved endpoints could otherwise silently re-pair without a lane-overlap diagnostic. This is a shared publication safeguard, not a second evaluator in the transfer command.
 - **Steps:**
-  1. Reconstruct selected-note ownership from current serialized BMS, including fresh notes and both hold endpoints; reject ambiguous ownership atomically.
-  2. Rewrite the owning channel statements in source and target leaves; rematerialize.
-  3. Tests: move root→leaf, leaf→leaf copy, undo.
-- **Invariants:** other notes on the same channel line keep their positions.
-- **Reject/failure behavior:** notes from several leaves at once reject.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
-- **Out of scope:** UI beyond one inspector button (add it in this card only if trivial).
+  1. Resolve selected-note ownership through the source authoring projection and recorded typed contributions, including fresh notes and both imported hold endpoints; reject ambiguous, partial or multiple-Chart ownership atomically.
+  2. Move complete authored contributions or copy them with history-wide fresh identities into the explicit destination Chart through immutable graph construction and one shared transaction. Keep unrelated items, exact musical positions, attributes and playback choices intact.
+  3. Test root→leaf move, leaf→leaf copy, fresh/imported holds, inactive targets, hidden collisions, native reload/export, identity allocation and Undo/Redo. Verify with GATE and explicit affected header consumers.
+- **Invariants:** unrelated notes and channel-line contributions retain positions and identity. Moves retain selected item IDs; copies allocate fresh item IDs above current/Undo/Redo identities. No implicit playback switch or resource-declaration edit occurs.
+- **Reject/failure behavior:** mixed/unknown owners, incomplete or cross-owner holds, invalid targets and unprovable/colliding outcomes publish nothing. Shared runners own stale/no-op/transaction checks.
+- **Verify:** GATE; focused `[bms-note-transfer]`; explicit header-consumer complexity checks.
+- **Bounded test review:** reviewed all ten new `[bms-note-transfer]` bodies against `c5c967e`: root/inactive destination ownership and neighboring entries; imported tap/hold copies with Redo identity ceilings; fresh annotated native holds; hidden collisions; invalid/mixed selections; complete imported hold moves; cross-owner refusal; explicit inactive hold witnesses; interleaved endpoint rejection; and valid transfers beside existing destination holds. Each covers distinct transfer data or publication behavior. No existing bodies were removed or reviewed for suite-wide nonredundancy. The cross-owner refusal uses a deliberate prepared fixture with a chosen witness, following the existing authoring tests; public import rejects its unpaired default evaluation.
+- **Verification:** GCC GATE passes **4,866/4,866**, including discovery, whitespace and complexity for **three changed TUs**. **Four explicit header consumers** pass separately; no complexity allowances increased. Focused transfer coverage passes **320 assertions / 10 cases**. Logs: `/tmp/t93-gate-2.log` (details `/tmp/wormedit-gate.f8wFWg`), `/tmp/t93-focused-final.log`, `/tmp/t93-headers-1.log`. The interleaving regression failed for both move and copy before the shared pairing guard and passes with it. No frontend workflow was added; no window-based acceptance is claimed.
+- **Handoff:** T-287 malformed-flow repair remains ready and separate; no successor is active.
+- **Out of scope:** scope picker or broader UI workflow; the original optional inspector button is omitted because selecting an arbitrary destination Chart requires a dedicated workflow. No cross-difficulty transfers, automatic resource declaration copying or hold repair.
 
 ## T-94 Decide multi-chart branch source identity and malformed-flow policy
 

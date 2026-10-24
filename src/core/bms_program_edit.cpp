@@ -596,8 +596,67 @@ auto validate_scoped_projection(song_document_t song) -> diagnostic_list_t {
     return validate_document(song);
 }
 
+class hold_pairing_guard_t {
+  public:
+    hold_pairing_guard_t(const bms_program_document_t* previous, const bms_program_document_t& proposed)
+        : previous_(previous ? &previous->prepared().program : nullptr), proposed_(proposed.prepared().program) {
+        if (!previous_) return;
+        const auto before = endpoints(*previous_);
+        if (before.by_id.empty()) return;
+        for (const auto& node : proposed_.nodes()) {
+            const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+            if (!chart) continue;
+            for (const auto& item : chart->items) {
+                const auto* old = before.find(item.id);
+                if (old && old->value == item.value) unchanged_.insert(item.id);
+            }
+        }
+    }
+    [[nodiscard]] auto has_changed(const bms_program_projection_t& before,
+        const bms_program_projection_t& after) const -> bool {
+        if (!previous_ || unchanged_.empty()) return false;
+        const auto original = pairs(*previous_, before);
+        const auto updated = pairs(proposed_, after);
+        for (const auto& [head, tail] : original) {
+            if (!unchanged_.contains(head) || !unchanged_.contains(tail)) continue;
+            const auto found = updated.find(head);
+            if (found != updated.end() && found->second != tail) return true;
+        }
+        return false;
+    }
+  private:
+    static auto endpoints(const bms_program_t& program) -> document_id_index_t<bms_content_item_t> {
+        document_id_index_t<bms_content_item_t> result;
+        for (const auto& node : program.nodes()) {
+            const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+            if (!chart) continue;
+            for (const auto& item : chart->items)
+                if (std::holds_alternative<bms_hold_endpoint_t>(item.value)) result.add(item);
+        }
+        return result;
+    }
+    static auto pairs(const bms_program_t& program, const bms_program_projection_t& projection)
+        -> std::map<object_id_t, object_id_t> {
+        std::map<object_id_t, object_id_t> result;
+        for (const auto& measure : projection.song().charts.front().measures) {
+            for (const auto& note : measure.notes) {
+                if (!note.end) continue;
+                const auto endpoints = program.hold_endpoints(projection.owners(note.id.value));
+                if (endpoints.size() != 2) continue;
+                result.emplace(endpoints.front().item, endpoints.back().item);
+                result.emplace(endpoints.back().item, endpoints.front().item);
+            }
+        }
+        return result;
+    }
+    const bms_program_t* previous_;
+    const bms_program_t& proposed_;
+    std::set<object_id_t> unchanged_;
+};
+
 auto validate_evaluation(const bms_program_document_t* previous,
-    const bms_program_document_t& owner, bms_program_evaluation_t evaluation) -> diagnostic_list_t {
+    const bms_program_document_t& owner, bms_program_evaluation_t evaluation,
+    const hold_pairing_guard_t& pairing) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
     const auto projection = bms_program_projection_t::from(owner.prepared(), evaluation);
     if (!projection.value) {
@@ -608,6 +667,9 @@ auto validate_evaluation(const bms_program_document_t* previous,
     const auto old = previous ? bms_program_projection_t::from(previous->prepared(), evaluation) :
         attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
     const auto* before = old.value ? &*old.value : nullptr;
+    if (before && pairing.has_changed(*before, *projection.value))
+        diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "Scoped edit would re-pair unchanged hold endpoints in an affected evaluation."));
     if (previous && before && (has_changed_cross_owner_hold(*previous, owner, *before, *previous) ||
         has_changed_cross_owner_hold(*previous, owner, *projection.value, owner)))
         diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
@@ -994,8 +1056,9 @@ auto validate_bms_program_publication(const song_document_t& before,
             diagnostics.push_back(error(diagnostic_code_t::unsupported_feature, evaluations.error().message));
             continue;
         }
+        const hold_pairing_guard_t pairing(previous, *owner);
         for (const auto& evaluation : *evaluations) {
-            auto validation = validate_evaluation(previous, *owner, reachable_evaluation(*owner, evaluation));
+            auto validation = validate_evaluation(previous, *owner, reachable_evaluation(*owner, evaluation), pairing);
             diagnostics.insert(diagnostics.end(), validation.begin(), validation.end());
             if (diagnostic_queries::has_errors(diagnostics)) return diagnostics;
         }

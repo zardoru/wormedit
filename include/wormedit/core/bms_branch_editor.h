@@ -7,6 +7,20 @@
 
 namespace wormedit {
 
+enum class bms_note_transfer_kind_t { move, copy };
+struct bms_note_transfer_command_t {
+    chart_stamp_t stamp;
+    branch_id_t source_chart;
+    branch_id_t destination_chart;
+    std::vector<object_id_t> notes;
+    bms_note_transfer_kind_t kind{bms_note_transfer_kind_t::move};
+    auto operator==(const bms_note_transfer_command_t&) const -> bool = default;
+};
+// Explicit cross-Chart operation within one difficulty. Complete authored
+// contributions move together; copied contributions receive fresh identities.
+[[nodiscard]] auto apply_bms_note_transfer_command(document_history_t& history,
+    const bms_note_transfer_command_t& request) -> document_command_result_t;
+
 // Structural authoring targets are independent of the visible preview/edit Chart.
 using bms_program_insert_value_t = std::variant<bms_random_scope_t, bms_if_scope_t,
     bms_else_if_scope_t, bms_else_scope_t, bms_switch_scope_t, bms_case_scope_t,

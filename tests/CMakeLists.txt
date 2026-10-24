@@ -593,15 +593,17 @@ endif()
 if(WORMEDIT_ENABLE_LUA)
     add_executable(wormedit_lua_tests
         lua/lua_runtime_tests.cpp
+        lua/lua_sandbox_tests.cpp
     )
     target_link_libraries(wormedit_lua_tests
         PRIVATE
             Lua::Lua
+            wormedit::scripting
             Catch2::Catch2WithMain
     )
     catch_discover_tests(wormedit_lua_tests
         TEST_PREFIX "lua."
-        PROPERTIES LABELS unit LABELS lua
+        PROPERTIES LABELS lua TIMEOUT 10
         DISCOVERY_MODE PRE_TEST
     )
 endif()

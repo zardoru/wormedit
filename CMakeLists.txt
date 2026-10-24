@@ -223,6 +223,12 @@ wormedit_enable_warnings(wormedit_core)
 
 if(WORMEDIT_ENABLE_LUA)
     include(cmake/dependencies/lua.cmake)
+    add_library(wormedit_scripting src/scripting/lua_sandbox.cpp)
+    add_library(wormedit::scripting ALIAS wormedit_scripting)
+    target_include_directories(wormedit_scripting PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_compile_features(wormedit_scripting PUBLIC cxx_std_23)
+    target_link_libraries(wormedit_scripting PUBLIC Threads::Threads PRIVATE Lua::Lua)
+    wormedit_enable_warnings(wormedit_scripting)
 endif()
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)

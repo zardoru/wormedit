@@ -525,3 +525,19 @@ projection API, with no authoring target or semantic Undo records; it never runs
 The adapter is rebuilt only when the document/pair cache key changes. Both fields and their
 difference rows therefore share playback choices while the user's authoring selection remains
 untouched. The right-hand picker offers only difficulties other than the active left pane.
+
+The optional `wormedit::scripting` target (`WORMEDIT_ENABLE_LUA=ON`) owns the Lua 5.4
+sandbox behind an opaque, move-only session. The default memory cap is 8 MiB, with one
+million VM instructions, 64 KiB source/result limits and an explicit SplitMix64 seed.
+The allocator charges retained capacity and its aligned headers; shrinking cannot fail.
+One count hook and a cooperative stop token cover the complete session, including repeated
+calls and RNG draws. They are not a wall-clock interrupt for standard-library C functions.
+Only base/string/table/math/utf8 libraries are installed. File/module/process/debug access,
+host output, GC control and metatable access/installation are absent. Dynamic loading accepts
+bounded text strings, never binary chunks or reader functions. `xpcall` runs its error handler
+only after an inner protected call restores instruction hooks. User finalizers are excluded
+because Lua disables hooks during GC finalization. Callbacks that may raise contain only
+trivial automatic values; setup, parsing and execution stay inside `lua_pcall` boundaries.
+Globals and closures survive successful calls in one session. Any host evaluation failure
+closes the VM; only bounded scalar results and typed errors leave the wrapper. No document
+binding, native VM serialization or recipe evaluator is added by this foundation (T-156).

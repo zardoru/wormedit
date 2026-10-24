@@ -130,7 +130,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-189 Evaluate Lua curve functions in SV recipes
 
-- **Status:** blocked-on T-156 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
+- **Status:** ready (T-156 and T-681 complete; un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** an SV/`SCROLLS`/`SPEEDS` recipe can use `values(function(p, ctx) … end)` (or a module entry point returning such a function); preview and export evaluate it in a fresh sandbox with the recipe's sampling policy and store only source reference, API version, entry point, named parameters, input hashes, seed, execution mode and declared emission/cycle plan.
 - **Read first:** `docs/osbx-draft-spec.md` (Parametric scroll and speed generation), `include/wormedit/core/sv_recipe.h` (`sample_sv_recipe`, `compile_sv_recipes`), `include/wormedit/scripting/lua_sandbox.h`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, new `src/scripting/lua_curve.cpp/.h`, new `tests/lua/lua_curve_tests.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

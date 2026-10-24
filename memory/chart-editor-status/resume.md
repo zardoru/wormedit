@@ -2,6 +2,19 @@
 
 ## Active queue (2026-10-24)
 
+Completed **T-156** (2026-10-24): the optional Lua sandbox owns one move-only evaluation
+session with cumulative memory/VM budgets, cooperative cancellation, text-only loading and
+portable seeded random generation. Successful calls retain closures; failure closes the state.
+Host I/O, modules, debug access, GC control and metatable capabilities are absent; protected
+xpcall dispatch keeps error handlers inside the VM budget. Core remains Lua-free.
+Lua-enabled GATE passes **4,887/4,887**, including **20 Lua cases**; focused sandbox coverage
+**160 assertions / 18 cases**. ASan/LSan/UBSan pass **167 / 20**, including the instrumented
+pinned Lua runtime. Complexity passes both new TUs and a separate three-TU check without
+increased allowances. [Completed card and bounded review](../../docs/chart-editor-plan/tasks/scripting-storyboard.md#t-156-create-a-sandboxed-bounded-lua-state).
+**T-189 is ready**, with T-681's prepared-session prerequisite also complete; no successor is
+active. Lua recipe/document/UI integration remains separate. Enable the optional target with
+`-DWORMEDIT_ENABLE_LUA=ON`; it remains off by default.
+
 Completed **T-743** (2026-10-24): scope authoring tree and one project runtime for node selection,
 recoverable drafts and typed confirmations. Node authoring is independent of playback choices;
 common/ancestor content is read-only, inherited notes are gray, and scope warnings use yellow

@@ -8,7 +8,6 @@
 #include "ui/nuklear/chrome/context_menu.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/compose/compose_resources.h"
-#include "ui/nuklear/compose/compose_markers.h"
 #include "ui/nuklear/timing/timing_stage_editor.h"
 
 #include <algorithm>
@@ -48,12 +47,6 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         action->timing_has_target_y = !timing_view->initial_bpm_event_id;
         action->timing_target = wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false};
     }
-}
-
-static void render_compose_marker_section(const ComposeInspectorContext& inspector) {
-    if (!nk_tree_push(inspector.context, NK_TREE_TAB, "Bookmarks and sections", NK_MINIMIZED)) return;
-    worm_ui_nuklear_render_compose_markers(inspector.context, inspector.view, inspector.action);
-    nk_tree_pop(inspector.context);
 }
 
 // Lets the layout at the cursor switch between profiles with the same lane count.
@@ -183,7 +176,6 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         nk_layout_row_dynamic(inspector.context, 18, 1);
         nk_label(inspector.context, "Building waveform...", NK_TEXT_LEFT);
     }
-    render_compose_marker_section(inspector);
 }
 
 void render_compose_label_search(const ComposeInspectorContext& inspector) {

@@ -2,10 +2,19 @@
 
 ## Active queue (2026-10-24)
 
-[Backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md) is complete:
-622 done, 2 ready, 11 partial, 4 blocked, 40 deferred and 2 superseded (681 total).
-Ready: **T-58**, **T-293**. T-231/T-232/T-250/T-275/T-287 have implemented checkpoints and
-explicit remaining work; T-272 is superseded. No implementation card is active.
+Completed **T-231** and **T-232** (2026-10-24): the Measures dock applies exact length
+ratios to authored/virtual selections in one Undo step; matching meters survive and incompatible
+meters clear. Bookmark/section editing now lives in the Markers dock with searchable navigation
+and the existing chooser. The manual covers both flows. GATE passes **5,015/5,015**;
+complexity passes **12 changed TUs plus four header consumers**, without increased allowances.
+Focused measures pass **534 assertions / 40 cases**, dock/marker workflows **148 / 17**.
+The full linux-clang build passes; isolated **1280×720** and **800×700** windows inspected.
+Both selected cards are complete; no new card is active.
+
+Current inventory after the [backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md)
+and these completions: **624 done, 2 ready, 9 partial, 4 blocked, 40 deferred and 2 superseded**
+(681 total). Ready: **T-58**, **T-293**. T-250/T-275/T-287 retain implemented checkpoints
+and explicit remaining work; T-272 is superseded.
 
 Completed **T-162**, **T-158**, and **T-159/T-160** (2026-10-24): finite SV impulses,
 owned read-only Lua document access, and explicit generator preview/Apply with saved recipes.

@@ -150,16 +150,17 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-232 Move Layers and Markers into their own panels
 
-- **Status:** partial (reconciled 2026-10-24; all three docks exist, marker editing still in Inspector)
+- **Status:** done (2026-10-24; existing marker/section editing lives in the Markers dock)
 - **Done so far:** `dock_panel_renderers` in `src/ui/nuklear/compose/compose_panel.cpp` registers Measures, Layers and Markers. The Layers dock renders `compose_layers_panel.cpp`; the Markers dock renders the existing bookmark list and has a stamped-navigation event test in `tests/ui/dock_layout_event_harness_tests.cpp`. T-228 and T-207 are done.
-- **Remaining:** move the existing bookmark/section editing controls from `render_compose_marker_section` in `compose_inspector.cpp` into the Markers dock, retaining the chooser and existing actions. Remove the Inspector duplication only after the dock exposes those controls. A bookmark navigation list alone does not satisfy the full marker/section editing outcome.
+- **Completion:** the Markers dock reuses the existing beat/audio bookmark and section editor, with searchable navigation under Find marker. Inspector duplication is removed. Chooser interaction, stamped navigation, add/delete guards and double-click rename retain their existing actions and coverage.
 - **Outcome:** Semantic layers and Markers/sections leave the Compose inspector and become dock panels; the Inspector panel keeps only properties of the current selection (note label, BPM value, recipe, BMSON slice state).
 - **Read first:** `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `tests/ui/dock_layout_event_harness_tests.cpp`.
 - **Files owned:** `src/ui/nuklear/compose/compose_inspector.cpp/.h`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp/.h`, `src/ui/nuklear/compose/compose_panel.cpp`, focused marker/dock event regressions and test registration if needed. Existing Layers rendering stays with its current owner.
+- **Supporting ownership (coordinator, 2026-10-24):** `tests/ui/markers_event_harness_tests.cpp` exercises the moved editing controls; `tests/ui/dock_layout_event_harness_tests.cpp` retains searchable navigation; `docs/manual/chapters/navigating.adoc` and resume/status document the new location.
 - **Steps:** 1. Characterize bookmark/section editing and chooser behavior in the existing Inspector and dock. 2. Move existing editing controls into the registered Markers dock. 3. Verify add/edit/delete/navigation, chooser interaction, keyboard capture and stale actions; inspect narrow and normal windows.
 - **Invariants:** identical actions and behavior.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; smoke PNGs.
+- **Verify:** GATE passes 5,015/5,015 tests, whitespace and 12 changed-TU complexity checks; four explicit header consumers also pass. Focused measure coverage: 534 assertions / 40 cases; dock/marker coverage: 148 / 17. Isolated 1280×720 and 800×700 window captures inspected. Full linux-clang build passes.
 - **Out of scope:** new layer features.
 
 ## T-312 Move the note palette into a tall left toolbar in Compose

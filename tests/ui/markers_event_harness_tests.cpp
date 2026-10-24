@@ -37,17 +37,6 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
             harness.frame(std::array{motion_to(x, y), button(false, x, y)})};
 }
 
-void scroll_inspector(nuklear_event_harness_t& harness, int notches) {
-    (void)harness.frame(std::array{motion_to(1500.0f, 800.0f)});
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.mouse_x = 1500.0f;
-    wheel.wheel.mouse_y = 800.0f;
-    wheel.wheel.y = -1.0f;
-    for (int count = 0; count < notches; ++count) (void)harness.frame(std::array{wheel});
-}
-
 struct markers_fixture_t {
     nuklear_event_harness_t harness{1600, 900};
     std::array<wormedit::ui::compose_bookmark_view_t, 2> bookmarks{{
@@ -68,12 +57,8 @@ struct markers_fixture_t {
         view.beat_sections.assign(sections.begin(), sections.end());
         view.beat_sections.resize(sections.size());
         view.beat_marker_navigation_available = true;
+        worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::markers, false);
         (void)harness.frame();
-        scroll_inspector(harness, 40);
-        const auto tree = harness.drawn_text_center("Bookmarks and sections");
-        REQUIRE(tree.has_value());
-        (void)click(harness, tree->first, tree->second);
-        scroll_inspector(harness, 40);
         REQUIRE(harness.drawn_text().find("Bookmarks") != std::string::npos);
     }
 
@@ -192,4 +177,22 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     CHECK(std::string{committed.compose_marker_label} == "intro");
     CHECK(committed.compose_input_chart_id.value == 7);
     CHECK(committed.compose_input_document_revision == 12);
+}
+
+TEST_CASE("marker editing lives in the Markers dock instead of the Inspector", "[event-harness][markers]") {
+    markers_fixture_t fixture;
+    CHECK(fixture.harness.drawn_text().find("Audio-time bookmarks") != std::string::npos);
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::inspector, false);
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Audio-time bookmarks") == std::string::npos);
+    CHECK(fixture.harness.drawn_text().find("Bookmarks and sections") == std::string::npos);
+}
+TEST_CASE("Markers dock yields its controls to the bookmark chooser and restores them after closing", "[event-harness][markers]") {
+    markers_fixture_t fixture;
+    worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open = true;
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Bookmark chooser is open.") != std::string::npos);
+    worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open = false;
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Bookmarks") != std::string::npos);
 }

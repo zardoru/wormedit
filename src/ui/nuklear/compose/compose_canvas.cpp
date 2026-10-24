@@ -1025,6 +1025,45 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
     }
 }
 
+// The song preview band. A point-only preview ends at the audition default, drawn fainter
+// because no length is stored.
+// While a preview edge or label is dragged, a ghost line follows the pointer; the preview moves to
+// the snapped row on release.
+static void draw_compose_preview_drag_ghost(const ComposePaintContext& paint) {
+    const auto& drag = state.preview_drag;
+    if (!drag.active || drag.chart_id != paint.view->chart_id.value) return;
+    const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto y = paint.viewport.y + static_cast<float>(drag.current_y_pixels) * scale;
+    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f,
+               nk_rgb(150, 240, 180), 4);
+}
+
+static void draw_compose_preview_span(const ComposePaintContext& paint,
+    std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
+    const auto& span = paint.view->preview_span;
+    if (!span.available) return;
+    draw_compose_preview_drag_ghost(paint);
+    const auto line = nk_rgb(110, 224, 150);
+    const auto end_line = span.has_length ? line : nk_rgba(110, 224, 150, 110);
+    if (span.span_projection_visible) {
+        const auto top = compose_projected_y(paint, span.projected_span_top_y_pixels);
+        const auto bottom = compose_projected_y(paint, span.projected_span_bottom_y_pixels);
+        field_rect(paint, nk_rect(paint.viewport.x, top, paint.viewport.w, std::max(1.0f, bottom - top)),
+                   0.0f, nk_rgba(96, 214, 140, span.has_length ? 26 : 14), 4);
+    }
+    if (span.begin_projection_visible) {
+        const auto y = compose_projected_y(paint, span.projected_begin_y_pixels);
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.4f, line, 4);
+        draw_compose_bookmark_label(paint, span.chart_override ? "Preview (this chart)" : "Preview",
+                                    y, line, previous);
+    }
+    if (span.end_projection_visible) {
+        const auto y = compose_projected_y(paint, span.projected_end_y_pixels);
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                   span.has_length ? 1.4f : 1.0f, end_line, 4);
+    }
+}
+
 static void draw_compose_audio_bookmarks(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
     const auto hovered = compose_hovered_bookmark_id(paint);
@@ -2145,6 +2184,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t> previous_bookmark_label;
     draw_compose_beat_bookmarks(paint, previous_bookmark_label);
     draw_compose_audio_sections(paint);
+    draw_compose_preview_span(paint, previous_bookmark_label);
     draw_compose_audio_bookmarks(paint, previous_bookmark_label);
 }
 

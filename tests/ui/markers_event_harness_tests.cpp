@@ -193,3 +193,40 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     CHECK(committed.compose_input_chart_id.value == 7);
     CHECK(committed.compose_input_document_revision == 12);
 }
+
+namespace {
+// Setting a preview changes the group's height; let the scrolled panel settle before clicking.
+auto clicked_action(nuklear_event_harness_t& harness, const char* label) -> WormUiComposeActionKind {
+    for (int frame = 0; frame < 3; ++frame) (void)harness.frame();
+    const auto center = harness.drawn_text_center(label);
+    if (!center) return WORM_UI_COMPOSE_ACTION_NONE;
+    for (const auto& frame : click(harness, center->first, center->second))
+        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE) return frame.get().compose_action;
+    return WORM_UI_COMPOSE_ACTION_NONE;
+}
+auto song_preview_view(bool chart_override) -> wormedit::ui::compose_preview_span_view_t {
+    return {.available = true, .has_length = true, .chart_override = chart_override,
+            .start_milliseconds = 500, .end_milliseconds = 2500, .begin_row = 240, .end_row = 1200};
+}
+} // namespace
+
+TEST_CASE("The Song preview group clears a song preview", "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(false);
+    CHECK(clicked_action(fixture.harness, "Clear preview") == WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW);
+}
+
+TEST_CASE("The Song preview group returns a chart's own preview to the song's",
+          "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(true);
+    CHECK(clicked_action(fixture.harness, "Use song preview") == WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW);
+}
+
+TEST_CASE("The Song preview group exports the authored span", "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(false);
+    (void)clicked_action(fixture.harness, "Export preview audio…");
+    const auto& dialog = worm_ui_nuklear_compose_state().preview_audio;
+    CHECK((dialog.open && dialog.draft.begin_row == 240 && dialog.draft.end_row == 1200));
+}

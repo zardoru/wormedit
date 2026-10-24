@@ -112,6 +112,16 @@
    - **No provisional choice:** do not flatten voices into generated composite audio, use hidden retained BMSON objects as the generic model, mutate shared source sets, or silently omit voices. No migration starts merely because a note is selected or played.
    - **Blocks:** implementation in [T-746–T-748](../tasks/compose-ux.md#t-746-integrate-approved-authored-voices-with-sounds-and-audio); [T-745](../tasks/compose-ux.md#t-745-specify-one-authored-multivoice-sound-model) is the code-free ownership/design audit that prepares this decision.
 
+26. Who owns the authored song preview, and how does it relate to formats and preview audio export?
+   - **Answered (2026-10-24):** one song-wide preview owner. osu! writes the same `PreviewTime` into every difficulty; an import whose difficulties disagree keeps a per-chart override and reports a diagnostic. The point and optional duration are anchored to audio time (milliseconds in the source song), not to musical position, so BPM and offset edits leave them on the same audio. The span exists mainly for wormedit's own preview-audio export, which produces BMS previews (owner, 2026-10-24); it is the default range for Export preview audio (BMS `#PREVIEW`, BMSON `preview_music`); a selection still overrides it for one export.
+   - **No provisional choice:** never fabricate an authored duration for point-only targets, and never write an audition default back into authored metadata.
+   - **Unblocks:** [T-749](../tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration).
+
+27. What are the scope and boundary rules of export-cut sections?
+   - **Answered (2026-10-24):** cuts are song-wide: the audio is cut once and every chart is rebased identically. A cut is an audio-time interval (source-song milliseconds), created from a selection through the area menu next to Create section. Creating and resizing a cut respects the Compose snap toggle: with snap on, edges land on snapped positions before conversion to audio time, so authors get precise control (owner, 2026-10-24). On export, objects fully inside a cut are dropped with a diagnostic. Holds, keysounds/BGM and BGA that cross a cut boundary reject the export with targeted diagnostics until fixed. Timing state in effect at the cut end carries over. Overlapping and adjacent cuts stay separate for editing, and export removes their union. Ordinary Compose skips cuts in waveform, timeline, playback and navigation. Timing focus shows them and plays the original audio through them.
+   - **No provisional choice:** never modify the source audio or the authored project when exporting, and never silently shorten holds or truncate sounds at a cut.
+   - **Unblocks:** [T-756–T-759](../tasks/markers.md#t-756-persist-song-wide-export-cuts-and-create-them-from-a-selection), planned by [T-729](../tasks/markers.md#t-729-plan-selection-created-export-cut-sections).
+
 ## How to use this list
 
 An executing model never resolves an open question by itself. If a task depends on one, implement only behavior that holds for the provisional default, keep it behind a policy value, and say in the report which question it relied on. The defaults are unconfirmed suggestions written on 2026-09-29; the user may overturn any of them.

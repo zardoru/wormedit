@@ -1,5 +1,6 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/numeric_text.h>
+#include <wormedit/core/song_preview_timing.h>
 #include "sys/compose/actions/compose_actions_internal.h"
 #include "sys/commands/native_chart_edit_action.h"
 #include "sys/notifications/projection_notification_feedback.h"
@@ -391,6 +392,112 @@ auto navigate_audio_marker_action_t::perform(compose_action_context_t& context) 
 }
 
 namespace {
+using song_preview_choice_t = std::variant<wormedit::song_preview_t, std::string>;
+
+auto preview_milliseconds_at(const wormedit::chart_indices_t& indices, wormedit::local_position_t position)
+    -> std::optional<std::int64_t> {
+    if (!indices.measures || !indices.timing.value) return std::nullopt;
+    const auto row = indices.measures->row_of(position);
+    return row ? wormedit::song_preview_milliseconds_at(*indices.timing.value, *row) : std::nullopt;
+}
+
+auto typed_song_preview(const wormedit::ui::workspace_action_t& action) -> song_preview_choice_t {
+    const auto start = parse_integer<std::int64_t>(action.compose_marker_audio_begin.c_str());
+    if (!start || *start < 0) return "Enter the preview start as whole milliseconds.";
+    wormedit::song_preview_t preview{.start_milliseconds = *start};
+    if (action.compose_marker_audio_end.empty()) return preview;
+    const auto end = parse_integer<std::int64_t>(action.compose_marker_audio_end.c_str());
+    if (!end || *end <= *start) return "Enter a preview end after its start, or leave it empty.";
+    preview.length_milliseconds = *end - *start;
+    return preview;
+}
+
+auto selected_song_preview(const compose_action_context_t& context, const wormedit::chart_indices_t& indices)
+    -> song_preview_choice_t {
+    if (!context.state.retained_selection_range) return "Select an area to set the preview span.";
+    const auto& selection = *context.state.retained_selection_range;
+    const auto begin = preview_milliseconds_at(indices, selection.begin);
+    const auto end = preview_milliseconds_at(indices, selection.end);
+    if (!begin || !end || *end <= *begin) return "The selected area is not a nonempty interval of the song.";
+    return wormedit::song_preview_t{.start_milliseconds = *begin, .length_milliseconds = *end - *begin};
+}
+
+// Moving the start keeps an authored length.
+auto cursor_song_preview(const compose_action_context_t& context, const wormedit::chart_indices_t& indices,
+                         const std::optional<wormedit::song_preview_t>& current) -> song_preview_choice_t {
+    if (context.state.virtual_bms_cursor_row) return "Move the cursor into a materialized measure first.";
+    const auto start = preview_milliseconds_at(indices, context.state.cursor);
+    if (!start) return "The Compose cursor is outside the song.";
+    return wormedit::song_preview_t{.start_milliseconds = *start,
+                                    .length_milliseconds = current ? current->length_milliseconds : std::nullopt};
+}
+
+auto placed_song_preview(const compose_action_context_t& context, const wormedit::chart_document_t& chart)
+    -> song_preview_choice_t {
+    const auto& history = context.environment.document.history;
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW) return typed_song_preview(context.action);
+    const auto* indices = history.indices(chart.id);
+    if (!indices) return "The chart timing cannot place a preview.";
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION)
+        return selected_song_preview(context, *indices);
+    return cursor_song_preview(context, *indices, history.document.effective_preview(chart));
+}
+
+auto song_preview_success(WormUiComposeActionKind kind) -> std::string {
+    switch (kind) {
+    case WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION: return "Preview set from the selected area.";
+    case WORM_UI_COMPOSE_ACTION_SET_PREVIEW_START_AT_CURSOR: return "Preview start moved to the Compose cursor.";
+    case WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW: return "Song preview cleared.";
+    case WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW: return "This chart now uses the song preview.";
+    default: return "Preview updated.";
+    }
+}
+
+constexpr compose_action_description_t song_preview_description{
+    .success = {},
+    .unchanged = "The preview is unchanged.",
+    .rebind_failure = "Preview changed, but workspace rebinding failed.",
+    .source = notification_source_t::edit};
+} // namespace
+
+auto make_song_preview_edit(compose_action_context_t& context, const wormedit::chart_document_t& chart)
+    -> std::variant<wormedit::song_preview_edit_t, std::string> {
+    using namespace wormedit;
+    const auto owner = chart.metadata.preview_override ? std::optional{chart.id} : std::nullopt;
+    switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW:
+        return song_preview_edit_t{};
+    case WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW:
+        if (!owner) return "This chart already uses the song preview.";
+        return song_preview_edit_t{.chart = owner};
+    default:
+        break;
+    }
+    auto placed = placed_song_preview(context, chart);
+    if (auto* error = std::get_if<std::string>(&placed)) return std::move(*error);
+    return song_preview_edit_t{.chart = owner, .preview = std::get<song_preview_t>(placed)};
+}
+
+auto edit_song_preview_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    if (auto blocked = context.require_no_gesture(
+            "Finish or cancel the active Compose gesture before editing the preview."))
+        return std::move(*blocked);
+    chart = selected_chart(context.environment.document.history, context.environment.document.workspace);
+    if (!chart) return compose_action_outcome_t::blocked("Choose a chart before editing the preview.");
+    return std::nullopt;
+}
+
+auto edit_song_preview_action_t::perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+    auto built = make_song_preview_edit(context, *chart);
+    if (auto* error = std::get_if<std::string>(&built))
+        return compose_action_outcome_t::blocked(std::move(*error), notification_source_t::edit);
+    return compose_action_outcome_t::from(
+        apply_song_preview_edit(context.environment.document.history, std::get<song_preview_edit_t>(built)),
+        song_preview_description, song_preview_success(context.action.compose_action));
+}
+
+namespace {
 constexpr auto bookmark_route_entries = std::array{
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION,
                            .operation = run_routed_compose_action<edit_beat_section_action_t>},
@@ -414,6 +521,16 @@ constexpr auto bookmark_route_entries = std::array{
                            .operation = run_routed_compose_action<edit_audio_section_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION,
                            .operation = run_routed_compose_action<edit_audio_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_PREVIEW,
+                           .operation = run_routed_compose_action<edit_song_preview_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION,
+                           .operation = run_routed_compose_action<edit_song_preview_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_PREVIEW_START_AT_CURSOR,
+                           .operation = run_routed_compose_action<edit_song_preview_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW,
+                           .operation = run_routed_compose_action<edit_song_preview_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW,
+                           .operation = run_routed_compose_action<edit_song_preview_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
                            .operation = run_routed_compose_action<edit_beat_bookmark_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION,

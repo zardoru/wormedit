@@ -1280,6 +1280,11 @@ auto make_stepmania_song(const std::vector<field_t>& song_fields, stepmania_prof
         song.metadata.title = std::string(trim(title->value));
     if (const auto* artist = last_field(song_fields, "ARTIST"))
         song.metadata.artist = std::string(trim(artist->value));
+    if (const auto* start = last_field(song_fields, stepmania_sample_start_field)) {
+        const auto* length = last_field(song_fields, stepmania_sample_length_field);
+        song.metadata.preview = song_preview_t::from_stepmania_sample(
+            start->value, length ? std::optional<std::string_view>{length->value} : std::nullopt);
+    }
     return song;
 }
 
@@ -2491,8 +2496,32 @@ class stepmania_writer_t {
     } else {
         modeled_song.insert("VERSION");
     }
+    emit_preview(modeled_song);
     append_unknown_fields(output_, song_group_, modeled_song, options_.preserve_unknown_fields,
                           result_.diagnostics, options_.max_output_bytes);
+    }
+    auto shared_preview() -> std::optional<song_preview_t> {
+        const auto& first = song_.effective_preview(*charts_.front());
+        if (std::ranges::any_of(charts_, [&](const auto* chart) { return song_.effective_preview(*chart) != first; }))
+            report(stepmania_write_diagnostic_code_t::conflicting_song_metadata,
+                "Selected charts have different previews; export them separately.", std::string{stepmania_sample_start_field});
+        return first;
+    }
+    // The typed preview owns SAMPLESTART/SAMPLELENGTH. Retained fields that still
+    // encode it pass through in place with their spelling.
+    void emit_preview(std::set<std::string>& modeled_song) {
+        const auto preview = shared_preview();
+        const auto has_start = has_group_field(song_group_, stepmania_sample_start_field);
+        const auto retained_length = has_group_field(song_group_, stepmania_sample_length_field)
+            ? std::optional{group_value(song_group_, stepmania_sample_length_field)} : std::nullopt;
+        if (!has_start && !preview) return;
+        if (has_start && song_preview_t::from_stepmania_sample(group_value(song_group_, stepmania_sample_start_field),
+                             retained_length) == preview) return;
+        modeled_song.insert(std::string{stepmania_sample_start_field});
+        modeled_song.insert(std::string{stepmania_sample_length_field});
+        if (!preview) return;
+        emit(stepmania_sample_start_field, preview->stepmania_sample_start_text());
+        if (const auto length = preview->stepmania_sample_length_text()) emit(stepmania_sample_length_field, *length);
     }
     void prepare_timing() {
         timing_by_chart_.reserve(charts_.size());

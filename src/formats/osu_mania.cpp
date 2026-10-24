@@ -1835,6 +1835,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         song.metadata.format_groups.front().ordered_fields = source_group.ordered_fields;
         song.metadata.format_groups.front().ordered_field_source_orders =
             source_group.ordered_field_source_orders;
+        if (const auto preview = find_osu_value(fields, "General", "PreviewTime"))
+            song.metadata.preview = song_preview_t::from_osu_preview_time(*preview);
 
         song.charts.push_back(std::move(chart));
         result.value = std::move(song);
@@ -3000,6 +3002,33 @@ void project_osu_specialstyle_field(const chart_document_t& chart,
     fields.push_back({"General", layout.profile_id == base ? "SpecialStyle:0" : "SpecialStyle:1"});
 }
 
+// The typed preview owns PreviewTime. A retained line is reused while it still
+// encodes the effective preview, keeping its position and spelling. A length,
+// which osu! cannot store, is reported.
+void project_osu_preview_field(const song_document_t& song, const chart_document_t& chart,
+                               std::vector<passthrough_field_t>& fields,
+                               std::vector<osu_mania_write_diagnostic_t>& diagnostics) {
+    const auto& preview = song.effective_preview(chart);
+    const auto is_preview_line = [](const passthrough_field_t& field) {
+        const auto colon = field.line.find(':');
+        return field.section == "General" && colon != std::string::npos &&
+               trim(field.line.substr(0, colon)) == "PreviewTime";
+    };
+    const auto retained = std::ranges::find_if(fields, is_preview_line);
+    const auto is_current = retained != fields.end() &&
+        song_preview_t::from_osu_preview_time(
+            std::string_view{retained->line}.substr(retained->line.find(':') + 1)) == preview;
+    if (!is_current) {
+        std::erase_if(fields, is_preview_line);
+        if (preview) fields.push_back({"General", "PreviewTime: " + preview->osu_preview_time_text()});
+    }
+    if (preview && preview->length_milliseconds)
+        diagnostics.push_back({.severity = diagnostic_severity_t::warning,
+                               .code = osu_mania_write_diagnostic_code_t::lossy_transform,
+                               .message = "osu! stores only the preview start; the preview length is not exported",
+                               .location = std::string{osu_preview_time_field}});
+}
+
 template <typename append_line_t>
 void append_osu_metadata_sections(const song_document_t& song, const chart_document_t& chart,
                                  const std::vector<std::string>& music_files,
@@ -3566,6 +3595,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                 ? passthrough_fields(*chart, song, result.diagnostics)
                                 : std::vector<passthrough_field_t>{};
         project_osu_specialstyle_field(*chart, extra_fields);
+        project_osu_preview_field(song, *chart, extra_fields, result.diagnostics);
         if (!result.ok())
             throw osu_write_abort_t{};
         std::size_t metadata_field_count{};

@@ -1,6 +1,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -13,7 +14,7 @@ void check_preview_request(const wormedit::ui::preview_audio_export_action_t& re
     CHECK(request.begin_row == 0);
     CHECK(request.end_row == 9600);
 }
-void open_preview(nuklear_event_harness_t& harness) {
+void open_area_menu(nuklear_event_harness_t& harness) {
     REQUIRE(harness.ready());
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, false);
@@ -34,6 +35,10 @@ void open_preview(nuklear_event_harness_t& harness) {
     button.type = SDL_EVENT_MOUSE_BUTTON_UP; button.button.down = false;
     (void)harness.frame(std::span{&button, 1});
     (void)harness.frame();
+}
+void open_preview(nuklear_event_harness_t& harness) {
+    open_area_menu(harness);
+    auto& state = worm_ui_nuklear_compose_state();
     const auto entry = harness.drawn_text_center("Export preview audio…");
     REQUIRE(entry);
     (void)wormedit::test::click_at(harness, entry->first, entry->second);
@@ -83,4 +88,15 @@ TEST_CASE("Preview dialog occlusion keeps Compose cleanup stamped to the visible
     CHECK(frame.get().compose_input_chart_id.value == view.chart_id.value);
     CHECK(frame.get().compose_input_document_revision == view.document_revision);
     CHECK(frame.get().compose_input_viewport_width_pixels == view.viewport_width_pixels);
+}
+
+TEST_CASE("The area menu sets the song preview from the selection", "[frontend-state][event-harness][song-preview]") {
+    nuklear_event_harness_t harness{1280, 900};
+    open_area_menu(harness);
+    const auto entry = harness.drawn_text_center("Set song preview from selection");
+    REQUIRE(entry);
+    const auto actions = wormedit::test::click_at(harness, entry->first, entry->second);
+    CHECK(std::ranges::any_of(actions, [](const auto& action) {
+        return action.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION;
+    }));
 }

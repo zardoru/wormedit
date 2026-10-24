@@ -2,6 +2,14 @@
 
 ## Active queue (2026-10-24)
 
+Completed **T-749** (2026-10-24, branch `wyrm/t729-t749`): one song-wide preview in source-song
+milliseconds with chart overrides only for differing imported osu! difficulties. Native schema v17
+lifts retained osu!/SM fields; writers reuse unchanged spellings, osu! reports a dropped length and
+the raw field editor refuses preview-owned fields. Markers panel, area menu and a snapped canvas
+drag edit it with one Undo step; Export preview audio renders the authored span. GCC GATE passes
+**4,889/4,889**. T-729 is planned as T-756–T-759 ([open question 27](../../docs/chart-editor-plan/decisions/open-questions.md)); T-756 is ready.
+[Completed card](../../docs/chart-editor-plan/tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration).
+
 Completed **T-743** (2026-10-24): scope authoring tree and one project runtime for node selection,
 recoverable drafts and typed confirmations. Node authoring is independent of playback choices;
 common/ancestor content is read-only, inherited notes are gray, and scope warnings use yellow

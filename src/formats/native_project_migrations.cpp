@@ -1,5 +1,8 @@
 #include "native_project_migrations.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/song_preview.h>
+
+#include "../core/text_util.h"
 
 #include <nlohmann/json.hpp>
 
@@ -309,7 +312,64 @@ auto migrate_v15_to_v16(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 15> released_migrations{{
+// Reads the preview that retained osu! or StepMania fields encode, the same
+// way the importers do.
+auto retained_preview(const nlohmann::json& groups) -> std::optional<song_preview_t> {
+    if (!groups.is_array()) return std::nullopt;
+    for (const auto& group : groups) {
+        if (!group.is_object() || !group.contains("family") || !group.contains("ordered_fields"))
+            continue;
+        const auto family = group.at("family").get<int>();
+        std::optional<std::string> osu_time, sample_start, sample_length;
+        for (const auto& field : group.at("ordered_fields")) {
+            const auto name = field.at(0).get<std::string>();
+            const auto value = field.at(1).get<std::string>();
+            if (family == static_cast<int>(format_family_t::osu_mania) && name == osu_preview_time_field)
+                osu_time = value;
+            else if (family == static_cast<int>(format_family_t::stepmania) &&
+                     text_util::ascii_upper(name) == stepmania_sample_start_field)
+                sample_start = value;
+            else if (family == static_cast<int>(format_family_t::stepmania) &&
+                     text_util::ascii_upper(name) == stepmania_sample_length_field)
+                sample_length = value;
+        }
+        if (osu_time) return song_preview_t::from_osu_preview_time(*osu_time);
+        if (sample_start) return song_preview_t::from_stepmania_sample(*sample_start, sample_length);
+    }
+    return std::nullopt;
+}
+
+auto preview_json(const std::optional<song_preview_t>& preview) -> nlohmann::json {
+    // Valid previews are never negative; unsigned matches how a saved project reads back.
+    if (!preview) return nullptr;
+    const auto unsigned_milliseconds = [](std::int64_t value) { return static_cast<std::uint64_t>(value); };
+    return {{"start_milliseconds", unsigned_milliseconds(preview->start_milliseconds)},
+            {"length_milliseconds", preview->length_milliseconds
+                                        ? nlohmann::json(unsigned_milliseconds(*preview->length_milliseconds))
+                                        : nlohmann::json(nullptr)}};
+}
+
+// Schema 17 adds the typed song preview (open question 26), lifted from the
+// retained osu! and StepMania fields. A chart whose retained fields encode a
+// different preview keeps it as an override.
+auto migrate_v16_to_v17(nlohmann::json& document) -> std::string {
+    if (!document.contains("metadata") || !document.at("metadata").is_object())
+        return "document metadata must be an object";
+    auto& metadata = document.at("metadata");
+    const auto song = retained_preview(metadata.value("format_groups", nlohmann::json::array()));
+    metadata["preview"] = preview_json(song);
+    if (!document.contains("charts")) return {};
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object() || !chart.contains("metadata") || !chart.at("metadata").is_object())
+            return "chart metadata must be an object";
+        auto& chart_metadata = chart.at("metadata");
+        const auto own = retained_preview(chart_metadata.value("format_groups", nlohmann::json::array()));
+        chart_metadata["preview_override"] = own && own != song ? preview_json(own) : nlohmann::json(nullptr);
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 16> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -325,6 +385,7 @@ constexpr std::array<migration_t, 15> released_migrations{{
     {13, &migrate_v13_to_v14},
     {14, &migrate_v14_to_v15},
     {15, &migrate_v15_to_v16},
+    {16, &migrate_v16_to_v17},
 }};
 
 } // namespace

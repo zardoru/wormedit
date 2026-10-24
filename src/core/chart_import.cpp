@@ -185,6 +185,14 @@ auto rational_text(const signed_rational_t& value) -> std::string {
     return text;
 }
 
+// An imported difficulty keeps its preview only when it differs from the song's
+// (open question 26); a song without a preview adopts the first imported one.
+auto imported_preview_override(const std::optional<song_preview_t>& song,
+                               const std::optional<song_preview_t>& imported)
+    -> std::optional<song_preview_t> {
+    return song && imported && imported != song ? imported : std::nullopt;
+}
+
 void compare_timing(const chart_document_t& reference, const chart_document_t& imported,
                     std::vector<chart_import_timing_difference_t>& out) {
     const auto add = [&](std::string message) {
@@ -254,6 +262,9 @@ auto make_plan(const song_document_t& target, const song_document_t& source,
             collect_scoped_references(owner->prepared(), plan.references);
         const auto targets = target.read_charts();
         if (!targets.empty()) compare_timing(*targets.front(), *chart, plan.proposal.timing_differences);
+        if (imported_preview_override(target.metadata.preview, source.effective_preview(*chart)))
+            plan.proposal.timing_differences.push_back({chart->id, chart->metadata.name +
+                ": its preview differs from the song's and is kept as this chart's own preview"});
     }
     target_files_t files{target, paths.target_base};
     for (const auto& entry : source.resources)
@@ -454,6 +465,11 @@ auto apply_chart_import(document_history_t& history,
         }
         scratch.document = proposed;
         auto added = import_one_chart(scratch, *chart, maps);
+        if (added) {
+            const auto& imported = source.effective_preview(*chart);
+            added->metadata.preview_override = imported_preview_override(proposed.metadata.preview, imported);
+            if (!proposed.metadata.preview) proposed.metadata.preview = imported;
+        }
         if (!added) {
             result.command = transaction.reject(diagnostic_code_t::invalid_id,
                 "a chart could not be given fresh identities");

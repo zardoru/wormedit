@@ -2,15 +2,28 @@
 #include <cstdio>
 
 namespace wormedit::ui {
-void preview_audio_dialog_t::begin(const wormedit::ui::compose_view_t& view) {
-    if (!view.preview_audio_range.available) return;
+void preview_audio_dialog_t::start(const wormedit::ui::compose_view_t& view, preview_audio_range_view_t source,
+                                   std::uint64_t begin_row, std::uint64_t end_row) {
+    if (!source.available || begin_row >= end_row) return;
     *this = {};
     open = true;
     draft = {.project = view.project_id.value, .chart = view.chart_id.value, .revision = view.document_revision,
-        .begin_row = view.area_range_begin_row, .end_row = view.area_range_end_row};
-    range = view.preview_audio_range;
+        .begin_row = begin_row, .end_row = end_row};
+    range = source;
     duration = std::min(range.end_seconds - range.begin_seconds, 600.0);
     std::snprintf(filename.data(), filename.size(), "%s", "preview.ogg");
+}
+
+void preview_audio_dialog_t::begin(const wormedit::ui::compose_view_t& view) {
+    start(view, view.preview_audio_range, view.area_range_begin_row, view.area_range_end_row);
+}
+
+void preview_audio_dialog_t::begin_from_preview(const wormedit::ui::compose_view_t& view) {
+    const auto& span = view.preview_span;
+    if (!span.available) return;
+    start(view, preview_audio_range_view_t::from(static_cast<double>(span.start_milliseconds) / 1000.0,
+                                                 static_cast<double>(span.end_milliseconds) / 1000.0),
+          span.begin_row, span.end_row);
 }
 
 void preview_audio_dialog_t::render(nk_context* context, const wormedit::ui::compose_view_t& view,

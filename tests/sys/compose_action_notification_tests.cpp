@@ -2896,3 +2896,52 @@ TEST_CASE("New project exports group charts with an excluded difficulty active",
     }
     std::filesystem::remove_all(root);
 }
+
+namespace {
+auto song_preview(const action_notification_fixture_t& fixture) -> std::optional<song_preview_t> {
+    return fixture.history.document.metadata.preview;
+}
+auto typed_preview_action(const action_notification_fixture_t& fixture, std::string begin, std::string end)
+    -> wormedit::ui::workspace_action_t {
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_PREVIEW);
+    action.compose_marker_audio_begin = std::move(begin);
+    action.compose_marker_audio_end = std::move(end);
+    return action;
+}
+} // namespace
+
+TEST_CASE("Song preview actions set typed times and reject an inverted span", "[compose-action][song-preview]") {
+    action_notification_fixture_t fixture;
+    check_action(fixture.dispatch(typed_preview_action(fixture, "1500", "")) == "Preview updated.");
+    check_action(song_preview(fixture) == song_preview_t{.start_milliseconds = 1500});
+    fixture.dispatch(typed_preview_action(fixture, "2000", "1000"));
+    check_action(song_preview(fixture) == song_preview_t{.start_milliseconds = 1500});
+    check_action(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Song preview actions take the selected area and keep the length at the cursor",
+          "[compose-action][song-preview]") {
+    action_notification_fixture_t fixture;
+    fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 480}};
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION)) ==
+                 "Preview set from the selected area.");
+    check_action(song_preview(fixture) == song_preview_t{.start_milliseconds = 500, .length_milliseconds = 500});
+    fixture.state.retained_selection_range.reset();
+    fixture.state.cursor = {measure_id_t{1}, 720};
+    fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_SET_PREVIEW_START_AT_CURSOR));
+    check_action(song_preview(fixture) == song_preview_t{.start_milliseconds = 1500, .length_milliseconds = 500});
+}
+
+TEST_CASE("Song preview Clear and Use song preview have their own owners", "[compose-action][song-preview]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.metadata.preview = song_preview_t{.start_milliseconds = 100};
+    fixture.history.document.charts.front().metadata.preview_override = song_preview_t{.start_milliseconds = 900};
+    fixture.dispatch(typed_preview_action(fixture, "700", ""));
+    check_action(fixture.history.document.charts.front().metadata.preview_override ==
+                 song_preview_t{.start_milliseconds = 700});
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW)) ==
+                 "This chart now uses the song preview.");
+    check_action(!fixture.history.document.charts.front().metadata.preview_override);
+    fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW));
+    check_action(!song_preview(fixture) && fixture.history.undo.size() == 3);
+}

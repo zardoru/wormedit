@@ -294,7 +294,24 @@ The context exposes immutable interval endpoints, baseline effective scroll at `
 
 Initial built-ins are:
 
-**Reserved storage (native schema 2).** The native project already has a slot for this: an SV recipe may use the curve kind `lua_expression` and carries the Lua source inline in `expression_source` (1 to 16384 bytes, no NUL; every other curve keeps it empty). Schema 2 stores and round-trips it and validates its shape, but nothing evaluates it: sampling, preview, materialization and export report an unsupported-feature diagnostic instead of guessing, so a project that holds one can be saved, reopened and shared safely. The fields listed above that the inline slot lacks (scripting API version, entry-point name, named parameters, asset handles and hashes, seed, project-relative source reference) arrive as an additive schema bump together with the evaluator (T-189).
+**Implemented recipe storage (native schema 17).** `lua_expression` retains frozen source in
+`expression_source` (1 to 16384 bytes, no NUL), plus an optional API-v1 `lua` descriptor.
+Legacy descriptors default to pure mode with seed zero. Source references are project-relative
+reload origins; evaluation consumes the embedded snapshot and performs no file I/O. The
+inspector reloads and hashes source explicitly. Named module entries are factories receiving
+`ctx` and returning the curve closure; inline sources may be a function expression, `values`
+expression or a chunk returning a function. Native projects store the descriptor and source,
+never sampled points or VM state. Lua-enabled application workers and the headless converter
+supply the optional evaluator; builds without Lua retain storage and report evaluation unavailable.
+
+API-v1 ordered cycles partition the fixed ascending musical-row schedule, including its end
+inspection query. `p` spans the entire interval and does not reset per cycle. `cycle_index`,
+`emission_index` and `cycle_emission_index` are 1-based in ordered mode; pure queries use zero
+indices. The range remains half-open: the end query inspects the curve, while composition restores
+the authored baseline at the range end. Prepared materialized output holds the preceding emission
+between sampled rows. Pure adaptive probes use deterministic midpoint traversal; no live closure
+survives preparation. `ctx.seed` is the full unsigned seed as a decimal string, with
+`ctx.seed_integer` also present when representable as a signed Lua integer.
 
 - `curve.linear { from, to }`, equal to `from + (to - from) * p`;
 - `curve.exponential { from, to, shape }`, using the endpoint-safe normalized form `from + (to - from) * (exp(shape*p)-1)/(exp(shape)-1)`, with `shape = 0` defined as linear;

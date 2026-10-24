@@ -7,6 +7,10 @@
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/conversion_publication.h>
 
+#if defined(WORMEDIT_HAS_LUA)
+#include "scripting/lua_curve.h"
+#endif
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -300,6 +304,10 @@ auto run_request(const json& body) -> std::pair<int, json> {
         return {2, fail_json("output_directory must be an existing directory")};
     }
     if (auto failure = prepare_cli_slices(*opened.document, request)) return {1, fail_json(*failure)};
+#if defined(WORMEDIT_HAS_LUA)
+    scripting::lua_curve_backend_t scripts;
+    sv_recipe_evaluation_scope_t script_scope{scripts};
+#endif
     const auto converted = convert_document(*opened.document, request.conversion);
     json result{{"ok", false}, {"artifacts", json::array()}, {"diagnostics", json::array()},
                 {"import_warnings", opened.warnings}};

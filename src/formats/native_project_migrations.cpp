@@ -309,7 +309,53 @@ auto migrate_v15_to_v16(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 15> released_migrations{{
+void migrate_lua_recipe(nlohmann::json& recipe) {
+    if (recipe.contains("lua") && !recipe.at("lua").is_null()) return;
+    recipe["lua"] = nullptr;
+    if (recipe.value("curve", std::uint64_t{}) !=
+        static_cast<std::uint64_t>(sv_recipe_curve_t::lua_expression)) return;
+    recipe["lua"] = {{"api_version", 1U}, {"entry_point", ""},
+        {"source_reference", nullptr}, {"source_hash", ""},
+        {"parameters", nlohmann::json::array()}, {"inputs", nlohmann::json::array()},
+        {"seed", 0U}, {"mode", 0U}, {"cycles", nlohmann::json::array()}};
+}
+
+auto migrate_chart_lua_recipes(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object() || !chart.contains("sv_recipes")) continue;
+        if (!chart.at("sv_recipes").is_array()) return "chart sv_recipes must be an array";
+        for (auto& recipe : chart.at("sv_recipes")) {
+            if (!recipe.is_object()) return "sv recipe must be an object";
+            migrate_lua_recipe(recipe);
+        }
+    }
+    return {};
+}
+
+void migrate_scoped_lua_recipes(nlohmann::json& document) {
+    if (!document.contains("prepared_bms_programs")) return;
+    for (auto& owner : document.at("prepared_bms_programs")) {
+        for (auto& node : owner.at("nodes")) {
+            if (node.at("value").at("type") != "chart") continue;
+            for (auto& item : node.at("value").at("data").at("items")) {
+                auto& value = item.at("value");
+                if (value.at("type") != "native") continue;
+                auto& payload = value.at("data").at("payload");
+                if (payload.at("type") == "sv_recipe") migrate_lua_recipe(payload.at("data"));
+            }
+        }
+    }
+}
+
+auto migrate_v16_to_v17(nlohmann::json& document) -> std::string {
+    if (auto error = migrate_chart_lua_recipes(document); !error.empty()) return error;
+    migrate_scoped_lua_recipes(document);
+    return {};
+}
+
+constexpr std::array<migration_t, 16> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -325,6 +371,7 @@ constexpr std::array<migration_t, 15> released_migrations{{
     {13, &migrate_v13_to_v14},
     {14, &migrate_v14_to_v15},
     {15, &migrate_v15_to_v16},
+    {16, &migrate_v16_to_v17},
 }};
 
 } // namespace

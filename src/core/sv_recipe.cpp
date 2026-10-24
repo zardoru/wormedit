@@ -1,4 +1,5 @@
 #include <wormedit/core/rational.h>
+#include <wormedit/core/resource_file_copy.h>
 #include "chart_object_ids.h"
 #include "text_util.h"
 #include <wormedit/core/snap.h>
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -21,6 +23,8 @@
 namespace wormedit {
 namespace {
 using wormedit::reject;
+thread_local const sv_recipe_script_backend_t* script_backend{};
+using recipe_evaluator_t = std::function<long double(std::uint64_t)>;
 
 struct sv_recipe_edit_t {
     const sv_recipe_edit_action_t& action;
@@ -142,7 +146,7 @@ auto curve_value(const sv_recipe_t& recipe, long double p) -> long double {
                                      : to_long_double(values.bump_y);
     }
     case sv_recipe_curve_t::lua_expression:
-        break;  // not evaluable yet; sample_sv_recipe rejects the recipe before this is reached
+        break;  // Script values are materialized through the scoped backend.
     }
     return std::numeric_limits<long double>::quiet_NaN();
 }
@@ -161,8 +165,10 @@ auto recipe_position_for_row(const std::pair<std::uint64_t, std::uint64_t>& rang
 auto ensure_sample_point(std::map<std::uint64_t, long double>& points, std::uint64_t row,
                          const sv_recipe_t& recipe,
                          const std::pair<std::uint64_t, std::uint64_t>& range,
-                         diagnostic_list_t& diagnostics) -> bool {
-    const auto value = curve_value(recipe, recipe_position_for_row(range, row));
+                         diagnostic_list_t& diagnostics,
+                         const recipe_evaluator_t& evaluate = {}) -> bool {
+    const auto value = evaluate ? evaluate(row) : curve_value(recipe, recipe_position_for_row(range, row));
+    if (!diagnostics.empty()) return false;
     if (!is_valid_curve_result(value, recipe.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "SV recipe evaluates to a non-finite, oversized, or target-invalid value");
@@ -362,6 +368,103 @@ void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& di
     }
 }
 
+auto is_lua_identifier(std::string_view name) -> bool {
+    const auto initial = [](char byte) {
+        return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || byte == '_';
+    };
+    return !name.empty() && name.size() <= 128 && initial(name.front()) &&
+        std::ranges::all_of(name, [&](char byte) {
+            return initial(byte) || (byte >= '0' && byte <= '9');
+        });
+}
+
+auto is_lua_content_hash(std::string_view hash) -> bool {
+    return hash.empty() || (hash.size() == 64 && std::ranges::all_of(hash, [](char byte) {
+        return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') ||
+            (byte >= 'A' && byte <= 'F');
+    }));
+}
+
+auto is_lua_source_reference(const std::filesystem::path& path) -> bool {
+    const auto text = text_util::path_utf8(path);
+    return !text.empty() && text_util::is_valid_bounded_text(text, 4096) &&
+        text.find('\\') == std::string::npos && text.find(':') == std::string::npos &&
+        export_asset_directory(path).has_value();
+}
+
+void validate_lua_parameters(const sv_recipe_lua_t& lua, diagnostic_list_t& diagnostics) {
+    std::set<std::string_view> names;
+    if (lua.parameters.size() > 256 || lua.inputs.size() > 256) {
+        reject(diagnostics, diagnostic_code_t::invalid_id, "Lua recipes allow at most 256 parameters and inputs");
+        return;
+    }
+    for (const auto& parameter : lua.parameters) {
+        if (!is_lua_identifier(parameter.name) || !names.insert(parameter.name).second ||
+            !is_valid_bounded_rational(parameter.value, maximum_parameter_magnitude)) {
+            reject(diagnostics, diagnostic_code_t::invalid_rational,
+                "Lua parameters need unique identifiers and bounded rational values");
+        }
+    }
+    std::set<std::uint64_t> assets;
+    for (const auto& input : lua.inputs) {
+        if (!input.asset || !assets.insert(input.asset.value).second ||
+            input.content_hash.empty() || !is_lua_content_hash(input.content_hash)) {
+            reject(diagnostics, diagnostic_code_t::invalid_id,
+                "Lua inputs need unique nonzero asset IDs and 64 hexadecimal hash characters");
+        }
+    }
+}
+
+auto fixed_emission_count(const sv_recipe_t& recipe, std::uint64_t span) -> std::uint64_t {
+    if (recipe.sampling.fixed_point_count) return *recipe.sampling.fixed_point_count;
+    const auto step = *recipe.sampling.fixed_step_rows;
+    return span / step + static_cast<std::uint64_t>(span % step != 0) + 1;
+}
+
+void validate_lua_cycles(const sv_recipe_t& recipe, std::uint64_t span,
+    diagnostic_list_t& diagnostics) {
+    const auto& lua = *recipe.lua;
+    if (lua.mode == sv_recipe_lua_mode_t::pure) {
+        if (!lua.cycles.empty()) reject(diagnostics, diagnostic_code_t::invalid_resolution,
+            "pure Lua recipes cannot declare ordered cycles");
+        return;
+    }
+    if (recipe.sampling.mode != sv_recipe_sampling_mode_t::fixed || lua.cycles.empty() ||
+        lua.cycles.size() > maximum_sv_recipe_sample_points) {
+        reject(diagnostics, diagnostic_code_t::invalid_resolution,
+            "ordered Lua recipes need fixed sampling and a bounded nonempty cycle plan");
+        return;
+    }
+    std::uint64_t count{};
+    for (const auto& cycle : lua.cycles) {
+        if (cycle.emission_count == 0 || cycle.emission_count > maximum_sv_recipe_sample_points) {
+            reject(diagnostics, diagnostic_code_t::invalid_resolution, "Lua cycles need 1 to 4096 emissions");
+            return;
+        }
+        count += cycle.emission_count;
+    }
+    if (count != fixed_emission_count(recipe, span)) reject(diagnostics,
+        diagnostic_code_t::invalid_resolution, "Lua cycle emissions must exactly partition the fixed schedule");
+}
+
+void validate_lua_descriptor(const sv_recipe_t& recipe, std::uint64_t span,
+    diagnostic_list_t& diagnostics) {
+    if (!recipe.lua) return;
+    const auto& lua = *recipe.lua;
+    if (recipe.curve != sv_recipe_curve_t::lua_expression || lua.api_version != 1 ||
+        static_cast<unsigned int>(lua.mode) > static_cast<unsigned int>(sv_recipe_lua_mode_t::ordered)) {
+        reject(diagnostics, diagnostic_code_t::invalid_id, "Lua descriptor needs a Lua recipe, API version 1 and a valid execution mode");
+        return;
+    }
+    if ((!lua.entry_point.empty() && !is_lua_identifier(lua.entry_point)) ||
+        !is_lua_content_hash(lua.source_hash) ||
+        (lua.source_reference && !is_lua_source_reference(*lua.source_reference))) {
+        reject(diagnostics, diagnostic_code_t::invalid_id, "Lua entry point, source reference or source hash is invalid");
+    }
+    validate_lua_parameters(lua, diagnostics);
+    if (diagnostics.empty()) validate_lua_cycles(recipe, span, diagnostics);
+}
+
 void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
     const auto& params = recipe.parameters;
     if (recipe.curve == sv_recipe_curve_t::constant &&
@@ -465,6 +568,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
     validate_transition(recipe, diagnostics);
     validate_sampling(recipe, span, diagnostics);
     validate_curve_outputs(recipe, diagnostics);
+    validate_lua_descriptor(recipe, span, diagnostics);
     const auto stages = validate_postprocess(recipe);
     diagnostics.insert(diagnostics.end(), stages.begin(), stages.end());
     return diagnostics;
@@ -491,13 +595,14 @@ auto add_bump_sample_points(std::map<std::uint64_t, long double>& points,
 auto add_fixed_sample_points(std::map<std::uint64_t, long double>& points,
                              const sv_recipe_t& recipe,
                              const std::pair<std::uint64_t, std::uint64_t>& range,
-                             diagnostic_list_t& diagnostics) -> bool {
+                             diagnostic_list_t& diagnostics,
+                             const recipe_evaluator_t& evaluate = {}) -> bool {
     const auto span = range.second - range.first;
     if (recipe.sampling.fixed_point_count.has_value()) {
         const auto count = static_cast<std::uint64_t>(*recipe.sampling.fixed_point_count);
         const auto step = span / (count - 1);
         for (std::uint64_t i = 0; i < count; ++i) {
-            if (!ensure_sample_point(points, range.first + i * step, recipe, range, diagnostics)) {
+            if (!ensure_sample_point(points, range.first + i * step, recipe, range, diagnostics, evaluate)) {
                 return false;
             }
         }
@@ -505,7 +610,7 @@ auto add_fixed_sample_points(std::map<std::uint64_t, long double>& points,
     }
     const auto step = *recipe.sampling.fixed_step_rows;
     for (auto row = range.first; row < range.second;) {
-        if (!ensure_sample_point(points, row, recipe, range, diagnostics)) {
+        if (!ensure_sample_point(points, row, recipe, range, diagnostics, evaluate)) {
             return false;
         }
         if (range.second - row <= step) {
@@ -513,7 +618,7 @@ auto add_fixed_sample_points(std::map<std::uint64_t, long double>& points,
         }
         row += step;
     }
-    return ensure_sample_point(points, range.second, recipe, range, diagnostics);
+    return ensure_sample_point(points, range.second, recipe, range, diagnostics, evaluate);
 }
 
 struct adaptive_sampling_context_t {
@@ -524,6 +629,7 @@ struct adaptive_sampling_context_t {
     std::map<std::uint64_t, long double>& sampled;
     diagnostic_list_t& diagnostics;
     bool& tolerance_met;
+    const recipe_evaluator_t& evaluate;
 };
 
 auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_t left,
@@ -532,8 +638,9 @@ auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_
         return;
     }
     const auto middle = left + (right - left) / 2;
-    const auto actual = curve_value(
+    const auto actual = context.evaluate ? context.evaluate(middle) : curve_value(
         context.recipe, recipe_position_for_row(context.range, middle));
+    if (!context.diagnostics.empty()) return;
     const auto left_value = context.sampled.at(left);
     const auto right_value = context.sampled.at(right);
     const auto ratio = static_cast<long double>(middle - left) /
@@ -559,9 +666,10 @@ auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_
 auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
                                 const sv_recipe_t& recipe,
                                 const std::pair<std::uint64_t, std::uint64_t>& range,
-                                sv_recipe_sample_outcome_t& result) -> bool {
-    if (!ensure_sample_point(sampled, range.first, recipe, range, result.diagnostics) ||
-        !ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics)) {
+                                sv_recipe_sample_outcome_t& result,
+                                const recipe_evaluator_t& evaluate = {}) -> bool {
+    if (!ensure_sample_point(sampled, range.first, recipe, range, result.diagnostics, evaluate) ||
+        !ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics, evaluate)) {
         return false;
     }
     const auto maximum = static_cast<std::size_t>(recipe.sampling.max_points);
@@ -576,7 +684,8 @@ auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
                                         .tolerance = to_long_double(recipe.sampling.tolerance),
                                         .sampled = sampled,
                                         .diagnostics = result.diagnostics,
-                                        .tolerance_met = result.value.tolerance_met};
+                                        .tolerance_met = result.value.tolerance_met,
+                                        .evaluate = evaluate};
     std::vector<std::uint64_t> mandatory;
     mandatory.reserve(sampled.size());
     for (const auto& [row, value] : sampled) {
@@ -587,6 +696,72 @@ auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
         refine_adaptive_interval(context, mandatory[index - 1], mandatory[index], 0);
     }
     return result.diagnostics.empty();
+}
+
+struct script_emissions_t {
+    std::vector<sv_recipe_emission_t> emissions;
+    bool tolerance_met{true};
+};
+
+struct script_sampling_context_t {
+    const sv_recipe_t& recipe;
+    sv_recipe_script_session_t& session;
+    const std::pair<std::uint64_t, std::uint64_t>& range;
+    const std::vector<std::pair<std::uint64_t, long double>>& baseline;
+    diagnostic_list_t& diagnostics;
+    std::uint32_t emission_index{}, cycle_index{}, cycle_emission_index{};
+
+    auto evaluate(std::uint64_t row) -> long double {
+        sv_recipe_script_query_t query{
+            .p = recipe_position_for_row(range, row),
+            .baseline = base_value_at(baseline, row), .absolute_row = row};
+        if (recipe.lua && recipe.lua->mode == sv_recipe_lua_mode_t::ordered) {
+            query.cycle_index = cycle_index + 1;
+            query.emission_index = ++emission_index;
+            query.cycle_emission_index = ++cycle_emission_index;
+            query.cycle_count = static_cast<std::uint32_t>(recipe.lua->cycles.size());
+            query.emission_count = static_cast<std::uint32_t>(fixed_emission_count(recipe, range.second - range.first));
+            if (cycle_emission_index == recipe.lua->cycles[cycle_index].emission_count) {
+                ++cycle_index;
+                cycle_emission_index = 0;
+            }
+        }
+        auto outcome = session.evaluate(query);
+        diagnostics.insert(diagnostics.end(), outcome.diagnostics.begin(), outcome.diagnostics.end());
+        return outcome.value;
+    }
+};
+
+auto sample_script_emissions(const chart_document_t& chart, const sv_recipe_t& recipe)
+    -> diagnosed_t<script_emissions_t> {
+    diagnosed_t<script_emissions_t> result;
+    result.diagnostics = validate_sv_recipe(chart, recipe);
+    if (!result.diagnostics.empty()) return result;
+    const auto* backend = sv_recipe_evaluation_scope_t::current();
+    if (!backend) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+        "Lua SV recipes require an explicit evaluation scope")}};
+    auto started = backend->start(chart, recipe);
+    if (!started.diagnostics.empty()) return {.diagnostics = std::move(started.diagnostics)};
+    if (!started.value) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+        "Lua SV recipe backend did not start a session")}};
+    const auto index = measure_index_t::from(chart);
+    const auto range = *recipe_range(chart, recipe, *index);
+    const auto baseline = base_events_for(chart, recipe.output, *index);
+    sv_recipe_sample_outcome_t sampled;
+    script_sampling_context_t context{recipe, *started.value, range, baseline, sampled.diagnostics};
+    const recipe_evaluator_t evaluate = [&](std::uint64_t row) { return context.evaluate(row); };
+    std::map<std::uint64_t, long double> points;
+    if (recipe.sampling.mode == sv_recipe_sampling_mode_t::fixed)
+        (void)add_fixed_sample_points(points, recipe, range, sampled.diagnostics, evaluate);
+    else
+        (void)add_adaptive_sample_points(points, recipe, range, sampled, evaluate);
+    result.diagnostics = std::move(sampled.diagnostics);
+    auto finished = started.value->finish();
+    result.diagnostics.insert(result.diagnostics.end(), finished.begin(), finished.end());
+    if (!result.diagnostics.empty()) return result;
+    for (const auto& [row, value] : points) result.value.emissions.push_back({row, value});
+    result.value.tolerance_met = sampled.value.tolerance_met;
+    return result;
 }
 
 auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recipe,
@@ -638,7 +813,7 @@ auto sv_recipe_samples_t::from(const chart_document_t& chart, const sv_recipe_t&
     }
     if (recipe.curve == sv_recipe_curve_t::lua_expression) {
         reject(result.diagnostics, diagnostic_code_t::unsupported_feature,
-               "Lua expression SV recipes are stored but not evaluated yet");
+               "raw Lua SV inspection requires the prepared recipe owner");
         return result;
     }
     const auto index_result = measure_index_t::from(chart);
@@ -815,8 +990,44 @@ auto add_bump_emission_boundaries(const sv_recipe_t& recipe,
 
 } // namespace
 
+namespace {
+thread_local const sv_recipe_prepared_scope_t* prepared_scope{};
+}
+
+sv_recipe_evaluation_scope_t::sv_recipe_evaluation_scope_t(const sv_recipe_script_backend_t& backend)
+    : previous_(std::exchange(script_backend, &backend)) {}
+sv_recipe_evaluation_scope_t::~sv_recipe_evaluation_scope_t() { script_backend = previous_; }
+auto sv_recipe_evaluation_scope_t::current() -> const sv_recipe_script_backend_t* { return script_backend; }
+
+sv_recipe_prepared_scope_t::sv_recipe_prepared_scope_t(std::span<const sv_recipe_prepared_t> prepared)
+    : prepared_(prepared), previous_(std::exchange(prepared_scope, this)) {}
+sv_recipe_prepared_scope_t::~sv_recipe_prepared_scope_t() { prepared_scope = previous_; }
+auto sv_recipe_prepared_scope_t::current() -> const sv_recipe_prepared_scope_t* { return prepared_scope; }
+auto sv_recipe_prepared_scope_t::find(const chart_document_t& chart, const sv_recipe_t& recipe) const
+    -> const sv_recipe_prepared_t* {
+    const auto index = measure_index_t::from(chart);
+    if (!index) return nullptr;
+    const auto found = std::ranges::find_if(prepared_, [&](const auto& prepared) {
+        return prepared.recipe() == recipe && prepared.has_matching_geometry(chart, *index);
+    });
+    return found == prepared_.end() ? nullptr : &*found;
+}
+
 auto sv_recipe_prepared_t::from(const chart_document_t& chart, const sv_recipe_t& recipe)
     -> diagnosed_t<sv_recipe_prepared_t> {
+    if (const auto* scope = sv_recipe_prepared_scope_t::current()) {
+        if (const auto* prepared = scope->find(chart, recipe)) return {.value = *prepared};
+        if (recipe.curve == sv_recipe_curve_t::lua_expression) return {.value = sv_recipe_prepared_t{}, .diagnostics = {
+            error(diagnostic_code_t::invalid_binding, "Lua recipe has no matching prepared snapshot")}};
+    }
+    if (recipe.curve == sv_recipe_curve_t::lua_expression) {
+        auto sampled = sample_script_emissions(chart, recipe);
+        if (!sampled.diagnostics.empty()) return {.value = sv_recipe_prepared_t{}, .diagnostics = std::move(sampled.diagnostics)};
+        auto prepared = from_emissions(chart, recipe, sampled.value.emissions);
+        prepared.value.samples_.tolerance_met = sampled.value.tolerance_met;
+        prepared.value.raw_samples_.tolerance_met = sampled.value.tolerance_met;
+        return prepared;
+    }
     auto sampled = sv_recipe_samples_t::from(chart, recipe);
     if (sampled.diagnostics.empty() && !recipe.postprocess.empty()) {
         const auto index = measure_index_t::from(chart);

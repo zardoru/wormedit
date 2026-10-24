@@ -389,9 +389,14 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_parameters_t, value_from, value_to,
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_sampling_t, mode, fixed_point_count, fixed_step_rows,
                                    tolerance, max_points)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_postprocess_t, kind, mode, solve, value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_parameter_t, name, value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_input_t, asset, content_hash)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_cycle_t, emission_count)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_t, api_version, entry_point, source_reference,
+                                   source_hash, parameters, inputs, seed, mode, cycles)
 // expression_source is schema 2; schema 1 documents gain an empty one in migrate_v1_to_v2.
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_t, id, name, range, output, curve, parameters,
-                                   sampling, expression_source, transition_duration,
+                                   sampling, expression_source, lua, transition_duration,
                                    transition_is_seconds, enabled, postprocess)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
                                    provenance)
@@ -1042,7 +1047,8 @@ auto is_valid_chart_effect_domains(const chart_document_t& chart) -> bool {
     if (!std::ranges::all_of(chart.sv_recipes, [](const auto& recipe) {
             return is_enum_at_most(recipe.output, sv_recipe_output_t::speeds) &&
                    is_enum_at_most(recipe.curve, sv_recipe_curve_t::lua_expression) &&
-                   is_enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive);
+                   is_enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive) &&
+                   (!recipe.lua || is_enum_at_most(recipe.lua->mode, sv_recipe_lua_mode_t::ordered));
         })) {
         return false;
     }
@@ -1286,6 +1292,19 @@ auto is_signed_numeric_field(std::string_view key, bool signed_array) -> bool {
            key == "loop_start_time_ms" || signed_array;
 }
 
+auto is_uint32_schema_field(std::string_view key) -> bool {
+    constexpr std::array fields = {
+        std::string_view{"sample_rate"}, std::string_view{"channels"}, std::string_view{"width"},
+        std::string_view{"height"}, std::string_view{"display_order"},
+        std::string_view{"split_after_column"}, std::string_view{"focused_stage"},
+        std::string_view{"stage_count"}, std::string_view{"retained_effect_bits"},
+        std::string_view{"schema_version"}, std::string_view{"fixed_point_count"},
+        std::string_view{"max_points"}, std::string_view{"api_version"},
+        std::string_view{"emission_count"},
+    };
+    return std::ranges::find(fields, key) != fields.end();
+}
+
 auto is_unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t number) -> bool {
     const auto at_most = [number](std::uint64_t maximum) { return number <= maximum; };
     if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
@@ -1296,12 +1315,7 @@ auto is_unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t
     if (key == "ticks_per_quarter" && !at_most(std::numeric_limits<std::uint16_t>::max())) {
         return false;
     }
-    return !((key == "sample_rate" || key == "channels" || key == "width" ||
-              key == "height" || key == "display_order" || key == "split_after_column" ||
-              key == "focused_stage" || key == "stage_count" ||
-              key == "retained_effect_bits" || key == "schema_version" ||
-              key == "fixed_point_count" || key == "max_points") &&
-             !at_most(std::numeric_limits<std::uint32_t>::max()));
+    return !is_uint32_schema_field(key) || at_most(std::numeric_limits<std::uint32_t>::max());
 }
 
 auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)

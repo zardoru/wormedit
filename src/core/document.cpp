@@ -1767,6 +1767,16 @@ auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& 
     }
 }
 
+void validate_lua_input_assets(document_validation_work_t& work, const sv_recipe_t& recipe) {
+    if (!recipe.lua) return;
+    for (const auto& input : recipe.lua->inputs) {
+        if (!input.asset || !work.asset_ids.contains(input.asset.value)) {
+            add_diagnostic(work.diagnostics, diagnostic_code_t::dangling_asset,
+                "Lua SV recipe refers to an unknown input asset");
+        }
+    }
+}
+
 auto validate_song_recipes(document_validation_work_t& work) -> void {
     std::unordered_set<std::uint64_t> recipe_ids;
     for (const auto& recipe : work.song.generator_recipes) {
@@ -1777,6 +1787,7 @@ auto validate_song_recipes(document_validation_work_t& work) -> void {
     }
     for (const auto& chart : work.song.charts) {
         for (const auto& recipe : chart.sv_recipes) {
+            validate_lua_input_assets(work, recipe);
             if (recipe.id && !recipe_ids.insert(recipe.id.value).second) {
                 add_diagnostic(work.diagnostics, diagnostic_code_t::duplicate_id,
                                "generator and SV recipe IDs must be unique across the song");

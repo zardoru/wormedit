@@ -13,6 +13,8 @@ extern "C" {
 #include <limits>
 #include <new>
 #include <optional>
+#include <set>
+#include <cstring>
 #include <utility>
 
 namespace wormedit::scripting {
@@ -29,6 +31,14 @@ struct lua_sandbox_t::implementation_t {
     const char* abort_message{};
     std::string_view source;
     int load_status{LUA_OK};
+    int function_reference{LUA_NOREF};
+    std::string chunk_name;
+    std::string_view entry_point;
+    const lua_sandbox_context_t* call_context{};
+    double argument{};
+    bool pure{};
+    static inline char context_metatable_key;
+
 
     explicit implementation_t(lua_sandbox_limits_t value)
         : limits(std::move(value)), usage{.remaining_instructions = limits.maximum_instructions},
@@ -200,7 +210,98 @@ struct lua_sandbox_t::implementation_t {
         lua_pushcfunction(state, randomseed);
         lua_setfield(state, -2, "randomseed");
         lua_pop(state, 1);
+        initialize_context(state);
         return 0;
+    }
+    static auto immutable_index(lua_State* state) -> int {
+        lua_getiuservalue(state, 1, 1);
+        lua_pushvalue(state, 2);
+        lua_rawget(state, -2);
+        return 1;
+    }
+    static auto immutable_write(lua_State* state) -> int {
+        return luaL_error(state, "recipe context is immutable");
+    }
+    static auto immutable_length(lua_State* state) -> int {
+        lua_getiuservalue(state, 1, 1);
+        lua_pushinteger(state, static_cast<lua_Integer>(lua_rawlen(state, -1)));
+        return 1;
+    }
+    static auto immutable_next(lua_State* state) -> int {
+        lua_getiuservalue(state, lua_upvalueindex(1), 1);
+        lua_pushvalue(state, 2);
+        if (lua_next(state, -2)) return 2;
+        return 0;
+    }
+    static auto immutable_pairs(lua_State* state) -> int {
+        lua_pushvalue(state, 1);
+        lua_pushcclosure(state, immutable_next, 1);
+        lua_pushnil(state);
+        lua_pushnil(state);
+        return 3;
+    }
+    static void push_scalar(lua_State* state, const lua_sandbox_value_t& value) {
+        switch (value.index()) {
+        case 0: lua_pushnil(state); break;
+        case 1: lua_pushboolean(state, std::get<bool>(value)); break;
+        case 2: lua_pushinteger(state, std::get<std::int64_t>(value)); break;
+        case 3: lua_pushnumber(state, std::get<double>(value)); break;
+        case 4: lua_pushlstring(state, std::get<std::string>(value).data(), std::get<std::string>(value).size()); break;
+        }
+    }
+    static void push_context(lua_State* state, const lua_sandbox_context_t& nodes, unsigned depth = 0) {
+        if (depth > 32) luaL_error(state, "recipe context nesting exceeds limit");
+        if (!lua_checkstack(state, 8)) luaL_error(state, "recipe context stack exceeds limit");
+        lua_newuserdatauv(state, 0, 1);
+        lua_rawgetp(state, LUA_REGISTRYINDEX, &context_metatable_key);
+        lua_setmetatable(state, -2);
+        lua_createtable(state, 0, static_cast<int>(nodes.size()));
+        for (const auto& node : nodes) {
+            auto& self = context(state);
+            if (!self.consume_instruction()) luaL_error(state, "%s", self.abort_message);
+            if (node.key.index() == 0) {
+                const auto& key = std::get<std::string>(node.key);
+                lua_pushlstring(state, key.data(), key.size());
+            } else lua_pushinteger(state, std::get<std::int64_t>(node.key));
+            if (node.value.index() == 0) push_scalar(state, std::get<lua_sandbox_value_t>(node.value));
+            else push_context(state, std::get<lua_sandbox_context_t>(node.value), depth + 1);
+            lua_rawset(state, -3);
+        }
+        lua_setiuservalue(state, -2, 1);
+    }
+    static void initialize_context(lua_State* state) {
+        lua_createtable(state, 0, 5);
+        lua_pushcfunction(state, immutable_index); lua_setfield(state, -2, "__index");
+        lua_pushcfunction(state, immutable_write); lua_setfield(state, -2, "__newindex");
+        lua_pushcfunction(state, immutable_length); lua_setfield(state, -2, "__len");
+        lua_pushcfunction(state, immutable_pairs); lua_setfield(state, -2, "__pairs");
+        lua_pushboolean(state, false); lua_setfield(state, -2, "__metatable");
+        lua_rawsetp(state, LUA_REGISTRYINDEX, &context_metatable_key);
+    }
+    static auto install(lua_State* state) -> int {
+        auto& self = context(state);
+        self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), self.chunk_name.c_str(), "t");
+        if (self.load_status != LUA_OK) return lua_error(state);
+        lua_call(state, 0, 1);
+        if (!self.entry_point.empty()) {
+            luaL_checktype(state, -1, LUA_TTABLE);
+            lua_pushlstring(state, self.entry_point.data(), self.entry_point.size());
+            lua_rawget(state, -2);
+            luaL_checktype(state, -1, LUA_TFUNCTION);
+            push_context(state, *self.call_context);
+            lua_call(state, 1, 1);
+        }
+        luaL_checktype(state, -1, LUA_TFUNCTION);
+        self.function_reference = luaL_ref(state, LUA_REGISTRYINDEX);
+        return 0;
+    }
+    static auto call(lua_State* state) -> int {
+        auto& self = context(state);
+        lua_rawgeti(state, LUA_REGISTRYINDEX, self.function_reference);
+        lua_pushnumber(state, self.argument);
+        push_context(state, *self.call_context);
+        lua_call(state, 2, 1);
+        return 1;
     }
     static auto run(lua_State* state) -> int {
         auto& self = context(state);
@@ -236,6 +337,126 @@ struct lua_sandbox_t::implementation_t {
         default: return std::unexpected(error_t{failure_code_t::unsupported, "Lua result must be a scalar value."});
         }
     }
+    auto invoke(lua_CFunction function, int results) -> result_t<void, error_t<failure_code_t>> {
+        if (!can_continue()) return std::unexpected(error(LUA_ERRRUN));
+        lua_pushcfunction(state, function);
+        const auto status = lua_pcall(state, 0, results, 0);
+        if (status != LUA_OK || !can_continue()) return std::unexpected(error(status));
+        return {};
+    }
+    // Raw inspection only: no metamethods or Lua callbacks. Reserve stack space
+    // first; all subsequent API operations merely push existing Lua values.
+    struct snapshot_t {
+        implementation_t& owner;
+        std::set<const void*> visited;
+        std::vector<std::string> objects;
+        std::size_t bytes{};
+        bool valid{true};
+        auto atom(int index) -> std::string {
+            const auto type = lua_type(owner.state, index);
+            std::string value(1, static_cast<char>(type));
+            if (type == LUA_TSTRING) {
+                std::size_t length{};
+                const auto* text = lua_tolstring(owner.state, index, &length);
+                bytes += length;
+                if (bytes > owner.limits.maximum_memory_bytes) valid = false;
+                else value.append(text, length);
+            } else if (type == LUA_TBOOLEAN) value += static_cast<char>(lua_toboolean(owner.state, index));
+            else if (type == LUA_TNUMBER) {
+                const auto integer = lua_isinteger(owner.state, index);
+                value += static_cast<char>(integer);
+                const auto bits = integer ? static_cast<std::uint64_t>(lua_tointeger(owner.state, index))
+                    : std::bit_cast<std::uint64_t>(static_cast<double>(lua_tonumber(owner.state, index)));
+                value.append(reinterpret_cast<const char*>(&bits), sizeof(bits));
+            } else if (type != LUA_TNIL) {
+                const auto pointer = reinterpret_cast<std::uintptr_t>(lua_topointer(owner.state, index));
+                value.append(reinterpret_cast<const char*>(&pointer), sizeof(pointer));
+            }
+            return value;
+        }
+        void table(int index, unsigned depth, std::string& record) {
+            std::vector<std::string> entries;
+            lua_pushnil(owner.state);
+            while (lua_next(owner.state, index)) {
+                if (!owner.consume_instruction()) { valid = false; lua_pop(owner.state, 2); break; }
+                auto key = atom(-2);
+                auto value = atom(-1);
+                visit(-2, depth + 1);
+                visit(-1, depth + 1);
+                if (!valid || key.size() + value.size() > owner.limits.maximum_memory_bytes - std::min(bytes, owner.limits.maximum_memory_bytes)) {
+                    valid = false; lua_pop(owner.state, 2); break;
+                }
+                bytes += key.size() + value.size();
+                key = std::to_string(key.size()) + ':' + key + value;
+                entries.push_back(std::move(key));
+                lua_pop(owner.state, 1);
+                if (!valid) { lua_pop(owner.state, 1); break; }
+            }
+            std::ranges::sort(entries);
+            for (const auto& entry : entries) {
+                if (entry.size() + record.size() + 32 > owner.limits.maximum_memory_bytes) { valid = false; break; }
+                record += std::to_string(entry.size()); record += ':'; record += entry;
+            }
+        }
+        void function(int index, unsigned depth, std::string& record) {
+            for (int upvalue = 1; lua_getupvalue(owner.state, index, upvalue); ++upvalue) {
+                if (!owner.consume_instruction()) { valid = false; lua_pop(owner.state, 1); break; }
+                const auto value = atom(-1);
+                if (!valid || value.size() + record.size() + 32 > owner.limits.maximum_memory_bytes) {
+                    valid = false; lua_pop(owner.state, 1); break;
+                }
+                record += std::to_string(value.size()); record += ':'; record += value;
+                visit(-1, depth + 1);
+                lua_pop(owner.state, 1);
+                if (!valid) break;
+            }
+        }
+        void userdata(int index, unsigned depth, std::string& record) {
+            if (!lua_getmetatable(owner.state, index)) { valid = false; return; }
+            lua_rawgetp(owner.state, LUA_REGISTRYINDEX, &context_metatable_key);
+            const auto immutable = lua_rawequal(owner.state, -1, -2);
+            lua_pop(owner.state, 2);
+            if (!immutable) { valid = false; return; }
+            lua_getiuservalue(owner.state, index, 1);
+            record += atom(-1);
+            visit(-1, depth + 1);
+            lua_pop(owner.state, 1);
+        }
+        void visit(int index, unsigned depth = 0) {
+            const auto type = lua_type(owner.state, index);
+            if (type == LUA_TLIGHTUSERDATA || type == LUA_TTHREAD) { valid = false; return; }
+            if (type != LUA_TTABLE && type != LUA_TFUNCTION && type != LUA_TUSERDATA) return;
+            const auto pointer = lua_topointer(owner.state, index);
+            if (visited.contains(pointer)) return;
+            if (depth > 64 || visited.size() >= 65536 || !owner.consume_instruction()) { valid = false; return; }
+            visited.insert(pointer);
+            index = lua_absindex(owner.state, index);
+            auto record = atom(index);
+            if (type == LUA_TTABLE) table(index, depth, record);
+            else if (type == LUA_TFUNCTION) function(index, depth, record);
+            else userdata(index, depth, record);
+            bytes += record.size();
+            if (bytes > owner.limits.maximum_memory_bytes) valid = false;
+            objects.push_back(std::move(record));
+        }
+    };
+    auto snapshot() -> result_t<std::vector<std::string>, error_t<failure_code_t>> {
+        if (!lua_checkstack(state, 512)) return std::unexpected(error_t{
+            failure_code_t::capacity_exceeded, "Cannot reserve pure Lua inspection stack."});
+        snapshot_t snapshot{.owner = *this};
+        lua_rawgeti(state, LUA_REGISTRYINDEX, function_reference);
+        snapshot.visit(-1);
+        lua_pop(state, 1);
+        lua_pushglobaltable(state);
+        snapshot.visit(-1);
+        lua_pop(state, 1);
+        if (abort_code) return std::unexpected(error(LUA_ERRRUN));
+        if (!snapshot.valid) return std::unexpected(error_t{failure_code_t::invalid_data,
+            "Pure Lua closure contains unsupported or excessive retained state."});
+        std::ranges::sort(snapshot.objects);
+        return std::move(snapshot.objects);
+    }
+
 };
 
 lua_sandbox_t::lua_sandbox_t(std::unique_ptr<implementation_t> implementation)
@@ -282,6 +503,54 @@ auto lua_sandbox_t::evaluate(std::string_view source) -> result_t<lua_sandbox_va
     }
     auto value = self.result();
     lua_settop(self.state, 0);
+    if (!value) self.close();
+    return value;
+}
+auto lua_sandbox_t::install_function(std::string_view source, const lua_sandbox_context_t& context,
+    std::string_view entry_point, std::string_view chunk_name, bool pure)
+    -> result_t<void, error_t<failure_code_t>> {
+    if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready, "Lua session is closed."});
+    auto& self = *implementation_;
+    if (self.function_reference != LUA_NOREF) return std::unexpected(error_t{
+        failure_code_t::invalid_state, "Lua function is already installed."});
+    if (source.size() > self.limits.maximum_source_bytes) self.record_failure(
+        failure_code_t::capacity_exceeded, "Lua source exceeds the source byte limit.");
+    self.source = source;
+    self.chunk_name = chunk_name;
+    self.entry_point = entry_point;
+    self.call_context = &context;
+    self.pure = pure;
+    auto result = self.invoke(implementation_t::install, 0);
+    self.source = {}; self.entry_point = {}; self.call_context = nullptr;
+    lua_settop(self.state, 0);
+    if (!result) self.close();
+    return result;
+}
+auto lua_sandbox_t::call_function(double p, const lua_sandbox_context_t& context)
+    -> result_t<lua_sandbox_value_t, error_t<failure_code_t>> {
+    if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready, "Lua session is closed."});
+    auto& self = *implementation_;
+    if (self.function_reference == LUA_NOREF) return std::unexpected(error_t{
+        failure_code_t::not_ready, "Lua function is not installed."});
+    if (!std::isfinite(p)) {
+        self.close();
+        return std::unexpected(error_t{failure_code_t::invalid_request, "Lua argument must be finite."});
+    }
+    const auto random_before = self.random_state;
+    auto before = self.pure ? self.snapshot() : result_t<std::vector<std::string>, error_t<failure_code_t>>{};
+    if (!before) { self.close(); return std::unexpected(before.error()); }
+    self.argument = p; self.call_context = &context;
+    const auto invoked = self.invoke(implementation_t::call, 1);
+    self.call_context = nullptr;
+    if (!invoked) { self.close(); return std::unexpected(invoked.error()); }
+    auto value = self.result();
+    lua_settop(self.state, 0);
+    if (value && self.pure) {
+        const auto after = self.snapshot();
+        if (!after) value = std::unexpected(after.error());
+        else if (*before != *after || random_before != self.random_state) value = std::unexpected(error_t{
+            failure_code_t::invalid_data, "Pure Lua curve mutated retained state; use ordered mode."});
+    }
     if (!value) self.close();
     return value;
 }

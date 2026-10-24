@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <utility>
 #include <variant>
@@ -42,6 +43,42 @@ struct sv_recipe_emission_t {
     auto operator==(const sv_recipe_emission_t&) const -> bool = default;
 };
 
+// Script backends are supplied only inside an explicit worker/build scope. Core
+// owns sampling and immutable preparation; implementations own bounded sessions.
+struct sv_recipe_script_query_t {
+    long double p{};
+    long double baseline{1};
+    std::uint64_t absolute_row{};
+    std::uint32_t cycle_index{}, emission_index{}, cycle_emission_index{};
+    std::uint32_t cycle_count{}, emission_count{};
+};
+
+class sv_recipe_script_session_t {
+  public:
+    virtual ~sv_recipe_script_session_t() = default;
+    [[nodiscard]] virtual auto evaluate(const sv_recipe_script_query_t&)
+        -> diagnosed_t<long double> = 0;
+    [[nodiscard]] virtual auto finish() -> diagnostic_list_t = 0;
+};
+
+class sv_recipe_script_backend_t {
+  public:
+    virtual ~sv_recipe_script_backend_t() = default;
+    [[nodiscard]] virtual auto start(const chart_document_t&, const sv_recipe_t&) const
+        -> diagnosed_t<std::unique_ptr<sv_recipe_script_session_t>> = 0;
+};
+
+class sv_recipe_evaluation_scope_t {
+  public:
+    explicit sv_recipe_evaluation_scope_t(const sv_recipe_script_backend_t&);
+    ~sv_recipe_evaluation_scope_t();
+    sv_recipe_evaluation_scope_t(const sv_recipe_evaluation_scope_t&) = delete;
+    auto operator=(const sv_recipe_evaluation_scope_t&) -> sv_recipe_evaluation_scope_t& = delete;
+    [[nodiscard]] static auto current() -> const sv_recipe_script_backend_t*;
+  private:
+    const sv_recipe_script_backend_t* previous_{};
+};
+
 // Owns the evaluated recipe contract shared by composition and inspection.
 // Built-ins retain their exact random-access curve. Materialized output (from
 // an ordered evaluator or a batch transform) is a half-open step function:
@@ -76,6 +113,22 @@ class sv_recipe_prepared_t {
     sv_recipe_samples_t samples_;
     sv_recipe_samples_t raw_samples_;
     std::vector<sv_recipe_emission_t> emissions_;
+};
+
+// Borrows immutable worker-prepared snapshots during synchronous frame actions.
+// A Lua request that does not exactly match this scope is rejected.
+class sv_recipe_prepared_scope_t {
+  public:
+    explicit sv_recipe_prepared_scope_t(std::span<const sv_recipe_prepared_t>);
+    ~sv_recipe_prepared_scope_t();
+    sv_recipe_prepared_scope_t(const sv_recipe_prepared_scope_t&) = delete;
+    auto operator=(const sv_recipe_prepared_scope_t&) -> sv_recipe_prepared_scope_t& = delete;
+    [[nodiscard]] static auto current() -> const sv_recipe_prepared_scope_t*;
+    [[nodiscard]] auto find(const chart_document_t&, const sv_recipe_t&) const
+        -> const sv_recipe_prepared_t*;
+  private:
+    std::span<const sv_recipe_prepared_t> prepared_;
+    const sv_recipe_prepared_scope_t* previous_{};
 };
 
 struct sv_recipe_sample_result_t {

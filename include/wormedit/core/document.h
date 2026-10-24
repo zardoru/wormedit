@@ -407,6 +407,38 @@ struct sv_recipe_postprocess_t {
     auto operator==(const sv_recipe_postprocess_t&) const -> bool = default;
 };
 
+struct sv_recipe_lua_parameter_t {
+    std::string name;
+    signed_rational_t value;
+    auto operator==(const sv_recipe_lua_parameter_t&) const -> bool = default;
+};
+
+struct sv_recipe_lua_input_t {
+    asset_id_t asset;
+    std::string content_hash;
+    auto operator==(const sv_recipe_lua_input_t&) const -> bool = default;
+};
+
+struct sv_recipe_lua_cycle_t {
+    // Partitions the fixed sampling schedule, including any exclusive-end query.
+    std::uint32_t emission_count{};
+    auto operator==(const sv_recipe_lua_cycle_t&) const -> bool = default;
+};
+
+struct sv_recipe_lua_t {
+    std::uint32_t api_version{1};
+    std::string entry_point;
+    // Optional reload origin; expression_source remains the frozen source snapshot.
+    std::optional<std::filesystem::path> source_reference;
+    std::string source_hash;
+    std::vector<sv_recipe_lua_parameter_t> parameters;
+    std::vector<sv_recipe_lua_input_t> inputs;
+    std::uint64_t seed{};
+    sv_recipe_lua_mode_t mode{sv_recipe_lua_mode_t::pure};
+    std::vector<sv_recipe_lua_cycle_t> cycles;
+    auto operator==(const sv_recipe_lua_t&) const -> bool = default;
+};
+
 struct sv_recipe_t {
     recipe_id_t id;
     std::string name;
@@ -420,6 +452,7 @@ struct sv_recipe_t {
     sv_recipe_sampling_t sampling;
     // Lua source for the lua_expression curve; empty for every other curve.
     std::string expression_source;
+    std::optional<sv_recipe_lua_t> lua;
     // StepMania SPEEDS transition behavior. It is ignored for SV/SCROLLS.
     std::optional<rational_t> transition_duration;
     std::optional<bool> transition_is_seconds;
@@ -979,7 +1012,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 16;
+inline constexpr std::uint32_t current_document_schema_version = 17;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

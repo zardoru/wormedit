@@ -728,7 +728,7 @@ TEST_CASE("materializing rejects unknown and non-evaluable recipes without a rev
     CHECK(history.document.charts.front().sv_recipes.size() == 2);
 }
 
-TEST_CASE("Lua expression recipes are stored and validated but never sampled",
+TEST_CASE("Lua expression recipes are validated and reject sampling without a backend",
           "[unit][sv-recipe][lua]") {
     auto chart = make_recipe_chart();
     auto recipe =
@@ -1464,4 +1464,234 @@ TEST_CASE("Duplicate rejects an exhausted recipe ID sequence", "[unit][sv-recipe
     const auto id = recipe_id_t{std::numeric_limits<std::uint64_t>::max()};
     song.charts.front().sv_recipes.push_back(make_constant_recipe(id, measure_id_t{11}, measure_id_t{12}, {1, 1}));
     check_duplicate_rejection(std::move(song), id, diagnostic_code_t::invalid_id);
+}
+
+namespace {
+struct script_trace_t {
+    std::vector<sv_recipe_script_query_t> queries;
+    std::size_t starts{}, finishes{};
+    bool counter{}, nonfinite{}, fail_finish{};
+};
+
+class fake_recipe_session_t final : public sv_recipe_script_session_t {
+  public:
+    explicit fake_recipe_session_t(script_trace_t& trace) : trace_(trace) {}
+    auto evaluate(const sv_recipe_script_query_t& query) -> diagnosed_t<long double> override {
+        trace_.queries.push_back(query);
+        if (trace_.nonfinite) return {.value = std::numeric_limits<long double>::infinity()};
+        return {.value = trace_.counter ? static_cast<long double>(++count_) : 1 + query.p};
+    }
+    auto finish() -> diagnostic_list_t override {
+        ++trace_.finishes;
+        if (trace_.fail_finish) return {error(diagnostic_code_t::invalid_id, "fake finish failure")};
+        return {};
+    }
+  private:
+    script_trace_t& trace_;
+    std::size_t count_{};
+};
+
+class fake_recipe_backend_t final : public sv_recipe_script_backend_t {
+  public:
+    explicit fake_recipe_backend_t(script_trace_t& trace) : trace_(trace) {}
+    auto start(const chart_document_t&, const sv_recipe_t&) const
+        -> diagnosed_t<std::unique_ptr<sv_recipe_script_session_t>> override {
+        ++trace_.starts;
+        return {.value = std::make_unique<fake_recipe_session_t>(trace_)};
+    }
+  private:
+    script_trace_t& trace_;
+};
+
+auto make_script_recipe() -> sv_recipe_t {
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "return function(p, ctx) return 1 + p end";
+    recipe.lua = sv_recipe_lua_t{};
+    return recipe;
+}
+} // namespace
+
+namespace {
+void check_pure_script_queries(const script_trace_t& trace) {
+    CHECK(trace.queries[1].p == 0.5L);
+    CHECK(trace.queries[1].baseline == 3);
+    CHECK(trace.queries[1].emission_index == 0);
+    CHECK(trace.queries[1].cycle_index == 0);
+    CHECK(trace.queries[1].emission_count == 0);
+}
+void check_script_session_counts(const script_trace_t& trace, std::size_t sessions, std::size_t queries) {
+    REQUIRE(trace.queries.size() == queries);
+    CHECK(trace.starts == sessions);
+    CHECK(trace.finishes == sessions);
+}
+void check_ordered_cycle_indices(const script_trace_t& trace) {
+    CHECK(trace.queries[0].cycle_index == 1);
+    CHECK(trace.queries[1].cycle_index == 2);
+    CHECK(trace.queries[1].cycle_emission_index == 1);
+    CHECK(trace.queries[2].cycle_emission_index == 2);
+    CHECK(trace.queries[2].emission_index == 3);
+}
+void check_adaptive_script_samples(const sv_recipe_prepared_t& prepared) {
+    CHECK(prepared.samples().points.front().value == 2);
+    CHECK(prepared.raw_samples().points.front().value == 1);
+    CHECK(prepared.samples().tolerance_met);
+    CHECK(prepared.value_at(137) == 2);
+}
+void check_prepared_script_replay(const diagnosed_t<sv_recipe_prepared_t>& first,
+    const diagnosed_t<sv_recipe_prepared_t>& second) {
+    REQUIRE(first.diagnostics.empty());
+    REQUIRE(second.diagnostics.empty());
+    CHECK(first.value == second.value);
+    CHECK(first.value.samples().points.back().value == 3);
+}
+void check_compiled_script_snapshot(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const sv_recipe_prepared_t& prepared) {
+    CHECK(prepared.samples().points[1].value == 1.5);
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, recipe.output, std::span{&prepared, 1});
+    REQUIRE(compiled.diagnostics.empty());
+    CHECK(prepared.value_at(480) == 1.5L);
+}
+void check_rejected_script_metadata(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const script_trace_t& trace) {
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
+    CHECK_FALSE(sv_recipe_prepared_t::from(chart, recipe).diagnostics.empty());
+    CHECK(trace.starts == 0);
+}
+} // namespace
+
+TEST_CASE("scoped Lua backends receive pure positions and authored baseline once",
+          "[unit][sv-recipe][lua][prepared]") {
+    auto chart = make_recipe_chart();
+    chart.scrolls.push_back({.id = object_id_t{70}, .position = {measure_id_t{11}, 0}, .multiplier = {3, 1}});
+    const auto recipe = make_script_recipe();
+    script_trace_t trace;
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    REQUIRE(prepared.diagnostics.empty());
+    check_script_session_counts(trace, 1, 3);
+    check_pure_script_queries(trace);
+    check_compiled_script_snapshot(chart, recipe, prepared.value);
+    CHECK(trace.queries.size() == 3);
+}
+
+TEST_CASE("ordered Lua sessions keep state across cycles and reset for each preparation",
+          "[unit][sv-recipe][lua][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_script_recipe();
+    recipe.lua->mode = sv_recipe_lua_mode_t::ordered;
+    recipe.lua->cycles = {{1}, {2}};
+    script_trace_t trace{.counter = true};
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    const auto first = sv_recipe_prepared_t::from(chart, recipe);
+    const auto second = sv_recipe_prepared_t::from(chart, recipe);
+    check_prepared_script_replay(first, second);
+    check_script_session_counts(trace, 2, 6);
+    check_ordered_cycle_indices(trace);
+    CHECK(trace.queries[2].cycle_count == 2);
+    CHECK(trace.queries[2].emission_count == 3);
+}
+
+TEST_CASE("Lua chart-end inspection consumes one ordered emission and holds the last real value",
+          "[unit][sv-recipe][lua][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_script_recipe();
+    recipe.range.end = {measure_id_t{12}, 960};
+    recipe.lua->mode = sv_recipe_lua_mode_t::ordered;
+    recipe.lua->cycles = {{3}};
+    script_trace_t trace{.counter = true};
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    REQUIRE(prepared.diagnostics.empty());
+    REQUIRE(trace.queries.size() == 3);
+    CHECK(trace.queries.back().absolute_row == 1920);
+    CHECK(trace.queries.back().p == 1);
+    check_recipe_point(prepared.value.samples().points.back(), 1919, 2);
+    CHECK(prepared.value.value_at(1919) == 2);
+    CHECK_FALSE(prepared.value.value_at(1920));
+}
+
+TEST_CASE("pure Lua adaptive inspection uses zero indices and freezes postprocessed output",
+          "[unit][sv-recipe][lua][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_script_recipe();
+    recipe.sampling = {.mode = sv_recipe_sampling_mode_t::adaptive, .fixed_point_count = std::nullopt};
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::multiply, .value = {2, 1}}};
+    script_trace_t trace;
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    REQUIRE(prepared.diagnostics.empty());
+    REQUIRE(trace.queries.size() == 3);
+    CHECK(trace.queries.back().absolute_row == 480);
+    CHECK(trace.queries.back().emission_index == 0);
+    check_adaptive_script_samples(prepared.value);
+    CHECK(trace.queries.size() == 3);
+}
+
+TEST_CASE("Lua preparation rejects nonfinite values and finishing failures atomically",
+          "[unit][sv-recipe][lua][prepared]") {
+    const auto chart = make_recipe_chart();
+    const auto recipe = make_script_recipe();
+    script_trace_t trace;
+    SECTION("nonfinite evaluation") { trace.nonfinite = true; }
+    SECTION("finish failure") { trace.fail_finish = true; }
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    CHECK_FALSE(prepared.diagnostics.empty());
+    CHECK(prepared.value.samples().points.empty());
+    CHECK(trace.finishes == 1);
+}
+
+TEST_CASE("prepared scopes reuse exact Lua snapshots without opening another VM",
+          "[unit][sv-recipe][lua][prepared]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_script_recipe();
+    script_trace_t trace;
+    const fake_recipe_backend_t backend(trace);
+    const auto prepared = [&] {
+        const sv_recipe_evaluation_scope_t scope(backend);
+        return sv_recipe_prepared_t::from(chart, recipe);
+    }();
+    REQUIRE(prepared.diagnostics.empty());
+    CHECK_FALSE(sv_recipe_evaluation_scope_t::current());
+    const sv_recipe_prepared_scope_t scope(std::span{&prepared.value, 1});
+    CHECK(sv_recipe_prepared_t::from(chart, recipe).diagnostics.empty());
+    SECTION("changed recipe") { recipe.lua->seed = 4; }
+    SECTION("changed geometry") { chart.divisions_per_standard_measure *= 2; }
+    CHECK_FALSE(sv_recipe_prepared_t::from(chart, recipe).diagnostics.empty());
+    CHECK(trace.starts == 1);
+}
+
+TEST_CASE("Lua durable metadata rejects malformed declarations before starting a session",
+          "[unit][sv-recipe][lua]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_script_recipe();
+    SECTION("API") { recipe.lua->api_version = 2; }
+    SECTION("mode") { recipe.lua->mode = static_cast<sv_recipe_lua_mode_t>(2); }
+    SECTION("entry point") { recipe.lua->entry_point = "a.b"; }
+    SECTION("reference") { recipe.lua->source_reference = "../outside.lua"; }
+    SECTION("hash") { recipe.lua->source_hash = "not a hash"; }
+    SECTION("parameter name") { recipe.lua->parameters = {{"a-b", {1, 1}}}; }
+    SECTION("duplicate parameters") { recipe.lua->parameters = {{"x", {1, 1}}, {"x", {2, 1}}}; }
+    SECTION("parameter rational") { recipe.lua->parameters = {{"x", {1, 0}}}; }
+    SECTION("input") { recipe.lua->inputs = {{asset_id_t{}, std::string(64, 'a')}}; }
+    SECTION("input hash") { recipe.lua->inputs = {{asset_id_t{1}, ""}}; }
+    SECTION("pure cycles") { recipe.lua->cycles = {{3}}; }
+    SECTION("ordered adaptive") {
+        recipe.lua->mode = sv_recipe_lua_mode_t::ordered;
+        recipe.lua->cycles = {{3}};
+        recipe.sampling = {.mode = sv_recipe_sampling_mode_t::adaptive, .fixed_point_count = std::nullopt};
+    }
+    SECTION("incomplete plan") { recipe.lua->mode = sv_recipe_lua_mode_t::ordered; recipe.lua->cycles = {{2}}; }
+    SECTION("empty cycle") { recipe.lua->mode = sv_recipe_lua_mode_t::ordered; recipe.lua->cycles = {{0}, {3}}; }
+    SECTION("non Lua") { recipe.curve = sv_recipe_curve_t::linear; recipe.expression_source.clear(); }
+    script_trace_t trace;
+    const fake_recipe_backend_t backend(trace);
+    const sv_recipe_evaluation_scope_t scope(backend);
+    check_rejected_script_metadata(chart, recipe, trace);
 }

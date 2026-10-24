@@ -3,6 +3,9 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/slice_spans.h>
+#if defined(WORMEDIT_HAS_LUA)
+#include "scripting/lua_curve.h"
+#endif
 #include <algorithm>
 #include <utility>
 
@@ -342,6 +345,11 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
         if (!pending) return std::unexpected(pending.error());
         prepared.pending_assets = std::move(*pending);
     }
+#if defined(WORMEDIT_HAS_LUA)
+    // Each conversion owns a fresh session scope; no preview VM or cache is reused.
+    scripting::lua_curve_backend_t scripts{{.cancellation = stop}};
+    sv_recipe_evaluation_scope_t script_scope{scripts};
+#endif
     prepared.converted = convert_document(input.document, prepared.request, {},
                                           {.stop = stop, .progress = input.progress.get()});
     if (!prepared.converted) {

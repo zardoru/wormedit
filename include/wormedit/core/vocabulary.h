@@ -299,6 +299,8 @@ enum class sv_recipe_postprocess_kind_t { multiply, normalize, balance_bump };
 enum class sv_recipe_normalization_t { preserve_displacement, preserve_distance, preserve_average };
 enum class sv_recipe_bump_solve_t { y, x };
 
+enum class sv_recipe_lua_mode_t { pure, ordered };
+
 enum class sv_recipe_sampling_mode_t {
     fixed,
     adaptive,

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include <type_traits>
+#include <limits>
 
 using namespace wormedit;
 using namespace wormedit::scripting;
@@ -217,4 +218,126 @@ TEST_CASE("Lua sandbox moves retain the state callback lifetime", "[lua-sandbox]
     assigned = std::move(moved);
     CHECK_FALSE(moved.is_open());
     CHECK(evaluate(assigned, "return value") == lua_sandbox_value_t{std::int64_t{41}});
+}
+
+TEST_CASE("Lua sandbox installs closures and keeps ordered state across typed calls", "[lua-sandbox]") {
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function("local n=0; return function(p,ctx) n=n+1; return p+ctx.offset+n end", {}));
+    const lua_sandbox_context_t context{{std::string("offset"), lua_sandbox_value_t{2.0}}};
+    CHECK(sandbox.call_function(0.5, context) == lua_sandbox_value_t{3.5});
+    CHECK(sandbox.call_function(0.5, context) == lua_sandbox_value_t{4.5});
+    const auto repeated = sandbox.install_function("return function() return 0 end", {});
+    REQUIRE_FALSE(repeated);
+    CHECK(repeated.error().code == failure_code_t::invalid_state);
+}
+
+TEST_CASE("Lua sandbox module factories receive immutable context once", "[lua-sandbox]") {
+    auto sandbox = session();
+    const lua_sandbox_context_t context{{std::string("offset"), lua_sandbox_value_t{std::int64_t{7}}}};
+    REQUIRE(sandbox.install_function("return {make=function(ctx) local n=ctx.offset; return function() n=n+1; return n end end}",
+        context, "make", "@recipe.lua"));
+    CHECK(sandbox.call_function(0, {}) == lua_sandbox_value_t{std::int64_t{8}});
+    CHECK(sandbox.call_function(0, {}) == lua_sandbox_value_t{std::int64_t{9}});
+}
+
+TEST_CASE("Lua sandbox context rejects nested mutation and hides pairs backing state", "[lua-sandbox]") {
+    const auto attack = GENERATE(std::string("ctx.nested.value=4"), std::string("rawset(ctx.nested,'value',4)"),
+        std::string("local _,state=pairs(ctx.nested); assert(state==nil); ctx.value=2"),
+        std::string("table.insert(ctx.nested,3)"));
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function("return function(p,ctx) " + attack + "; return 1 end", {}));
+    const lua_sandbox_context_t context{{std::string("nested"), lua_sandbox_context_t{
+        {std::string("value"), lua_sandbox_value_t{std::int64_t{1}}}}}};
+    const auto value = sandbox.call_function(0, context);
+    REQUIRE_FALSE(value);
+    CHECK_FALSE(sandbox.is_open());
+}
+
+TEST_CASE("Lua sandbox immutable context supports indexed reading length and safe iteration", "[lua-sandbox]") {
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function(R"(return function(p,ctx)
+        local sum=0
+        for _,value in pairs(ctx.items) do sum=sum+value end
+        for i,value in ipairs(ctx.items) do assert(ctx.items[i]==value) end
+        local iterator,state=pairs(ctx.items)
+        assert(state==nil)
+        assert(#ctx.items==2)
+        return sum
+    end)", {}));
+    const lua_sandbox_context_t context{{std::string("items"), lua_sandbox_context_t{
+        {std::int64_t{1}, lua_sandbox_value_t{std::int64_t{4}}},
+        {std::int64_t{2}, lua_sandbox_value_t{std::int64_t{5}}}}}};
+    CHECK(sandbox.call_function(0, context) == lua_sandbox_value_t{std::int64_t{9}});
+}
+
+TEST_CASE("Pure Lua closures reject retained mutation even when their output is constant", "[lua-sandbox]") {
+    const auto source = GENERATE(
+        "local n=0; return function() n=n+1; return 1 end",
+        "local t={n=0}; return function() t.n=t.n+1; return 1 end",
+        "return function() global_count=1; return 1 end",
+        "local run=load; return function(p) run('hidden=1')(); return p end",
+        "return function() math.random(); return 1 end",
+        "local iter=string.gmatch('abc','.'); return function() iter(); return 1 end");
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function(source, {}, {}, "pure", true));
+    const auto value = sandbox.call_function(0, {});
+    REQUIRE_FALSE(value);
+    CHECK(value.error().code == failure_code_t::invalid_data);
+    CHECK_FALSE(sandbox.is_open());
+}
+
+TEST_CASE("Pure Lua closures permit temporary local mutation and immutable captured configuration", "[lua-sandbox]") {
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function(R"(
+        local config={value=3}; config.self=config
+        return function(p,ctx)
+            local t={}; for i=1,3 do t[i]=i end
+            return p+config.value+#t+ctx.offset+math.abs(-1)
+        end)", {}, {}, "pure", true));
+    const lua_sandbox_context_t context{{std::string("offset"), lua_sandbox_value_t{2.0}}};
+    CHECK(sandbox.call_function(0.5, context) == lua_sandbox_value_t{9.5});
+    CHECK(sandbox.call_function(0.5, context) == lua_sandbox_value_t{9.5});
+}
+
+TEST_CASE("Lua installed calls retain cumulative instruction bounds", "[lua-sandbox]") {
+    auto sandbox = session({.maximum_instructions=256});
+    REQUIRE(sandbox.install_function("return function() while true do end end", {}));
+    const auto result = sandbox.call_function(0, {});
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::capacity_exceeded);
+}
+
+TEST_CASE("Lua installed calls retain cancellation bounds", "[lua-sandbox]") {
+    std::stop_source stop;
+    auto sandbox = session({.cancellation=stop.get_token()});
+    REQUIRE(sandbox.install_function("return function() return 1 end", {}));
+    stop.request_stop();
+    const auto result = sandbox.call_function(0, {});
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::cancelled);
+}
+
+TEST_CASE("Lua installed calls retain memory bounds", "[lua-sandbox]") {
+    auto sandbox = session({.maximum_memory_bytes=128U*1024U});
+    REQUIRE(sandbox.install_function("return function() return string.rep('x',100*1024*1024) end", {}));
+    const auto result = sandbox.call_function(0, {});
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::out_of_memory);
+}
+
+TEST_CASE("Lua installed context materialization shares the instruction budget", "[lua-sandbox]") {
+    auto sandbox = session({.maximum_instructions=128});
+    REQUIRE(sandbox.install_function("return function(p) return p end", {}));
+    lua_sandbox_context_t context;
+    for (std::int64_t i=1;i<=256;++i) context.push_back({i,lua_sandbox_value_t{i}});
+    const auto result = sandbox.call_function(0, context);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::capacity_exceeded);
+}
+
+TEST_CASE("Lua installed invalid numeric arguments close the session", "[lua-sandbox]") {
+    auto sandbox = session();
+    REQUIRE(sandbox.install_function("return function(p) return p end", {}));
+    REQUIRE_FALSE(sandbox.call_function(std::numeric_limits<double>::infinity(), {}));
+    CHECK_FALSE(sandbox.is_open());
 }

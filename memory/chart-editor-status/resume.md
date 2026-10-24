@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-24)
 
+Completed **T-189** (2026-10-24): API-v1 Lua recipes persist frozen source, module reload
+origin/hash, parameters, inputs, seed and pure/ordered cycle plans in native schema17. Core owns
+sampling and immutable prepared composition; bounded sandbox sessions retain ordered state across
+cycles and reset for independent preview/export builds. Pure verification checks retained/global
+state and reverse/repeated queries. Export workers and the headless converter use fresh sessions.
+Lua-enabled GATE passes **4,928/4,928**; focused Lua **350 assertions / 41 cases**; sandbox
+ASan/LSan/UBSan **250 / 31**. Complexity passes **20 changed TUs**, no increased allowances.
+Lua-disabled syntax checks pass four consumers. [Completed card](../../docs/chart-editor-plan/tasks/osbx.md#t-189-evaluate-lua-curve-functions-in-sv-recipes).
+**T-191 is active:** inspector integration is implemented and passes the above gate; final review
+is replacing per-frame Lua form/graph allocations with persistent buffers before its final gate.
+T-162 finite impulses remains separate and serialized because it overlaps core/schema ownership.
+
 Completed **T-156** (2026-10-24): the optional Lua sandbox owns one move-only evaluation
 session with cumulative memory/VM budgets, cooperative cancellation, text-only loading and
 portable seeded random generation. Successful calls retain closures; failure closes the state.
@@ -11,8 +23,7 @@ Lua-enabled GATE passes **4,887/4,887**, including **20 Lua cases**; focused san
 **160 assertions / 18 cases**. ASan/LSan/UBSan pass **167 / 20**, including the instrumented
 pinned Lua runtime. Complexity passes both new TUs and a separate three-TU check without
 increased allowances. [Completed card and bounded review](../../docs/chart-editor-plan/tasks/scripting-storyboard.md#t-156-create-a-sandboxed-bounded-lua-state).
-**T-189 is ready**, with T-681's prepared-session prerequisite also complete; no successor is
-active. Lua recipe/document/UI integration remains separate. Enable the optional target with
+**T-189 is complete above; T-191 remains active** for final inspector verification. Enable the optional target with
 `-DWORMEDIT_ENABLE_LUA=ON`; it remains off by default.
 
 Completed **T-743** (2026-10-24): scope authoring tree and one project runtime for node selection,

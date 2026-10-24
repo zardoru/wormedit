@@ -212,6 +212,7 @@ add_executable(wormedit_core_tests
     formats/conversion_publication_tests.cpp
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
+    formats/native_project_lua_recipe_tests.cpp
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
@@ -594,6 +595,7 @@ if(WORMEDIT_ENABLE_LUA)
     add_executable(wormedit_lua_tests
         lua/lua_runtime_tests.cpp
         lua/lua_sandbox_tests.cpp
+        lua/lua_curve_tests.cpp
     )
     target_link_libraries(wormedit_lua_tests
         PRIVATE
@@ -1077,3 +1079,13 @@ target_link_libraries(wormedit_audition_unavailable_tests PRIVATE
 catch_discover_tests(wormedit_audition_unavailable_tests
     TEST_PREFIX "audition-unavailable."
     PROPERTIES LABELS unit LABELS sys DISCOVERY_MODE PRE_TEST)
+
+# Script sessions are owned by application workers and the converter, never core.
+if(WORMEDIT_ENABLE_LUA)
+    foreach(consumer IN ITEMS wormedit_core_tests wormedit_frontend_event_harness_tests
+            wormedit_frame_timing_tests wormedit_frame_projection_arena_tests)
+        if(TARGET ${consumer})
+            target_link_libraries(${consumer} PRIVATE wormedit::scripting)
+        endif()
+    endforeach()
+endif()

@@ -440,7 +440,24 @@ between rows. The prepared owner stores validated data and inspection samples, w
 evaluator. Composition uses that owner for overlap multiplication and authored baseline rows;
 draft preview reuses its prepared candidate, and export baking reaches the same composition
 path. These transient values belong to one input snapshot; captured work still needs the stamp
-checks above. Lua execution and stored post-processing stages remain separate feature work.
+checks above. Ordered post-processing transforms the immutable batch before composition.
+
+Lua recipes use the same prepared owner. Core declares the script session interface and owns
+fixed/adaptive traversal; `scripting::lua_curve_backend_t` supplies bounded calls. An explicit
+`sv_recipe_evaluation_scope_t` installs a backend only on a worker/build thread and restores
+the previous scope on exit. Each independent preview/export starts fresh sessions from frozen
+source and seed. Ordered sessions consume a fixed ascending-row schedule once, with cycle
+counts partitioning that schedule, including the endpoint inspection query. Their immutable
+output holds the preceding value between emissions. Pure sessions additionally verify retained
+state and reverse/repeated-query consistency. Composition and post-processing never call Lua.
+`sv_recipe_prepared_scope_t` supplies exact matching immutable results to frame-thread Apply;
+the caller retains responsibility for captured project/chart/revision stamps. Missing or changed
+Lua results reject rather than evaluating synchronously. The inspector owns evaluation through
+`async_job_t`, cancellation and snapshot publication, and preserves its last good graph on errors.
+Native schema v17 stores the API-v1 Lua descriptor and frozen source, never prepared samples.
+Module paths are project-relative reload origins; Reload reads and hashes their bytes on a worker.
+The output-group worker and headless converter explicitly scope fresh export backends; format
+writers and core remain independent of Lua.
 
 The [extension checkpoints](chart-editor-plan/tasks/extension-friction.md) record the current
 SV capability references, cross-cycle state direction, bounded lane/gesture findings,
@@ -540,4 +557,7 @@ because Lua disables hooks during GC finalization. Callbacks that may raise cont
 trivial automatic values; setup, parsing and execution stay inside `lua_pcall` boundaries.
 Globals and closures survive successful calls in one session. Any host evaluation failure
 closes the VM; only bounded scalar results and typed errors leave the wrapper. No document
-binding, native VM serialization or recipe evaluator is added by this foundation (T-156).
+binding or native VM serialization crosses the sandbox boundary. T-189 adds protected retained
+function calls and recursively immutable context userdata; their backing tables never leave the
+proxy. Pure calls inspect bounded reachable closure state and reject retained mutation or opaque
+mutable userdata. The recipe adapter exposes only owned value snapshots and scalar results.

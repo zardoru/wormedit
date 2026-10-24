@@ -43,6 +43,14 @@ struct sv_recipe_emission_t {
     auto operator==(const sv_recipe_emission_t&) const -> bool = default;
 };
 
+// Derived finite right-owned approximation of a structural normalized-p impulse.
+struct sv_recipe_impulse_box_t {
+    std::uint64_t entry_row{}, exit_row{};
+    long double raw_area{}, area{}, realized_area{}, area_error{};
+    long double width_milliseconds{}, height{};
+    auto operator==(const sv_recipe_impulse_box_t&) const -> bool = default;
+};
+
 // Script backends are supplied only inside an explicit worker/build scope. Core
 // owns sampling and immutable preparation; implementations own bounded sessions.
 struct sv_recipe_script_query_t {
@@ -100,12 +108,17 @@ class sv_recipe_prepared_t {
         return range_;
     }
     [[nodiscard]] auto value_at(std::uint64_t row) const -> std::optional<long double>;
+    [[nodiscard]] auto continuous_value_at(std::uint64_t row) const -> std::optional<long double>;
+    [[nodiscard]] auto has_impulse_at(std::uint64_t entry_row) const -> bool;
+    [[nodiscard]] auto impulse_boxes() const -> std::span<const sv_recipe_impulse_box_t> { return impulse_boxes_; }
     [[nodiscard]] auto has_matching_geometry(const chart_document_t& chart,
         const measure_index_t& index) const -> bool;
     auto operator==(const sv_recipe_prepared_t&) const -> bool = default;
 
   private:
     sv_recipe_prepared_t() = default;
+    [[nodiscard]] static auto from_builtin_samples(const chart_document_t&, const sv_recipe_t&,
+        sv_recipe_sample_outcome_t) -> diagnosed_t<sv_recipe_prepared_t>;
     sv_recipe_t recipe_;
     chart_id_t chart_;
     std::uint64_t divisions_{};
@@ -113,6 +126,8 @@ class sv_recipe_prepared_t {
     sv_recipe_samples_t samples_;
     sv_recipe_samples_t raw_samples_;
     std::vector<sv_recipe_emission_t> emissions_;
+    std::vector<sv_recipe_impulse_box_t> impulse_boxes_;
+    bool uses_analytic_curve_{};
 };
 
 // Borrows immutable worker-prepared snapshots during synchronous frame actions.

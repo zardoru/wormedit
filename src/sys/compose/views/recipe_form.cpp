@@ -160,6 +160,20 @@ auto set_transition(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_fo
     return true;
 }
 
+auto set_impulses(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
+    const auto width = parse_unsigned_rational(form.finite_box_width_milliseconds);
+    if (!width) return false;
+    candidate.finite_box_width_milliseconds = *width;
+    candidate.impulses.clear();
+    for (const auto& impulse : form.impulses) {
+        const auto at = parse_signed_rational(impulse.at);
+        const auto area = parse_signed_rational(impulse.area);
+        if (!at || !area) return false;
+        candidate.impulses.push_back({.at = *at, .area = *area});
+    }
+    return true;
+}
+
 } // namespace
 
 
@@ -174,7 +188,7 @@ auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_r
         candidate.lua.reset();
     }
     if (!set_curve_parameters(candidate, form) || !set_sampling(candidate, form) ||
-        !set_transition(candidate, form))
+        !set_transition(candidate, form) || !set_impulses(candidate, form))
         return std::nullopt;
     return candidate;
 }
@@ -264,11 +278,14 @@ void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& rec
     using namespace wormedit::sys;
     auto parameters = std::move(lua_parameters);
     auto cycles = std::move(lua_cycles);
+    auto retained_impulses = std::move(impulses);
     *this = {};
     lua_parameters = std::move(parameters);
     lua_cycles = std::move(cycles);
+    impulses = std::move(retained_impulses);
     lua_parameters.clear();
     lua_cycles.clear();
+    impulses.clear();
     auto& form = *this;
     // An absent descriptor uses the inline-function API defaults too.
     form.lua_entry_point[0] = '\0';
@@ -290,6 +307,13 @@ void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& rec
     }
     form.output = recipe.output;
     form.curve = recipe.curve;
+    set_text(form.finite_box_width_milliseconds, recipe.finite_box_width_milliseconds);
+    for (const auto& impulse : recipe.impulses) {
+        timing_recipe_impulse_form_t field;
+        set_text(field.at, impulse.at);
+        set_text(field.area, impulse.area);
+        form.impulses.push_back(field);
+    }
     form.sampling_mode = recipe.sampling.mode;
     form.fixed_extent = recipe.sampling.fixed_step_rows ? wormedit::ui::timing_recipe_fixed_extent_t::step_rows
                                                         : wormedit::ui::timing_recipe_fixed_extent_t::point_count;

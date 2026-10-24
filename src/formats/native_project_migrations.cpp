@@ -320,7 +320,7 @@ void migrate_lua_recipe(nlohmann::json& recipe) {
         {"seed", 0U}, {"mode", 0U}, {"cycles", nlohmann::json::array()}};
 }
 
-auto migrate_chart_lua_recipes(nlohmann::json& document) -> std::string {
+auto migrate_chart_recipes(nlohmann::json& document, void (*migrate)(nlohmann::json&)) -> std::string {
     if (!document.contains("charts")) return {};
     if (!document.at("charts").is_array()) return "document charts must be an array";
     for (auto& chart : document.at("charts")) {
@@ -328,13 +328,13 @@ auto migrate_chart_lua_recipes(nlohmann::json& document) -> std::string {
         if (!chart.at("sv_recipes").is_array()) return "chart sv_recipes must be an array";
         for (auto& recipe : chart.at("sv_recipes")) {
             if (!recipe.is_object()) return "sv recipe must be an object";
-            migrate_lua_recipe(recipe);
+            migrate(recipe);
         }
     }
     return {};
 }
 
-void migrate_scoped_lua_recipes(nlohmann::json& document) {
+void migrate_scoped_recipes(nlohmann::json& document, void (*migrate)(nlohmann::json&)) {
     if (!document.contains("prepared_bms_programs")) return;
     for (auto& owner : document.at("prepared_bms_programs")) {
         for (auto& node : owner.at("nodes")) {
@@ -343,19 +343,31 @@ void migrate_scoped_lua_recipes(nlohmann::json& document) {
                 auto& value = item.at("value");
                 if (value.at("type") != "native") continue;
                 auto& payload = value.at("data").at("payload");
-                if (payload.at("type") == "sv_recipe") migrate_lua_recipe(payload.at("data"));
+                if (payload.at("type") == "sv_recipe") migrate(payload.at("data"));
             }
         }
     }
 }
 
 auto migrate_v16_to_v17(nlohmann::json& document) -> std::string {
-    if (auto error = migrate_chart_lua_recipes(document); !error.empty()) return error;
-    migrate_scoped_lua_recipes(document);
+    if (auto error = migrate_chart_recipes(document, migrate_lua_recipe); !error.empty()) return error;
+    migrate_scoped_recipes(document, migrate_lua_recipe);
     return {};
 }
 
-constexpr std::array<migration_t, 16> released_migrations{{
+void migrate_impulse_recipe(nlohmann::json& recipe) {
+    if (!recipe.contains("impulses")) recipe["impulses"] = nlohmann::json::array();
+    if (!recipe.contains("finite_box_width_milliseconds"))
+        recipe["finite_box_width_milliseconds"] = {{"numerator", 1U}, {"denominator", 1U}};
+}
+
+auto migrate_v17_to_v18(nlohmann::json& document) -> std::string {
+    if (auto error = migrate_chart_recipes(document, migrate_impulse_recipe); !error.empty()) return error;
+    migrate_scoped_recipes(document, migrate_impulse_recipe);
+    return {};
+}
+
+constexpr std::array<migration_t, 17> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -372,6 +384,7 @@ constexpr std::array<migration_t, 16> released_migrations{{
     {14, &migrate_v14_to_v15},
     {15, &migrate_v15_to_v16},
     {16, &migrate_v16_to_v17},
+    {17, &migrate_v17_to_v18},
 }};
 
 } // namespace

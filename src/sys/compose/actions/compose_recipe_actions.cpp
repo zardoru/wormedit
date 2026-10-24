@@ -26,12 +26,13 @@ auto propose_recipe_form_action_t::perform(compose_action_context_t& context) co
     -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.timing_recipe;
     const bool needs_worker = context.action.compose_recipe_form.curve == sv_recipe_curve_t::lua_expression ||
+        !context.action.compose_recipe_form.impulses.empty() ||
         std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
-            return recipe.enabled && recipe.curve == sv_recipe_curve_t::lua_expression;
+            return recipe.enabled && (recipe.curve == sv_recipe_curve_t::lua_expression || !recipe.impulses.empty());
         });
     if (needs_worker) {
         if (!context.environment.resources)
-            return compose_action_outcome_t::blocked("Lua recipe evaluation is unavailable in this context.");
+            return compose_action_outcome_t::blocked("Recipe evaluation is unavailable in this context.");
         const auto& resources = *context.environment.resources;
         if (!state.evaluation)
             state.evaluation = std::make_shared<recipe_evaluation_runtime_t>(resources.jobs.scheduler);
@@ -78,8 +79,9 @@ auto apply_recipe_form_action_t::perform(compose_action_context_t& context) cons
     -> compose_action_outcome_t {
     auto& state = context.environment.editor.commands.project.timing_recipe;
     const bool needs_worker = context.action.compose_recipe_form.curve == sv_recipe_curve_t::lua_expression ||
+        !context.action.compose_recipe_form.impulses.empty() ||
         std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
-            return recipe.enabled && recipe.curve == sv_recipe_curve_t::lua_expression;
+            return recipe.enabled && (recipe.curve == sv_recipe_curve_t::lua_expression || !recipe.impulses.empty());
         });
     if (needs_worker) {
         const auto* report = state.recipe_preview ? state.recipe_preview->report() : nullptr;

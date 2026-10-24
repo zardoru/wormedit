@@ -589,3 +589,56 @@ TEST_CASE("frozen Lua source evaluates without implicitly reloading a file", "[u
     CHECK(preview->diagnostics.front().code == diagnostic_code_t::unsupported_feature);
 #endif
 }
+
+TEST_CASE("SV impulse forms preserve exact placement area width and vector storage", "[unit][sys][recipe-form][impulse]") {
+    auto recipe = sample_recipe();
+    recipe.impulses = {{.at = {1, 4}, .area = {-3, 2}}};
+    recipe.finite_box_width_milliseconds = {25, 12};
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    const auto* storage = form.impulses.data();
+    const auto edited = recipe_from_form(form, recipe);
+    REQUIRE(edited);
+    CHECK(edited->impulses == recipe.impulses);
+    CHECK(edited->finite_box_width_milliseconds == recipe.finite_box_width_milliseconds);
+    form.refill(sample_recipe());
+    form.refill(recipe);
+    CHECK(form.impulses.data() == storage);
+    set(form.impulses.front().area, "-5", "3");
+    const auto revised = recipe_from_form(form, recipe);
+    REQUIRE(revised);
+    CHECK(revised->impulses.front().area == signed_rational_t{-5, 3});
+}
+
+namespace {
+void check_impulse_worker_box(const recipe_form_outcome_t& preview) {
+    REQUIRE(preview.report()->prepared.size() == 1);
+    const auto boxes = preview.report()->prepared.front().impulse_boxes();
+    REQUIRE(boxes.size() == 1);
+    CHECK(boxes.front().entry_row == 1000);
+    CHECK(boxes.front().exit_row == 1002);
+}
+}
+
+TEST_CASE("SV impulse worker preview provides immutable box details for one undoable Apply", "[unit][sys][recipe-form][impulse]") {
+    auto history = form_history();
+    auto& chart = history.document.charts.front();
+    chart.divisions_per_standard_measure = 4000;
+    chart.bpms.push_back({.id = object_id_t{100}, .position = {measure_id_t{11}, 0}, .beats_per_minute = {120, 1}});
+    const auto& recipe = chart.sv_recipes.front();
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    ui::timing_recipe_impulse_form_t impulse;
+    set(impulse.at, "1", "4");
+    set(impulse.area, "1", "4");
+    form.impulses.push_back(impulse);
+    task_scheduler_t scheduler{1, 4};
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    runtime.request(history.document, chart, recipe, form, {});
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    REQUIRE(preview);
+    REQUIRE(preview->value);
+    check_impulse_worker_box(*preview);
+    const auto applied = apply_recipe_form(history, *preview);
+    CHECK(applied.applied);
+    CHECK(history.undo.size() == 1);
+}

@@ -95,7 +95,7 @@ auto recipe_evaluation_runtime_t::submit_pending() -> std::string {
         return "Waiting for recipe evaluation…";
     }
     pending_.reset();
-    return "Evaluating Lua recipe…";
+    return "Evaluating recipe…";
 }
 recipe_evaluation_runtime_t::~recipe_evaluation_runtime_t() { job_.cancel(); }
 

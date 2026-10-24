@@ -184,6 +184,7 @@ add_executable(wormedit_core_tests
     core/notifications_tests.cpp
     core/storyboard_tests.cpp
     core/sv_recipe_tests.cpp
+    core/sv_recipe_impulse_tests.cpp
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp
     core/tap_tempo_tests.cpp
@@ -213,6 +214,7 @@ add_executable(wormedit_core_tests
     formats/conversion_publication_tests.cpp
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
+    formats/native_project_impulse_tests.cpp
     formats/native_project_lua_recipe_tests.cpp
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp

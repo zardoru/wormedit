@@ -180,14 +180,17 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-162 Add SV impulses as finite boxes
 
-- **Status:** blocked-on T-190 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
+- **Status:** done (2026-10-24)
+- **Completion:** Typed structural impulses persist in schema18 and compile to exact-grid, right-owned boxes with configurable width (default 1 ms), additive coincident sources and exposed area/error. Built-in continuous factors retain analytic evaluation; prepared Lua batches are not reevaluated. Minimum-width rejection reports an exact editable fraction. Integrated GATE passes 5,008/5,008 and 42-TU complexity, with six additional header consumers and a successful linux-clang build. Focused generator/impulse/core persistence coverage passes 363 assertions / 44 cases. The real isolated inspector shows readable width, generated rows, area and error; the manual describes representability and composition.
 - **Outcome:** `curve.dirac { at, area }` adds a zero-width scroll impulse to a recipe; export compiles it to a finite constant box 1 ms wide by default (width configurable per recipe) whose integrated area equals the impulse, and the preview shows the generated points and approximation error (user decision 2026-09-30).
 - **Read first:** `docs/osbx-draft-spec.md` (Dirac impulses), `include/wormedit/core/sv_recipe.h` (`compile_sv_recipes`, `bake_sv_recipes_for_export`), `tests/core/sv_recipe_tests.cpp`.
-- **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`.
+- **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`. Supporting ownership: `include/wormedit/core/document.h`, `include/wormedit/core/vocabulary.h`, `src/formats/native_project_migrations.cpp`, `src/core/document.cpp`, `src/core/text_util.h` (shared digest validation), new `tests/core/sv_recipe_impulse_tests.cpp`, new `tests/formats/native_project_impulse_tests.cpp`, cohesive impulse preparation helpers if needed, inspector projection/controls and manual/docs integration (coordinator), `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Parallel ownership (2026-10-24):** impulse agent owns core/model/native schema 18 and dedicated tests. Schema/model ownership hands back to coordinator before T-160 schema 19 changes; document API and generator agents do not edit these shared files concurrently.
+- **Implementation contract:** the declarative `curve.dirac` primitive is stored as typed `sv_recipe_t::impulses` and authored through the inspector; the numeric Lua function API remains scalar-only. Literal Lua `curve.dirac(...)` syntax belongs to the broader curve DSL. Coincident sources add before weighting by nonparticipating continuous recipes, including standalone zero-baseline impulses.
 - **Steps:** 1. Impulse primitive in the recipe model (not sampled). 2. Box compilation at export with exact area and boundary ownership rules. 3. Coincident impulses add their areas. 4. Tests: area preservation, width setting, target resolution limits.
 - **Invariants:** recipes still store no sampled points.
 - **Reject/failure behavior:** a box narrower than the target's time resolution rejects with the minimum width.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'sv_recipe'`.
+- **Verify:** GATE
 - **Out of scope:** triangular pulses.
 
 ## T-292 Carry storyboards into SM/SSC exports

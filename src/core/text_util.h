@@ -8,6 +8,12 @@
 #include <utility>
 namespace wormedit::text_util {
 inline constexpr std::string_view ascii_whitespace = " \t\r\n\f\v";
+inline auto is_sha256_digest(std::string_view value) noexcept -> bool {
+    return value.size() == 64 && std::ranges::all_of(value, [](char byte) {
+        return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') ||
+            (byte >= 'A' && byte <= 'F');
+    });
+}
 inline constexpr auto is_utf8_continuation(char byte) noexcept -> bool {
     return (static_cast<unsigned char>(byte) & 0xc0U) == 0x80U;
 }

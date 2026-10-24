@@ -570,3 +570,14 @@ categories and file parsing remain separate work. Named snapshots use the sandbo
 immutable proxies. Structured script results leave Lua only after bounded raw inspection with a reserved Lua
 stack; Lua errors never unwind host-owned result objects. Host construction and extraction
 charge the complete evaluation budget.
+
+SV recipe impulses are structural normalized-position areas, persisted by schema v18 alongside
+their exact millisecond box width. Preparation converts them to right-owned, half-open boxes on
+the exact chart grid; unrepresentable widths, warped spans, range overflow and non-instant
+SPEEDS transitions reject. Ordinary built-ins keep their analytic continuous values. Processed
+and explicit materialized batches keep held values. Post-processing accounts for impulse area;
+composition multiplies continuous factors and adds impulse contributions, freezing other factors
+at each impulse position without forming impulse cross-products. Coincident sources add before
+weighting by nonparticipating continuous recipes.
+Preview and export consume the same prepared boxes and expose realized area/error without
+persisting sampled clouds.

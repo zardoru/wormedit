@@ -295,6 +295,7 @@ enum class sv_recipe_output_t {
 };
 
 inline constexpr std::size_t maximum_sv_recipe_postprocess_stages = 32;
+inline constexpr std::size_t maximum_sv_recipe_impulses = 256;
 enum class sv_recipe_postprocess_kind_t { multiply, normalize, balance_bump };
 enum class sv_recipe_normalization_t { preserve_displacement, preserve_distance, preserve_average };
 enum class sv_recipe_bump_solve_t { y, x };

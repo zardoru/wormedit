@@ -164,6 +164,25 @@ Stages run in their listed order on the same sampled step values used by preview
 Raw and final samples are transient; the project stores only the recipe and its stages.
 Zero denominators, non-finite values and target-forbidden results reject the batch.
 
+=== Impulses
+
+Expand *Impulses* in an SV recipe form to add an exact normalized position `p` and signed
+area. The position belongs to `[0,1)`: the interval start is included and its end is excluded.
+A standalone impulse can use a constant curve of zero. Coincident impulse areas add.
+
+The recipe stores the impulse, and preview/export compile its contribution into a constant box.
+*Box width (ms)* defaults to one millisecond. The requested width must map exactly to the chart
+grid and fit within the recipe range. If it is too narrow or cannot be represented, the diagnostic
+shows the minimum grid width; choose a representable fraction or increase the chart resolution.
+There is no implicit rounding. Warped spans and non-instant SPEEDS transitions are unsupported.
+
+*Compiled impulse boxes* shows entry/exit rows, width, final area and numerical area error.
+Multiply and normalization stages scale the structural area along with the continuous curve.
+Overlapping recipes multiply their continuous values; impulse contributions add after weighting
+by the authored baseline and continuous factors at their entry. Recipes contributing impulses
+at the same entry are summed together before weighting by the remaining recipes. No sampled
+point cloud is stored in the project.
+
 === Lua functions
 
 In a Lua-enabled build, choose *Lua function* in the recipe inspector. Use *Choose module…*

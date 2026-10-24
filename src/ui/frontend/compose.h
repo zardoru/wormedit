@@ -215,6 +215,11 @@ struct timing_recipe_lua_parameter_form_t {
     timing_recipe_rational_text_t value{};
     auto operator==(const timing_recipe_lua_parameter_form_t&) const -> bool = default;
 };
+struct timing_recipe_impulse_form_t {
+    timing_recipe_rational_text_t at{};
+    timing_recipe_rational_text_t area{};
+    auto operator==(const timing_recipe_impulse_form_t&) const -> bool = default;
+};
 struct timing_recipe_form_t {
     char lua_source_reference[4097]{};
     char lua_entry_point[129]{"curve"};
@@ -222,6 +227,8 @@ struct timing_recipe_form_t {
     wormedit::sv_recipe_lua_mode_t lua_mode{wormedit::sv_recipe_lua_mode_t::pure};
     std::vector<timing_recipe_lua_parameter_form_t> lua_parameters;
     std::vector<std::uint32_t> lua_cycles;
+    std::vector<timing_recipe_impulse_form_t> impulses;
+    timing_recipe_rational_text_t finite_box_width_milliseconds{};
     bool lua_reload{};
     wormedit::sv_recipe_output_t output{};
     wormedit::sv_recipe_curve_t curve{};
@@ -255,8 +262,14 @@ struct compose_recipe_sample_view_t {
     double value{};
     auto operator==(const compose_recipe_sample_view_t&) const -> bool = default;
 };
+struct compose_recipe_impulse_box_view_t {
+    std::uint64_t entry_row{}, exit_row{};
+    double raw_area{}, area{}, realized_area{}, area_error{}, width_milliseconds{};
+    auto operator==(const compose_recipe_impulse_box_view_t&) const -> bool = default;
+};
 struct compose_recipe_form_view_t {
     std::vector<compose_recipe_sample_view_t> sampled_points;
+    std::vector<compose_recipe_impulse_box_view_t> impulse_boxes;
     std::size_t composed_point_count{};
     bool evaluation_busy{};
     std::vector<std::string_view> postprocess_labels;

@@ -439,6 +439,13 @@ struct sv_recipe_lua_t {
     auto operator==(const sv_recipe_lua_t&) const -> bool = default;
 };
 
+struct sv_recipe_impulse_t {
+    // Exact normalized position in [0,1); signed multiplier × normalized-p area.
+    signed_rational_t at;
+    signed_rational_t area;
+    auto operator==(const sv_recipe_impulse_t&) const -> bool = default;
+};
+
 struct sv_recipe_t {
     recipe_id_t id;
     std::string name;
@@ -458,6 +465,8 @@ struct sv_recipe_t {
     std::optional<bool> transition_is_seconds;
     bool enabled{true};
     std::vector<sv_recipe_postprocess_t> postprocess;
+    std::vector<sv_recipe_impulse_t> impulses;
+    rational_t finite_box_width_milliseconds{1, 1};
 
     auto operator==(const sv_recipe_t&) const -> bool = default;
 };
@@ -1012,7 +1021,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 17;
+inline constexpr std::uint32_t current_document_schema_version = 18;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

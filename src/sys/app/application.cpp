@@ -4570,7 +4570,10 @@ struct application_t::implementation_t {
         const bool has_lua = std::ranges::any_of(chart->sv_recipes, [](const auto& value) {
             return value.enabled && value.curve == sv_recipe_curve_t::lua_expression;
         });
-        if (!state.evaluation && !has_lua) return;
+        const bool has_impulses = std::ranges::any_of(chart->sv_recipes, [](const auto& value) {
+            return value.enabled && !value.impulses.empty();
+        });
+        if (!state.evaluation && !has_lua && !has_impulses) return;
         if (!state.evaluation)
             state.evaluation = std::make_shared<recipe_evaluation_runtime_t>(jobs.resource_copy_scheduler);
         state.evaluation->poll(session.history.document, chart->id, selected, state.recipe_preview);

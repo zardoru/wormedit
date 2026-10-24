@@ -394,10 +394,12 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_input_t, asset, content_hash)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_cycle_t, emission_count)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_t, api_version, entry_point, source_reference,
                                    source_hash, parameters, inputs, seed, mode, cycles)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_impulse_t, at, area)
 // expression_source is schema 2; schema 1 documents gain an empty one in migrate_v1_to_v2.
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_t, id, name, range, output, curve, parameters,
                                    sampling, expression_source, lua, transition_duration,
-                                   transition_is_seconds, enabled, postprocess)
+                                   transition_is_seconds, enabled, postprocess, impulses,
+                                   finite_box_width_milliseconds)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
                                    provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_frame, locked)

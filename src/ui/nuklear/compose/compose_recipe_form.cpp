@@ -345,6 +345,48 @@ void render_lua_preview(nk_context* context, const wormedit::ui::compose_view_t&
     }
 }
 
+bool impulse_fields(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
+    bool changed = false;
+    if (nk_tree_push(context, NK_TREE_TAB, "Impulses", NK_MINIMIZED)) {
+        for (auto& impulse : form.impulses) {
+            changed |= rational_field(context, "Position p", impulse.at);
+            changed |= rational_field(context, "Signed area", impulse.area);
+        }
+        changed |= rational_field(context, "Width (ms)", form.finite_box_width_milliseconds);
+        nk_layout_row_dynamic(context, 24, 2);
+        if (nk_button_label(context, "Add impulse") && form.impulses.size() < wormedit::maximum_sv_recipe_impulses) {
+            wormedit::ui::timing_recipe_impulse_form_t impulse;
+            std::snprintf(impulse.at.numerator, sizeof(impulse.at.numerator), "0");
+            std::snprintf(impulse.at.denominator, sizeof(impulse.at.denominator), "1");
+            std::snprintf(impulse.area.numerator, sizeof(impulse.area.numerator), "1");
+            std::snprintf(impulse.area.denominator, sizeof(impulse.area.denominator), "1");
+            form.impulses.push_back(impulse);
+            changed = true;
+        }
+        if (nk_button_label(context, "Remove last") && !form.impulses.empty()) {
+            form.impulses.pop_back();
+            changed = true;
+        }
+        nk_tree_pop(context);
+    }
+    return changed;
+}
+
+void render_impulse_preview(nk_context* context, const wormedit::ui::compose_view_t& view) {
+    if (view.recipe_form.impulse_boxes.empty()) return;
+    if (nk_tree_push(context, NK_TREE_TAB, "Compiled impulse boxes", NK_MINIMIZED)) {
+        for (const auto& box : view.recipe_form.impulse_boxes) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_labelf(context, NK_TEXT_LEFT, "Rows %llu to %llu (%.6g ms)",
+                static_cast<unsigned long long>(box.entry_row), static_cast<unsigned long long>(box.exit_row),
+                box.width_milliseconds);
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_labelf(context, NK_TEXT_LEFT, "Area %.8g; error %.3g", box.area, box.area_error);
+        }
+        nk_tree_pop(context);
+    }
+}
+
 } // namespace
 
 void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
@@ -373,6 +415,7 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     changed |= lua ? lua_fields(context, view, form) : curve_values(context, form);
     changed |= sampling_values(context, form);
     changed |= transition_values(context, form);
+    changed |= impulse_fields(context, form);
     if (changed) {
         state.recipe_editor.recipe_edit_dirty = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
@@ -387,6 +430,7 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
         nk_label_wrap(context, view.recipe_form.status_text.data());
     }
     render_lua_preview(context, view, lua);
+    render_impulse_preview(context, view);
     nk_layout_row_dynamic(context, 24, 2);
     if (nk_button_label(context, "Apply")) {
         state.recipe_editor.recipe_edit_apply_pending = true;

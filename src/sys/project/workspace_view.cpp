@@ -1224,6 +1224,7 @@ void wormedit::ui::compose_view_t::reset() {
         speed_spans,
         recipe_areas,
         recipe_graph_points,
+        recipe_form.impulse_boxes,
         recipe_form.postprocess_labels,
         recipe_form.sampled_points,
         recipe_form.form,

@@ -2,6 +2,7 @@
 #include <wormedit/core/resource_file_copy.h>
 #include "chart_object_ids.h"
 #include "text_util.h"
+#include "timing_arithmetic.h"
 #include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/span_manipulation.h>
@@ -379,10 +380,7 @@ auto is_lua_identifier(std::string_view name) -> bool {
 }
 
 auto is_lua_content_hash(std::string_view hash) -> bool {
-    return hash.empty() || (hash.size() == 64 && std::ranges::all_of(hash, [](char byte) {
-        return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') ||
-            (byte >= 'A' && byte <= 'F');
-    }));
+    return hash.empty() || text_util::is_sha256_digest(hash);
 }
 
 auto is_lua_source_reference(const std::filesystem::path& path) -> bool {
@@ -463,6 +461,28 @@ void validate_lua_descriptor(const sv_recipe_t& recipe, std::uint64_t span,
     }
     validate_lua_parameters(lua, diagnostics);
     if (diagnostics.empty()) validate_lua_cycles(recipe, span, diagnostics);
+}
+
+void validate_impulses(const sv_recipe_t& recipe, std::uint64_t span, diagnostic_list_t& diagnostics) {
+    if (recipe.impulses.size() > maximum_sv_recipe_impulses) {
+        reject(diagnostics, diagnostic_code_t::invalid_resolution, "SV recipes allow at most 256 structural impulses");
+        return;
+    }
+    if (!recipe.impulses.empty() && recipe.output == sv_recipe_output_t::speeds &&
+        recipe.transition_duration && recipe.transition_duration->numerator != 0)
+        reject(diagnostics, diagnostic_code_t::invalid_rational,
+            "SV impulse boxes require instantaneous SPEEDS transitions");
+    const auto width = recipe.finite_box_width_milliseconds;
+    if (width.numerator == 0 || width.numerator > maximum_parameter_denominator ||
+        width.denominator == 0 || width.denominator > maximum_parameter_denominator) {
+        reject(diagnostics, diagnostic_code_t::invalid_rational, "SV impulse box width must be a bounded positive exact millisecond rational");
+    }
+    for (const auto& impulse : recipe.impulses) {
+        const auto offset = offset_for_fraction(span, impulse.at);
+        if (!offset || *offset >= span || !is_valid_bounded_rational(impulse.area, maximum_parameter_magnitude))
+            reject(diagnostics, diagnostic_code_t::invalid_rational,
+                "SV impulse needs an exact grid position in [0,1) and a bounded signed normalized-p area");
+    }
 }
 
 void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
@@ -569,6 +589,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
     validate_sampling(recipe, span, diagnostics);
     validate_curve_outputs(recipe, diagnostics);
     validate_lua_descriptor(recipe, span, diagnostics);
+    validate_impulses(recipe, span, diagnostics);
     const auto stages = validate_postprocess(recipe);
     diagnostics.insert(diagnostics.end(), stages.begin(), stages.end());
     return diagnostics;
@@ -868,15 +889,133 @@ auto validate_recipe_emissions(std::span<const sv_recipe_emission_t> emissions,
     return {};
 }
 
+auto impulse_width_error(const timing_index_t& timing, std::uint64_t row) -> diagnostic_t {
+    const auto first = timing.seconds_at(row);
+    const auto next = timing.seconds_at(row + 1);
+    std::string minimum = "unavailable";
+    if (first.seconds && next.seconds) {
+        const auto seconds = timing_arithmetic::subtract_exact(*next.seconds, *first.seconds);
+        if (seconds && seconds->numerator > 0) {
+            const auto divisor = std::gcd(seconds->denominator, std::uint64_t{1000});
+            const auto numerator = checked_math::checked_multiply(
+                static_cast<std::uint64_t>(seconds->numerator), 1000 / divisor);
+            if (numerator)
+                minimum = std::to_string(*numerator) + "/" + std::to_string(seconds->denominator / divisor);
+        }
+    }
+    return error(diagnostic_code_t::invalid_resolution,
+        "SV impulse width must map exactly to non-warped chart rows; minimum grid width here is " +
+        minimum +
+        " ms. Promote chart resolution or choose an exact representable width; no rounding is applied.");
+}
+
+auto impulse_exit_row(const timing_index_t& timing, const sv_recipe_t& recipe,
+    std::uint64_t entry, std::uint64_t range_end) -> std::optional<std::uint64_t> {
+    const auto start = timing.seconds_at(entry);
+    if (!start.seconds || start.inside_warp) return std::nullopt;
+    const auto width = recipe.finite_box_width_milliseconds;
+    const auto end_time = timing_arithmetic::add_exact(*start.seconds,
+        {static_cast<std::int64_t>(width.numerator), width.denominator * 1000});
+    if (!end_time) return std::nullopt;
+    const auto mapped = timing.row_at(*end_time, chart_end_policy_t::clamp_to_end);
+    if (!mapped.absolute_row || mapped.inside_warp || mapped.absolute_row->numerator < 0 ||
+        mapped.absolute_row->denominator == 0) return std::nullopt;
+    const auto row = *mapped.absolute_row;
+    if (static_cast<std::uint64_t>(row.numerator) % row.denominator != 0) return std::nullopt;
+    const auto exit = static_cast<std::uint64_t>(row.numerator) / row.denominator;
+    if (exit <= entry || exit > range_end) return std::nullopt;
+    const auto actual_end = timing.seconds_at(exit);
+    if (!actual_end.seconds || timing_arithmetic::try_normalize(*actual_end.seconds) !=
+        timing_arithmetic::try_normalize(*end_time)) return std::nullopt;
+    if (std::ranges::any_of(timing.segments, [&](const auto& segment) {
+        return segment.warped && segment.begin_row < exit && segment.end_row > entry;
+    })) return std::nullopt;
+    return exit;
+}
+
+auto realized_impulse_area(long double height, std::uint64_t width, std::uint64_t span) -> long double {
+    return static_cast<long double>(static_cast<double>(height)) * static_cast<long double>(width) /
+        static_cast<long double>(span);
+}
+
+auto build_impulse_boxes(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range)
+    -> diagnosed_t<std::vector<sv_recipe_impulse_box_t>> {
+    if (recipe.impulses.empty()) return {};
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+        "SV impulse time boxes need a valid exact timing map and an initial BPM")}};
+    std::map<std::uint64_t, signed_rational_t> areas;
+    const auto span = range.second - range.first;
+    for (const auto& impulse : recipe.impulses) {
+        const auto row = range.first + *offset_for_fraction(span, impulse.at);
+        const auto area = timing_arithmetic::add_exact(areas[row], impulse.area);
+        if (!area) return {.diagnostics = {error(diagnostic_code_t::invalid_rational, "Coincident SV impulse area overflows")}};
+        areas[row] = *area;
+    }
+    diagnosed_t<std::vector<sv_recipe_impulse_box_t>> result;
+    for (const auto& [entry, authored_area] : areas) {
+        const auto exit = impulse_exit_row(*timing.value, recipe, entry, range.second);
+        if (!exit) return {.diagnostics = {impulse_width_error(*timing.value, entry)}};
+        const auto area = to_long_double(authored_area);
+        const auto height = area * static_cast<long double>(span) / static_cast<long double>(*exit - entry);
+        result.value.push_back({.entry_row = entry, .exit_row = *exit, .raw_area = area,
+            .area = area, .realized_area = realized_impulse_area(height, *exit - entry, span),
+            .width_milliseconds = to_long_double(recipe.finite_box_width_milliseconds), .height = height});
+        result.value.back().area_error = result.value.back().realized_area - area;
+    }
+    return result;
+}
+
+auto build_builtin_impulse_emissions(const chart_document_t& chart, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range, const sv_recipe_samples_t& sampled)
+    -> diagnosed_t<std::vector<sv_recipe_emission_t>> {
+    const auto boxes = build_impulse_boxes(chart, recipe, range);
+    if (!boxes.diagnostics.empty()) return {.diagnostics = boxes.diagnostics};
+    std::set<std::uint64_t> rows;
+    for (const auto& point : sampled.points) rows.insert(point.absolute_row);
+    for (const auto& box : boxes.value) {
+        rows.insert(box.entry_row);
+        rows.insert(box.exit_row - 1);
+        rows.insert(box.exit_row);
+    }
+    diagnosed_t<std::vector<sv_recipe_emission_t>> result;
+    for (const auto row : rows) result.value.push_back({.absolute_row = row,
+        .value = curve_value(recipe, recipe_position_for_row(range, row))});
+    return result;
+}
+
+auto impulse_height_at(std::span<const sv_recipe_impulse_box_t> boxes, std::uint64_t row) -> long double {
+    long double value{};
+    for (const auto& box : boxes)
+        if (row >= box.entry_row && row < box.exit_row) value += box.height;
+    return value;
+}
+
+void add_impulse_inspection_rows(std::map<std::uint64_t, long double>& points,
+    std::span<const sv_recipe_emission_t> emissions, std::span<const sv_recipe_impulse_box_t> boxes,
+    std::uint64_t total_rows) {
+    for (const auto& box : boxes) {
+        for (const auto row : {box.entry_row, box.exit_row}) {
+            if (row >= total_rows) continue;
+            const auto after = std::upper_bound(emissions.begin(), emissions.end(), row,
+                [](std::uint64_t sought, const auto& point) { return sought < point.absolute_row; });
+            points.try_emplace(row, std::prev(after)->value);
+        }
+    }
+}
+
 auto sample_recipe_emissions(const measure_index_t& index, const sv_recipe_t& recipe,
     const std::pair<std::uint64_t, std::uint64_t>& range,
-    std::span<const sv_recipe_emission_t> emissions) -> sv_recipe_sample_outcome_t {
+    std::span<const sv_recipe_emission_t> emissions,
+    std::span<const sv_recipe_impulse_box_t> boxes = {}) -> sv_recipe_sample_outcome_t {
     std::map<std::uint64_t, long double> points;
     for (const auto& emission : emissions)
         if (emission.absolute_row < index.total_rows)
             points.emplace(emission.absolute_row, emission.value);
     const auto last = range.second == index.total_rows ? index.total_rows - 1 : range.second;
     if (!points.contains(last)) points.emplace(last, points.rbegin()->second);
+    add_impulse_inspection_rows(points, emissions, boxes, index.total_rows);
     if (points.size() > maximum_sv_recipe_sample_points)
         return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
             "SV emission inspection boundaries exceed the point cap")}};
@@ -887,8 +1026,11 @@ auto sample_recipe_emissions(const measure_index_t& index, const sv_recipe_t& re
         if (!position)
             return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                           "SV emission point is outside chart geometry")}};
+        const auto combined = value + impulse_height_at(boxes, row);
+        if (!is_valid_curve_result(combined, recipe.output)) return {.diagnostics = {
+            error(diagnostic_code_t::invalid_rational, "SV impulse box output is non-finite, oversized or target-forbidden")}};
         result.value.points.push_back({.absolute_row = row, .position = *position,
-            .value = static_cast<double>(value),
+            .value = static_cast<double>(combined),
             .transition_duration = recipe.transition_duration.value_or(rational_t{}),
             .transition_is_seconds = recipe.transition_is_seconds.value_or(false)});
     }
@@ -909,11 +1051,12 @@ auto is_bump_region(const sv_recipe_t& recipe, const std::pair<std::uint64_t, st
 }
 
 struct postprocess_integrals_t {
-    std::array<long double, 2> baseline{}, processed{};
+    std::array<long double, 2> baseline{}, processed{}, impulses{};
 };
 auto postprocess_integrals(const chart_document_t& chart, const sv_recipe_t& recipe,
     const std::pair<std::uint64_t, std::uint64_t>& range,
-    std::span<const sv_recipe_emission_t> emissions, bool distance) -> postprocess_integrals_t {
+    std::span<const sv_recipe_emission_t> emissions, std::span<const sv_recipe_impulse_box_t> boxes,
+    bool distance) -> postprocess_integrals_t {
     const auto index = measure_index_t::from(chart);
     const auto base = base_events_for(chart, recipe.output, *index);
     std::set<std::uint64_t> rows{range.first, range.second};
@@ -931,15 +1074,23 @@ auto postprocess_integrals(const chart_document_t& chart, const sv_recipe_t& rec
         result.baseline[region] += (distance ? std::abs(baseline) : baseline) * length;
         result.processed[region] += (distance ? std::abs(weighted) : weighted) * length;
     }
+    const auto span = static_cast<long double>(range.second - range.first);
+    for (const auto& box : boxes) {
+        const auto region = is_bump_region(recipe, range, box.entry_row) ? 0U : 1U;
+        const auto weighted = box.area * span * base_value_at(base, box.entry_row);
+        result.impulses[region] += distance ? std::abs(weighted) : weighted;
+        result.processed[region] += distance ? std::abs(weighted) : weighted;
+    }
     return result;
 }
 
 auto postprocess_factor(const chart_document_t& chart, const sv_recipe_t& recipe,
     const std::pair<std::uint64_t, std::uint64_t>& range,
-    std::span<const sv_recipe_emission_t> emissions, const sv_recipe_postprocess_t& stage) -> std::optional<long double> {
+    std::span<const sv_recipe_emission_t> emissions, std::span<const sv_recipe_impulse_box_t> boxes,
+    const sv_recipe_postprocess_t& stage) -> std::optional<long double> {
     const auto target = to_long_double(stage.value);
     if (stage.kind == sv_recipe_postprocess_kind_t::multiply) return target;
-    const auto integrals = postprocess_integrals(chart, recipe, range, emissions,
+    const auto integrals = postprocess_integrals(chart, recipe, range, emissions, boxes,
         stage.kind == sv_recipe_postprocess_kind_t::normalize && stage.mode == sv_recipe_normalization_t::preserve_distance);
     const auto total = integrals.baseline[0] + integrals.baseline[1];
     const auto solved = stage.solve == sv_recipe_bump_solve_t::x ? 0U : 1U;
@@ -947,16 +1098,27 @@ auto postprocess_factor(const chart_document_t& chart, const sv_recipe_t& recipe
         ? integrals.processed[0] + integrals.processed[1] : integrals.baseline[solved];
     if (!std::isfinite(denominator) || denominator == 0) return {};
     return stage.kind == sv_recipe_postprocess_kind_t::normalize ? total * target / denominator
-        : (total * target - integrals.processed[1U - solved]) / denominator;
+        : (total * target - integrals.processed[1U - solved] - integrals.impulses[solved]) / denominator;
+}
+
+void scale_impulse_boxes(std::vector<sv_recipe_impulse_box_t>& boxes, long double factor, std::uint64_t span) {
+    for (auto& box : boxes) {
+        box.area *= factor;
+        box.height *= factor;
+        box.realized_area = realized_impulse_area(box.height, box.exit_row - box.entry_row, span);
+        box.area_error = box.realized_area - box.area;
+    }
 }
 
 auto transform_recipe_batch(const chart_document_t& chart, const sv_recipe_t& recipe,
     const std::pair<std::uint64_t, std::uint64_t>& range,
-    std::vector<sv_recipe_emission_t>& emissions) -> diagnostic_list_t {
+    std::vector<sv_recipe_emission_t>& emissions, std::vector<sv_recipe_impulse_box_t>& boxes) -> diagnostic_list_t {
     for (const auto& stage : recipe.postprocess) {
-        const auto factor = postprocess_factor(chart, recipe, range, emissions, stage);
+        const auto factor = postprocess_factor(chart, recipe, range, emissions, boxes, stage);
         if (!factor)
             return {error(diagnostic_code_t::invalid_rational, "SV postprocess denominator is zero or non-finite")};
+        if (stage.kind != sv_recipe_postprocess_kind_t::balance_bump)
+            scale_impulse_boxes(boxes, *factor, range.second - range.first);
         for (auto& point : emissions) {
             if (stage.kind != sv_recipe_postprocess_kind_t::balance_bump) point.value *= *factor;
             else if (is_bump_region(recipe, range, point.absolute_row) == (stage.solve == sv_recipe_bump_solve_t::x)) point.value = *factor;
@@ -1028,17 +1190,27 @@ auto sv_recipe_prepared_t::from(const chart_document_t& chart, const sv_recipe_t
         prepared.value.raw_samples_.tolerance_met = sampled.value.tolerance_met;
         return prepared;
     }
-    auto sampled = sv_recipe_samples_t::from(chart, recipe);
-    if (sampled.diagnostics.empty() && !recipe.postprocess.empty()) {
+    return from_builtin_samples(chart, recipe, sv_recipe_samples_t::from(chart, recipe));
+}
+
+auto sv_recipe_prepared_t::from_builtin_samples(const chart_document_t& chart, const sv_recipe_t& recipe,
+    sv_recipe_sample_outcome_t sampled) -> diagnosed_t<sv_recipe_prepared_t> {
+    if (sampled.diagnostics.empty() && (!recipe.postprocess.empty() || !recipe.impulses.empty())) {
         const auto index = measure_index_t::from(chart);
         const auto range = *recipe_range(chart, recipe, *index);
-        std::vector<sv_recipe_emission_t> emissions;
-        for (const auto& point : sampled.value.points)
-            emissions.push_back({.absolute_row = point.absolute_row,
-                .value = curve_value(recipe, recipe_position_for_row(range, point.absolute_row))});
-        auto result = from_emissions(chart, recipe, emissions);
-        result.value.raw_samples_ = std::move(sampled.value);
-        result.value.samples_.tolerance_met = result.value.raw_samples_.tolerance_met;
+        diagnosed_t<std::vector<sv_recipe_emission_t>> emissions;
+        if (!recipe.impulses.empty()) emissions = build_builtin_impulse_emissions(chart, recipe, range, sampled.value);
+        else {
+            for (const auto& point : sampled.value.points)
+                emissions.value.push_back({.absolute_row = point.absolute_row,
+                    .value = curve_value(recipe, recipe_position_for_row(range, point.absolute_row))});
+        }
+        if (!emissions.diagnostics.empty()) return {.value = sv_recipe_prepared_t{}, .diagnostics = std::move(emissions.diagnostics)};
+        auto result = from_emissions(chart, recipe, emissions.value);
+        result.value.uses_analytic_curve_ = recipe.postprocess.empty();
+        if (recipe.impulses.empty()) result.value.raw_samples_ = std::move(sampled.value);
+        result.value.samples_.tolerance_met = sampled.value.tolerance_met;
+        result.value.raw_samples_.tolerance_met = sampled.value.tolerance_met;
         return result;
     }
     sv_recipe_prepared_t prepared;
@@ -1065,14 +1237,19 @@ auto sv_recipe_prepared_t::from_emissions(const chart_document_t& chart,
     diagnostics = validate_recipe_emissions(emissions, range, recipe.output);
     if (!diagnostics.empty())
         return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
-    if (!recipe.postprocess.empty())
-        prepared.raw_samples_ = sample_recipe_emissions(*index, recipe, range, emissions).value;
+    auto boxes = build_impulse_boxes(chart, recipe, range);
+    if (!boxes.diagnostics.empty()) return {.value = std::move(prepared), .diagnostics = std::move(boxes.diagnostics)};
+    if (!recipe.postprocess.empty()) {
+        auto raw = sample_recipe_emissions(*index, recipe, range, emissions, boxes.value);
+        if (!raw.diagnostics.empty()) return {.value = std::move(prepared), .diagnostics = std::move(raw.diagnostics)};
+        prepared.raw_samples_ = std::move(raw.value);
+    }
     std::vector<sv_recipe_emission_t> processed{emissions.begin(), emissions.end()};
     diagnostics = add_bump_emission_boundaries(recipe, range, processed);
-    if (diagnostics.empty()) diagnostics = transform_recipe_batch(chart, recipe, range, processed);
+    if (diagnostics.empty()) diagnostics = transform_recipe_batch(chart, recipe, range, processed, boxes.value);
     if (!diagnostics.empty())
         return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
-    auto sampled = sample_recipe_emissions(*index, recipe, range, processed);
+    auto sampled = sample_recipe_emissions(*index, recipe, range, processed, boxes.value);
     prepared.samples_ = std::move(sampled.value);
     if (sampled.diagnostics.empty()) {
         prepared.recipe_ = recipe;
@@ -1080,13 +1257,25 @@ auto sv_recipe_prepared_t::from_emissions(const chart_document_t& chart,
         prepared.divisions_ = chart.divisions_per_standard_measure;
         prepared.range_ = range;
         prepared.emissions_ = std::move(processed);
+        prepared.impulse_boxes_ = std::move(boxes.value);
     }
     return {.value = std::move(prepared), .diagnostics = std::move(sampled.diagnostics)};
 }
 
 auto sv_recipe_prepared_t::value_at(std::uint64_t row) const -> std::optional<long double> {
+    const auto continuous = continuous_value_at(row);
+    return continuous ? std::optional{*continuous + impulse_height_at(impulse_boxes_, row)} : std::nullopt;
+}
+
+auto sv_recipe_prepared_t::has_impulse_at(std::uint64_t entry_row) const -> bool {
+    return std::ranges::any_of(impulse_boxes_, [entry_row](const auto& box) {
+        return box.entry_row == entry_row;
+    });
+}
+
+auto sv_recipe_prepared_t::continuous_value_at(std::uint64_t row) const -> std::optional<long double> {
     if (row < range_.first || row >= range_.second) return std::nullopt;
-    if (emissions_.empty())
+    if (emissions_.empty() || uses_analytic_curve_)
         return curve_value(recipe_, recipe_position_for_row(range_, row));
     const auto after = std::upper_bound(emissions_.begin(), emissions_.end(), row,
         [](std::uint64_t sought, const auto& emission) { return sought < emission.absolute_row; });
@@ -1176,19 +1365,36 @@ struct recipe_composition_context_t {
     const std::vector<std::pair<std::uint64_t, long double>>& base_events;
 };
 
+auto composed_impulse_height(const recipe_composition_context_t& context, std::uint64_t row) -> long double {
+    long double height{};
+    for (const auto& source : context.recipes) {
+        for (const auto& box : source.impulse_boxes()) {
+            if (row < box.entry_row || row >= box.exit_row) continue;
+            auto weighted = box.height * base_value_at(context.base_events, box.entry_row);
+            for (const auto& other : context.recipes) {
+                if (other.has_impulse_at(box.entry_row)) continue;
+                weighted *= other.continuous_value_at(box.entry_row).value_or(1);
+            }
+            height += weighted;
+        }
+    }
+    return height;
+}
+
 auto compose_recipe_point(const recipe_composition_context_t& context, std::uint64_t row,
                          diagnostic_list_t& diagnostics)
     -> std::optional<sv_recipe_point_t> {
     long double value = base_value_at(context.base_events, row);
     const sv_recipe_t* transition_source{};
     for (const auto& recipe : context.recipes) {
-        const auto prepared_value = recipe.value_at(row);
+        const auto prepared_value = recipe.continuous_value_at(row);
         if (!prepared_value) continue;
         value *= *prepared_value;
         if (context.output == sv_recipe_output_t::speeds) {
             transition_source = &recipe.recipe();
         }
     }
+    value += composed_impulse_height(context, row);
     if (!is_valid_curve_result(value, context.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "composed SV recipe value is non-finite, oversized, or target-invalid");

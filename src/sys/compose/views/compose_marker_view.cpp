@@ -779,6 +779,7 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
     view.recipe_form.status_text = {};
     view.recipe_form.postprocess_labels.clear();
     view.recipe_form.sampled_points.clear();
+    view.recipe_form.impulse_boxes.clear();
     view.recipe_form.composed_point_count = 0;
     view.recipe_form.evaluation_busy = application_state.project.timing_recipe.evaluation &&
         application_state.project.timing_recipe.evaluation->is_busy();
@@ -814,6 +815,11 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
             if (prepared.recipe().id != recipe->id) continue;
             for (const auto& point : prepared.samples().points)
                 view.recipe_form.sampled_points.push_back({point.absolute_row, point.value});
+            for (const auto& box : prepared.impulse_boxes())
+                view.recipe_form.impulse_boxes.push_back({box.entry_row, box.exit_row,
+                    static_cast<double>(box.raw_area), static_cast<double>(box.area),
+                    static_cast<double>(box.realized_area), static_cast<double>(box.area_error),
+                    static_cast<double>(box.width_milliseconds)});
         }
     }
 }

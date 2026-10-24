@@ -55,7 +55,7 @@ TEST_CASE("native Lua recipe descriptors retain frozen authoring inputs",
     descriptor.cycles = {{.emission_count = 1}, {.emission_count = 1}};
     const auto encoded = written_json(song);
     const auto& stored = encoded["document"]["charts"][0]["sv_recipes"][0];
-    CHECK(encoded["document"]["schema_version"] == 17);
+    CHECK(encoded["document"]["schema_version"] == current_document_schema_version);
     CHECK(stored["lua"]["parameters"][0]["value"]["numerator"] == -3);
     CHECK_FALSE(stored.contains("points"));
     const auto loaded = parse_native_project(encoded.dump());

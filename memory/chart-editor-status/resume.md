@@ -14,9 +14,19 @@ consumers**, without increased allowances. Inspected isolated **1280×720** and 
 windows with an unreachable arm selected and playback unchanged.
 [Completed card, bounded test review and verification logs](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
 
-**Next: T-744**, ready; no successor implementation is active. Public import/new-project/load
-cutover and removal of the legacy statement authority remain its work. Do not widen supported
-dialects, conditional timing links or the unapproved multivoice design during that cutover.
+**Active: T-744**, public scoped ownership cutover. Auditing creation, identity and migration
+before activating public import/new-project/load together and retiring legacy statement authority.
+Its first checkpoint replaces JSON-key ID rewriting with typed scoped remapping, includes inactive
+and native child identities in allocation, and allows ordinary chart creation/duplication alongside
+prepared owners. Public activation is still gated. Continue step 1 with native difficulty settings,
+fresh scoped creation, full-program duplicate/import and edited-native migration; then retire the
+legacy paths and run the full acceptance matrix. GATE passes **4,882/4,882**; migration
+**1,002 assertions / 28 cases**, combined BMS **8,766 / 243**, scope harness **162 / 14**.
+Clang compiles the four affected TUs, and complexity passes without increased allowances.
+No successor card is active. Do not widen supported dialects, conditional timing links or the
+unapproved multivoice design during that cutover.
+Keep resource caps: three build workers; the three giant application/Compose TUs needed
+`MemoryHigh=5500M`, `MemoryMax=6G` to avoid throttling, with own-task OOM score 500 and low priority.
 
 Completed **T-739** (2026-10-23): scalar RANDOM range edits retain all arms and report
 unreachable IF/ELSEIF values without renumbering, deleting bodies or changing nested selectors.

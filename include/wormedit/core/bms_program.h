@@ -299,6 +299,10 @@ struct bms_prepared_program_t {
     std::vector<visual_asset_t> visual_assets;
     std::vector<semantic_layer_t> semantic_layers;
     std::vector<sound_layer_default_t> sound_layer_defaults;
+    // Every nonzero semantic declaration/reference requires an explicit mapping.
+    // Lane IDs are layout vocabulary; symbolic BMS slots and provenance stay intact.
+    [[nodiscard]] auto with_remapped_ids(const std::unordered_map<std::uint64_t, std::uint64_t>& ids) const
+        -> result_t<bms_prepared_program_t, error_t<failure_code_t>>;
 };
 
 struct bms_program_evaluation_t {

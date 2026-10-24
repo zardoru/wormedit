@@ -3,6 +3,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing_links.h>
+#include "id_ceiling.h"
 
 #include <wormedit/formats/stepmania.h>
 
@@ -130,16 +131,11 @@ void visit_chart_ids(Chart& chart, Visit& visit) {
 }
 
 auto maximum_chart_id(const song_document_t& document) -> std::uint64_t {
-    std::uint64_t maximum{};
+    auto maximum = id_ceiling_t<object_id_t>::from(document).maximum;
+    // Legacy chart duplication also remaps layout vocabulary IDs. Scoped lane
+    // IDs stay in their profile domain; every scoped declaration is scanned above.
     auto visit = [&](const auto& id) { maximum = std::max(maximum, id.value); };
     for (const auto& chart : document.charts) visit_chart_ids(chart, visit);
-    visit(document.id);
-    for (const auto& asset : document.audio_assets) visit(asset.id);
-    for (const auto& asset : document.visual_assets) visit(asset.id);
-    for (const auto& asset : document.midi_assets) visit(asset.id);
-    for (const auto& resource : document.resources) visit(resource.id);
-    for (const auto& recipe : document.generator_recipes) visit(recipe.id);
-    for (const auto& storyboard : document.storyboards) visit(storyboard.id);
     return maximum;
 }
 
@@ -266,11 +262,6 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
 auto apply_new_chart_command(document_history_t& history,
     lane_input_profile_t profile, format_family_t source_family,
     const default_lane_keys_t* defaults, const timing_link_selection_t& timing) -> duplicate_chart_result_t {
-    if (!history.document.prepared_bms_programs.empty())
-        return {.command = document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::unsupported_feature,
-            "Prepared scoped difficulty creation requires full-program identity remapping.")};
-
     if (defaults) profile.input = defaults->profile_for(profile.layout, profile.input);
     return commit_empty_chart(history, std::move(profile), source_family,
         default_divisions_per_standard_measure, {}, timing);
@@ -300,7 +291,7 @@ auto apply_duplicate_chart_command(document_history_t& history,
 
 auto apply_duplicate_charts_command(document_history_t& history,
     std::span<const chart_id_t> charts) -> duplicate_chart_result_t {
-    if (!history.document.prepared_bms_programs.empty())
+    if (std::ranges::any_of(charts, [&](auto id) { return history.document.find_bms_program(id); }))
         return {.command = document_command_transaction_t::rejection(history.document.revision,
             diagnostic_code_t::unsupported_feature,
             "Prepared scoped difficulty creation requires full-program identity remapping.")};

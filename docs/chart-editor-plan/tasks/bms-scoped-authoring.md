@@ -258,12 +258,16 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-744 Activate scoped ownership and retire raw statement authority
 
-- **Status:** ready
+- **Status:** partial (step 1 identity foundation; public activation remains gated)
 - **Prerequisites:** T-731–T-743, including the native migration and all product answers.
 - **Outcome:** public BMS import/new-project/load/edit/save/export use one scoped program owner, with no independently writable retained-statement semantic graph or legacy panel adapter.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/audits/bms-scoped-ownership.md`, `src/core/bms_branch_editor.cpp`, `src/formats/native_project_migrations.cpp`, `src/ui/nuklear/project/bms_branch_panel.cpp`.
 - **Files owned:** `docs/chart-editor-plan/tasks/bms-scoped-model.md`, `docs/chart-editor-plan/tasks/bms-scoped-authoring.md`, `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/tasks/bms-branches.md`, `docs/chart-editor-plan/tasks/compose-docks.md`, `memory/chart-editor-status/resume.md`, `src/core/bms_program.cpp`, `src/core/bms_branch_editor.cpp`, `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `src/sys/app/application_defaults.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/sys/project/workspace_view.cpp`, `src/ui/nuklear/project/bms_branch_panel.cpp`, `tests/core/bms_program_edit_tests.cpp`, `tests/formats/bms_program_migration_tests.cpp`, `tests/formats/bms_program_writer_tests.cpp`, `tests/ui/bms_program_event_harness_tests.cpp`, `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/core/bms_branch_view.h`, `include/wormedit/formats/bms.h`, `include/wormedit/formats/bms_branch_selection.h`, `src/core/bms_branch_view.cpp`, `src/formats/bms_branch_selection.cpp`, `src/core/command.cpp`, `src/core/chart_editor.cpp`, `src/core/id_ceiling.h`, `src/core/chart_object_ids.h`, `src/core/interaction.cpp`, `src/core/interaction_internal.h`, `src/core/resource_assignment.cpp`, `src/core/quantize.cpp`, `src/core/channel_map_editor.cpp`, `src/core/lane_migration.cpp`, `src/core/measure_editor.cpp`, `src/core/bpm_editor.cpp`, `src/core/pause_warp_editor.cpp`, `src/core/time_shift.cpp`, `src/core/timing_reposition.cpp`, `src/core/timing_links.cpp`, `src/core/workspace.cpp`, `src/formats/conversion.cpp`, `src/formats/osu_mania.cpp`, `src/sys/compose/actions/compose_action_outcome.cpp`, `src/ui/frontend/actions.h`, `src/ui/frontend/compose.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/nuklear/project/bms_branch_panel.h`, `tests/core/bms_branch_editor_tests.cpp`, `tests/core/chart_editor_tests.cpp`, `tests/core/timing_links_tests.cpp`, `tests/sys/application_defaults_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, `tests/formats/conversion_tests.cpp`, `tests/formats/native_project_tests.cpp`, `tests/core/command_journal_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, `src/core/chart_import.cpp`, `src/core/sound_import.cpp`, `tests/core/chart_import_tests.cpp`, `tests/core/sound_import_tests.cpp`.
 - **Cutover inventory (T-731, 2026-10-23):** retire the exact functions and authority listed in the [one-way transition audit](../audits/bms-scoped-ownership.md#one-way-transition-and-public-cutover), including source-order guards and non-BMS conversion loss checks. Preserve refusals until replacement capabilities are verified. The supporting files above cover new/add/duplicate difficulty, all inactive IDs, legacy statement/selection APIs, panel feedback, migration/recovery and export; no implicit widening of supported dialects or conditional timing links.
+- **Supporting ownership (2026-10-24):** `include/wormedit/core/bms_program.h`, `src/core/bms_program_identity.cpp`, `src/formats/native_project_bms_migration.inc`, `CMakeLists.txt`: replace migration's serialized-key ID rewriting with a typed program identity operation shared by creation/import/duplication. Public activation remains gated on the complete cutover inventory.
+- **Done so far (step 1 checkpoint, 2026-10-24):** typed identity remapping covers scoped declarations/references, native exact positions and child IDs, IF continuations and SKIP anchors; lane vocabulary, Text/provenance and project sound-group membership remain intact. Explicit legacy preparation uses this operation. Shared typed resource/asset/recipe/chart ceilings include prepared owners, and ordinary chart creation/duplication in mixed projects uses complete current/Undo/Redo ceilings. GCC GATE passes **4,882/4,882**; focused migration **1,002 assertions / 28 cases**, combined BMS **8,766 / 243**, scope event harness **162 / 14**. Complexity passes for three changed TUs, five explicit header consumers and the native migration TU; Clang compiles all four directly affected TUs. No complexity allowances changed. Public activation and its acceptance captures remain pending.
+- **Remaining:** finish step 1 before public activation: preserve native difficulty settings in the scoped owner, create fresh BMS Roots and support full-program difficulty duplication/import with shared pools, and reconcile edited legacy native data without relying on unchanged-source equivalence. Then perform steps 2–4's coordinated public import/load/edit/export activation, legacy semantic-path retirement and complete acceptance matrix. Existing production ownership and conservative capability refusals remain until those replacements are verified.
+- **Bounded checkpoint test review:** reviewed nine new migration-test bodies for the shared identity operation and mixed-project allocation boundary, including all 14 existing native fixture variants, inactive structure, export equivalence, invalid maps, native references, sound groups, exhaustion and recipe allocation. The 19 existing migration bodies are retained, not newly reviewed for value. These counts make no claim about the whole suite.
 - **Steps:**
   1. Activate the validated public import/native schema/new-project paths and scoped edit routing together; reconcile old command callers through the audited migration, never two writable authorities.
   2. Remove every temporary T-744 adapter/guard and the retained raw-statement panel as a semantic editing entry; retain read-only provenance and opaque Text where still required.
@@ -273,3 +277,23 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 - **Reject/failure behavior:** failed migration, unsupported scoped content or an incomplete command-family adapter blocks cutover instead of discarding data or enabling partial production authoring.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program],[bms-program-import],[bms-program-projection],[bms-program-writer],[bms-program-edit],[bms-program-migration],[bms-program-authoring]'`; `build/tests/wormedit_frontend_event_harness_tests '[bms-scope]'`; isolated Xvfb acceptance captures and native save/reload comparison.
 - **Out of scope:** individual-note move/copy between scopes (T-93), opt-out malformed-flow repair proposals (T-287), new BMS dialects and an inactive ghost overlay (separate future work).
+
+Checkpoint verification logs: `/tmp/t744-gate-2.log` (details `/tmp/wormedit-gate.WPQXTP`),
+`/tmp/t744-migration-final.log`, `/tmp/t744-bms-contract-final.log`,
+`/tmp/t744-scope-harness-1.log`, `/tmp/t744-header-1.log`,
+`/tmp/t744-native-complexity.log`, `/tmp/t744-clang-1.log`.
+Actual output tails:
+
+```text
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 4882
+gate: passed
+All tests passed (1002 assertions in 28 test cases)
+All tests passed (8766 assertions in 243 test cases)
+All tests passed (162 assertions in 14 test cases)
+complexity: passed (5 translation units)
+complexity: passed (1 translation units)
+```

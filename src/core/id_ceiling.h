@@ -135,6 +135,18 @@ template<> struct id_declarations_t<recipe_id_t> {
         if (!visit_declared_id_values(song.generator_recipes, visitor)) return false;
         for (const auto& chart : song.charts)
             if (!visit_declared_id_values(chart.sv_recipes, visitor)) return false;
+        for (const auto& owner : song.prepared_bms_programs) {
+            if (!owner) continue;
+            for (const auto& node : owner->prepared().program.nodes()) {
+                const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+                if (!chart) continue;
+                for (const auto& item : chart->items) {
+                    const auto* native = std::get_if<bms_native_content_t>(&item.value);
+                    if (native && std::holds_alternative<sv_recipe_t>(native->payload()) &&
+                        !visitor(recipe_id_t{item.id.value})) return false;
+                }
+            }
+        }
         return true;
     }
 };
@@ -142,16 +154,23 @@ template<> struct id_declarations_t<recipe_id_t> {
 template<> struct id_declarations_t<resource_id_t> {
     template<class Visitor>
     static auto visit(const song_document_t& song, Visitor& visitor) -> bool {
-        return visit_declared_id_values(song.resources, visitor);
+        if (!visit_declared_id_values(song.resources, visitor)) return false;
+        for (const auto& owner : song.prepared_bms_programs)
+            if (owner && !visit_declared_id_values(owner->prepared().resources, visitor)) return false;
+        return true;
     }
 };
 
 template<> struct id_declarations_t<asset_id_t> {
     template<class Visitor>
     static auto visit(const song_document_t& song, Visitor& visitor) -> bool {
-        return visit_declared_id_values(song.audio_assets, visitor) &&
+        if (!(visit_declared_id_values(song.audio_assets, visitor) &&
                visit_declared_id_values(song.visual_assets, visitor) &&
-               visit_declared_id_values(song.midi_assets, visitor);
+               visit_declared_id_values(song.midi_assets, visitor))) return false;
+        for (const auto& owner : song.prepared_bms_programs)
+            if (owner && (!visit_declared_id_values(owner->prepared().audio_assets, visitor) ||
+                !visit_declared_id_values(owner->prepared().visual_assets, visitor))) return false;
+        return true;
     }
 };
 
@@ -165,7 +184,10 @@ template<> struct id_declarations_t<sound_group_id_t> {
 template<> struct id_declarations_t<chart_id_t> {
     template<class Visitor>
     static auto visit(const song_document_t& song, Visitor& visitor) -> bool {
-        return visit_declared_id_values(song.charts, visitor);
+        if (!visit_declared_id_values(song.charts, visitor)) return false;
+        for (const auto& owner : song.prepared_bms_programs)
+            if (owner && !visitor(owner->difficulty())) return false;
+        return true;
     }
 };
 

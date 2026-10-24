@@ -3,10 +3,14 @@
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command_journal.h>
+#include <wormedit/core/chart_editor.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/formats/bms_writer.h>
 #include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
+#include <utility>
 
 using namespace wormedit;
 using namespace wormedit::test::bms_program;
@@ -345,4 +349,185 @@ TEST_CASE("Native loading validates exact geometry in inactive scoped alternativ
     CHECK_FALSE(read.value);
     REQUIRE_FALSE(read.diagnostics.empty());
     CHECK(read.diagnostics.front().code == native_project_diagnostic_code_t::invalid_document);
+}
+
+namespace {
+auto shifted_identities() -> std::unordered_map<std::uint64_t, std::uint64_t> {
+    std::unordered_map<std::uint64_t, std::uint64_t> result;
+    // Includes the fixture's native child IDs (7001/7002), independently of
+    // which declarations the implementation discovers.
+    for (std::uint64_t id = 1; id <= 8000; ++id) result.emplace(id, id + 20000);
+    return result;
+}
+void check_native_identity_fields(const bms_native_content_t& before, const bms_native_content_t& after) {
+    for (std::size_t position = 0; position < before.positions().size(); ++position)
+        CHECK(after.positions()[position].measure.value == before.positions()[position].measure.value + 20000);
+    auto expected = before.declared_ids();
+    for (auto& id : expected) id.value += 20000;
+    CHECK(after.declared_ids() == expected);
+}
+void check_remapped_native(const bms_prepared_program_t& before, const bms_prepared_program_t& after) {
+    for (const auto& node : before.program.nodes()) {
+        const auto* content = std::get_if<bms_chart_content_t>(&node.value);
+        if (!content) continue;
+        const auto* mapped = after.program.find(branch_id_t{node.id.value + 20000});
+        REQUIRE(mapped);
+        const auto& items = std::get<bms_chart_content_t>(mapped->value).items;
+        for (std::size_t index = 0; index < content->items.size(); ++index) {
+            const auto* native = std::get_if<bms_native_content_t>(&content->items[index].value);
+            if (!native) continue;
+            const auto& updated = std::get<bms_native_content_t>(items[index].value);
+            check_native_identity_fields(*native, updated);
+        }
+    }
+}
+void check_remapped_projection(const bms_prepared_program_t& before, const bms_prepared_program_t& after) {
+    CHECK(after.program.root().value == before.program.root().value + 20000);
+    CHECK(after.lane_profile->layout == before.lane_profile->layout);
+    CHECK(note_keys(projected(after).song()) == note_keys(projected(before).song()));
+    check_remapped_native(before, after);
+}
+void check_identity_round_trip(const bms_prepared_program_t& before) {
+    const auto identities = shifted_identities();
+    const auto remapped = before.with_remapped_ids(identities);
+    REQUIRE(remapped);
+    check_remapped_projection(before, *remapped);
+    std::unordered_map<std::uint64_t, std::uint64_t> inverse;
+    for (const auto& [old_id, new_id] : identities) inverse.emplace(new_id, old_id);
+    const auto restored = remapped->with_remapped_ids(inverse);
+    REQUIRE(restored);
+    CHECK((restored->program == before.program && restored->measures == before.measures &&
+        restored->sound_layer_defaults == before.sound_layer_defaults));
+}
+auto create_mixed_chart(document_history_t& history, std::uint64_t minimum) -> chart_id_t {
+    const auto created = apply_new_chart_command(history, *make_osu_mania_profile(4), format_family_t::osu_mania);
+    REQUIRE(created.command.applied);
+    REQUIRE(created.payload.chart);
+    CHECK(created.payload.chart->value > minimum);
+    return *created.payload.chart;
+}
+auto native_linked_content() -> bms_prepared_program_t {
+    auto input = with_native_event(13).prepared_bms_programs.front()->prepared();
+    const auto view = projected(input);
+    auto note = std::get<note_t>(native_event(view.song().charts.front(), input, 0));
+    note.sound = input.resources.front().id;
+    note.sound_channel_event = object_id_t{7002};
+    note.semantic_layers = {layer_id_t{7200}};
+    input.semantic_layers = {{.id = layer_id_t{7200}, .name = "Native"}};
+    input.sound_layer_defaults = {{.resource = *note.sound, .layers = note.semantic_layers}};
+    auto native = bms_native_content_t::from(note, view.song().charts.front());
+    REQUIRE(native);
+    auto nodes = std::vector<bms_program_node_t>(input.program.nodes().begin(), input.program.nodes().end());
+    const auto chart = input.program.target_chart(input.program.root());
+    auto found = std::ranges::find(nodes, *chart, &bms_program_node_t::id);
+    std::get<bms_chart_content_t>(found->value).items.push_back({.id = object_id_t{7100}, .value = std::move(*native)});
+    auto program = bms_program_t::from(std::move(nodes));
+    REQUIRE(program);
+    input.program = std::move(*program);
+    return input;
+}
+auto native_note_payload(const bms_prepared_program_t& input) -> const note_t& {
+    for (const auto& node : input.program.nodes()) {
+        const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+        if (!chart) continue;
+        for (const auto& item : chart->items) {
+            const auto* native = std::get_if<bms_native_content_t>(&item.value);
+            if (!native) continue;
+            if (const auto* note = std::get_if<note_t>(&native->payload())) return *note;
+        }
+    }
+    FAIL("Missing native note payload");
+    std::unreachable();
+}
+}
+
+TEST_CASE("Typed scoped identity remapping retains every native family and child identity", "[bms-program-migration]") {
+    const auto kind = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
+    const auto song = with_native_event(kind);
+    check_identity_round_trip(song.prepared_bms_programs.front()->prepared());
+}
+TEST_CASE("Typed scoped identity remapping retains inactive arms Text continuations and SKIP anchors", "[bms-program-migration]") {
+    check_identity_round_trip(prepared(source));
+    check_identity_round_trip(prepared("#BPM 120\n#WAV01 a.wav\n#SWITCH 2\n#CASE 1\n"
+        "; anchor\n#00011:01\n#SKIP\n#DEF\n#00112:01\n#ENDSW\n"));
+}
+TEST_CASE("Complete scoped BMS export is independent of remapped semantic identities", "[bms-program-migration]") {
+    const auto input = prepared(source);
+    const auto remapped = input.with_remapped_ids(shifted_identities());
+    REQUIRE(remapped);
+    const auto before = write_bms_program(input);
+    const auto after = write_bms_program(*remapped);
+    REQUIRE(before.value);
+    REQUIRE(after.value);
+    CHECK(after.value == before.value);
+}
+TEST_CASE("Incomplete and merging scoped identity maps reject without changing the source", "[bms-program-migration]") {
+    const auto input = prepared(source);
+    const auto before = input.program;
+    auto identities = shifted_identities();
+    const auto fault = GENERATE(0, 1, 2);
+    const auto first_measure = input.measures.front().value;
+    if (fault == 0) identities.erase(first_measure);
+    if (fault == 1) identities[first_measure] = 0;
+    if (fault == 2) identities[first_measure] = identities.at(input.program.root().value);
+    const auto result = input.with_remapped_ids(identities);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == failure_code_t::invalid_data);
+    CHECK(input.program == before);
+}
+TEST_CASE("Mixed project chart creation reserves inactive scoped IDs from current and Redo snapshots", "[bms-program-migration]") {
+    auto input = prepared(source);
+    auto identities = shifted_identities();
+    const auto shifted = input.with_remapped_ids(identities);
+    REQUIRE(shifted);
+    auto history = document_history_t::from(snapshot(*shifted));
+    const auto created = create_mixed_chart(history, 20000);
+    REQUIRE(undo_document_command(history));
+    const auto next = create_mixed_chart(history, created.value);
+    const auto duplicate = apply_duplicate_chart_command(history, next);
+    REQUIRE(duplicate.command.applied);
+    REQUIRE(duplicate.payload.chart);
+    CHECK(duplicate.payload.chart->value > next.value);
+    CHECK(history.document.prepared_bms_programs.front()->prepared().program == shifted->program);
+}
+TEST_CASE("Scoped remapping leaves project sound group membership outside its identity domain", "[bms-program-migration]") {
+    auto input = prepared(source);
+    const auto group = sound_group_id_t{input.program.root().value};
+    input.resources.front().sound_group = group;
+    const auto remapped = input.with_remapped_ids(shifted_identities());
+    REQUIRE(remapped);
+    CHECK(remapped->resources.front().sound_group == group);
+    CHECK(remapped->resources.front().asset.value == input.resources.front().asset.value + 20000);
+}
+TEST_CASE("Scoped identity remapping reconnects native sounds channel events and layer memberships", "[bms-program-migration]") {
+    const auto input = native_linked_content();
+    const auto remapped = input.with_remapped_ids(shifted_identities());
+    REQUIRE(remapped);
+    const auto& note = native_note_payload(*remapped);
+    CHECK(note.sound == resource_id_t{input.resources.front().id.value + 20000});
+    CHECK(note.sound_channel_event == object_id_t{27002});
+    CHECK(note.semantic_layers == std::vector{layer_id_t{27200}});
+    CHECK(remapped->sound_layer_defaults.front().layers == note.semantic_layers);
+}
+TEST_CASE("Chart creation rolls back when scoped native child IDs leave insufficient identity space", "[bms-program-migration]") {
+    auto input = with_native_event(13).prepared_bms_programs.front()->prepared();
+    auto identities = shifted_identities();
+    identities[7002] = UINT64_MAX - 6;
+    const auto remapped = input.with_remapped_ids(identities);
+    REQUIRE(remapped);
+    auto history = document_history_t::from(snapshot(*remapped));
+    const auto before = serialized(history.document);
+    const auto created = apply_new_chart_command(history, *make_osu_mania_profile(4), format_family_t::osu_mania);
+    CHECK_FALSE(created.command.applied);
+    CHECK(history.undo.empty());
+    CHECK(serialized(history.document) == before);
+}
+TEST_CASE("Ordinary recipe allocation includes recipes owned by scoped programs", "[bms-program-migration]") {
+    auto history = document_history_t::from(with_native_event(12));
+    const auto chart_id = create_mixed_chart(history, 9001);
+    const auto measure = history.document.find_chart(chart_id)->measures.front().id;
+    const auto inserted = apply_sv_recipe_edit(history, insert_edit_t<sv_recipe_t>{
+        .chart = chart_id, .value = {.name = "New recipe", .range = {{measure, 0}, {measure, 240}}}});
+    REQUIRE(inserted.applied);
+    CHECK(history.document.find_chart(chart_id)->sv_recipes.front().id.value > 7000);
 }

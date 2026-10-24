@@ -19,25 +19,6 @@ void migration_choices(const bms_control_node_t& node, const chart_document_t& c
     for (const auto& child : node.children) migration_choices(child, chart, options);
 }
 
-// IDs are remapped once from declared semantic identities. Lane IDs belong to
-// the selected layout vocabulary and are deliberately outside this ID space.
-void remap_bms_json(json& value, const std::unordered_map<std::uint64_t, std::uint64_t>& ids,
-    std::string_view key = {}) {
-    if (key == "lane_profile" || key == "difficulty" || key == "provenance") return;
-    if (value.is_object()) {
-        for (auto& item : value.items()) remap_bms_json(item.value(), ids, item.key());
-    } else if (value.is_array()) {
-        for (auto& item : value) remap_bms_json(item, ids, key);
-    } else if (value.is_number_unsigned() &&
-        (key == "id" || key == "measure" || key == "measures" || key == "column" ||
-         key == "resource" || key == "asset" || key == "children" || key == "previous_arm" ||
-         key == "scope" || key == "after_child" || key == "branch" || key == "layers" || key == "semantic_layers")) {
-        const auto found = ids.find(value.get<std::uint64_t>());
-        if (found == ids.end()) throw std::invalid_argument("Migration has an unmapped semantic identity.");
-        value = found->second;
-    }
-}
-
 auto remapped_bms_owner(document_history_t& history, chart_id_t chart,
     bms_prepared_program_t prepared, bms_program_evaluation_t evaluation)
     -> std::shared_ptr<const bms_program_document_t> {
@@ -51,11 +32,13 @@ auto remapped_bms_owner(document_history_t& history, chart_id_t chart,
     };
     if (!id_declarations_t<object_id_t>::visit(prepared, reserve))
         throw std::invalid_argument("Migration identity space is exhausted or ambiguous.");
-    auto owner = bms_program_document_t::from(chart, std::move(prepared), std::move(evaluation));
+    auto remapped = prepared.with_remapped_ids(ids);
+    if (!remapped) throw std::invalid_argument(remapped.error().message);
+    for (auto& selection : evaluation.selections)
+        selection.branch = branch_id_t{ids.at(selection.branch.value)};
+    auto owner = bms_program_document_t::from(chart, std::move(*remapped), std::move(evaluation));
     if (!owner.value || !owner.ok()) throw std::invalid_argument("Legacy scoped preparation cannot be evaluated.");
-    json serialized = **owner.value;
-    remap_bms_json(serialized, ids);
-    return read_bms_program_document(serialized);
+    return std::move(*owner.value);
 }
 
 template<class Asset>

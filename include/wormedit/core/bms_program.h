@@ -80,6 +80,7 @@ struct bms_direct_bpm_t {
 struct bms_measure_length_t {
     measure_id_t measure;
     rational_t length;
+    std::optional<meter_t> meter{};
     auto operator==(const bms_measure_length_t&) const -> bool = default;
 };
 struct bms_resource_declaration_t {
@@ -133,6 +134,7 @@ struct bms_content_item_t {
     object_id_t id;
     bms_content_value_t value;
     source_provenance_t provenance;
+    [[nodiscard]] auto resource_identifier() const -> std::optional<bms_native_resource_reference_t>;
     auto operator==(const bms_content_item_t&) const -> bool = default;
 };
 struct bms_chart_content_t {
@@ -232,7 +234,7 @@ struct bms_program_subtree_t {
     auto operator==(const bms_program_subtree_t&) const -> bool = default;
 };
 
-// Prepared value model only: T-744 activates it as the document's semantic owner.
+// The immutable program owns authored semantics for a BMS difficulty.
 // Musical/resource validation belongs to the projection/edit adapters, not this
 // graph constructor. No live document contains a separately writable mirror.
 struct bms_program_owner_t;
@@ -272,6 +274,7 @@ class bms_program_t {
     [[nodiscard]] auto nodes() const -> std::span<const bms_program_node_t> { return nodes_; }
     [[nodiscard]] auto find(branch_id_t id) const -> const bms_program_node_t*;
     [[nodiscard]] auto parent(branch_id_t id) const -> std::optional<branch_id_t>;
+    [[nodiscard]] auto has_control_flow() const -> bool;
     [[nodiscard]] auto conditional_selector(branch_id_t id) const -> std::optional<branch_id_t>;
     [[nodiscard]] auto hold_endpoints(std::span<const bms_program_owner_t> contributors) const
         -> std::vector<bms_program_owner_t>;
@@ -287,8 +290,26 @@ class bms_program_t {
     std::unordered_map<std::uint64_t, branch_id_t> parents_;
     std::size_t root_index_{};
 };
-// Prepared import only; production ownership is activated by T-744. Geometry
-// identities and shared assets are separate from the scoped semantic statements.
+// Shared difficulty geometry and catalog read caches accompany the scoped
+// semantic statements. The project catalog owns shared resource and asset values.
+struct bms_difficulty_settings_t {
+    std::optional<std::string> name;
+    std::optional<std::string> author;
+    std::optional<signed_rational_t> rating;
+    metadata_overrides_t overrides;
+    std::uint64_t divisions_per_standard_measure{default_divisions_per_standard_measure};
+    std::optional<object_id_t> layout_segment;
+    timing_links_t timing_links;
+    bool show_empty_bgm_columns{};
+    auto operator==(const bms_difficulty_settings_t&) const -> bool = default;
+};
+// Read-only evidence for preserving source tokens after automatic filesystem resolution.
+// It never supplies playback paths or authorizes a later semantic asset relink.
+struct bms_asset_resolution_t {
+    std::filesystem::path authored;
+    std::filesystem::path resolved;
+    auto operator==(const bms_asset_resolution_t&) const -> bool = default;
+};
 struct bms_prepared_program_t {
     bms_program_t program;
     std::vector<measure_id_t> measures;
@@ -299,10 +320,15 @@ struct bms_prepared_program_t {
     std::vector<visual_asset_t> visual_assets;
     std::vector<semantic_layer_t> semantic_layers;
     std::vector<sound_layer_default_t> sound_layer_defaults;
+    bms_difficulty_settings_t settings;
+    encoding_provenance_t source;
+    std::vector<bms_asset_resolution_t> resolved_asset_paths;
     // Every nonzero semantic declaration/reference requires an explicit mapping.
     // Lane IDs are layout vocabulary; symbolic BMS slots and provenance stay intact.
     [[nodiscard]] auto with_remapped_ids(const std::unordered_map<std::uint64_t, std::uint64_t>& ids) const
         -> result_t<bms_prepared_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_catalog(const song_document_t& song) const -> bms_prepared_program_t;
+    [[nodiscard]] auto with_resolved_catalog(const song_document_t& song) const -> bms_prepared_program_t;
 };
 
 struct bms_program_evaluation_t {

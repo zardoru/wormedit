@@ -719,15 +719,17 @@ auto imported_bms_link_song(bool conditional) -> song_document_t {
 }
 void add_native_link_target(song_document_t& song) {
     chart_document_t target{.id = chart_id_t{9999},
-        .divisions_per_standard_measure = song.charts.front().divisions_per_standard_measure};
+        .divisions_per_standard_measure = song.read_charts().front()->divisions_per_standard_measure};
     std::uint64_t next = 10000;
-    for (const auto& measure : song.charts.front().measures)
+    for (const auto& measure : song.read_charts().front()->measures)
         target.measures.push_back({.id = measure_id_t{next++}, .definition = measure.definition});
+    song.ensure_chart_order();
+    song.chart_order.push_back(target.id);
     song.charts.push_back(std::move(target));
 }
 auto link_imported_source(document_history_t& history, timing_category_t category) -> document_command_result_t {
-    return apply_timing_link_edit(history, chart_stamp_t::from(history.document, history.document.charts.back().id),
-        {.category = category, .source = history.document.charts.front().id, .discard_confirmed = true});
+    return apply_timing_link_edit(history, chart_stamp_t::from(history.document, history.document.read_charts().back()->id),
+        {.category = category, .source = history.document.read_charts().front()->id, .discard_confirmed = true});
 }
 auto link_fixture_bytes(std::string_view relative) -> std::vector<std::byte> {
     std::ifstream input(std::filesystem::path{WORMEDIT_FIXTURE_DIR} / relative, std::ios::binary);
@@ -754,20 +756,25 @@ TEST_CASE("Conditional BMS timing sources require normalization before linking",
     CHECK_FALSE(history.document.charts.back().timing_links.value(timing_category_t::bpm));
     CHECK(history.undo.empty());
 }
-TEST_CASE("Timing links preserve retained target BMS projections on rejection", "[core][timing-links][provenance-links]") {
+TEST_CASE("Unconditional scoped timing targets inherit native sources and propagate", "[core][timing-links][bms-public-cutover]") {
     auto song = imported_bms_link_song(false);
+    const auto target = song.read_charts().front()->id;
     add_native_link_target(song);
-    std::swap(song.charts.front(), song.charts.back());
-    song.charts.front().bpms.push_back({.id = object_id_t{20000},
-        .position = {.measure = song.charts.front().measures.front().id}, .beats_per_minute = {180, 1}});
-    const auto original = song.charts.back().bpms;
+    auto& source = song.charts.front();
+    source.bpms.push_back({.id = object_id_t{20000},
+        .position = {.measure = source.measures.front().id}, .beats_per_minute = {180, 1}});
+    const auto source_id = source.id;
     auto history = document_history_t::from(std::move(song));
-    const auto before = native_link_json(history.document);
-    CHECK_FALSE(link_imported_source(history, timing_category_t::bpm).applied);
-    CHECK(history.document.charts.back().bpms == original);
-    CHECK(native_link_json(history.document) == before);
-    CHECK(history.undo.empty());
+    require_timing_command(apply_timing_link_edit(history, chart_stamp_t::from(history.document, target),
+        {.category = timing_category_t::bpm, .source = source_id, .discard_confirmed = true}));
+    CHECK(history.document.read_chart(target)->bpms.front().beats_per_minute == signed_rational_t{180, 1});
+    require_timing_command(apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{.chart = source_id,
+        .id = object_id_t{20000}, .value = {.position = history.document.read_chart(source_id)->bpms.front().position,
+            .settings = {.beats_per_minute = {210, 1}}}}));
+    CHECK(history.document.read_chart(target)->bpms.front().beats_per_minute == signed_rational_t{210, 1});
+    require_valid_links(history.document);
 }
+
 TEST_CASE("Absolute-time imported sources require a usable resolved clock", "[core][timing-links][clock-links]") {
     const auto parsed = parse_osu_mania_bytes(link_fixture_bytes("osu/mania-tags-bookmarks-kiai.osu"));
     REQUIRE(parsed.ok());

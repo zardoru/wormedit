@@ -226,7 +226,8 @@ struct clip_location_t {
 
 auto find_clip(const song_document_t& document, clip_id_t id) -> clip_location_t {
     clip_location_t result;
-    for (const auto& chart : document.charts) {
+    for (const auto* view : document.read_charts()) {
+        const auto& chart = *view;
         for (const auto& channel : chart.sound_channels) {
             if (channel.source_clip.id == id) {
                 if (result.clip != nullptr) {
@@ -244,7 +245,8 @@ auto has_object_id(const song_document_t& document, object_id_t id) -> bool {
     if (!id) {
         return false;
     }
-    for (const auto& chart : document.charts) {
+    for (const auto* view : document.read_charts()) {
+        const auto& chart = *view;
         const auto in = [id](const auto& values) {
             return std::ranges::any_of(values, [id](const auto& value) { return value.id == id; });
         };
@@ -1378,6 +1380,7 @@ auto build_compose_tab(workspace_view_build_context_t& context,
     }
     view.tab_view = workspace_compose_view_t{
         .chart = chart->id,
+        .authoring_chart = chart->bms_authoring_chart,
         .measure_count = chart->measures.size(),
         .note_count = note_count,
         .layout_segment_count = chart->lane_layouts.size(),
@@ -1392,7 +1395,8 @@ auto build_compose_tab(workspace_view_build_context_t& context,
 auto build_audio_slices_tab(workspace_view_build_context_t& context) -> bool {
     const auto& [workspace, document, chart, result, view] = context;
     std::size_t clip_count = 0;
-    for (const auto& item : document.charts) {
+    for (const auto* view : document.read_charts()) {
+        const auto& item = *view;
         if (!checked_add(clip_count, item.sound_channels.size())) {
             add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
                       "audio clip count overflows the supported range");

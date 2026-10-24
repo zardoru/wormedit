@@ -516,7 +516,7 @@ TEST_CASE("Osu StepMania walkthrough preview receives incompatible StepMania tar
     }));
 }
 
-TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
+TEST_CASE("Export preview lists a scoped BME chart without spurious geometry warnings",
           "[frontend-state][event-harness][walkthrough-bms]") {
     auto document = make_initial_document(song_id_t{1}, "bme-7k-outside-scratch");
     expect(document);
@@ -526,7 +526,7 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     std::filesystem::create_directories(root);
     const auto status = preview_group(history, 0, root);
     INFO(status);
-    expect(status.find("1 conversion warning(s)") != std::string::npos);
+    expect(status.find("0 conversion warning(s)") != std::string::npos);
     const output_group_export_request_t request{.document = history.document,
         .plan = output_group_export_plan_t::from(history.document,
                                                  history.document.output_groups.front()),
@@ -534,7 +534,7 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     const auto prepared = output_group_export_preparation_t::from(request, {});
     expect(prepared);
     expect(!prepared->files.empty());
-    expect(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+    expect(std::ranges::none_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
         return diagnostic.message.find("BMS measure ratios") != std::string::npos;
     }));
     expect(std::filesystem::is_empty(root));
@@ -548,7 +548,7 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     harness.view().setup.output_groups = {group};
     (void)harness.frame();
     expect(harness.drawn_text().find(
-               "Preview: 1 file(s), 1 conversion warning(s), 0 conversion error(s).") !=
+               "Preview: 1 file(s), 0 conversion warning(s), 0 conversion error(s).") !=
            std::string::npos);
     expect(harness.drawn_text().find("Warning: BMS measure ratios") == std::string::npos);
     std::filesystem::remove_all(root);

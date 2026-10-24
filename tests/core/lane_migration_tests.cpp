@@ -292,7 +292,6 @@ auto require_branch_hold(const chart_document_t& chart) -> const note_t& {
         return note.kind == note_kind_t::hold;
     });
     REQUIRE(hold != chart.measures.front().notes.end());
-    REQUIRE(!chart.active_branch_selection.empty());
     return *hold;
 }
 
@@ -556,7 +555,7 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
     REQUIRE(parsed.value.song.has_value());
-    auto& chart = parsed.value.song->charts.front();
+    const auto& chart = *parsed.value.song->read_charts().front();
     const auto& hold = require_branch_hold(chart);
     const auto hold_id = hold.id;
     const auto old_lane = hold.lane;
@@ -567,7 +566,7 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
     REQUIRE(safe_preview.value);
     REQUIRE(apply_proposal(safe_history, *safe_preview.value, false));
-    const auto& safe_chart = safe_history.document.charts.front();
+    const auto& safe_chart = *safe_history.document.read_charts().front();
     const auto safe_note = std::ranges::find(safe_chart.measures.front().notes, hold_id,
                                              &note_t::id);
     REQUIRE(safe_note != safe_chart.measures.front().notes.end());
@@ -575,7 +574,30 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     CHECK(validate_document(safe_history.document).empty());
 }
 
-TEST_CASE("lane migration rejects parsed BMS branch holds moved to another channel slot",
+namespace {
+auto conditional_hold_mapping(const chart_document_t& chart, lane_id_t source,
+    const lane_layout_t& target) -> std::vector<lane_migration_mapping_t> {
+    auto mapping = rank_mapping(chart, target);
+    const auto source_lane = std::ranges::find(chart.lane_layouts.front().layout.lanes, source,
+                                               &lane_definition_t::id);
+    REQUIRE(source_lane != chart.lane_layouts.front().layout.lanes.end());
+    const auto destination = std::ranges::find_if(target.lanes, [&](const auto& lane) {
+        return lane.bms_channels.long_note != source_lane->bms_channels.long_note;
+    });
+    REQUIRE(destination != target.lanes.end());
+    auto explicit_lane = std::ranges::find(mapping, source, &lane_migration_mapping_t::source_lane);
+    REQUIRE(explicit_lane != mapping.end());
+    explicit_lane->target_lane = destination->id;
+    return mapping;
+}
+void check_scoped_hold_lane(const document_history_t& history, chart_id_t chart, object_id_t hold,
+    lane_id_t destination) {
+    CHECK(history.document.read_chart(chart)->find_note(hold)->lane == destination);
+    CHECK(validate_document(history.document).empty());
+}
+}
+
+TEST_CASE("Scoped lane migration remaps conditional holds to explicit target channels",
           "[unit][core][lane-migration][bms][branch]") {
     constexpr std::string_view source =
         "#WAV01 key.wav\n#WAV02 key2.wav\n#RANDOM 2\n#IF 1\n#00051:0100\n#00051:0002\n"
@@ -585,26 +607,20 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
     REQUIRE(parsed.value.song.has_value());
-    const auto& chart = parsed.value.song->charts.front();
+    const auto& chart = *parsed.value.song->read_charts().front();
     const auto hold = std::ranges::find_if(chart.measures.front().notes, [](const auto& note) {
         return note.kind == note_kind_t::hold;
     });
     REQUIRE(hold != chart.measures.front().notes.end());
     auto target = make_bme_7k_profile();
-    const auto defaults = rank_mapping(chart, target.layout);
-    const auto source_lane = std::ranges::find(chart.lane_layouts.front().layout.lanes, hold->lane,
-                                               &lane_definition_t::id);
-    REQUIRE(source_lane != chart.lane_layouts.front().layout.lanes.end());
-    const auto destination = std::ranges::find_if(target.layout.lanes, [&](const auto& lane) {
-        return lane.bms_channels.long_note != source_lane->bms_channels.long_note;
-    });
-    REQUIRE(destination != target.layout.lanes.end());
-    auto mapping = defaults;
-    auto explicit_lane = std::ranges::find(mapping, hold->lane,
-                                           &lane_migration_mapping_t::source_lane);
-    REQUIRE(explicit_lane != mapping.end());
-    explicit_lane->target_lane = destination->id;
-    check_lane_issue(lane_migration_proposal_t::propose(*parsed.value.song, parsed.value.song->revision, chart.id, target, mapping), lane_migration_issue_t::unsupported_branch_identity);
+    const auto mapping = conditional_hold_mapping(chart, hold->lane, target.layout);
+    const auto destination = std::ranges::find(mapping, hold->lane,
+        &lane_migration_mapping_t::source_lane)->target_lane;
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision, chart.id, target, mapping);
+    REQUIRE(preview.value);
+    REQUIRE(apply_proposal(history, *preview.value, false));
+    check_scoped_hold_lane(history, chart.id, hold->id, *destination);
 }
 
 TEST_CASE("Sealed lane migration stamp changes stay tamper errors before staleness",

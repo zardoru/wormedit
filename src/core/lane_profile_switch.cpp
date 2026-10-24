@@ -261,7 +261,7 @@ auto apply_lane_profile_switch(document_history_t& history,
                                chart_id_t chart, local_position_t position,
                                const lane_layout_t& target) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto found = history.document.find_chart(chart);
+    const auto found = history.read_chart(chart);
     if (found == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "The selected difficulty is no longer available.");
         return result;

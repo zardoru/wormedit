@@ -1,3 +1,5 @@
+#include "formats/bms_writer_internal.h"
+#include "formats/bms_program_import_internal.h"
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
@@ -39,18 +41,18 @@ auto read_text(const std::filesystem::path& path) -> std::string {
 
 auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
     -> wormedit::bms_parse_outcome_t {
-    return wormedit::parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+    return wormedit::parse_bms_legacy_witness(std::as_bytes(std::span{source.data(), source.size()}),
                                      options);
 }
 
 auto fixture(std::string_view relative, wormedit::bms_parse_options_t options = {})
     -> wormedit::bms_parse_outcome_t {
     const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / relative);
-    return wormedit::parse_bms_bytes(bytes, std::move(options));
+    return wormedit::parse_bms_legacy_witness(bytes, std::move(options));
 }
 
 auto normalized_bms(const wormedit::song_document_t& song) -> wormedit::bms_write_outcome_t {
-    return wormedit::write_bms(
+    return wormedit::write_bms_legacy_witness(
         song, {.lane_profile_id = "bms-5k-outside-scratch",
               .preserve_unchanged_source = false,
               .output_encoding = wormedit::text_encoding_t::utf8});
@@ -1307,7 +1309,7 @@ TEST_CASE("BMS reader handles ASCII, BOM UTF-8, and caller-selected legacy codec
 
     const auto parse_with = [](std::string_view name, wormedit::text_encoding_t encoding) {
         const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / name);
-        return wormedit::parse_bms_bytes(bytes, {.encoding_override = encoding});
+        return wormedit::parse_bms_legacy_witness(bytes, {.encoding_override = encoding});
     };
     auto cp932 = parse_with("bms/encoding/cp932-shift-jis.bms", wormedit::text_encoding_t::cp932);
     if (wormedit::is_bms_text_encoding_supported(wormedit::text_encoding_t::cp932)) {
@@ -1350,7 +1352,7 @@ TEST_CASE("BMS reader handles ASCII, BOM UTF-8, and caller-selected legacy codec
 
     const auto ambiguous = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) /
                                        "bms/encoding/cp932-shift-jis.bms");
-    auto no_override = wormedit::parse_bms_bytes(ambiguous);
+    auto no_override = wormedit::parse_bms_legacy_witness(ambiguous);
     CHECK_FALSE(no_override.value.song.has_value());
     REQUIRE(no_override.value.encoding.original_bytes);
     CHECK(*no_override.value.encoding.original_bytes == ambiguous);
@@ -1370,7 +1372,7 @@ TEST_CASE("Malformed BOM UTF-8 and explicit legacy sequences fail without fallba
 
     const auto cp932_bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) /
                                          "bms/encoding/invalid-cp932-truncated-lead.bms");
-    auto invalid_cp932 = wormedit::parse_bms_bytes(
+    auto invalid_cp932 = wormedit::parse_bms_legacy_witness(
         cp932_bytes, {.encoding_override = wormedit::text_encoding_t::cp932});
     CHECK_FALSE(invalid_cp932.value.song.has_value());
     REQUIRE_FALSE(invalid_cp932.diagnostics.empty());
@@ -1383,7 +1385,7 @@ TEST_CASE("Malformed BOM UTF-8 and explicit legacy sequences fail without fallba
                                    std::byte{'#'},  std::byte{'T'},  std::byte{'I'},
                                    std::byte{'T'},  std::byte{'L'},  std::byte{'E'},
                                    std::byte{' '},  std::byte{0xe9}};
-    auto conflicting_override = wormedit::parse_bms_bytes(
+    auto conflicting_override = wormedit::parse_bms_legacy_witness(
         bom_bytes, {.encoding_override = wormedit::text_encoding_t::windows_1252});
     CHECK_FALSE(conflicting_override.value.song.has_value());
     CHECK(conflicting_override.diagnostics[0].code ==

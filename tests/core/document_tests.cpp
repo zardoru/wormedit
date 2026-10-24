@@ -1010,3 +1010,27 @@ TEST_CASE("Document pointer indexes preserve missing-key lookup contracts", "[co
     CHECK(index.find(asset_id_t{1}) == nullptr);
     CHECK_THROWS_AS(index.at(asset_id_t{1}), std::out_of_range);
 }
+
+namespace {
+void check_chart_reader(bool value) { CHECK(value); }
+}
+TEST_CASE("Borrowed chart reads follow document copies storage changes and explicit order", "[core][document][chart-reader]") {
+    auto song = make_valid_song();
+    const auto first = song.charts.front().id;
+    const auto views = song.read_charts();
+    check_chart_reader(views.size() == 1);
+    check_chart_reader(song.read_charts().data() == views.data());
+    auto copied = song;
+    check_chart_reader(copied.read_charts().front() == &copied.charts.front());
+    auto added = song.charts.front();
+    added.id = chart_id_t{98765};
+    song.charts.push_back(added);
+    check_chart_reader(song.read_charts().size() == 2);
+    song.chart_order = {added.id, first};
+    check_chart_reader(song.read_charts().front()->id == added.id);
+    std::swap(song.charts.front(), song.charts.back());
+    check_chart_reader(song.read_charts().front() == &song.charts.front());
+    song.chart_order.clear();
+    std::swap(song.charts.front(), song.charts.back());
+    check_chart_reader(song.read_charts().front()->id == first);
+}

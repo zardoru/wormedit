@@ -1,4 +1,5 @@
 #include <wormedit/core/bmson_lane_mode.h>
+#include <wormedit/core/bms_program_edit.h>
 #include "sys/project/workspace_view.h"
 #include "sys/resources/catalog_view.h"
 #include <charconv>
@@ -270,7 +271,7 @@ void populate_metadata_format_targets(const workspace_projection_context_t& proj
                                       const wormedit::workspace_metadata_view_t& tab,
                                       wormedit::ui::metadata_view_t& metadata) {
     const auto* selected = tab.selected_difficulty
-        ? projection.document.find_chart(tab.selected_difficulty->id) : nullptr;
+        ? projection.document.read_chart(tab.selected_difficulty->id) : nullptr;
     if (selected) metadata.selected_chart_source_family = selected->source_family;
     metadata.format_targets.clear();
     append_metadata_format_targets(metadata, projection.document.metadata.format_groups, false);
@@ -481,7 +482,8 @@ void populate_compose_sound_groups(const workspace_projection_context_t& project
     }
 }
 
-void populate_compose_sound_slots(const workspace_projection_context_t& projection) {
+void populate_compose_sound_slots(const workspace_projection_context_t& projection,
+                                  const chart_document_t* chart) {
     auto& view = projection.result.view.compose;
     const auto& request = projection.keysound_request;
     view.sound_slots_mode = view.keysound_ids_available && request.slots_mode;
@@ -490,12 +492,12 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
     const auto* identity = &projection.document;
     const auto stamp = document_stamp_t::from(projection.document);
     const auto& list = projection.result.compose.sound_slots_cache.get_or_build(
-        std::tie(identity, stamp, projection.result.query_session_generation, request.search,
+        std::tie(identity, stamp, projection.result.query_session_generation, chart, request.search,
                  request.selected_slot, request.first_row, request.row_limit, request.use_filter), [&] {
             return sound_slots_view_t::from(projection.document,
                 {.search = std::string{request.search}, .selected_slot = request.selected_slot,
                  .first_row = request.first_row, .row_limit = request.row_limit,
-                 .use_filter = request.use_filter});
+                 .use_filter = request.use_filter}, chart);
         });
     view.sound_slot_selected_number = request.selected_slot;
     view.sound_slot_selected_row = list.selected_row;
@@ -629,7 +631,10 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
                                 wormedit::chart_id_t chart_id) {
     auto& result = projection.result;
     auto& view = result.view.compose;
-    const auto chart = projection.document.find_chart(chart_id);
+    const auto* tab = std::get_if<workspace_compose_view_t>(&projection.source.tab_view);
+    const auto* owner = projection.document.find_bms_program(chart_id);
+    const auto* chart = owner && tab && tab->authoring_chart
+        ? owner->read_authoring_chart(*tab->authoring_chart) : projection.document.read_chart(chart_id);
     view.keysounds_available = chart != nullptr;
     if (!view.keysounds_available) {
         view.keysounds.clear(); view.keysound_selected_rows.clear();
@@ -672,7 +677,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     refill_keysound_metadata(view, list);
     refill_keysound_indices(view, list);
     populate_compose_sound_groups(projection);
-    populate_compose_sound_slots(projection);
+    populate_compose_sound_slots(projection, chart);
 }
 
 void populate_compose_branch_rows(frontend_workspace_view_t& result,
@@ -801,7 +806,7 @@ void populate_storyboard_tab(const workspace_projection_context_t& projection, c
 
 }
 void populate_sound_lane_modes(const workspace_projection_context_t& projection) {
-    const auto* chart = projection.document.find_chart(projection.result.view.selected_chart_id);
+    const auto* chart = projection.document.read_chart(projection.result.view.selected_chart_id);
     if (!chart || chart->source_family != format_family_t::bmson) return;
     const auto& bindings = projection.result.sound_lane_modes_cache.get_or_build(
         std::tuple{document_stamp_t::from(projection.document), chart->id, projection.result.query_session_generation}, [&] {
@@ -854,7 +859,7 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
 void build_sound_usage_position_label(std::string& label, const song_document_t& document,
                                       const sound_usage_row_t& row) {
     if (!row.position) { label = "Source clip"; return; }
-    const auto* chart = document.find_chart(row.chart);
+    const auto* chart = document.read_chart(row.chart);
     const auto* measure = chart ? chart->find_measure(row.position->measure) : nullptr;
     if (!measure) { label = "Unavailable position"; return; }
     std::array<char, 96> text{};
@@ -974,7 +979,8 @@ void frontend_workspace_view_t::reset() {
         view.setup, view.options, view.chart_import, view.notifications,
         view.metadata, view.audio_slices, view.timing, view.player_preview,
         view.compare.charts, view.compare.diagnostics,
-        view.playback_rates.entries, view.bms_encodings.entries, view.sound_kinds.entries,
+        view.playback_rates.entries, view.bms_encodings.entries, view.bms_lane_profiles.entries,
+        view.sound_kinds.entries,
         view.compose);
     view.compose.reset();
     view.setup.reset();
@@ -1088,6 +1094,7 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
     result.view.new_project_layouts = new_project_layout_view;
     result.view.playback_rates.refill(playback_rate_view);
     result.view.bms_encodings.refill(bms_encoding_view);
+    result.view.bms_lane_profiles.refill(bms_lane_profile_catalog_view);
     result.view.compose.timing_lanes.refill(timing_lane_view);
     result.view.compose.timing_lane_captions.refill(timing_caption_view);
     result.view.compose.note_palette.refill(note_palette_view);

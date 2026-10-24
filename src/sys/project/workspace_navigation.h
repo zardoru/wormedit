@@ -17,7 +17,7 @@ struct workspace_navigation_t {
         const workspace_controller_t& workspace,
         const std::optional<editor_interaction_state_t>& previous,
         chart_id_t chart_id, local_position_t position) -> std::optional<workspace_navigation_t> {
-        const auto* chart = history.document.find_chart(chart_id);
+        const auto* chart = history.read_chart(chart_id);
         if (!chart) return std::nullopt;
         auto candidate = previous;
         if (!candidate || candidate->chart != chart_id) {

@@ -1,4 +1,5 @@
 #pragma once
+#include "bms_profile_fixtures.h"
 #include <wormedit/formats/bms.h>
 #include <wormedit/core/rational.h>
 #include <catch2/catch_test_macros.hpp>
@@ -91,25 +92,6 @@ inline auto length_keys(const chart_document_t& chart) -> std::vector<rational_t
     for (const auto& measure : chart.measures) result.push_back(measure.definition.length);
     return result;
 }
-inline constexpr std::array profile_fixtures{
-        std::pair{"bms-5k-standard.bms", "bms-5k-outside-scratch"},
-        std::pair{"bms-5k-free-zone.bms", "bms-5k-outside-scratch-free-zone"},
-        std::pair{"bms-5k-foot-pedal.bms", "bms-5k-outside-scratch-foot-pedal"},
-        std::pair{"bms-10k-standard.bms", "bms-10k-left-outside-right-outside"},
-        std::pair{"bms-10k-free-zone.bms", "bms-10k-left-outside-right-outside-free-zone"},
-        std::pair{"bms-10k-foot-pedal.bms", "bms-10k-left-outside-right-outside-foot-pedal"},
-        std::pair{"bms-10k-scratchless.bms", "bms-10k-scratchless"},
-        std::pair{"bme-7k.bme", "bme-7k-outside-scratch"},
-        std::pair{"bme-7k-foot-pedal.bme", "bme-7k-outside-scratch-foot-pedal"},
-        std::pair{"bme-14k.bme", "bme-14k-left-outside-right-outside"},
-        std::pair{"bme-14k-foot-pedal.bme", "bme-14k-left-outside-right-outside-foot-pedal"},
-        std::pair{"pms-5button.pms", "pms-standard-5button"},
-        std::pair{"pms-9button.pms", "pms-standard-9button"},
-        std::pair{"pms-bme-9button.pms", "pms-bme-style-9button"},
-        std::pair{"pms-bme-18button.pms", "pms-bme-style-18button"},
-        std::pair{"double-scratch-fpp.bms", "bms-double-scratch-fpp"},
-        std::pair{"octave-foot-pedal.bms", "bms-octave-foot-pedal"},
-        std::pair{"project2dx-7k.bms", "project2dx-7k"}};
 inline constexpr auto scoped_source = "#TITLE Root\n#ARTIST Author\n#BPM 120\n#WAV01 common.wav\n#BMP01 scene.png\n#00011:01\n#00051:01\n"
     "#RANDOM 3\n#IF 1\n#WAV01 branch.wav\n#BPM01 150\n#BPM01 160\n#STOP01 192\n#SCROLL01 -0.5\n"
     "#00008:01\n#00009:01\n#000SC:01\n#00002:1.5\n#00001:0100\n#00001:0001\n; split Chart\n#TITLE A\n#00151:01\n"

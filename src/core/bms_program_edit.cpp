@@ -1,9 +1,12 @@
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/lane_migration.h>
 #include <wormedit/core/document_index.h>
 #include "lane_occupancy.h"
 #include "id_ceiling.h"
 #include "bms_native_content_internal.h"
+#include "chart_position_storage.h"
+#include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
 #include <limits>
@@ -151,47 +154,38 @@ auto find_native_event(const chart_document_t& chart, object_id_t id) -> std::op
     return result;
 }
 
-auto event_resource(const bms_native_event_t& event) -> std::optional<resource_id_t> {
-    return std::visit([](const auto& value) -> std::optional<resource_id_t> {
-        if constexpr (requires { value.sound; }) return value.sound;
-        else if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, bga_event_t>) return value.resource;
-        else return std::nullopt;
-    }, event);
-}
-
-auto content_reference(const bms_content_value_t& content) -> std::optional<bms_native_resource_reference_t> {
-    return std::visit([](const auto& value) -> std::optional<bms_native_resource_reference_t> {
-        using value_type = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<value_type, bms_native_content_t>) return value.resource_reference();
-        else if constexpr (std::same_as<value_type, bms_bga_content_t>)
-            return bms_native_resource_reference_t{.name_space = bms_resource_namespace_t::bmp, .identifier = value.bmp};
-        else if constexpr (std::same_as<value_type, bms_hold_endpoint_t>)
-            return bms_native_resource_reference_t{.identifier = value.wav};
-        else if constexpr (requires { value.wav; }) {
-            if (value.wav) return bms_native_resource_reference_t{.identifier = *value.wav};
-            return std::nullopt;
-        } else return std::nullopt;
-    }, content);
-}
-
 struct existing_event_normalizer_t {
     const bms_program_document_t& program;
     const chart_document_t& original;
     const chart_document_t& geometry;
 
     auto identifier(resource_id_t resource, bms_resource_namespace_t name_space) const -> std::optional<std::string> {
-        const auto* entry = program.read_resource(resource);
-        if (!entry) return std::nullopt;
+        const auto projection = program.build_projection(original.bms_authoring_chart);
+        if (!projection.value) return std::nullopt;
+        const auto& resources = projection.value->song().resources;
+        const auto entry = std::ranges::find(resources, resource, &resource_entry_t::id);
+        if (entry == resources.end()) return std::nullopt;
         const auto name = name_space == bms_resource_namespace_t::wav ? "WAV" : "BMP";
         for (const auto& identity : entry->target_identities)
             if (identity.family == format_family_t::bms && identity.namespace_name == name) return identity.identifier;
         return std::nullopt;
     }
+    auto native(const bms_native_event_t& event,
+        std::optional<bms_native_resource_reference_t> reference = {}) const -> std::optional<bms_native_content_t> {
+        if (!reference) {
+            const auto resource = event_resource(event);
+            const auto ns = std::holds_alternative<bga_event_t>(event)
+                ? bms_resource_namespace_t::bmp : bms_resource_namespace_t::wav;
+            const auto binding = resource ? identifier(*resource, ns) : std::nullopt;
+            if (binding) reference = bms_native_resource_reference_t{.name_space = ns, .identifier = *binding};
+        }
+        return bms_native_content_t::from(event, geometry, std::move(reference));
+    }
     auto fallback(const bms_content_value_t& before, const bms_native_event_t& after,
         const std::optional<bms_native_event_t>& previous) const -> std::optional<bms_content_value_t> {
-        auto reference = content_reference(before);
+        auto reference = bms_content_item_t{.value = before}.resource_identifier();
         if (!previous || event_resource(*previous) != event_resource(after)) reference.reset();
-        const auto value = bms_native_content_t::from(after, geometry, std::move(reference));
+        const auto value = native(after, std::move(reference));
         if (!value) return std::nullopt;
         return *value;
     }
@@ -208,7 +202,7 @@ struct existing_event_normalizer_t {
         if (after.kind != note_kind_t::mine) value.mine_value.reset();
         if (event_resource(previous) != after.sound) {
             value.wav = after.sound ? identifier(*after.sound, bms_resource_namespace_t::wav) : std::nullopt;
-            if (after.sound && !value.wav) return std::nullopt;
+            if (after.sound && !value.wav) return fallback(before, after, previous);
         }
         return value;
     }
@@ -219,12 +213,13 @@ struct existing_event_normalizer_t {
             return fallback(before, after, previous);
         const auto position = bms_program_position_t::from(after.position, geometry);
         if (!position) return std::nullopt;
+        if (*position != before.position) return fallback(before, after, previous);
         auto value = before;
         value.position = *position;
         value.semantic_layers = after.semantic_layers;
         if (old->sound != after.sound) {
             value.wav = after.sound ? identifier(*after.sound, bms_resource_namespace_t::wav) : std::nullopt;
-            if (after.sound && !value.wav) return std::nullopt;
+            if (after.sound && !value.wav) return fallback(before, after, previous);
         }
         return value;
     }
@@ -237,7 +232,7 @@ struct existing_event_normalizer_t {
         value.kind = after.kind;
         if (event_resource(previous) != after.resource) {
             const auto reference = identifier(after.resource, bms_resource_namespace_t::bmp);
-            if (!reference) return std::nullopt;
+            if (!reference) return fallback(before, after, previous);
             value.bmp = *reference;
         }
         return value;
@@ -311,6 +306,13 @@ auto resolve_object_target(const song_document_t& document, chart_id_t difficult
     return target;
 }
 
+auto has_same_native_positions(const chart_document_t& original, const chart_document_t& edited,
+    const bms_native_event_t& event) -> bool {
+    const auto before = bms_native_content_t::from(event, original);
+    const auto after = bms_native_content_t::from(event, edited);
+    return before && after && std::ranges::equal(before->positions(), after->positions());
+}
+
 struct native_batch_builder_t {
     const bms_program_document_t& program;
     const chart_document_t& original;
@@ -379,7 +381,7 @@ struct native_batch_builder_t {
     }
     void update(object_id_t id, const bms_native_event_t& event) {
         const auto previous = find_native_event(original, id);
-        if (previous && *previous == event) return;
+        if (previous && *previous == event && has_same_native_positions(original, edited, event)) return;
         const auto& items = std::get<bms_chart_content_t>(program.prepared().program.find(batch.target.chart)->value).items;
         const auto found = std::ranges::find(items, id, &bms_content_item_t::id);
         if (found != items.end())
@@ -391,10 +393,38 @@ struct native_batch_builder_t {
         else batch.edits.push_back(bms_program_content_update_t{.owner = owner(id), .value = *value});
     }
     void insert(object_id_t id, const bms_native_event_t& event) {
-        const auto value = bms_native_content_t::from(event, edited);
+        const auto value = existing_event_normalizer_t{program, original, edited}.native(event);
         if (!value) diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
             "Scoped insertion requires exact measure positions."));
         else batch.edits.push_back(bms_program_content_insert_t{.item = {.id = id, .value = *value}});
+    }
+    void edit_existing(std::span<const object_id_t> objects, bms_existing_edit_kind_t kind) {
+        for (const auto id : objects) {
+            if (kind == bms_existing_edit_kind_t::erase) { erase(id); continue; }
+            const auto event = find_native_event(edited, id);
+            if (!event) {
+                diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+                    "Scoped operation did not produce its named event.", id));
+                return;
+            }
+            update(id, *event);
+        }
+        complete_endpoints();
+    }
+    void edit_event(std::optional<object_id_t> existing, std::optional<object_id_t> inserted,
+                    const std::optional<bms_native_event_t>& event) {
+        if (existing) {
+            if (event) update(*existing, *event);
+            else erase(*existing);
+            complete_endpoints();
+            return;
+        }
+        if (!inserted || !event) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                "Scoped insertion has no event or available identity."));
+            return;
+        }
+        insert(*inserted, *event);
     }
     void complete_endpoints() {
         std::vector<object_id_t> affected;
@@ -559,6 +589,13 @@ auto has_changed_cross_owner_hold(const bms_program_document_t& before,
     return false;
 }
 
+auto validate_scoped_projection(song_document_t song) -> diagnostic_list_t {
+    // Cross-difficulty associations are validated against the complete project.
+    for (auto& chart : song.charts) chart.timing_links = {};
+    for (auto& resource : song.resources) resource.sound_group.reset();
+    return validate_document(song);
+}
+
 auto validate_evaluation(const bms_program_document_t* previous,
     const bms_program_document_t& owner, bms_program_evaluation_t evaluation) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
@@ -584,20 +621,21 @@ auto validate_evaluation(const bms_program_document_t* previous,
         diagnostics.push_back(error(diagnostic_code_t::dangling_resource,
             "Scoped edit would introduce an unresolved resource or timing reference.", diagnostic.item));
     }
-    auto validation = validate_document(projection.value->song());
+    auto validation = validate_scoped_projection(projection.value->song());
     diagnostics.insert(diagnostics.end(), validation.begin(), validation.end());
     return diagnostics;
 }
 } // namespace
 
 auto bms_program_document_t::read_chart() const -> const chart_document_t* {
-    if (!view_) {
+    std::call_once(playback_once_, [this] {
         const auto projection = build_projection();
-        if (!projection.value || !projection.ok()) return nullptr;
+        if (!projection.value || !projection.ok()) return;
         view_ = projection.value->song();
         view_->charts.front().id = difficulty_;
-    }
-    return &view_->charts.front();
+        playback_resources_ = document_id_index_t<resource_entry_t>::from(view_->resources);
+    });
+    return view_ ? &view_->charts.front() : nullptr;
 }
 
 auto bms_program_document_t::read_authoring_chart(branch_id_t chart) const -> const chart_document_t* {
@@ -607,8 +645,22 @@ auto bms_program_document_t::read_authoring_chart(branch_id_t chart) const -> co
         auto song = projection.value->song();
         song.charts.front().id = difficulty_;
         authoring_view_ = std::pair{chart, std::move(song)};
+        authoring_resources_ = document_id_index_t<resource_entry_t>::from(authoring_view_->second.resources);
     }
     return &authoring_view_->second.charts.front();
+}
+
+auto bms_program_document_t::read_catalog(std::optional<branch_id_t> authoring_chart) const
+    -> const song_document_t* {
+    if (authoring_chart)
+        return read_authoring_chart(*authoring_chart) ? &authoring_view_->second : nullptr;
+    return read_chart() ? &*view_ : nullptr;
+}
+
+auto bms_program_document_t::read_bound_resource(resource_id_t id,
+    std::optional<branch_id_t> authoring_chart) const -> const resource_entry_t* {
+    if (!read_catalog(authoring_chart)) return nullptr;
+    return authoring_chart ? authoring_resources_.find(id) : playback_resources_.find(id);
 }
 
 auto bms_program_document_t::read_resource(resource_id_t id) const -> const resource_entry_t* {
@@ -635,6 +687,159 @@ auto bms_program_document_t::from(chart_id_t difficulty, bms_prepared_program_t 
     auto projection = candidate->build_projection();
     if (!projection.value || !projection.ok()) return {.diagnostics = std::move(projection.diagnostics)};
     return {.value = std::move(candidate), .diagnostics = std::move(projection.diagnostics)};
+}
+
+namespace {
+struct fresh_program_builder_t {
+    const chart_document_t& chart;
+    std::uint64_t next;
+    bool valid{true}, initial_bpm{};
+    bms_chart_content_t body;
+    std::vector<measure_id_t> measures;
+    std::map<std::uint64_t, std::uint64_t> measure_ids, object_ids, recipe_ids, column_ids, layer_ids, child_ids;
+    std::vector<bgm_source_lane_t> columns;
+    std::vector<semantic_layer_t> layers;
+    std::vector<sound_layer_default_t> defaults;
+
+    auto allocate() -> object_id_t {
+        if (!next || next == UINT64_MAX) { valid = false; return {}; }
+        return object_id_t{next++};
+    }
+    template<class Id> void mapped(Id& id, const std::map<std::uint64_t, std::uint64_t>& ids) {
+        const auto found = ids.find(id.value);
+        if (found == ids.end()) valid = false;
+        else id.value = found->second;
+    }
+    void geometry() {
+        for (const auto& measure : chart.measures) {
+            const auto id = measure_id_t{allocate().value};
+            if (!measure_ids.emplace(measure.id.value, id.value).second) valid = false;
+            measures.push_back(id);
+            body.items.push_back({.id = allocate(), .value = bms_measure_length_t{
+                .measure = id, .length = measure.definition.length, .meter = measure.definition.meter}});
+        }
+    }
+    void pools() {
+        columns = chart.bgm_source_lanes;
+        for (auto& column : columns) {
+            const auto old = column.id;
+            column.id = allocate();
+            if (!column_ids.emplace(old.value, column.id.value).second) valid = false;
+        }
+        layers = chart.semantic_layers;
+        for (auto& layer : layers) {
+            const auto old = layer.id;
+            layer.id = layer_id_t{allocate().value};
+            if (!layer_ids.emplace(old.value, layer.id.value).second) valid = false;
+        }
+        defaults = chart.sound_layer_defaults;
+        for (auto& entry : defaults)
+            for (auto& id : entry.layers) mapped(id, layer_ids);
+        for (const auto& channel : chart.sound_channels) {
+            child_ids.emplace(channel.source_clip.id.value, allocate().value);
+            for (const auto& event : channel.events) child_ids.emplace(event.id.value, allocate().value);
+        }
+    }
+    template<class Event> void references(Event& event) {
+        if constexpr (requires { event.semantic_layers; })
+            for (auto& id : event.semantic_layers) mapped(id, layer_ids);
+        if constexpr (requires { event.source_lane; }) mapped(event.source_lane, column_ids);
+        if constexpr (requires { event.sound_channel_event; })
+            if (event.sound_channel_event) mapped(*event.sound_channel_event, child_ids);
+        if constexpr (std::same_as<Event, sound_channel_t>) {
+            mapped(event.source_clip.id, child_ids);
+            for (auto& child : event.events) mapped(child.id, child_ids);
+        }
+    }
+    template<class Event> void event(const Event& event) {
+        const auto id = allocate();
+        auto& identities = std::same_as<Event, sv_recipe_t> ? recipe_ids : object_ids;
+        if (!identities.emplace(event.id.value, id.value).second) valid = false;
+        if constexpr (std::same_as<Event, bpm_event_t>) {
+            if (!initial_bpm && event.position == local_position_t{chart.measures.front().id, 0}) {
+                initial_bpm = true;
+                body.items.push_back({.id = id, .value = bms_timing_definition_t{.value = event.beats_per_minute}});
+                return;
+            }
+        }
+        auto detached = event;
+        references(detached);
+        auto native = bms_native_content_t::from(std::move(detached), chart);
+        if (!native) { valid = false; return; }
+        auto positions = std::vector<bms_program_position_t>(native->positions().begin(), native->positions().end());
+        for (auto& position : positions) mapped(position.measure, measure_ids);
+        auto value = bms_native_content_t::from(native->payload(), std::move(positions), native->resource_reference());
+        if (!value) valid = false;
+        else body.items.push_back({.id = id, .value = std::move(*value)});
+    }
+    template<class Events> void events(const Events& values) { for (const auto& value : values) event(value); }
+    auto links() -> timing_links_t {
+        auto result = chart.timing_links;
+        for (auto& link : result.categories) {
+            if (!link) continue;
+            for (auto& identity : link->objects) mapped(identity.target, object_ids);
+            for (auto& identity : link->recipes) mapped(identity.target, recipe_ids);
+            for (auto& identity : link->measures) mapped(identity.target, measure_ids);
+        }
+        return result;
+    }
+};
+auto is_empty_creation_chart(const chart_document_t& chart) -> bool {
+    return !chart.measures.empty() && chart.lane_layouts.size() == 1 && !chart.bms_control_tree &&
+        chart.bga_events.empty() && chart.sound_channels.empty() && chart.semantic_layers.empty() &&
+        chart.sound_layer_defaults.empty() && chart.bookmarks.empty() && chart.sections.empty() &&
+        std::ranges::none_of(chart.measures, [](const auto& measure) {
+            return !measure.notes.empty() || !measure.bgm_events.empty();
+        });
+}
+}
+auto bms_program_document_t::from_empty_chart(const chart_document_t& chart, object_id_t first_id)
+    -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t> {
+    if (!first_id || !is_empty_creation_chart(chart)) return {.diagnostics = {{.code = failure_code_t::invalid_request,
+        .message = "Fresh scoped creation requires an empty chart with one initial layout."}}};
+    return from_native_chart(chart, {}, first_id);
+}
+auto bms_program_document_t::from_native_chart(const chart_document_t& chart,
+    const song_document_t& catalog, object_id_t first_id)
+    -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t> {
+    if (!first_id || chart.measures.empty() || chart.lane_layouts.size() > 1 || chart.bms_control_tree)
+        return {.diagnostics = {{.code = failure_code_t::invalid_request,
+            .message = "Native migration requires a single static layout and no retained control graph."}}};
+    fresh_program_builder_t build{.chart = chart, .next = first_id.value};
+    const auto root = branch_id_t{build.allocate().value};
+    const auto content = branch_id_t{build.allocate().value};
+    build.geometry();
+    build.pools();
+    for (const auto& measure : chart.measures) {
+        build.events(measure.notes);
+        build.events(measure.bgm_events);
+    }
+    build.events(chart.bga_events); build.events(chart.bookmarks); build.events(chart.sections);
+    build.events(chart.sound_channels);
+    build.events(chart.bpms); build.events(chart.pauses); build.events(chart.warps);
+    build.events(chart.scrolls); build.events(chart.speeds); build.events(chart.kiai);
+    build.events(chart.timing_anchors); build.events(chart.sv_recipes);
+    if (chart.beat_zero_audio_offset_seconds.numerator)
+        build.body.items.push_back({.id = build.allocate(), .value = bms_metadata_declaration_t{
+            .field = bms_metadata_field_t::offset, .value = chart.beat_zero_audio_offset_seconds}});
+    auto links = build.links();
+    const auto layout = build.allocate();
+    if (!build.valid) return {.diagnostics = {{.code = failure_code_t::capacity_exceeded,
+        .message = "Fresh scoped identities or exact timing mappings are unavailable."}}};
+    auto program = bms_program_t::from({{.id = root, .value = bms_root_scope_t{}, .children = {content}},
+        {.id = content, .value = std::move(build.body)}});
+    if (!program) return {.diagnostics = {{.code = program.error().code, .message = program.error().message}}};
+    std::optional<lane_input_profile_t> profile;
+    if (!chart.lane_layouts.empty()) profile = lane_input_profile_t{
+        .layout = chart.lane_layouts.front().layout, .input = chart.input_profile};
+    auto prepared = bms_prepared_program_t{.program = std::move(*program), .measures = std::move(build.measures),
+        .lane_profile = std::move(profile),
+        .bgm_columns = std::move(build.columns), .semantic_layers = std::move(build.layers),
+        .sound_layer_defaults = std::move(build.defaults),
+        .settings = {.name = chart.metadata.name, .author = chart.metadata.author, .rating = chart.metadata.rating,
+            .overrides = chart.metadata.overrides, .divisions_per_standard_measure = chart.divisions_per_standard_measure,
+            .layout_segment = layout, .timing_links = std::move(links), .show_empty_bgm_columns = true}};
+    return from(chart.id, prepared.with_catalog(catalog));
 }
 
 auto bms_program_edit_target_t::from(const song_document_t& document,
@@ -739,11 +944,9 @@ auto document_command_transaction_t::stage(const bms_program_content_edit_batch_
         auto program = bms_program_t::from(std::move(nodes));
         if (!program) return {.diagnostics = {error(diagnostic_code_t::invalid_id, program.error().message)}};
         if (*program == (*owner)->prepared().program) return {.value = document_edit_effect_t{}};
-        auto prepared = bms_prepared_program_t{.program = std::move(*program),
-            .measures = source.measures, .lane_profile = source.lane_profile,
-            .bgm_columns = source.bgm_columns, .resources = source.resources,
-            .audio_assets = source.audio_assets, .visual_assets = source.visual_assets,
-            .semantic_layers = source.semantic_layers, .sound_layer_defaults = source.sound_layer_defaults};
+        auto prepared = source;
+        prepared.program = std::move(*program);
+        prepared = prepared.with_catalog(document);
         auto proposed = std::shared_ptr<const bms_program_document_t>(new bms_program_document_t(
             (*owner)->difficulty(), std::move(prepared), (*owner)->evaluation()));
         const auto destination = std::ranges::find_if(document.prepared_bms_programs,
@@ -773,7 +976,7 @@ auto validate_prepared_bms_programs(const song_document_t& document) -> diagnost
                 diagnostic_code_t::invalid_binding, "Prepared scoped projection failed."));
             continue;
         }
-        auto validation = validate_document(projection.value->song());
+        auto validation = validate_scoped_projection(projection.value->song());
         diagnostics.insert(diagnostics.end(), validation.begin(), validation.end());
     }
     return diagnostics;
@@ -800,6 +1003,258 @@ auto validate_bms_program_publication(const song_document_t& before,
     return diagnostics;
 }
 
+namespace {
+auto has_unchanged_measure_prefix(const chart_document_t& before, const chart_document_t& after) -> bool {
+    if (after.measures.size() < before.measures.size() || after.divisions_per_standard_measure != before.divisions_per_standard_measure) return false;
+    for (std::size_t index = 0; index < before.measures.size(); ++index)
+        if (before.measures[index].id != after.measures[index].id || before.measures[index].definition != after.measures[index].definition) return false;
+    return true;
+}
+auto remap_extent_event(const bms_native_event_t& event, const chart_document_t& before,
+    const chart_document_t& after, const std::map<measure_id_t, measure_id_t>& ids) -> std::optional<bms_native_event_t> {
+    const auto native = bms_native_content_t::from(event, before);
+    if (!native) return {};
+    auto positions = std::vector<bms_program_position_t>(native->positions().begin(), native->positions().end());
+    for (auto& position : positions)
+        if (const auto found = ids.find(position.measure); found != ids.end()) position.measure = found->second;
+    const auto remapped = bms_native_content_t::from(native->payload(), std::move(positions), native->resource_reference());
+    const auto id = std::visit([](const auto& value) { return object_id_t{value.id.value}; }, event);
+    return remapped ? remapped->build_event(id, after) : std::nullopt;
+}
+auto stage_scoped_extent(document_command_transaction_t& transaction, chart_id_t difficulty,
+    const chart_document_t& original, chart_document_t& edited, std::optional<bms_native_event_t>* event = nullptr)
+    -> attempt_t<document_edit_effect_t> {
+    if (!has_unchanged_measure_prefix(original, edited)) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+        "This scoped content command cannot replace shared measure geometry.")}};
+    if (edited.measures.size() == original.measures.size()) return {.value = document_edit_effect_t{}};
+    const auto count = edited.measures.size() - original.measures.size();
+    const auto first = transaction.next_bms_program_item_id(count);
+    if (!first) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped measure identities are exhausted.")}};
+    std::map<measure_id_t, measure_id_t> ids;
+    for (std::size_t index = original.measures.size(); index < edited.measures.size(); ++index) {
+        const auto& measure = edited.measures[index];
+        if (measure.definition.length != rational_t{1, 1}) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Virtual scoped measures must use the shared default length.")}};
+        if (!ids.emplace(measure.id, measure_id_t{first->value + index - original.measures.size()}).second)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped measure identities are ambiguous.")}};
+    }
+    const auto previous = edited;
+    for_each_chart_position(edited, [&](local_position_t& position, measure_chart_end_policy_t) {
+        if (const auto found = ids.find(position.measure); found != ids.end()) position.measure = found->second;
+    });
+    for (auto& measure : edited.measures)
+        if (const auto found = ids.find(measure.id); found != ids.end()) measure.id = found->second;
+    if (event && *event) {
+        *event = remap_extent_event(**event, previous, edited, ids);
+        if (!*event) return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped event cannot use the extended geometry exactly.")}};
+    }
+    return transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        const auto* source = document.find_bms_program(difficulty);
+        auto prepared = source->prepared();
+        for (std::size_t index = original.measures.size(); index < edited.measures.size(); ++index)
+            prepared.measures.push_back(edited.measures[index].id);
+        auto replacement = bms_program_document_t::from(difficulty, std::move(prepared), source->evaluation());
+        if (!replacement.value || !replacement.ok()) return {.diagnostics = {error(diagnostic_code_t::invalid_measure,
+            "The shared scoped extent cannot be extended without changing an existing outcome.")}};
+        const auto destination = std::ranges::find_if(document.prepared_bms_programs,
+            [&](const auto& owner) { return owner.get() == source; });
+        *destination = std::move(*replacement.value);
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Extend scoped measures"}};
+    });
+}
+}
+
+auto document_command_transaction_t::stage_bms_measure_extent(chart_id_t difficulty, std::size_t count)
+    -> attempt_t<document_edit_effect_t> {
+    const auto* view = read_chart(difficulty);
+    if (!view || !has_bms_program(difficulty) || count > bms_addressable_measure_count)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped extent exceeds the BMS measure range.")}};
+    if (count <= view->measures.size()) return {.value = document_edit_effect_t{}};
+    const auto original = *view;
+    auto edited = original;
+    const auto first = next_bms_program_item_id(count - edited.measures.size());
+    if (!first) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped measure identities are exhausted.")}};
+    while (edited.measures.size() < count) edited.measures.push_back({.id = measure_id_t{
+        first->value + edited.measures.size() - original.measures.size()}});
+    return stage_scoped_extent(*this, difficulty, original, edited);
+}
+
+namespace {
+auto native_event_map(const chart_document_t& chart) -> std::map<object_id_t, bms_native_event_t> {
+    std::map<object_id_t, bms_native_event_t> result;
+    auto include = [&](const auto& values) { for (const auto& value : values) result.emplace(object_id_t{value.id.value}, value); };
+    for (const auto& measure : chart.measures) { include(measure.notes); include(measure.bgm_events); }
+    [&]<std::size_t... Index>(std::index_sequence<Index...>) {
+        ([&] {
+            using value_t = std::variant_alternative_t<Index, bms_native_event_t>;
+            if constexpr (!std::same_as<value_t, note_t> && !std::same_as<value_t, bgm_event_t>)
+                include(chart.*bms_native_collection_t<value_t>::member);
+        }(), ...);
+    }(std::make_index_sequence<std::variant_size_v<bms_native_event_t>>{});
+    return result;
+}
+
+void remap_new_geometry_measures(const chart_document_t& before, chart_document_t& after, std::uint64_t& next) {
+    std::map<measure_id_t, measure_id_t> replacements;
+    for (auto& measure : after.measures)
+        if (!before.find_measure(measure.id)) replacements.emplace(measure.id, measure_id_t{next++});
+    for_each_chart_position(after, [&](local_position_t& position, measure_chart_end_policy_t) {
+        if (const auto found = replacements.find(position.measure); found != replacements.end()) position.measure = found->second;
+    });
+    for (auto& measure : after.measures)
+        if (const auto found = replacements.find(measure.id); found != replacements.end()) measure.id = found->second;
+}
+
+struct structure_program_builder_t {
+    const bms_program_document_t& owner;
+    const chart_document_t& before;
+    const chart_document_t& after;
+    std::uint64_t next;
+    std::vector<bms_program_node_t> nodes;
+    diagnostic_list_t diagnostics;
+
+    void update_chart(bms_program_node_t& node, bms_chart_content_t& chart) {
+        native_batch_builder_t builder{.program = owner, .original = before, .edited = after,
+            .batch = {.target = {.difficulty = owner.difficulty(), .scope = *owner.prepared().program.parent(node.id),
+                .chart = node.id}}};
+        for (const auto& item : chart.items) {
+            if (!find_native_event(before, item.id)) continue;
+            const auto event = find_native_event(after, item.id);
+            if (event) builder.update(item.id, *event);
+            else builder.erase(item.id);
+        }
+        builder.complete_endpoints();
+        if (!builder.diagnostics.empty()) { diagnostics = std::move(builder.diagnostics); return; }
+        const std::set<object_id_t> cross_owner;
+        content_editor_t editor{.target = builder.batch.target, .items = chart.items, .cross_owner = cross_owner, .reserved_through = next - 1};
+        for (const auto& edit : builder.batch.edits) std::visit(editor, edit);
+        diagnostics.insert(diagnostics.end(), editor.diagnostics.begin(), editor.diagnostics.end());
+        std::erase_if(chart.items, [](const auto& item) { return std::holds_alternative<bms_measure_length_t>(item.value); });
+    }
+    void append_geometry(bms_chart_content_t& chart) {
+        for (const auto& measure : after.measures)
+            chart.items.push_back({.id = object_id_t{next++}, .value = bms_measure_length_t{
+                .measure = measure.id, .length = measure.definition.length, .meter = measure.definition.meter}});
+    }
+    void append_new_events(bms_chart_content_t& chart) {
+        existing_event_normalizer_t normalizer{owner, before, after};
+        for (const auto& [id, event] : native_event_map(after)) {
+            if (find_native_event(before, id)) continue;
+            const auto content = normalizer.native(event);
+            if (!content) { diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                "New structural content requires exact positions.")); return; }
+            chart.items.push_back({.id = object_id_t{next++}, .value = *content});
+        }
+    }
+    auto build() -> result_t<bms_prepared_program_t, diagnostic_list_t> {
+        for (auto& node : nodes)
+            if (auto* chart = std::get_if<bms_chart_content_t>(&node.value)) update_chart(node, *chart);
+        if (!diagnostics.empty()) return std::unexpected(std::move(diagnostics));
+        const auto root_chart = *owner.prepared().program.target_chart(owner.prepared().program.root());
+        auto& chart = std::get<bms_chart_content_t>(std::ranges::find(nodes, root_chart, &bms_program_node_t::id)->value);
+        append_geometry(chart);
+        append_new_events(chart);
+        if (!diagnostics.empty()) return std::unexpected(std::move(diagnostics));
+        auto program = bms_program_t::from(std::move(nodes));
+        if (!program) return std::unexpected(diagnostic_list_t{error(diagnostic_code_t::invalid_id, program.error().message)});
+        auto prepared = owner.prepared();
+        prepared.program = std::move(*program);
+        prepared.measures.clear();
+        for (const auto& measure : after.measures) prepared.measures.push_back(measure.id);
+        prepared.settings.divisions_per_standard_measure = after.divisions_per_standard_measure;
+        if (!after.lane_layouts.empty()) {
+            prepared.lane_profile = lane_input_profile_t{after.lane_layouts.front().layout, after.input_profile};
+            if (!prepared.settings.layout_segment) prepared.settings.layout_segment = object_id_t{next++};
+        }
+        return prepared;
+    }
+};
+}
+
+namespace {
+struct lane_program_mapper_t {
+    std::unordered_map<std::uint64_t, lane_id_t> mapping;
+    bool valid{true};
+    void lane(lane_id_t& id) {
+        const auto found = mapping.find(id.value);
+        if (found == mapping.end() || !found->second) { valid = false; return; }
+        id = found->second;
+    }
+    auto content(bms_content_value_t value) -> bms_content_value_t {
+        return std::visit([&](auto item) -> bms_content_value_t {
+            using value_t = std::remove_cvref_t<decltype(item)>;
+            if constexpr (std::same_as<value_t, bms_native_content_t>) {
+                auto payload = item.payload();
+                std::visit([&](auto& event) {
+                    using event_t = std::remove_cvref_t<decltype(event)>;
+                    if constexpr (std::same_as<event_t, note_t>) lane(event.lane);
+                    else if constexpr (std::same_as<event_t, sound_channel_t>)
+                        for (auto& point : event.events) lane(point.lane);
+                }, payload);
+                return *bms_native_content_t::from(std::move(payload),
+                    {item.positions().begin(), item.positions().end()}, item.resource_reference());
+            } else if constexpr (requires { item.lane; }) lane(item.lane);
+            return item;
+        }, std::move(value));
+    }
+};
+}
+
+auto document_command_transaction_t::stage_bms_lane_profile(chart_id_t difficulty, lane_input_profile_t profile,
+    std::span<const lane_migration_mapping_t> mapping) -> attempt_t<document_edit_effect_t> {
+    return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        const auto* owner = document.find_bms_program(difficulty);
+        if (!owner) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped lane profile has no owner.")}};
+        auto prepared = owner->prepared();
+        lane_program_mapper_t mapper;
+        for (const auto& entry : mapping) mapper.mapping.emplace(entry.source_lane.value, entry.target_lane.value_or(lane_id_t{}));
+        auto nodes = std::vector<bms_program_node_t>(prepared.program.nodes().begin(), prepared.program.nodes().end());
+        for (auto& node : nodes)
+            if (auto* chart = std::get_if<bms_chart_content_t>(&node.value))
+                for (auto& item : chart->items) item.value = mapper.content(std::move(item.value));
+        if (!mapper.valid) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Scoped lane migration requires a complete mapping for every active and inactive authored lane; dropping inactive content is unavailable.")}};
+        auto program = bms_program_t::from(std::move(nodes));
+        if (!program) return {.diagnostics = {error(diagnostic_code_t::invalid_id, program.error().message)}};
+        prepared.program = std::move(*program);
+        prepared.lane_profile = std::move(profile);
+        const auto destination = std::ranges::find_if(document.prepared_bms_programs,
+            [&](const auto& entry) { return entry.get() == owner; });
+        *destination = std::shared_ptr<const bms_program_document_t>(new bms_program_document_t(
+            difficulty, std::move(prepared), owner->evaluation()));
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Edit scoped lane profile"}};
+    });
+}
+
+auto document_command_transaction_t::stage_bms_structure_edit(chart_id_t difficulty,
+    const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+    -> attempt_t<document_edit_effect_t> {
+    return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        const auto* owner = document.find_bms_program(difficulty);
+        if (!owner || owner->prepared().program.has_control_flow()) return {.diagnostics = {error(
+            diagnostic_code_t::unsupported_feature, "Shared structure edits require an unconditional scoped difficulty.")}};
+        const auto* before = owner->read_chart();
+        if (!before) return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped structure has no complete playback view.")}};
+        auto after = *before;
+        const auto result = edit(after);
+        if (!result.value || !result.ok() || !result.value->changed) return result;
+        if (after.measures.empty() || after.measures.size() > bms_addressable_measure_count || after.lane_layouts.size() > 1)
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature, "Scoped structure requires one static layout and a bounded measure extent.")}};
+        const auto first = next_bms_program_item_id(after.measures.size() * 2 + native_event_map(after).size() + 1);
+        if (!first) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped structural identities are exhausted.")}};
+        auto next = first->value;
+        remap_new_geometry_measures(*before, after, next);
+        auto prepared = structure_program_builder_t{.owner = *owner, .before = *before, .after = after,
+            .next = next, .nodes = {owner->prepared().program.nodes().begin(), owner->prepared().program.nodes().end()}}.build();
+        if (!prepared) return {.diagnostics = std::move(prepared.error())};
+        const auto destination = std::ranges::find_if(document.prepared_bms_programs,
+            [&](const auto& entry) { return entry.get() == owner; });
+        *destination = std::shared_ptr<const bms_program_document_t>(new bms_program_document_t(
+            difficulty, std::move(*prepared), owner->evaluation()));
+        return result;
+    });
+}
+
 auto document_command_transaction_t::stage_bms_native_objects(chart_id_t difficulty,
     std::span<const object_id_t> objects, bms_existing_edit_kind_t kind,
     const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
@@ -808,24 +1263,19 @@ auto document_command_transaction_t::stage_bms_native_objects(chart_id_t difficu
         if (objects.empty()) return {.value = document_edit_effect_t{}};
         const auto target = resolve_object_target(document, difficulty, objects, bms_target_);
         if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
-        const auto* program = document.find_bms_program(difficulty);
+        const auto source_owner = *std::ranges::find_if(document.prepared_bms_programs,
+            [&](const auto& owner) { return owner->difficulty() == difficulty; });
+        const auto* program = source_owner.get();
         const auto* original = target->authoring ? program->read_authoring_chart(target->chart) : program->read_chart();
         if (!original) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped edit has no playable source.")}};
         auto chart = *original;
         const auto staged = edit(chart);
         if (!staged.value || !staged.ok() || !staged.value->changed) return staged;
+        const auto extent = stage_scoped_extent(*this, difficulty, *original, chart);
+        if (!extent.value || !extent.ok()) return extent;
         native_batch_builder_t builder{.program = *program, .original = *original, .edited = chart,
             .batch = {.target = *target, .label = staged.value->command_label}};
-        for (const auto id : objects) {
-            if (kind == bms_existing_edit_kind_t::erase) builder.erase(id);
-            else {
-                const auto event = find_native_event(chart, id);
-                if (!event) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-                    "Scoped operation did not produce its named event.", id)}};
-                builder.update(id, *event);
-            }
-        }
-        builder.complete_endpoints();
+        builder.edit_existing(objects, kind);
         if (!builder.diagnostics.empty()) return {.diagnostics = std::move(builder.diagnostics)};
         return stage(builder.batch);
     });
@@ -881,6 +1331,7 @@ auto document_command_transaction_t::stage_bms_bgm_column(chart_id_t difficulty)
         }
         prepared.bgm_columns.push_back({.id = *id,
             .name = "BGM " + std::to_string(prepared.bgm_columns.size() + 1), .source_order = order});
+        prepared.settings.show_empty_bgm_columns = true;
         const auto destination = std::ranges::find_if(document.prepared_bms_programs,
             [&](const auto& owner) { return owner.get() == source; });
         *destination = std::shared_ptr<const bms_program_document_t>(new bms_program_document_t(
@@ -920,9 +1371,11 @@ auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficul
         (void)reject(diagnostic_code_t::invalid_id, "Scoped insertion geometry or identity is unavailable.");
         return {.diagnostics = outcome().diagnostics};
     }
+    const auto* program = current.find_bms_program(difficulty);
+    existing_event_normalizer_t normalizer{*program, *geometry, *geometry};
     std::vector<object_id_t> created;
     for (const auto& event : additions) {
-        const auto native = bms_native_content_t::from(event, *geometry);
+        const auto native = normalizer.native(event);
         if (!native) {
             (void)reject(diagnostic_code_t::invalid_measure, "Scoped insertion needs an exact measure position.");
             return {.diagnostics = outcome().diagnostics};
@@ -952,25 +1405,20 @@ auto document_command_transaction_t::stage_bms_native_edit(chart_id_t difficulty
     return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
         const auto target = bms_target(difficulty, existing);
         if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
-        const auto* program = document.find_bms_program(difficulty);
+        const auto source_owner = *std::ranges::find_if(document.prepared_bms_programs,
+            [&](const auto& owner) { return owner->difficulty() == difficulty; });
+        const auto* program = source_owner.get();
         const auto* original = target->authoring ? program->read_authoring_chart(target->chart) : program->read_chart();
         if (!original) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped edit has no playable source.")}};
         auto chart = *original;
-        const auto staged = edit(chart);
+        auto staged = edit(chart);
         if (!staged.value || !staged.ok()) return {.diagnostics = staged.diagnostics};
         if (!staged.value->effect.changed) return {.value = document_edit_effect_t{}};
+        const auto extent = stage_scoped_extent(*this, difficulty, *original, chart, &staged.value->event);
+        if (!extent.value || !extent.ok()) return extent;
         native_batch_builder_t builder{.program = *program, .original = *original, .edited = chart,
             .batch = {.target = *target, .label = staged.value->effect.command_label}};
-        if (existing) {
-            if (staged.value->event) builder.update(*existing, *staged.value->event);
-            else builder.erase(*existing);
-            builder.complete_endpoints();
-        } else {
-            const auto id = next_bms_program_item_id();
-            if (!id || !staged.value->event) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                "Scoped insertion has no event or available identity.")}};
-            builder.insert(*id, *staged.value->event);
-        }
+        builder.edit_event(existing, existing ? std::nullopt : next_bms_program_item_id(), staged.value->event);
         if (!builder.diagnostics.empty()) return {.diagnostics = std::move(builder.diagnostics)};
         return stage(builder.batch);
     });

@@ -294,27 +294,11 @@ auto compose_action_context_t::require_no_gesture(std::string_view message) cons
     return std::nullopt;
 }
 
-void retain_bms_statement_feedback(application_command_state_t& application,
-                                   std::optional<wormedit::chart_id_t> chart,
-                                   std::uint64_t revision, const std::string& message) {
-    if (chart) {
-        application.project.feedback.bms_branch_statement_feedback =
-            application_command_state_t::bms_branch_statement_feedback_t{*chart, revision, message};
-    } else {
-        application.project.feedback.bms_branch_statement_feedback.reset();
-    }
-}
-
 auto finish_compose_action(compose_action_context_t& context, compose_action_outcome_t outcome)
     -> std::string {
     auto finished =
         finish_compose_outcome(context.environment.document, context.notifications,
                                std::move(outcome), &context.environment.editor.commands);
-    if (finished.has_bms_statement_feedback)
-        retain_bms_statement_feedback(context.environment.editor.commands,
-                                      context.environment.document.workspace.selected_chart,
-                                      context.environment.document.history.document.revision,
-                                      finished.message);
     return std::move(finished.message);
 }
 } // namespace compose_action_detail

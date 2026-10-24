@@ -59,9 +59,9 @@ void populate_metadata_music(frontend_workspace_view_t& flattened,
         flattened.metadata_projection_cache.selected_music_source, audio->source_path);
     metadata.selected_music_resource_count = std::ranges::count(
         history.document.resources, audio->id, &wormedit::resource_entry_t::asset);
-    for (const auto& chart : history.document.charts) {
+    for (const auto* chart : history.document.read_charts()) {
         metadata.selected_music_channel_count += std::ranges::count_if(
-            chart.sound_channels, [&](const auto& channel) {
+            chart->sound_channels, [&](const auto& channel) {
                 return channel.source_clip.source == audio->id;
             });
     }
@@ -81,7 +81,7 @@ auto metadata_copy_preview_matches(const wormedit::ui::metadata_view_t& metadata
 void populate_metadata_chart_resolution(frontend_workspace_view_t& flattened,
                                        const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
+    const auto chart = history.read_chart(wormedit::chart_id_t{metadata.chart_id});
     if (chart == nullptr || !metadata.has_chart) return;
     metadata.chart_divisions_per_standard_measure = chart->divisions_per_standard_measure;
 }
@@ -105,7 +105,7 @@ void populate_metadata_copy_preview(frontend_workspace_view_t& flattened,
 void populate_metadata_channel_map_lanes(frontend_workspace_view_t& flattened,
                                         const document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto* chart = history.document.find_chart(metadata.chart_id);
+    const auto* chart = history.read_chart(metadata.chart_id);
     if (!chart || !metadata.has_chart || chart->source_family != format_family_t::bms ||
         chart->lane_layouts.empty()) { metadata.channel_map_lanes.clear(); return; }
     const auto& segment = chart->lane_layouts.front();
@@ -161,7 +161,7 @@ void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
+    const auto chart = history.read_chart(wormedit::chart_id_t{metadata.chart_id});
     if (chart == nullptr || !metadata.has_chart) { metadata.lane_profile_choices.clear(); return; }
     const auto& targets = flattened.metadata_projection_cache.lane_targets.get_or_build(
         std::tuple{document_stamp_t::from(history.document), chart->id,
@@ -203,7 +203,7 @@ void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
 
 void populate_metadata_inheritance(frontend_workspace_view_t& flattened, const document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto* chart = metadata.has_chart ? history.document.find_chart(metadata.chart_id) : nullptr;
+    const auto* chart = metadata.has_chart ? history.read_chart(metadata.chart_id) : nullptr;
     if (!chart) { metadata.inheritance.clear(); return; }
     const auto& resolved = flattened.metadata_projection_cache.inheritance.get_or_build(
         std::tuple{document_stamp_t::from(history.document), chart->id, flattened.query_session_generation},
@@ -222,10 +222,11 @@ void populate_metadata_inheritance(frontend_workspace_view_t& flattened, const d
 void populate_metadata_chart_choices(frontend_workspace_view_t& flattened,
                                      const document_history_t& history) {
     auto& choices = flattened.view.metadata.chart_choices;
-    choices.resize(history.document.charts.size());
+    const auto charts = history.document.read_charts();
+    choices.resize(charts.size());
     for (std::size_t i = 0; i < choices.size(); ++i) {
-        choices[i].chart_id = history.document.charts[i].id;
-        choices[i].name = history.document.charts[i].metadata.name;
+        choices[i].chart_id = charts[i]->id;
+        choices[i].name = charts[i]->metadata.name;
     }
 }
 
@@ -233,7 +234,7 @@ void populate_metadata_timing_links(frontend_workspace_view_t& flattened, const 
     auto& metadata = flattened.view.metadata;
     metadata.timing_link_context = {.project = history.document.id, .chart = metadata.chart_id,
         .revision = history.document.revision, .session_generation = flattened.query_session_generation};
-    const auto* chart = metadata.has_chart ? history.document.find_chart(metadata.chart_id) : nullptr;
+    const auto* chart = metadata.has_chart ? history.read_chart(metadata.chart_id) : nullptr;
     if (!chart) { metadata.timing_links.clear(); return; }
     metadata.timing_links.resize(timing_categories.size());
     for (std::size_t index = 0; index < timing_categories.size(); ++index) {
@@ -247,7 +248,7 @@ void populate_metadata_timing_links(frontend_workspace_view_t& flattened, const 
         row.requires_confirmation = category.requires_link_confirmation(*chart);
         row.status = link ? link->is_local_override ? "Local override: " : "Linked: " : "Local";
         if (link) {
-            const auto* source = history.document.find_chart(link->source);
+            const auto* source = history.read_chart(link->source);
             row.status += source ? source->metadata.name : "Missing source";
         }
     }

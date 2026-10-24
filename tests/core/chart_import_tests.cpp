@@ -44,7 +44,8 @@ auto parse_sm_fixture(std::string_view name) -> song_document_t {
 }
 
 auto parse_bms_text(std::string_view text) -> song_document_t {
-    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(parsed.value.song.has_value());
     return *parsed.value.song;
 }
@@ -111,17 +112,17 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
     REQUIRE(result.payload.charts.size() == 1);
     CHECK(history.undo.size() == 1);
     const auto& document = history.document;
-    CHECK(document.charts.size() == before.charts.size() + 1);
+    CHECK(document.read_charts().size() == before.read_charts().size() + 1);
     CHECK(validate_document(document).empty());
     // The existing chart and resources are untouched.
-    CHECK(document.charts.front().id == before.charts.front().id);
-    CHECK(document.charts.front().measures.front().notes.size() == before.charts.front().measures.front().notes.size());
+    CHECK((*document.read_charts().front()).id == (*before.read_charts().front()).id);
+    CHECK((*document.read_charts().front()).measures.front().notes.size() == (*before.read_charts().front()).measures.front().notes.size());
     for (const auto& resource : before.resources) {
         const auto kept = std::ranges::find(document.resources, resource.id, &resource_entry_t::id);
         REQUIRE(kept != document.resources.end());
         CHECK(kept->asset == resource.asset);
     }
-    const auto& added = document.charts.back();
+    const auto& added = (*document.read_charts().back());
     CHECK(added.id == result.payload.charts.front());
     CHECK(added.source_family == format_family_t::stepmania);
     // The imported chart's sounds point at catalog entries of the project: kick reused.
@@ -133,7 +134,7 @@ TEST_CASE("Chart import adds an SM difficulty to a BMS song as one undoable comm
     CHECK(document.audio_assets.size() == before.audio_assets.size() + 2);
     CHECK(document.resources.size() == before.resources.size() + 2);
     REQUIRE(undo_document_command(history));
-    CHECK(history.document.charts.size() == before.charts.size());
+    CHECK(history.document.read_charts().size() == before.read_charts().size());
     CHECK(history.document.resources.size() == before.resources.size());
 }
 
@@ -191,7 +192,7 @@ TEST_CASE("Importing two difficulties gives each fresh unique identities",
     CHECK(result.payload.charts[0] != result.payload.charts[1]);
     CHECK(history.undo.size() == 1);
     CHECK(validate_document(history.document).empty());
-    CHECK(history.document.charts.back().metadata.name == "Second");
+    CHECK((*history.document.read_charts().back()).metadata.name == "Second");
 }
 
 TEST_CASE("Chart import session reads a file through the opener, previews, and commits one command",
@@ -226,7 +227,7 @@ TEST_CASE("Chart import session reads a file through the opener, previews, and c
     const auto result = sys::chart_import_confirm(session, history, history.document.revision, scratch.root / "project");
     REQUIRE(result.command.applied);
     CHECK_FALSE(session.open);
-    CHECK(history.document.charts.size() == before.charts.size() + 1);
+    CHECK(history.document.read_charts().size() == before.read_charts().size() + 1);
     CHECK(history.undo.size() == 1);
 }
 
@@ -281,7 +282,12 @@ TEST_CASE("Chart import rejects exhausted chart IDs without publishing staged re
           "[unit][core][chart-import][id-allocation]") {
     scratch_t scratch;
     auto history = document_history_t::from(parse_bms_text(target_bms));
-    history.document.charts.front().id = chart_id_t{std::numeric_limits<std::uint64_t>::max()};
+    auto exhausted = *history.document.read_charts().front();
+    exhausted.id = chart_id_t{std::numeric_limits<std::uint64_t>::max()};
+    exhausted.source_family = format_family_t::native_project;
+    history.document.prepared_bms_programs.clear();
+    history.document.chart_order.clear();
+    history.document.charts = {std::move(exhausted)};
     const auto before = write_native_project(history.document);
     REQUIRE(before.value.has_value());
     const auto revision = history.document.revision;

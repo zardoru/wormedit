@@ -1,3 +1,5 @@
+#include "formats/bms_writer_internal.h"
+#include "formats/bms_program_import_internal.h"
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
 
@@ -27,7 +29,7 @@ namespace {
 
 auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
     -> wormedit::bms_parse_outcome_t {
-    return wormedit::parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+    return wormedit::parse_bms_legacy_witness(std::as_bytes(std::span{source.data(), source.size()}),
                                      std::move(options));
 }
 
@@ -106,14 +108,6 @@ auto control_node_at(const wormedit::bms_control_node_t& root, std::size_t sourc
     return match;
 }
 
-auto branch_edit_has_error(const wormedit::bms_branch_statement_edit_result_t& result,
-                           wormedit::bms_branch_statement_edit_diagnostic_code_t code) -> bool {
-    return std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
-        return diagnostic.severity == wormedit::diagnostic_severity_t::error &&
-               diagnostic.code == code;
-    });
-}
-
 auto simple_chart() -> wormedit::bms_parse_outcome_t {
     constexpr std::string_view source = "#PLAYER 1\n"
                                         "#TITLE Original title\n"
@@ -150,7 +144,7 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
     const auto lane = imported.value.song->charts.front().measures.front().notes.front().lane;
     const auto sound = imported.value.song->charts.front().measures.front().notes.front().sound;
     REQUIRE(sound);
-    const auto untouched = wormedit::write_bms(*imported.value.song);
+    const auto untouched = wormedit::write_bms_legacy_witness(*imported.value.song);
     REQUIRE(untouched.value);
     CHECK(*untouched.value == source);
 
@@ -167,7 +161,7 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
     REQUIRE(history.document.charts.front().measures.size() == 1'000);
     REQUIRE(history.document.charts.front().measures.back().notes.front().sound == sound);
 
-    const auto written = wormedit::write_bms(history.document);
+    const auto written = wormedit::write_bms_legacy_witness(history.document);
     REQUIRE(written.value);
     CHECK(written.ok());
     CHECK(written.value->find("#99911:01") != std::string::npos);
@@ -182,7 +176,7 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
            wormedit::rational_t{1, 2}));
     REQUIRE(wormedit::undo_document_command(history));
     REQUIRE(history.document.charts.front().measures.size() == 1);
-    const auto undone = wormedit::write_bms(history.document);
+    const auto undone = wormedit::write_bms_legacy_witness(history.document);
     REQUIRE(undone.value);
     CHECK(*undone.value == source);
 }
@@ -216,7 +210,7 @@ TEST_CASE("virtual BMS BGM and BGA resources export at #999",
              .canvas_row = 959'040,
              .kind = kind});
         REQUIRE(placed);
-        const auto written = wormedit::write_bms(history.document);
+        const auto written = wormedit::write_bms_legacy_witness(history.document);
         REQUIRE(written.value);
         CHECK(written.ok());
         CHECK(written.value->find(kind == wormedit::resource_placement_kind_t::bgm_event
@@ -250,7 +244,7 @@ TEST_CASE("moved BGM event exports in virtual BMS measure #999",
     REQUIRE(wormedit::apply_virtual_bms_bgm_event_move(
         history,
         {.chart = source_chart.id, .event = event, .canvas_row = 959'040}));
-    const auto written = wormedit::write_bms(history.document);
+    const auto written = wormedit::write_bms_legacy_witness(history.document);
     REQUIRE(written.value);
     CHECK(written.ok());
     CHECK(written.value->find("#99901:01") != std::string::npos);
@@ -267,7 +261,7 @@ TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format]
     constexpr std::string_view source = "#TITLE Keep bytes\r\n#BPM 120\r\n";
     const auto imported = parse(source);
     REQUIRE(imported.value.song.has_value());
-    const auto written = wormedit::write_bms(*imported.value.song);
+    const auto written = wormedit::write_bms_legacy_witness(*imported.value.song);
     REQUIRE(written.value.has_value());
     CHECK(*written.value == source);
     CHECK(written.ok());
@@ -275,7 +269,7 @@ TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format]
     wormedit::bms_write_options_t normalized_options;
     normalized_options.lane_profile_id = "bme-7k-outside-scratch";
     normalized_options.output_encoding = wormedit::text_encoding_t::ascii;
-    const auto normalized = wormedit::write_bms(*imported.value.song, normalized_options);
+    const auto normalized = wormedit::write_bms_legacy_witness(*imported.value.song, normalized_options);
     REQUIRE(normalized.value.has_value());
     CHECK(normalized.ok());
     CHECK(*normalized.value != source);
@@ -290,7 +284,7 @@ TEST_CASE("BMS writer selects normalized UTF-8 or ASCII output explicitly",
     wormedit::bms_write_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.output_encoding = wormedit::text_encoding_t::ascii;
-    const auto ascii = wormedit::write_bms(*imported.value.song, options);
+    const auto ascii = wormedit::write_bms_legacy_witness(*imported.value.song, options);
     REQUIRE(ascii.value.has_value());
     CHECK(ascii.ok());
     CHECK_FALSE(ascii.value->starts_with("\xef\xbb\xbf"));
@@ -302,7 +296,7 @@ TEST_CASE("BMS writer selects normalized UTF-8 or ASCII output explicitly",
     auto unicode_song = *imported.value.song;
     unicode_song.metadata.title = "Snow / 雪";
     options.output_encoding = wormedit::text_encoding_t::utf8;
-    const auto utf8 = wormedit::write_bms(unicode_song, options);
+    const auto utf8 = wormedit::write_bms_legacy_witness(unicode_song, options);
     REQUIRE(utf8.value.has_value());
     CHECK(utf8.ok());
     CHECK(utf8.value->starts_with("\xef\xbb\xbf"));
@@ -312,12 +306,12 @@ TEST_CASE("BMS writer selects normalized UTF-8 or ASCII output explicitly",
     CHECK(reparsed_utf8.value.song->metadata.title == "Snow / 雪");
 
     options.output_encoding = wormedit::text_encoding_t::ascii;
-    const auto unrepresentable = wormedit::write_bms(unicode_song, options);
+    const auto unrepresentable = wormedit::write_bms_legacy_witness(unicode_song, options);
     CHECK_FALSE(unrepresentable.value.has_value());
     CHECK(has_error(unrepresentable, wormedit::bms_write_diagnostic_code_t::unrepresentable_text));
 
     options.output_encoding = wormedit::text_encoding_t::unknown;
-    const auto unknown = wormedit::write_bms(*imported.value.song, options);
+    const auto unknown = wormedit::write_bms_legacy_witness(*imported.value.song, options);
     CHECK_FALSE(unknown.value.has_value());
     CHECK(has_error(unknown, wormedit::bms_write_diagnostic_code_t::unsupported_encoding));
 }
@@ -343,7 +337,7 @@ TEST_CASE("BMS writer round-trips each available selected legacy output encoding
         wormedit::bms_write_options_t options;
         options.lane_profile_id = "bme-7k-outside-scratch";
         options.output_encoding = test.encoding;
-        const auto written = wormedit::write_bms(song, options);
+        const auto written = wormedit::write_bms_legacy_witness(song, options);
         if (!wormedit::is_bms_text_encoding_supported(test.encoding)) {
             CHECK_FALSE(written.value.has_value());
             CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_encoding));
@@ -374,10 +368,10 @@ TEST_CASE("BMS writer emits ordered metadata, exact measures, resources, and tap
     wormedit::bms_write_options_t options;
     options.preserve_unchanged_source = false;
     options.lane_profile_id = "bme-7k-outside-scratch";
-    const auto first = wormedit::write_bms(song, options);
+    const auto first = wormedit::write_bms_legacy_witness(song, options);
     REQUIRE(first.value.has_value());
     CHECK(first.ok());
-    CHECK(*first.value == *wormedit::write_bms(song, options).value);
+    CHECK(*first.value == *wormedit::write_bms_legacy_witness(song, options).value);
 
     const auto player = first.value->find("#PLAYER 1");
     const auto title = first.value->find("#TITLE Edited title");
@@ -467,7 +461,7 @@ TEST_CASE("BMS writer maps integral chart ratings without replacing retained PLA
     REQUIRE(without_playlevel.ok());
     auto authored = *without_playlevel.value.song;
     authored.charts.front().metadata.rating = wormedit::signed_rational_t{24, 2};
-    const auto generated = wormedit::write_bms(authored, options);
+    const auto generated = wormedit::write_bms_legacy_witness(authored, options);
     REQUIRE(generated.value.has_value());
     CHECK(generated.ok());
     CHECK(generated.value->find("#PLAYLEVEL 12\n") != std::string::npos);
@@ -475,7 +469,7 @@ TEST_CASE("BMS writer maps integral chart ratings without replacing retained PLA
 
     auto retained = *simple_chart().value.song;
     retained.charts.front().metadata.rating = wormedit::signed_rational_t{12, 1};
-    const auto matching = wormedit::write_bms(retained, options);
+    const auto matching = wormedit::write_bms_legacy_witness(retained, options);
     REQUIRE(matching.value.has_value());
     CHECK(matching.value->find("#PLAYLEVEL 12\n") != std::string::npos);
     CHECK(matching.value->find("#PLAYLEVEL 12", matching.value->find("#PLAYLEVEL 12") + 1) ==
@@ -483,14 +477,14 @@ TEST_CASE("BMS writer maps integral chart ratings without replacing retained PLA
     CHECK_FALSE(has_rating_warning(matching));
 
     retained.charts.front().metadata.rating = wormedit::signed_rational_t{13, 1};
-    const auto conflicting = wormedit::write_bms(retained, options);
+    const auto conflicting = wormedit::write_bms_legacy_witness(retained, options);
     REQUIRE(conflicting.value.has_value());
     CHECK(conflicting.value->find("#PLAYLEVEL 12\n") != std::string::npos);
     CHECK(conflicting.value->find("#PLAYLEVEL 13\n") == std::string::npos);
     CHECK(has_rating_warning(conflicting));
 
     authored.charts.front().metadata.rating = wormedit::signed_rational_t{25, 2};
-    const auto fractional = wormedit::write_bms(authored, options);
+    const auto fractional = wormedit::write_bms_legacy_witness(authored, options);
     REQUIRE(fractional.value.has_value());
     CHECK(fractional.value->find("#PLAYLEVEL ") == std::string::npos);
     CHECK(has_rating_warning(fractional));
@@ -500,7 +494,7 @@ TEST_CASE("BMS writer round trips its signed OFFSET extension",
           "[unit][format][bms][writer]") {
     auto song = *simple_chart().value.song;
     song.charts.front().beat_zero_audio_offset_seconds = wormedit::signed_rational_t{-1, 10};
-    const auto written = wormedit::write_bms(song);
+    const auto written = wormedit::write_bms_legacy_witness(song);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(written.value->find("#OFFSET -0.1\n") != std::string::npos);
@@ -512,7 +506,7 @@ TEST_CASE("BMS writer round trips its signed OFFSET extension",
 
     auto retained = *reparsed.value.song;
     retained.charts.front().beat_zero_audio_offset_seconds = wormedit::signed_rational_t{3, 20};
-    const auto edited = wormedit::write_bms(retained);
+    const auto edited = wormedit::write_bms_legacy_witness(retained);
     REQUIRE(edited.value.has_value());
     CHECK(edited.value->find("#OFFSET 0.15\n") != std::string::npos);
     CHECK(edited.value->find("#OFFSET -0.1\n") == std::string::npos);
@@ -535,7 +529,7 @@ TEST_CASE("BMS writer flattens note layers and omits bookmarks with warnings",
     wormedit::bms_write_options_t options;
     options.preserve_unchanged_source = false;
     options.lane_profile_id = "bme-7k-outside-scratch";
-    const auto written = wormedit::write_bms(song, options);
+    const auto written = wormedit::write_bms_legacy_witness(song, options);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(has_warning(written, wormedit::bms_write_diagnostic_code_t::lossy_transform));
@@ -566,7 +560,7 @@ TEST_CASE("BMS writer round trips holds, repeated BGM lanes, structural zeros, a
     CHECK(original_chart.measures.front().notes.front().kind == wormedit::note_kind_t::hold);
 
     const auto written =
-        wormedit::write_bms(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
+        wormedit::write_bms_legacy_witness(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
                                              .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -633,7 +627,7 @@ TEST_CASE("Deleting a selected imported BGM event updates repeated BMS channel l
         history, state, wormedit::delete_editor_selection_action_t{}));
     REQUIRE(history.document.charts.front().measures.front().bgm_events.size() == 1);
     CHECK(history.document.charts.front().measures.front().bgm_events.front().id == retained);
-    const auto written = wormedit::write_bms(
+    const auto written = wormedit::write_bms_legacy_witness(
         history.document, {.lane_profile_id = "bme-7k-outside-scratch",
                            .preserve_unchanged_source = false});
     REQUIRE(written.value);
@@ -671,7 +665,7 @@ TEST_CASE("BMS writer supports authored BGM lanes across measures", "[unit][form
         .sound = song.resources.front().id,
     });
 
-    const auto written = wormedit::write_bms(
+    const auto written = wormedit::write_bms_legacy_witness(
         song, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -699,13 +693,13 @@ TEST_CASE("BMS writer reports unrepresentable hold and visual-event semantics",
 
     auto roll = *imported.value.song;
     roll.charts.front().measures.front().notes.front().kind = wormedit::note_kind_t::roll;
-    const auto roll_result = wormedit::write_bms(roll, options);
+    const auto roll_result = wormedit::write_bms_legacy_witness(roll, options);
     CHECK_FALSE(roll_result.value.has_value());
     CHECK(has_error(roll_result, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
 
     auto video = *imported.value.song;
     video.charts.front().bga_events.front().kind = wormedit::visual_event_kind_t::video;
-    const auto video_result = wormedit::write_bms(video, options);
+    const auto video_result = wormedit::write_bms_legacy_witness(video, options);
     CHECK_FALSE(video_result.value.has_value());
     CHECK(has_error(video_result, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
 
@@ -714,7 +708,7 @@ TEST_CASE("BMS writer reports unrepresentable hold and visual-event semantics",
     third_layer.id = wormedit::object_id_t{9001};
     third_layer.kind = wormedit::visual_event_kind_t::layer;
     crowded_layers.charts.front().bga_events.push_back(third_layer);
-    const auto layer_result = wormedit::write_bms(crowded_layers, options);
+    const auto layer_result = wormedit::write_bms_legacy_witness(crowded_layers, options);
     CHECK_FALSE(layer_result.value.has_value());
     CHECK(has_error(layer_result, wormedit::bms_write_diagnostic_code_t::duplicate_event));
 }
@@ -747,7 +741,7 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
     wormedit::bms_write_options_t options;
     options.preserve_unchanged_source = false;
     options.lane_profile_id = "bme-7k-outside-scratch";
-    const auto written = wormedit::write_bms(song, options);
+    const auto written = wormedit::write_bms_legacy_witness(song, options);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(written.value->find("#TITLE Edited root title") != std::string::npos);
@@ -793,7 +787,7 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
     }));
 
     options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
-    const auto flatten = wormedit::write_bms(song, options);
+    const auto flatten = wormedit::write_bms_legacy_witness(song, options);
     INFO((flatten.diagnostics.empty() ? std::string{} : flatten.diagnostics.back().message));
     REQUIRE(flatten.value.has_value());
     CHECK(flatten.ok());
@@ -811,707 +805,10 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
 
     auto unresolved = song;
     unresolved.charts.front().active_branch_selection.clear();
-    const auto unresolved_flatten = wormedit::write_bms(unresolved, options);
+    const auto unresolved_flatten = wormedit::write_bms_legacy_witness(unresolved, options);
     CHECK_FALSE(unresolved_flatten.value.has_value());
     CHECK(has_error(unresolved_flatten,
                     wormedit::bms_write_diagnostic_code_t::unsupported_branch_policy));
-}
-
-TEST_CASE("BMS inactive branch statements are edited directly without flattening the tree",
-          "[unit][format][bms][writer][branch][direct-edit]") {
-    constexpr std::string_view source =
-        "#PLAYER 1\n#TITLE Direct branch edit\n#BPM 120\n"
-        "#WAV01 active.wav\n#WAV02 inactive.wav\n#WAV03 replacement.wav\n"
-        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0200\n"
-        "#ENDIF\n#ENDRANDOM\n";
-    wormedit::bms_parse_options_t parse_options;
-    parse_options.lane_profile_id = "bme-7k-outside-scratch";
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
-    const auto imported = parse(source, parse_options);
-    REQUIRE(imported.value.song.has_value());
-    REQUIRE(imported.ok());
-    const auto& chart = imported.value.song->charts.front();
-    REQUIRE(chart.bms_control_tree.has_value());
-    const auto inactive_order = line_order(source, "#00011:0200");
-    const auto* inactive = control_statement_at(*chart.bms_control_tree, inactive_order);
-    REQUIRE(inactive != nullptr);
-
-    wormedit::bms_branch_statement_edit_t edit{
-        .statement = inactive->id,
-        .expected_source_order = inactive->source_order,
-        .expected_source_span = inactive->source_span,
-        .expected_original_text = inactive->original_text,
-        .replacement_text = "#00011:0300",
-    };
-    const auto edited = wormedit::edit_bms_inactive_branch_statement(*imported.value.song, edit);
-    REQUIRE(edited.song.has_value());
-    CHECK_FALSE(edited.has_errors());
-    CHECK(control_statement_at(*imported.value.song->charts.front().bms_control_tree, inactive_order)
-              ->original_text == "#00011:0200");
-    CHECK(control_statement_at(*edited.song->charts.front().bms_control_tree, inactive_order)
-              ->original_text == "#00011:0300");
-
-    const auto written =
-        wormedit::write_bms(*edited.song, {.lane_profile_id = parse_options.lane_profile_id});
-    REQUIRE(written.value.has_value());
-    CHECK(written.ok());
-    CHECK(occurrences(*written.value, "#RANDOM 2") == 1);
-    CHECK(occurrences(*written.value, "#IF 1") == 1);
-    CHECK(occurrences(*written.value, "#ELSE") == 1);
-    CHECK(occurrences(*written.value, "#ENDIF") == 1);
-    CHECK(occurrences(*written.value, "#ENDRANDOM") == 1);
-    CHECK(occurrences(*written.value, "#00011:0100") == 1);
-    CHECK(occurrences(*written.value, "#00011:0300") == 1);
-    CHECK(written.value->find("#00011:0200") == std::string::npos);
-
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(*written.value, "#RANDOM 2"), .selected_value = 1}};
-    const auto active_reimport = parse(*written.value, parse_options);
-    REQUIRE(active_reimport.value.song.has_value());
-    REQUIRE(active_reimport.value.song->charts.front().measures.front().notes.size() == 1);
-    const auto& active_note = active_reimport.value.song->charts.front().measures.front().notes.front();
-    REQUIRE(active_note.sound.has_value());
-    CHECK(std::ranges::find(active_reimport.value.song->resources, *active_note.sound,
-                            &wormedit::resource_entry_t::id)
-              ->name == "active.wav");
-
-    parse_options.branch_choices.front().selected_value = 2;
-    const auto edited_reimport = parse(*written.value, parse_options);
-    REQUIRE(edited_reimport.value.song.has_value());
-    REQUIRE(edited_reimport.value.song->charts.front().measures.front().notes.size() == 1);
-    const auto& edited_note = edited_reimport.value.song->charts.front().measures.front().notes.front();
-    REQUIRE(edited_note.sound.has_value());
-    CHECK(std::ranges::find(edited_reimport.value.song->resources, *edited_note.sound,
-                            &wormedit::resource_entry_t::id)
-              ->name == "replacement.wav");
-}
-
-TEST_CASE("BMS statements can be inserted into a provenance-checked inactive leaf",
-          "[unit][format][bms][writer][branch][direct-insert]") {
-    constexpr std::string_view source = "#PLAYER 1\n#TITLE Leaf insertion\n#BPM 120\n"
-                                        "#WAV01 active.wav\n#WAV02 inactive.wav\n"
-                                        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0200\n"
-                                        "#ENDIF\n#ENDRANDOM\n";
-    wormedit::bms_parse_options_t parse_options;
-    parse_options.lane_profile_id = "bme-7k-outside-scratch";
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 2}};
-    const auto imported = parse(source, parse_options);
-    REQUIRE(imported.value.song.has_value());
-    REQUIRE(imported.ok());
-    const auto& chart = imported.value.song->charts.front();
-    REQUIRE(chart.bms_control_tree.has_value());
-    const auto* leaf = control_node_at(*chart.bms_control_tree, line_order(source, "#IF 1"));
-    const auto* anchor =
-        control_statement_at(*chart.bms_control_tree, line_order(source, "#00011:0100"));
-    REQUIRE(leaf != nullptr);
-    REQUIRE(anchor != nullptr);
-
-    const wormedit::bms_branch_statement_insert_t insertion{
-        .leaf_branch = leaf->id,
-        .expected_leaf_source_order = leaf->source_order,
-        .expected_leaf_source_span = leaf->source_span,
-        .expected_leaf_original_text = leaf->original_text,
-        .after_statement = anchor->id,
-        .expected_statement_source_order = anchor->source_order,
-        .expected_statement_source_span = anchor->source_span,
-        .expected_statement_original_text = anchor->original_text,
-        .statement_text = "#00012:01",
-    };
-    auto inserted = wormedit::insert_bms_inactive_branch_statement(*imported.value.song, insertion);
-    REQUIRE(inserted.song.has_value());
-    CHECK_FALSE(inserted.has_errors());
-    CHECK(inserted.song->charts.front().measures.front().notes.size() == 1);
-    const auto active_resource = std::ranges::find(
-        inserted.song->resources, std::string("active.wav"), &wormedit::resource_entry_t::name);
-    REQUIRE(active_resource != inserted.song->resources.end());
-    inserted.song->charts.front().measures.front().notes.front().sound = active_resource->id;
-
-    const auto written =
-        wormedit::write_bms(*inserted.song, {.lane_profile_id = parse_options.lane_profile_id});
-    INFO((written.diagnostics.empty() ? std::string{} : written.diagnostics.back().message));
-    REQUIRE(written.value.has_value());
-    CHECK(written.ok());
-    CHECK(occurrences(*written.value, "#RANDOM 2") == 1);
-    CHECK(occurrences(*written.value, "#IF 1") == 1);
-    CHECK(occurrences(*written.value, "#ELSE") == 1);
-    CHECK(occurrences(*written.value, "#ENDIF") == 1);
-    CHECK(occurrences(*written.value, "#ENDRANDOM") == 1);
-    CHECK(written.value->find("#00011:0100\n#00012:01\n#ELSE") != std::string::npos);
-    CHECK(occurrences(*written.value, "#00011:0100") == 2);
-
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(*written.value, "#RANDOM 2"), .selected_value = 1}};
-    const auto original_branch = parse(*written.value, parse_options);
-    REQUIRE(original_branch.value.song.has_value());
-    CHECK(original_branch.value.song->charts.front().measures.front().notes.size() == 2);
-
-    parse_options.branch_choices.front().selected_value = 2;
-    const auto inserted_branch = parse(*written.value, parse_options);
-    REQUIRE(inserted_branch.value.song.has_value());
-    const auto& notes = inserted_branch.value.song->charts.front().measures.front().notes;
-    REQUIRE(notes.size() == 1);
-    CHECK(std::ranges::any_of(notes, [&](const auto& note) {
-        if (!note.sound.has_value()) {
-            return false;
-        }
-        const auto resource = std::ranges::find(inserted_branch.value.song->resources, *note.sound,
-                                                &wormedit::resource_entry_t::id);
-        return resource != inserted_branch.value.song->resources.end() && resource->name == "active.wav";
-    }));
-
-    auto ambiguous = *imported.value.song;
-    wormedit::bms_control_node_t* mutable_leaf{};
-    const auto find_mutable_leaf = [&](const auto& self,
-                                       wormedit::bms_control_node_t& node) -> void {
-        if (node.id == insertion.leaf_branch) {
-            mutable_leaf = &node;
-            return;
-        }
-        for (auto& child : node.children) {
-            self(self, child);
-            if (mutable_leaf != nullptr) {
-                return;
-            }
-        }
-    };
-    find_mutable_leaf(find_mutable_leaf, *ambiguous.charts.front().bms_control_tree);
-    REQUIRE(mutable_leaf != nullptr);
-    const auto mutable_anchor =
-        std::ranges::find(mutable_leaf->children, anchor->id, &wormedit::bms_control_node_t::id);
-    REQUIRE(mutable_anchor != mutable_leaf->children.end());
-    const auto duplicate_anchor = *mutable_anchor;
-    mutable_leaf->children.push_back(duplicate_anchor);
-    const auto ambiguous_result =
-        wormedit::insert_bms_inactive_branch_statement(ambiguous, insertion);
-    CHECK_FALSE(ambiguous_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        ambiguous_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::ambiguous_target));
-
-    auto stale = insertion;
-    ++stale.expected_statement_source_span.byte_begin;
-    const auto stale_result = wormedit::insert_bms_inactive_branch_statement(*imported.value.song, stale);
-    CHECK_FALSE(stale_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        stale_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch));
-
-    const auto* active_leaf = control_node_at(*chart.bms_control_tree, line_order(source, "#ELSE"));
-    const auto* active_anchor =
-        control_statement_at(*chart.bms_control_tree, line_order(source, "#00011:0200"));
-    REQUIRE(active_leaf != nullptr);
-    REQUIRE(active_anchor != nullptr);
-    const auto active_insertion = wormedit::bms_branch_statement_insert_t{
-        .leaf_branch = active_leaf->id,
-        .expected_leaf_source_order = active_leaf->source_order,
-        .expected_leaf_source_span = active_leaf->source_span,
-        .expected_leaf_original_text = active_leaf->original_text,
-        .after_statement = active_anchor->id,
-        .expected_statement_source_order = active_anchor->source_order,
-        .expected_statement_source_span = active_anchor->source_span,
-        .expected_statement_original_text = active_anchor->original_text,
-        .statement_text = "#00012:01",
-    };
-    const auto active_result =
-        wormedit::insert_bms_inactive_branch_statement(*imported.value.song, active_insertion);
-    CHECK_FALSE(active_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        active_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::active_statement));
-
-    auto multiple_charts = *imported.value.song;
-    auto second_chart = multiple_charts.charts.front();
-    second_chart.id = wormedit::chart_id_t{9'999};
-    multiple_charts.charts.push_back(std::move(second_chart));
-    const auto multiple_result =
-        wormedit::insert_bms_inactive_branch_statement(multiple_charts, insertion);
-    CHECK_FALSE(multiple_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        multiple_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape));
-
-    auto exhausted = *imported.value.song;
-    auto* exhausted_else = const_cast<wormedit::bms_control_node_t*>(
-        control_node_at(*exhausted.charts.front().bms_control_tree, line_order(source, "#ELSE")));
-    REQUIRE(exhausted_else != nullptr);
-    exhausted_else->source_order = std::numeric_limits<std::size_t>::max();
-    const auto exhausted_result =
-        wormedit::insert_bms_inactive_branch_statement(exhausted, insertion);
-    CHECK_FALSE(exhausted_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        exhausted_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit));
-}
-
-TEST_CASE("BMS raw statements can be deleted from inactive leaves with full-tree preservation",
-          "[unit][format][bms][writer][branch][direct-delete]") {
-    constexpr std::string_view source =
-        "#PLAYER 1\n#TITLE Leaf deletion\n#BPM 120\n#WAV01 click.wav\n"
-        "#RANDOM 3\n#IF 1\n#00011:0100\n#ELSEIF 2\n#00011:0200\n"
-        "#ELSE\n#00011:0300\n#ENDIF\n#ENDRANDOM\n"
-        "#SWITCH 2\n#CASE 1\n#00011:0400\n#SKIP\n#DEF\n#00011:0500\n#ENDSW\n";
-    struct deletion_case_t {
-        std::string_view leaf_line;
-        std::string_view statement_line;
-        std::int64_t random_value;
-        std::int64_t switch_value;
-    };
-    constexpr std::array deletion_cases{
-        deletion_case_t{"#IF 1", "#00011:0100", 2, 1},
-        deletion_case_t{"#ELSEIF 2", "#00011:0200", 1, 1},
-        deletion_case_t{"#ELSE", "#00011:0300", 1, 1},
-        deletion_case_t{"#CASE 1", "#00011:0400", 1, 2},
-        deletion_case_t{"#DEF", "#00011:0500", 1, 1},
-    };
-    const auto tree_signature = [](const wormedit::bms_control_node_t& root) {
-        std::string signature;
-        const auto visit = [&](const auto& self, const wormedit::bms_control_node_t& node) -> void {
-            signature += std::to_string(static_cast<int>(node.kind));
-            signature += ':';
-            signature += node.original_text;
-            signature += ':';
-            if (node.close_text.has_value()) {
-                signature += *node.close_text;
-            }
-            signature += '[';
-            for (const auto& child : node.children) {
-                self(self, child);
-            }
-            signature += ']';
-        };
-        visit(visit, root);
-        return signature;
-    };
-    const auto tree_has_id = [](const wormedit::bms_control_node_t& root,
-                                wormedit::branch_id_t id) {
-        bool found{};
-        const auto visit = [&](const auto& self, const wormedit::bms_control_node_t& node) -> void {
-            found = found || node.id == id;
-            for (const auto& child : node.children) {
-                self(self, child);
-            }
-        };
-        visit(visit, root);
-        return found;
-    };
-
-    for (const auto& deletion_case : deletion_cases) {
-        INFO(deletion_case.leaf_line);
-        wormedit::bms_parse_options_t parse_options;
-        parse_options.lane_profile_id = "bme-7k-outside-scratch";
-        parse_options.branch_choices = {
-            {.control_source_order = line_order(source, "#RANDOM 3"),
-             .selected_value = deletion_case.random_value},
-            {.control_source_order = line_order(source, "#SWITCH 2"),
-             .selected_value = deletion_case.switch_value},
-        };
-        const auto imported = parse(source, parse_options);
-        REQUIRE(imported.value.song.has_value());
-        REQUIRE(imported.ok());
-        const auto& chart = imported.value.song->charts.front();
-        REQUIRE(chart.bms_control_tree.has_value());
-        const auto leaf_lookup =
-            deletion_case.leaf_line == "#ELSE" ? "#ELSE\n" : deletion_case.leaf_line;
-        const auto* leaf =
-            control_node_at(*chart.bms_control_tree, line_order(source, leaf_lookup));
-        const auto* statement = control_statement_at(
-            *chart.bms_control_tree, line_order(source, deletion_case.statement_line));
-        REQUIRE(leaf != nullptr);
-        REQUIRE(statement != nullptr);
-
-        const wormedit::bms_branch_statement_delete_t deletion{
-            .leaf_branch = leaf->id,
-            .expected_leaf_source_order = leaf->source_order,
-            .expected_leaf_source_span = leaf->source_span,
-            .expected_leaf_original_text = leaf->original_text,
-            .statement = statement->id,
-            .expected_source_order = statement->source_order,
-            .expected_source_span = statement->source_span,
-            .expected_original_text = statement->original_text,
-        };
-        const auto deleted =
-            wormedit::delete_bms_inactive_branch_statement(*imported.value.song, deletion);
-        INFO((deleted.diagnostics.empty() ? std::string{} : deleted.diagnostics.back().message));
-        REQUIRE(deleted.song.has_value());
-        CHECK_FALSE(deleted.has_errors());
-        REQUIRE(deleted.song->charts.front().bms_control_tree.has_value());
-        CHECK_FALSE(tree_has_id(*deleted.song->charts.front().bms_control_tree, statement->id));
-
-        const auto target_size =
-            statement->source_span.byte_end - statement->source_span.byte_begin;
-        const auto* original_switch =
-            control_node_at(*chart.bms_control_tree, line_order(source, "#SWITCH 2"));
-        REQUIRE(original_switch != nullptr);
-        REQUIRE(original_switch->close_source_span.has_value());
-        REQUIRE(original_switch->close_source_order.has_value());
-        const auto find_by_id =
-            [&](const auto& self,
-                const wormedit::bms_control_node_t& node) -> const wormedit::bms_control_node_t* {
-            if (node.id == original_switch->id) {
-                return &node;
-            }
-            for (const auto& child : node.children) {
-                if (const auto* found = self(self, child); found != nullptr) {
-                    return found;
-                }
-            }
-            return nullptr;
-        };
-        const auto* shifted_switch =
-            find_by_id(find_by_id, *deleted.song->charts.front().bms_control_tree);
-        REQUIRE(shifted_switch != nullptr);
-        REQUIRE(shifted_switch->close_source_span.has_value());
-        REQUIRE(shifted_switch->close_source_order.has_value());
-        CHECK(shifted_switch->close_source_span->byte_begin + target_size ==
-              original_switch->close_source_span->byte_begin);
-        CHECK(shifted_switch->close_source_span->byte_end + target_size ==
-              original_switch->close_source_span->byte_end);
-        CHECK(*shifted_switch->close_source_order == *original_switch->close_source_order - 1);
-
-        for (const auto& original_note : chart.measures.front().notes) {
-            const auto& edited_notes = deleted.song->charts.front().measures.front().notes;
-            const auto edited_note =
-                std::ranges::find(edited_notes, original_note.id, &wormedit::note_t::id);
-            REQUIRE(edited_note != edited_notes.end());
-            CHECK(edited_note->provenance.source_order ==
-                  (original_note.provenance.source_order > statement->source_order
-                       ? original_note.provenance.source_order - 1
-                       : original_note.provenance.source_order));
-        }
-
-        const auto bms_group = std::ranges::find_if(
-            deleted.song->charts.front().metadata.format_groups,
-            [](const auto& group) { return group.family == wormedit::format_family_t::bms; });
-        REQUIRE(bms_group != deleted.song->charts.front().metadata.format_groups.end());
-        REQUIRE(bms_group->encoding.original_bytes != nullptr);
-        CHECK_FALSE(bms_group->encoding.unchanged_since_import);
-        const auto& updated_bytes = *bms_group->encoding.original_bytes;
-        const std::string updated_source(reinterpret_cast<const char*>(updated_bytes.data()),
-                                         updated_bytes.size());
-        auto expected_source = std::string(source);
-        expected_source.erase(statement->source_span.byte_begin, target_size);
-        CHECK(updated_source == expected_source);
-
-        const auto written =
-            wormedit::write_bms(*deleted.song, {.lane_profile_id = parse_options.lane_profile_id});
-        INFO((written.diagnostics.empty() ? std::string{} : written.diagnostics.back().message));
-        REQUIRE(written.value.has_value());
-        CHECK(written.ok());
-        CHECK(written.value->find(deletion_case.statement_line) == std::string::npos);
-        CHECK(occurrences(*written.value, "#RANDOM 3") == 1);
-        CHECK(occurrences(*written.value, "#IF 1") == 1);
-        CHECK(occurrences(*written.value, "#ELSEIF 2") == 1);
-        CHECK(occurrences(*written.value, "#ELSE\n") == 1);
-        CHECK(occurrences(*written.value, "#ENDIF") == 1);
-        CHECK(occurrences(*written.value, "#ENDRANDOM") == 1);
-        CHECK(occurrences(*written.value, "#SWITCH 2") == 1);
-        CHECK(occurrences(*written.value, "#CASE 1") == 1);
-        CHECK(occurrences(*written.value, "#SKIP") == 1);
-        CHECK(occurrences(*written.value, "#DEF") == 1);
-        CHECK(occurrences(*written.value, "#ENDSW") == 1);
-        const auto tree_reimport = parse(*written.value);
-        REQUIRE(tree_reimport.value.song.has_value());
-        REQUIRE(tree_reimport.value.song->charts.front().bms_control_tree.has_value());
-        CHECK(tree_signature(*deleted.song->charts.front().bms_control_tree) ==
-              tree_signature(*tree_reimport.value.song->charts.front().bms_control_tree));
-
-        for (std::int64_t random_value = 1; random_value <= 3; ++random_value) {
-            for (std::int64_t switch_value = 1; switch_value <= 2; ++switch_value) {
-                auto reimport_options = parse_options;
-                reimport_options.branch_choices = {
-                    {.control_source_order = line_order(*written.value, "#RANDOM 3"),
-                     .selected_value = random_value},
-                    {.control_source_order = line_order(*written.value, "#SWITCH 2"),
-                     .selected_value = switch_value},
-                };
-                const auto reimported = parse(*written.value, reimport_options);
-                REQUIRE(reimported.value.song.has_value());
-                REQUIRE(reimported.ok());
-                const auto conditional_deleted = deletion_case.leaf_line == "#IF 1" ||
-                                                 deletion_case.leaf_line == "#ELSEIF 2" ||
-                                                 deletion_case.leaf_line == "#ELSE";
-                const auto selected_deleted =
-                    conditional_deleted
-                        ? ((deletion_case.leaf_line == "#IF 1" && random_value == 1) ||
-                           (deletion_case.leaf_line == "#ELSEIF 2" && random_value == 2) ||
-                           (deletion_case.leaf_line == "#ELSE" && random_value == 3))
-                        : ((deletion_case.leaf_line == "#CASE 1" && switch_value == 1) ||
-                           (deletion_case.leaf_line == "#DEF" && switch_value == 2));
-                CHECK(reimported.value.song->charts.front().measures.front().notes.size() ==
-                      (selected_deleted ? 1U : 2U));
-            }
-        }
-    }
-}
-
-TEST_CASE("BMS inactive branch deletion rejects stale active ambiguous and invalid targets",
-          "[unit][format][bms][writer][branch][direct-delete]") {
-    constexpr std::string_view source =
-        "#PLAYER 1\n#TITLE Delete rejection\n#BPM 120\n#WAV01 one.wav\n"
-        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0200\n"
-        "#ENDIF\n#ENDRANDOM\n";
-    wormedit::bms_parse_options_t parse_options;
-    parse_options.lane_profile_id = "bme-7k-outside-scratch";
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
-    const auto imported = parse(source, parse_options);
-    REQUIRE(imported.value.song.has_value());
-    REQUIRE(imported.value.song->charts.front().bms_control_tree.has_value());
-    const auto& tree = *imported.value.song->charts.front().bms_control_tree;
-    const auto* active_leaf = control_node_at(tree, line_order(source, "#IF 1"));
-    const auto* inactive_leaf = control_node_at(tree, line_order(source, "#ELSE"));
-    const auto* active = control_statement_at(tree, line_order(source, "#00011:0100"));
-    const auto* inactive = control_statement_at(tree, line_order(source, "#00011:0200"));
-    const auto* structural = control_node_at(tree, line_order(source, "#ELSE"));
-    const auto* random = control_node_at(tree, line_order(source, "#RANDOM 2"));
-    REQUIRE(active_leaf != nullptr);
-    REQUIRE(inactive_leaf != nullptr);
-    REQUIRE(active != nullptr);
-    REQUIRE(inactive != nullptr);
-    REQUIRE(structural != nullptr);
-    REQUIRE(random != nullptr);
-
-    const auto request_for = [](const wormedit::bms_control_node_t& leaf,
-                                const wormedit::bms_control_node_t& statement) {
-        return wormedit::bms_branch_statement_delete_t{
-            .leaf_branch = leaf.id,
-            .expected_leaf_source_order = leaf.source_order,
-            .expected_leaf_source_span = leaf.source_span,
-            .expected_leaf_original_text = leaf.original_text,
-            .statement = statement.id,
-            .expected_source_order = statement.source_order,
-            .expected_source_span = statement.source_span,
-            .expected_original_text = statement.original_text,
-        };
-    };
-    const auto expect_error = [](const wormedit::bms_branch_statement_edit_result_t& result,
-                                 wormedit::bms_branch_statement_edit_diagnostic_code_t code) {
-        CHECK_FALSE(result.song.has_value());
-        CHECK(branch_edit_has_error(result, code));
-    };
-
-    const auto active_result = wormedit::delete_bms_inactive_branch_statement(
-        *imported.value.song, request_for(*active_leaf, *active));
-    expect_error(active_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::active_statement);
-
-    auto stale = request_for(*inactive_leaf, *inactive);
-    ++stale.expected_source_span.byte_begin;
-    const auto stale_result = wormedit::delete_bms_inactive_branch_statement(*imported.value.song, stale);
-    expect_error(stale_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
-
-    const auto structural_result = wormedit::delete_bms_inactive_branch_statement(
-        *imported.value.song, request_for(*inactive_leaf, *structural));
-    expect_error(
-        structural_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::target_not_branch_statement);
-
-    auto capped = request_for(*inactive_leaf, *inactive);
-    capped.max_statement_bytes = 1;
-    const auto capped_result =
-        wormedit::delete_bms_inactive_branch_statement(*imported.value.song, capped);
-    expect_error(capped_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit);
-
-    auto invalid_selection = *imported.value.song;
-    invalid_selection.charts.front().active_branch_selection.push_back(
-        invalid_selection.charts.front().active_branch_selection.front());
-    const auto invalid_selection_result = wormedit::delete_bms_inactive_branch_statement(
-        invalid_selection, request_for(*inactive_leaf, *inactive));
-    expect_error(invalid_selection_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::invalid_branch_selection);
-
-    auto ambiguous = *imported.value.song;
-    wormedit::bms_control_node_t* mutable_leaf{};
-    const auto find_mutable_leaf = [&](const auto& self,
-                                       wormedit::bms_control_node_t& node) -> void {
-        if (node.id == inactive_leaf->id) {
-            mutable_leaf = &node;
-            return;
-        }
-        for (auto& child : node.children) {
-            self(self, child);
-            if (mutable_leaf != nullptr) {
-                return;
-            }
-        }
-    };
-    find_mutable_leaf(find_mutable_leaf, *ambiguous.charts.front().bms_control_tree);
-    REQUIRE(mutable_leaf != nullptr);
-    mutable_leaf->children.push_back(mutable_leaf->children.front());
-    const auto ambiguous_result = wormedit::delete_bms_inactive_branch_statement(
-        ambiguous, request_for(*inactive_leaf, *inactive));
-    expect_error(ambiguous_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::ambiguous_target);
-
-    auto invalid_span = *imported.value.song;
-    wormedit::bms_control_node_t* mutable_target{};
-    const auto find_mutable_target = [&](const auto& self,
-                                         wormedit::bms_control_node_t& node) -> void {
-        if (node.id == inactive->id) {
-            mutable_target = &node;
-            return;
-        }
-        for (auto& child : node.children) {
-            self(self, child);
-            if (mutable_target != nullptr) {
-                return;
-            }
-        }
-    };
-    find_mutable_target(find_mutable_target, *invalid_span.charts.front().bms_control_tree);
-    REQUIRE(mutable_target != nullptr);
-    mutable_target->source_span = {std::numeric_limits<std::size_t>::max() - 2,
-                                   std::numeric_limits<std::size_t>::max() - 1};
-    auto invalid_request = request_for(*inactive_leaf, *inactive);
-    invalid_request.expected_source_span = mutable_target->source_span;
-    const auto invalid_span_result =
-        wormedit::delete_bms_inactive_branch_statement(invalid_span, invalid_request);
-    expect_error(invalid_span_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
-
-    auto overlapping_span = *imported.value.song;
-    auto* mutable_random = const_cast<wormedit::bms_control_node_t*>(
-        control_node_at(*overlapping_span.charts.front().bms_control_tree, random->source_order));
-    REQUIRE(mutable_random != nullptr);
-    mutable_random->close_source_span = inactive->source_span;
-    const auto overlapping_result = wormedit::delete_bms_inactive_branch_statement(
-        overlapping_span, request_for(*inactive_leaf, *inactive));
-    expect_error(overlapping_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
-
-    auto conflicting_projection = *imported.value.song;
-    REQUIRE_FALSE(conflicting_projection.charts.front().measures.front().notes.empty());
-    conflicting_projection.charts.front().measures.front().notes.front().provenance.source_order =
-        inactive->source_order;
-    const auto conflicting_result = wormedit::delete_bms_inactive_branch_statement(
-        conflicting_projection, request_for(*inactive_leaf, *inactive));
-    expect_error(conflicting_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
-
-    auto multiple_charts = *imported.value.song;
-    auto second_chart = multiple_charts.charts.front();
-    second_chart.id = wormedit::chart_id_t{9'999};
-    multiple_charts.charts.push_back(std::move(second_chart));
-    const auto multiple_result = wormedit::delete_bms_inactive_branch_statement(
-        multiple_charts, request_for(*inactive_leaf, *inactive));
-    expect_error(multiple_result,
-                 wormedit::bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape);
-}
-
-TEST_CASE("BMS direct branch editing rejects stale active and structural targets",
-          "[unit][format][bms][writer][branch][direct-edit]") {
-    constexpr std::string_view source =
-        "#PLAYER 1\n#TITLE Direct branch rejection\n#BPM 120\n#WAV01 one.wav\n"
-        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0001\n"
-        "#ENDIF\n#ENDRANDOM\n";
-    wormedit::bms_parse_options_t parse_options;
-    parse_options.lane_profile_id = "bme-7k-outside-scratch";
-    parse_options.branch_choices = {
-        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
-    const auto imported = parse(source, parse_options);
-    REQUIRE(imported.value.song.has_value());
-    REQUIRE(imported.value.song->charts.front().bms_control_tree.has_value());
-    const auto& tree = *imported.value.song->charts.front().bms_control_tree;
-    const auto* active = control_statement_at(tree, line_order(source, "#00011:0100"));
-    const auto* inactive = control_statement_at(tree, line_order(source, "#00011:0001"));
-    REQUIRE(active != nullptr);
-    REQUIRE(inactive != nullptr);
-
-    const auto request_for = [](const wormedit::bms_control_node_t& node) {
-        return wormedit::bms_branch_statement_edit_t{
-            .statement = node.id,
-            .expected_source_order = node.source_order,
-            .expected_source_span = node.source_span,
-            .expected_original_text = node.original_text,
-            .replacement_text = "#00011:0101",
-        };
-    };
-    const auto active_result =
-        wormedit::edit_bms_inactive_branch_statement(*imported.value.song, request_for(*active));
-    CHECK_FALSE(active_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        active_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::active_statement));
-
-    auto stale = request_for(*inactive);
-    ++stale.expected_source_span.byte_begin;
-    const auto stale_result =
-        wormedit::edit_bms_inactive_branch_statement(*imported.value.song, std::move(stale));
-    CHECK_FALSE(stale_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        stale_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch));
-
-    auto changed_token = request_for(*inactive);
-    changed_token.replacement_text = "#00012:0100";
-    const auto changed_token_result =
-        wormedit::edit_bms_inactive_branch_statement(*imported.value.song, std::move(changed_token));
-    CHECK_FALSE(changed_token_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        changed_token_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::invalid_replacement));
-
-    const auto* else_control = control_node_at(tree, line_order(source, "#ELSE"));
-    REQUIRE(else_control != nullptr);
-    const auto structural_result = wormedit::edit_bms_inactive_branch_statement(
-        *imported.value.song, {.statement = else_control->id,
-                         .expected_source_order = else_control->source_order,
-                         .expected_source_span = else_control->source_span,
-                         .expected_original_text = else_control->original_text,
-                         .replacement_text = "#ELSE"});
-    CHECK_FALSE(structural_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        structural_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::target_not_branch_statement));
-
-    auto multiline = request_for(*inactive);
-    multiline.replacement_text = "#00011:0100\n#ENDIF";
-    const auto multiline_result =
-        wormedit::edit_bms_inactive_branch_statement(*imported.value.song, std::move(multiline));
-    CHECK_FALSE(multiline_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        multiline_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::invalid_replacement));
-
-    auto capped = request_for(*inactive);
-    capped.max_replacement_bytes = 4;
-    const auto capped_result =
-        wormedit::edit_bms_inactive_branch_statement(*imported.value.song, std::move(capped));
-    CHECK_FALSE(capped_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        capped_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit));
-
-    auto invalid_selection = *imported.value.song;
-    invalid_selection.charts.front().active_branch_selection.push_back(
-        invalid_selection.charts.front().active_branch_selection.front());
-    const auto invalid_selection_result =
-        wormedit::edit_bms_inactive_branch_statement(invalid_selection, request_for(*inactive));
-    CHECK_FALSE(invalid_selection_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        invalid_selection_result,
-        wormedit::bms_branch_statement_edit_diagnostic_code_t::invalid_branch_selection));
-
-    auto ambiguous = *imported.value.song;
-    wormedit::bms_control_node_t* duplicate_parent{};
-    const auto find_parent = [&](const auto& self, wormedit::bms_control_node_t& node) -> void {
-        if (std::ranges::any_of(node.children,
-                                [&](const auto& child) { return child.id == inactive->id; })) {
-            duplicate_parent = &node;
-        }
-        for (auto& child : node.children) {
-            self(self, child);
-        }
-    };
-    find_parent(find_parent, *ambiguous.charts.front().bms_control_tree);
-    REQUIRE(duplicate_parent != nullptr);
-    const auto duplicate = std::ranges::find(duplicate_parent->children, inactive->id,
-                                             &wormedit::bms_control_node_t::id);
-    REQUIRE(duplicate != duplicate_parent->children.end());
-    const auto duplicate_node = *duplicate;
-    duplicate_parent->children.push_back(duplicate_node);
-    const auto ambiguous_result =
-        wormedit::edit_bms_inactive_branch_statement(ambiguous, request_for(*inactive));
-    CHECK_FALSE(ambiguous_result.song.has_value());
-    CHECK(branch_edit_has_error(
-        ambiguous_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::ambiguous_target));
 }
 
 TEST_CASE("BMS writer preserves branches and exact ratios while editing the active projection",
@@ -1540,7 +837,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
     wormedit::bms_write_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.preserve_unchanged_source = false;
-    const auto written = wormedit::write_bms(edited_song, options);
+    const auto written = wormedit::write_bms_legacy_witness(edited_song, options);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(written.value->find("#TITLE Edited root title") != std::string::npos);
@@ -1579,7 +876,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
 
     auto flatten_options = options;
     flatten_options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
-    const auto flattened = wormedit::write_bms(*metadata_import.value.song, flatten_options);
+    const auto flattened = wormedit::write_bms_legacy_witness(*metadata_import.value.song, flatten_options);
     std::string flatten_diagnostics;
     for (const auto& diagnostic : flattened.diagnostics) {
         flatten_diagnostics += diagnostic.message + " at " + diagnostic.location + "\n";
@@ -1598,7 +895,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
            wormedit::rational_t{3, 4}));
 
     edited_song.charts.front().measures.front().definition.length = {7, 4};
-    const auto edited_branch_ratio = wormedit::write_bms(edited_song, options);
+    const auto edited_branch_ratio = wormedit::write_bms_legacy_witness(edited_song, options);
     REQUIRE(edited_branch_ratio.value.has_value());
     CHECK(edited_branch_ratio.ok());
     CHECK(occurrences(*edited_branch_ratio.value, "#00002:1.75") == 1);
@@ -1627,7 +924,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
     const auto sibling_ratio_order = line_order(metadata_source, "#00002:1/2");
     ambiguous_ratio_source.charts.front().bms_measure_length_projections.front().source_order =
         sibling_ratio_order;
-    const auto rejected_ambiguous_ratio = wormedit::write_bms(ambiguous_ratio_source, options);
+    const auto rejected_ambiguous_ratio = wormedit::write_bms_legacy_witness(ambiguous_ratio_source, options);
     CHECK_FALSE(rejected_ambiguous_ratio.value.has_value());
     CHECK(has_error(rejected_ambiguous_ratio,
                     wormedit::bms_write_diagnostic_code_t::branch_provenance));
@@ -1646,7 +943,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
     });
     REQUIRE(changed_line != active_ratio_children.end());
     changed_line->original_text = "#00002:9/4";
-    const auto rejected_changed_source = wormedit::write_bms(changed_retained_ratio, options);
+    const auto rejected_changed_source = wormedit::write_bms_legacy_witness(changed_retained_ratio, options);
     CHECK_FALSE(rejected_changed_source.value.has_value());
     CHECK(has_error(rejected_changed_source,
                     wormedit::bms_write_diagnostic_code_t::branch_provenance));
@@ -1661,7 +958,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
         .ordered_fields[static_cast<std::size_t>(
             branch_title_index - metadata_fields.ordered_field_source_orders.begin())]
         .second = "Edited branch title";
-    const auto edited_branch_title = wormedit::write_bms(edited_branch_metadata, options);
+    const auto edited_branch_title = wormedit::write_bms_legacy_witness(edited_branch_metadata, options);
     REQUIRE(edited_branch_title.value.has_value());
     CHECK(edited_branch_title.ok());
     CHECK(occurrences(*edited_branch_title.value, "#TITLE Edited branch title") == 1);
@@ -1685,7 +982,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
     const auto straddled_import = parse(straddled_source, parse_options);
     REQUIRE(straddled_import.value.song.has_value());
     const auto order_result =
-        wormedit::write_bms(*straddled_import.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
+        wormedit::write_bms_legacy_witness(*straddled_import.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
                                                      .preserve_unchanged_source = false});
     CHECK_FALSE(order_result.value.has_value());
     CHECK(has_error(order_result, wormedit::bms_write_diagnostic_code_t::branch_provenance));
@@ -1703,7 +1000,7 @@ TEST_CASE("BMS writer keeps branch-only metadata inside its branch",
     REQUIRE(imported.value.song->metadata.title == "Branch-only title");
 
     const auto written =
-        wormedit::write_bms(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
+        wormedit::write_bms_legacy_witness(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
                                              .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(occurrences(*written.value, "#TITLE Branch-only title") == 1);
@@ -1736,7 +1033,7 @@ TEST_CASE("BMS writer edits projected metadata in place across branch choices",
             ambiguous_provenance.metadata.format_groups.front().ordered_field_source_orders.end());
     *branch_title_source = line_order(source, "#IF 1");
     const auto ambiguous_write =
-        wormedit::write_bms(ambiguous_provenance, {
+        wormedit::write_bms_legacy_witness(ambiguous_provenance, {
                                                       .lane_profile_id = "bme-7k-outside-scratch",
                                                       .preserve_unchanged_source = false,
                                                   });
@@ -1758,7 +1055,7 @@ TEST_CASE("BMS writer edits projected metadata in place across branch choices",
     write_options.lane_profile_id = "bme-7k-outside-scratch";
     write_options.preserve_unchanged_source = false;
     write_options.output_encoding = wormedit::text_encoding_t::ascii;
-    const auto first_written = wormedit::write_bms(*first.value.song, write_options);
+    const auto first_written = wormedit::write_bms_legacy_witness(*first.value.song, write_options);
     REQUIRE(first_written.value.has_value());
     CHECK(first_written.ok());
     CHECK(occurrences(*first_written.value, "#TITLE Root title") == 1);
@@ -1796,7 +1093,7 @@ TEST_CASE("BMS writer edits projected metadata in place across branch choices",
         .ordered_fields[static_cast<std::size_t>(second_subtitle -
                                                  second_fields.ordered_field_source_orders.begin())]
         .second = "Edited second subtitle";
-    const auto second_written = wormedit::write_bms(*second.value.song, write_options);
+    const auto second_written = wormedit::write_bms_legacy_witness(*second.value.song, write_options);
     REQUIRE(second_written.value.has_value());
     CHECK(second_written.ok());
     CHECK(occurrences(*second_written.value, "#ARTIST Edited second artist") == 1);
@@ -1846,12 +1143,12 @@ TEST_CASE("BMS writer patches one branch resource path without changing sibling 
     wormedit::bms_write_options_t write_options;
     write_options.lane_profile_id = parse_options.lane_profile_id;
     write_options.preserve_unchanged_source = false;
-    const auto unchanged = wormedit::write_bms(*imported.value.song, write_options);
+    const auto unchanged = wormedit::write_bms_legacy_witness(*imported.value.song, write_options);
     REQUIRE(unchanged.value.has_value());
     CHECK(occurrences(*unchanged.value, "#WAV01  first.wav") == 1);
 
     resource->name = "edited-first.wav";
-    const auto written = wormedit::write_bms(*imported.value.song, write_options);
+    const auto written = wormedit::write_bms_legacy_witness(*imported.value.song, write_options);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(occurrences(*written.value, "#WAV01 edited-first.wav") == 1);
@@ -1877,7 +1174,7 @@ TEST_CASE("BMS writer patches one branch resource path without changing sibling 
 
     auto ambiguous = *imported.value.song;
     ambiguous.resources.front().provenance.source_order = line_order(source, "#WAV01 second.wav");
-    const auto rejected = wormedit::write_bms(ambiguous, write_options);
+    const auto rejected = wormedit::write_bms_legacy_witness(ambiguous, write_options);
     CHECK_FALSE(rejected.value.has_value());
     CHECK(has_error(rejected, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 }
@@ -1905,7 +1202,7 @@ void check_plain_timing_values(const wormedit::chart_document_t& chart) {
 }
 
 void check_fixed_selector_flatten(const wormedit::song_document_t& song, std::string_view selector) {
-    const auto flattened = wormedit::write_bms(song,
+    const auto flattened = wormedit::write_bms_legacy_witness(song,
         {.branch_policy = wormedit::bms_branch_policy_t::flatten_active});
     REQUIRE(flattened.value);
     CHECK(flattened.value->find(selector) == std::string::npos);
@@ -1923,7 +1220,7 @@ TEST_CASE("Default BMS export emits edited plain timing without discarding root 
     chart.pauses.front().duration = {96, 1};
     // Direct model edits in writer tests must bypass the unchanged-source shortcut;
     // the branch policy itself remains the default preserve-tree policy.
-    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    const auto written = wormedit::write_bms_legacy_witness(song, {.preserve_unchanged_source = false});
     REQUIRE(written.value);
     CHECK(written.value->find("; keep this timing comment") != std::string::npos);
     CHECK(written.value->find("#X-WORMEDIT-UNKNOWN keep this header") != std::string::npos);
@@ -1937,7 +1234,7 @@ TEST_CASE("Default BMS timing export still rejects unsupported pause units",
     auto song = plain_timing_song();
     song.charts.front().pauses.front().source_unit = GENERATE(wormedit::pause_unit_t::seconds,
         wormedit::pause_unit_t::milliseconds, wormedit::pause_unit_t::beats);
-    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    const auto written = wormedit::write_bms_legacy_witness(song, {.preserve_unchanged_source = false});
     CHECK_FALSE(written.value);
     CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
 }
@@ -1947,7 +1244,7 @@ TEST_CASE("Default BMS timing export rejects ambiguous BPM ordering rather than 
     auto song = plain_timing_song();
     auto& chart = song.charts.front();
     chart.bpms.back().position = chart.bpms.front().position;
-    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    const auto written = wormedit::write_bms_legacy_witness(song, {.preserve_unchanged_source = false});
     CHECK_FALSE(written.value);
     CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::duplicate_event));
 }
@@ -1960,7 +1257,7 @@ TEST_CASE("Preserve-tree keeps fixed BMS selectors even without conditional bran
     REQUIRE(imported.value.song);
     auto& song = *imported.value.song;
     song.metadata.title = "Edited fixed selector";
-    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    const auto written = wormedit::write_bms_legacy_witness(song, {.preserve_unchanged_source = false});
     REQUIRE(written.value);
     CHECK(occurrences(*written.value, selector) == 1);
     const auto reparsed = parse(*written.value, {.lane_profile_id = "bme-7k-outside-scratch"});
@@ -1988,7 +1285,7 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
     wormedit::bms_write_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.preserve_unchanged_source = false;
-    const auto written = wormedit::write_bms(edited, options);
+    const auto written = wormedit::write_bms_legacy_witness(edited, options);
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
     CHECK(occurrences(*written.value, "#BPM 120") == 1);
@@ -2036,7 +1333,7 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
         });
     REQUIRE(branch_bpm != edited_timing.charts.front().bpms.end());
     branch_bpm->beats_per_minute = {181, 1};
-    const auto edited_bpm = wormedit::write_bms(edited_timing, options);
+    const auto edited_bpm = wormedit::write_bms_legacy_witness(edited_timing, options);
     REQUIRE(edited_bpm.value.has_value());
     CHECK(edited_bpm.ok());
     CHECK(occurrences(*edited_bpm.value, "#BPM 181") == 1);
@@ -2059,7 +1356,7 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
     auto edited_root_channel_bpm = *imported.value.song;
     REQUIRE_FALSE(edited_root_channel_bpm.charts.front().bpms.empty());
     edited_root_channel_bpm.charts.front().bpms.front().beats_per_minute = {121, 1};
-    const auto rejected_root_channel_bpm = wormedit::write_bms(edited_root_channel_bpm, options);
+    const auto rejected_root_channel_bpm = wormedit::write_bms_legacy_witness(edited_root_channel_bpm, options);
     CHECK_FALSE(rejected_root_channel_bpm.value.has_value());
     CHECK(has_error(rejected_root_channel_bpm,
                     wormedit::bms_write_diagnostic_code_t::branch_provenance));
@@ -2067,7 +1364,7 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
     auto edited_pause = *imported.value.song;
     REQUIRE_FALSE(edited_pause.charts.front().pauses.empty());
     edited_pause.charts.front().pauses.front().duration = {49, 1};
-    const auto rejected_pause = wormedit::write_bms(edited_pause, options);
+    const auto rejected_pause = wormedit::write_bms_legacy_witness(edited_pause, options);
     CHECK_FALSE(rejected_pause.value.has_value());
     CHECK(has_error(rejected_pause, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 }
@@ -2094,7 +1391,7 @@ TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional mea
     wormedit::bms_write_options_t preserve_options;
     preserve_options.lane_profile_id = "bme-7k-outside-scratch";
     preserve_options.preserve_unchanged_source = false;
-    const auto preserved = wormedit::write_bms(*imported.value.song, preserve_options);
+    const auto preserved = wormedit::write_bms_legacy_witness(*imported.value.song, preserve_options);
     REQUIRE(preserved.value.has_value());
     CHECK(preserved.ok());
     CHECK(preserved.value->find("#RANDOM 2") != std::string::npos);
@@ -2106,7 +1403,7 @@ TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional mea
 
     auto flatten_options = preserve_options;
     flatten_options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
-    const auto flattened = wormedit::write_bms(*imported.value.song, flatten_options);
+    const auto flattened = wormedit::write_bms_legacy_witness(*imported.value.song, flatten_options);
     INFO((flattened.diagnostics.empty() ? std::string{} : flattened.diagnostics.back().message));
     REQUIRE(flattened.value.has_value());
     CHECK(flattened.ok());
@@ -2120,7 +1417,7 @@ TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional mea
     CHECK(flattened.value->find("#STOP02 96") != std::string::npos);
     CHECK(flattened.value->find("#00002:0.75") != std::string::npos);
     CHECK(flattened.value->find("#00002:1.25") == std::string::npos);
-    const auto flattened_again = wormedit::write_bms(*imported.value.song, flatten_options);
+    const auto flattened_again = wormedit::write_bms_legacy_witness(*imported.value.song, flatten_options);
     REQUIRE(flattened_again.value.has_value());
     CHECK(*flattened_again.value == *flattened.value);
 
@@ -2151,14 +1448,14 @@ TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional mea
 
     auto non_bms_pause = *imported.value.song;
     non_bms_pause.charts.front().pauses.front().source_unit = wormedit::pause_unit_t::seconds;
-    const auto rejected_pause = wormedit::write_bms(non_bms_pause, flatten_options);
+    const auto rejected_pause = wormedit::write_bms_legacy_witness(non_bms_pause, flatten_options);
     CHECK_FALSE(rejected_pause.value.has_value());
     CHECK(has_error(rejected_pause, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
 
     auto nonterminating = *imported.value.song;
     nonterminating.charts.front().measures.push_back(
         {.id = wormedit::measure_id_t{9'999}, .definition = {.length = {1, 3}}});
-    const auto rejected_ratio = wormedit::write_bms(nonterminating, flatten_options);
+    const auto rejected_ratio = wormedit::write_bms_legacy_witness(nonterminating, flatten_options);
     CHECK_FALSE(rejected_ratio.value.has_value());
     CHECK(has_error(rejected_ratio, wormedit::bms_write_diagnostic_code_t::unrepresentable_number));
 }
@@ -2220,7 +1517,7 @@ TEST_CASE("BMS writer patches active branch channel events and uniquely bound ti
     chart.pauses.front().duration = {60, 1};
 
     const auto written =
-        wormedit::write_bms(edited, {.lane_profile_id = parse_options.lane_profile_id,
+        wormedit::write_bms_legacy_witness(edited, {.lane_profile_id = parse_options.lane_profile_id,
                                      .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -2320,7 +1617,7 @@ TEST_CASE("BMS writer rejects branch event edits without unique source attributi
     auto& notes = colliding_note.charts.front().measures.front().notes;
     REQUIRE(notes.size() == 2);
     notes.front().position.row = colliding_note.charts.front().divisions_per_standard_measure / 2;
-    const auto collision = wormedit::write_bms(colliding_note, options);
+    const auto collision = wormedit::write_bms_legacy_witness(colliding_note, options);
     CHECK_FALSE(collision.value.has_value());
     CHECK(has_error(collision, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
@@ -2330,21 +1627,21 @@ TEST_CASE("BMS writer rejects branch event edits without unique source attributi
         bpms, [](const auto& bpm) { return bpm.provenance.source_field.starts_with("08 slot "); });
     REQUIRE(first_extended != bpms.end());
     first_extended->beats_per_minute = {155, 1};
-    const auto shared_bpm = wormedit::write_bms(ambiguous_bpm, options);
+    const auto shared_bpm = wormedit::write_bms_legacy_witness(ambiguous_bpm, options);
     CHECK_FALSE(shared_bpm.value.has_value());
     CHECK(has_error(shared_bpm, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
     auto ambiguous_pause = *imported.value.song;
     REQUIRE(ambiguous_pause.charts.front().pauses.size() == 2);
     ambiguous_pause.charts.front().pauses.front().duration = {60, 1};
-    const auto shared_stop = wormedit::write_bms(ambiguous_pause, options);
+    const auto shared_stop = wormedit::write_bms_legacy_witness(ambiguous_pause, options);
     CHECK_FALSE(shared_stop.value.has_value());
     CHECK(has_error(shared_stop, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
     auto forged_provenance = *imported.value.song;
     forged_provenance.charts.front().measures.front().notes.front().provenance.source_spelling +=
         " forged";
-    const auto forged = wormedit::write_bms(forged_provenance, options);
+    const auto forged = wormedit::write_bms_legacy_witness(forged_provenance, options);
     CHECK_FALSE(forged.value.has_value());
     CHECK(has_error(forged, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 }
@@ -2365,7 +1662,7 @@ TEST_CASE("BMS writer protects root timing declarations shared with sibling bran
     });
     REQUIRE(extended != edited.charts.front().bpms.end());
     extended->beats_per_minute = {155, 1};
-    const auto rejected = wormedit::write_bms(
+    const auto rejected = wormedit::write_bms_legacy_witness(
         edited, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
     CHECK_FALSE(rejected.value.has_value());
     CHECK(has_error(rejected, wormedit::bms_write_diagnostic_code_t::branch_provenance));
@@ -2394,7 +1691,7 @@ TEST_CASE("BMS writer edits a retained branch hold through its paired source slo
     auto edited = *imported.value.song;
     edited.charts.front().measures.front().notes.front().sound = edited_wav->id;
     const auto written =
-        wormedit::write_bms(edited, {.lane_profile_id = parse_options.lane_profile_id,
+        wormedit::write_bms_legacy_witness(edited, {.lane_profile_id = parse_options.lane_profile_id,
                                      .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -2431,14 +1728,14 @@ TEST_CASE("BMS writer diagnoses unsafe retained metadata tokens", "[unit][format
 
     auto unsafe = *simple_chart().value.song;
     unsafe.metadata.format_groups.front().ordered_fields.front().first = "TITLE\n#WAV01";
-    const auto unsafe_result = wormedit::write_bms(unsafe, options);
+    const auto unsafe_result = wormedit::write_bms_legacy_witness(unsafe, options);
     CHECK_FALSE(unsafe_result.value.has_value());
     CHECK(has_error(unsafe_result, wormedit::bms_write_diagnostic_code_t::invalid_document));
 
     auto extension = *simple_chart().value.song;
     extension.metadata.format_groups.front().ordered_fields.emplace_back("CUSTOM_EXTENSION",
                                                                          "value");
-    const auto extension_result = wormedit::write_bms(extension, options);
+    const auto extension_result = wormedit::write_bms_legacy_witness(extension, options);
     REQUIRE(extension_result.value.has_value());
     CHECK(extension_result.value->find("#CUSTOM_EXTENSION value") != std::string::npos);
 
@@ -2446,7 +1743,7 @@ TEST_CASE("BMS writer diagnoses unsafe retained metadata tokens", "[unit][format
     nonterminating.charts.front().measures.front().definition.length = {1, 3};
     nonterminating.charts.front().measures.front().definition.meter.reset();
     nonterminating.charts.front().measures.front().notes.clear();
-    const auto nonterminating_result = wormedit::write_bms(nonterminating, options);
+    const auto nonterminating_result = wormedit::write_bms_legacy_witness(nonterminating, options);
     CHECK_FALSE(nonterminating_result.value.has_value());
     CHECK(has_error(nonterminating_result,
                     wormedit::bms_write_diagnostic_code_t::unrepresentable_number));
@@ -2459,7 +1756,7 @@ TEST_CASE("BMS normalized output keeps raw comment lines instead of omitting the
     const auto imported = parse(source);
     REQUIRE(imported.value.song.has_value());
     const auto written =
-        wormedit::write_bms(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
+        wormedit::write_bms_legacy_witness(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch",
                                              .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -2478,7 +1775,7 @@ TEST_CASE("BMS writer emits every retained song and chart metadata group",
         .ordered_fields = {{"CHART_GROUP", "chart value"}},
     });
 
-    const auto written = wormedit::write_bms(
+    const auto written = wormedit::write_bms_legacy_witness(
         song, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
     CHECK(written.ok());
@@ -2494,7 +1791,7 @@ TEST_CASE("BMS writer validates only the selected chart", "[unit][format][bms][w
     unrelated.divisions_per_standard_measure = 0;
     song.charts.push_back(std::move(unrelated));
 
-    const auto written = wormedit::write_bms(song, {.chart = selected_chart,
+    const auto written = wormedit::write_bms_legacy_witness(song, {.chart = selected_chart,
                                                     .lane_profile_id = "bme-7k-outside-scratch",
                                                     .preserve_unchanged_source = false});
     REQUIRE(written.value.has_value());
@@ -2516,10 +1813,10 @@ TEST_CASE("BMS export bakes SV recipes into supported SCROLL declarations",
         .curve = wormedit::sv_recipe_curve_t::constant,
         .parameters = {.value_from = {2, 1}},
     });
-    const auto written = wormedit::write_bms(song);
+    const auto written = wormedit::write_bms_legacy_witness(song);
     REQUIRE(written.value);
     CHECK(written.value->find("#SCROLL01 2") != std::string::npos);
-    const auto classic = wormedit::write_bms(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible});
+    const auto classic = wormedit::write_bms_legacy_witness(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible});
     CHECK(has_error(classic, wormedit::bms_write_diagnostic_code_t::lossy_transform));
 }
 
@@ -2539,7 +1836,7 @@ auto standard_5k_fixture_import() -> wormedit::bms_parse_outcome_t {
 auto write_standard_5k_fixture() -> std::optional<std::string> {
     const auto imported = standard_5k_fixture_import();
     if (!imported.value.song) return std::nullopt;
-    const auto written = wormedit::write_bms(
+    const auto written = wormedit::write_bms_legacy_witness(
         *imported.value.song, {.lane_profile_id = "bms-5k-outside-scratch",
                          .preserve_unchanged_source = false});
     return written.value;
@@ -2573,7 +1870,7 @@ auto export_after_far_edit(const std::string& source) -> wormedit::bms_write_out
             {{wormedit::editor_selection_object_kind_t::note, far_measure.notes.front().id}}}));
     REQUIRE(wormedit::dispatch_editor_action(
         history, state, wormedit::delete_editor_selection_action_t{}));
-    return wormedit::write_bms(history.document, {.lane_profile_id = "bme-7k-outside-scratch"});
+    return wormedit::write_bms_legacy_witness(history.document, {.lane_profile_id = "bme-7k-outside-scratch"});
 }
 
 } // namespace
@@ -2653,13 +1950,13 @@ TEST_CASE("BMS normalized output transcodes retained comments and unknown header
                                          .lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(imported.value.song);
     auto song = *imported.value.song;
-    const auto utf8 = wormedit::write_bms(song, {.lane_profile_id = "bme-7k-outside-scratch",
+    const auto utf8 = wormedit::write_bms_legacy_witness(song, {.lane_profile_id = "bme-7k-outside-scratch",
                                                  .preserve_unchanged_source = false});
     REQUIRE(utf8.value);
     CHECK(utf8.value->find("; テスト\n") != std::string::npos);
     CHECK(utf8.value->find("#X-MEMO テスト\n") != std::string::npos);
 
-    const auto legacy = wormedit::write_bms(
+    const auto legacy = wormedit::write_bms_legacy_witness(
         song, {.lane_profile_id = "bme-7k-outside-scratch",
                .preserve_unchanged_source = false,
                .output_encoding = wormedit::text_encoding_t::cp932});
@@ -2737,11 +2034,11 @@ TEST_CASE("BMS BGM columns export byte-identically unedited and keep each line's
     REQUIRE(imported.value.song);
 
     const auto unedited =
-        wormedit::write_bms(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch"});
+        wormedit::write_bms_legacy_witness(*imported.value.song, {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(unedited.value);
     CHECK(*unedited.value == source);
 
-    const auto normalized = wormedit::write_bms(
+    const auto normalized = wormedit::write_bms_legacy_witness(
         *imported.value.song,
         {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
     REQUIRE(normalized.value);
@@ -2806,6 +2103,8 @@ namespace {
 template <typename T> void require_bms_export(const T& value,
     const std::source_location& where = std::source_location::current()) {
     INFO("BMS export assertion at " << where.line());
+    if constexpr (requires { value.diagnostics; })
+        for (const auto& diagnostic : value.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(static_cast<bool>(value));
 }
 
@@ -2840,7 +2139,7 @@ TEST_CASE("Converted BMS taps and holds export in their original conditional sco
                                                  chart, ids, std::nullopt));
     const auto native = wormedit::write_native_project(history.document);
     require_bms_export(native.value);
-    const auto written = wormedit::write_bms(history.document);
+    const auto written = wormedit::write_bms_legacy_witness(history.document);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
     require_bms_export(written.value);
     CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
@@ -2879,8 +2178,10 @@ TEST_CASE("BGM hold export loss respects strict and warning conversion policies"
     CHECK(strict.outputs.empty());
     request.loss_policy = wormedit::loss_policy_t::warn;
     const auto warning = wormedit::convert_document(history.document, request);
+    for (const auto& diagnostic : warning.diagnostics) UNSCOPED_INFO(diagnostic.message);
     CHECK_FALSE(warning.has_errors());
-    CHECK(warning.outputs.size() == 1);
+    require_bms_export(warning.outputs.size() == 1);
+    CHECK(warning.outputs.front().bytes.find("#00001:01") != std::string::npos);
     CHECK_FALSE(warning.diagnostics.empty());
 }
 
@@ -2890,11 +2191,11 @@ TEST_CASE("BMS player profiles accept paired extension fixtures and reject LR2 l
         const auto source = read_fixture_text("bms/export-" + profile + "-" + extension + ".bms");
         const auto imported = parse(source);
         require_bms_export(imported.value.song);
-        const auto modern = wormedit::write_bms(*imported.value.song);
+        const auto modern = wormedit::write_bms_legacy_witness(*imported.value.song);
         require_bms_export(modern.value);
         require_bms_export(*modern.value == source);
         auto options = *wormedit::bms_write_options_t::from_profile("lr2_compatible");
-        const auto classic = wormedit::write_bms(*imported.value.song, options);
+        const auto classic = wormedit::write_bms_legacy_witness(*imported.value.song, options);
         const bool compatible = profile == "lr2" || extension == "timing";
         require_bms_export(classic.value.has_value() == compatible);
         if (compatible) {
@@ -2909,21 +2210,21 @@ TEST_CASE("BMS profiles preserve selected source bytes and transcode legacy Japa
     const auto utf8 = read_fixture_text("bms/export-beatoraja-encoding.bms");
     const auto imported = parse(legacy, {.encoding_override = wormedit::text_encoding_t::cp932});
     require_bms_export(imported.value.song);
-    const auto modern = wormedit::write_bms(*imported.value.song);
+    const auto modern = wormedit::write_bms_legacy_witness(*imported.value.song);
     require_bms_export(modern.value);
     require_bms_export(*modern.value == utf8);
     wormedit::bms_write_options_t preserve{.convert_untouched_source_to_utf8 = false};
-    require_bms_export(wormedit::write_bms(*imported.value.song, preserve).value == legacy);
+    require_bms_export(wormedit::write_bms_legacy_witness(*imported.value.song, preserve).value == legacy);
     auto classic = *wormedit::bms_write_options_t::from_profile("lr2_compatible");
-    require_bms_export(wormedit::write_bms(*imported.value.song, classic).value == legacy);
+    require_bms_export(wormedit::write_bms_legacy_witness(*imported.value.song, classic).value == legacy);
     const auto unicode = parse(utf8);
     require_bms_export(unicode.value.song);
-    require_bms_export(wormedit::write_bms(*unicode.value.song, classic).value == legacy);
+    require_bms_export(wormedit::write_bms_legacy_witness(*unicode.value.song, classic).value == legacy);
     auto song = *unicode.value.song;
     song.metadata.title = "Cannot encode 😀";
     classic.preserve_unchanged_source = false;
     classic.lane_profile_id = "bme-7k-outside-scratch";
-    const auto rejected = wormedit::write_bms(song, classic);
+    const auto rejected = wormedit::write_bms_legacy_witness(song, classic);
     for (const auto& diagnostic : rejected.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_bms_export(has_error(rejected, wormedit::bms_write_diagnostic_code_t::unrepresentable_text));
 }
@@ -2940,7 +2241,7 @@ TEST_CASE("BMS authored scrolls export and reimport exact SC channel multipliers
     chart.scrolls.front().multiplier = {-3, 4};
     chart.scrolls.push_back({.id = wormedit::object_id_t{9999},
         .position = {chart.measures.front().id, 0}, .multiplier = {0, 1}});
-    const auto written = wormedit::write_bms(song, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
+    const auto written = wormedit::write_bms_legacy_witness(song, {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
     for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
     require_bms_export(written.value);
     require_bms_export(written.value->find("#SCROLL01 -0.75") != std::string::npos);
@@ -2951,21 +2252,23 @@ TEST_CASE("BMS authored scrolls export and reimport exact SC channel multipliers
     require_bms_export(scrolls.size() == 2);
     require_bms_export(scrolls[0].multiplier == wormedit::signed_rational_t{0, 1});
     require_bms_export(scrolls[1].multiplier == wormedit::signed_rational_t{-3, 4});
-    require_bms_export(has_error(wormedit::write_bms(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible}),
+    require_bms_export(has_error(wormedit::write_bms_legacy_witness(song, {.profile = wormedit::bms_export_profile_t::lr2_compatible}),
                     wormedit::bms_write_diagnostic_code_t::lossy_transform));
 }
 
 TEST_CASE("BMS conversion chooses player profiles without treating them as lane profiles", "[bms][writer][player-profile][conversion]") {
     const std::string profile = GENERATE("beatoraja", "lr2_compatible");
-    const auto imported = parse(read_fixture_text("bms/export-lr2-timing.bms"));
+    const auto imported = parse(read_fixture_text("bms/export-lr2-timing.bms"),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
     require_bms_export(imported.value.song);
     wormedit::conversion_request_t request{.target = wormedit::format_family_t::bms,
         .target_profile = profile};
     const auto converted = wormedit::convert_document(*imported.value.song, request);
-    require_bms_export(static_cast<bool>(converted));
+    require_bms_export(converted);
     require_bms_export(converted.outputs.size() == 1);
     require_bms_export(converted.outputs.front().reimport_validated);
-    auto modern = parse(read_fixture_text("bms/export-beatoraja-preview.bms"));
+    auto modern = parse(read_fixture_text("bms/export-beatoraja-preview.bms"),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
     require_bms_export(modern.value.song);
     const auto preview = wormedit::convert_document(*modern.value.song, request);
     require_bms_export(static_cast<bool>(preview) == (profile == "beatoraja"));

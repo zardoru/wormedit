@@ -4,6 +4,23 @@
 #include <unordered_set>
 
 namespace wormedit {
+auto bms_content_item_t::resource_identifier() const -> std::optional<bms_native_resource_reference_t> {
+    return std::visit([](const auto& value) -> std::optional<bms_native_resource_reference_t> {
+        using value_type = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<value_type, bms_resource_declaration_t>)
+            return bms_native_resource_reference_t{.name_space = value.name_space, .identifier = value.identifier};
+        else if constexpr (std::same_as<value_type, bms_native_content_t>) return value.resource_reference();
+        else if constexpr (std::same_as<value_type, bms_bga_content_t>)
+            return bms_native_resource_reference_t{.name_space = bms_resource_namespace_t::bmp, .identifier = value.bmp};
+        else if constexpr (std::same_as<value_type, bms_hold_endpoint_t>)
+            return bms_native_resource_reference_t{.identifier = value.wav};
+        else if constexpr (requires { value.wav; }) {
+            if (value.wav) return bms_native_resource_reference_t{.identifier = *value.wav};
+            return std::nullopt;
+        } else return std::nullopt;
+    }, value);
+}
+
 namespace {
 using failure_t = error_t<failure_code_t>;
 struct program_validation_t {
@@ -256,6 +273,15 @@ auto bms_program_t::with_text(branch_id_t id, bms_text_t text, bms_program_limit
     nodes[indices_.at(id.value)].value = std::move(text);
     return from(std::move(nodes), limits);
 }
+auto bms_program_t::has_control_flow() const -> bool {
+    return std::ranges::any_of(nodes_, [](const auto& node) {
+        return !std::holds_alternative<bms_root_scope_t>(node.value) &&
+            !std::holds_alternative<bms_bare_scope_t>(node.value) &&
+            (node.is_scope() || std::holds_alternative<bms_set_random_t>(node.value) ||
+                std::holds_alternative<bms_set_switch_t>(node.value));
+    });
+}
+
 auto bms_program_t::conditional_selector(branch_id_t id) const -> std::optional<branch_id_t> {
     const auto* node = find(id);
     if (!node) return std::nullopt;

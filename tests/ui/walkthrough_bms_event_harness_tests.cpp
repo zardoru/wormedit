@@ -1,3 +1,4 @@
+#include "sys/resources/bms_catalog_bindings.h"
 #include "sys/project/workspace_view.h"
 #include "nuklear_event_harness.h"
 #include "sys/app/application_defaults.h"
@@ -108,7 +109,9 @@ struct walkthrough_t {
         project();
         (void)harness.frame();
     }
+    auto chart() const -> const chart_document_t& { return *history.read_chart(*workspace.value->selected_chart); }
     void project() {
+        application.project.bms_program.synchronize(history, workspace.value->selected_chart);
         require_step(rebind_workspace(*workspace.value, history.document).value);
         const auto source = workspace_view_t::from(*workspace.value, history.document);
         require_step(source.value);
@@ -148,7 +151,7 @@ auto import_review(walkthrough_t& flow) -> resource_id_t {
     const auto path = (std::filesystem::path{WORMEDIT_SOURCE_ROOT} /
                        "tests/fixtures/audio/keysound-c4.ogg").string();
     const std::array paths{path};
-    const auto chart = flow.history.document.charts.front().id;
+    const auto chart = flow.chart().id;
     const auto prepared = prepare_keysound_import(flow.history.document, chart, paths);
     require_step(prepared.entries.size() == 1);
     const wormedit::ui::sound_import_item_t item{
@@ -187,7 +190,8 @@ void check_bms_metadata(walkthrough_t& flow) {
 }
 
 void check_imported_slots(walkthrough_t& flow, resource_id_t sound) {
-    const auto& identities = flow.history.document.resources.front().target_identities;
+    const bms_catalog_bindings_t bindings(flow.history.document, &flow.chart());
+    const auto identities = bindings.identities(flow.history.document.resources.front());
     require_step(identities.size() == 1);
     check_step(identities.front().family == format_family_t::bms);
     check_step(identities.front().namespace_name == "WAV");
@@ -226,7 +230,7 @@ void add_bgm_column(walkthrough_t& flow) {
                                             snapshot.get().compose_bgm_column_count).applied);
     }
     require_step(emitted);
-    require_step(flow.history.document.charts.front().bgm_source_lanes.size() == 1);
+    require_step(flow.chart().bgm_source_lanes.size() == 1);
     require_step(rebind_workspace(*flow.workspace.value, flow.history).value);
     flow.project();
     check_step(flow.harness.view().compose.bgm_lanes.size() == 1);
@@ -234,13 +238,13 @@ void add_bgm_column(walkthrough_t& flow) {
 }
 
 void move_note_and_paste_imported_sound(walkthrough_t& flow, resource_id_t sound) {
-    const auto note = flow.history.document.charts.front().measures.front().notes.front().id;
+    const auto note = flow.chart().measures.front().notes.front().id;
     flow.interaction->selected_notes = {note};
     flow.interaction->selected_objects.clear();
     flow.project();
     check_step(flow.harness.view().compose.move_to_bgm_available);
     require_step(move_editor_selection_to_bgm(flow.history, *flow.interaction).command.applied);
-    const auto& measure = flow.history.document.charts.front().measures.front();
+    const auto& measure = flow.chart().measures.front();
     require_step(measure.bgm_events.size() == 1);
     check_step(measure.bgm_events.front().id == note);
     check_step(measure.bgm_events.front().sound == sound);
@@ -251,7 +255,7 @@ void move_note_and_paste_imported_sound(walkthrough_t& flow, resource_id_t sound
     std::string status;
     require_step(begin_compose_paste(flow.application, flow.history, *flow.interaction, status));
     require_step(apply_compose_paste(flow.application, flow.history, *flow.interaction, status));
-    const auto& pasted = flow.history.document.charts.front().measures.front().notes;
+    const auto& pasted = flow.chart().measures.front().notes;
     check_step(std::ranges::any_of(pasted, [&](const auto& entry) {
         return entry.position.row == 96 && entry.sound == sound;
     }));
@@ -287,11 +291,11 @@ TEST_CASE("BMS walkthrough wizard creates BME and BMSON charts with their source
     require_step(created.front().get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     const auto document = make_initial_document(song_id_t{1}, created.front().get().new_project_layout_id);
     require_step(document);
-    require_step(document->charts.size() == 1);
-    check_step(document->charts.front().input_profile.bindings.size() == (bmson ? 0 : 8));
+    require_step(document->read_charts().size() == 1);
+    check_step((*document->read_charts().front()).input_profile.bindings.size() == (bmson ? 0 : 8));
     const auto family = bmson ? format_family_t::bmson : format_family_t::bms;
-    check_step(document->charts.front().source_family == family);
-    check_step(document->charts.front().lane_layouts.front().layout.lanes.size() == (bmson ? 24 : 8));
+    check_step((*document->read_charts().front()).source_family == family);
+    check_step((*document->read_charts().front()).lane_layouts.front().layout.lanes.size() == (bmson ? 24 : 8));
     require_step(document->output_groups.size() == 1);
     check_step(document->output_groups.front().family == family);
 }
@@ -304,7 +308,7 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     const auto& initial_view = flow.harness.view().compose;
     check_step(std::ranges::any_of(std::span{initial_view.grid_lines},
         [](const auto& line) { return line.measure_number == 1 && line.chart_row == 0; }));
-    const auto canvas = build_virtual_canvas(flow.history.document.charts.front());
+    const auto canvas = build_virtual_canvas(flow.chart());
     require_step(std::holds_alternative<virtual_canvas_t>(canvas));
     check_step(std::get<virtual_canvas_t>(canvas).measure_count == bms_addressable_measure_count);
     const auto sound = import_review(flow);
@@ -331,15 +335,15 @@ TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC past
     INFO(started);
     const auto released = flow.dispatch(flow.press(SDLK_2, SDL_SCANCODE_2, false));
     INFO(released);
-    require_step(flow.history.document.charts.front().measures.front().notes.size() == 1);
-    check_step(flow.history.document.charts.front().measures.front().notes.front().sound == sound);
+    require_step(flow.chart().measures.front().notes.size() == 1);
+    check_step(flow.chart().measures.front().notes.front().sound == sound);
     flow.project();
     (void)flow.harness.frame();
     (void)flow.dispatch(flow.press(SDLK_3, SDL_SCANCODE_3));
     (void)flow.dispatch(flow.press(SDLK_UP, SDL_SCANCODE_UP));
     (void)flow.dispatch(flow.press(SDLK_UP, SDL_SCANCODE_UP, false));
     (void)flow.dispatch(flow.press(SDLK_3, SDL_SCANCODE_3, false));
-    const auto& notes = flow.history.document.charts.front().measures.front().notes;
+    const auto& notes = flow.chart().measures.front().notes;
     require_step(notes.size() == 2);
     check_step(notes.back().kind == note_kind_t::hold);
     check_step(notes.back().sound == sound);
@@ -358,10 +362,11 @@ TEST_CASE("BMS walkthrough pastes all four editor formats through preview commit
         {.file_extension = ".bme", .lane_profile_id = "bme-7k-outside-scratch"});
     require_step(parsed.value.song);
     auto history = document_history_t::from(std::move(*parsed.value.song));
-    history.document.charts.front().divisions_per_standard_measure = 1344;
+    require_step(apply_redivision_command(history, history.document.read_charts().front()->id, 1344).command.applied);
+    history = document_history_t::from(history.document);
     editor_interaction_state_t state;
-    state.chart = history.document.charts.front().id;
-    state.cursor = {history.document.charts.front().measures[1].id, 0};
+    state.chart = (*history.document.read_charts().front()).id;
+    state.cursor = {(*history.document.read_charts().front()).measures[1].id, 0};
     application_command_state_t application;
     const auto text = read_file(std::filesystem::path{WORMEDIT_SOURCE_ROOT} /
                                 "tests/fixtures/bms/clipboard" / name);
@@ -384,9 +389,9 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
           "[frontend-state][event-harness][walkthrough-bms]") {
     walkthrough_t flow;
     const auto sound = import_review(flow);
-    const auto chart = flow.history.document.charts.front().id;
-    const auto measure = flow.history.document.charts.front().measures.front().id;
-    flow.interaction->active_lane = flow.history.document.charts.front().input_profile.bindings[1].lane;
+    const auto chart = flow.chart().id;
+    const auto measure = flow.chart().measures.front().id;
+    flow.interaction->active_lane = flow.chart().input_profile.bindings[1].lane;
     require_step(dispatch_editor_action(flow.history, *flow.interaction,
         place_tap_action_t{.position = {measure, 0}, .sound = sound}));
     const auto directory = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/bms-export-walkthrough";
@@ -408,8 +413,8 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     require_step(prepared);
     check_step(prepared->pending_assets.size() == 1);
     check_step(!std::filesystem::exists(directory / "song"));
-    check_step(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.loss && !diagnostic.message.empty();
+    check_step(std::ranges::none_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.loss;
     }));
     const auto exported = run_output_group_export(request, {});
     INFO(exported.message);
@@ -422,7 +427,7 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     const auto bytes = read_file(output);
     check_step(bytes.find("#WAV01 ") != std::string::npos);
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
-        {.file_extension = output.extension().string()});
+        {.file_extension = output.extension().string(), .lane_profile_id = "bme-7k-outside-scratch"});
     require_step(parsed.value.song);
     require_step(parsed.value.song->audio_assets.size() == 1);
     const auto copied = output.parent_path() / parsed.value.song->audio_assets.front().source_path;
@@ -551,8 +556,7 @@ auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id
         .compose_input_document_revision = flow.history.document.revision,
         .compose_import_paths = {path}, .compose_sound_slot = slot};
     apply_sound_action(flow, action);
-    const auto rows = sound_slots_view_t::from(flow.history.document,
-        {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1});
+    const auto rows = sound_slots_view_t::from(flow.history.document, {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1}, &flow.chart());
     require_step(rows.rows.size() == 1);
     return rows.rows.front().resource;
 }
@@ -584,7 +588,7 @@ TEST_CASE("BMS walkthrough imports three picked files starting at an explicitly 
     require_step(staged.accepted);
     check_step(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.first_slot == 10);
     confirm_sound_review(flow, true);
-    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 3});
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 3}, &flow.chart());
     require_step(slots.rows.size() == 3);
     for (std::size_t index = 0; index < paths.size(); ++index) {
         check_step(static_cast<bool>(slots.rows[index].resource));
@@ -620,7 +624,7 @@ TEST_CASE("BMS walkthrough arming slot 05 does not redirect automatic picked or 
     require_step(staged.accepted);
     check_false_step(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
     confirm_sound_review(flow, false);
-    const auto slots = sound_slots_view_t::from(flow.history.document, {.row_limit = 5});
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.row_limit = 5}, &flow.chart());
     for (std::size_t index = 0; index < file_count; ++index)
         check_step(static_cast<bool>(slots.rows[index].resource));
     check_step(slots.rows[4].resource == armed);
@@ -647,8 +651,8 @@ TEST_CASE("BMS walkthrough explicitly selected drop ranges retain occupied-slot 
     }));
     (void)click_text(flow.harness, "Replace");
     confirm_sound_review(flow, true);
-    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 10, .row_limit = 1});
-    check_step(slots.rows.front().resource == occupied);
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 10, .row_limit = 1}, &flow.chart());
+    check_step(slots.rows.front().resource != occupied);
     check_step(slots.rows.front().source_path == paths[1]);
 }
 
@@ -706,7 +710,7 @@ TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target"
     require_step(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
     check_step(assigned.get().compose_sound_slot == 10);
     apply_sound_action(flow, assigned.get());
-    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 1});
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 1}, &flow.chart());
     check_step(static_cast<bool>(slots.rows.front().resource));
 }
 
@@ -739,7 +743,7 @@ TEST_CASE("BMS walkthrough treats dotted and extensionless destinations as folde
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
         {.file_extension = expected, .lane_profile_id = layout});
     require_step(parsed.value.song);
-    check_step(parsed.value.song->charts.front().lane_layouts.front().layout.profile_id == layout);
+    check_step((*parsed.value.song->read_charts().front()).lane_layouts.front().layout.profile_id == layout);
     std::filesystem::remove_all(directory);
 }
 

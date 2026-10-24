@@ -3,6 +3,8 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/bms.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -205,6 +207,45 @@ auto stem_uses_exactly_two_object_ids() -> bool {
 }
 
 } // namespace
+
+namespace {
+void check_bulk_scoped_binding(const document_history_t& history, chart_id_t difficulty,
+    branch_id_t chart, resource_id_t resource) {
+    CHECK(history.document.resources.front().target_identities.empty());
+    const auto* bound = history.document.find_bms_program(difficulty)->read_bound_resource(resource, chart);
+    REQUIRE(bound);
+    REQUIRE(bound->target_identities.size() == 1);
+    CHECK(bound->target_identities.front().identifier == "01");
+}
+void check_bulk_scoped_undo_redo(document_history_t& history, chart_id_t difficulty,
+    branch_id_t chart, resource_id_t resource) {
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.empty());
+    REQUIRE(redo_document_command(history));
+    check_bulk_scoped_binding(history, difficulty, chart, resource);
+}
+}
+
+TEST_CASE("Scoped bulk WAV imports keep aliases out of the shared catalog",
+          "[core][sounds][import][bms-public-cutover]") {
+    const std::string source = "#TITLE Bulk scoped import\n#BPM 120\n#00011:00\n";
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(parsed.value.song);
+    auto history = document_history_t::from(std::move(*parsed.value.song));
+    const auto* owner = history.document.prepared_bms_programs.front().get();
+    const auto difficulty = owner->difficulty();
+    const auto chart = *owner->prepared().program.target_chart(owner->prepared().program.root());
+    history.bms_edit_target = {.difficulty = difficulty, .chart = chart};
+    auto imported = entry("scoped-batch", sound_kind_t::keysound);
+    imported.asset.allocate_bms_identifier = true;
+    REQUIRE(apply_bulk_sound_import(history, {.chart = difficulty, .entries = {imported}}));
+    REQUIRE(history.document.resources.size() == 1);
+    const auto resource = history.document.resources.front().id;
+    check_bulk_scoped_binding(history, difficulty, chart, resource);
+    CHECK(history.undo.size() == 1);
+    check_bulk_scoped_undo_redo(history, difficulty, chart, resource);
+}
 
 TEST_CASE("bulk import adds linked empty BMSON stem channels and lanes atomically",
           "[unit][core][sounds][import]") {

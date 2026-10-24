@@ -175,7 +175,7 @@ TEST_CASE("Scoped BMS ambiguous inactive lanes request a profile without convert
     const auto imported = prepare("#RANDOM 2\n#IF 1\n#00011:01\n#ENDIF\n#ENDRANDOM\n", {});
     CHECK_FALSE(imported.value.prepared);
     CHECK(std::ranges::any_of(imported.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.code == bms_parse_diagnostic_code_t::unsupported_channel;
+        return diagnostic.code == bms_parse_diagnostic_code_t::missing_profile;
     }));
     CHECK(imported.value.encoding.original_bytes);
 }

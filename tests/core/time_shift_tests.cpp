@@ -1,4 +1,5 @@
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/formats/bms.h>
 #include "sys/project/output_group_export.h"
@@ -66,7 +67,7 @@ auto shift_song() -> song_document_t {
 }
 
 auto chart_of(const document_history_t& history) -> const chart_document_t& {
-    return history.document.charts.front();
+    return *history.document.read_charts().front();
 }
 
 auto find_note(const document_history_t& history, std::uint64_t id)
@@ -98,7 +99,7 @@ auto import_shift_bms(std::string_view source) -> song_document_t {
 auto export_shift_bms(const song_document_t& song) -> song_document_t {
     // Use the same default request as the GUI's target Preview/Export path.
     const auto plan = sys::output_group_export_plan_t::from(song,
-        {.family = format_family_t::bms, .charts = {song.charts.front().id}});
+        {.family = format_family_t::bms, .charts = {song.read_charts().front()->id}});
     REQUIRE(plan.request.branches == branch_projection_t::preserve_tree);
     const auto written = convert_document(song, plan.request);
     std::string diagnostics;
@@ -218,7 +219,7 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
     CHECK(timed.payload.moved_objects == result.payload.moved_objects + 1);
 }
 
-TEST_CASE("time shift refuses charts that retain BMS control flow",
+TEST_CASE("Scoped selection shifts retain conditional outcomes while range shifts refuse",
           "[unit][core][time-shift]") {
     const auto from_cursor = GENERATE(false, true);
     auto history = document_history_t::from(import_shift_bms(std::string(plain_bms) +
@@ -228,9 +229,9 @@ TEST_CASE("time shift refuses charts that retain BMS control flow",
     const auto result = from_cursor
         ? apply_shift_from_cursor(history, {.chart = chart.id, .cursor = note.position, .rows = 10})
         : apply_shift_selection(history, {.chart = chart.id, .notes = {note.id}, .rows = 10});
-    CHECK_FALSE(result.command.applied);
-    CHECK(has_code(result, diagnostic_code_t::unsupported_feature));
-    CHECK(history.undo.empty());
+    CHECK(result.command.applied == !from_cursor);
+    if (from_cursor) CHECK(has_code(result, diagnostic_code_t::unsupported_feature));
+    CHECK(history.undo.size() == (from_cursor ? 0 : 1));
 }
 
 TEST_CASE("Retained BMS tree queries distinguish statements from all control-flow kinds",
@@ -250,14 +251,14 @@ TEST_CASE("Time shift allows ordinary imported BMS statements and exports moved 
           "[unit][core][time-shift][bms]") {
     auto history = document_history_t::from(import_shift_bms(plain_bms));
     const auto& chart = chart_of(history);
-    REQUIRE(chart.bms_control_tree);
-    CHECK_FALSE(chart.bms_control_tree->has_control_flow());
+    REQUIRE(history.document.find_bms_program(chart.id));
+    CHECK_FALSE(history.document.find_bms_program(chart.id)->prepared().program.has_control_flow());
     const auto note = chart.measures.front().notes.front().id;
     const auto result = apply_shift_selection(history, {.chart = chart.id, .notes = {note},
         .rows = static_cast<std::int64_t>(chart.divisions_per_standard_measure / 8)});
     REQUIRE(result);
     const auto reloaded = export_shift_bms(history.document);
-    const auto& moved = reloaded.charts.front();
+    const auto& moved = *reloaded.read_charts().front();
     CHECK(rows_to_fraction(moved.measures.front().notes.front().position.row,
                            moved.divisions_per_standard_measure) == rational_t{1, 8});
     REQUIRE(undo_document_command(history));
@@ -277,8 +278,8 @@ TEST_CASE("Time shift from cursor preserves plain BMS timing and measure lengths
     check_plain_bms_content(chart_of(history));
     check_plain_bms_timing(chart_of(history), include_timing);
     const auto reloaded = export_shift_bms(history.document);
-    check_plain_bms_content(reloaded.charts.front());
-    check_plain_bms_timing(reloaded.charts.front(), include_timing);
+    check_plain_bms_content(*reloaded.read_charts().front());
+    check_plain_bms_timing(*reloaded.read_charts().front(), include_timing);
     REQUIRE(undo_document_command(history));
     check_plain_bms_timing(chart_of(history), false);
 }

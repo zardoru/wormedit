@@ -132,7 +132,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before navigating.",
             notification_severity_t::warning, notification_source_t::input, false, false);
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::from("The selected difficulty is no longer available.",
                                               notification_severity_t::warning,
@@ -159,7 +159,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
 auto navigate_compose_measure(document_history_t& history, editor_interaction_state_t& state,
                               application_command_state_t& application, std::uint64_t number)
     -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::from("The selected difficulty is no longer available.",
                                               notification_severity_t::warning,

@@ -38,7 +38,7 @@ void build_hover_timing_view(frontend_workspace_view_t& flattened, const documen
           (hover.total_frames == flattened.view.transport_end_frame &&
            hover.sample_rate == flattened.view.transport_sample_rate)))
         return;
-    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    const auto chart = history.read_chart(*workspace.selected_chart);
     if (chart == nullptr)
         return;
     if (!format_compose_hover_timing(
@@ -93,7 +93,7 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         !context.workspace.selected_chart || !context.compose_interaction_state ||
         context.workspace.active_tab != workspace_tab_t::compose)
         return {};
-    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    const auto chart = context.history.read_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return {};
     const auto timing_matches = context.compose_scene_cache.stamp().chart == chart->id &&

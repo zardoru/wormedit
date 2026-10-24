@@ -106,7 +106,7 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
                                                    marker_navigation_direction_t direction)
     -> compose_action_outcome_t {
     const bool previous = direction == marker_navigation_direction_t::previous;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked(
             "Bookmark navigation requires the active Compose chart.", notification_source_t::input);
@@ -159,7 +159,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history,
                                                  notification_source_t::input);
     // A chooser jump is a seek of its own: it ends any repeat sequence in progress.
     application.invalidate_playing_seek_records();
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (!chart)
         return compose_action_outcome_t::blocked("Bookmark chooser chart is unavailable.",
                                                  notification_source_t::input);
@@ -193,7 +193,7 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
                                                    editor_interaction_state_t& state,
                                                    application_command_state_t& application)
     -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("Choose a chart before editing bookmarks.",
                                                  notification_source_t::edit);

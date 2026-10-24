@@ -414,7 +414,7 @@ void build_proposed_timing_index(const Factory& make_candidate, std::optional<ti
 auto make_proposed_offset_chart(const document_history_t& history,
                                  wormedit::chart_id_t chart_id, signed_rational_t proposed_offset)
     -> std::optional<chart_document_t> {
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) return std::nullopt;
     auto candidate = *chart;
     candidate.beat_zero_audio_offset_seconds = proposed_offset;
@@ -427,7 +427,7 @@ void build_offset_grid_view(frontend_workspace_view_t& flattened, compose_scene_
                          const editor_interaction_state_t* interaction) {
     if (!cache.timing.proposed_offset_timing_index.value() || !workspace.selected_chart || !interaction ||
         !cache.timing.marker_timing_index) return;
-    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    const auto chart = history.read_chart(*workspace.selected_chart);
     if (chart != nullptr)
         build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                       *cache.timing.proposed_offset_timing_index.value(), *interaction);
@@ -542,7 +542,7 @@ void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,
     auto& compose = flattened.view.compose;
     populate_beat_fit_fields(compose, drag.payload);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
-    const auto chart = history.document.find_chart(drag.stamp.chart);
+    const auto chart = history.read_chart(drag.stamp.chart);
     if (chart == nullptr || !cache.scene.index.value() || !interaction ||
         !cache.timing.marker_timing_index) return;
     build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag.payload);
@@ -577,7 +577,7 @@ void populate_tap_apply_overlay(frontend_workspace_view_t& flattened,
                    proposal.payload.beats_per_minute, proposal.payload.beat_zero_audio_offset_seconds},
         std::bind_front(build_proposed_timing_index<decltype(make_candidate)>, std::move(make_candidate))));
     if (!cache.timing.tap_preview_timing.value()) return;
-    const auto chart = history.document.find_chart(proposal.stamp.chart);
+    const auto chart = history.read_chart(proposal.stamp.chart);
     if (chart == nullptr) return;
     build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing.value(), *interaction);

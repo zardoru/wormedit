@@ -1,4 +1,5 @@
 #include "chart_object_ids.h"
+#include "resource_assignment_internal.h"
 #include <wormedit/core/sound_groups.h>
 #include <wormedit/core/bms36.h>
 #include "text_util.h"
@@ -33,21 +34,6 @@ auto validate_batch(const bulk_sound_import_action_t& action, document_command_r
 
 struct bms_id_gap_t { std::size_t begin; std::size_t length; };
 
-auto used_bms_wav_ids(const song_document_t& document) -> std::vector<bool> {
-    constexpr auto base = std::size_t{36};
-    auto used = std::vector<bool>(base * base, false);
-    for (const auto& resource : document.resources)
-        for (const auto& identity : resource.target_identities) {
-            if (identity.family != format_family_t::bms || identity.namespace_name != "WAV" ||
-                identity.identifier.size() != 2) continue;
-            const auto high = bms36_value(static_cast<unsigned char>(identity.identifier[0]));
-            const auto low = bms36_value(static_cast<unsigned char>(identity.identifier[1]));
-            if (high >= 0 && low >= 0)
-                used[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
-        }
-    return used;
-}
-
 auto requested_bms_indices(const bulk_sound_import_action_t& action) -> std::vector<std::size_t> {
     std::vector<std::size_t> result;
     for (std::size_t index = 0; index < action.entries.size(); ++index)
@@ -56,7 +42,7 @@ auto requested_bms_indices(const bulk_sound_import_action_t& action) -> std::vec
 }
 
 auto free_bms_gaps(const song_document_t& document) -> std::vector<bms_id_gap_t> {
-    const auto used = used_bms_wav_ids(document);
+    const auto used = bms_occupied(document, "WAV", 36);
     auto gaps = std::vector<bms_id_gap_t>{};
     for (std::size_t value = 1; value < used.size();) {
         if (used[value]) { ++value; continue; }
@@ -145,7 +131,7 @@ auto assign_grouped_bms_ids(const song_document_t& document,
                             const std::vector<bool>& grouped,
                             std::vector<std::optional<std::string>>& ids,
                             document_command_result_t& result) -> bool {
-    auto used = used_bms_wav_ids(document);
+    auto used = bms_occupied(document, "WAV", 36);
     auto requests = std::vector<group_run_request_t>{};
     for (std::size_t index = 0; index < action.groups.size(); ++index) {
         const auto count = static_cast<std::size_t>(std::ranges::count_if(
@@ -264,45 +250,52 @@ auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_
     return true;
 }
 
-auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& entry,
-                  chart_id_t stem_chart, id_ceiling_t<object_id_t>& ids,
-                  const std::optional<std::string>& bms_identifier,
-                  document_command_result_t& result) -> bool {
+auto stage_imported_resource_details(document_command_transaction_t& transaction,
+    const bulk_sound_import_entry_t& entry, chart_id_t stem_chart, id_ceiling_t<object_id_t>& ids,
+    const std::optional<std::string>& bms_identifier, document_command_result_t& result)
+    -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        auto& resource = document.resources.back();
+        if (bms_identifier) {
+            std::erase_if(resource.target_identities, [](const auto& identity) {
+                return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
+            });
+            resource.target_identities.push_back({format_family_t::bms, *bms_identifier, "WAV"});
+        }
+        if (entry.kind == sound_kind_t::stem) {
+            if (std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end()) resource.roles.push_back(resource_role_t::bgm);
+            const auto* chart = document.find_chart(stem_chart);
+            if (stem_chart && (!chart || !append_stem(*document.find_chart(stem_chart), resource,
+                next_channel_source_index(document, *chart), ids, result))) return {.diagnostics = result.diagnostics};
+        }
+        return {.value = document_edit_effect_t{.changed = true}};
+    });
+}
+
+auto import_entry(document_command_transaction_t& transaction,
+    const bulk_sound_import_entry_t& entry, chart_id_t stem_chart,
+    id_ceiling_t<object_id_t>& ids, const std::optional<std::string>& bms_identifier,
+    std::optional<bms_program_target_key_t> selection, document_command_result_t& result) -> bool {
     auto asset = entry.asset;
     asset.role = resource_role_t::sample;
-    const auto imported = apply_resource_asset_import(draft, asset);
-    if (!imported.applied) {
-        result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
-                                  imported.diagnostics.end());
-        return false;
-    }
-    const auto resource_id = draft.document.resources.back().id;
-    if (bms_identifier) {
-        auto& imported_resource = draft.document.resources.back();
-        std::erase_if(imported_resource.target_identities, [](const auto& identity) {
-            return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
-        });
-        imported_resource.target_identities.push_back(
-            {format_family_t::bms, *bms_identifier, "WAV"});
-    }
-    const auto metadata = apply_resource_sound_metadata(
-        draft,
+    asset.allocate_bms_identifier = false;
+    const auto imported = stage_resource_asset_import(transaction, asset, selection);
+    if (!imported.value || !imported.ok()) { result.diagnostics = imported.diagnostics; return false; }
+    const auto resource_id = transaction.current_document().resources.back().id;
+    const auto metadata = stage_resource_sound_metadata(transaction,
         {.resource = resource_id, .kind = entry.kind, .tags = entry.tags});
-    if (!metadata.diagnostics.empty()) {
-        result.diagnostics.insert(result.diagnostics.end(), metadata.diagnostics.begin(),
-                                  metadata.diagnostics.end());
-        return false;
+    if (!metadata.value || !metadata.ok()) { result.diagnostics = metadata.diagnostics; return false; }
+    if (bms_identifier && selection) {
+        const auto target = transaction.bms_target(selection->difficulty);
+        if (!target) { result.diagnostics.push_back(error(diagnostic_code_t::invalid_id, target.error().message)); return false; }
+        const auto declared = stage_bms_resource_declaration(transaction, *target,
+            {.identifier = *bms_identifier, .resource = resource_id});
+        if (!declared.value || !declared.ok()) { result.diagnostics = declared.diagnostics; return false; }
     }
-    if (entry.kind != sound_kind_t::stem) return true;
-    auto& resource = draft.document.resources.back();
-    if (std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end())
-        resource.roles.push_back(resource_role_t::bgm);
-    if (!stem_chart) return true;
-    // Each command replaces the draft document, so resolve the chart afresh.
-    const auto chart = draft.document.find_chart(stem_chart);
-    return chart != nullptr &&
-           append_stem(*chart, resource, next_channel_source_index(draft.document, *chart), ids,
-                       result);
+    const auto staged = stage_imported_resource_details(transaction, entry, stem_chart, ids,
+        selection ? std::nullopt : bms_identifier, result);
+    if (!staged.value || !staged.ok()) { result.diagnostics = staged.diagnostics; return false; }
+    return true;
 }
 
 auto trim_group_name(std::string text) -> std::string {
@@ -408,37 +401,32 @@ auto apply_import_groups(song_document_t& song, const bulk_sound_import_action_t
 auto apply_bulk_sound_import(document_history_t& history,
                              const bulk_sound_import_action_t& action)
     -> document_command_result_t {
-    if (!history.document.prepared_bms_programs.empty())
-        return document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::unsupported_feature,
-            "Prepared scoped sound imports require an explicit shared-pool edit.");
-
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (!validate_batch(action, result)) return result;
-    const auto identifiers = assigned_bms_ids(history.document, action, result);
-    if (!identifiers) return result;
-    auto draft = document_history_t::from(history.document, 1, false);
-    const auto first_imported_resource = draft.document.resources.size();
-    chart_id_t stem_chart{};
-    id_ceiling_t<object_id_t> ids;
-    if (action.chart) {
-        const auto found = draft.document.find_chart(action.chart);
-        if (found == nullptr) {
-            reject(result, diagnostic_code_t::invalid_id, "sound import chart is unknown");
-            return result;
+    document_command_transaction_t transaction(history);
+    auto staged = transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        document_command_result_t result{.revision = document.revision};
+        if (!validate_batch(action, result)) return {.diagnostics = std::move(result.diagnostics)};
+        const auto identifiers = assigned_bms_ids(document, action, result);
+        if (!identifiers) return {.diagnostics = std::move(result.diagnostics)};
+        if (transaction.has_bms_program(action.chart) && !history.bms_edit_target &&
+            std::ranges::any_of(*identifiers, [](const auto& value) { return value.has_value(); }))
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "Select a scoped Chart before importing WAV declarations.")}};
+        const auto first_resource = document.resources.size();
+        chart_id_t stem_chart{};
+        id_ceiling_t<object_id_t> ids;
+        if (action.chart) {
+            const auto* chart = document.read_chart(action.chart);
+            if (!chart) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Sound import chart is unknown.")}};
+            if (chart->source_family == format_family_t::bmson) { stem_chart = chart->id; ids = id_ceiling_t<object_id_t>::from(*chart); }
         }
-        if (found->source_family == format_family_t::bmson) {
-            stem_chart = found->id;
-            ids = id_ceiling_t<object_id_t>::from(*found);
-        }
-    }
-    for (std::size_t index = 0; index < action.entries.size(); ++index) {
-        if (!import_entry(draft, action.entries[index], stem_chart, ids, (*identifiers)[index], result)) return result;
-    }
-    if (!apply_import_groups(draft.document, action, first_imported_resource, result)) return result;
-    auto transaction = document_command_transaction_t(history);
-    transaction.adopt_document(std::move(draft.document));
-    return transaction.commit(action.groups.empty() ? "Import sounds" : "Import sounds and groups");
+        for (std::size_t index = 0; index < action.entries.size(); ++index)
+            if (!import_entry(transaction, action.entries[index], stem_chart, ids, (*identifiers)[index],
+                history.bms_edit_target, result)) return {.diagnostics = std::move(result.diagnostics)};
+        if (!apply_import_groups(document, action, first_resource, result)) return {.diagnostics = std::move(result.diagnostics)};
+        return {.value = document_edit_effect_t{.changed = true,
+            .command_label = action.groups.empty() ? "Import sounds" : "Import sounds and groups"}};
+    });
+    return transaction.finish_execution(std::move(staged));
 }
 
 } // namespace wormedit

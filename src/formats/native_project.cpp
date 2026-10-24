@@ -4,10 +4,13 @@
 
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/timing_links.h>
 #include "../core/bms_native_content_internal.h"
 
 #include "native_project_migrations.h"
 #include <wormedit/formats/bms.h>
+#include "bms_program_import_internal.h"
+#include "bms_writer_internal.h"
 #include "../core/id_ceiling.h"
 
 #include <nlohmann/json.hpp>
@@ -735,6 +738,8 @@ void from_json(const json& value, timing_category_link_t& link) {
     value.at("recipes").get_to(link.recipes);
     value.at("measures").get_to(link.measures);
 }
+void to_json(json& value, const timing_links_t& links) { value = links.categories; }
+void from_json(const json& value, timing_links_t& links) { value.get_to(links.categories); }
 
 void to_json(json& value, const chart_document_t& chart) {
     value = json{{"id", chart.id},
@@ -844,13 +849,18 @@ void to_json(json& value, const song_document_t& song) {
                  {"output_groups", song.output_groups},
                  {"quantization_presets", song.quantization_presets}};
     if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
+    if (!song.chart_order.empty()) value["chart_order"] = song.chart_order;
     if (!song.prepared_bms_programs.empty()) {
         value["prepared_bms_programs"] = json::array();
         for (const auto& owner : song.prepared_bms_programs) {
             if (!owner) throw std::invalid_argument("Null scoped BMS owner.");
-            json snapshot = *owner;
-            write_bms_asset_references(snapshot, "audio_assets", song.audio_assets);
-            write_bms_asset_references(snapshot, "visual_assets", song.visual_assets);
+            const auto canonical = bms_program_document_t::from(owner->difficulty(),
+                owner->prepared().with_catalog(song), owner->evaluation());
+            if (!canonical.value || !canonical.ok()) throw std::invalid_argument("Invalid canonical scoped catalog.");
+            json snapshot = **canonical.value;
+            write_bms_pool_references(snapshot, "audio_assets", song.audio_assets);
+            write_bms_pool_references(snapshot, "visual_assets", song.visual_assets);
+            write_bms_pool_references(snapshot, "resources", song.resources);
             value["prepared_bms_programs"].push_back(std::move(snapshot));
         }
     }
@@ -872,13 +882,15 @@ void from_json(const json& value, song_document_t& song) {
     value.at("output_groups").get_to(song.output_groups);
     value.at("quantization_presets").get_to(song.quantization_presets);
     song.sound_groups = value.value("sound_groups", std::vector<sound_group_t>{});
+    song.chart_order = value.value("chart_order", std::vector<chart_id_t>{});
     song.prepared_bms_programs.clear();
     if (value.contains("prepared_bms_programs")) {
         const auto& owners = value.at("prepared_bms_programs");
         if (!owners.is_array()) throw std::invalid_argument("Scoped BMS owners must be an array.");
         for (auto owner : owners) {
-            read_bms_asset_references(owner, "audio_assets", song.audio_assets);
-            read_bms_asset_references(owner, "visual_assets", song.visual_assets);
+            read_bms_pool_references(owner, "audio_assets", song.audio_assets);
+            read_bms_pool_references(owner, "visual_assets", song.visual_assets);
+            read_bms_pool_references(owner, "resources", song.resources);
             song.prepared_bms_programs.push_back(read_bms_program_document(owner));
         }
     }
@@ -1110,7 +1122,7 @@ auto is_valid_bms_owner_domains(const bms_program_document_t& owner, std::size_t
         layout.lane_layouts.push_back({.layout = prepared.lane_profile->layout});
         layout.input_profile = prepared.lane_profile->input;
     }
-    return is_valid_resource_enum_domains(pools) && is_valid_chart_layout_domains(layout) &&
+    return is_valid_encoding(prepared.source) && is_valid_resource_enum_domains(pools) && is_valid_chart_layout_domains(layout) &&
         std::ranges::all_of(pools.visual_assets, [](const auto& asset) {
             return is_enum_at_most(asset.kind, asset_kind_t::midi);
         }) && std::ranges::all_of(prepared.program.nodes(), [&](const auto& node) {
@@ -1468,7 +1480,7 @@ auto native_graph_diagnostics(const song_document_t& song) -> diagnostic_list_t 
     if (song.prepared_bms_programs.empty() || diagnostic_queries::has_errors(diagnostics)) return diagnostics;
     auto probe = song;
     for (auto& owner : probe.prepared_bms_programs) {
-        auto copy = bms_program_document_t::from(owner->difficulty(), owner->prepared(), owner->evaluation());
+        auto copy = bms_program_document_t::from(owner->difficulty(), owner->prepared().with_catalog(song), owner->evaluation());
         if (!copy.value || !copy.ok()) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_binding, "Scoped native validation cannot rebuild its owner."));
             return diagnostics;
@@ -1577,8 +1589,24 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
 #include "native_project_bms_migration.inc"
 
 auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
-    return native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
+    auto parsed = native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
         native_project_internal::default_migrations());
+    if (!parsed.value || !parsed.ok()) return parsed;
+    auto song = std::move(*parsed.value);
+    std::vector<chart_id_t> legacy;
+    for (const auto& chart : song.charts)
+        if (chart.source_family == format_family_t::bms) legacy.push_back(chart.id);
+    for (const auto id : legacy) {
+        auto migrated = prepare_native_bms_migration_impl(song, id, id_ceiling_t<object_id_t>::from(song).next(), limits);
+        if (!migrated.value || !migrated.ok()) return migrated;
+        song = std::move(*migrated.value);
+    }
+    if (!legacy.empty()) {
+        for (auto& group : song.metadata.format_groups)
+            if (group.family == format_family_t::bms) group.encoding.original_bytes.reset();
+    }
+    parsed.value = std::move(song);
+    return parsed;
 }
 
 namespace native_project_internal {

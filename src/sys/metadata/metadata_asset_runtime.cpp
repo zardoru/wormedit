@@ -535,7 +535,7 @@ auto metadata_asset_t::start_import_copy(
         }))
         return finish("This audio is already linked; select its asset and copy it instead.",
                       notification_severity_t::warning);
-    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    const auto chart = history.read_chart(*workspace.selected_chart);
     if (chart == nullptr)
         return finish("The selected difficulty is no longer available.",
                       notification_severity_t::warning);

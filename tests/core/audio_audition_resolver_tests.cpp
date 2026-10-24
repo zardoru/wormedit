@@ -1,3 +1,5 @@
+#include <wormedit/core/bms_program_edit.h>
+#include <wormedit/formats/bms.h>
 #include "../support/stale_action_assertions.h"
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/audio/audition_resolver.h>
@@ -565,4 +567,35 @@ TEST_CASE("preview binding resolver expands one canonical fused object atomicall
     REQUIRE(bounded.diagnostics.size() == 1);
     CHECK(bounded.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::capacity_exceeded);
+}
+
+namespace {
+void require_scoped_audition(bool value) { REQUIRE(value); }
+}
+TEST_CASE("Object audition can resolve an inactive scoped authoring Chart",
+          "[audio][audition-resolver][bms-scoped]") {
+    using namespace wormedit;
+    const std::string source = "#WAV01 a.wav\n#RANDOM 1\n#IF 2\n#00011:01\n#ENDIF\n#ENDRANDOM\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_scoped_audition(parsed.value.song.has_value());
+    const auto& song = *parsed.value.song;
+    require_scoped_audition(song.prepared_bms_programs.size() == 1);
+    const auto& owner = *song.prepared_bms_programs.front();
+    for (const auto& node : owner.prepared().program.nodes()) {
+        if (!std::holds_alternative<bms_if_scope_t>(node.value)) continue;
+        const auto selected = owner.prepared().program.target_chart(node.id);
+        require_scoped_audition(selected.has_value());
+        const auto* chart = owner.read_authoring_chart(*selected);
+        require_scoped_audition(chart);
+        require_scoped_audition(!chart->measures.front().notes.empty());
+        const auto& note = chart->measures.front().notes.front();
+        const std::array bindings{runtime_binding(song.resources.front().asset)};
+        const auto resolved = audio::audition_resolution_t::from(song, owner.difficulty(), note.id,
+            bindings, {.authoring_chart = *selected});
+        require_scoped_audition(resolved.ok());
+        CHECK(resolved.value.clips.size() == 1);
+        return;
+    }
+    FAIL("missing inactive branch fixture");
 }

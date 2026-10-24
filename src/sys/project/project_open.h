@@ -21,6 +21,8 @@ struct pending_import_t {
     std::string audio_project_path;
     std::string chart_project_path;
     std::string bms_encoding_path;
+    bool bms_profile_required{};
+    text_encoding_t bms_encoding{};
 };
 
 struct project_identity_t {
@@ -53,6 +55,8 @@ struct project_open_result_t {
     // A BMS-family source contains non-ASCII bytes without a UTF-8 BOM and
     // needs the caller to choose an encoding before retrying this same path.
     bool needs_encoding_choice{};
+    bool needs_profile_choice{};
+    std::optional<text_encoding_t> bms_encoding;
     std::string error;
     // Nonfatal osu import quantization and asset-resolution diagnostics.
     std::vector<std::string> warnings;
@@ -75,12 +79,14 @@ void validate_opened_document(project_open_result_t& result);
 [[nodiscard]] auto open_project_file(
     const std::filesystem::path& selected_path,
     std::optional<text_encoding_t> encoding_override = {},
-    std::stop_token stop = {}, job_progress_t* progress = nullptr)
+    std::stop_token stop = {}, job_progress_t* progress = nullptr,
+    std::optional<std::string> lane_profile_id = {})
     -> project_open_result_t;
 
 struct project_open_request_t {
     std::filesystem::path path;
     std::optional<text_encoding_t> encoding;
+    std::optional<std::string> lane_profile_id;
     std::shared_ptr<job_progress_t> progress;
 };
 struct project_open_identity_t {
@@ -95,7 +101,8 @@ public:
     explicit project_open_runtime_t(task_scheduler_t& scheduler);
     auto start(std::filesystem::path path, std::optional<text_encoding_t> encoding,
                project_open_identity_t identity,
-               project_open_job_t::work_function_t work = open) -> async_job_start_outcome_t;
+               project_open_job_t::work_function_t work = open,
+               std::optional<std::string> lane_profile_id = {}) -> async_job_start_outcome_t;
     auto poll() -> std::optional<project_open_job_t::completion_t> { return collect(false); }
     void cancel();
     void shutdown() { job_.shutdown(); }
@@ -103,9 +110,9 @@ public:
     [[nodiscard]] auto is_busy() const -> bool { return job_.is_busy(); }
     [[nodiscard]] auto view() const -> ui::file_job_view_t;
     [[nodiscard]] auto is_encoding_retry() const -> bool { return encoding_retry_; }
-private:
     static auto open(const project_open_request_t& request, std::stop_token stop)
         -> project_open_job_t::work_outcome_t;
+private:
     auto collect(bool wait) -> std::optional<project_open_job_t::completion_t>;
     project_open_job_t job_;
     std::shared_ptr<job_progress_t> progress_;

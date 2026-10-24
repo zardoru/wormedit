@@ -37,6 +37,7 @@ struct hold_start_t {
     local_position_t position;
     std::optional<hold_gesture_source_t> source;
     std::optional<resource_id_t> sound;
+    std::optional<std::uint64_t> canvas_row;
     bool is_displacing{};
     std::optional<bmson_source_geometry_t> geometry;
     template<class Action>
@@ -956,6 +957,9 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_conte
     -> std::variant<std::size_t, diagnostic_list_t>;
 struct editor_edit_effect_t;
 struct prepared_editor_edit_t;
+auto stage_scoped_hold(document_command_transaction_t& transaction, chart_id_t chart,
+    const pending_hold_t& pending, const hold_placement_plan_t& placement, local_position_t snapped)
+    -> attempt_t<editor_edit_effect_t>;
 auto stage_editor_selection_delete(document_history_t& history, editor_interaction_state_t& state)
     -> attempt_t<prepared_editor_edit_t>;
 auto stage_editor_tap_placement(document_history_t& history, editor_interaction_state_t& state,
@@ -1027,6 +1031,7 @@ auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t>;
 auto is_paint_sample_resource(const song_document_t& document, resource_id_t id) -> bool;
+auto is_paint_sample_resource(const editor_edit_context_t& context, resource_id_t id) -> bool;
 auto entry_stem_channel(const song_document_t& document, const chart_document_t& chart,
                         std::optional<resource_id_t> sound)
     -> std::variant<std::optional<object_id_t>, diagnostic_list_t>;

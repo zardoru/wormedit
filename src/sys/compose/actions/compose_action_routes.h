@@ -17,7 +17,6 @@ struct compose_action_route_t {
     compose_action_outcome_t (*operation)(compose_action_context_t&){};
     bool bypasses_area_clear{};
     bool is_workspace_only{};
-    bool has_bms_statement_feedback{};
     bool requires_resources{};
     bool captures_semantic_target{};
     bool rejects_locked_target{};

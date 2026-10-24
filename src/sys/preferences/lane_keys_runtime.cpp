@@ -17,7 +17,7 @@ auto short_lane_name(lane_role_t role, unsigned& number) -> std::string {
 }
 auto lane_keys_runtime_t::open(const song_document_t& document, chart_id_t chart_id,
     local_position_t cursor, const program_preferences_t& preferences) -> bool {
-    const auto* chart = document.find_chart(chart_id);
+    const auto* chart = document.read_chart(chart_id);
     if (!can_open(chart)) return false;
     const auto* segment = active_lane_layout_segment(*chart, cursor);
     layout_ = segment ? segment->layout : chart->lane_layouts.front().layout;
@@ -47,7 +47,7 @@ auto lane_keys_runtime_t::open(const song_document_t& document, chart_id_t chart
 }
 void lane_keys_runtime_t::refresh(const song_document_t& document) {
     if (!view_.visible) return;
-    const auto* chart = document.find_chart(chart_);
+    const auto* chart = document.read_chart(chart_);
     const auto same = chart && document.id == project_ && std::ranges::any_of(chart->lane_layouts,
         [this](const auto& segment) { return segment.layout == layout_; });
     if (!same) { view_.visible = false; view_.capturing = false; }

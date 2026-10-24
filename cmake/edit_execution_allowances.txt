@@ -5,7 +5,6 @@
 scratch_history | src/audio/audition_resolver.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 working_document | src/core/audio_offset_editor.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
 working_document | src/core/bgm_columns.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
-document_adoption | src/core/bms_branch_editor.cpp | 3 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 working_document | src/core/bmson_lane_mode.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
 scratch_history | src/core/bmson_sound_channel_editor.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 working_document | src/core/bmson_sound_channel_editor.cpp | 7 | Existing domain access to working data; migrate chart acquisition through the runner.
@@ -34,13 +33,11 @@ working_document | src/core/note_move.cpp | 2 | Existing domain access to workin
 document_adoption | src/core/note_move.cpp | 1 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 scratch_history | src/core/note_placement.cpp | 2 | Legacy detached edit/preview composition; audited migration debt.
 document_adoption | src/core/note_placement.cpp | 3 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
-scratch_history | src/core/resource_assignment.cpp | 7 | Legacy detached edit/preview composition; audited migration debt.
-working_document | src/core/resource_assignment.cpp | 16 | Existing domain access to working data; migrate chart acquisition through the runner.
-document_adoption | src/core/resource_assignment.cpp | 7 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
+scratch_history | src/core/resource_assignment.cpp | 2 | Legacy detached edit/preview composition; audited migration debt.
+working_document | src/core/resource_assignment.cpp | 8 | Existing domain access to working data; migrate chart acquisition through the runner.
+document_adoption | src/core/resource_assignment.cpp | 2 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 working_document | src/core/semantic_layer_editor.cpp | 3 | Existing domain access to working data; migrate chart acquisition through the runner.
 working_document | src/core/sound_groups.cpp | 1 | Existing domain access to working data; migrate chart acquisition through the runner.
-scratch_history | src/core/sound_import.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
-document_adoption | src/core/sound_import.cpp | 1 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 working_document | src/core/sv_recipe.cpp | 4 | Existing domain access to working data; migrate chart acquisition through the runner.
 document_adoption | src/core/tap_timing_apply.cpp | 1 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.
 document_adoption | src/core/time_shift.cpp | 1 | Existing detached payload publication; audit distinguishes payloads from legacy rollups.

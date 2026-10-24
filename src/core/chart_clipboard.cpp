@@ -1,3 +1,5 @@
+#include <wormedit/core/bms_program_edit.h>
+#include <unordered_map>
 #include "interaction_edit_commit.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_catalog.h>
@@ -698,6 +700,50 @@ auto place_paste_objects(chart_document_t& chart, const measure_index_t& index,
     return {};
 }
 
+auto paste_source_chart(const proposal_read_scope_t<chart_stamp_t>& scope) -> const chart_document_t* {
+    const auto& stamp = scope.captured_stamp();
+    const auto& document = scope.source_document();
+    const auto* owner = document.find_bms_program(stamp.chart);
+    const auto target = stamp.document.bms_target;
+    return owner && target && target->difficulty == stamp.chart
+        ? owner->read_authoring_chart(target->chart) : document.read_chart(stamp.chart);
+}
+
+auto scoped_paste_additions(document_command_transaction_t& transaction, chart_id_t difficulty,
+    const chart_paste_report_t& report) -> attempt_t<std::vector<bms_native_event_t>> {
+    std::unordered_map<std::uint64_t, object_id_t> columns;
+    for (const auto& column : report.new_bgm_lanes) {
+        const auto added = transaction.stage_bms_bgm_column(difficulty);
+        if (!added.value || !added.ok()) return {.diagnostics = added.diagnostics};
+        columns.emplace(column.id.value, *added.value);
+    }
+    std::vector<bms_native_event_t> additions;
+    additions.reserve(report.objects.size());
+    for (const auto& object : report.objects) {
+        std::visit([&](const auto& value) {
+            auto copy = value;
+            if constexpr (std::same_as<std::decay_t<decltype(copy)>, bgm_event_t>) {
+                const auto found = columns.find(copy.source_lane.value);
+                if (found != columns.end()) copy.source_lane = found->second;
+            }
+            additions.push_back(std::move(copy));
+        }, object);
+    }
+    return {.value = std::move(additions)};
+}
+
+auto stage_scoped_paste(document_command_transaction_t& transaction, chart_id_t difficulty,
+    const chart_paste_report_t& report, const std::vector<chart_paste_stem_event_t>& stems)
+    -> diagnosed_t<std::optional<std::string>> {
+    if (!report.bar_line_rows.empty() || !stems.empty()) return {.diagnostics = {error(
+        diagnostic_code_t::unsupported_feature, "Scoped paste cannot change measure geometry or retained stem channels.")}};
+    auto additions = scoped_paste_additions(transaction, difficulty, report);
+    if (!additions.value || !additions.ok()) return {.diagnostics = std::move(additions.diagnostics)};
+    auto staged = transaction.stage_bms_native_events(difficulty, {}, *additions.value, "Paste chart objects");
+    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+    return {.value = "Paste chart objects"};
+}
+
 } // namespace
 
 auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& scope,
@@ -705,14 +751,14 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     -> result_t<chart_paste_proposal_t, chart_paste_diagnostic_t> {
     const auto& document = scope.source_document();
     const auto chart_id = scope.captured_stamp().chart;
-    const auto stamp = chart_stamp_t::from(document, chart_id);
+    const auto stamp = scope.captured_stamp();
     chart_paste_proposal_t result;
     if (document.id != clipboard.source_song) return std::unexpected(chart_paste_diagnostic_t::from("Clipboard resources belong to another project.", stamp, std::move(result.report)));
     const auto count = clipboard.objects.size() + clipboard.bar_lines.size();
     if (count == 0 || count > maximum_objects)
         return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", stamp, std::move(result.report)));
     auto proposed = document;
-    const auto* source_chart = document.read_chart(chart_id);
+    const auto* source_chart = paste_source_chart(scope);
     auto scoped_chart = source_chart ? *source_chart : chart_document_t{};
     const bool scoped = !document.find_chart(chart_id) && source_chart;
     auto* chart = scoped ? &scoped_chart : proposed.find_chart(chart_id);
@@ -739,12 +785,12 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     }
     if (const auto problem = apply_stem_run_rules(document, *chart, *indexed, result.stem_events))
         return std::unexpected(chart_paste_diagnostic_t::from(*problem, stamp, std::move(result.report)));
-    if (scoped) {
-        if (!result.report.new_bgm_lanes.empty())
-            return std::unexpected(chart_paste_diagnostic_t::from(
-                "Scoped paste requires existing BGM columns.", stamp, std::move(result.report)));
-        return result;
-    }
+    if (scoped && !result.report.new_bgm_lanes.empty() &&
+        document.find_bms_program(chart_id)->prepared().bgm_columns.size() != source_chart->bgm_source_lanes.size())
+        return std::unexpected(chart_paste_diagnostic_t::from(
+            "Reveal retained BGM columns with the column-count control before growing a paste.",
+            stamp, std::move(result.report)));
+    if (scoped) return result;
     for (const auto& object : result.report.objects) append_paste_object(*chart, object);
     append_stem_events(*chart, result.stem_events);
     const auto diagnostics = validate_document(proposed);
@@ -786,17 +832,8 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
     if (report.objects.empty() && report.bar_line_rows.empty()) return {};
     if (!transaction.source_chart(stamp.chart))
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
-    if (transaction.has_bms_program(stamp.chart)) {
-        if (!report.bar_line_rows.empty() || !report.new_bgm_lanes.empty() || !stem_events.empty())
-            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-                "Scoped paste cannot change shared geometry or retained stem channels.")}};
-        std::vector<bms_native_event_t> additions;
-        for (const auto& object : report.objects)
-            std::visit([&](const auto& value) { additions.push_back(value); }, object);
-        auto staged = transaction.stage_bms_native_events(stamp.chart, {}, additions, "Paste chart objects");
-        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-        return {.value = "Paste chart objects"};
-    }
+    if (transaction.has_bms_program(stamp.chart))
+        return stage_scoped_paste(transaction, stamp.chart, report, stem_events);
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(stamp.chart);
     chart->bgm_source_lanes.insert(chart->bgm_source_lanes.end(),

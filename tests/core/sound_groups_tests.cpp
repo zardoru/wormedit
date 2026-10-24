@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/sound_groups.h>
 #include <wormedit/formats/bms.h>
@@ -197,6 +198,7 @@ auto default_export_matches(const document_history_t& history,
 }
 
 auto bms_source_still_unchanged(const song_document_t& song) -> bool {
+    if (!song.prepared_bms_programs.empty()) return song.prepared_bms_programs.front()->prepared().source.unchanged_since_import;
     if (song.charts.empty()) return false;
     for (const auto& group : song.charts.front().metadata.format_groups) {
         if (group.family == format_family_t::bms) return group.encoding.unchanged_since_import;

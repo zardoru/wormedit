@@ -1,3 +1,7 @@
+#include "sys/resources/bga_list_view.h"
+#include "sys/project/project_view.h"
+#include <wormedit/formats/bms.h>
+#include <wormedit/core/bms_program_edit.h>
 #include "sys/resources/sound_list_view.h"
 #include "sys/resources/sound_picker_view.h"
 
@@ -785,4 +789,63 @@ TEST_CASE("BMS slots filter exact retained uses and full path before the row win
     check_sound_projection(unused.total_matching == 1294);
     check_sound_projection(unused.selected_row == SIZE_MAX);
     check_sound_projection(bms_identifier_capacity(song, "WAV").used == 1);
+}
+
+namespace {
+auto scoped_sound_catalog() -> song_document_t {
+    const std::string source = "#WAV01 common.wav\n#RANDOM 2\n#IF 1\n#WAV02 first.wav\n#BMP02 first.png\n#00011:02\n#ELSE\n#WAV02 second.wav\n#BMP02 second.png\n#00011:02\n#ENDIF\n#ENDRANDOM\n";
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_sound_projection(parsed.ok());
+    require_sound_projection(parsed.value.song.has_value());
+    return std::move(*parsed.value.song);
+}
+void check_scoped_sound_views(const song_document_t& song, const chart_document_t& chart,
+                             resource_id_t expected, keysound_list_cache_t& cache,
+                             sound_picker_cache_t& picker) {
+    const auto& list = keysound_list_view_t::from(cache, song, &chart, 64, dock_sort_t::bms_id);
+    const auto found = std::ranges::find(list.rows, expected, &keysound_row_t::resource);
+    require_sound_projection(found != list.rows.end());
+    check_sound_projection(found->slot == "02");
+    const auto slots = sound_slots_view_t::from(song, {.row_limit = 3}, &chart);
+    require_sound_projection(slots.rows.size() == 3);
+    check_sound_projection(slots.rows[1].resource == expected);
+    const auto& matches = sound_picker_view_result_t::from(picker, song, chart, "02");
+    require_sound_projection(matches.rows.size() == 1);
+    check_sound_projection(matches.rows.front().resource == expected);
+    const auto images = bga_list_view_t::from(song,
+        {.search = "02", .sort = dock_sort_t::bms_id}, &chart);
+    require_sound_projection(images.rows.size() == 1);
+    check_sound_projection(images.rows.front().slot == "02");
+}
+
+}
+TEST_CASE("Scoped sound catalogs follow the selected Chart without mutating global aliases",
+          "[sound-list][bms-scoped-catalog]") {
+    const auto song = scoped_sound_catalog();
+    require_sound_projection(song.prepared_bms_programs.size() == 1);
+    const auto& owner = *song.prepared_bms_programs.front();
+    const auto table = project_chart_table_view_t::from(song);
+    require_sound_projection(table.rows.size() == 1);
+    check_sound_projection(table.rows.front().chart == owner.difficulty());
+    keysound_list_cache_t cache;
+    sound_picker_cache_t picker;
+    std::vector<resource_id_t> outcomes;
+    for (const auto& node : owner.prepared().program.nodes()) {
+        if (!std::holds_alternative<bms_chart_content_t>(node.value)) continue;
+        const auto* catalog = owner.read_catalog(node.id);
+        require_sound_projection(catalog);
+        const auto found = std::ranges::find_if(catalog->resources, [](const auto& resource) {
+            return std::ranges::any_of(resource.target_identities, [](const auto& identity) {
+                return identity.namespace_name == "WAV" && identity.identifier == "02";
+            });
+        });
+        if (found == catalog->resources.end()) continue;
+        const auto id = found->id;
+        check_scoped_sound_views(song, catalog->charts.front(), id, cache, picker);
+        outcomes.push_back(id);
+    }
+    require_sound_projection(outcomes.size() == 2);
+    check_sound_projection(outcomes.front() != outcomes.back());
+    for (const auto& resource : song.resources) check_sound_projection(resource.target_identities.empty());
 }

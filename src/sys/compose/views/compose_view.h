@@ -533,11 +533,6 @@ void build_compose_bgm_muted_lanes(const wormedit::chart_document_t& chart,
                                   std::vector<std::uint64_t>& muted);
 
 struct application_command_state_t {
-    struct bms_branch_statement_feedback_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
-        std::string message;
-    };
     struct quantize_editor_t {
         wormedit::chart_stamp_t stamp;
         wormedit::quantize_request_t request;
@@ -695,7 +690,6 @@ struct application_command_state_t {
         } sound_selection;
 
         struct feedback_state_t {
-            std::optional<bms_branch_statement_feedback_t> bms_branch_statement_feedback;
         } feedback;
 
         struct clipboard_state_t {
@@ -722,7 +716,7 @@ struct application_command_state_t {
             bool resource_paint_mode_active{};
             [[nodiscard]] auto can_paint(const wormedit::song_document_t& document,
                 const wormedit::editor_interaction_state_t& state) const -> bool {
-                const auto* chart = document.find_chart(state.chart);
+                const auto* chart = document.read_chart(state.chart);
                 return chart && (sample_resource(document).has_value() ||
                     state.has_hitsound_palette(chart->source_family));
             }

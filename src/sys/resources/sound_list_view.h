@@ -363,7 +363,8 @@ struct sound_slots_view_t {
     std::size_t selected_row{SIZE_MAX};
 
     [[nodiscard]] static auto from(const song_document_t& document,
-                                   const sound_slot_request_t& request) -> sound_slots_view_t;
+                                   const sound_slot_request_t& request,
+                                   const chart_document_t* chart = nullptr) -> sound_slots_view_t;
 };
 
 } // namespace wormedit::sys

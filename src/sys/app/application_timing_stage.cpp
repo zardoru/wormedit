@@ -139,7 +139,7 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
         if (preview.report()->lifecycle.status() == proposal_status_t::active &&
             action.timing_has_target_y) {
             const auto chart =
-                history.document.find_chart(preview.captured_stamp().chart);
+                history.read_chart(preview.captured_stamp().chart);
             const auto target =
                 chart == nullptr
                     ? std::optional<local_position_t>{}
@@ -157,7 +157,7 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     if (!action.timing_has_target_y) {
         return rejected;
     }
-    const auto found = history.document.find_chart(action.timing_chart_id);
+    const auto found = history.read_chart(action.timing_chart_id);
     if (found == nullptr) {
         return rejected;
     }

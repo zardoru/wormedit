@@ -85,13 +85,13 @@ void chart_import_load(chart_import_session_t& session, const std::filesystem::p
         session.error = "This chart needs a text encoding choice. Open it as a project once to pick one.";
     } else if (!opened.is_success()) {
         session.error = opened.error.empty() ? std::string{"The chart file could not be read."} : opened.error;
-    } else if (opened.document->charts.empty()) {
+    } else if (opened.document->read_charts().empty()) {
         session.error = "The file contains no charts.";
     } else {
         if (defaults && !opened.native_project) defaults->apply_to(*opened.document);
         session.source = std::move(opened.document);
         session.source_base = opened.asset_base;
-        if (session.source->charts.size() == 1) session.selected.push_back(session.source->charts.front().id);
+        if (session.source->read_charts().size() == 1) session.selected.push_back(session.source->read_charts().front()->id);
     }
     replan(session, target, target_base);
 }
@@ -99,7 +99,7 @@ void chart_import_load(chart_import_session_t& session, const std::filesystem::p
 void chart_import_toggle(chart_import_session_t& session, chart_id_t chart,
                          const song_document_t& target, const std::filesystem::path& target_base) {
     if (!session.source ||
-        session.source->find_chart(chart) == nullptr)
+        session.source->read_chart(chart) == nullptr)
         return;
     const auto found = std::ranges::find(session.selected, chart);
     if (found == session.selected.end()) session.selected.push_back(chart);

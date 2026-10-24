@@ -67,7 +67,7 @@ auto run_label_search(document_history_t& history, editor_interaction_state_t& s
                       std::string_view text, label_search_step_t step,
                       notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto chart = history.document.find_chart(state.chart);
+    const auto chart = history.read_chart(state.chart);
     if (chart == nullptr) return "The selected difficulty is no longer available.";
     if (text.empty()) return "Type a label to search for.";
     const auto& measures = history.indices(chart->id)->measures;

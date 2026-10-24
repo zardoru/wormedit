@@ -231,12 +231,18 @@ void plan_resource(const song_document_t& target, const song_document_t& source,
     plan.proposal.resources.push_back(std::move(item));
 }
 
+void collect_scoped_references(const bms_prepared_program_t& prepared, chart_references_t& references) {
+    for (const auto& resource : prepared.resources) references.resources.insert(resource.id.value);
+    for (const auto& asset : prepared.audio_assets) references.clip_assets.insert(asset.id.value);
+    for (const auto& asset : prepared.visual_assets) references.clip_assets.insert(asset.id.value);
+}
+
 auto make_plan(const song_document_t& target, const song_document_t& source,
                const chart_import_paths_t& paths, std::span<const chart_id_t> selected) -> import_plan_t {
     import_plan_t plan;
     plan.proposal.difficulties = list_chart_import_difficulties(source);
     for (const auto id : selected) {
-        const auto chart = source.find_chart(id);
+        const auto chart = source.read_chart(id);
         if (chart == nullptr) {
             plan.proposal.diagnostics.push_back(import_error("the chart to import is not in the source file"));
             return plan;
@@ -244,7 +250,10 @@ auto make_plan(const song_document_t& target, const song_document_t& source,
         if (std::ranges::find(plan.charts, &*chart) != plan.charts.end()) continue;
         plan.charts.push_back(&*chart);
         collect_references(*chart, plan.references);
-        if (!target.charts.empty()) compare_timing(target.charts.front(), *chart, plan.proposal.timing_differences);
+        if (const auto* owner = source.find_bms_program(id))
+            collect_scoped_references(owner->prepared(), plan.references);
+        const auto targets = target.read_charts();
+        if (!targets.empty()) compare_timing(*targets.front(), *chart, plan.proposal.timing_differences);
     }
     target_files_t files{target, paths.target_base};
     for (const auto& entry : source.resources)
@@ -353,12 +362,41 @@ auto import_one_chart(document_history_t& scratch, const chart_document_t& sourc
     const auto staged_id = id_ceiling_t<chart_id_t>::from(scratch.document).next();
     if (!staged_id) return std::nullopt;
     staged.id = *staged_id;
+    if (!scratch.document.chart_order.empty()) scratch.document.chart_order.push_back(*staged_id);
     scratch.document.charts.push_back(std::move(staged));
     const auto duplicated = apply_duplicate_chart_command(scratch, *staged_id);
     if (!duplicated || !duplicated.payload.chart) return std::nullopt;
     auto chart = *scratch.document.find_chart(*duplicated.payload.chart);
     chart.metadata.name = name;
     return chart;
+}
+
+auto import_one_program(document_command_transaction_t& transaction,
+    const bms_program_document_t& source, const merge_maps_t& pools)
+    -> std::shared_ptr<const bms_program_document_t> {
+    const auto first = transaction.next_bms_program_item_id();
+    if (!first) return {};
+    auto next = first->value;
+    const auto difficulty = chart_id_t{next++};
+    std::unordered_map<std::uint64_t, std::uint64_t> ids;
+    for (const auto& [old, id] : pools.resources) ids.emplace(old, id.value);
+    for (const auto& [old, id] : pools.assets) ids.emplace(old, id.value);
+    auto reserve = [&](object_id_t id) {
+        if (ids.contains(id.value)) return true;
+        if (next == UINT64_MAX) return false;
+        return ids.emplace(id.value, next++).second;
+    };
+    if (!id_declarations_t<object_id_t>::visit(source.prepared(), reserve)) return {};
+    auto prepared = source.prepared().with_remapped_ids(ids);
+    if (!prepared) return {};
+    // Associations never refer outside their original project. The materialized
+    // category remains local when a difficulty is imported into another project.
+    prepared->settings.timing_links = {};
+    prepared = prepared->with_catalog(transaction.current_document());
+    auto evaluation = source.evaluation();
+    for (auto& selection : evaluation.selections) selection.branch = branch_id_t{ids.at(selection.branch.value)};
+    auto owner = bms_program_document_t::from(difficulty, std::move(*prepared), std::move(evaluation));
+    return owner.value && owner.ok() ? std::move(*owner.value) : nullptr;
 }
 
 } // namespace
@@ -369,7 +407,7 @@ auto chart_import_proposal_t::count(chart_import_resource_action_t action) const
 
 auto list_chart_import_difficulties(const song_document_t& source) -> std::vector<chart_import_difficulty_t> {
     std::vector<chart_import_difficulty_t> result;
-    for (const auto& chart : source.charts) result.push_back(describe(chart));
+    for (const auto* chart : source.read_charts()) result.push_back(describe(*chart));
     return result;
 }
 
@@ -382,11 +420,6 @@ auto plan_chart_import(const song_document_t& target, const song_document_t& sou
 auto apply_chart_import(document_history_t& history,
                         const song_document_t& source, const chart_import_paths_t& paths,
                         std::span<const chart_id_t> selected) -> chart_import_result_t {
-    if (!history.document.prepared_bms_programs.empty() || !source.prepared_bms_programs.empty())
-        return {.command = document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::unsupported_feature,
-            "Prepared scoped imports require full-program and shared-pool identity remapping.")};
-
     auto transaction = document_command_transaction_t(history);
     chart_import_result_t result{.command = transaction.outcome(), .payload = {}};
     if (selected.empty()) {
@@ -399,25 +432,36 @@ auto apply_chart_import(document_history_t& history,
         return result;
     }
     auto& proposed = transaction.document();
+    if (!proposed.prepared_bms_programs.empty() || !source.prepared_bms_programs.empty()) proposed.ensure_chart_order();
     merge_maps_t maps;
     if (!merge_resources(proposed, source, plan, paths, maps)) {
         result.command = transaction.reject(diagnostic_code_t::invalid_id, "the resource catalog is full");
         return result;
     }
     auto scratch = document_history_t::from(proposed, 1, false);
-    std::vector<chart_document_t> imported;
     for (const auto* chart : plan.charts) {
+        if (const auto* owner = source.find_bms_program(chart->id)) {
+            auto added = import_one_program(transaction, *owner, maps);
+            if (!added) {
+                result.command = transaction.reject(diagnostic_code_t::invalid_id,
+                    "The complete scoped program could not be assigned fresh identities.");
+                return result;
+            }
+            result.payload.charts.push_back(added->difficulty());
+            if (!proposed.chart_order.empty()) proposed.chart_order.push_back(added->difficulty());
+            proposed.prepared_bms_programs.push_back(std::move(added));
+            continue;
+        }
+        scratch.document = proposed;
         auto added = import_one_chart(scratch, *chart, maps);
         if (!added) {
             result.command = transaction.reject(diagnostic_code_t::invalid_id,
                 "a chart could not be given fresh identities");
             return result;
         }
-        imported.push_back(std::move(*added));
-    }
-    for (auto& chart : imported) {
-        result.payload.charts.push_back(chart.id);
-        proposed.charts.push_back(std::move(chart));
+        result.payload.charts.push_back(added->id);
+        if (!proposed.chart_order.empty()) proposed.chart_order.push_back(added->id);
+        proposed.charts.push_back(std::move(*added));
     }
     result.command = transaction.commit(selected.size() == 1 ? "Import chart" : "Import charts");
     if (!result.command.applied) result.payload.charts.clear();

@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include "../core/text_util.h"
 #include <wormedit/formats/osu_mania.h>
@@ -2274,13 +2275,13 @@ template <typename fail_t>
 auto select_osu_chart(const song_document_t& song, const osu_mania_write_options_t& options,
                       fail_t&& fail) -> const chart_document_t* {
     if (options.chart) {
-        const auto found = song.find_chart(*options.chart);
+        const auto found = song.read_chart(*options.chart);
         if (found == nullptr)
             fail(osu_mania_write_diagnostic_code_t::missing_chart,
                  "requested chart ID does not exist in this song", "charts");
         return &*found;
     }
-    if (song.charts.size() == 1) return &song.charts.front();
+    if (song.read_charts().size() == 1) return song.read_charts().front();
     fail(osu_mania_write_diagnostic_code_t::missing_chart,
          "select one chart because osu! stores one chart per .osu file", "charts");
     return nullptr;
@@ -2289,6 +2290,9 @@ auto select_osu_chart(const song_document_t& song, const osu_mania_write_options
 template <typename fail_t>
 auto validate_and_bake_osu_chart(const song_document_t& song, const chart_document_t& chart,
                                  fail_t&& fail) -> sv_recipe_export_bake_outcome_t {
+    if (const auto* owner = song.find_bms_program(chart.id); owner && owner->prepared().program.has_control_flow())
+        fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+            "Choose an explicit active projection before exporting scoped control flow to osu!mania.", "chart");
     const auto validation = validate_document(song);
     const auto invalid = std::ranges::find_if(validation, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;

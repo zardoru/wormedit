@@ -71,6 +71,7 @@ template<> struct id_declarations_t<object_id_t> {
     template<class Visitor>
     static auto visit(const bms_prepared_program_t& prepared, Visitor& visitor) -> bool {
         bms_identity_visitor_t<Visitor> identities{visitor};
+        if (prepared.settings.layout_segment && !identities(*prepared.settings.layout_segment)) return false;
         if (!visit_declared_id_values(prepared.program.nodes(), identities) ||
             !visit_declared_id_values(prepared.bgm_columns, identities) ||
             !visit_declared_id_values(prepared.resources, identities) ||
@@ -116,6 +117,17 @@ template<> struct id_declarations_t<object_id_t> {
 };
 
 template<> struct id_declarations_t<measure_id_t> {
+    template<class Visitor>
+    static auto visit(const song_document_t& song, Visitor& visitor) -> bool {
+        for (const auto& chart : song.charts)
+            if (!visit_declared_id_values(chart.measures, visitor)) return false;
+        for (const auto& owner : song.prepared_bms_programs) {
+            if (!owner) continue;
+            for (const auto id : owner->prepared().measures)
+                if (!visitor(id)) return false;
+        }
+        return true;
+    }
     template<class Visitor>
     static auto visit(const chart_document_t& chart, Visitor& visitor) -> bool {
         return visit_declared_id_values(chart.measures, visitor);
@@ -202,6 +214,10 @@ template<class Id> struct id_ceiling_t {
         -> id_ceiling_t {
         id_ceiling_t result{.limit = bound};
         (void)id_declarations_t<Id>::visit(owner, result);
+        if constexpr (std::same_as<Owner, song_document_t> && !std::same_as<Id, object_id_t>) {
+            if (!owner.prepared_bms_programs.empty())
+                result.maximum = std::max(result.maximum, id_ceiling_t<object_id_t>::from(owner).maximum);
+        }
         return result;
     }
 

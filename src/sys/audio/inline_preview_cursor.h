@@ -33,7 +33,7 @@ struct inline_preview_cursor_t {
                                const editor_interaction_state_t* state) {
         follow_anchor_fraction.reset();
         if (!state || state->virtual_bms_cursor_row || state->viewport_height_pixels <= 0.0) return;
-        const auto chart = history.document.find_chart(state->chart);
+        const auto chart = history.read_chart(state->chart);
         if (chart == nullptr || chart->divisions_per_standard_measure == 0) return;
         const auto model = compose_view_for_state(history, *state);
         if (!model) return;

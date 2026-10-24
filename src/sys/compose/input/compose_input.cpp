@@ -245,7 +245,7 @@ auto application_command_state_t::bmson_marker_draft_t::revise(
         return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::invalid_stage, .message = "Select one BMSON BGM marker to choose its sound channel."}};
     }
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) {
         return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::invalid_stage, .message = "The selected chart is not a BMSON chart."}};
@@ -534,7 +534,7 @@ auto compose_stem_geometry(const wormedit::document_history_t& history,
     std::optional<wormedit::resource_id_t> sound) -> std::optional<wormedit::bmson_source_geometry_t> {
     using namespace wormedit;
     if (!sound) return std::nullopt;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto resource = std::ranges::find(history.document.resources, *sound, &resource_entry_t::id);
     if (chart == nullptr || resource == history.document.resources.end())
         return std::nullopt;
@@ -692,7 +692,7 @@ auto toggle_bmson_restart(const wormedit::ui::compose_input_action_t& input, bms
     if (gesture_active)
         return compose_input_family_result_t::from(
             "Finish or cancel the active Compose gesture before editing a BMSON reset.");
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (chart == nullptr)
         return compose_input_family_result_t::from(
             "The selected BMSON chart is no longer available.");
@@ -886,7 +886,7 @@ auto apply_resource_paint_input(const wormedit::ui::compose_input_action_t& inpu
         const auto& source = context.environment.commands.project.compose_gesture;
         const auto resource = source.draw_source_kind == 1 && source.draw_source_id
             ? std::optional{resource_id_t{source.draw_source_id}} : std::nullopt;
-        const auto* chart = context.environment.document.history.document.find_chart(context.state.chart);
+        const auto* chart = context.environment.document.history.read_chart(context.state.chart);
         const auto hitsample = chart && context.state.has_hitsound_palette(chart->source_family)
             ? std::optional{context.state.armed_hitsample.value_or(osu_hitsample_t{})} : std::nullopt;
         if (!resource && !hitsample) return compose_input_family_result_t::from("Arm a Sample resource or choose osu! hitsounds before painting.");
@@ -2477,7 +2477,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
-    const auto* input_chart = history.document.find_chart(state.chart);
+    const auto* input_chart = history.read_chart(state.chart);
     if (input_chart != nullptr)
         arm_compose_note_layers(state, application_state, *input_chart);
     const auto bgm_lane_count =
@@ -2496,7 +2496,7 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto gesture_active = (state).is_pending();
     auto input_context =
         compose_input_context_t{.environment = environment,

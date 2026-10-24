@@ -22,6 +22,9 @@
 #include <vector>
 
 namespace wormedit {
+struct lane_migration_mapping_t;
+struct lane_input_profile_t;
+
 struct bms_program_content_edit_batch_t;
 struct bms_program_edit_target_t;
 struct document_history_t;
@@ -444,10 +447,17 @@ class document_command_transaction_t {
         std::span<const object_id_t> objects, bms_existing_edit_kind_t kind,
         const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto stage_bms_lane_profile(chart_id_t difficulty, lane_input_profile_t profile,
+        std::span<const lane_migration_mapping_t> mapping) -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto stage_bms_structure_edit(chart_id_t difficulty,
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+        -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_layer_settings(chart_id_t difficulty,
         const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_bgm_column(chart_id_t difficulty) -> attempt_t<object_id_t>;
+    [[nodiscard]] auto stage_bms_measure_extent(chart_id_t difficulty, std::size_t count)
+        -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_native_events(chart_id_t difficulty,
         std::span<const object_id_t> removals, std::span<const bms_native_event_t> additions,
         std::string label) -> attempt_t<std::vector<object_id_t>>;

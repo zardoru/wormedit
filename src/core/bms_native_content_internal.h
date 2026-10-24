@@ -2,6 +2,13 @@
 #include <wormedit/core/bms_native_content.h>
 
 namespace wormedit {
+inline auto event_resource(const bms_native_event_t& event) -> std::optional<resource_id_t> {
+    return std::visit([](const auto& value) -> std::optional<resource_id_t> {
+        if constexpr (requires { value.sound; }) return value.sound;
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, bga_event_t>) return value.resource;
+        else return std::nullopt;
+    }, event);
+}
 // One collection mapping is shared by normalization, projection and edit adapters.
 template<class Value> struct bms_native_collection_t;
 template<> struct bms_native_collection_t<bga_event_t> {

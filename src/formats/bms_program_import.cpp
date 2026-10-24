@@ -142,6 +142,10 @@ void program_import_t::collect_profile_evidence(const bms_control_node_t& source
     for (const auto& child : source.children) collect_profile_evidence(child, request);
 }
 auto program_import_t::choose_profile(const bms_control_node_t& root) -> bool {
+    if (options.authored_lane_profile) {
+        profile = options.authored_lane_profile;
+        return true;
+    }
     bms_profile_detection_request_t request{.file_extension = options.file_extension,
         .explicit_profile_id = options.lane_profile_id};
     collect_profile_evidence(root, request);
@@ -149,8 +153,12 @@ auto program_import_t::choose_profile(const bms_control_node_t& root) -> bool {
     auto detected = detect_bms_lane_profile(request);
     profile = std::move(detected.selected_profile);
     if (profile) return true;
-    diagnose(root, bms_parse_diagnostic_code_t::unsupported_channel,
-        "All scoped playable channels require one compatible explicit or unambiguous lane profile.");
+    const auto can_choose = std::ranges::any_of(detected.candidates, [](const auto& candidate) {
+        return candidate.maps_all_playable_channels;
+    });
+    diagnose(root, can_choose ? bms_parse_diagnostic_code_t::missing_profile : bms_parse_diagnostic_code_t::unsupported_channel,
+        can_choose ? "Choose one compatible lane profile for all scoped playable channels."
+                   : "No built-in lane profile covers every playable channel; an explicit authored channel map is required.");
     return false;
 }
 auto program_import_t::import_metadata(import_scope_t parent, const bms_control_node_t& source,
@@ -288,7 +296,7 @@ auto program_import_t::import_channel(import_scope_t parent, const bms_control_n
             diagnose(source, bms_parse_diagnostic_code_t::invalid_measure, "Scoped measure length is not a positive exact ratio.");
             return false;
         }
-        return append_content(parent, source, bms_measure_length_t{source_chart.measures[measure].id, *length});
+        return append_content(parent, source, bms_measure_length_t{.measure = source_chart.measures[measure].id, .length = *length});
     }
     if (!statement.is_builtin_channel() && !statement.is_playable()) return append_text(parent, source);
     std::optional<object_id_t> column;

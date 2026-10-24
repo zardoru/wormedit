@@ -64,25 +64,14 @@ struct bms_write_options_t {
 
 using bms_write_outcome_t = attempt_t<std::string, std::vector<bms_write_diagnostic_t>>;
 
-// Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
-// BMS in the requested encoding for metadata, resources, measure lengths, initial
-// BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
-// Branch-free output emits projected BPM changes, BMS STOP-tick pauses and exact
-// supported measure ratios under the default policy, retaining root comments and
-// unknown headers. Explicit flatten_active uses the same timing projection while
-// discarding control flow. Unsupported pause units fail rather than being converted
-// approximately.
-// Unsupported semantic features fail with typed diagnostics. Preserve-tree output
-// always emits every retained branch and its control statements; it never emits
-// only the selected materialized projection or only its patches. Provenanced branch
-// metadata/resource edits, measure-length edits, direct/extended BPM edits, channel
-// events, and uniquely attributable pauses replace only their retained source
-// statements. Other branch content remains source-backed. The paired BMS API also
-// supports exact-provenance replacement of inactive raw branch statements and
-// insertion after a source-verified statement in an inactive leaf; direct control-
-// structure editing remains outside this bounded writer contract. It also supports
-// exact-provenance deletion of one raw statement directly inside an inactive leaf,
-// updating the retained source bytes and all later source identities atomically.
+// Serializes the complete scoped program, including inactive controls, definitions,
+// content and Text. Original bytes may be reused only after semantic equivalence
+// is proved, including any recorded automatic asset-path resolution. Explicit
+// flatten_active exports the resolved playback outcome and reports discarded flow.
+// Legacy native BMS inputs migrate losslessly before reaching this writer.
+// Ordinary interchange inputs use their authored lane map and shared catalog.
+// Unsupported features, inexact geometry and unprovable migration return typed
+// diagnostics without partial output; native span losses are reported explicitly.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_outcome_t;
 

@@ -7,6 +7,7 @@
 #include <semaphore>
 #include <thread>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/lane_profiles.h>
 
 using namespace wormedit;
@@ -239,22 +240,22 @@ TEST_CASE("Project New chart follows the new audio project's measure extent",
     auto document = make_audio_project_document(song_id_t{123}, "/tmp/track.ogg", "Track", "Artist",
                                                layout, {48'000, 2, 48'000 * 13, true});
     require_project(document.has_value());
-    const auto expected_measures = document->charts.front().measures.size();
+    const auto expected_measures = document->read_charts().front()->measures.size();
     expect_project(expected_measures == 7);
-    auto& source = document->charts.front();
-    source.measures.push_back({.id = measure_id_t{source.measures.back().id.value + 1}});
-    const auto source_id = source.id;
+    const auto source_id = document->read_charts().front()->id;
     auto history = document_history_t::from(std::move(*document));
+    require_project(apply_measure_edit(history, insert_measure_action_t{
+        .chart = source_id, .before_index = expected_measures}).applied);
     project_chart_runtime_t runtime;
     const auto added = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_NEW, .document_revision = history.document.revision,
          .session_generation = runtime.session_generation}, source_id);
     require_project(added.applied && added.open_chart.has_value());
-    const auto& chart = history.document.charts.back();
+    const auto& chart = *history.document.read_charts().back();
     expect_project(chart.id == *added.open_chart);
     expect_project(chart.measures.size() == expected_measures);
     expect_project(chart.measures.back().notes.empty() && chart.measures.back().bgm_events.empty());
-    expect_project(history.document.charts.front().measures.size() == expected_measures + 1);
+    expect_project(history.document.read_charts().front()->measures.size() == expected_measures + 1);
     expect_project(validate_document(history.document).empty());
 }
 

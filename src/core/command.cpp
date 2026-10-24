@@ -96,7 +96,7 @@ void trim_undo_history(document_history_t& history) {
     });
 }
 
-void mark_retained_sources_changed(song_document_t& document) {
+auto mark_retained_sources_changed(song_document_t& document) -> diagnostic_list_t {
     for (auto& group : document.metadata.format_groups) {
         group.encoding.unchanged_since_import = false;
     }
@@ -105,6 +105,16 @@ void mark_retained_sources_changed(song_document_t& document) {
             group.encoding.unchanged_since_import = false;
         }
     }
+    for (auto& owner : document.prepared_bms_programs) {
+        if (!owner->prepared().source.unchanged_since_import) continue;
+        auto prepared = owner->prepared();
+        prepared.source.unchanged_since_import = false;
+        auto replacement = bms_program_document_t::from(owner->difficulty(), std::move(prepared), owner->evaluation());
+        if (!replacement.value || !replacement.ok()) return {error(diagnostic_code_t::invalid_binding,
+            "Scoped source flags cannot be updated on an invalid owner.")};
+        owner = std::move(*replacement.value);
+    }
+    return {};
 }
 
 auto is_quantized_stem_audio_valid(const song_document_t& song, const chart_document_t& before,
@@ -240,12 +250,17 @@ static auto commit_validated_document(document_history_t& history, song_document
 
     // Direct publication and chart replacement can carry slots from an older snapshot.
     proposed.reset_chart_indices();
-    result.diagnostics = validate_bms_program_publication(history.document, proposed);
+    result.diagnostics = reconcile_bms_program_catalogs(history.document, proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) return result;
     result.diagnostics = reconcile_timing_links(history.document, proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) return result;
+    result.diagnostics = validate_bms_program_publication(history.document, proposed);
+    if (diagnostic_queries::has_errors(result.diagnostics)) return result;
     proposed.revision = history.next_revision;
-    if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
+    if (!options.preserve_retained_source_flags) {
+        result.diagnostics = mark_retained_sources_changed(proposed);
+        if (!result.diagnostics.empty()) return result;
+    }
     sync_virtual_tails(proposed);
     result.diagnostics = validate_document(proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) {
@@ -455,7 +470,7 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     if (history.document.find_bms_program(chart_id)) return apply_scoped_quantize(history, chart_id, request);
     quantize_command_result_t result;
     result.command.revision = history.document.revision;
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) {
         result.command.diagnostics.push_back(error(
             diagnostic_code_t::invalid_id, "quantization command refers to an unknown chart"));
@@ -488,7 +503,7 @@ auto apply_redivision_command(document_history_t& history,
     -> redivision_command_result_t {
     redivision_command_result_t result;
     result.command.revision = history.document.revision;
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) {
         result.command.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "redivision command refers to an unknown chart"));
@@ -506,6 +521,15 @@ auto apply_redivision_command(document_history_t& history,
     result.payload.moves = std::move(proposal.value.moves);
 
     auto transaction = document_command_transaction_t(history);
+    if (transaction.has_bms_program(chart_id)) {
+        const auto staged = transaction.stage_bms_structure_edit(chart_id,
+            [&](chart_document_t& target) -> attempt_t<document_edit_effect_t> {
+                target = std::move(*proposal.value.chart);
+                return {.value = document_edit_effect_t{.changed = true, .command_label = "Change chart resolution"}};
+            });
+        result.command = transaction.finish_execution(staged, command_noop_policy_t::accept_without_diagnostics);
+        return result;
+    }
     auto& proposed_document = transaction.document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.value.chart);

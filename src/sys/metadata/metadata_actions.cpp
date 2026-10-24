@@ -281,7 +281,7 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
 // Custom and stale indices never reach the core.
 auto dispatch_lane_profile_preview(const wormedit::ui::workspace_action_t& action, const document_history_t& history,
                                    metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
-    const auto* chart = history.document.find_chart(action.metadata_chart_id);
+    const auto* chart = history.read_chart(action.metadata_chart_id);
     if (!chart) return {notification_severity_t::warning, "Choose a chart before previewing its key count."};
     const auto targets = lane_profile_family_targets(*chart);
     if (action.metadata_lane_profile_index >= targets.size())

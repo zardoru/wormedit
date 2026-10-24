@@ -1,3 +1,5 @@
+#include "sys/resources/bms_catalog_bindings.h"
+#include <wormedit/core/bms_program_edit.h>
 #include "sys/resources/catalog_view.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/catalogs.h>
@@ -1706,4 +1708,32 @@ TEST_CASE("Remaining workspace Compose rows retain allocations and refresh reque
     std::snprintf(request.query, sizeof(request.query), "no matching bookmark");
     refill();
     check_frame_storage(frame.view.compose.bookmark_chooser.rows.empty());
+}
+
+TEST_CASE("Warmed scoped catalog bindings and borrowed chart enumeration allocate nothing",
+          "[sys][frame-arena][bms-scoped-catalog]") {
+    using namespace wormedit;
+    const std::string source = "#BPM 120\n#WAV01 sample.ogg\n#00011:01\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    check_frame_storage(parsed.value.song.has_value());
+    const auto& song = *parsed.value.song;
+    const auto& owner = *song.prepared_bms_programs.front();
+    const auto target = owner.prepared().program.target_chart(owner.prepared().program.root());
+    check_frame_storage(target.has_value());
+    const auto* chart = owner.read_authoring_chart(*target);
+    check_frame_storage(chart != nullptr);
+    const auto& resource = song.resources.front();
+    const bms_catalog_bindings_t warm(song, chart);
+    check_frame_storage(warm.identities(resource).size() == 1);
+    check_frame_storage(song.read_charts().size() == 1);
+    std::size_t total{};
+    const auto before = frame_heap_allocation_snapshot();
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        const bms_catalog_bindings_t bindings(song, chart);
+        total += bindings.identities(resource).size() + song.read_charts().size();
+    }
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(total == 2000);
 }

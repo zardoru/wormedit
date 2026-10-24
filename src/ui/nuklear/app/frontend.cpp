@@ -221,6 +221,7 @@ struct NewProjectWizardState {
 static NewProjectWizardState g_new_project_wizard;
 static std::string g_bms_encoding_path_seen;
 static int g_bms_encoding_choice{};
+static int g_bms_lane_profile_choice{};
 
 static void request_manual_new_project() {
     g_new_project_wizard.open = true;
@@ -3060,6 +3061,50 @@ static void cancel_bms_encoding_dialog(wormedit::ui::workspace_action_t& action)
         action.kind = WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING;
 }
 
+static auto render_bms_profile_choice(const wormedit::ui::workspace_view_t& view) -> std::string_view {
+    if (!view.pending_bms_profile_required) return {};
+    namespace chrome = wormedit::ui::chrome;
+    chrome::dialog_text(g_project_modal_dialog, g_context,
+        "Choose the lane layout for every playable channel, including inactive branches.",
+        chrome::color(chrome::UiColor::text));
+    std::vector<const char*> labels{"Choose lane layout"};
+    for (const auto& entry : view.bms_lane_profiles.entries) labels.push_back(entry.label.data());
+    if (g_bms_lane_profile_choice >= static_cast<int>(labels.size())) g_bms_lane_profile_choice = 0;
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
+    g_bms_lane_profile_choice = chrome::safe_combo(g_context, labels.data(),
+        static_cast<int>(labels.size()), g_bms_lane_profile_choice, 25, nk_vec2(360.0f, 240.0f));
+    return g_bms_lane_profile_choice == 0 ? std::string_view{} :
+        view.bms_lane_profiles.entries[static_cast<std::size_t>(g_bms_lane_profile_choice - 1)].id;
+}
+
+static void sync_bms_import_choices(const wormedit::ui::workspace_view_t& view, const std::string& path) {
+    if (path != g_bms_encoding_path_seen) {
+        g_bms_encoding_path_seen = path;
+        g_bms_encoding_choice = 0;
+        g_bms_lane_profile_choice = 0;
+        for (std::size_t i = 0; i < view.bms_encodings.entries.size(); ++i)
+            if (view.bms_encodings.entries[i].id == view.pending_bms_encoding)
+                g_bms_encoding_choice = static_cast<int>(i);
+    }
+}
+
+static auto render_bms_encoding_choice(const wormedit::ui::workspace_view_t& view)
+    -> std::optional<wormedit::text_encoding_t> {
+    namespace chrome = wormedit::ui::chrome;
+    std::array<const char*, wormedit::text_encoding_count> labels{};
+    const int count = static_cast<int>(std::min(view.bms_encodings.entries.size(), labels.size()));
+    for (int i = 0; i < count; ++i)
+        labels[static_cast<std::size_t>(i)] = view.bms_encodings.entries[i].label.data();
+    if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
+    nk_layout_row_dynamic(g_context, 15, 1);
+    nk_label_colored(g_context, "Encoding", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
+    nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
+    g_bms_encoding_choice = chrome::safe_combo(g_context, labels.data(), count,
+                      g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
+    if (count == 0) return {};
+    return view.bms_encodings.entries[g_bms_encoding_choice].id;
+}
+
 static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& view,
                                        wormedit::ui::workspace_action_t& action, int width, int height) {
     const std::string path{view.pending_bms_encoding_path};
@@ -3068,36 +3113,29 @@ static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& vie
         return;
     }
     g_new_project_wizard.open = false;
-    if (path != g_bms_encoding_path_seen) {
-        g_bms_encoding_path_seen = path;
-        g_bms_encoding_choice = 0;
-    }
-    std::array<const char*, wormedit::text_encoding_count> labels{};
-    const int count = static_cast<int>(std::min(view.bms_encodings.entries.size(), labels.size()));
-    for (int i = 0; i < count; ++i)
-        labels[static_cast<std::size_t>(i)] = view.bms_encodings.entries[i].label.data();
-    if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
+    sync_bms_import_choices(view, path);
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_project_modal_dialog;
-    if (chrome::dialog_begin(dialog, g_context, "BMS text encoding", "BMS text encoding",
+    const auto* title = view.pending_bms_profile_required ? "BMS import options" : "BMS text encoding";
+    if (chrome::dialog_begin(dialog, g_context, title, title,
             {.modal = true, .width = 520.0f,
              .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
         chrome::dialog_text(dialog, g_context, path.c_str(), chrome::color(chrome::UiColor::text_muted));
-        chrome::dialog_text(dialog, g_context, "This chart contains non-ASCII text without a UTF-8 BOM.",
-                            chrome::color(chrome::UiColor::text));
-        nk_layout_row_dynamic(g_context, 15, 1);
-        nk_label_colored(g_context, "Encoding", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
-        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
-        g_bms_encoding_choice = chrome::safe_combo(g_context, labels.data(), count,
-                                          g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
+        const auto profile = render_bms_profile_choice(view);
+        if (!view.pending_bms_profile_required)
+            chrome::dialog_text(dialog, g_context, "This chart contains non-ASCII text without a UTF-8 BOM.",
+                                chrome::color(chrome::UiColor::text));
+        const auto encoding = render_bms_encoding_choice(view);
         chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
         if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
             cancel_bms_encoding_dialog(action);
-        if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary) &&
+        if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary,
+                encoding.has_value() && (!view.pending_bms_profile_required || !profile.empty())) &&
             action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
-            count > 0 && path.size() <= wormedit::maximum_project_path_bytes) {
+            path.size() <= wormedit::maximum_project_path_bytes) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.bms_encoding_id = view.bms_encodings.entries[g_bms_encoding_choice].id;
+            action.bms_encoding_id = *encoding;
+            action.bms_lane_profile_id = profile;
             action.project_path = path.c_str();
         }
     }

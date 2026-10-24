@@ -1,3 +1,4 @@
+#include "sys/resources/bms_catalog_bindings.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_action_outcome.h"
@@ -136,8 +137,15 @@ struct slot_owner_t {
     bool ambiguous{};
 };
 
-auto slot_owner(const song_document_t& document, std::size_t slot) -> slot_owner_t {
-    const auto owner = bms_wav_slot_owner(document, slot);
+auto slot_owner(const song_document_t& document, std::size_t slot,
+                const bms_catalog_bindings_t& bindings) -> slot_owner_t {
+    bms_wav_slot_owner_t owner;
+    for (const auto& resource : document.resources)
+        for (const auto& identity : bindings.identities(resource))
+            if (bms_wav_slot_value(identity) == slot) {
+                if (owner.resource && owner.resource != resource.id) owner.ambiguous = true;
+                owner.resource = resource.id;
+            }
     const auto entry = std::ranges::find(document.resources, owner.resource, &resource_entry_t::id);
     return {owner.resource.value, entry == document.resources.end() ? "" : entry->name,
             owner.ambiguous};
@@ -165,7 +173,8 @@ auto sorted_slot_paths(std::span<const std::string> paths) -> std::vector<std::s
 }
 
 auto prepare_slot_item(const song_document_t& document, std::size_t slot, const std::string& source,
-                       std::unordered_set<std::string>& seen, prepared_sound_slot_batch_t& prepared)
+                       std::unordered_set<std::string>& seen, prepared_sound_slot_batch_t& prepared,
+                       const bms_catalog_bindings_t& bindings)
     -> prepared_sound_slot_import_item_t {
     auto path = std::filesystem::path{source}.lexically_normal();
     const auto key = path.generic_string();
@@ -183,7 +192,7 @@ auto prepare_slot_item(const song_document_t& document, std::size_t slot, const 
     auto name = path.filename().generic_string();
     if (name.empty() || name.size() > 255)
         set_first_error(prepared.reason, "A selected filename cannot be used as a sound name.");
-    const auto owner = slot_owner(document, slot);
+    const auto owner = slot_owner(document, slot, bindings);
     if (owner.ambiguous)
         set_first_error(prepared.reason,
                         "A destination WAV slot is assigned to more than one sound.");
@@ -240,7 +249,7 @@ auto ungrouped_entry_indexes(std::size_t entry_count,
 auto import_keysound_feedback(document_history_t& history, chart_id_t chart, std::span<const std::string> paths,
                               sound_kind_t kind = sound_kind_t::keysound)
     -> compose_action_outcome_t {
-    const auto* target = history.document.find_chart(chart);
+    const auto* target = history.read_chart(chart);
     if (target == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
     if (paths.empty())
@@ -315,7 +324,7 @@ struct assign_sound_slot_action_t {
         auto& history = context.document.history;
         const auto chart_id = context.chart;
 
-        const auto* chart = history.document.find_chart(chart_id);
+        const auto* chart = history.read_chart(chart_id);
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
@@ -374,7 +383,7 @@ struct assign_sound_slot_batch_action_t {
         auto& history = context.document.history;
         const auto chart_id = context.chart;
 
-        const auto* chart = history.document.find_chart(chart_id);
+        const auto* chart = history.read_chart(chart_id);
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "Direct sound slots are available only for a BMS chart.");
@@ -614,7 +623,7 @@ struct renumber_sound_ids_action_t {
         auto& history = context.document.history;
         const auto chart_id = context.chart;
 
-        const auto* chart = history.document.find_chart(chart_id);
+        const auto* chart = history.read_chart(chart_id);
         if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
                 "BMS identifiers are available only for a BMS chart.");
@@ -790,7 +799,7 @@ struct confirm_compose_sound_import_action_t {
                                   .chart = action.compose_input_chart_id};
         if (!stamp.is_current(history.document, chart))
             return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
-        target = history.document.find_chart(chart);
+        target = history.read_chart(chart);
         if (target == nullptr)
             return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
         return std::nullopt;
@@ -852,7 +861,7 @@ static_assert(
 auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
                              std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind)
     -> prepared_keysound_import_t {
-    const auto* target = document.find_chart(chart);
+    const auto* target = document.read_chart(chart);
     if (target == nullptr)
         return {.message = "Select a difficulty before adding sounds."};
     auto plan = plan_sound_import(document, target->source_family == format_family_t::bms,
@@ -870,10 +879,12 @@ auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
 }
 
 auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
-                              std::uint16_t first_slot, std::span<const std::string> paths)
+                              std::uint16_t first_slot, std::span<const std::string> paths,
+                              const chart_document_t* selected_chart)
     -> prepared_sound_slot_batch_t {
     auto prepared = prepared_sound_slot_batch_t{};
-    const auto* target = document.find_chart(chart);
+    const auto* target = selected_chart ? selected_chart : document.read_chart(chart);
+    const auto bindings = bms_catalog_bindings_t(document, target);
     if (target == nullptr || target->source_family != format_family_t::bms)
         set_first_error(prepared.reason, "Direct sound slots are available only for a BMS chart.");
     if (first_slot == 0 || first_slot > 1295)
@@ -894,7 +905,7 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     for (std::size_t index = 0; index < sorted.size(); ++index) {
         const auto destination = static_cast<std::size_t>(first_slot) + index;
         prepared.items.push_back(
-            prepare_slot_item(document, destination, sorted[index], seen, prepared));
+            prepare_slot_item(document, destination, sorted[index], seen, prepared, bindings));
     }
     return prepared;
 }

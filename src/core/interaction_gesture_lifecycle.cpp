@@ -452,8 +452,9 @@ auto is_paint_sample_resource(const song_document_t& document, resource_id_t id)
 
 auto is_paint_sample_resource(const editor_edit_context_t& context, resource_id_t id) -> bool {
     const auto* program = context.history.document.find_bms_program(context.state.chart);
-    if (!program) return is_paint_sample_resource(context.history.document, id);
-    const auto projection = program->build_projection();
+    if (is_paint_sample_resource(context.history.document, id)) return true;
+    if (!program) return false;
+    const auto projection = program->build_projection(context.scope.chart.bms_authoring_chart);
     return projection.value && is_paint_sample_resource(projection.value->song(), id);
 }
 
@@ -562,7 +563,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
             for (auto& note : measure.notes) {
                 if (note.position != target.position || note.lane != target.lane)
                     continue;
-                if (!(*history.document.find_chart(chart_id)).find_note(note.id))
+                if (!(*history.read_chart(chart_id)).find_note(note.id))
                     note.semantic_layers =
                         resolve_placement_layers(*chart, armed_layers, note.sound);
                 notes.push_back(note.id);
@@ -584,14 +585,14 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
                                  std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto stem =
-        entry_stem_channel(history.document, *history.document.find_chart(chart_id), sound);
+        entry_stem_channel(history.document, *history.read_chart(chart_id), sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&stem))
         return *failure;
     if (const auto channel = std::get<std::optional<object_id_t>>(stem))
         return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers, geometry);
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
-                              : next_object_id(*history.document.find_chart(chart_id));
+                              : next_object_id(*history.read_chart(chart_id));
     if (!plan.additions.empty() &&
         (!first_id ||
          plan.additions.size() - 1 > std::numeric_limits<std::uint64_t>::max() - first_id->value))
@@ -708,14 +709,16 @@ auto validate_scoped_hold_sound(const editor_edit_context_t& context, const hold
 
 auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& start)
     -> diagnosed_t<std::optional<pending_hold_t>> {
-    if (start.source) {
+    if (start.source || start.canvas_row) {
         auto diagnostics = validate_scoped_hold_sound(context, start);
         if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     }
-    if (start.source == hold_gesture_source_t::keyboard_lane && context.state.virtual_bms_cursor_row)
+    const auto canvas_row = start.canvas_row ? start.canvas_row :
+        (start.source == hold_gesture_source_t::keyboard_lane ? context.state.virtual_bms_cursor_row : std::nullopt);
+    if (canvas_row)
         return {.value = pending_hold_t{.position = context.state.cursor, .lane = start.lane,
-            .anchor_canvas_row = context.state.virtual_bms_cursor_row,
-            .preview_canvas_row = context.state.virtual_bms_cursor_row,
+            .anchor_canvas_row = canvas_row,
+            .preview_canvas_row = canvas_row,
             .gesture_source = start.source, .sound = start.sound,
             .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
             .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr,
@@ -990,10 +993,9 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
                                .created_note = created});
 }
 
-auto apply_scoped_hold(editor_edit_context_t& context, const pending_hold_t& pending,
-    const hold_placement_plan_t& placement, local_position_t snapped) -> editor_interaction_result_t {
-    return run_editor_edit(context, [&](document_command_transaction_t& transaction)
-        -> attempt_t<editor_edit_effect_t> {
+auto stage_scoped_hold(document_command_transaction_t& transaction, chart_id_t chart,
+    const pending_hold_t& pending, const hold_placement_plan_t& placement, local_position_t snapped)
+    -> attempt_t<editor_edit_effect_t> {
         std::vector<bms_native_event_t> additions;
         if (placement.adds_note)
             additions.push_back(note_t{.position = placement.head, .lane = pending.lane,
@@ -1001,12 +1003,17 @@ auto apply_scoped_hold(editor_edit_context_t& context, const pending_hold_t& pen
                 .end = placement.tail, .sound = pending.sound,
                 .semantic_layers = pending.layers.value_or(std::vector<layer_id_t>{}),
                 .osu_hitsample = pending.hitsample});
-        auto staged = transaction.stage_bms_native_events(context.state.chart, placement.removals,
+        auto staged = transaction.stage_bms_native_events(chart, placement.removals,
             additions, "Place hold note");
         if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
         return {.value = editor_edit_effect_t{.label = "Place hold note", .cursor = snapped,
             .lane = pending.lane, .created_note = staged.value->empty()
                 ? std::optional<object_id_t>{} : std::optional{staged.value->front()}}};
+}
+auto apply_scoped_hold(editor_edit_context_t& context, const pending_hold_t& pending,
+    const hold_placement_plan_t& placement, local_position_t snapped) -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) {
+        return stage_scoped_hold(transaction, context.state.chart, pending, placement, snapped);
     });
 }
 

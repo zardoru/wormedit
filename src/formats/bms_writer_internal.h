@@ -57,3 +57,8 @@ auto exact_decimal(signed_rational_t value, std::string path) -> std::string;
 auto exact_signed_decimal(signed_rational_t value, std::string path) -> std::string;
 auto encode_bms_channel_line(const channel_line_t& line, const bms_write_options_t& options) -> std::string;
 } // namespace wormedit::bms_writer_detail
+
+namespace wormedit {
+// Read-only compatibility encoder for native migration and non-program formats.
+auto write_bms_legacy_witness(const song_document_t& song, bms_write_options_t options = {}) -> bms_write_outcome_t;
+}

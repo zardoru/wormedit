@@ -1,5 +1,7 @@
 #include "sys/project/project_save_paths.h"
 #include <wormedit/core/resource_file_copy.h>
+#include <wormedit/core/bms_program_edit.h>
+#include <stdexcept>
 
 #include <filesystem>
 #include <optional>
@@ -8,6 +10,24 @@
 
 namespace wormedit::sys {
 namespace {
+
+template<class Transform>
+auto transform_chart_audio_paths(song_document_t& document, const Transform& transform) -> bool {
+    bool changed{};
+    for (auto& chart : document.charts)
+        changed |= chart.metadata.overrides.transform_audio_paths(transform);
+    for (auto& owner : document.prepared_bms_programs) {
+        auto prepared = owner->prepared();
+        if (!prepared.settings.overrides.transform_audio_paths(transform)) continue;
+        auto replacement = bms_program_document_t::from(owner->difficulty(),
+            std::move(prepared), owner->evaluation());
+        if (!replacement.value || !replacement.ok())
+            throw std::logic_error("Rebased scoped metadata cannot retain its validated owner");
+        owner = std::move(*replacement.value);
+        changed = true;
+    }
+    return changed;
+}
 
 auto absolute_base(const std::filesystem::path& base) -> std::optional<std::filesystem::path> {
     if (base.empty()) {
@@ -91,8 +111,7 @@ struct project_save_assets_t {
         for (auto& asset : document.midi_assets) changed |= copy_path(asset.id, asset.source_path);
         for (auto& recipe : document.generator_recipes)
             changed |= copy_path(asset_id_t{recipe.id.value}, recipe.source_path);
-        for (auto& chart : document.charts)
-            changed |= chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+        changed |= transform_chart_audio_paths(document, [&](std::filesystem::path& path) {
                 relink_saved_path(path, directory, report);
             });
         return changed;
@@ -104,8 +123,7 @@ void publish_saved_paths(song_document_t& document, const std::filesystem::path&
                           const project_save_report_t& report) {
     const auto directory = resolved_asset_path(report.destination.parent_path(), {});
     rebase_project_paths(document, old_base, directory);
-    for (auto& chart : document.charts)
-        chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+    transform_chart_audio_paths(document, [&](std::filesystem::path& path) {
             relink_saved_path(path, directory, report);
         });
     for (auto& asset : document.audio_assets) relink_saved_path(asset.source_path, directory, report);
@@ -160,8 +178,7 @@ void rebase_project_paths(song_document_t& document,
     if (!source || !destination || *source == *destination) {
         return;
     }
-    for (auto& chart : document.charts)
-        chart.metadata.overrides.transform_audio_paths([&](std::filesystem::path& path) {
+    transform_chart_audio_paths(document, [&](std::filesystem::path& path) {
             rebase_path(path, *source, *destination);
         });
     for (auto& asset : document.audio_assets) {

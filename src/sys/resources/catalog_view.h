@@ -66,6 +66,16 @@ consteval auto build_playback_rate_catalog_view()
 inline constexpr auto playback_rate_catalog_view = build_playback_rate_catalog_view();
 inline constexpr auto playback_rate_view = std::span{playback_rate_catalog_view};
 
+inline auto build_bms_lane_profile_catalog_view()
+    -> std::vector<ui::kind_descriptor_view_t<std::string_view>> {
+    std::vector<ui::kind_descriptor_view_t<std::string_view>> result;
+    for (const auto& entry : built_in_bms_lane_profiles())
+        result.push_back({.id = entry.profile.layout.profile_id,
+                          .label = entry.profile.layout.display_name});
+    return result;
+}
+inline const auto bms_lane_profile_catalog_view = build_bms_lane_profile_catalog_view();
+
 // Capability probing and storage allocation happen once, never during projection.
 inline auto build_bms_encoding_catalog_view() -> std::vector<wormedit::ui::kind_descriptor_view_t<text_encoding_t>> {
     std::vector<wormedit::ui::kind_descriptor_view_t<text_encoding_t>> result;

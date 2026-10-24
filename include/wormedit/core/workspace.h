@@ -312,6 +312,7 @@ struct workspace_bms_branch_outline_cache_key_t {
 
 struct workspace_compose_view_t {
     chart_id_t chart;
+    std::optional<branch_id_t> authoring_chart;
     std::size_t measure_count{};
     std::size_t note_count{};
     std::size_t layout_segment_count{};

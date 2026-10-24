@@ -49,7 +49,7 @@ namespace {
 auto restore_history_selection(const document_history_t& history, editor_interaction_state_t& state,
     const editor_selection_snapshot_t& selection) -> bool {
     if (selection.chart != state.chart) {
-        const auto* chart = history.document.find_chart(selection.chart);
+        const auto* chart = history.read_chart(selection.chart);
         if (!chart || chart->measures.empty() || chart->lane_layouts.empty() ||
             chart->lane_layouts.front().layout.lanes.empty()) return false;
         auto setup = editor_interaction_state_t::from(history, selection.chart,

@@ -607,7 +607,7 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(),source.size()}), {.lane_profile_id="bme-7k-outside-scratch"});
     REQUIRE(parsed.value.song);
     auto history = document_history_t::from(*parsed.value.song);
-    const auto& chart = history.document.charts.front();
+    const auto& chart = *history.document.read_charts().front();
     const auto id = chart.id;
     const auto measure = chart.measures.front().id;
     const auto half = chart.divisions_per_standard_measure/2;
@@ -617,7 +617,7 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     REQUIRE(written.value);
     const auto reloaded = parse_bms_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}), {.lane_profile_id="bme-7k-outside-scratch"});
     REQUIRE(reloaded.value.song);
-    const auto& after = reloaded.value.song->charts.front();
+    const auto& after = *reloaded.value.song->read_charts().front();
     const auto index = measure_index_t::from(after);
     check_audio_extent(index.value().row_of(after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
     check_audio_extent(index.value().row_of(after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
@@ -714,7 +714,7 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     auto imported = parse_bms_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!imported.value.song) return false;
     auto history = document_history_t::from(*imported.value.song);
-    const auto& source = history.document.charts.front();
+    const auto& source = *history.document.read_charts().front();
     const auto id = source.id;
     const auto resolution = source.divisions_per_standard_measure;
     const auto measure = source.measures.front().id;
@@ -731,13 +731,13 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     if (!written.value) return false;
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!parsed.value.song) return false;
-    const auto timing = timing_index_t::from(parsed.value.song->charts.front());
+    const auto timing = timing_index_t::from(*parsed.value.song->read_charts().front());
     if (!timing.value) return false;
-    const auto built = measure_index_t::from(parsed.value.song->charts.front());
+    const auto built = measure_index_t::from(*parsed.value.song->read_charts().front());
     const auto& measures = built;
     if (!measures) return false;
     std::vector<signed_rational_t> times;
-    for (const auto& chunk : parsed.value.song->charts.front().measures)
+    for (const auto& chunk : parsed.value.song->read_charts().front()->measures)
         for (const auto& note : chunk.notes) {
             const auto row = measures->row_of(note.position);
             if (!row) return false;
@@ -803,7 +803,7 @@ auto pause_conversion_bmson_aliases() -> bool {
                                         pause_kind_t::stop,
                                         true});
     if (!result.applied || !validate_document(history.document).empty()) return false;
-    const auto& chart = history.document.charts.front();
+    const auto& chart = *history.document.read_charts().front();
     const auto built = measure_index_t::from(chart);
     const auto& measures = built;
     if (!measures || chart.sound_channels.front().events.size() != 2) return false;

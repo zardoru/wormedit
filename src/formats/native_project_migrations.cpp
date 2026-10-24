@@ -1,4 +1,5 @@
 #include "native_project_migrations.h"
+#include <wormedit/core/document.h>
 
 #include <nlohmann/json.hpp>
 
@@ -288,7 +289,27 @@ auto migrate_v14_to_v15(nlohmann::json&) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 14> released_migrations{{
+auto migrate_v15_to_v16(nlohmann::json& document) -> std::string {
+    if (!document.contains("prepared_bms_programs")) return {};
+    for (auto& owner : document.at("prepared_bms_programs")) {
+        for (auto& node : owner.at("nodes")) {
+            if (node.at("value").at("type") != "chart") continue;
+            for (auto& item : node.at("value").at("data").at("items"))
+                if (item.at("value").at("type") == "measure_length") item["value"]["data"]["meter"] = nullptr;
+        }
+        owner["settings"] = {{"name", nullptr}, {"author", nullptr}, {"rating", nullptr},
+            {"overrides", nlohmann::json::array({nullptr, nullptr, nullptr, nullptr, nullptr, nullptr})},
+            {"divisions_per_standard_measure", default_divisions_per_standard_measure},
+            {"layout_segment", nullptr},
+            {"show_empty_bgm_columns", false},
+            {"timing_links", nlohmann::json::array({nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr})}};
+        owner["source"] = {{"detected", 0U}, {"user_override", nullptr},
+            {"original_bytes_hex", nullptr}, {"unchanged_since_import", false}};
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 15> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -303,6 +324,7 @@ constexpr std::array<migration_t, 14> released_migrations{{
     {12, &migrate_v12_to_v13},
     {13, &migrate_v13_to_v14},
     {14, &migrate_v14_to_v15},
+    {15, &migrate_v15_to_v16},
 }};
 
 } // namespace

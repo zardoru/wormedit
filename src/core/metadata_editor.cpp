@@ -12,6 +12,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <tuple>
 
 namespace wormedit {
 namespace {
@@ -52,7 +53,8 @@ auto is_metadata_within_limits(const song_document_t& song, const metadata_edit_
             return false;
     if (!account_groups(song.metadata.format_groups))
         return false;
-    for (const auto& chart : song.charts)
+    for (const auto* view : song.read_charts()) {
+        const auto& chart = *view;
         if (!is_valid_bounded_text(chart.metadata.name, limits.maximum_chart_text_bytes) ||
             !is_valid_bounded_text(chart.metadata.author, limits.maximum_chart_text_bytes) ||
             !account(chart.metadata.name) || !account(chart.metadata.author) ||
@@ -61,6 +63,7 @@ auto is_metadata_within_limits(const song_document_t& song, const metadata_edit_
                 return !value || (is_valid_bounded_text(*value, limits.maximum_chart_text_bytes) && account(*value));
             }))
             return false;
+    }
     return true;
 }
 
@@ -519,6 +522,53 @@ auto chart_rating_edit_t::from(chart_id_t chart, bool unset, std::string_view nu
     return chart_rating_edit_t{chart, rating};
 }
 
+namespace {
+auto replace_scoped_metadata(song_document_t& song, chart_id_t id, const chart_metadata_t& metadata)
+    -> diagnostic_list_t {
+    const auto* source = song.find_bms_program(id);
+    auto prepared = source->prepared();
+    prepared.settings.name = metadata.name;
+    prepared.settings.author = metadata.author;
+    prepared.settings.rating = metadata.rating;
+    prepared.settings.overrides = metadata.overrides;
+    if (prepared.settings == source->prepared().settings) return {};
+    auto replacement = bms_program_document_t::from(id, prepared.with_catalog(song), source->evaluation());
+    if (!replacement.value || !replacement.ok()) return {error(diagnostic_code_t::invalid_id,
+        "Scoped difficulty metadata is invalid.")};
+    const auto found = std::ranges::find_if(song.prepared_bms_programs,
+        [&](const auto& owner) { return owner.get() == source; });
+    *found = std::move(*replacement.value);
+    return {};
+}
+template<class Edit> auto apply_scoped_native_metadata(document_command_transaction_t& transaction,
+    const Edit& edit, metadata_edit_limits_t limits) -> document_command_result_t {
+    auto staged = transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        auto detached = song;
+        detached.charts = {*song.read_chart(edit.chart)};
+        detached.prepared_bms_programs.clear();
+        document_command_result_t result;
+        metadata_edit_context_t context{.proposed = detached, .result = result, .limits = limits};
+        apply_metadata_operation(context, edit);
+        if (!result.diagnostics.empty()) return {.diagnostics = std::move(result.diagnostics)};
+        if (!context.changed) return {.value = document_edit_effect_t{}};
+        const auto diagnostics = replace_scoped_metadata(song, edit.chart, detached.charts.front().metadata);
+        if (!diagnostics.empty()) return {.diagnostics = diagnostics};
+        if (!is_metadata_within_limits(song, limits)) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "Document metadata exceeds its total byte cap.")}};
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Edit difficulty metadata"}};
+    });
+    return transaction.finish_execution(std::move(staged));
+}
+}
+
+auto batch_metadata(const chart_metadata_t& original, const batch_chart_metadata_action_t& action)
+    -> chart_metadata_t {
+    auto result = original;
+    if (action.author) result.author = *action.author;
+    if (action.edit_rating) result.rating = action.rating;
+    return result;
+}
+
 auto apply_batch_chart_metadata_edit(document_history_t& history,
     const batch_chart_metadata_action_t& action, metadata_edit_limits_t limits)
     -> document_command_result_t {
@@ -535,17 +585,15 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
     for (const auto id : action.charts) {
         if (std::ranges::find(seen, id) != seen.end()) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata repeats a chart");
         seen.push_back(id);
-        const auto chart = proposed.find_chart(id);
-        if (chart == nullptr) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata refers to an unknown chart");
-        auto& metadata = chart->metadata;
-        if (action.author) {
-            changed = changed || metadata.author != *action.author;
-            metadata.author = *action.author;
-        }
-        if (action.edit_rating) {
-            changed = changed || metadata.rating != action.rating;
-            metadata.rating = action.rating;
-        }
+        const auto* chart = proposed.read_chart(id);
+        if (!chart) return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata refers to an unknown chart");
+        auto metadata = batch_metadata(chart->metadata, action);
+        changed = changed || std::tie(metadata.author, metadata.rating) !=
+            std::tie(chart->metadata.author, chart->metadata.rating);
+        if (proposed.find_bms_program(id)) {
+            const auto diagnostics = replace_scoped_metadata(proposed, id, metadata);
+            if (!diagnostics.empty()) { transaction.outcome().diagnostics = diagnostics; return transaction.outcome(); }
+        } else proposed.find_chart(id)->metadata = std::move(metadata);
     }
     if (!changed) return result;
     if (limits.maximum_total_metadata_bytes == 0 || !is_metadata_within_limits(proposed, limits))
@@ -558,6 +606,10 @@ auto apply_metadata_edit(document_history_t& history,
     -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
     const auto scoped = std::visit([&](const auto& edit) -> std::optional<document_command_result_t> {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(edit)>, set_chart_metadata_action_t> ||
+            std::same_as<std::remove_cvref_t<decltype(edit)>, set_chart_metadata_overrides_action_t>) {
+            if (history.document.find_bms_program(edit.chart)) return apply_scoped_native_metadata(transaction, edit, limits);
+        }
         if constexpr (requires { edit.target.chart; }) {
             if (edit.target.chart && history.document.find_bms_program(*edit.target.chart))
                 return scoped_metadata_editor_t{transaction, history, limits}.apply(edit);

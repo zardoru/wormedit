@@ -106,7 +106,7 @@ auto dispatch_bmson_razor_input(const wormedit::ui::compose_input_action_t& inpu
     if (gesture_active) {
         return "Finish or cancel the active Compose gesture before using the BMSON razor.";
     }
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto current_view = compose_view_for_state(history, state);
     if (chart == nullptr || !current_view || !std::isfinite(input.y_pixels)) {
         return "The BMSON chart field is no longer available.";
@@ -373,7 +373,7 @@ auto update_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bm
     if (!state.gesture<wormedit::pending_note_move_gesture_t>() ||
         state.gesture<wormedit::pending_note_move_gesture_t>()->reference_note != input.object_id)
         return compose_input_family_result_t::from("BGM event drag expired before release.");
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     auto position = chart != nullptr && view ? position_at_compose_y(*chart, *view, input.y_pixels)
                                              : std::nullopt;
@@ -456,7 +456,7 @@ auto insert_bmson_stem_point(const wormedit::ui::compose_input_action_t& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
         return compose_input_family_result_t::from(
             "Draw requires an editable chart without an active gesture.");
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view || !std::isfinite(input.y_pixels))
         return compose_input_family_result_t::from("The BMSON chart field is no longer available.");
@@ -604,7 +604,7 @@ struct compose_input_context_t {
     }
 
     auto chart() const -> const wormedit::chart_document_t* {
-        const auto* found = environment.document.history.document.find_chart(state.chart);
+        const auto* found = environment.document.history.read_chart(state.chart);
         return found;
     }
     auto selection_mode(WormUiComposeSelectionMode mode) const
@@ -760,7 +760,7 @@ auto begin_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& input
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
         return compose_input_family_result_t::from(
@@ -804,7 +804,7 @@ auto update_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& inpu
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -884,7 +884,7 @@ auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& inp
         }
         return compose_input_family_result_t::continue_with_result();
     }
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -984,7 +984,7 @@ auto apply_resource_paint_input(const wormedit::ui::compose_input_action_t& inpu
 template <typename HitTargetAt>
 auto dispatch_resource_paint_gesture(const wormedit::ui::compose_input_action_t& input,
     compose_gesture_context_t& context, HitTargetAt&& hit_target_at) -> compose_input_family_result_t {
-    const auto* chart = context.environment.document.history.document.find_chart(context.state.chart);
+    const auto* chart = context.environment.document.history.read_chart(context.state.chart);
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!chart || !view || !context.environment.commands.project.compose_gesture.resource_paint_mode_active) {
         (void)wormedit::dispatch_editor_action(context.environment.document.history, context.state,
@@ -1008,7 +1008,7 @@ auto dispatch_semantic_layer_paint_gesture(const wormedit::ui::compose_input_act
     auto& application_state = context.environment.commands;
     if (!semantic_layer_paint_armed(application_state))
         return handle_inactive_semantic_layer_paint(context);
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -1042,7 +1042,7 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -1107,7 +1107,7 @@ auto dispatch_bar_line_move_gesture(const wormedit::ui::compose_input_action_t& 
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (!chart || !view) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});

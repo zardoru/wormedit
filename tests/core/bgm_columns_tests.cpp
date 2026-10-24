@@ -1,3 +1,6 @@
+#include <wormedit/formats/bms_clipboard.h>
+#include <wormedit/core/bms_program_edit.h>
+#include <wormedit/formats/bms.h>
 #include <wormedit/core/bgm_columns.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -209,4 +212,58 @@ TEST_CASE("BGM column growth reserves all IDs before reaching the ceiling",
     CHECK((lanes.size() == 3 &&
            lanes[1].id.value == std::numeric_limits<std::uint64_t>::max() - 1 &&
            lanes[2].id.value == std::numeric_limits<std::uint64_t>::max()));
+}
+
+namespace {
+void check_scoped_columns(bool value) { CHECK(value); }
+}
+TEST_CASE("Scoped BGM count edits retain inactive column references and one Undo step", "[core][bgm-columns][bms-public-cutover]") {
+    const std::string text = "#WAV01 a.wav\n#00001:01\n#RANDOM 2\n#IF 2\n#00001:01\n#ENDIF\n#ENDRANDOM\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    check_scoped_columns(parsed.value.song.has_value());
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto difficulty = history.document.read_charts().front()->id;
+    const auto before = history.document.find_bms_program(difficulty)->prepared().bgm_columns.size();
+    check_scoped_columns(before == 2);
+    check_scoped_columns(apply_bgm_column_count(history, difficulty, 3).applied);
+    check_scoped_columns(history.read_chart(difficulty)->bgm_source_lanes.size() == 3);
+    check_scoped_columns(history.undo.size() == 1);
+    const auto revision = history.document.revision;
+    check_scoped_columns(!apply_bgm_column_count(history, difficulty, 1).applied);
+    check_scoped_columns(history.document.revision == revision);
+    check_scoped_columns(apply_bgm_column_count(history, difficulty, 2).applied);
+    check_scoped_columns(undo_document_command(history));
+    check_scoped_columns(history.read_chart(difficulty)->bgm_source_lanes.size() == 3);
+    check_scoped_columns(undo_document_command(history));
+    check_scoped_columns(history.document.find_bms_program(difficulty)->prepared().bgm_columns.size() == before);
+    check_scoped_columns(redo_document_command(history));
+    check_scoped_columns(history.read_chart(difficulty)->bgm_source_lanes.size() == 3);
+}
+
+TEST_CASE("Scoped BGM paste reveals retained columns before growing its preview", "[core][bgm-columns][bms-public-cutover]") {
+    const std::string text = "#WAV01 a.wav\n#00001:01\n#RANDOM 2\n#IF 2\n#00001:01\n#ENDIF\n#ENDRANDOM\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    check_scoped_columns(parsed.value.song.has_value());
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto* chart = history.document.read_charts().front();
+    const auto difficulty = chart->id;
+    const auto anchor = local_position_t{chart->measures.front().id, 0};
+    const auto clipboard = parse_bms_chart_clipboard("iBMSC Clipboard Data\r\n29 0 10000 0 0 0",
+        history.document, *chart, chart->lane_layouts.front().layout);
+    check_scoped_columns(clipboard.has_value());
+    const auto hidden = chart_paste_proposal_t::propose(history.document, difficulty, *clipboard,
+        anchor, history.document.revision);
+    check_scoped_columns(!hidden.value.has_value());
+    check_scoped_columns(history.undo.empty());
+    check_scoped_columns(apply_bgm_column_count(history, difficulty, 2).applied);
+    const auto visible = chart_paste_proposal_t::propose(history.document, difficulty, *clipboard,
+        anchor, history.document.revision);
+    check_scoped_columns(visible.value.has_value());
+    check_scoped_columns(paste_chart_clipboard(history, difficulty, *clipboard, anchor).applied);
+    check_scoped_columns(history.read_chart(difficulty)->bgm_source_lanes.size() == 3);
+    check_scoped_columns(history.undo.size() == 2);
+    check_scoped_columns(undo_document_command(history));
+    check_scoped_columns(history.read_chart(difficulty)->bgm_source_lanes.size() == 2);
 }

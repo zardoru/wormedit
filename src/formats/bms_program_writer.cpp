@@ -5,7 +5,9 @@
 #include "text_codec_result.h"
 #include <tuple>
 #include "../core/checked_math.h"
+#include "../core/id_ceiling.h"
 #include "../core/text_util.h"
+#include "../core/bms_native_content_internal.h"
 #include <wormedit/core/rational.h>
 
 #include <map>
@@ -49,6 +51,11 @@ struct program_emission_t {
     std::size_t maximum_used_measure{};
     bool flatten{};
     bool source_proof{};
+    std::vector<bms_write_diagnostic_t>* diagnostics{};
+    void warn_loss(std::string message, std::string path);
+    std::array<std::set<std::string>, 2> resource_slots;
+    std::array<std::set<std::string>, 3> timing_slots;
+    std::map<resource_id_t, std::pair<bms_resource_namespace_t, std::string>> native_resources;
 
     void account_input(std::size_t size);
     void index_inputs();
@@ -88,10 +95,25 @@ struct program_emission_t {
     void emit(const bms_measure_length_t& value);
     void emit(const bms_resource_declaration_t& value);
     void emit(const bms_metadata_declaration_t& value);
-    void emit(const bms_native_content_t&) {
+    void emit(const bms_native_content_t& value);
+    void native(const note_t& value, const bms_native_content_t& content);
+    void native(const bgm_event_t& value, const bms_native_content_t& content);
+    void native(const bga_event_t& value, const bms_native_content_t& content);
+    void native(const bpm_event_t& value, const bms_native_content_t& content);
+    void native(const pause_event_t& value, const bms_native_content_t& content);
+    void native(const scroll_event_t& value, const bms_native_content_t& content);
+    template<class Value> void native(const Value&, const bms_native_content_t&) {
         fail(bms_write_diagnostic_code_t::unsupported_feature,
             "Native-only scoped content requires a compatible output format.", "$.program.native_content");
     }
+    void index_native_resources();
+    template<class Value> void reserve_identifiers(const Value& value);
+    auto native_identifier(const bms_native_content_t& content, bms_resource_namespace_t name_space) const -> std::string;
+    auto allocate_identifier(std::set<std::string>& used) -> std::string;
+    void native_timing(bms_program_position_t position, bms_timing_definition_kind_t kind, signed_rational_t value);
+    auto merge_bgm_padding(std::size_t measure, object_id_t column, rational_t fraction,
+        const std::string& object, std::optional<std::uint64_t> grid) -> bool;
+    void retain_bgm_grid(std::optional<std::uint64_t> grid);
     auto channel(lane_id_t lane, note_kind_t kind) const -> std::string;
     auto measure_index(measure_id_t id) -> std::size_t;
     void prepare_line(std::size_t measure, std::string channel, std::optional<object_id_t> column, rational_t fraction);
@@ -108,6 +130,122 @@ auto identifier(std::string_view value, bool zero = false) -> std::string {
     return std::string(value);
 }
 
+template<class Value> void program_emission_t::reserve_identifiers(const Value& value) {
+    if constexpr (std::same_as<Value, bms_resource_declaration_t>)
+        resource_slots[static_cast<std::size_t>(value.name_space)].insert(value.identifier);
+    else if constexpr (requires { value.wav; }) {
+        if constexpr (std::same_as<decltype(value.wav), std::string>) resource_slots[0].insert(value.wav);
+        else if (value.wav) resource_slots[0].insert(*value.wav);
+    } else if constexpr (std::same_as<Value, bms_bga_content_t>) resource_slots[1].insert(value.bmp);
+    else if constexpr (std::same_as<Value, bms_timing_definition_t>) {
+        if (value.identifier) timing_slots[static_cast<std::size_t>(value.kind)].insert(*value.identifier);
+    } else if constexpr (std::same_as<Value, bms_timing_reference_t>)
+        timing_slots[static_cast<std::size_t>(value.kind)].insert(value.identifier);
+    else if constexpr (std::same_as<Value, bms_native_content_t>) {
+        if (value.resource_reference()) resource_slots[static_cast<std::size_t>(value.resource_reference()->name_space)]
+            .insert(value.resource_reference()->identifier);
+    }
+}
+
+auto program_emission_t::allocate_identifier(std::set<std::string>& used) -> std::string {
+    for (std::size_t index = 1; index < 1296; ++index) {
+        auto name = base36_id(index);
+        if (used.insert(name).second) return name;
+    }
+    fail(bms_write_diagnostic_code_t::resource_limit, "No free BMS identifier remains for native content.", "$.program");
+}
+
+void program_emission_t::index_native_resources() {
+    std::set<resource_id_t> needed;
+    for (const auto& node : prepared.program.nodes()) {
+        const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+        if (!chart) continue;
+        for (const auto& item : chart->items) {
+            std::visit([&](const auto& value) { reserve_identifiers(value); }, item.value);
+            const auto* native = std::get_if<bms_native_content_t>(&item.value);
+            if (!native || native->resource_reference() || (flatten && !active_charts.contains(node.id))) continue;
+            if (const auto id = event_resource(native->payload()); id && *id) needed.insert(*id);
+        }
+    }
+    for (const auto id : needed) {
+        const auto resource = resources.find(id);
+        if (resource == resources.end()) fail(bms_write_diagnostic_code_t::unresolved_resource,
+            "Native content references an unknown catalog resource.", "$.program.native_content");
+        const auto asset = assets.find(resource->second->asset);
+        if (asset == assets.end()) fail(bms_write_diagnostic_code_t::unresolved_resource,
+            "Native content references an unknown asset.", "$.program.native_content");
+        const auto name_space = asset->second.first;
+        native_resources.emplace(id, std::pair{name_space, allocate_identifier(resource_slots[static_cast<std::size_t>(name_space)])});
+    }
+}
+
+auto program_emission_t::native_identifier(const bms_native_content_t& content,
+    bms_resource_namespace_t name_space) const -> std::string {
+    if (content.resource_reference()) {
+        if (content.resource_reference()->name_space == name_space) return identifier(content.resource_reference()->identifier);
+    } else if (const auto resource = event_resource(content.payload()); resource && *resource) {
+        const auto found = native_resources.find(*resource);
+        if (found != native_resources.end() && found->second.first == name_space) return found->second.second;
+    } else return "00";
+    fail(bms_write_diagnostic_code_t::unresolved_resource, "Native content has an incompatible resource binding.", "$.program.native_content");
+}
+
+void program_emission_t::emit(const bms_native_content_t& value) {
+    std::visit([&](const auto& event) { native(event, value); }, value.payload());
+}
+
+void program_emission_t::warn_loss(std::string message, std::string path) {
+    if (options.loss_policy == loss_policy_t::reject)
+        fail(bms_write_diagnostic_code_t::lossy_transform, std::move(message), std::move(path));
+    if (!diagnostics) return;
+    const auto duplicate = std::ranges::any_of(*diagnostics, [&](const auto& entry) {
+        return entry.code == bms_write_diagnostic_code_t::lossy_transform && entry.message == message;
+    });
+    if (!duplicate) diagnostics->push_back({diagnostic_severity_t::warning,
+        bms_write_diagnostic_code_t::lossy_transform, std::move(message), std::move(path)});
+}
+
+void program_emission_t::native(const note_t& value, const bms_native_content_t& content) {
+    if (value.sound_channel_event) fail(bms_write_diagnostic_code_t::unsupported_feature,
+        "Native stem points require a compatible output format.", "$.program.native_content");
+    const auto wav = native_identifier(content, bms_resource_namespace_t::wav);
+    const auto attributes = bms_note_attributes_t::from(value);
+    if (value.end) {
+        emit(bms_hold_endpoint_t{.position = *content.position(), .lane = value.lane, .wav = wav, .attributes = attributes});
+        emit(bms_hold_endpoint_t{.position = *content.end_position(), .lane = value.lane, .wav = wav});
+    } else emit(bms_note_content_t{.position = *content.position(), .lane = value.lane, .kind = value.kind,
+        .wav = wav == "00" ? std::nullopt : std::optional{wav}, .attributes = attributes});
+}
+void program_emission_t::native(const bgm_event_t& value, const bms_native_content_t& content) {
+    if (value.sound_channel_event)
+        fail(bms_write_diagnostic_code_t::unsupported_feature, "Native BGM stem points require a compatible output format.", "$.program.native_content");
+    if (value.end) warn_loss("BMS background sounds retain their heads and omit native span tails.", "$.program.BGM.end");
+    if (!bgm_columns.contains(value.source_lane)) fail(bms_write_diagnostic_code_t::invalid_document,
+        "Native BGM content has no shared column.", "$.program.native_content");
+    slot(*content.position(), "01", native_identifier(content, bms_resource_namespace_t::wav), value.source_lane);
+}
+void program_emission_t::native(const bga_event_t& value, const bms_native_content_t& content) {
+    emit(bms_bga_content_t{.position = *content.position(), .kind = value.kind,
+        .bmp = native_identifier(content, bms_resource_namespace_t::bmp)});
+}
+void program_emission_t::native_timing(bms_program_position_t position, bms_timing_definition_kind_t kind,
+    signed_rational_t value) {
+    const auto name = allocate_identifier(timing_slots[static_cast<std::size_t>(kind)]);
+    emit(bms_timing_definition_t{.kind = kind, .identifier = name, .value = value});
+    emit(bms_timing_reference_t{.position = position, .kind = kind, .identifier = name});
+}
+void program_emission_t::native(const bpm_event_t& value, const bms_native_content_t& content) {
+    native_timing(*content.position(), bms_timing_definition_kind_t::bpm, value.beats_per_minute);
+}
+void program_emission_t::native(const pause_event_t& value, const bms_native_content_t& content) {
+    if (value.kind != pause_kind_t::stop || value.source_unit != pause_unit_t::bms_stop_ticks)
+        fail(bms_write_diagnostic_code_t::unsupported_feature, "BMS pauses require STOP ticks.", "$.program.native_content");
+    native_timing(*content.position(), bms_timing_definition_kind_t::stop, value.duration);
+}
+void program_emission_t::native(const scroll_event_t& value, const bms_native_content_t& content) {
+    native_timing(*content.position(), bms_timing_definition_kind_t::scroll, value.multiplier);
+}
+
 auto timing_directive(bms_timing_definition_kind_t kind) -> const bms_timing_directive_t& {
     const auto found = std::ranges::find(bms_timing_directives, kind, &bms_timing_directive_t::kind);
     if (found == bms_timing_directives.end()) fail(bms_write_diagnostic_code_t::unsupported_feature, "Unknown timing kind.", "$.program");
@@ -120,10 +258,6 @@ void program_emission_t::account_input(std::size_t size) {
 }
 
 void program_emission_t::index_inputs() {
-    if (!prepared.semantic_layers.empty() || !prepared.sound_layer_defaults.empty())
-        fail(bms_write_diagnostic_code_t::unsupported_feature,
-            "Native scoped layer settings require a compatible output format.", "$.program.layers");
-
     if (prepared.program.nodes().size() > options.program_limits.maximum_nodes || prepared.measures.empty() || prepared.measures.size() > 1000)
         fail(bms_write_diagnostic_code_t::resource_limit, "Scoped node/measure limits exceeded.", "$.program");
     account_input(prepared.resources.size());
@@ -175,18 +309,15 @@ void program_emission_t::index_catalogs() {
 void program_emission_t::index_lanes() {
     if (!prepared.lane_profile) return;
     const auto& layout = prepared.lane_profile->layout;
-    const auto profiles = built_in_bms_lane_profiles();
-    const auto profile = std::ranges::find_if(profiles, [&](const auto& candidate) { return candidate.profile.layout.profile_id == layout.profile_id; });
-    if (profile == profiles.end() || profile->profile.layout.lanes.size() != layout.lanes.size())
-        fail(bms_write_diagnostic_code_t::missing_profile, "Prepared export requires a supported BMS lane profile.", "$.lane_profile");
     account_input(layout.lanes.size());
     std::set<std::string> used;
     for (const auto& lane : layout.lanes) {
-        const auto known = std::ranges::any_of(profile->profile.layout.lanes, [&](const auto& original) {
-            return original.bms_channels == lane.bms_channels && original.role == lane.role;
-        });
-        if (!known || !lane.id || !lanes.emplace(lane.id, &lane).second || !used.insert(lane.bms_channels.visible.value_or("")).second)
-            fail(bms_write_diagnostic_code_t::missing_profile, "Lane channels or identities are unsupported or ambiguous.", "$.lane_profile");
+        const auto channels = lane.bms_channels.normalized();
+        if (!channels || *channels != lane.bms_channels || !lane.id || !lanes.emplace(lane.id, &lane).second)
+            fail(bms_write_diagnostic_code_t::missing_profile, "Lane channels or identities are invalid.", "$.lane_profile");
+        for (const auto* channel : {&channels->visible, &channels->invisible, &channels->long_note, &channels->mine})
+            if (*channel && !used.insert(**channel).second)
+                fail(bms_write_diagnostic_code_t::missing_profile, "Lane channels overlap.", "$.lane_profile");
     }
 }
 
@@ -312,6 +443,37 @@ auto program_emission_t::measure_index(measure_id_t id) -> std::size_t {
     maximum_used_measure = std::max(maximum_used_measure, found->second);
     return found->second;
 }
+namespace {
+auto bgm_source_grid(rational_t fraction, std::optional<std::size_t> slot) -> std::optional<std::uint64_t> {
+    if (!slot) return {};
+    if (!fraction.numerator) {
+        if (*slot) fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM zero position requires slot zero.", "$.program.BGM");
+        return {};
+    }
+    const auto grid = checked_math::checked_multiply(*slot, fraction.denominator);
+    if (!grid || !*grid || *grid % fraction.numerator)
+        fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM structural slot disagrees with its exact position.", "$.program.BGM");
+    return *grid / fraction.numerator;
+}
+}
+void program_emission_t::retain_bgm_grid(std::optional<std::uint64_t> grid) {
+    if (!grid) return;
+    if (pending->minimum_slots != 1 && pending->minimum_slots != *grid)
+        fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM slots disagree on their source grid.", "$.program.BGM");
+    pending->minimum_slots = *grid;
+}
+auto program_emission_t::merge_bgm_padding(std::size_t measure, object_id_t column, rational_t fraction,
+    const std::string& object, std::optional<std::uint64_t> grid) -> bool {
+    if (!pending || pending->measure != measure || pending_column != column) return false;
+    const auto same = std::ranges::find_if(pending->notes, [&](const auto& note) {
+        return note.numerator == fraction.numerator && note.denominator == fraction.denominator;
+    });
+    if (same == pending->notes.end() || (same->object_id != "00" && object != "00")) return false;
+    retain_bgm_grid(grid);
+    if (object != "00") same->object_id = object;
+    return true;
+}
+
 void program_emission_t::slot(bms_program_position_t position, std::string channel, std::string object,
     std::optional<object_id_t> column, std::optional<std::size_t> structural_slot) {
     if (options.format.profile == bms_export_profile_t::lr2_compatible && !is_lr2_command("000" + channel))
@@ -320,20 +482,10 @@ void program_emission_t::slot(bms_program_position_t position, std::string chann
     if (!position.fraction.denominator || position.fraction.numerator >= position.fraction.denominator)
         fail(bms_write_diagnostic_code_t::invalid_geometry, "BMS position is outside its shared measure.", "$.program.position");
     const auto fraction = reduce_fraction(position.fraction);
+    const auto grid = bgm_source_grid(fraction, structural_slot);
+    if (column && merge_bgm_padding(measure, *column, fraction, object, grid)) return;
     prepare_line(measure, std::move(channel), column, fraction);
-    // BGM authored padding retains its grid and structural slots. Slot i / N
-    // gives N even when the fraction was reduced; zero slots are checked later.
-    if (structural_slot && fraction.numerator) {
-        const auto grid = checked_math::checked_multiply(*structural_slot, fraction.denominator);
-        if (!grid || *grid % fraction.numerator)
-            fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM structural slot disagrees with its exact position.", "$.program.BGM");
-        const auto slots = *grid / fraction.numerator;
-        if (!slots || (pending->minimum_slots != 1 && pending->minimum_slots != slots))
-            fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM slots disagree on their source grid.", "$.program.BGM");
-        pending->minimum_slots = slots;
-    }
-    if (structural_slot && !fraction.numerator && *structural_slot)
-        fail(bms_write_diagnostic_code_t::invalid_geometry, "BGM zero position requires slot zero.", "$.program.BGM");
+    retain_bgm_grid(grid);
     pending->notes.push_back({fraction.numerator, fraction.denominator, std::move(object), "$.program"});
     positions.insert(fraction);
 }
@@ -374,8 +526,7 @@ auto program_emission_t::channel(lane_id_t id, note_kind_t kind) const -> std::s
     return identifier(*value);
 }
 void program_emission_t::emit(const bms_note_content_t& value) {
-    if (!value.attributes.is_empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
-        "Native note annotations require a compatible output format.", "$.program.notes.attributes");
+    if (value.attributes.osu_hitsample) warn_loss("BMS omits osu hitsample annotations.", "$.program.notes.attributes");
     if (value.kind == note_kind_t::hold) fail(bms_write_diagnostic_code_t::invalid_document, "Holds require separate authored endpoints.", "$.program.notes");
     std::string object;
     if (value.kind == note_kind_t::mine) {
@@ -389,13 +540,10 @@ void program_emission_t::emit(const bms_note_content_t& value) {
     slot(value.position, channel(value.lane, value.kind), std::move(object));
 }
 void program_emission_t::emit(const bms_hold_endpoint_t& value) {
-    if (!value.attributes.is_empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
-        "Native note annotations require a compatible output format.", "$.program.notes.attributes");
+    if (value.attributes.osu_hitsample) warn_loss("BMS omits osu hitsample annotations.", "$.program.notes.attributes");
     slot(value.position, channel(value.lane, note_kind_t::hold), identifier(value.wav));
 }
 void program_emission_t::emit(const bms_bgm_content_t& value) {
-    if (!value.semantic_layers.empty()) fail(bms_write_diagnostic_code_t::unsupported_feature,
-        "Native BGM annotations require a compatible output format.", "$.program.BGM.layers");
     if (!value.column || !bgm_columns.contains(value.column)) fail(bms_write_diagnostic_code_t::invalid_document, "BGM requires a line identity.", "$.program.BGM");
     slot(value.position, "01", value.wav ? identifier(*value.wav) : "00", value.column, value.structural_slot);
 }
@@ -473,6 +621,9 @@ auto program_emission_t::build() -> std::string {
         fail(bms_write_diagnostic_code_t::unsupported_encoding, "LR2 requires CP932 output.", "$.output_encoding");
     index_inputs();
     select_projection();
+    index_native_resources();
+    for (const auto& [resource, binding] : native_resources)
+        emit(bms_resource_declaration_t{.name_space = binding.first, .identifier = binding.second, .resource = resource});
     emit_node(*prepared.program.find(prepared.program.root()), 0);
     flush();
     // Zero direct-BPM padding preserves an otherwise unreferenced trailing
@@ -500,19 +651,68 @@ void validate_output_bounds(std::string_view bytes, const bms_program_write_opti
     }
 }
 
+auto canonical_source_program(bms_prepared_program_t prepared) -> std::optional<bms_prepared_program_t> {
+    prepared.settings = {};
+    std::unordered_map<std::uint64_t, std::uint64_t> ids;
+    std::uint64_t next{1};
+    auto reserve = [&](object_id_t id) { return ids.emplace(id.value, next++).second; };
+    if (!id_declarations_t<object_id_t>::visit(prepared, reserve)) return {};
+    auto remapped = prepared.with_remapped_ids(ids);
+    if (!remapped) return {};
+    return std::move(*remapped);
+}
+auto source_semantics_match(const bms_prepared_program_t& current, const bms_prepared_program_t& imported) -> bool {
+    const auto left = canonical_source_program(current);
+    const auto right = canonical_source_program(imported);
+    if (!left || !right || left->program != right->program || left->measures != right->measures ||
+        left->lane_profile != right->lane_profile || left->bgm_columns != right->bgm_columns ||
+        left->semantic_layers != right->semantic_layers || left->sound_layer_defaults != right->sound_layer_defaults ||
+        left->resources.size() != right->resources.size() || left->audio_assets.size() != right->audio_assets.size() ||
+        left->visual_assets.size() != right->visual_assets.size()) return false;
+    for (std::size_t index = 0; index < left->resources.size(); ++index)
+        if (left->resources[index].asset != right->resources[index].asset ||
+            left->resources[index].name != right->resources[index].name) return false;
+    for (std::size_t index = 0; index < left->audio_assets.size(); ++index)
+        if (left->audio_assets[index].source_path != right->audio_assets[index].source_path) return false;
+    for (std::size_t index = 0; index < left->visual_assets.size(); ++index)
+        if (left->visual_assets[index].source_path != right->visual_assets[index].source_path ||
+            left->visual_assets[index].kind != right->visual_assets[index].kind) return false;
+    return true;
+}
+template<class Asset>
+void apply_resolution_evidence(std::vector<Asset>& assets, const std::vector<bms_asset_resolution_t>& records) {
+    for (auto& asset : assets) {
+        std::optional<std::filesystem::path> resolved;
+        bool ambiguous{};
+        for (const auto& record : records) {
+            if (record.authored != asset.source_path) continue;
+            if (resolved && *resolved != record.resolved) ambiguous = true;
+            resolved = record.resolved;
+        }
+        if (resolved && !ambiguous) asset.source_path = *resolved;
+    }
+}
+
 auto verified_source(const bms_prepared_program_t& prepared, const bms_program_write_options_t& options,
-    std::string_view normalized) -> std::optional<bms_source_t> {
+    std::optional<std::string_view> normalized) -> std::optional<bms_source_t> {
     if (!options.can_verify_source()) return {};
     const auto& source = *options.source;
     if (source.original_bytes->size() > options.maximum_output_bytes) return {};
     bms_parse_options_t parse_options{.encoding_override = source.user_override.value_or(source.detected),
         .max_source_bytes = options.maximum_output_bytes, .max_lines = options.maximum_lines};
-    if (prepared.lane_profile) parse_options.lane_profile_id = prepared.lane_profile->layout.profile_id;
+    parse_options.authored_lane_profile = prepared.lane_profile;
     auto imported = prepare_bms_program(*source.original_bytes, parse_options, options.program_limits);
-    if (!imported.value.prepared) return {};
+    if (!imported.value.prepared || !imported.ok()) return {};
+    apply_resolution_evidence(imported.value.prepared->audio_assets, prepared.resolved_asset_paths);
+    apply_resolution_evidence(imported.value.prepared->visual_assets, prepared.resolved_asset_paths);
+    if (!normalized) {
+        if (source_semantics_match(prepared, *imported.value.prepared))
+            return bms_source_t{source.original_bytes, *parse_options.encoding_override};
+        return {};
+    }
     try {
         program_emission_t original{.prepared = *imported.value.prepared, .options = options, .source_proof = true};
-        if (original.build() == normalized) return bms_source_t{source.original_bytes, *parse_options.encoding_override};
+        if (original.build() == *normalized) return bms_source_t{source.original_bytes, *parse_options.encoding_override};
     } catch (const write_failure_t&) { return {}; }
     return {};
 }
@@ -521,11 +721,7 @@ auto verified_source(const bms_prepared_program_t& prepared, const bms_program_w
 auto write_bms_program(const bms_prepared_program_t& prepared, bms_program_write_options_t options) -> bms_write_outcome_t {
     bms_write_outcome_t result;
     try {
-        const auto has_control = std::ranges::any_of(prepared.program.nodes(), [](const auto& node) {
-            return !std::holds_alternative<bms_root_scope_t>(node.value) &&
-                !std::holds_alternative<bms_bare_scope_t>(node.value) &&
-                (node.is_scope() || std::holds_alternative<bms_set_random_t>(node.value) || std::holds_alternative<bms_set_switch_t>(node.value));
-        });
+        const auto has_control = prepared.program.has_control_flow();
         if (has_control && options.format.branch_policy == bms_branch_policy_t::flatten_active) {
             if (options.loss_policy == loss_policy_t::reject) fail(bms_write_diagnostic_code_t::lossy_transform, "Flattening discards control flow and inactive content.", "$.program");
             result.diagnostics.push_back({options.loss_policy == loss_policy_t::allow ? diagnostic_severity_t::info : diagnostic_severity_t::warning,
@@ -535,12 +731,22 @@ auto write_bms_program(const bms_prepared_program_t& prepared, bms_program_write
         // verifies unchanged backing even for a recovered nonterminating ratio;
         // signature bytes are never returned as an export artifact.
         if (options.can_verify_source() && options.source->original_bytes->size() <= options.maximum_output_bytes) {
-            program_emission_t proof{.prepared = prepared, .options = options, .source_proof = true};
-            if (const auto source = verified_source(prepared, options, proof.build()))
+            program_emission_t proof{.prepared = prepared, .options = options, .source_proof = true, .diagnostics = &result.diagnostics};
+            try {
+                const auto signature = proof.build();
+                if (const auto source = verified_source(prepared, options, signature))
+                    result.value = write_retained_bms_source(*source, options.format);
+            } catch (const write_failure_t& failure) {
+                // Fragmented BGM source lines can be valid even when they cannot
+                // be normalized into a single native column without changing voice.
+                if (failure.code != bms_write_diagnostic_code_t::duplicate_event) throw;
+                const auto source = verified_source(prepared, options, std::nullopt);
+                if (!source) throw;
                 result.value = write_retained_bms_source(*source, options.format);
+            }
         }
         if (!result.value) {
-            program_emission_t emission{.prepared = prepared, .options = options};
+            program_emission_t emission{.prepared = prepared, .options = options, .diagnostics = &result.diagnostics};
             result.value = encode_bms_text(emission.build(), options.format.output_encoding.value_or(
                 options.format.profile == bms_export_profile_t::beatoraja ? text_encoding_t::utf8 : text_encoding_t::cp932));
         }

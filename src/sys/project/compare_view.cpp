@@ -160,24 +160,25 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
 
     auto& available = cache.available_charts;
     available.clear();
-    available.reserve(history.document.charts.size());
-    for (const auto& chart : history.document.charts) available.push_back(chart.id);
+    const auto charts = history.document.read_charts();
+    available.reserve(charts.size());
+    for (const auto* chart : charts) available.push_back(chart->id);
     const auto pair = choose_compare_chart_pair(available, workspace.selected_chart,
                                                 workspace.comparison_charts);
     const auto first_id = pair ? pair->first
         : workspace.selected_chart.value_or(available.empty() ? wormedit::chart_id_t{}
                                                                : available.front());
     const auto second_id = pair ? pair->second : wormedit::chart_id_t{};
-    const auto* first = history.document.find_chart(first_id);
-    const auto* second = history.document.find_chart(second_id);
+    const auto* first = history.read_chart(first_id);
+    const auto* second = history.read_chart(second_id);
     view.first_chart_id = first_id;
     view.second_chart_id = second_id;
     view.first_difficulty = first ? difficulty_name(*first).c_str() : "No difficulty";
     view.second_difficulty = second ? difficulty_name(*second).c_str() : "No comparison";
     view.has_two_difficulties = pair.has_value() && first && second;
     view.charts.clear();
-    for (const auto& chart : history.document.charts)
-        view.charts.push_back({.id = chart.id, .label = difficulty_name(chart)});
+    for (const auto* chart : charts)
+        view.charts.push_back({.id = chart->id, .label = difficulty_name(*chart)});
     if (first) {
         cache_compare_diagnostics(cache, history.document);
         const auto key = std::pair{first->id, history.document.revision};

@@ -218,7 +218,9 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
             {path.string(), "conversion-pcm-v1"}});
         require_span(static_cast<bool>(registered));
     }
-    const auto& chart = song.charts.front();
+    const auto charts = song.read_charts();
+    require_span(charts.size() == 1);
+    const auto& chart = *charts.front();
     const auto timing = timing_index_t::from(chart);
     require_span(static_cast<bool>(timing.value));
     const auto schedule = build_preview_schedule(chart, *timing.value,
@@ -271,7 +273,9 @@ TEST_CASE("sliced BMSON conversion reimport matches production preview PCM",
 namespace {
 auto authored_note_count(const song_document_t& song) -> std::size_t {
     std::size_t count{};
-    for (const auto& measure : song.charts.front().measures) count += measure.notes.size();
+    const auto charts = song.read_charts();
+    require_span(charts.size() == 1);
+    for (const auto& measure : charts.front()->measures) count += measure.notes.size();
     return count;
 }
 

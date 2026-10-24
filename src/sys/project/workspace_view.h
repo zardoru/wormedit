@@ -59,7 +59,7 @@ struct frontend_workspace_view_t {
         std::optional<std::pair<compose_scene_source_key_t, std::uint64_t>> sound_labels_source;
         std::vector<std::uint64_t> visible_sound_ids;
         std::unordered_map<std::uint64_t, std::string> stem_filenames;
-        keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, std::string, std::uint16_t,
+        keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, const chart_document_t*, std::string, std::uint16_t,
             std::size_t, std::size_t, resource_use_filter_t>, sound_slots_view_t> sound_slots_cache;
         std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
         struct {

@@ -2,19 +2,17 @@
 
 [Back to the task-card index](../tasks.md).
 
-Stage 3 branch and channel-map leftovers from
+Historical Stage 3 branch and channel-map work from
 [authoring/export](../stages/authoring-export.md) and the
-[BMS control-flow reference](../../references/bms-control-flow.md). Core already
-has source-backed statement edit/insert/delete, choice changes, narrow root-range
-RANDOM block creation/removal and leaf-body reordering. The panel is not read-only.
-Apply the stale-plan check (rule 9) first.
+[BMS control-flow reference](../../references/bms-control-flow.md).
 
-**Owner direction (2026-10-20):** the next model is a scoped program with Control,
-Chart and opaque Text nodes, not a retained-source browser. See the
-[approved contract](../editing/bms-scoped-program.md) and new T-731–T-744 cards.
-The completed cards below record the old source-backed slice; they do not fulfill
-the new contract. T-93 remains individual-note move/copy work, separate from moving
-whole scoped subtrees. T-287's opt-out malformed-flow repair proposals remain separate.
+**Scoped cutover (2026-10-24, T-744):** the source-backed editing entry points and
+panel described in T-90–T-92 have been retired in favor of typed Control/Chart/Text
+ownership, explicit edit targets and the scope editor from T-731–T-743. Their done
+statuses remain historical evidence, not claims that raw-statement controls still exist.
+T-93 remains individual-note transfer/copy between semantic Charts, separate from scoped
+subtree movement; no implicit owner transfer is enabled. T-287 remains opt-out malformed-flow
+repair work. Atomic refusal of an unprovable legacy migration does not implement repair.
 
 ## T-90 Expose inactive-statement edit, insert, and delete in the branch outline
 

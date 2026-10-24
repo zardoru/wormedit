@@ -51,8 +51,15 @@ Document-only metadata edits may set publication options on `document_edit_effec
 The shared finisher passes them to commit; project settings preserve existing imported-source
 flags without enabling passthrough for sources that were already edited *(T-263)*.
 
-Prepared scoped BMS fixtures use immutable `bms_program_document_t` snapshots in
-`song_document_t::prepared_bms_programs`, separate from production chart vectors until T-744.
+Public BMS import, new-project creation and native load use immutable
+`bms_program_document_t` snapshots in `song_document_t::prepared_bms_programs`.
+Ordinary format difficulties remain in chart vectors; `read_charts` applies the shared
+project chart order across both storage owners. It returns a borrowed pointer span from an
+immutable cached index, invalidated by storage, chart identities, scoped owners and explicit
+order. Copies validate their own storage before borrowing; concurrent first readers publish
+one cache atomically. Effective resource indices live beside each playback/authoring projection,
+so warmed selected catalog and chart-list queries allocate nothing. A scoped difficulty has no
+flat mutable mirror.
 `bms_program_edit_target_t` captures the document stamp, difficulty, scope and exact Chart;
 scope selection resolves its first direct Chart. The active-preview API rejects inactive targets;
 `for_authoring` explicitly resolves inactive or unreachable nodes without changing evaluation choices.
@@ -123,17 +130,27 @@ another project even when its revision happens to match.
 Notes/holds, resource placement/strokes/assignment, clipboard content, timing points and
 Kiai spans, recipes, scoped metadata/offsets, selected moves/resize/delete/quantize/shift,
 hitsounds, labels and layer edits route through these shared prepared boundaries.
-Shared geometry, retained-stem rewrites, broad catalog/import/duplication operations and
-other unadapted operations keep atomic capability refusals. Production activation remains
-T-744. Native schema v15 persists prepared scoped snapshots with stable payload tags,
-exact fractions and opaque Text bytes. Shared project assets are referenced once; conflicting
-values reject. The codec reuses bounded alternative publication validation, preserving
-existing missing bindings while checking graph/geometry beyond the selected outcome.
-Explicit legacy migration proves the retained-source chart witness, carries note annotations
-and layer settings into their typed owners, preserves shared assets and allocates above
-current/Undo/Redo identities. Unsupported native rewrites or malformed retained source refuse
-without changing the legacy snapshot. Ordinary legacy native loading keeps its existing
-owner until T-744; unsupported native BMS export still fails instead of dropping data.
+Unconditional measure geometry, virtual-measure extension, complete lane mappings,
+scoped catalog imports and full-program difficulty duplication/import have typed adapters.
+Conditional geometry/timing links, retained-stem rewrites and unsupported multi-owner
+operations retain atomic capability refusals with diagnostics. Shared resource and asset
+metadata stays in canonical project pools; WAV/BMP declarations and references belong to
+semantic Charts. Sound lists and pickers read effective aliases from the selected authoring
+projection, without attaching scope aliases to the global resource pool.
+
+Native schema v16 persists complete scoped programs, native difficulty settings, exact
+fractions, retained source provenance, opaque Text bytes and shared catalog references.
+Optional filesystem-resolution evidence preserves an authored token through automatic
+extension/case lookup, but cannot authorize stale-source export after an explicit asset relink.
+Public legacy native load migrates every BMS difficulty atomically. Migration reconciles
+edited native values with the independent legacy codec witness, preserves annotations,
+layers, native event families and inactive bodies, and allocates above current/Undo/Redo
+identities. Unprovable or malformed legacy data rejects without publishing a partial graph.
+Sparse ambiguous lane channels require an explicit profile through the asynchronous import
+options dialog. The raw-statement editing API, source mutation helpers and legacy panel
+routes are retired. The private read-only decoder/encoder remain codec witnesses and a
+one-way migration boundary. Public BMS export writes the complete scoped program by
+default; explicit flattening still uses playback choices and existing loss policy.
 
 Timing links materialize through `reconcile_timing_links` in the shared publication boundary,
 before document validation and journal/Undo publication. It compares each unchanged active

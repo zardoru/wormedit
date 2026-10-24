@@ -190,7 +190,7 @@ TEST_CASE("Unrepresentable scoped values refuse without partial output", "[bms-p
     if (mode == 0) std::get<bms_timing_definition_t>(items.front().value).value = {1, 3};
     if (mode == 1) std::get<bms_direct_bpm_t>(items.back().value).value = {256, 1};
     if (mode == 2) std::get<bms_direct_bpm_t>(items.back().value).position.fraction = {1, 0};
-    if (mode == 3) items.front().value = bms_measure_length_t{input.measures.front(), {1, 3}};
+    if (mode == 3) items.front().value = bms_measure_length_t{.measure = input.measures.front(), .length = {1, 3}};
     replace_program(input, std::move(nodes));
     const auto snapshot = input.program;
     const auto result = write_bms_program(input);

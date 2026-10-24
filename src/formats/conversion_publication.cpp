@@ -197,7 +197,7 @@ auto referenced_export_assets(const song_document_t& song, const output_group_t&
         if (resource.asset) referenced.insert(resource.asset);
     }
     for (const auto chart_id : group.charts) {
-        const auto chart = song.find_chart(chart_id);
+        const auto chart = song.read_chart(chart_id);
         if (chart == nullptr)
             return std::unexpected(std::string{"Output group refers to a missing chart."});
         const auto audio = metadata_audio_references_t::from(song, chart->metadata.overrides);

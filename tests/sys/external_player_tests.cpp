@@ -110,7 +110,7 @@ TEST_CASE("external_player rejects export and launch errors without leaving temp
     { std::ofstream original(source); original << "original untouched"; }
     CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, {999999}, source, 0, {}).is_success());
     CHECK_FALSE(std::filesystem::exists(directory.path / "___wormedit_preview.bms"));
-    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, song.charts[0].id, source, 0, {}).is_success());
+    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, song.read_charts().front()->id, source, 0, {}).is_success());
     CHECK_FALSE(std::filesystem::exists(directory.path / "___wormedit_preview.bms"));
     CHECK(read(source) == "original untouched");
 }
@@ -124,7 +124,7 @@ TEST_CASE("external_player never overwrites or cleans up an existing preview col
         external_player_t player;
         const external_player_definition_t definition{"Missing", "/nonexistent/player", "", "", ""};
         const auto result = player.launch(definition, external_player_action_t::play_start, song,
-            song.charts[0].id, directory.path / "original.bms", 0, {});
+            song.read_charts().front()->id, directory.path / "original.bms", 0, {});
         CHECK_FALSE(result.is_success());
     }
     CHECK(read(path) == "belongs to someone else");
@@ -181,16 +181,16 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     { std::ofstream original(source); original << "real source stays untouched"; }
     external_player_t player;
     const auto result = player.launch(definition, external_player_action_t::play_here, song,
-        song.charts[0].id, source, 37, directory.path / "app directory");
+        song.read_charts().front()->id, source, 37, directory.path / "app directory");
     require_player_launch(result);
     REQUIRE(wait_for_log(log));
     check_stub_preview(result, directory.path, log, source);
     CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song,
-        song.charts[0].id, source, 0, {}).is_success());
+        song.read_charts().front()->id, source, 0, {}).is_success());
     std::this_thread::sleep_for(std::chrono::milliseconds{500});
     std::filesystem::remove(log);
     const auto second = player.launch(definition, external_player_action_t::play_start, song,
-        song.charts[0].id, source, 0, {});
+        song.read_charts().front()->id, source, 0, {});
     require_player_launch(second);
     REQUIRE(wait_for_log(log));
     // The second stub has no hold-open delay; its published arguments are enough to continue.
@@ -212,7 +212,7 @@ TEST_CASE("external_player accepts BML source extension through the shared catal
     external_player_t player;
     const external_player_definition_t definition{"Missing", "/nonexistent/wormedit-player", "", "", ""};
     const auto result = player.launch(definition, external_player_action_t::play_start,
-        song, song.charts.front().id, directory.path / "source.BML", 0, {});
+        song, song.read_charts().front()->id, directory.path / "source.BML", 0, {});
     REQUIRE_FALSE(result.is_success());
     CHECK(result.preview_path == preview);
     CHECK(read(preview) == "foreign preview");

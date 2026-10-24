@@ -313,12 +313,40 @@ auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
                                std::max(anchor_measure->number, end_measure->number) + 1};
 }
 
+auto commit_scoped_virtual_hold(editor_edit_context_t& context,
+    const place_virtual_bms_hold_action_t& action, const virtual_hold_rows_t& rows,
+    const pending_hold_t* captured) -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+        const auto extent = transaction.stage_bms_measure_extent(context.state.chart, rows.measure_count);
+        if (!extent.value || !extent.ok()) return {.diagnostics = extent.diagnostics};
+        const auto* chart = transaction.read_chart(context.state.chart);
+        const auto index = measure_index_t::from(*chart);
+        if (!index) return {.diagnostics = index.error()};
+        const auto anchor = position_at(*index, rows.anchor);
+        const auto end = position_at(*index, rows.end);
+        if (!anchor || !end) return {.diagnostics = {error(diagnostic_code_t::invalid_hold, "Virtual hold positions are unavailable.")}};
+        auto pending = captured ? *captured : pending_hold_t{.lane = action.lane, .sound = action.sound,
+            .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
+            .hitsample = context.state.armed_hitsample};
+        pending.position = *anchor;
+        pending.anchor_canvas_row.reset(); pending.preview_canvas_row.reset(); pending.gesture_source.reset();
+        if (pending.sound && !is_paint_sample_resource(context, *pending.sound)) return {.diagnostics = {error(
+            diagnostic_code_t::invalid_id, "Virtual hold sample is unavailable.")}};
+        if (*anchor == *end && (pending.kind == note_kind_t::hold || pending.kind == note_kind_t::roll))
+            return {.diagnostics = {error(diagnostic_code_t::invalid_hold, "Move to another row to finish the hold.")}};
+        const auto planned = plan_hold_placement(*chart, *index, pending.lane, *anchor, *end, pending.kind, true);
+        if (const auto* failure = std::get_if<diagnostic_list_t>(&planned)) return {.diagnostics = *failure};
+        auto effect = stage_scoped_hold(transaction, context.state.chart, pending, std::get<hold_placement_plan_t>(planned), *end);
+        if (effect.value) { effect.value->label = virtual_row_placement_label; effect.value->consume_primary_hold = true; }
+        return effect;
+    });
+}
+
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows, const pending_hold_t* captured) -> editor_interaction_result_t {
     if (context.history.document.find_bms_program(context.state.chart))
-        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-            "Scoped virtual placement requires an exact shared-measure edit.")}};
+        return commit_scoped_virtual_hold(context, action, rows, captured ? captured : context.state.hold());
 
     auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
@@ -361,10 +389,6 @@ auto commit_virtual_hold(editor_edit_context_t& context,
 auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t {
-    if (context.history.document.find_bms_program(context.state.chart))
-        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-            "Scoped virtual placement requires an exact shared-measure edit.")}};
-
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual hold"))
         return *invalid;
     auto rows = resolve_virtual_hold_rows(context, action);
@@ -407,22 +431,41 @@ auto validate_virtual_tap_sample(const editor_edit_context_t& context,
     -> std::optional<editor_interaction_result_t> {
     if (!sample)
         return std::nullopt;
-    const auto resource =
-        std::ranges::find(context.history.document.resources, *sample, &resource_entry_t::id);
-    if (resource != context.history.document.resources.end() &&
-        std::ranges::find(resource->roles, resource_role_t::sample) != resource->roles.end())
-        return std::nullopt;
+    if (is_paint_sample_resource(context, *sample)) return std::nullopt;
     return editor_interaction_result_t{
         .diagnostics = {error(diagnostic_code_t::invalid_id, "virtual tap sample is unavailable")}};
+}
+
+auto place_scoped_virtual_tap(editor_edit_context_t& context,
+    const place_virtual_bms_tap_action_t& action, const virtual_tap_target_t& resolved) -> editor_interaction_result_t {
+    if (context.state.armed_note_kind == note_kind_t::hold || context.state.armed_note_kind == note_kind_t::roll) {
+        auto start = hold_start_t::from(context.state, action);
+        start.lane = action.lane; start.sound = action.sample; start.canvas_row = resolved.row;
+        auto result = begin_gesture<hold_gesture_t>(context, start);
+        if (result.accepted) context.state.active_lane = action.lane;
+        return result;
+    }
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+        const auto extent = transaction.stage_bms_measure_extent(context.state.chart, resolved.measure + 1);
+        if (!extent.value || !extent.ok()) return {.diagnostics = extent.diagnostics};
+        const auto* chart = transaction.read_chart(context.state.chart);
+        const auto index = measure_index_t::from(*chart);
+        if (!index) return {.diagnostics = index.error()};
+        auto state = context.state;
+        state.active_lane = action.lane;
+        const auto position = local_position_t{chart->measures[resolved.measure].id, resolved.row - resolved.measure_begin_row};
+        place_cursor_at(state, position);
+        editor_edit_context_t placement{context.history, state, {*chart, *index}};
+        auto effect = stage_editor_tap(placement, transaction, {.position = position, .sound = action.sample,
+            .source_geometry = action.source_geometry});
+        if (effect.value) { effect.value->label = virtual_row_placement_label; effect.value->lane = action.lane; effect.value->consume_primary_hold = true; }
+        return effect;
+    });
 }
 
 auto place_virtual_bms_tap(editor_edit_context_t& context,
                            const place_virtual_bms_tap_action_t& action)
     -> editor_interaction_result_t {
-    if (context.history.document.find_bms_program(context.state.chart))
-        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-            "Scoped virtual placement requires an exact shared-measure edit.")}};
-
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual tap"))
         return *invalid;
     if (auto invalid = validate_virtual_tap_sample(context, action.sample))
@@ -431,6 +474,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
     if (const auto* failure = std::get_if<diagnostic_list_t>(&target))
         return editor_interaction_result_t{.diagnostics = *failure};
     const auto resolved = std::get<virtual_tap_target_t>(target);
+    if (context.history.document.find_bms_program(context.state.chart)) return place_scoped_virtual_tap(context, action, resolved);
     auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, resolved.measure + 1))

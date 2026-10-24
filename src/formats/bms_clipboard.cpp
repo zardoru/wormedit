@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/result.h>
 #include "../core/text_util.h"
 #include "../core/timing_arithmetic.h"
@@ -746,7 +747,10 @@ auto parse_bms_chart_clipboard(std::string_view text, const song_document_t& tar
     if (lines->size() > options.maximum_records)
         return std::unexpected(std::string{"BMS clipboard exceeds the configured record limit."});
 
-    const auto resources = index_resources(target_document);
+    const auto* owner = target_document.find_bms_program(target_chart.id);
+    const auto* catalog = owner ? owner->read_catalog(target_chart.bms_authoring_chart) : &target_document;
+    if (!catalog) return std::unexpected(std::string{"Target scoped WAV bindings are unavailable."});
+    const auto resources = index_resources(*catalog);
     const decode_context_t context{target_document, target_chart, target_layout, options,
                                    resources};
     std::vector<record_t> records;

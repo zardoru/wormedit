@@ -1,3 +1,5 @@
+#include <wormedit/core/chart_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
 #include <wormedit/formats/bms_writer.h>
@@ -217,10 +219,10 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
         "#PLAYER 1\n#TITLE IDs\n#WAV01 snd10.wav\n#WAV02 snd2.wav\n#00011:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
         {.lane_profile_id = "bme-7k-outside-scratch"});
-    if (!parsed.value.song || parsed.value.song->charts.empty() || parsed.value.song->charts.front().measures.empty() ||
-        parsed.value.song->charts.front().measures.front().notes.empty()) return std::nullopt;
+    if (!parsed.value.song || parsed.value.song->read_charts().empty() || parsed.value.song->read_charts().front()->measures.empty() ||
+        parsed.value.song->read_charts().front()->measures.front().notes.empty()) return std::nullopt;
     auto history = document_history_t::from(*parsed.value.song);
-    const auto& note = history.document.charts.front().measures.front().notes.front();
+    const auto& note = history.document.read_charts().front()->measures.front().notes.front();
     if (!note.sound) return std::nullopt;
     const auto resource = *note.sound;
     const auto object = note.id;
@@ -419,9 +421,9 @@ TEST_CASE("BMS export applies renumbered IDs while preserving note resource link
     const auto fixture = make_renumbered_bms_fixture();
     REQUIRE(fixture);
     const auto& history = fixture->history;
-    CHECK(history.document.charts.front().measures.front().notes.front().sound ==
+    CHECK(history.document.read_charts().front()->measures.front().notes.front().sound ==
           std::optional<resource_id_t>{fixture->note_resource});
-    CHECK(history.document.charts.front().measures.front().notes.front().id == fixture->note_id);
+    CHECK(history.document.read_charts().front()->measures.front().notes.front().id == fixture->note_id);
 }
 
 TEST_CASE("BMS export writes the natural renumbered resource IDs",
@@ -2366,4 +2368,40 @@ TEST_CASE("A missing armed sample rejects hitsound painting without dropping the
     REQUIRE_FALSE(result.diagnostics.empty());
     CHECK(result.diagnostics.front().code == diagnostic_code_t::dangling_resource);
     CHECK(paint_content(history.document) == before);
+}
+
+TEST_CASE("Scoped WAV replacement preserves a shared resource in another difficulty",
+          "[core][resources][bms-public-cutover]") {
+    const std::string source = "#BPM 120\n#WAV0A old.wav\n#00011:0A\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    check_wav_slot(parsed.value.song.has_value());
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto first = history.document.read_charts().front()->id;
+    const auto shared = history.document.resources.front().id;
+    const auto old_asset = history.document.resources.front().asset;
+    const auto duplicated = apply_duplicate_chart_command(history, first);
+    check_wav_slot(duplicated.payload.chart.has_value());
+    const auto second = *duplicated.payload.chart;
+    const auto* owner = history.document.find_bms_program(first);
+    const auto selected = owner->prepared().program.target_chart(owner->prepared().program.root());
+    check_wav_slot(selected.has_value());
+    history.bms_edit_target = {.difficulty = first, .chart = *selected};
+    const auto revision = history.document.revision;
+    check_wav_slot(!apply_bms_wav_slot_assignment(history,
+        {.identifier = "0a", .imported_file = wav_slot_import("replacement.wav", "New sound")}));
+    check_wav_slot(history.document.revision == revision);
+    const auto replaced = apply_bms_wav_slot_assignment(history,
+        {.identifier = "0a", .imported_file = wav_slot_import("replacement.wav", "New sound"),
+         .confirm_replacement = true});
+    check_wav_slot(replaced.applied);
+    const auto replacement = history.document.read_chart(first)->measures.front().notes.front().sound;
+    check_wav_slot(replacement.has_value() && *replacement != shared);
+    check_wav_slot(history.document.resources.front().asset == old_asset);
+    check_wav_slot(history.document.read_chart(second)->measures.front().notes.front().sound == shared);
+    check_wav_slot(undo_document_command(history));
+    check_wav_slot(history.document.read_chart(first)->measures.front().notes.front().sound == shared);
+    check_wav_slot(redo_document_command(history));
+    check_wav_slot(history.document.read_chart(first)->measures.front().notes.front().sound == replacement);
+    check_wav_slot(history.document.read_chart(second)->measures.front().notes.front().sound == shared);
 }

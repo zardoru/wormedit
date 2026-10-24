@@ -286,7 +286,7 @@ auto visible_stems(const bmson_waveform_projection_context_t& context, const cha
                                context.cache.stamp().document.revision == context.history.document.revision;
     const auto* timing = cache_matches && context.cache.timing.marker_timing_index
                              ? &*context.cache.timing.marker_timing_index : nullptr;
-    const auto* indices = context.history.document.find_chart(chart.id) == &chart
+    const auto* indices = context.history.read_chart(chart.id) == &chart
         ? context.history.indices(chart.id) : nullptr;
     auto& visible = context.cache.stems.visible_channels;
     indexed_visible_stem_channels(context.cache.stems.stem_index,
@@ -333,7 +333,7 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     view.stem_waveforms.clear();
     view.stem_cuts.clear();
     if (!stem_ready(context)) return;
-    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    const auto chart = context.history.read_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) {
         cache.stems.stem_waveforms.clear();
         return;
@@ -497,7 +497,7 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
     auto& view = context.flattened.view.compose;
     if (!view.visible || !view.scene_available || !context.workspace.selected_chart ||
         !context.interaction_state || !cache.timing.marker_timing_index) return;
-    const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
+    const auto chart = context.history.read_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
     const auto& measures = context.history.indices(chart->id)->measures;
     if (!measures) return;
@@ -575,7 +575,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
     const auto* interaction_state = context.interaction_state;
     auto& cache = context.cache;
 
-    const auto chart = history.document.find_chart(*workspace.selected_chart);
+    const auto chart = history.read_chart(*workspace.selected_chart);
     if (chart == nullptr)
         return;
 

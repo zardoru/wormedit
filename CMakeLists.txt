@@ -62,6 +62,8 @@ add_library(wormedit_core
     src/core/bms_native_content.cpp
     src/core/bms_program_edit.cpp
     src/core/bms_program_identity.cpp
+    src/core/bms_program_catalog.cpp
+    src/core/bms_program_timing.cpp
     src/core/bms_branch_view.cpp
     src/core/bmson_lane_mode.cpp
     src/core/bmson_sound_channel_editor.cpp
@@ -155,8 +157,8 @@ add_library(wormedit_core
     src/core/workspace.cpp
     src/formats/bms.cpp
     src/formats/bms_program_import.cpp
+    src/formats/bms_program_document.cpp
     src/formats/bms_clipboard.cpp
-    src/formats/bms_branch_selection.cpp
     src/formats/bms_writer.cpp
     src/formats/bms_program_writer.cpp
     src/formats/bmson.cpp
@@ -507,6 +509,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/bookmarks/bookmark_rename_commands.cpp
         src/sys/compose/input/compose_playhead_skip.cpp
         src/sys/compose/compose_bgm_bar.cpp
+        src/sys/resources/bms_catalog_bindings.cpp
         src/sys/resources/sound_list_view.cpp
         src/sys/resources/sound_picker_view.cpp
         src/sys/resources/sound_usage_view.cpp

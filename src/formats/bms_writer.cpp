@@ -3367,7 +3367,7 @@ auto bms_write_options_t::from_profile(std::string_view name) -> std::optional<b
     return bms_write_options_t{.profile = found->second};
 }
 
-auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
+auto write_bms_legacy_witness(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
     bms_write_outcome_t result{};
     try {
         const chart_document_t* chart{};

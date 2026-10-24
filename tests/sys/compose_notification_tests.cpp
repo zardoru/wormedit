@@ -1,3 +1,4 @@
+#include "../support/native_bms_fixture.h"
 #include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
@@ -846,7 +847,7 @@ struct bms_editor_paste_fixture_t {
             {.file_extension = ".bme", .lane_profile_id = "bme-7k-outside-scratch"});
         REQUIRE(parsed.value.song);
         history = document_history_t::from(std::move(*parsed.value.song));
-        state.chart = history.document.charts.front().id;
+        state.chart = (*history.document.read_charts().front()).id;
         application.services.system_clipboard_text = [this] { return system_clipboard; };
     }
     auto paste(std::string& status) -> bool {
@@ -858,7 +859,7 @@ struct bms_editor_paste_fixture_t {
         return application.project.clipboard.paste_session->clipboard.objects.size();
     }
     void set_bgm_columns(unsigned count) {
-        auto& chart = history.document.charts.front();
+        auto chart = *history.document.read_charts().front();
         chart.bgm_source_lanes.clear();
         for (unsigned index = 0; index < count; ++index)
             chart.bgm_source_lanes.push_back({.id = object_id_t{1000 + index},
@@ -866,8 +867,8 @@ struct bms_editor_paste_fixture_t {
         if (count) chart.measures.front().bgm_events.push_back({.id = object_id_t{2000},
             .position = {chart.measures.front().id, 24},
             .source_lane = chart.bgm_source_lanes.front().id});
-        history = document_history_t::from(history.document);
-        state.cursor = {history.document.charts.front().measures.front().id, 0};
+        history = document_history_t::from(test::native_bms_fixture(history.document, std::move(chart)));
+        state.cursor = {(*history.document.read_charts().front()).measures.front().id, 0};
     }
 };
 
@@ -890,22 +891,35 @@ auto check_bgm_paste_preview(const bms_editor_paste_fixture_t& fixture)
     return session.geometry.bgm_source_lanes;
 }
 
-void check_retained_bgm_events(song_document_t before, const chart_document_t& after) {
-    const auto before_content = paste_document_content(before);
-    before.charts.front().measures.front().bgm_events = after.measures.front().bgm_events;
-    before.charts.front().measures.front().bgm_events.pop_back();
-    CHECK(paste_document_content(std::move(before)) == before_content);
+void check_retained_bgm_events(const song_document_t& before, const chart_document_t& after) {
+    const auto& events = before.read_charts().front()->measures.front().bgm_events;
+    REQUIRE(after.measures.front().bgm_events.size() == events.size() + 1);
+    for (const auto& event : events) {
+        const auto* retained = after.find_bgm_event(event.id);
+        CHECK((retained && *retained == event));
+    }
 }
 
 void check_bgm_paste_commit(bms_editor_paste_fixture_t& fixture,
                             const std::vector<bgm_source_lane_t>& expected_lanes) {
+    const auto original = fixture.history.document.read_charts().front()->bgm_source_lanes;
+    const auto maximum = id_ceiling_t<object_id_t>::from(fixture.history.document).maximum;
     std::string status;
     const auto applied = apply_compose_paste(fixture.application, fixture.history, fixture.state, status);
     INFO(status);
     REQUIRE(applied);
-    const auto& after = fixture.history.document.charts.front();
-    CHECK(after.bgm_source_lanes == expected_lanes);
-    CHECK(after.measures.front().bgm_events.back().source_lane == expected_lanes.back().id);
+    const auto& after = (*fixture.history.document.read_charts().front());
+    check_mixed_input(after.bgm_source_lanes.size() == expected_lanes.size());
+    for (std::size_t index = 0; index < original.size(); ++index)
+        check_mixed_input(after.bgm_source_lanes[index] == original[index]);
+    for (auto index = original.size(); index < after.bgm_source_lanes.size(); ++index) {
+        check_mixed_input(after.bgm_source_lanes[index].id.value > maximum);
+        check_mixed_input(after.bgm_source_lanes[index].name == expected_lanes[index].name);
+        check_mixed_input(after.bgm_source_lanes[index].source_order == expected_lanes[index].source_order);
+    }
+    CHECK(std::ranges::any_of(after.measures.front().bgm_events, [&](const auto& event) {
+        return event.source_lane == after.bgm_source_lanes.back().id && event.position.row == 0;
+    }));
 }
 } // namespace
 
@@ -933,7 +947,7 @@ TEST_CASE("External BGM paste previews column growth and commits it with the eve
     const auto expected_lanes = check_bgm_paste_preview(fixture);
     CHECK(paste_document_content(fixture.history.document) == before_content);
     check_bgm_paste_commit(fixture, expected_lanes);
-    const auto& after = fixture.history.document.charts.front();
+    const auto& after = (*fixture.history.document.read_charts().front());
     check_retained_bgm_events(before_document, after);
     CHECK(fixture.history.undo.size() == 1);
     REQUIRE(undo_document_command(fixture.history));
@@ -958,8 +972,8 @@ TEST_CASE("Paste keeps wormedit's own copy until the system clipboard changes",
 TEST_CASE("Rejected external paste does not publish proposed BGM columns",
           "[unit][sys][compose-notification][bms-clipboard]") {
     bms_editor_paste_fixture_t fixture;
-    auto& chart = fixture.history.document.charts.front();
-    chart.bgm_source_lanes.clear();
+    fixture.set_bgm_columns(0);
+    const auto& chart = *fixture.history.document.read_charts().front();
     fixture.state.cursor = chart.measures[1].notes.front().position;
     fixture.history = document_history_t::from(fixture.history.document);
     const auto before = paste_document_content(fixture.history.document);

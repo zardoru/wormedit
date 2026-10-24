@@ -1,5 +1,7 @@
 #include "../support/bms_program_fixture.h"
 #include <wormedit/core/bms_program_edit.h>
+#include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/pause_warp_editor.h>
@@ -862,4 +864,123 @@ TEST_CASE("Root scoped proposals reject a foreign legacy project at the same rev
     CHECK_FALSE(result.applied);
     CHECK(history.document.charts.front().speeds.empty());
     CHECK(history.undo.empty());
+}
+
+namespace {
+auto native_scoped_song() -> song_document_t {
+    auto profile = make_bms_7k_profile();
+    chart_document_t chart{.id = chart_id_t{2}, .metadata = {.name = "Native", .author = "Author", .rating = signed_rational_t{7, 2}},
+        .source_family = format_family_t::bms,
+        .measures = {{.id = measure_id_t{3}}, {.id = measure_id_t{4}, .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}}},
+        .lane_layouts = {{.id = object_id_t{4}, .position = {measure_id_t{3}, 0}, .layout = profile.layout}},
+        .input_profile = profile.input,
+        .bpms = {{.id = object_id_t{5}, .position = {measure_id_t{3}, 0}, .beats_per_minute = {120, 1}}}};
+    chart.measures.front().notes.push_back({.id = object_id_t{6}, .position = {measure_id_t{3}, 0},
+        .lane = profile.layout.lanes.front().id, .sound = resource_id_t{101}, .label = "native annotation"});
+    song_document_t song{.id = song_id_t{1}, .metadata = {.title = "Project", .artist = "Artist"},
+        .audio_assets = {{.id = asset_id_t{100}, .source_path = "/tmp/native.wav"}},
+        .resources = {{.id = resource_id_t{101}, .name = "native", .asset = asset_id_t{100}, .roles = {resource_role_t::sample}}}};
+    auto owner = bms_program_document_t::from_native_chart(chart, song, object_id_t{1000});
+    for (const auto& diagnostic : owner.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(owner.ok());
+    REQUIRE(owner.value);
+    song.prepared_bms_programs = {*owner.value};
+    song.chart_order = {chart.id};
+    return song;
+}
+}
+namespace {
+auto reopen_native_settings(const song_document_t& song) -> song_document_t {
+    const auto written = write_native_project(song);
+    REQUIRE(written.ok());
+    REQUIRE(written.value);
+    const auto reopened = parse_native_project(*written.value);
+    REQUIRE(reopened.ok());
+    REQUIRE(reopened.value);
+    return *reopened.value;
+}
+void check_native_settings_reload(const song_document_t& song) {
+    const auto reopened = reopen_native_settings(song);
+    CHECK(reopened.charts.empty());
+    REQUIRE(reopened.prepared_bms_programs.size() == 2);
+    CHECK(reopened.read_chart(chart_id_t{2})->measures.front().notes.front().label == "native annotation");
+}
+void check_native_settings_duplicate(document_history_t& history) {
+    const auto duplicate = apply_duplicate_chart_command(history, chart_id_t{2});
+    REQUIRE(duplicate.command.applied);
+    REQUIRE(duplicate.payload.chart);
+    CHECK(history.document.read_chart(*duplicate.payload.chart)->metadata.name == "Renamed (copy)");
+    CHECK(history.document.read_chart(*duplicate.payload.chart)->measures.back().definition.meter == meter_t{3, 4});
+}
+void check_scoped_extent_undo_redo(document_history_t& history, std::size_t before, std::size_t after) {
+    REQUIRE(undo_document_command(history));
+    CHECK(owner(history).prepared().measures.size() == before);
+    REQUIRE(redo_document_command(history));
+    CHECK(owner(history).prepared().measures.size() == after);
+}
+void check_scoped_extent_history(document_history_t& history, std::size_t before, std::size_t after) {
+    CHECK(history.document.charts.empty());
+    CHECK(owner(history).prepared().measures.size() == after);
+    CHECK(history.undo.size() == 1);
+    check_scoped_extent_undo_redo(history, before, after);
+}
+void check_virtual_created_note(document_history_t& history, const editor_interaction_result_t& result, bool hold) {
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.accepted);
+    REQUIRE(result.document_changed);
+    REQUIRE(result.created_note);
+    const auto* note = history.read_chart(difficulty)->find_note(*result.created_note);
+    REQUIRE(note);
+    CHECK(note->end.has_value() == hold);
+}
+}
+TEST_CASE("native scoped settings survive metadata edits duplication and native reload", "[bms-program-edit][bms-public-cutover]") {
+    auto history = document_history_t::from(native_scoped_song());
+    REQUIRE(validate_document(history.document).empty());
+    auto edited = apply_metadata_edit(history, set_chart_metadata_action_t{.chart = chart_id_t{2},
+        .name = "Renamed", .author = "Editor", .rating = signed_rational_t{5, 1}});
+    REQUIRE(edited.applied);
+    REQUIRE(history.document.charts.empty());
+    CHECK(history.document.read_chart(chart_id_t{2})->metadata.name == "Renamed");
+    check_native_settings_duplicate(history);
+    check_native_settings_reload(history.document);
+}
+
+TEST_CASE("Scoped virtual tap and hold placement allocate shared measures in one Undo step", "[bms-program-edit][bms-public-cutover]") {
+    const auto hold = GENERATE(false, true);
+    auto history = history_from("#BPM 120\n#WAV01 a.wav\n#00011:01\n");
+    auto state = scoped_state(history);
+    const auto root = target(history);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = root.chart};
+    const auto before = owner(history).prepared().measures.size();
+    const auto grid = history.read_chart(difficulty)->divisions_per_standard_measure;
+    editor_interaction_result_t result;
+    if (hold) result = dispatch_editor_action(history, state, place_virtual_bms_hold_action_t{
+        .anchor_canvas_row = grid * 3, .end_canvas_row = grid * 4, .lane = state.active_lane});
+    else result = dispatch_editor_action(history, state, place_virtual_bms_tap_action_t{
+        .canvas_row = grid * 3, .lane = state.active_lane});
+    check_virtual_created_note(history, result, hold);
+    check_scoped_extent_history(history, before, hold ? 5 : 4);
+    CHECK(history.read_chart(difficulty)->find_note(*result.created_note));
+}
+
+TEST_CASE("Scoped virtual resources and visual or BGM moves share the extent transaction", "[bms-program-edit][bms-public-cutover]") {
+    const auto mode = GENERATE(0, 1, 2);
+    auto history = history_from("#BPM 120\n#WAV01 a.wav\n#BMP01 a.png\n#00011:01\n#00001:01\n#00004:01\n");
+    const auto destination = target(history);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = destination.chart};
+    const auto* chart = history.read_chart(difficulty);
+    const auto grid = chart->divisions_per_standard_measure;
+    const auto bgm = chart->measures.front().bgm_events.front().id;
+    const auto bga = chart->bga_events.front().id;
+    document_command_result_t result;
+    if (mode == 0) result = apply_virtual_bms_resource_placement(history, {.chart = difficulty,
+        .resource = owner(history).prepared().resources.front().id, .canvas_row = grid * 3,
+        .lane = chart->lane_layouts.front().layout.lanes.front().id, .kind = resource_placement_kind_t::sample_note});
+    if (mode == 1) result = apply_virtual_bms_bgm_event_move(history, {.chart = difficulty, .event = bgm, .canvas_row = grid * 3});
+    if (mode == 2) result = apply_virtual_bms_bga_event_move(history, {.chart = difficulty, .event = bga, .canvas_row = grid * 3});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    REQUIRE(validate_document(history.document).empty());
+    check_scoped_extent_history(history, 1, 4);
 }

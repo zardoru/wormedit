@@ -14,19 +14,21 @@ consumers**, without increased allowances. Inspected isolated **1280×720** and 
 windows with an unreachable arm selected and playback unchanged.
 [Completed card, bounded test review and verification logs](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
 
-**Active: T-744**, public scoped ownership cutover. Auditing creation, identity and migration
-before activating public import/new-project/load together and retiring legacy statement authority.
-Its first checkpoint replaces JSON-key ID rewriting with typed scoped remapping, includes inactive
-and native child identities in allocation, and allows ordinary chart creation/duplication alongside
-prepared owners. Public activation is still gated. Continue step 1 with native difficulty settings,
-fresh scoped creation, full-program duplicate/import and edited-native migration; then retire the
-legacy paths and run the full acceptance matrix. GATE passes **4,882/4,882**; migration
-**1,002 assertions / 28 cases**, combined BMS **8,766 / 243**, scope harness **162 / 14**.
-Clang compiles the four affected TUs, and complexity passes without increased allowances.
-No successor card is active. Do not widen supported dialects, conditional timing links or the
-unapproved multivoice design during that cutover.
-Keep resource caps: three build workers; the three giant application/Compose TUs needed
-`MemoryHigh=5500M`, `MemoryMax=6G` to avoid throttling, with own-task OOM score 500 and low priority.
+Completed **T-744** (2026-10-24): public BMS import/new-project/load/edit/save/export now
+use one immutable scoped owner. Schema v16 retains settings, inactive programs and shared
+catalogs; raw-statement editing APIs and panel routes are retired. Edited legacy migration,
+full-program duplication/import, typed catalog staging, unconditional timing links and exact
+geometry adapters retain ownership. Selected WAV/BMP aliases and inactive object audition
+follow the authoring Chart; warmed chart/catalog queries allocate nothing. BGM count and paste
+commands preserve retained columns, and single/bulk WAV imports keep aliases scoped.
+GCC GATE passes **4,856/4,856**, with combined complexity coverage for **150 changed TUs** (full scan plus the final
+five-file refactor recheck) and **seven explicit header consumers**, without increased allowances. BMS contracts pass **8,894 assertions / 247
+cases**, scope harness **162 / 14**, allocation checks **3,355 / 94**. Inspected isolated
+**1280×720** and **800×700** scope windows, fresh Root creation and explicit-profile public import.
+[Completed card, bounded test review and evidence](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-744-activate-scoped-ownership-and-retire-raw-statement-authority).
+No successor card is active. T-93 cross-scope individual-note transfer and T-287 malformed-flow
+repair remain ready; conditional timing links and unapproved multivoice design remain outside
+this cutover. Keep three memory-capped build workers; run giant Clang consumers singly.
 
 Completed **T-739** (2026-10-23): scalar RANDOM range edits retain all arms and report
 unreachable IF/ELSEIF values without renumbering, deleting bodies or changing nested selectors.

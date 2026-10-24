@@ -215,17 +215,6 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
     WORM_UI_COMPOSE_ACTION_BMS_PROGRAM,
-    WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
-    WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
-    WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
-    WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT,
-    WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT,
-    /* compose_branch_statement_id: the selected root raw statement to wrap in a two-leaf block. */
-    WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK,
-    /* compose_branch_id: the empty #RANDOM block to remove. */
-    WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK,
-    /* compose_branch_id: the leaf to move; compose_branch_value: -1 up, +1 down. */
-    WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
     WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET,
@@ -508,6 +497,7 @@ struct workspace_action_t {
     std::string project_path;
     // Unknown requests automatic detection.
     text_encoding_t bms_encoding_id;
+    std::string bms_lane_profile_id;
     // Stable core layout identity.
     std::string new_project_layout_id;
     WormUiWorkspaceTab tab;
@@ -683,10 +673,7 @@ struct workspace_action_t {
     std::string compose_import_path;
     timing_lane_kind_t compose_timing_lane;
     bms_program_action_t bms_program;
-    wormedit::branch_id_t compose_branch_id;
-    int64_t compose_branch_value;
-    wormedit::branch_id_t compose_branch_statement_id;
-    std::string compose_branch_statement_text;
+
     std::string compose_semantic_layer_name;
     uint8_t compose_semantic_layer_red;
     uint8_t compose_semantic_layer_green;

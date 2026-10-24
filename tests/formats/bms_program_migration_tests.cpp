@@ -1,4 +1,5 @@
 #include "../support/bms_program_fixture.h"
+#include "formats/bms_program_import_internal.h"
 #include "../support/temporary_directory.h"
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/bpm_editor.h>
@@ -45,7 +46,7 @@ auto reloaded(const song_document_t& song) -> song_document_t {
     return std::move(*read.value);
 }
 auto legacy(std::string_view text = source) -> document_history_t {
-    auto parsed = parse_bms_bytes(bytes(text), {.lane_profile_id = "bme-7k-outside-scratch"});
+    auto parsed = parse_bms_legacy_witness(bytes(text), {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(parsed.value.song);
     return document_history_t::from(std::move(*parsed.value.song));
 }
@@ -235,15 +236,16 @@ TEST_CASE("Scoped native budgets reject without partial output", "[bms-program-m
     REQUIRE_FALSE(read.diagnostics.empty());
     CHECK(read.diagnostics.front().code == native_project_diagnostic_code_t::resource_limit);
 }
-TEST_CASE("Schema 13 upgrades preserve legacy authority until the explicit cutover", "[bms-program-migration]") {
+TEST_CASE("Schema 13 upgrades activate scoped ownership atomically", "[bms-program-migration]") {
     const auto history = legacy();
     auto root = nlohmann::json::parse(serialized(history.document));
     root["document"]["schema_version"] = 13U;
     const auto read = parse_native_project(root.dump());
     REQUIRE(read.value);
     CHECK(read.value->schema_version == current_document_schema_version);
-    CHECK(read.value->prepared_bms_programs.empty());
-    CHECK(read.value->charts.size() == 1);
+    REQUIRE(read.value->prepared_bms_programs.size() == 1);
+    CHECK(read.value->charts.empty());
+    CHECK(read.value->read_charts().size() == 1);
 }
 TEST_CASE("Explicit legacy migration retains inactive scopes and is one Undo step", "[bms-program-migration]") {
     auto history = legacy();
@@ -255,13 +257,18 @@ TEST_CASE("Explicit legacy migration retains inactive scopes and is one Undo ste
     commit_migration(history, std::move(proposal));
     check_migration_history(history, id, reloaded(history.document));
 }
-TEST_CASE("Legacy native edits and malformed retained data refuse migration without loss", "[bms-program-migration]") {
+TEST_CASE("Legacy native edits migrate while malformed backing refuses without loss", "[bms-program-migration]") {
     const auto fault = GENERATE(0, 1, 2);
     auto history = legacy(fault == 2 ? "#BPM 120\n#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#00011:01\n" : source);
     auto& chart = history.document.charts.front();
     if (fault == 0) chart.measures.front().notes.front().position.row = 1;
     if (fault == 1) history.document.resources.front().name = "native resource edit";
-    check_migration_refusal(history, chart.id);
+    if (fault == 2) { check_migration_refusal(history, chart.id); return; }
+    const auto id = chart.id;
+    const auto migrated = migration_proposal(history, id);
+    REQUIRE(migrated.find_bms_program(id));
+    if (fault == 0) CHECK(migrated.read_chart(id)->measures.front().notes.front().position.row == 1);
+    if (fault == 1) CHECK(migrated.resources.front().name == "native resource edit");
 }
 TEST_CASE("Scoped recovery and journal post states preserve the semantic owner", "[bms-program-migration]") {
     auto directory = test::temporary_directory_t::from();
@@ -294,15 +301,15 @@ TEST_CASE("Legacy migration preserves other difficulties output groups and share
     check_shared_asset(result, history.document, id);
     CHECK(reloaded(result).output_groups.front().charts == history.document.output_groups.front().charts);
 }
-TEST_CASE("A scoped snapshot cannot overwrite a conflicting shared asset value", "[bms-program-migration]") {
+TEST_CASE("Native scoped caches retain the canonical project asset value", "[bms-program-migration]") {
     auto song = snapshot(prepared(source));
     song.audio_assets = song.prepared_bms_programs.front()->prepared().audio_assets;
     song.audio_assets.front().source_path = "different.wav";
-    const auto written = write_native_project(song);
-    CHECK_FALSE(written.value);
-    REQUIRE_FALSE(written.diagnostics.empty());
-    CHECK(written.diagnostics.front().code == native_project_diagnostic_code_t::serialization_failure);
+    const auto loaded = reloaded(song);
+    CHECK(loaded.audio_assets.front().source_path == "different.wav");
+    CHECK(loaded.prepared_bms_programs.front()->prepared().audio_assets.front().source_path == "different.wav");
 }
+
 TEST_CASE("Inactive scoped enum values are validated by the native codec", "[bms-program-migration]") {
     auto root = nlohmann::json::parse(serialized(snapshot(prepared(source))));
     last_scoped_note(root)["value"]["data"]["kind"] = 999U;
@@ -530,4 +537,35 @@ TEST_CASE("Ordinary recipe allocation includes recipes owned by scoped programs"
         .chart = chart_id, .value = {.name = "New recipe", .range = {{measure, 0}, {measure, 240}}}});
     REQUIRE(inserted.applied);
     CHECK(history.document.find_chart(chart_id)->sv_recipes.front().id.value > 7000);
+}
+
+namespace {
+void check_public_import_owner(const song_document_t& song, const encoding_provenance_t& encoding) {
+    CHECK(song.charts.empty());
+    REQUIRE(song.prepared_bms_programs.size() == 1);
+    REQUIRE(song.read_charts().size() == 1);
+    CHECK(song.prepared_bms_programs.front()->prepared().source.original_bytes == encoding.original_bytes);
+}
+void check_public_program_reload(const song_document_t& song, const song_document_t& loaded) {
+    const auto& owner = *song.prepared_bms_programs.front();
+    const auto* restored = loaded.find_bms_program(owner.difficulty());
+    REQUIRE(restored);
+    CHECK(restored->prepared().program == owner.prepared().program);
+}
+}
+TEST_CASE("public BMS import retains inactive scopes through native reload and export",
+    "[bms-program-migration][bms-public-cutover]") {
+    auto imported = parse_bms_bytes(bytes(source), {.lane_profile_id = "bme-7k-outside-scratch"});
+    for (const auto& diagnostic : imported.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(imported.ok());
+    REQUIRE(imported.value.song);
+    const auto& song = *imported.value.song;
+    check_public_import_owner(song, imported.value.encoding);
+    const auto loaded = reloaded(song);
+    check_public_program_reload(song, loaded);
+    auto written = write_bms(loaded, {.convert_untouched_source_to_utf8 = false});
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(written.ok());
+    REQUIRE(written.value);
+    CHECK(*written.value == source);
 }

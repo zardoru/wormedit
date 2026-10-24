@@ -31,13 +31,13 @@ auto validate_chart_query(const song_document_t& song, std::uint64_t expected_re
             error(diagnostic_code_t::invalid_id, stale_action_message("Marker navigation")));
         return query;
     }
-    const auto found = song.find_chart(chart_id);
+    const auto found = song.read_chart(chart_id);
     if (!chart_id || found == nullptr) {
         query.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "marker navigation refers to an unknown chart"));
         return query;
     }
-    if (std::ranges::count(song.charts, chart_id, &chart_document_t::id) != 1) {
+    if (std::ranges::count(song.read_charts(), chart_id, [](const auto* chart) { return chart->id; }) != 1) {
         query.diagnostics.push_back(
             error(diagnostic_code_t::duplicate_id, "marker navigation chart ID is ambiguous"));
         return query;

@@ -58,7 +58,7 @@ compose_action_outcome_t commit_primary_music(compose_action_context_t& context,
     constexpr std::string_view rebind_failure = "Song audio set, but workspace rebinding failed.";
     using namespace wormedit;
     const auto* chart =
-        context.environment.document.history.document.find_chart(context.state.chart);
+        context.environment.document.history.read_chart(context.state.chart);
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
@@ -105,7 +105,7 @@ compose_action_outcome_t commit_resource_import(compose_action_context_t& contex
     if (role == resource_role_t::music)
         return commit_primary_music(context, path, metadata);
     const auto* chart =
-        context.environment.document.history.document.find_chart(context.state.chart);
+        context.environment.document.history.read_chart(context.state.chart);
     auto name = path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
@@ -301,7 +301,7 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
     }
     const auto valid_group = [&](const auto& group) {
         return !group.charts.empty() && std::ranges::none_of(group.charts, [&](const auto id) {
-            return doc.find_chart(id) == nullptr;
+            return doc.read_chart(id) == nullptr;
         });
     };
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS) {
@@ -511,7 +511,7 @@ auto select_compose_resource_uses_action_t::validate(compose_action_context_t& c
                          context.environment.document.history.document.resources.end())
         return compose_action_outcome_t::blocked("The selected resource is no longer available.",
                                                  notification_source_t::edit);
-    chart = context.environment.document.history.document.find_chart(context.state.chart);
+    chart = context.environment.document.history.read_chart(context.state.chart);
     if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected chart is no longer available.",
                                                  notification_source_t::edit);
@@ -598,7 +598,7 @@ auto create_compose_resource_action_t::validate(compose_action_context_t& contex
         return std::move(*blocked);
     }
     role = import_resource_role(context.action).value_or(resource_role_t::music);
-    chart = context.environment.document.history.document.find_chart(context.state.chart);
+    chart = context.environment.document.history.read_chart(context.state.chart);
     return std::nullopt;
 }
 

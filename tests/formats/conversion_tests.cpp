@@ -423,14 +423,14 @@ TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
     const auto parsed =
         wormedit::parse_bms_bytes(read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms" /
                                               "profiles" / "bms-5k-foot-pedal.bms"),
-                                  {.file_extension = ".bms"});
+                                  {.file_extension = ".bms", .lane_profile_id = "bms-5k-outside-scratch-foot-pedal"});
     REQUIRE(parsed.value.song.has_value());
     REQUIRE_FALSE(parsed.value.song->audio_assets.empty());
     const auto original = parsed.value.song->resources.front().name;
     const wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bms,
         .target_profile = "bms-5k-outside-scratch-foot-pedal",
-        .chart = parsed.value.song->charts.front().id,
+        .chart = parsed.value.song->read_charts().front()->id,
         .loss_policy = wormedit::loss_policy_t::warn,
         .staged_assets = {
             {.asset = parsed.value.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
@@ -781,8 +781,8 @@ auto reimport_linked_output(std::string_view output, wormedit::format_family_t t
     return wormedit::parse_osu_mania_bytes(bytes).value;
 }
 void check_reimported_link_clock(const wormedit::song_document_t& song) {
-    REQUIRE(song.charts.size() == 1);
-    const auto& chart = song.charts.front();
+    REQUIRE(song.read_charts().size() == 1);
+    const auto& chart = *song.read_charts().front();
     const auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
     REQUIRE(timing.value);
     CHECK(timing.value->seconds_at(chart.divisions_per_standard_measure / 4).seconds == wormedit::signed_rational_t{2, 5});

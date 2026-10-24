@@ -272,7 +272,7 @@ auto append_chart_projection(chart_compare_work_t& work, chart_id_t chart_id) ->
         return fail_compare(work, diagnostic_code_t::duplicate_id,
                             "chart comparison IDs must be present and unique");
     }
-    const auto chart = work.song.find_chart(chart_id);
+    const auto chart = work.song.read_chart(chart_id);
     if (chart == nullptr) {
         return fail_compare(work, diagnostic_code_t::invalid_id,
                             "chart comparison refers to a chart outside the document");

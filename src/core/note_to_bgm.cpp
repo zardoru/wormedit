@@ -723,7 +723,7 @@ auto move_editor_selection_to_bgm(document_history_t& history,
                                    "note move to BGM has stale input or an active gesture");
         return result;
     }
-    const auto chart = history.document.find_chart(state.chart);
+    const auto chart = history.read_chart(state.chart);
     if (chart == nullptr) {
         result.command = document_command_transaction_t::rejection(
             history.document.revision, diagnostic_code_t::invalid_id,

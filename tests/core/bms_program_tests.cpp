@@ -94,7 +94,7 @@ TEST_CASE("BMS program retains typed inactive declarations and endpoint contribu
         bms_timing_definition_t{bms_timing_definition_kind_t::stop, "04", {192, 1}},
         bms_timing_reference_t{position, bms_timing_definition_kind_t::stop, "04"},
         bms_direct_bpm_t{position, {120, 1}},
-        bms_measure_length_t{measure_id_t{100}, {3, 4}},
+        bms_measure_length_t{.measure = measure_id_t{100}, .length = {3, 4}},
         bms_resource_declaration_t{bms_resource_namespace_t::wav, "01", resource_id_t{12}},
         bms_metadata_declaration_t{bms_metadata_field_t::title, std::string{"Inactive title"}}};
     auto& content = std::get<bms_chart_content_t>(nodes[5].value);

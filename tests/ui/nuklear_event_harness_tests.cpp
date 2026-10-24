@@ -3054,55 +3054,11 @@ TEST_CASE("Repeat, text input, IME, focus loss and Note actions suppress Shift l
     t422_suppress_actual_text_editor();
 }
 
-TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statements per node",
-          "[frontend-state][event-harness][bms-branch]") {
-    nuklear_event_harness_t harness{1600, 1000};
-    REQUIRE(harness.ready());
-    auto& view = harness.view().compose;
-    const std::array<wormedit::ui::compose_branch_row_view_t, 5> rows{{
-        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = {1}},
-        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = {9},
-         .raw_statement = true, .statement_id = {9}},
-        {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
-         .source_order = 4, .node_id = {2}, .choice_block = true},
-        {.display_text = "#IF 1", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 5, .node_id = {3}},
-        {.display_text = "#UNKNOWN x", .depth = 3, .active = true, .node_id = {10},
-         .raw_statement = true, .statement_id = {10}}}};
-    const std::array<wormedit::ui::compose_branch_choice_view_t, 1> choices{{
-        {.branch_id = {2}, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
-         .source_order = 4, .active = true, .editable = true,
-         .has_next_value = true, .next_value = 1}}};
-    view.branch_outline_available = true;
-    view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
-    view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
-    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
-    (void)harness.frame();
-    (void)harness.frame();
-    const auto& text = harness.drawn_text();
-    INFO(text);
-    CHECK(text.find("#RANDOM 2") != std::string::npos);
-    CHECK(text.find("#IF 1") != std::string::npos);
-    CHECK(text.find("RANDOM #4") != std::string::npos);
-    // The root is selected first, so only its own unparsed statement is listed.
-    CHECK(text.find("#TITLE odd") != std::string::npos);
-    CHECK(text.find("#UNKNOWN x") == std::string::npos);
-    const auto node = harness.drawn_text_center("#5 #IF 1");
-    REQUIRE(node);
-    (void)click_at(harness, node->first, node->second);
-    (void)harness.frame();
-    CHECK(harness.drawn_text().find("#UNKNOWN x") != std::string::npos);
-    CHECK(harness.drawn_text().find("#TITLE odd") == std::string::npos);
-}
+
 
 namespace {
 
-auto block_action_from(const std::vector<workspace_action_snapshot_t>& frames,
-                       WormUiComposeActionKind kind) -> const wormedit::ui::workspace_action_t* {
-    for (const auto& frame : frames)
-        if (frame.get().compose_action == kind) return &frame.get();
-    return nullptr;
-}
+
 
 void click_label(nuklear_event_harness_t& harness, const char* label) {
     const auto center = harness.drawn_text_center(label);
@@ -3120,92 +3076,31 @@ auto click_button(nuklear_event_harness_t& harness, const char* label)
 
 } // namespace
 
-TEST_CASE("BMS branch outline buttons emit create, remove and leaf move actions",
-          "[frontend-state][event-harness][bms-branch]") {
-    nuklear_event_harness_t harness{1600, 1000};
+
+
+namespace {
+auto scope_dock_field_left(int width, bool with_branches) -> std::pair<float, int> {
+    nuklear_event_harness_t harness{width, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
-    view.chart_id.value = 7;
-    view.document_revision = 21;
-    const std::array<wormedit::ui::compose_branch_row_view_t, 7> rows{{
-        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = {1}},
-        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = {9},
-         .raw_statement = true, .statement_id = {9}},
-        {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
-         .source_order = 4, .node_id = {2}, .choice_block = true},
-        {.display_text = "#IF group", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 5, .node_id = {3}},
-        {.display_text = "#IF 1", .depth = 3, .active = true, .has_source_order = true,
-         .source_order = 6, .node_id = {4}},
-        {.display_text = "#ELSEIF 2", .depth = 3, .active = false, .has_source_order = true,
-         .source_order = 7, .node_id = {5}},
-        {.display_text = "#ENDIF end", .depth = 2, .active = true, .has_source_order = true,
-         .source_order = 8, .node_id = {6}}}};
-    const std::array<wormedit::ui::compose_branch_choice_view_t, 1> choices{{
-        {.branch_id = {2}, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
-         .source_order = 4, .active = true, .editable = true, .has_next_value = true, .next_value = 1}}};
-    view.branch_outline_available = true;
-    view.branch_rows.assign(rows.begin(), rows.end()); view.branch_rows.resize(rows.size());
-    view.branch_choices.assign(choices.begin(), choices.end()); view.branch_choices.resize(choices.size());
-    worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
+    view.bms_program.available = with_branches;
+    worm_ui_nuklear_compose_state().dock_layout.branch_panel_visible = true;
     (void)harness.frame();
-    (void)harness.frame();
-
-    // Nothing selected that the buttons can act on: the root is selected, no statement chosen.
-    for (const auto* label : {"New block", "Remove block", "Leaf up", "Leaf down"})
-        CHECK(block_action_from(click_button(harness, label), WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK) == nullptr);
-
-    click_label(harness, " ▶ #TITLE odd");
-    const auto create = click_button(harness, "New block");
-    const auto* created = block_action_from(create, WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK);
-    REQUIRE(created);
-    CHECK(created->compose_branch_statement_id.value == 9);
-    CHECK(created->compose_input_chart_id.value == 7);
-    CHECK(created->compose_input_document_revision == 21);
-
-    click_label(harness, "#4 #RANDOM 2");
-    const auto* removed = block_action_from(click_button(harness, "Remove block"),
-                                            WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK);
-    REQUIRE(removed);
-    CHECK(removed->compose_branch_id.value == 2);
-
-    click_label(harness, "#6 #IF 1");
-    CHECK(block_action_from(click_button(harness, "Leaf up"), WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) == nullptr);
-    const auto* down = block_action_from(click_button(harness, "Leaf down"),
-                                         WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF);
-    REQUIRE(down);
-    CHECK(down->compose_branch_id.value == 4);
-    CHECK(down->compose_branch_value == 1);
-
-    click_label(harness, "(inactive) #7 #ELSEIF 2");
-    const auto* up = block_action_from(click_button(harness, "Leaf up"),
-                                       WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF);
-    REQUIRE(up);
-    CHECK(up->compose_branch_id.value == 5);
-    CHECK(up->compose_branch_value == -1);
-    CHECK(block_action_from(click_button(harness, "Leaf down"), WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) == nullptr);
+    wormedit::ui::testing_rect_view_t rect{};
+    REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&rect));
+    return {rect.x, worm_ui_frontend_compose_left_dock_pixels()};
+}
 }
 
-TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
+TEST_CASE("BMS branch dock keeps scope authoring available on a narrow window",
           "[frontend-state][event-harness][bms-branch]") {
-    const auto field_left = [](int width, bool with_branches) {
-        nuklear_event_harness_t harness{width, 900};
-        REQUIRE(harness.ready());
-        auto& view = harness.view().compose;
-        view.branch_outline_available = with_branches;
-        worm_ui_nuklear_compose_state().dock_layout.branch_panel_visible = true;
-        (void)harness.frame();
-        wormedit::ui::testing_rect_view_t rect{};
-        REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&rect));
-        return std::pair{rect.x, worm_ui_frontend_compose_left_dock_pixels()};
-    };
-    const auto plain = field_left(1280, false);
-    const auto docked = field_left(1280, true);
+    const auto plain = scope_dock_field_left(1280, false);
+    const auto docked = scope_dock_field_left(1280, true);
     CHECK(plain.second == 0);
     CHECK(docked.second > 0);
     CHECK(docked.first >= plain.first + static_cast<float>(docked.second) - 1.0f);
-    const auto narrow = field_left(800, true);
-    CHECK(narrow.second == 0);
+    const auto narrow = scope_dock_field_left(800, true);
+    CHECK(narrow.second > 0);
 }
 
 namespace {
@@ -5481,14 +5376,24 @@ TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt
     }
 }
 
+namespace {
+void show_bms_import_dialog(nuklear_event_harness_t& harness, std::string_view path) {
+    REQUIRE(harness.ready());
+    harness.view().pending_bms_encoding_path = path;
+    (void)harness.frame();
+    (void)harness.frame();
+    (void)harness.frame();
+}
+void check_bms_import(bool condition, std::source_location where = std::source_location::current()) {
+    INFO("BMS import assertion at " << where.line());
+    CHECK(condition);
+}
+}
+
 TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated prompt",
           "[frontend-state][event-harness][dialog][project-modal]") {
     const auto make = [](nuklear_event_harness_t& harness) {
-        REQUIRE(harness.ready());
-        harness.view().pending_bms_encoding_path = "/charts/song.bms";
-        (void)harness.frame();
-        (void)harness.frame();
-        (void)harness.frame();
+        show_bms_import_dialog(harness, "/charts/song.bms");
     };
     {
         nuklear_event_harness_t harness{1280, 900};
@@ -8714,10 +8619,7 @@ TEST_CASE("BMS encoding dialog sends the offered identity independently of posit
         {.id = wormedit::text_encoding_t::windows_1252, .label = "Western choice"},
         {.id = wormedit::text_encoding_t::utf8, .label = "Unicode choice"}};
     harness.view().bms_encodings = {.entries = {std::begin(entries), std::end(entries)}};
-    harness.view().pending_bms_encoding_path = "/charts/catalog.bms";
-    (void)harness.frame();
-    (void)harness.frame();
-    (void)harness.frame();
+    show_bms_import_dialog(harness, "/charts/catalog.bms");
     CHECK(harness.drawn_text().find("Western choice") != std::string::npos);
     const auto open = harness.drawn_text_center("Open chart");
     REQUIRE(open);
@@ -9085,4 +8987,33 @@ TEST_CASE("Compose recipe selector exposes overlapping recipes and their evaluat
     REQUIRE(earlier);
     CHECK(fixture.dispatch(*earlier) == "SV recipe reordered.");
     CHECK(fixture.history.document.charts.front().sv_recipes.front().id == recipe_id_t{7002});
+}
+
+TEST_CASE("BMS import profile choice submits its stable identity after explicit selection", "[frontend-state][event-harness][bms-public-cutover]") {
+    nuklear_event_harness_t harness{1280, 900};
+    harness.view().pending_bms_profile_required = true;
+    show_bms_import_dialog(harness, "/charts/choose-profile.bms");
+    check_bms_import(harness.drawn_text().find("BMS import options") != std::string::npos);
+    const auto open = harness.drawn_text_center("Open chart");
+    require_project_access(open.has_value());
+    const auto disabled = click_at(harness, open->first, open->second);
+    check_bms_import(std::ranges::none_of(disabled, [](const auto& frame) {
+        return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+    }));
+    const auto choose = harness.drawn_text_center("Choose lane layout");
+    require_project_access(choose.has_value());
+    (void)click_at(harness, choose->first, choose->second);
+    require_project_access(!harness.view().bms_lane_profiles.entries.empty());
+    const auto expected = harness.view().bms_lane_profiles.entries.front();
+    const auto offered = harness.drawn_text_center(expected.label);
+    require_project_access(offered.has_value());
+    (void)click_at(harness, offered->first, offered->second);
+    const auto ready = harness.drawn_text_center("Open chart");
+    require_project_access(ready.has_value());
+    const auto frames = click_at(harness, ready->first, ready->second);
+    check_bms_import(std::ranges::any_of(frames, [&](const auto& frame) {
+        return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE &&
+            frame.get().bms_lane_profile_id == expected.id &&
+            frame.get().project_path == "/charts/choose-profile.bms";
+    }));
 }

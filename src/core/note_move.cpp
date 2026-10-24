@@ -610,7 +610,7 @@ auto plan_single_bgm_move(const document_history_t& history,
         return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
             "Scoped move planning requires an explicit owner-aware edit.")};
 
-    const auto& chart = *history.document.find_chart(state.chart);
+    const auto& chart = *history.read_chart(state.chart);
     const auto target =
         state.y_lock ? std::optional{source.position}
         : canvas_row ? std::optional{source.position}
@@ -862,7 +862,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                 error(diagnostic_code_t::collision, "Selected notes would overlap")};
     }
     auto scratch = document_history_t::from(history.document);
-    const auto* source = history.document.find_chart(state.chart);
+    const auto* source = history.read_chart(state.chart);
     const note_to_bgm_policy_t policy{.allow_new_lanes =
                                           source->source_family == format_family_t::bms ||
                                           source->source_family == format_family_t::bmson ||

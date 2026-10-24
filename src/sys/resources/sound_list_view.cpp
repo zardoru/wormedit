@@ -1,3 +1,4 @@
+#include "sys/resources/bms_catalog_bindings.h"
 #include "core/text_util.h"
 #include <wormedit/core/document_index.h>
 #include "sys/resources/sound_list_view.h"
@@ -153,18 +154,11 @@ auto sound_properties_view_t::from(const song_document_t& document, resource_id_
 
 namespace {
 
-auto keysound_slot(const resource_entry_t& resource) -> std::string {
-    const auto identity = std::ranges::find_if(resource.target_identities, [](const auto& item) {
-        return item.family == format_family_t::bms && text_util::ascii_iequal(item.namespace_name, "wav");
-    });
-    return identity == resource.target_identities.end() ? std::string{} : identity->identifier;
-}
-
 auto keysound_resource_less(const resource_entry_t& left, const resource_entry_t& right,
-                            dock_sort_t sort) -> bool {
+                            dock_sort_t sort, const bms_catalog_bindings_t& bindings) -> bool {
     if (sort == dock_sort_t::bms_id) {
-        const auto left_slot = ascii_lowercase(keysound_slot(left));
-        const auto right_slot = ascii_lowercase(keysound_slot(right));
+        const auto left_slot = ascii_lowercase(bindings.wav_identifier(left));
+        const auto right_slot = ascii_lowercase(bindings.wav_identifier(right));
         if (left_slot != right_slot) {
             if (left_slot.empty()) return false;
             if (right_slot.empty()) return true;
@@ -214,10 +208,10 @@ auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_view
 auto keysound_matches_request(const resource_entry_t& resource,
                               const chart_document_t* chart,
                               const keysound_list_request_t& request,
-                              std::string_view folded_search) -> bool {
+                              std::string_view folded_search, const bms_catalog_bindings_t& bindings) -> bool {
     if (!folded_search.empty() &&
         ascii_lowercase(resource.name).find(folded_search) == std::string::npos &&
-        ascii_lowercase(keysound_slot(resource)).find(folded_search) == std::string::npos)
+        ascii_lowercase(bindings.wav_identifier(resource)).find(folded_search) == std::string::npos)
         return false;
     const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
     if (request.group_filter_active) {
@@ -246,9 +240,9 @@ auto group_is_collapsed(const keysound_list_request_t& request, std::uint64_t gr
 
 auto keysound_row_from_resource(const chart_document_t* chart,
                                 const keysound_list_view_t& list,
-                                const resource_entry_t& resource) -> keysound_row_t {
+                                const resource_entry_t& resource, const bms_catalog_bindings_t& bindings) -> keysound_row_t {
     return {.resource = resource.id,
-            .slot = keysound_slot(resource),
+            .slot = bindings.wav_identifier(resource),
             .name = resource.name.empty() ? "Resource " + std::to_string(resource.id.value)
                                           : resource.name,
             .missing = resource.missing,
@@ -308,6 +302,7 @@ auto assemble_legacy_keysounds(const song_document_t& document,
     const chart_document_t* chart, std::size_t maximum_rows, dock_sort_t sort,
     bool ids_available, const std::unordered_set<std::uint64_t>* audio_asset_ids)
     -> keysound_list_view_t {
+    const auto bindings = bms_catalog_bindings_t(document, chart);
     keysound_list_view_t list;
     list.bms_capacity = bms_identifier_capacity(document, "WAV");
     if (chart) {
@@ -321,8 +316,8 @@ auto assemble_legacy_keysounds(const song_document_t& document,
     for (const auto& resource : document.resources)
         if (is_listed_sound(document, chart, resource, audio_asset_ids)) matching.push_back(&resource);
     const auto effective_sort = ids_available ? sort : dock_sort_t::natural_name;
-    std::ranges::sort(matching, [effective_sort](const auto* left, const auto* right) {
-        return keysound_resource_less(*left, *right, effective_sort);
+    std::ranges::sort(matching, [effective_sort, &bindings](const auto* left, const auto* right) {
+        return keysound_resource_less(*left, *right, effective_sort, bindings);
     });
     list.total = matching.size();
     const auto count = std::min(maximum_rows, matching.size());
@@ -331,7 +326,7 @@ auto assemble_legacy_keysounds(const song_document_t& document,
         const auto& resource = *matching[index];
         list.rows.push_back(
             {.resource = resource.id,
-             .slot = keysound_slot(resource),
+             .slot = bindings.wav_identifier(resource),
              .name = resource.name.empty() ? "Resource " + std::to_string(resource.id.value)
                                            : resource.name,
              .missing = resource.missing,
@@ -368,7 +363,7 @@ void append_section_projection(keysound_list_view_t& list,
                                const keysound_section_projection_t& section,
                                std::size_t first, std::size_t last,
                                std::uint64_t primary_resource_id,
-                               const chart_document_t* chart) {
+                               const chart_document_t* chart, const bms_catalog_bindings_t& bindings) {
     if (section.members.empty()) return;
     auto display_index = list.display_total++;
     if (display_index >= first && display_index < last)
@@ -385,7 +380,7 @@ void append_section_projection(keysound_list_view_t& list,
         if (display_index >= first && display_index < last) {
             list.display_rows.push_back({.kind = keysound_list_view_t::display_row_t::kind_t::sound,
                 .group_id = section.id, .resource = member->id});
-            list.rows.push_back(keysound_row_from_resource(chart, list, *member));
+            list.rows.push_back(keysound_row_from_resource(chart, list, *member, bindings));
         }
     }
 }
@@ -418,7 +413,7 @@ auto collect_keysound_resources(const song_document_t& document,
                                 const std::unordered_map<std::uint64_t, std::size_t>& indices,
                                 std::size_t ungrouped_index,
                                 const std::unordered_set<std::uint64_t>* audio_asset_ids,
-                                const sound_resource_metadata_t& metadata)
+                                const sound_resource_metadata_t& metadata, const bms_catalog_bindings_t& bindings)
     -> document_id_index_t<resource_entry_t> {
     auto resources = document_id_index_t<resource_entry_t>::from({});
     for (const auto& resource : document.resources) {
@@ -428,7 +423,7 @@ auto collect_keysound_resources(const song_document_t& document,
         if (!matches_resource_use(request.use_filter, metadata.uses(resource.id), resource.missing)) continue;
         const auto row_search = ascii_lowercase(std::string{metadata.path(resource.asset)}).find(search) !=
             std::string::npos ? std::string_view{} : search;
-        if (!keysound_matches_request(resource, chart, request, row_search)) continue;
+        if (!keysound_matches_request(resource, chart, request, row_search, bindings)) continue;
         const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
         const auto found = indices.find(group_id);
         if (group_id == 0) {
@@ -442,10 +437,10 @@ auto collect_keysound_resources(const song_document_t& document,
 }
 
 void sort_keysound_sections(std::vector<keysound_section_projection_t>& sections,
-                            dock_sort_t sort) {
+                            dock_sort_t sort, const bms_catalog_bindings_t& bindings) {
     for (auto& section : sections)
         std::ranges::sort(section.members, [&](const auto* left, const auto* right) {
-            return keysound_resource_less(*left, *right, sort);
+            return keysound_resource_less(*left, *right, sort, bindings);
         });
     std::ranges::sort(sections, [](const auto& left, const auto& right) {
         if (left.id == 0) return false;
@@ -458,11 +453,11 @@ void sort_keysound_sections(std::vector<keysound_section_projection_t>& sections
 
 void append_selected_keysounds(keysound_list_view_t& list, const chart_document_t* chart,
                                const keysound_list_request_t& request,
-                               const document_id_index_t<resource_entry_t>& resources) {
+                               const document_id_index_t<resource_entry_t>& resources, const bms_catalog_bindings_t& bindings) {
     for (const auto id : request.selected_resource_ids) {
         const auto* found = resources.find(resource_id_t{id});
         if (!found) continue;
-        const auto row = keysound_row_from_resource(chart, list, *found);
+        const auto row = keysound_row_from_resource(chart, list, *found, bindings);
         list.selection_rows.push_back({.resource = row.resource,
             .group_id = row.sound_group_id, .layer_mask = row.layer_mask,
             .slot = row.slot, .missing = row.missing});
@@ -477,6 +472,7 @@ namespace {
 auto assemble_requested_keysounds(const song_document_t& document,
     const chart_document_t* chart, const keysound_list_request_t& request,
     const std::unordered_set<std::uint64_t>* audio_asset_ids) -> keysound_list_view_t {
+    const auto bindings = bms_catalog_bindings_t(document, chart);
     keysound_list_view_t list;
     list.bms_capacity = bms_identifier_capacity(document, "WAV");
     if (chart) {
@@ -508,17 +504,17 @@ auto assemble_requested_keysounds(const song_document_t& document,
     auto sections = make_keysound_sections(document, request, section_indices, ungrouped_index);
     const auto metadata = sound_resource_metadata(document);
     const auto resources_by_id = collect_keysound_resources(document, chart, request,
-        ascii_lowercase(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids, metadata);
+        ascii_lowercase(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids, metadata, bindings);
     list.total = list.all_resources.size();
     sort_keysound_sections(sections, request.ids_available ? request.sort
-                                                          : dock_sort_t::natural_name);
+                                                          : dock_sort_t::natural_name, bindings);
     const auto first = request.first_row;
     const auto last = request.row_limit > std::numeric_limits<std::size_t>::max() - first
         ? std::numeric_limits<std::size_t>::max() : first + request.row_limit;
     for (const auto& section : sections)
         append_section_projection(list, section, first, last,
-                                  request.primary_resource_id, chart);
-    append_selected_keysounds(list, chart, request, resources_by_id);
+                                  request.primary_resource_id, chart, bindings);
+    append_selected_keysounds(list, chart, request, resources_by_id, bindings);
     append_keysound_metadata(list, document, metadata);
     list.display_first_row = std::min(first, list.display_total);
     list.display_truncated = list.display_first_row != 0 ||
@@ -664,11 +660,12 @@ auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
 }
 } // namespace
 
-auto sound_slots_view_t::from(const song_document_t& document, const sound_slot_request_t& request)
-    -> sound_slots_view_t {
+auto sound_slots_view_t::from(const song_document_t& document, const sound_slot_request_t& request,
+                              const chart_document_t* chart) -> sound_slots_view_t {
+    const auto bindings = bms_catalog_bindings_t(document, chart);
     std::array<const resource_entry_t*, 1296> owners{};
     for (const auto& resource : document.resources)
-        for (const auto& identity : resource.target_identities)
+        for (const auto& identity : bindings.identities(resource))
             if (const auto number = slot_number(identity); number != 0) owners[number] = &resource;
     const auto metadata = sound_resource_metadata(document);
     const auto query = ascii_lowercase(request.search);

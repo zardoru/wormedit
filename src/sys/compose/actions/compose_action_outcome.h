@@ -72,7 +72,6 @@ struct compose_action_outcome_t {
     bool clear_semantic_layer_paint_after_rebind{};
     std::optional<workspace_select_asset_action_t> asset_selection;
     bool is_rebind_severity_diagnostic{true};
-    bool has_bms_statement_feedback{};
     std::optional<notification_severity_t> rebind_failure_severity;
     std::optional<notification_source_t> rebind_failure_source;
     bool is_message_retained_on_rebind_failure{};

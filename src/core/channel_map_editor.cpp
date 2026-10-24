@@ -3,6 +3,8 @@
 #include <wormedit/core/channel_map_editor.h>
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/lane_migration.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/lane_profile_switch.h>
 
 #include <algorithm>
@@ -231,6 +233,12 @@ auto overlay_replacements(lane_layout_t& layout,
 
 } // namespace
 
+auto bms_channel_map_t::normalized() const -> std::optional<bms_channel_map_t> {
+    auto result = *this;
+    if (!normalize_map(result)) return std::nullopt;
+    return result;
+}
+
 auto channel_map_proposal_t::propose(const song_document_t& song,
     std::uint64_t expected_revision, chart_id_t chart_id, object_id_t segment_id,
     std::span<const channel_map_replacement_t> requested) -> channel_map_proposal_outcome_t {
@@ -257,7 +265,7 @@ auto channel_map_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& 
     channel_map_proposal_outcome_t result;
     channel_map_proposal_t proposal;
     proposal.layout_segment = segment_id;
-    const auto chart = song.find_chart(stamp.chart);
+    const auto chart = song.read_chart(stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(channel_map_diagnostic_t::from(channel_map_issue_t::chart_not_found,
             "The selected chart no longer exists.", stamp, std::move(proposal.report)));
@@ -355,6 +363,18 @@ auto channel_map_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
             .issue = view.diagnostic ? view.diagnostic->issue : channel_map_issue_t::stale_revision,
             .message = view.diagnostic && !view.diagnostic->message.empty()
                 ? view.diagnostic->message : stale_action_message("Channel-map edit")}};
+    }
+    if (transaction.has_bms_program(canonical.stamp.chart)) {
+        const auto* chart = transaction.source_chart(canonical.stamp.chart);
+        auto profile = lane_input_profile_t{chart->lane_layouts.front().layout, chart->input_profile};
+        if (!overlay_replacements(profile.layout, canonical.replacements))
+            return {.diagnostics = {.issue = channel_map_issue_t::invalid_replacement, .message = "A lane disappeared during apply."}};
+        std::vector<lane_migration_mapping_t> mapping;
+        for (const auto& lane : profile.layout.lanes) mapping.push_back({lane.id, lane.id});
+        const auto staged = transaction.stage_bms_lane_profile(canonical.stamp.chart, std::move(profile), mapping);
+        if (!staged.value || !staged.ok()) return {.diagnostics = {.issue = channel_map_issue_t::invalid_replacement,
+            .message = staged.diagnostics.empty() ? "Scoped channel map failed." : staged.diagnostics.front().message}};
+        return {.value = "Edit BMS channel map"};
     }
     auto& proposed = transaction.document();
     auto chart = proposed.find_chart(canonical.stamp.chart);

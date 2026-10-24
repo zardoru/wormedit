@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include "chart_object_ids.h"
 #include <wormedit/core/bgm_columns.h>
 
@@ -57,6 +58,61 @@ auto shrink_columns(chart_document_t& chart, std::size_t count, document_command
     return true;
 }
 
+auto references_column(const bms_content_item_t& item, object_id_t column) -> bool {
+    if (const auto* bgm = std::get_if<bms_bgm_content_t>(&item.value)) return bgm->column == column;
+    const auto* native = std::get_if<bms_native_content_t>(&item.value);
+    const auto* bgm = native ? std::get_if<bgm_event_t>(&native->payload()) : nullptr;
+    return bgm && bgm->source_lane == column;
+}
+auto retained_column_events(const bms_program_t& program, object_id_t column) -> std::size_t {
+    std::size_t count{};
+    for (const auto& node : program.nodes()) {
+        const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+        if (!chart) continue;
+        count += static_cast<std::size_t>(std::ranges::count_if(chart->items,
+            [&](const auto& item) { return references_column(item, column); }));
+    }
+    return count;
+}
+auto stage_scoped_column_settings(document_command_transaction_t& transaction,
+    chart_id_t difficulty, std::size_t count) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        const auto* source = song.find_bms_program(difficulty);
+        auto prepared = source->prepared();
+        if (prepared.bgm_columns.size() == count && prepared.settings.show_empty_bgm_columns)
+            return {.value = document_edit_effect_t{}};
+        for (std::size_t index = count; index < prepared.bgm_columns.size(); ++index) {
+            const auto& column = prepared.bgm_columns[index];
+            if (retained_column_events(prepared.program, column.id))
+                return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                    "Cannot remove " + column.name + ": it holds retained BGM events.")}};
+        }
+        prepared.bgm_columns.resize(count);
+        prepared.settings.show_empty_bgm_columns = true;
+        auto replacement = bms_program_document_t::from(difficulty, std::move(prepared), source->evaluation());
+        if (!replacement.value || !replacement.ok()) return {.diagnostics = {error(
+            diagnostic_code_t::invalid_id, "Scoped BGM column settings are invalid.")}};
+        const auto found = std::ranges::find_if(song.prepared_bms_programs,
+            [&](const auto& owner) { return owner.get() == source; });
+        *found = std::move(*replacement.value);
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Set BGM column count"}};
+    });
+}
+auto stage_scoped_column_count(document_command_transaction_t& transaction,
+    chart_id_t difficulty, std::size_t count) -> attempt_t<document_edit_effect_t> {
+    const auto current = transaction.current_document().find_bms_program(difficulty)->prepared().bgm_columns.size();
+    for (auto index = current; index < count; ++index) {
+        const auto added = transaction.stage_bms_bgm_column(difficulty);
+        if (!added.value || !added.ok()) return {.diagnostics = added.diagnostics};
+    }
+    auto settings = stage_scoped_column_settings(transaction, difficulty, count);
+    if (settings.value && count > current) {
+        settings.value->changed = true;
+        settings.value->command_label = "Set BGM column count";
+    }
+    return settings;
+}
+
 } // namespace
 
 auto apply_bgm_column_count(document_history_t& history,
@@ -67,6 +123,8 @@ auto apply_bgm_column_count(document_history_t& history,
         return result;
     }
     auto transaction = document_command_transaction_t(history);
+    if (transaction.has_bms_program(chart)) return transaction.finish_execution(
+        stage_scoped_column_count(transaction, chart, count), command_noop_policy_t::accept_without_diagnostics);
     auto& proposed = transaction.document();
     const auto target = proposed.find_chart(chart);
     if (!chart || target == nullptr) {

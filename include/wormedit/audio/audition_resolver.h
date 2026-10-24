@@ -22,6 +22,7 @@ struct audition_resolve_options_t {
     sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
     bool skip_unavailable_preview_sources{};
     std::span<const hitsound_binding_t> hitsounds;
+    std::optional<branch_id_t> authoring_chart;
 };
 
 enum class audition_resolve_code_t {

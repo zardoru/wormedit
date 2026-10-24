@@ -1135,6 +1135,20 @@ auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure
     return remove_measure_contents(scratch, measure);
 }
 
+auto stage_scoped_measure_edit(document_command_transaction_t& transaction, chart_id_t id,
+    const measure_edit_action_t& action, measure_edit_limits_t limits) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage_bms_structure_edit(id, [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+        auto algorithm_document = transaction.current_document();
+        algorithm_document.charts = {chart};
+        document_command_result_t result;
+        measure_edit_context_t context{.proposed = algorithm_document, .limits = limits, .result = result};
+        std::visit([&](const auto& edit) { apply_measure_action(context, edit); }, action);
+        if (!result.diagnostics.empty()) return {.diagnostics = std::move(result.diagnostics)};
+        chart = std::move(algorithm_document.charts.front());
+        return {.value = document_edit_effect_t{.changed = context.changed, .command_label = std::move(context.label)}};
+    });
+}
+
 auto apply_measure_edit(document_history_t& history,
                         const measure_edit_action_t& action, measure_edit_limits_t limits)
     -> document_command_result_t {
@@ -1145,6 +1159,10 @@ auto apply_measure_edit(document_history_t& history,
                "measure editor bounds must be positive");
         return result;
     }
+
+    const auto id = std::visit([](const auto& edit) { return edit.chart; }, action);
+    if (transaction.has_bms_program(id)) return transaction.finish_execution(
+        stage_scoped_measure_edit(transaction, id, action, limits), command_noop_policy_t::accept_without_diagnostics);
 
     auto& proposed = transaction.document();
     measure_edit_context_t context{.proposed = proposed,

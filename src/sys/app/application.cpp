@@ -537,7 +537,7 @@ auto active_field_skin_layout(const wormedit::song_document_t& document,
     const std::optional<wormedit::editor_interaction_state_t>& interaction)
     -> const wormedit::lane_layout_t* {
     if (!workspace.selected_chart) return nullptr;
-    const auto chart = document.find_chart(*workspace.selected_chart);
+    const auto chart = document.read_chart(*workspace.selected_chart);
     if (chart == nullptr || chart->lane_layouts.empty()) return nullptr;
     if (interaction && interaction->chart == chart->id) {
         if (const auto* segment = wormedit::active_lane_layout_segment(*chart, interaction->cursor))
@@ -1258,6 +1258,7 @@ struct pending_close_t {
     std::string project_path;
     std::string layout_id;
     wormedit::text_encoding_t encoding_id{};
+    std::string bms_lane_profile_id;
     bool awaiting_encoding{};
     // Shown in the confirmation only when a save started from it failed.
     std::string save_failure;
@@ -1312,10 +1313,10 @@ void build_bga_dock_view(wormedit::sys::bga_dock_runtime_t& runtime,
     worm_ui_frontend_bga_dock_request(&request);
     request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
     const auto chart = workspace.selected_chart
-        ? history.document.find_chart(*workspace.selected_chart) : nullptr;
+        ? history.read_chart(*workspace.selected_chart) : nullptr;
     request.ids_available = chart != nullptr &&
         chart->source_family == wormedit::format_family_t::bms;
-    runtime.project(history.document, base, request, view, session_generation);
+    runtime.project(history.document, base, request, view, session_generation, chart);
 }
 
 void apply_compare_scroll_action(compare_scene_cache_t& cache,
@@ -1353,7 +1354,7 @@ void import_dropped_resources(bool session_loaded, wormedit::document_history_t&
             static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, batch.paths, notifications));
         else
             static_cast<void>(wormedit::sys::finish_compose_action(notifications,
-                wormedit::sys::stage_dropped_sound_import(history.document, batch)));
+                wormedit::sys::stage_dropped_sound_import(history.document, batch, history.read_chart(wormedit::chart_id_t{batch.origin.chart_id}))));
     }
     batches.clear();
 }
@@ -1384,7 +1385,7 @@ auto dispatch_reviewed_sound_slot_batch(const wormedit::ui::workspace_action_t& 
         for (std::size_t i = 0; !action.compose_import_paths.empty() && i < action.compose_import_paths.size(); ++i)
             paths.emplace_back(action.compose_import_paths[i]);
         feedback = wormedit::sys::finish_compose_action(notifications,
-            wormedit::sys::stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths)).message;
+            wormedit::sys::stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths, history.read_chart(chart))).message;
         return true;
     }
     if (interaction && interaction->is_pending()) {
@@ -1425,7 +1426,8 @@ auto dispatch_reviewed_sound_import(const wormedit::ui::workspace_action_t& acti
                                    index < action.compose_import_paths.size(); ++index)
             if (!action.compose_import_paths[index].empty()) paths.emplace_back(action.compose_import_paths[index]);
         feedback = wormedit::sys::finish_compose_action(notifications,
-            wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import_kind)).message;
+            wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import_kind,
+                workspace.selected_chart ? history.read_chart(*workspace.selected_chart) : nullptr)).message;
         return true;
     }
     if (interaction && interaction->is_pending()) {
@@ -1509,7 +1511,7 @@ auto dispatch_compare_diagnostic_jump(
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     wormedit::notification_sink_t& notifications) -> std::string {
     const auto chart_id = action.compare_diagnostic_chart;
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::input, "The validation target is no longer available.");
     const auto measure = chart->find_measure(action.compare_diagnostic_measure);
@@ -1639,8 +1641,9 @@ void seed_notification_history_smoke(wormedit::notification_center_t& center,
                      "Unicode detail example", detail, {}});
     center.post(wormedit::notification_severity_t::hint, wormedit::notification_source_t::input, "History hint");
     center.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::edit, "History success");
-    for (std::size_t index = 0; index < std::min<std::size_t>(document.charts.size(), 2); ++index) {
-        const auto& chart = document.charts[index];
+    const auto charts = document.read_charts();
+    for (std::size_t index = 0; index < std::min<std::size_t>(charts.size(), 2); ++index) {
+        const auto& chart = *charts[index];
         if (chart.measures.empty()) continue;
         const auto& measure = chart.measures.front();
         const wormedit::notification_target_t target = measure.notes.empty()
@@ -1799,7 +1802,7 @@ auto tap_meter_at(const wormedit::song_document_t& document,
                   std::uint64_t frame) -> std::uint16_t {
     if (!preview.chart() || !preview.compiled.value().timing ||
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return 4;
-    const auto chart = document.find_chart(*preview.chart());
+    const auto chart = document.read_chart(*preview.chart());
     if (chart == nullptr) return 4;
     const auto position = preview.compiled.value().timing->query_position({static_cast<std::int64_t>(frame), 44'100});
     if (!position) return 4;
@@ -2300,7 +2303,7 @@ struct application_t::implementation_t {
 
     void move_staged_timing_event(const wormedit::ui::workspace_action_t& action, bool timing_locked,
                                   std::uint64_t active_snap_denominator,
-                                  wormedit::chart_document_t* chart,
+                                  const wormedit::chart_document_t* chart,
                                   wormedit::timing_lane_pseudonote_outcome_t& stage) {
         const auto target =
             chart == nullptr || !stage.report()->existing_event || !action.timing_has_target_y
@@ -2463,8 +2466,8 @@ struct application_t::implementation_t {
         if (!replace_project_session(std::move(*document), true, true, false, {},
                                      audio.source_path.parent_path()))
             return;
-        for (const auto& chart : session.history.document.charts)
-            remember_snap_denominator(commands, chart.id,
+        for (const auto* chart : session.history.document.read_charts())
+            remember_snap_denominator(commands, chart->id,
                 session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
         const auto selected = wormedit::apply_workspace_action(
             session.workspace, session.history.document,
@@ -2922,6 +2925,7 @@ struct application_t::implementation_t {
             pending.revision != session.history.document.revision)
             return false;
         pending.encoding_id = action.bms_encoding_id;
+        pending.bms_lane_profile_id = action.bms_lane_profile_id;
         pending.awaiting_encoding = false;
         (void)finish_confirmed_close(pending);
         return true;
@@ -2985,7 +2989,8 @@ struct application_t::implementation_t {
                                   ? std::optional<wormedit::text_encoding_t>{}
                                   : std::optional{action.bms_encoding_id};
         const auto started = jobs.project_open_runtime.start(action.project_path, encoding,
-                                                              project_open_identity());
+                                                              project_open_identity(), project_open_runtime_t::open,
+            action.bms_lane_profile_id.empty() ? std::nullopt : std::optional{action.bms_lane_profile_id});
         if (!started)
             post_project_feedback(notification_severity_t::warning, notification_source_t::import_,
                                   started.error().message);
@@ -3003,6 +3008,7 @@ struct application_t::implementation_t {
         if (!completion) return;
         if (!*completion) {
             const auto& error = completion->error();
+            views.pending_close = {};
             if (error.identity != project_open_identity()) return;
             post_project_feedback(error.cause.code == failure_code_t::cancelled
                                       ? notification_severity_t::info : notification_severity_t::error,
@@ -3011,6 +3017,7 @@ struct application_t::implementation_t {
         }
         auto& value = **completion;
         if (value.identity != project_open_identity()) {
+            views.pending_close = {};
             post_project_feedback(notification_severity_t::warning, notification_source_t::import_,
                                   "Opening discarded because the current project changed.");
             return;
@@ -3024,16 +3031,23 @@ struct application_t::implementation_t {
     void finish_project_open(wormedit::sys::project_open_result_t opened,
                              const std::filesystem::path& requested_path, bool encoding_retry) {
         if (!opened.is_success()) {
-            post_project_feedback(opened.needs_encoding_choice
+            post_project_feedback((opened.needs_encoding_choice || opened.needs_profile_choice)
                                       ? wormedit::notification_severity_t::warning
                                       : wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::import_, opened.error);
-            if (opened.needs_encoding_choice)
-                session.project_identity.pending_import.bms_encoding_path = requested_path.string();
-            else if (encoding_retry)
-                session.project_identity.pending_import.bms_encoding_path.clear();
+            if (opened.needs_encoding_choice || opened.needs_profile_choice) {
+                auto& pending = session.project_identity.pending_import;
+                pending.bms_encoding_path = requested_path.string();
+                pending.bms_profile_required = opened.needs_profile_choice;
+                pending.bms_encoding = opened.bms_encoding.value_or(text_encoding_t::unknown);
+            }
+            else {
+                if (encoding_retry) session.project_identity.pending_import.bms_encoding_path.clear();
+                views.pending_close = {};
+            }
             return;
         }
+        views.pending_close = {};
         publish_opened_project(std::move(opened));
     }
 
@@ -3391,14 +3405,14 @@ struct application_t::implementation_t {
         wormedit::ui::workspace_action_t action{};
         action.new_project_layout_id = pending.layout_id;
         action.bms_encoding_id = pending.encoding_id;
+        action.bms_lane_profile_id = pending.bms_lane_profile_id;
         action.project_path = pending.project_path.c_str();
         if (pending.target == close_target_t::new_project)
             create_new_project_session(action);
         else
             open_project_session(action);
-        // Encoding choice continues the same approved replacement of this document version.
-        if (pending.target == close_target_t::open_file && !pending.project_path.empty() &&
-            session.project_identity.pending_import.bms_encoding_path == pending.project_path) {
+        // BMS option retries continue the same approved replacement of this document version.
+        if (pending.target == close_target_t::open_file && jobs.project_open_runtime.is_busy()) {
             pending.awaiting_encoding = true;
             return;
         }
@@ -3458,7 +3472,7 @@ struct application_t::implementation_t {
     bool dispatch_timing_workspace_action(const wormedit::ui::workspace_action_t& action,
                                           application_command_state_t& application_state) {
         if (action.timing_stage_action != wormedit::ui::timing_stage_action_t::none) {
-            const auto chart = session.history.document.find_chart(action.timing_chart_id);
+            const auto chart = session.history.read_chart(action.timing_chart_id);
             const auto denominator =
                 chart == nullptr
                     ? views.timing_grid.active_denominator
@@ -3476,7 +3490,7 @@ struct application_t::implementation_t {
         wormedit::sys::frame_phase_scope_t preparation(
             wormedit::sys::frame_phase_t::workspace_preparation);
         if (session.workspace.selected_chart) {
-            const auto chart = session.history.document.find_chart(*session.workspace.selected_chart);
+            const auto chart = session.history.read_chart(*session.workspace.selected_chart);
             if (chart != nullptr) {
                 views.timing_grid = refresh_timing_grid(*chart, commands);
             }
@@ -3533,6 +3547,7 @@ struct application_t::implementation_t {
             pending.project_path = replacement->project_path;
             pending.layout_id = replacement->new_project_layout_id;
             pending.encoding_id = replacement->bms_encoding_id;
+            pending.bms_lane_profile_id = replacement->bms_lane_profile_id;
         }
         if (!confirm || !session.project_identity.session_loaded ||
             !wormedit::is_document_dirty(session.history))
@@ -3640,8 +3655,8 @@ struct application_t::implementation_t {
             return;
         }
         if (replace_project_session(std::move(*document), true, true, false, {}, {})) {
-            for (const auto& chart : session.history.document.charts)
-                remember_snap_denominator(commands, chart.id,
+            for (const auto* chart : session.history.document.read_charts())
+                remember_snap_denominator(commands, chart->id,
                     session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
             session.project_identity.fresh_blank_project = true;
             post_project_feedback(wormedit::notification_severity_t::success,
@@ -3753,7 +3768,7 @@ struct application_t::implementation_t {
 
     void dispatch_timing_stage_value_action(
         const wormedit::ui::workspace_action_t& action, bool timing_locked,
-        std::uint64_t active_snap_denominator, wormedit::chart_document_t* chart,
+        std::uint64_t active_snap_denominator, const wormedit::chart_document_t* chart,
         std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage) {
         if (action.timing_anchoring) {
             *timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage),
@@ -3971,7 +3986,7 @@ struct application_t::implementation_t {
                 *failure);
             return;
         }
-        auto* chart_ptr = session.history.document.find_chart(stage->captured_stamp().chart);
+        auto* chart_ptr = session.history.read_chart(stage->captured_stamp().chart);
         if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::remove) {
             delete_staged_timing_event(action, session.history, timing_locked, *stage,
                                        platform.notification_sink);
@@ -4756,6 +4771,8 @@ struct application_t::implementation_t {
             session.project_identity.pending_import.audio_project_path.c_str();
         flattened.view.pending_bms_encoding_path =
             session.project_identity.pending_import.bms_encoding_path.c_str();
+        flattened.view.pending_bms_profile_required = session.project_identity.pending_import.bms_profile_required;
+        flattened.view.pending_bms_encoding = session.project_identity.pending_import.bms_encoding;
         build_bga_dock_view(views.bga_dock_runtime, session.history, session.workspace,
                          session.project_identity.asset_base, flattened.view.compose,
                          views.project_chart_runtime.session_generation);

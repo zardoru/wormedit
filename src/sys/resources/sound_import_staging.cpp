@@ -9,7 +9,7 @@ namespace {
 auto stage_automatic_sound_import(const song_document_t& document, chart_id_t chart,
                                   std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind = wormedit::ui::sound_import_kind_t::generic)
     -> compose_action_outcome_t {
-    const auto* target = document.find_chart(chart);
+    const auto* target = document.read_chart(chart);
     if (!target) return compose_action_outcome_t::blocked(
         "Select a difficulty before adding sounds.", notification_source_t::import_);
     auto prepared = prepare_keysound_import(document, chart, paths, fixed_kind);
@@ -43,12 +43,13 @@ auto stage_automatic_sound_import(const song_document_t& document, chart_id_t ch
 }
 
 auto stage_dropped_sound_slots(const song_document_t& document, chart_id_t chart,
-                               std::uint16_t first_slot, std::span<const std::string> paths)
+                               std::uint16_t first_slot, std::span<const std::string> paths,
+                               const chart_document_t* selected_chart)
     -> compose_action_outcome_t {
-    if (paths.size() != 1) return stage_sound_slot_batch(document, chart, first_slot, paths);
-    const auto prepared = prepare_sound_slot_batch(document, chart, first_slot, paths);
+    if (paths.size() != 1) return stage_sound_slot_batch(document, chart, first_slot, paths, selected_chart);
+    const auto prepared = prepare_sound_slot_batch(document, chart, first_slot, paths, selected_chart);
     if (!prepared.reason.empty() || prepared.items.size() != 1)
-        return stage_sound_slot_batch(document, chart, first_slot, paths);
+        return stage_sound_slot_batch(document, chart, first_slot, paths, selected_chart);
     const auto& item = prepared.items.front();
     const auto staged = worm_ui_frontend_stage_sound_slot_file_at(document.id.value,
         chart.value, document.revision, first_slot, item.occupied_resource_id, item.path.c_str());
@@ -61,9 +62,10 @@ auto stage_dropped_sound_slots(const song_document_t& document, chart_id_t chart
 } // namespace
 
 auto stage_sound_slot_batch(const song_document_t& document, chart_id_t chart,
-                            std::uint16_t first_slot, std::span<const std::string> paths)
+                            std::uint16_t first_slot, std::span<const std::string> paths,
+                               const chart_document_t* selected_chart)
     -> compose_action_outcome_t {
-    const auto prepared = prepare_sound_slot_batch(document, chart, first_slot, paths);
+    const auto prepared = prepare_sound_slot_batch(document, chart, first_slot, paths, selected_chart);
     if (prepared.items.empty() && !prepared.reason.empty())
         return compose_action_outcome_t::blocked(prepared.reason, notification_source_t::import_);
     std::vector<wormedit::ui::sound_slot_import_item_t> items;
@@ -81,23 +83,25 @@ auto stage_sound_slot_batch(const song_document_t& document, chart_id_t chart,
 }
 
 auto stage_sound_import(const song_document_t& document, const workspace_controller_t& workspace,
-                        std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind)
+                        std::span<const std::string> paths, wormedit::ui::sound_import_kind_t fixed_kind,
+                        const chart_document_t* selected_chart)
     -> compose_action_outcome_t {
     if (!workspace.selected_chart) return compose_action_outcome_t::blocked(
         "Select a difficulty before adding sounds.", notification_source_t::import_);
     wormedit::ui::keysound_dock_request_t dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     if (workspace.active_tab == workspace_tab_t::compose && dock.slots_mode && dock.selected_slot_explicit)
-        return stage_sound_slot_batch(document, *workspace.selected_chart, dock.selected_slot, paths);
+        return stage_sound_slot_batch(document, *workspace.selected_chart, dock.selected_slot, paths, selected_chart);
     return stage_automatic_sound_import(document, *workspace.selected_chart, paths, fixed_kind);
 }
 
-auto stage_dropped_sound_import(const song_document_t& document, const sound_drop_batch_t& batch)
+auto stage_dropped_sound_import(const song_document_t& document, const sound_drop_batch_t& batch,
+                                const chart_document_t* selected_chart)
     -> compose_action_outcome_t {
     const auto& origin = batch.origin;
     const auto chart = chart_id_t{origin.chart_id};
     if (origin.slots_mode && origin.slot_explicit)
-        return stage_dropped_sound_slots(document, chart, origin.first_slot, batch.paths);
+        return stage_dropped_sound_slots(document, chart, origin.first_slot, batch.paths, selected_chart);
     return stage_automatic_sound_import(document, chart, batch.paths);
 }
 

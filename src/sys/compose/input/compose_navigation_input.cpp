@@ -55,7 +55,7 @@ auto navigation_minimum_rows(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              wormedit::editor_navigation_action_t action) -> std::uint64_t {
     const auto found =
-        history.document.find_chart(state.chart);
+        history.read_chart(state.chart);
     if (found == nullptr)
         return 0;
     const auto divisions = found->divisions_per_standard_measure;
@@ -86,7 +86,7 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
     -> compose_action_outcome_t {
     using namespace wormedit;
     const auto found =
-        history.document.find_chart(state.chart);
+        history.read_chart(state.chart);
     if (found == nullptr)
         return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
                                                  notification_source_t::input);

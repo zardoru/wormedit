@@ -746,7 +746,7 @@ void player_preview_presenter_t::populate(wormedit::ui::player_preview_view_t& v
         return;
     }
     const auto chart =
-        history.document.find_chart(*selected_chart);
+        history.read_chart(*selected_chart);
     if (chart == nullptr) {
         fail("The selected difficulty is unavailable.");
         return;

@@ -2,17 +2,30 @@
 
 #include <wormedit/core/bms_program.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/document_index.h>
+#include <mutex>
 
 namespace wormedit {
 
-// Temporary isolated document adapter; public activation is owned by T-744.
+// Immutable semantic snapshot for one scoped BMS difficulty.
 // Program content is authoritative. Projections are detached read-only values.
 class bms_program_document_t {
   public:
     [[nodiscard]] static auto from(chart_id_t difficulty, bms_prepared_program_t prepared,
         bms_program_evaluation_t evaluation = {})
         -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] static auto from_empty_chart(const chart_document_t& chart, object_id_t first_id)
+        -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] static auto from_native_chart(const chart_document_t& chart,
+        const song_document_t& catalog, object_id_t first_id)
+        -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] auto with_resolved_timing(const chart_document_t& chart, object_id_t first_id) const
+        -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] auto read_bound_resource(resource_id_t id,
+        std::optional<branch_id_t> authoring_chart = {}) const -> const resource_entry_t*;
     [[nodiscard]] auto read_resource(resource_id_t id) const -> const resource_entry_t*;
+    [[nodiscard]] auto read_catalog(std::optional<branch_id_t> authoring_chart = {}) const
+        -> const song_document_t*;
     [[nodiscard]] auto read_chart() const -> const chart_document_t*;
     [[nodiscard]] auto read_authoring_chart(branch_id_t chart) const -> const chart_document_t*;
     [[nodiscard]] auto difficulty() const -> chart_id_t { return difficulty_; }
@@ -28,7 +41,10 @@ class bms_program_document_t {
     chart_id_t difficulty_;
     bms_prepared_program_t prepared_;
     bms_program_evaluation_t evaluation_;
+    mutable std::once_flag playback_once_;
     mutable std::optional<song_document_t> view_;
+    mutable document_id_index_t<resource_entry_t> playback_resources_;
+    mutable document_id_index_t<resource_entry_t> authoring_resources_;
     mutable std::optional<std::pair<branch_id_t, song_document_t>> authoring_view_;
 };
 
@@ -80,6 +96,7 @@ struct bms_program_content_edit_batch_t {
 
 [[nodiscard]] auto validate_prepared_bms_programs(const song_document_t& document)
     -> diagnostic_list_t;
+[[nodiscard]] auto reconcile_bms_program_catalogs(const song_document_t& before, song_document_t& document) -> diagnostic_list_t;
 [[nodiscard]] auto validate_bms_program_publication(const song_document_t& before,
     const song_document_t& proposed, std::size_t maximum_evaluations = 256) -> diagnostic_list_t;
 

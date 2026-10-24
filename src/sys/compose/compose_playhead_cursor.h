@@ -61,7 +61,7 @@ namespace wormedit::sys {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
         state.is_pending())
         return false;
-    const auto chart = history.document.find_chart(state.chart);
+    const auto chart = history.read_chart(state.chart);
     if (chart == nullptr || !snap_step(*chart, active_snap_grid(state), 0))
         return false;
     if (geometry.index && (geometry.chart != chart->id ||

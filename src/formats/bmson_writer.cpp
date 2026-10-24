@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/rational.h>
 #include "../core/checked_math.h"
@@ -881,12 +882,12 @@ auto resource_name_for_identity(const song_document_t& song, std::string_view na
 auto selected_chart(const song_document_t& song, bmson_write_options_t options)
     -> const chart_document_t& {
     if (options.chart) {
-        const auto found = song.find_chart(*options.chart);
+        const auto found = song.read_chart(*options.chart);
         if (found != nullptr) return *found;
         fail(bmson_write_diagnostic_code_t::missing_chart,
              "requested chart ID does not exist in this song", "$.charts");
     }
-    if (song.charts.size() == 1) return song.charts.front();
+    if (song.read_charts().size() == 1) return *song.read_charts().front();
     fail(bmson_write_diagnostic_code_t::missing_chart,
          "select one chart because BMSON stores a single chart per file", "$.charts");
 }
@@ -894,6 +895,8 @@ auto selected_chart(const song_document_t& song, bmson_write_options_t options)
 auto bake_selected_chart(const song_document_t& song, const chart_document_t& selected)
     -> chart_document_t {
     song_document_t validation_song = song;
+    validation_song.prepared_bms_programs.clear();
+    validation_song.chart_order = {selected.id};
     validation_song.charts = {selected};
     // The selected chart retains its effective timing, while its source stays in the project.
     validation_song.charts.front().timing_links = {};
@@ -1300,6 +1303,9 @@ auto serialize_writer_output(writer_output_context_t& output) -> std::string {
 auto write_impl(const song_document_t& song, bmson_write_options_t options,
                 std::vector<bmson_write_diagnostic_t>& diagnostics) -> std::string {
     const auto selected = selected_chart(song, options);
+    if (const auto* owner = song.find_bms_program(selected.id); owner && owner->prepared().program.has_control_flow())
+        fail(bmson_write_diagnostic_code_t::unsupported_feature,
+            "Choose an explicit active projection before exporting scoped control flow to BMSON.", "$.charts");
     auto chart = bake_selected_chart(song, selected);
     if (!chart.beat_zero_audio_offset_seconds.denominator ||
         chart.beat_zero_audio_offset_seconds.numerator != 0)

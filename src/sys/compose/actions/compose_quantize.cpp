@@ -57,7 +57,7 @@ auto apply_compose_quantize_selection(document_history_t& history,
     if (!is_compose_quantize_request_valid(request))
         return compose_action_outcome_t::blocked("Selection quantization has invalid settings.");
     normalize_compose_quantize_request(request, state);
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
     const auto& geometry = history.indices(chart->id)->measures;

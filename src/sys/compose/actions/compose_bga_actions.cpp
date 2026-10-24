@@ -27,10 +27,10 @@ auto probe_image(const std::filesystem::path& path)
 auto referenced_bga_resources(const song_document_t& document)
     -> std::unordered_set<std::uint64_t> {
     std::unordered_set<std::uint64_t> referenced;
-    for (const auto& target : document.charts) {
-        for (const auto& event : target.bga_events)
+    for (const auto* target : document.read_charts()) {
+        for (const auto& event : target->bga_events)
             referenced.insert(event.resource.value);
-        for (const auto& measure : target.measures) {
+        for (const auto& measure : target->measures) {
             for (const auto& note : measure.notes)
                 if (note.sound)
                     referenced.insert(note.sound->value);
@@ -45,7 +45,7 @@ auto referenced_bga_resources(const song_document_t& document)
 } // namespace
 auto import_bga_feedback(document_history_t& history, chart_id_t chart_id, std::span<const std::string> paths)
     -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (chart == nullptr)
         return compose_action_outcome_t::blocked("Select a difficulty before adding images.");
     if (paths.empty() || paths.size() > wormedit::ui::sound_drop_resource_limit)

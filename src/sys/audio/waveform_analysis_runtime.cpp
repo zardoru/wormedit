@@ -333,7 +333,7 @@ auto waveform_analysis_t::selected_channel_asset(
         compose_interaction_state->selected_objects.size() == 1 &&
         compose_interaction_state->selected_objects.front().kind ==
             editor_selection_object_kind_t::bgm_event) {
-        const auto chart = document.find_chart(*workspace.selected_chart);
+        const auto chart = document.read_chart(*workspace.selected_chart);
         if (chart != nullptr) {
             const auto selection = selected_bmson_waveform_source(
                 compose_scene_cache, *chart, document.revision,
@@ -455,7 +455,7 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
-    const auto chart = document.find_chart(*workspace.selected_chart);
+    const auto chart = document.read_chart(*workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) return wanted;
     std::unordered_set<std::uint64_t> seen;
     for (const auto* channel : visible_stems) {
@@ -538,7 +538,7 @@ void append_packed_waveform_assets(const song_document_t& document,
     std::vector<asset_id_t>& wanted) {
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction ||
         interaction->chart != *workspace.selected_chart || !cache.timing.marker_timing_index) return;
-    const auto chart = document.find_chart(*workspace.selected_chart);
+    const auto chart = document.read_chart(*workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson ||
         cache.stamp().chart != chart->id || cache.stamp().document.revision != document.revision) return;
     const auto* measures = cache.is_scene_key_current(document, *chart,

@@ -1,4 +1,5 @@
 #include <wormedit/formats/bms.h>
+#include "formats/bms_program_import_internal.h"
 #include "../support/bms_program_fixture.h"
 #include <wormedit/core/rational.h>
 #include <catch2/catch_test_macros.hpp>
@@ -15,7 +16,7 @@ struct comparison_t {
 auto compare(std::string_view source, std::vector<std::int64_t> values = {},
     std::string profile = "bme-7k-outside-scratch") -> comparison_t {
     auto input = prepared(source, profile);
-    auto legacy = parse_bms_bytes(bytes(source), {.lane_profile_id = profile});
+    auto legacy = parse_bms_legacy_witness(bytes(source), {.lane_profile_id = profile});
     REQUIRE(legacy.value.song);
     std::vector<std::size_t> orders;
     const auto visit = [&](auto&& self, const bms_control_node_t& node) -> void {
@@ -31,7 +32,7 @@ auto compare(std::string_view source, std::vector<std::int64_t> values = {},
         evaluation.selections.push_back({controls[index], values[index]});
         options.branch_choices.push_back({orders[index], values[index]});
     }
-    legacy = parse_bms_bytes(bytes(source), options);
+    legacy = parse_bms_legacy_witness(bytes(source), options);
     REQUIRE(legacy.value.song);
     return {projected(input, evaluation), std::move(*legacy.value.song)};
 }

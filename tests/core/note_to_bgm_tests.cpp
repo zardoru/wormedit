@@ -521,8 +521,8 @@ TEST_CASE("moving an imported BMS note writes only its BGM occurrence",
         {.lane_profile_id = "bms-5k-outside-scratch"});
     require_move(parsed.value.song.has_value());
     auto history = document_history_t::from(*parsed.value.song);
-    const auto chart_id = history.document.charts.front().id;
-    const auto& chart_before = history.document.charts.front();
+    const auto chart_id = history.document.read_charts().front()->id;
+    const auto& chart_before = *history.document.read_charts().front();
     require_move(!chart_before.measures.empty());
     require_move(!chart_before.measures.front().notes.empty());
     const auto note_id = chart_before.measures.front().notes.front().id;
@@ -536,7 +536,7 @@ TEST_CASE("moving an imported BMS note writes only its BGM occurrence",
     const auto reparsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}),
         {.lane_profile_id = "bms-5k-outside-scratch"});
     require_move(reparsed.value.song.has_value());
-    const auto& roundtrip = reparsed.value.song->charts.front();
+    const auto& roundtrip = *reparsed.value.song->read_charts().front();
     std::size_t note_count{};
     std::size_t event_count{};
     for (const auto& measure : roundtrip.measures) {

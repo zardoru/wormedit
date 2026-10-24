@@ -283,7 +283,7 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
         toggle && context.environment.editor.commands.services.transport_loop_selection_active &&
         context.environment.editor.commands.services.transport_loop_selection_active();
     const auto* state = context.compose();
-    const auto* chart = context.environment.document.history.document.find_chart(
+    const auto* chart = context.environment.document.history.read_chart(
         state ? state->chart : chart_id_t{});
     if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
         state->is_pending() ||
@@ -385,7 +385,7 @@ auto transport_command(command_context_t& context) -> command_result_t {
 auto note_to_bgm_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
     auto* state = context.compose();
-    const auto* found = context.environment.document.history.document.find_chart(
+    const auto* found = context.environment.document.history.read_chart(
         state ? state->chart : chart_id_t{});
     const auto* chart = found == nullptr ? nullptr : &*found;
     if (!state || !chart ||

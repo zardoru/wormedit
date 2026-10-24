@@ -82,7 +82,7 @@ auto rotate_lane_permutation(const lane_layout_t& layout, bool left)
 auto apply_selection_transform(document_history_t& history, const editor_interaction_state_t& state,
                                selection_transform_t transform, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (!chart) return "The selected difficulty is no longer available.";
     if (transform == selection_transform_t::shift_earlier || transform == selection_transform_t::shift_later)
         return shift_selection(history, state, *chart, transform == selection_transform_t::shift_later, severity);

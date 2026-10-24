@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
 #include <wormedit/core/rational.h>
@@ -74,7 +75,7 @@ auto selected_chart_ids(conversion_context_t& context, const song_document_t& so
     if (!context.request.charts.empty()) {
         std::unordered_set<std::uint64_t> seen;
         for (const auto id : context.request.charts) {
-            const auto count = std::ranges::count(song.charts, id, &chart_document_t::id);
+            const auto count = std::ranges::count(song.read_charts(), id, [](const auto* chart) { return chart->id; });
             if (!id || !seen.insert(id.value).second || count != 1) {
                 add_diagnostic(context.result, diagnostic_severity_t::error,
                                conversion_diagnostic_code_t::invalid_request,
@@ -87,7 +88,7 @@ auto selected_chart_ids(conversion_context_t& context, const song_document_t& so
     }
     if (context.request.chart) {
         const auto count =
-            std::ranges::count(song.charts, *context.request.chart, &chart_document_t::id);
+            std::ranges::count(song.read_charts(), *context.request.chart, [](const auto* chart) { return chart->id; });
         if (count != 1) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::chart_not_found,
@@ -100,9 +101,9 @@ auto selected_chart_ids(conversion_context_t& context, const song_document_t& so
         return {*context.request.chart};
     }
     std::vector<chart_id_t> ids;
-    ids.reserve(song.charts.size());
-    for (const auto& chart : song.charts)
-        ids.push_back(chart.id);
+    ids.reserve(song.read_charts().size());
+    for (const auto* chart : song.read_charts())
+        ids.push_back(chart->id);
     if (ids.empty())
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::chart_not_found, conversion_stage_t::request,
@@ -174,7 +175,7 @@ void append_target_diagnostics(conversion_outcome_t& result,
 }
 
 auto selected_chart(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
-    const auto found = song.find_chart(id);
+    const auto found = song.read_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
@@ -277,6 +278,10 @@ auto apply_quantization(conversion_context_t& context, song_document_t& prepared
 auto prepare_document(conversion_context_t& context, const song_document_t& song,
                       const std::vector<chart_id_t>& charts) -> std::optional<song_document_t> {
     auto prepared = song;
+    if (context.request.target != format_family_t::bms && context.request.target != format_family_t::native_project) {
+        for (const auto& owner : song.prepared_bms_programs) prepared.charts.push_back(*owner->read_chart());
+        prepared.prepared_bms_programs.clear();
+    }
     if (!context.request.charts.empty() && context.request.target == format_family_t::stepmania) {
         std::vector<chart_document_t> selected;
         selected.reserve(charts.size());
@@ -285,6 +290,7 @@ auto prepare_document(conversion_context_t& context, const song_document_t& song
             selected.push_back(*found);
         }
         prepared.charts = std::move(selected);
+        prepared.chart_order = charts;
     }
     if (!context.request.staged_assets.empty() && !prepare_staged_assets(context, prepared)) {
         return std::nullopt;
@@ -574,7 +580,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     shared_slices_t shared;
     for (const auto id : charts) {
         auto chart = prepared.find_chart(id);
-        if (chart->source_family != format_family_t::bmson) continue;
+        if (!chart || chart->source_family != format_family_t::bmson) continue;
         auto plan = slice_span_plan_payload_t::from(prepared, id, context.request.slice_sources, options);
         if (!plan.ok()) {
             for (const auto& diagnostic : plan.diagnostics)
@@ -620,7 +626,9 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
 auto has_bms_tree(const song_document_t& song, const std::vector<chart_id_t>& charts) -> bool {
     return std::ranges::any_of(charts, [&](const auto id) {
         const auto* chart = selected_chart(song, id);
-        return chart && chart->bms_control_tree.has_value();
+        const auto* owner = song.find_bms_program(id);
+        return (chart && chart->bms_control_tree.has_value()) || (owner &&
+            (owner->prepared().source.original_bytes || owner->prepared().program.has_control_flow()));
     });
 }
 
@@ -642,7 +650,8 @@ auto make_bms_reimport_options(const conversion_request_t& request, const conver
 }
 
 auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
-                       const stepmania_export_policy_outcome_t* stepmania_options) -> bool {
+                       const stepmania_export_policy_outcome_t* stepmania_options,
+                       const song_document_t& prepared) -> bool {
     switch (output.target) {
     case format_family_t::native_project: {
         const auto parsed = parse_native_project(output.bytes);
@@ -654,6 +663,9 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     }
     case format_family_t::bms: {
         auto options = make_bms_reimport_options(context.request, output);
+        const auto* chart = output.chart ? prepared.read_chart(*output.chart) : nullptr;
+        if (!options.lane_profile_id && chart && !chart->lane_layouts.empty())
+            options.authored_lane_profile = lane_input_profile_t{chart->lane_layouts.front().layout, chart->input_profile};
         const auto parsed = parse_bms_bytes(byte_span(output.bytes), std::move(options));
         if (parsed.value.song && parsed.ok())
             return true;
@@ -989,7 +1001,8 @@ auto serialize_conversion(conversion_context_t& context, const song_document_t& 
 }
 
 auto validate_conversion_outputs(conversion_context_t& context,
-                                 const stepmania_export_policy_outcome_t* stepmania_options)
+                                 const stepmania_export_policy_outcome_t* stepmania_options,
+                                 const song_document_t& prepared)
     -> bool {
     if (!context.result.ok()) {
         context.result.value.outputs.clear();
@@ -1024,7 +1037,7 @@ auto validate_conversion_outputs(conversion_context_t& context,
         total_bytes += output.bytes.size();
     }
     for (auto& output : context.result.value.outputs) {
-        if (!context.can_continue() || !validate_reimport(context, output, stepmania_options)) {
+        if (!context.can_continue() || !validate_reimport(context, output, stepmania_options, prepared)) {
             context.result.value.outputs.clear();
             return false;
         }
@@ -1091,7 +1104,7 @@ auto conversion_result_t::from(const song_document_t& song, const conversion_req
         return result;
     }
     auto stepmania_options = serialize_conversion(context, *prepared, charts);
-    if (!validate_conversion_outputs(context, stepmania_options ? &*stepmania_options : nullptr)) {
+    if (!validate_conversion_outputs(context, stepmania_options ? &*stepmania_options : nullptr, *prepared)) {
         result.value = {};
         return result;
     }

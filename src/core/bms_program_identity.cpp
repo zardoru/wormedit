@@ -70,6 +70,13 @@ struct program_identity_map_t {
         }
     }
     void pools(bms_prepared_program_t& prepared) {
+        remap(prepared.settings.layout_segment);
+        for (auto& link : prepared.settings.timing_links.categories) {
+            if (!link) continue;
+            for (auto& identity : link->objects) remap(identity.target);
+            for (auto& identity : link->recipes) remap(identity.target);
+            for (auto& identity : link->measures) remap(identity.target);
+        }
         remap(prepared.measures);
         declarations(prepared.bgm_columns);
         declarations(prepared.audio_assets);

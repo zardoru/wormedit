@@ -169,7 +169,7 @@ struct chart_id_remap_t {
 
 auto check_chart(const document_history_t& history, chart_id_t id)
     -> std::optional<document_command_result_t> {
-    if (history.document.find_chart(id) == nullptr)
+    if (history.document.read_chart(id) == nullptr)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart command refers to an unknown chart");
     return std::nullopt;
 }
@@ -193,12 +193,38 @@ auto check_chart_selection(const document_history_t& history, std::span<const ch
     return std::nullopt;
 }
 
+auto duplicate_program(const bms_program_document_t& source, std::uint64_t& next)
+    -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t> {
+    if (!next || next == UINT64_MAX) return {};
+    const auto difficulty = chart_id_t{next++};
+    const auto& prepared = source.prepared();
+    std::set<std::uint64_t> shared;
+    for (const auto& resource : prepared.resources) shared.insert(resource.id.value);
+    for (const auto& asset : prepared.audio_assets) shared.insert(asset.id.value);
+    for (const auto& asset : prepared.visual_assets) shared.insert(asset.id.value);
+    std::unordered_map<std::uint64_t, std::uint64_t> ids;
+    auto reserve = [&](object_id_t id) {
+        if (shared.contains(id.value)) return ids.emplace(id.value, id.value).second;
+        if (!next || next == UINT64_MAX) return false;
+        return ids.emplace(id.value, next++).second;
+    };
+    if (!id_declarations_t<object_id_t>::visit(prepared, reserve)) return {};
+    auto copy = prepared.with_remapped_ids(ids);
+    if (!copy) return {.diagnostics = {{.code = copy.error().code, .message = copy.error().message}}};
+    const auto* view = source.read_chart();
+    if (!view) return {};
+    copy->settings.name = view->metadata.name + " (copy)";
+    auto evaluation = source.evaluation();
+    for (auto& choice : evaluation.selections) choice.branch = branch_id_t{ids.at(choice.branch.value)};
+    return bms_program_document_t::from(difficulty, std::move(*copy), std::move(evaluation));
+}
+
 auto prepare_creation_timing_extent(const song_document_t& song, chart_document_t& chart,
     const timing_link_selection_t& timing) -> std::optional<diagnostic_t> {
     for (const auto& category : timing_categories) {
         const auto source_id = timing.source(category.kind);
         if (!source_id) continue;
-        const auto* source = song.find_chart(source_id);
+        const auto* source = song.read_chart(source_id);
         if (!source) return error(diagnostic_code_t::invalid_id, "A selected timing source no longer exists.");
         if (category.kind == timing_category_t::offset) continue;
         const auto map = timing_position_map_t::from(*source, chart);
@@ -249,9 +275,20 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
     const auto id = chart.id;
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
+    if (source_family == format_family_t::bms || !proposed.prepared_bms_programs.empty()) proposed.ensure_chart_order();
+    if (!proposed.chart_order.empty()) proposed.chart_order.push_back(id);
     proposed.charts.push_back(std::move(chart));
     const auto diagnostics = stage_creation_timing(transaction, id, timing);
     if (!diagnostics.empty()) return {.command = {.revision = history.document.revision, .diagnostics = diagnostics}};
+    if (source_family == format_family_t::bms) {
+        const auto first = transaction.next_bms_program_item_id();
+        const auto owner = first ? bms_program_document_t::from_empty_chart(*proposed.find_chart(id), *first)
+            : attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>{};
+        if (!owner.value || !owner.ok()) return {.command = transaction.reject(diagnostic_code_t::unsupported_feature,
+            owner.diagnostics.empty() ? "Scoped creation identities are exhausted." : owner.diagnostics.front().message)};
+        std::erase_if(proposed.charts, [id](const auto& value) { return value.id == id; });
+        proposed.prepared_bms_programs.push_back(*owner.value);
+    }
     auto result = transaction.commit("New chart");
     const auto applied = result.applied;
     return {.command = std::move(result), .payload = {.chart = applied ? std::optional{id} : std::nullopt}};
@@ -271,7 +308,7 @@ auto apply_add_chart_command(document_history_t& history,
     chart_id_t template_chart, const default_lane_keys_t* defaults, const timing_link_selection_t& timing) -> duplicate_chart_result_t {
     if (auto invalid = check_chart(history, template_chart))
         return {.command = std::move(*invalid)};
-    const auto source = history.document.find_chart(template_chart);
+    const auto source = history.document.read_chart(template_chart);
     if (source->lane_layouts.empty())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "new chart template has no initial lane layout")};
     lane_input_profile_t profile{.layout = source->lane_layouts.front().layout,
@@ -291,27 +328,34 @@ auto apply_duplicate_chart_command(document_history_t& history,
 
 auto apply_duplicate_charts_command(document_history_t& history,
     std::span<const chart_id_t> charts) -> duplicate_chart_result_t {
-    if (std::ranges::any_of(charts, [&](auto id) { return history.document.find_bms_program(id); }))
-        return {.command = document_command_transaction_t::rejection(history.document.revision,
-            diagnostic_code_t::unsupported_feature,
-            "Prepared scoped difficulty creation requires full-program identity remapping.")};
-
     if (auto invalid = check_chart_selection(history, charts)) return {.command = std::move(*invalid)};
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
         return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
+    if (!proposed.prepared_bms_programs.empty()) proposed.ensure_chart_order();
     auto next_id = ceiling + 1;
     std::optional<chart_id_t> first;
     for (const auto id : charts) {
-        auto duplicate = *history.document.find_chart(id);
+        if (const auto* source = history.document.find_bms_program(id)) {
+            const auto duplicate = duplicate_program(*source, next_id);
+            if (!duplicate.value || !duplicate.ok())
+                return {.command = transaction.reject(diagnostic_code_t::invalid_id,
+                    "Scoped difficulty cannot be duplicated with fresh identities.")};
+            if (!first) first = (*duplicate.value)->difficulty();
+            if (!proposed.chart_order.empty()) proposed.chart_order.push_back((*duplicate.value)->difficulty());
+            proposed.prepared_bms_programs.push_back(*duplicate.value);
+            continue;
+        }
+        auto duplicate = *history.read_chart(id);
         chart_id_remap_t remap{.next = next_id};
         visit_chart_ids(duplicate, remap);
         if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
         next_id = remap.next;
         if (!first) first = duplicate.id;
         duplicate.metadata.name += " (copy)";
+        if (!proposed.chart_order.empty()) proposed.chart_order.push_back(duplicate.id);
         proposed.charts.push_back(std::move(duplicate));
     }
     auto result = transaction.commit(charts.size() == 1 ? "Duplicate chart" : "Duplicate charts");
@@ -327,24 +371,33 @@ auto apply_delete_chart_command(document_history_t& history,
 auto apply_delete_charts_command(document_history_t& history,
     std::span<const chart_id_t> charts) -> document_command_result_t {
     if (auto invalid = check_chart_selection(history, charts)) return std::move(*invalid);
-    if (history.document.charts.size() == charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
+    if (history.document.read_charts().size() == charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     for (const auto id : charts) remove_memberships(proposed, id);
+    std::erase_if(proposed.chart_order, [charts](auto id) { return std::ranges::contains(charts, id); });
     std::erase_if(proposed.charts, [charts](const auto& chart) { return std::ranges::contains(charts, chart.id); });
+    std::erase_if(proposed.prepared_bms_programs, [charts](const auto& owner) {
+        return owner && std::ranges::contains(charts, owner->difficulty());
+    });
     return transaction.commit(charts.size() == 1 ? "Delete chart" : "Delete charts");
 }
 
 auto apply_reorder_chart_command(document_history_t& history,
                                  chart_id_t id, std::size_t destination) -> document_command_result_t {
     if (auto invalid = check_chart(history, id)) return std::move(*invalid);
-    if (destination >= history.document.charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart destination is out of range");
+    const auto charts = history.document.read_charts();
+    if (destination >= charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart destination is out of range");
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
-    const auto source = proposed.find_chart(id);
-    auto moved = std::move(*source);
-    proposed.charts.erase(proposed.charts.begin() + (source - proposed.charts.data()));
-    proposed.charts.insert(proposed.charts.begin() + static_cast<std::ptrdiff_t>(destination), std::move(moved));
+    proposed.chart_order.clear();
+    for (const auto* chart : charts) if (chart->id != id) proposed.chart_order.push_back(chart->id);
+    proposed.chart_order.insert(proposed.chart_order.begin() + static_cast<std::ptrdiff_t>(destination), id);
+    if (proposed.prepared_bms_programs.empty()) {
+        std::ranges::sort(proposed.charts, {}, [&](const auto& chart) {
+            return std::ranges::find(proposed.chart_order, chart.id) - proposed.chart_order.begin();
+        });
+    }
     return transaction.commit("Reorder charts");
 }
 
@@ -407,7 +460,7 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     }
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
-        const auto* member = doc.find_chart(chart);
+        const auto* member = doc.read_chart(chart);
         if (member == nullptr) return "Output group contains an unknown chart.";
         if (std::ranges::find(seen, chart) != seen.end()) return "Output group repeats a chart.";
         const auto compatibility = output_family_compatibility(*member, group.family);

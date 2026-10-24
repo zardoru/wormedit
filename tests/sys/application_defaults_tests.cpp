@@ -18,9 +18,9 @@ namespace {
 
 auto valid_initial_layout(const wormedit::song_document_t& document, std::uint32_t lanes)
     -> bool {
-    if (document.charts.size() != 1 || !wormedit::validate_document(document).empty())
+    if (document.read_charts().size() != 1 || !wormedit::validate_document(document).empty())
         return false;
-    const auto& chart = document.charts.front();
+    const auto& chart = (*document.read_charts().front());
     if (chart.lane_layouts.size() != 1 || chart.bpms.size() != 1)
         return false;
     return chart.lane_layouts.front().layout.lanes.size() == lanes &&
@@ -38,9 +38,9 @@ auto valid_audio_project(const wormedit::song_document_t& document,
     if (document.metadata.title != "Title from tag" ||
         document.metadata.artist != "Artist from tag" ||
         document.audio_assets.size() != 1 || document.resources.size() != 1 ||
-        document.charts.size() != 1 || !wormedit::validate_document(document).empty())
+        document.read_charts().size() != 1 || !wormedit::validate_document(document).empty())
         return false;
-    const auto& layout = document.charts.front().lane_layouts.front().layout;
+    const auto& layout = (*document.read_charts().front()).lane_layouts.front().layout;
     const auto& roles = document.resources.front().roles;
     return layout.lanes.size() == 7 &&
            std::ranges::all_of(layout.lanes, [](const auto& lane) {
@@ -80,13 +80,15 @@ TEST_CASE("new project layouts create valid charts with the requested playable c
     }
 }
 
-TEST_CASE("new project rejects unsupported lane counts and retains legacy BMS template",
+TEST_CASE("new project rejects unsupported lane counts and creates a scoped BMS template",
           "[unit][sys][application-defaults]") {
     CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, 0));
     CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, 19));
     const auto legacy = wormedit::sys::make_initial_document(wormedit::song_id_t{123});
-    CHECK(legacy.charts.front().source_family == wormedit::format_family_t::bms);
-    CHECK(legacy.charts.front().lane_layouts.front().layout.lanes.size() == 8);
+    CHECK(legacy.charts.empty());
+    REQUIRE(legacy.prepared_bms_programs.size() == 1);
+    CHECK((*legacy.read_charts().front()).source_family == wormedit::format_family_t::bms);
+    CHECK((*legacy.read_charts().front()).lane_layouts.front().layout.lanes.size() == 8);
 }
 
 TEST_CASE("audio project starts with playable lanes and a linked music resource",
@@ -103,7 +105,7 @@ TEST_CASE("audio project starts with playable lanes and a linked music resource"
     CHECK(document->output_groups[0].relative_output_path == "exports/osu");
     check_default_stepmania_group(document->output_groups[1]);
     for (const auto& group : document->output_groups)
-        CHECK(group.charts == std::vector{document->charts.front().id});
+        CHECK(group.charts == std::vector{(*document->read_charts().front()).id});
     const auto nine_lanes = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{124}, audio_path, "Title", "Artist", 9);
     REQUIRE(nine_lanes);
@@ -118,8 +120,8 @@ TEST_CASE("audio project creates editable measures through the imported music du
         wormedit::song_id_t{123}, "/tmp/track.mp3", "Track", "Artist", 7,
         {44'100, 2, 44'100 * 13, true});
     REQUIRE(document);
-    REQUIRE(document->charts.front().measures.size() == 7);
-    CHECK(document->charts.front().measures.front().id == wormedit::measure_id_t{3});
+    REQUIRE((*document->read_charts().front()).measures.size() == 7);
+    CHECK((*document->read_charts().front()).measures.front().id == wormedit::measure_id_t{3});
     CHECK(document->audio_assets.front().stream.frame_count == 44'100 * 13);
     CHECK(wormedit::validate_document(*document).empty());
 }
@@ -130,7 +132,7 @@ void check_mania_catalog_document(std::uint32_t keys) {
     const auto document = wormedit::sys::make_initial_document(wormedit::song_id_t{123}, keys);
     REQUIRE(document);
     CHECK(valid_initial_layout(*document, keys));
-    const auto bindings = document->charts.front().input_profile.bindings.size();
+    const auto bindings = (*document->read_charts().front()).input_profile.bindings.size();
     // 12K, 16K and 18K have owner-chosen keys (2026-10-18); other wide counts start unbound.
     const bool keyed = keys == 12 || keys == 16 || keys == 18;
     CHECK((keys <= 10 || bindings == (keyed ? keys : 0)));
@@ -160,14 +162,14 @@ auto is_catalog_output(const wormedit::output_group_t& actual,
 void check_catalog_document(const wormedit::song_document_t& document,
                             const wormedit::new_project_layout_descriptor_t& layout) {
     const auto expected = layout.profile();
-    const auto& chart = document.charts.front();
+    const auto& chart = (*document.read_charts().front());
     CHECK(chart.lane_layouts.front().layout == expected.layout);
     CHECK(is_same_input(chart.input_profile, expected.input));
     CHECK(std::ranges::equal(document.output_groups, layout.default_output_groups, is_catalog_output));
 }
 
 void check_initial_family(const wormedit::song_document_t& document) {
-    const auto family = document.charts.front().source_family;
+    const auto family = (*document.read_charts().front()).source_family;
     const auto& groups = document.output_groups;
     const bool shared_family = !groups.empty() && std::ranges::all_of(groups, [&](const auto& group) {
         return group.family == groups.front().family;
@@ -176,7 +178,7 @@ void check_initial_family(const wormedit::song_document_t& document) {
 }
 
 void check_catalog_document_valid(const wormedit::song_document_t& document) {
-    const auto& chart = document.charts.front();
+    const auto& chart = (*document.read_charts().front());
     const auto lanes = chart.lane_layouts.front().layout.lanes.size();
     const auto bindings = chart.input_profile.bindings.size();
     CHECK((lanes <= 10 || bindings == 0 || bindings == lanes));

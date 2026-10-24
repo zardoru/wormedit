@@ -2489,47 +2489,6 @@ void build_loop_selection_controls_view(wormedit::ui::compose_view_t& view,
           view.area_range_begin_row < view.area_range_end_row));
 }
 
-void bind_branch_statement_metadata(const wormedit::bms_control_node_t& node,
-                                    std::vector<wormedit::ui::compose_branch_row_view_t>& rows,
-                                    std::size_t& row_index) {
-    while (row_index < rows.size() &&
-           (!rows[row_index].has_source_order ||
-            rows[row_index].source_order < node.source_order))
-        ++row_index;
-    if (row_index < rows.size() && rows[row_index].has_source_order &&
-        rows[row_index].source_order == node.source_order) {
-        auto& row = rows[row_index++];
-        if (node.kind == wormedit::bms_control_kind_t::raw_statement) {
-            row.statement_id.value = node.id.value;
-            row.statement_text = node.original_text;
-        }
-    }
-    for (const auto& child : node.children)
-        bind_branch_statement_metadata(child, rows, row_index);
-}
-
-void populate_branch_statement_metadata(frontend_workspace_view_t& flattened,
-                                       const wormedit::chart_document_t& chart) {
-    if (!chart.bms_control_tree) return;
-    auto& rows = flattened.view.compose.branch_rows;
-    std::size_t row_index{};
-    for (const auto& child : chart.bms_control_tree->children)
-        bind_branch_statement_metadata(child, rows, row_index);
-}
-
-void build_branch_statement_feedback_view(wormedit::ui::compose_view_t& view,
-                                      application_command_state_t& application_state,
-                                      wormedit::chart_id_t chart,
-                                      std::uint64_t revision) {
-    auto& feedback = application_state.project.feedback.bms_branch_statement_feedback;
-    if (!feedback || feedback->chart != chart || feedback->revision != revision) {
-        feedback.reset();
-        return;
-    }
-    if (feedback->message.empty()) return;
-    view.branch_statement_feedback = feedback->message;
-}
-
 } // namespace compose_projection_detail
 
 auto default_song_bar_hidden(const wormedit::song_document_t& document,
@@ -2561,10 +2520,6 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
                                  retained_state,  application_state, timing_stage,
                                  comparison_rows, bga_move_preview};
 
-    if (!workspace.selected_chart || !application_state.project.feedback.bms_branch_statement_feedback ||
-        application_state.project.feedback.bms_branch_statement_feedback->chart != *workspace.selected_chart ||
-        application_state.project.feedback.bms_branch_statement_feedback->revision != history.document.revision)
-        application_state.project.feedback.bms_branch_statement_feedback.reset();
     cache.scene.area_object_geometry.reset();
     if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
                                        default_song_bar_hidden(history.document, workspace.selected_chart),
@@ -2593,8 +2548,6 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
     populate_draw_stem_sources(flattened, cache, history.document, chart);
     populate_draw_source_label(flattened, cache, history.document);
     populate_bgm_draw_hint(view, chart);
-    populate_branch_statement_metadata(flattened, chart);
-    build_branch_statement_feedback_view(view, application_state, chart.id, history.document.revision);
     view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
     view.bgm_column_count_editable =
         chart.source_family == wormedit::format_family_t::bms ||

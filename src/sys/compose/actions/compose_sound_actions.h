@@ -50,7 +50,8 @@ struct prepared_sound_slot_batch_t {
 // overflow returns no items and names the remaining capacity before staging.
 [[nodiscard]] auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
                                             std::uint16_t first_slot,
-                                            std::span<const std::string> paths)
+                                            std::span<const std::string> paths,
+                                            const chart_document_t* selected_chart = nullptr)
     -> prepared_sound_slot_batch_t;
 
 // Registers dropped or picked audio in one undo step using the requested section

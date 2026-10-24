@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/lane_keys.h>
 #include <wormedit/core/lane_profiles.h>
 #include "text_util.h"
@@ -123,6 +124,16 @@ void default_lane_keys_t::apply_to(song_document_t& document) const {
     for (auto& chart : document.charts) {
         if (chart.lane_layouts.size() != 1) continue;
         chart.input_profile = profile_for(chart.lane_layouts.front().layout, chart.input_profile);
+    }
+    for (auto& owner : document.prepared_bms_programs) {
+        auto prepared = owner->prepared();
+        if (!prepared.lane_profile) continue;
+        auto& profile = *prepared.lane_profile;
+        const auto input = profile_for(profile.layout, profile.input);
+        if (profile.input == input) continue;
+        profile.input = input;
+        auto replacement = bms_program_document_t::from(owner->difficulty(), std::move(prepared), owner->evaluation());
+        if (replacement.value && replacement.ok()) owner = std::move(*replacement.value);
     }
 }
 } // namespace wormedit

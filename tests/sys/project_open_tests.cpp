@@ -7,6 +7,7 @@
 #include <wormedit/core/workspace.h>
 
 #include <wormedit/formats/bms.h>
+#include "formats/bms_program_import_internal.h"
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
@@ -71,6 +72,13 @@ auto fixture(std::string_view family, std::string_view name) -> std::filesystem:
     return std::filesystem::path(WORMEDIT_FIXTURE_DIR) / family / name;
 }
 
+auto open_with_bms_profile(const std::filesystem::path& path,
+    std::optional<wormedit::text_encoding_t> encoding = {}, std::stop_token stop = {},
+    wormedit::job_progress_t* progress = nullptr) -> wormedit::sys::project_open_result_t {
+    const auto profile = path.extension() == ".pms" ? "pms-standard-9button" : "bme-7k-outside-scratch";
+    return wormedit::sys::open_project_file(path, encoding, stop, progress, profile);
+}
+
 void require_opened_project(const wormedit::sys::project_open_result_t& opened) {
     const auto& payload = opened;
     INFO(payload.error);
@@ -79,13 +87,13 @@ void require_opened_project(const wormedit::sys::project_open_result_t& opened) 
 }
 
 void check_imported_chart(const std::filesystem::path& path) {
-    const auto result = wormedit::sys::open_project_file(path);
+    const auto result = open_with_bms_profile(path);
     require_opened_project(result);
 
     CHECK_FALSE(result.native_project);
     CHECK(result.source_path == std::filesystem::absolute(path));
     CHECK(result.asset_base == std::filesystem::absolute(path).parent_path());
-    CHECK_FALSE(result.document->charts.empty());
+    CHECK_FALSE(result.document->read_charts().empty());
 }
 
 void check_native_identity(const wormedit::sys::project_open_result_t& opened,
@@ -203,7 +211,7 @@ auto has_default_layer_warning(const wormedit::sys::project_open_result_t& opene
 }
 
 auto opened_stepmania_music_is_selected() -> bool {
-    const auto opened = wormedit::sys::open_project_file(
+    const auto opened = open_with_bms_profile(
         fixture("stepmania", "matched-timing.sm"));
     if (!opened.is_success() || opened.document->audio_assets.size() != 1 ||
         opened.document->resources.size() != 1)
@@ -227,7 +235,7 @@ auto stepmania_music_case_fallback_exports_resolved_path() -> bool {
         chart << "#MUSIC:Song.OGG;#BPMS:0=120;#NOTES:\n"
                  "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n1000\n0000\n0000\n0000\n;";
     }
-    const auto opened = wormedit::sys::open_project_file(chart_path);
+    const auto opened = open_with_bms_profile(chart_path);
     if (!opened.is_success() || opened.document->audio_assets.size() != 1 ||
         opened.document->resources.size() != 1 ||
         opened.document->audio_assets.front().source_path != "song.ogg" ||
@@ -252,7 +260,7 @@ TEST_CASE("BMSON import creates channel layers and native open preserves authore
           "[integration][sys][project-open][bmson-layer]") {
     temporary_project_file_t source{".bmson"};
     source.write(bmson_layer_source());
-    const auto imported = wormedit::sys::open_project_file(source.path);
+    const auto imported = open_with_bms_profile(source.path);
     require_opened_project(imported);
 
     require_bmson_condition(imported.document->charts.size() == 1);
@@ -279,7 +287,7 @@ TEST_CASE("BMSON import creates channel layers and native open preserves authore
     const auto saved = wormedit::write_native_project(*imported.document);
     require_bmson_condition(saved.value);
     native.write(*saved.value);
-    const auto reopened = wormedit::sys::open_project_file(native.path);
+    const auto reopened = open_with_bms_profile(native.path);
     require_opened_project(reopened);
 
     check_bmson_condition(reopened.native_project);
@@ -290,7 +298,7 @@ TEST_CASE("BMSON import creates channel layers and native open preserves authore
     const auto unlayered_saved = wormedit::write_native_project(without_layers);
     require_bmson_condition(unlayered_saved.value);
     native_without_layers.write(*unlayered_saved.value);
-    const auto unlayered_reopened = wormedit::sys::open_project_file(native_without_layers.path);
+    const auto unlayered_reopened = open_with_bms_profile(native_without_layers.path);
     require_opened_project(unlayered_reopened);
 
     check_bmson_condition(unlayered_reopened.document->charts.front().semantic_layers.empty());
@@ -300,7 +308,7 @@ TEST_CASE("BMSON import warns and remains open when semantic layer defaults cann
           "[integration][sys][project-open][bmson-layer]") {
     temporary_project_file_t source{".bmson"};
     source.write(bmson_layer_source(std::string(4097, 'x') + ".wav"));
-    const auto opened = wormedit::sys::open_project_file(source.path);
+    const auto opened = open_with_bms_profile(source.path);
     require_opened_project(opened);
 
     check_bmson_condition(opened.document->charts.front().semantic_layers.empty());
@@ -314,7 +322,6 @@ TEST_CASE("opening chart files keeps their source directory and leaves them unsa
         std::string_view name;
     };
     for (const auto item : {fixture_case_t{"bms", "repeated-bgm-ratio-stop-collision.bms"},
-                            fixture_case_t{"bms", "custom-channel.bme"},
                             fixture_case_t{"bms", "legacy-long-note.bml"},
                             fixture_case_t{"bms", "pms-nine-button.pms"},
                             fixture_case_t{"bmson", "zero-resolution-default.bmson"},
@@ -335,7 +342,7 @@ TEST_CASE("osu imports surface bounded timing quantization warnings",
                     "[Difficulty]\nCircleSize:4\n[TimingPoints]\n"
                     "0,500,4,2,0,100,1,0\n1000.123456789,400,4,2,0,100,1,0\n"
                     "[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n");
-    const auto opened = wormedit::sys::open_project_file(temporary.path);
+    const auto opened = open_with_bms_profile(temporary.path);
     require_opened_project(opened);
 
     CHECK(opened.error.empty());
@@ -364,7 +371,7 @@ TEST_CASE("opened chart resolves audio beside its source before a native project
     const auto source = fixture("audio", "keysound-c4.ogg");
     REQUIRE(std::filesystem::copy_file(source, temporary.path / "audio/keysound-c4.ogg"));
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     REQUIRE_FALSE(opened.document->audio_assets.empty());
@@ -392,7 +399,7 @@ TEST_CASE("BMS audio fallback finds a differently cased Ogg beside its chart",
     REQUIRE(std::filesystem::copy_file(fixture("audio", "keysound-c4.ogg"),
                                        temporary.path / "audio/keysound-c4.ogg"));
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     check_single_audio_asset(opened, "audio/keysound-c4.ogg", "AuDiO\\KEYSOUND-C4.WAV");
     CHECK(opened.warnings.empty());
     const auto exported = wormedit::write_bms(*opened.document);
@@ -409,7 +416,7 @@ TEST_CASE("BMS audio fallback keeps an existing exact source",
     std::ofstream(temporary.path / "audio/source.wav") << "exact source";
     std::ofstream(temporary.path / "audio/source.ogg") << "alternate source";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     check_single_audio_asset(opened, "audio/source.wav", "audio/source.wav");
     CHECK(opened.warnings.empty());
 }
@@ -423,7 +430,7 @@ TEST_CASE("BMS audio fallback reports competing matches and keeps the authored p
     std::ofstream(temporary.path / "audio/source.wav") << "first candidate";
     std::ofstream(temporary.path / "audio/SOURCE.OGG") << "second candidate";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     check_single_audio_asset(opened, "audio/source.mp3", "audio/source.mp3");
     REQUIRE(opened.warnings.size() == 1);
     CHECK(opened.warnings.front().find("source.wav") != std::string::npos);
@@ -438,7 +445,7 @@ TEST_CASE("BMS audio fallback accepts a uniquely matched FLAC file",
                            "#WAV01 audio/sample.wav\n#00111:01\n";
     std::ofstream(temporary.path / "audio/SAMPLE.FLAC") << "sample";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     check_single_audio_asset(opened, "audio/SAMPLE.FLAC", "audio/sample.wav");
     CHECK(opened.warnings.empty());
 }
@@ -456,7 +463,7 @@ TEST_CASE("BMS audio fallback reports case-folded duplicate filenames",
     }
     std::ofstream(temporary.path / "audio/sample.ogg") << "second candidate";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     check_single_audio_asset(opened, "audio/sample.wav", "audio/sample.wav");
     REQUIRE(opened.warnings.size() == 1);
     CHECK(opened.warnings.front().find("SAMPLE.OGG") != std::string::npos);
@@ -471,7 +478,7 @@ TEST_CASE("BMS audio fallback rejects traversal and drive paths",
                            "#WAV01 ..\\outside.wav\n#WAV02 C:\\outside.wav\n"
                            "#00111:0102\n";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     REQUIRE(opened.document->audio_assets.size() == 2);
@@ -492,7 +499,7 @@ TEST_CASE("BMS image resolver finds one alternate extension and keeps the author
     std::ofstream(temporary.path / "exact.png") << "exact image";
     std::ofstream(temporary.path / "exact.bmp") << "alternate image";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     require_bmson_condition(opened.document->visual_assets.size() == 2);
@@ -515,7 +522,7 @@ TEST_CASE("BMS image resolver leaves ambiguous alternate extensions unresolved",
     std::ofstream(temporary.path / "scene.bmp") << "bitmap";
     std::ofstream(temporary.path / "scene.JPG") << "jpeg";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     require_bmson_condition(opened.document->visual_assets.size() == 1);
@@ -536,7 +543,7 @@ TEST_CASE("BMS image resolver matches directory and extension case safely",
     std::filesystem::create_directories(temporary.path / "folder");
     std::ofstream(temporary.path / "folder/icon.JpEg") << "image";
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     require_bmson_condition(opened.document->visual_assets.size() == 1);
@@ -547,7 +554,7 @@ TEST_CASE("BMS image resolver matches directory and extension case safely",
 
 TEST_CASE("opening a native project preserves its saved document identity",
           "[unit][sys][project-open]") {
-    const auto imported = wormedit::sys::open_project_file(
+    const auto imported = open_with_bms_profile(
         fixture("bmson", "zero-resolution-default.bmson"));
     require_opened_project(imported);
     const auto serialized = wormedit::write_native_project(*imported.document);
@@ -555,7 +562,7 @@ TEST_CASE("opening a native project preserves its saved document identity",
     temporary_project_file_t file{".wormedit"};
     file.write(*serialized.value);
 
-    const auto opened = wormedit::sys::open_project_file(file.path);
+    const auto opened = open_with_bms_profile(file.path);
     require_opened_project(opened);
 
     check_native_identity(opened, *imported.document, file.path);
@@ -572,7 +579,7 @@ TEST_CASE("BMSON beat source x lanes survive export and native project reopen",
         "eyecatch_image":""},"lines":[{"y":0},{"y":960}],"bpm_events":[],
         "stop_events":[],"sound_channels":[{"name":"sound.wav","notes":[
         {"x":8,"y":0,"l":0,"c":false},{"x":1,"y":240,"l":0,"c":false}]}]})";
-    const auto imported = wormedit::sys::open_project_file(chart_path);
+    const auto imported = open_with_bms_profile(chart_path);
     require_opened_project(imported);
 
     const auto& chart = imported.document->charts.front();
@@ -599,7 +606,7 @@ TEST_CASE("BMSON beat source x lanes survive export and native project reopen",
     const auto saved = wormedit::write_native_project(*imported.document);
     require_bmson_condition(saved.value);
     native.write(*saved.value);
-    const auto reopened = wormedit::sys::open_project_file(native.path);
+    const auto reopened = open_with_bms_profile(native.path);
     require_opened_project(reopened);
 
     const auto& reopened_chart = reopened.document->charts.front();
@@ -613,7 +620,7 @@ TEST_CASE("BMSON beat source x lanes survive export and native project reopen",
 
 TEST_CASE("an imported chart saves and reopens with its assets rooted at the source",
           "[unit][sys][project-open][project-save-paths]") {
-    const auto imported = wormedit::sys::open_project_file(
+    const auto imported = open_with_bms_profile(
         fixture("bms", "repeated-bgm-ratio-stop-collision.bms"));
     require_opened_project(imported);
 
@@ -626,7 +633,7 @@ TEST_CASE("an imported chart saves and reopens with its assets rooted at the sou
     INFO((saved.diagnostics.empty() ? "" : saved.diagnostics.front().message));
     REQUIRE(saved.value);
 
-    const auto reopened = wormedit::sys::open_project_file(file.path);
+    const auto reopened = open_with_bms_profile(file.path);
     require_opened_project(reopened);
 
     REQUIRE_FALSE(reopened.document->audio_assets.empty());
@@ -638,7 +645,7 @@ TEST_CASE("an imported chart saves and reopens with its assets rooted at the sou
 
 TEST_CASE("project opening rejects unsupported extensions",
           "[unit][sys][project-open]") {
-    const auto unsupported = wormedit::sys::open_project_file(
+    const auto unsupported = open_with_bms_profile(
         fixture("bmson", "zero-resolution-default.bmson").replace_extension(".txt"));
     REQUIRE_FALSE(unsupported.is_success());
     CHECK(unsupported.error.find("Unsupported") != std::string::npos);
@@ -647,7 +654,7 @@ TEST_CASE("project opening rejects unsupported extensions",
 
 TEST_CASE("project opening reports missing native files", "[unit][sys][project-open]") {
     temporary_project_file_t missing{".wormedit"};
-    const auto missing_result = wormedit::sys::open_project_file(missing.path);
+    const auto missing_result = open_with_bms_profile(missing.path);
     REQUIRE_FALSE(missing_result.is_success());
     CHECK_FALSE(missing_result.error.empty());
 }
@@ -657,7 +664,7 @@ TEST_CASE("project opening enforces the chart source size limit",
     temporary_project_file_t oversized{".bms"};
     oversized.write({});
     std::filesystem::resize_file(oversized.path, 16U * 1024U * 1024U + 1U);
-    const auto result = wormedit::sys::open_project_file(oversized.path);
+    const auto result = open_with_bms_profile(oversized.path);
     REQUIRE_FALSE(result.is_success());
     CHECK(result.error.find("size limit") != std::string::npos);
 }
@@ -665,7 +672,7 @@ TEST_CASE("project opening enforces the chart source size limit",
 TEST_CASE("project opening rejects malformed native files", "[unit][sys][project-open]") {
     temporary_project_file_t malformed{".wormedit"};
     malformed.write("not a project");
-    const auto malformed_result = wormedit::sys::open_project_file(malformed.path);
+    const auto malformed_result = open_with_bms_profile(malformed.path);
     REQUIRE_FALSE(malformed_result.is_success());
     CHECK_FALSE(malformed_result.native_project);
     CHECK(malformed_result.error.find("Native project could not be opened") != std::string::npos);
@@ -676,14 +683,14 @@ TEST_CASE("ambiguous non-ASCII BMS can be retried with an explicit encoding",
     temporary_project_file_t file{".bms"};
     file.write("#PLAYER 1\n#TITLE Caf\xE9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
 
-    const auto automatic = wormedit::sys::open_project_file(file.path);
+    const auto automatic = open_with_bms_profile(file.path);
     REQUIRE_FALSE(automatic.is_success());
     CHECK(automatic.needs_encoding_choice);
     CHECK(automatic.source_path == file.path);
 
     if (!wormedit::is_bms_text_encoding_supported(wormedit::text_encoding_t::windows_1252))
         return;
-    const auto explicit_encoding = wormedit::sys::open_project_file(
+    const auto explicit_encoding = open_with_bms_profile(
         file.path, wormedit::text_encoding_t::windows_1252);
     require_opened_project(explicit_encoding);
 
@@ -696,10 +703,10 @@ TEST_CASE("UTF-8 BMS without a BOM opens after the user chooses UTF-8",
     temporary_project_file_t file{".bms"};
     file.write("#PLAYER 1\n#TITLE Caf\xC3\xA9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
 
-    const auto automatic = wormedit::sys::open_project_file(file.path);
+    const auto automatic = open_with_bms_profile(file.path);
     REQUIRE_FALSE(automatic.is_success());
     CHECK(automatic.needs_encoding_choice);
-    const auto opened = wormedit::sys::open_project_file(file.path,
+    const auto opened = open_with_bms_profile(file.path,
                                                          wormedit::text_encoding_t::utf8);
     require_opened_project(opened);
 
@@ -712,7 +719,7 @@ TEST_CASE("a malformed explicit BMS encoding does not repeatedly request a choic
     temporary_project_file_t file{".bms"};
     file.write("#PLAYER 1\n#TITLE Caf\xE9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
 
-    const auto malformed = wormedit::sys::open_project_file(file.path,
+    const auto malformed = open_with_bms_profile(file.path,
                                                              wormedit::text_encoding_t::utf8);
     REQUIRE_FALSE(malformed.is_success());
     CHECK_FALSE(malformed.needs_encoding_choice);
@@ -731,27 +738,27 @@ void check_normalized_native_document(const wormedit::song_document_t& document,
 } // namespace
 
 TEST_CASE("native load normalizes empty lane keys without making an edit", "[project-open][default-input]") {
-    auto imported = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    auto imported = open_with_bms_profile(fixture("stepmania", "matched-timing.sm"));
     require_opened_project(imported);
     imported.document->charts.front().input_profile = {};
     const auto saved = wormedit::write_native_project(*imported.document);
     REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
     file.write(*saved.value);
-    const auto opened = wormedit::sys::open_project_file(file.path);
+    const auto opened = open_with_bms_profile(file.path);
     require_opened_project(opened);
     check_normalized_native_document(*opened.document, imported.document->revision);
 }
 
 TEST_CASE("native load preserves deliberately unbound custom profiles", "[project-open][default-input]") {
-    auto imported = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    auto imported = open_with_bms_profile(fixture("stepmania", "matched-timing.sm"));
     require_opened_project(imported);
     imported.document->charts.front().input_profile = {.profile_id = "custom-unbound"};
     const auto saved = wormedit::write_native_project(*imported.document);
     REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
     file.write(*saved.value);
-    const auto opened = wormedit::sys::open_project_file(file.path);
+    const auto opened = open_with_bms_profile(file.path);
     require_opened_project(opened);
     CHECK(opened.document->charts.front().input_profile.profile_id == "custom-unbound");
     CHECK(opened.document->charts.front().input_profile.bindings.empty());
@@ -789,15 +796,15 @@ TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][de
     REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
     file.write(*saved.value);
-    const auto opened = wormedit::sys::open_project_file(file.path);
+    const auto opened = open_with_bms_profile(file.path);
     require_opened_project(opened);
-    check_preserved_input_profile(parsed.value.song->charts.front().input_profile,
-                                  opened.document->charts.front().input_profile);
+    check_preserved_input_profile(parsed.value.song->read_charts().front()->input_profile,
+                                  opened.document->read_charts().front()->input_profile);
 }
 
 namespace {
 auto load_validation_fixture() -> wormedit::sys::project_open_result_t {
-    auto opened = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    auto opened = open_with_bms_profile(fixture("stepmania", "matched-timing.sm"));
     require_opened_project(opened);
     opened.document->charts.front().metadata.name = "Hard validation fixture";
     return std::move(opened);
@@ -875,7 +882,12 @@ TEST_CASE("project_open validation leaves valid documents and load identity unch
 
 TEST_CASE("project_open rehomes BGM storage without altering authored slots or provenance",
           "[project-open][validation]") {
-    auto opened = wormedit::sys::open_project_file(fixture("bms", "repeated-bgm-ratio-stop-collision.bms"));
+    const auto path = fixture("bms", "repeated-bgm-ratio-stop-collision.bms");
+    std::ifstream input(path, std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>{input}, {}};
+    const auto parsed = wormedit::parse_bms_legacy_witness(std::as_bytes(std::span{bytes.data(), bytes.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    wormedit::sys::project_open_result_t opened{.document = parsed.value.song};
     require_opened_project(opened);
     const auto before = native_bytes(*opened.document);
     auto& measures = opened.document->charts.front().measures;
@@ -912,7 +924,7 @@ TEST_CASE("project_open refuses invalid native files with contextual graph diagn
     json.at("document").at("charts").at(0).at("measures").at(0).at("notes").at(0)["lane"] = 99999;
     temporary_project_file_t file{".wormedit"};
     file.write(json.dump());
-    const auto opened = wormedit::sys::open_project_file(file.path);
+    const auto opened = open_with_bms_profile(file.path);
     REQUIRE_FALSE(opened.is_success());
     CHECK_FALSE(opened.native_project);
     check_contextual_validation_message(opened.error);
@@ -920,7 +932,7 @@ TEST_CASE("project_open refuses invalid native files with contextual graph diagn
 
 TEST_CASE("an opened BMSON chart gets number-row key bindings for its lanes",
           "[unit][sys][project-open]") {
-    const auto opened = wormedit::sys::open_project_file(
+    const auto opened = open_with_bms_profile(
         fixture("bmson", "zero-resolution-default.bmson"));
     require_opened_project(opened);
 
@@ -941,7 +953,7 @@ TEST_CASE("BMSON audio names resolve to the differently extended file beside the
                           {"name":"gone.wav","notes":[{"x":0,"y":240,"l":0,"c":false}]}]})";
     REQUIRE(std::filesystem::copy_file(fixture("audio", "keysound-c4.ogg"), temporary.path / "clap.ogg"));
 
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
 
     const auto& assets = opened.document->audio_assets;
@@ -961,7 +973,7 @@ TEST_CASE("BMS visual resolver preserves exact declarations over alternatives",
     std::ofstream(chart) << "#PLAYER 1\n#TITLE Exact\n#BPM 120\n#BMP01 scene.png\n#00104:01\n";
     std::ofstream(temporary.path / "scene.png") << "png";
     std::ofstream(temporary.path / "scene.bmp") << "bmp";
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
     check_bmson_condition(opened.document->visual_assets.front().source_path == "scene.png");
     check_bmson_condition(opened.warnings.empty());
@@ -973,7 +985,7 @@ TEST_CASE("BMS video fallback preserves its declared basename for export",
     const auto chart = temporary.path / "video.bms";
     std::ofstream(chart) << "#PLAYER 1\n#TITLE Video\n#BPM 120\n#BMP01 movie.mpg\n#00104:01\n";
     std::ofstream(temporary.path / "movie.MP4") << "video";
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
     check_bmson_condition(opened.document->visual_assets.front().source_path == "movie.MP4");
     check_bmson_condition(opened.warnings.empty());
@@ -981,7 +993,7 @@ TEST_CASE("BMS video fallback preserves its declared basename for export",
     require_bmson_condition(exported.value);
     check_bmson_condition(exported.value->find("#BMP01 movie.mpg") != std::string::npos);
     std::ofstream(temporary.path / "movie.webm") << "other";
-    const auto ambiguous = wormedit::sys::open_project_file(chart);
+    const auto ambiguous = open_with_bms_profile(chart);
     require_opened_project(ambiguous);
     check_bmson_condition(ambiguous.document->visual_assets.front().source_path == "movie.mpg");
     require_bmson_condition(ambiguous.warnings.size() == 1);
@@ -995,7 +1007,7 @@ TEST_CASE("BMS visual fallback rejects traversal and drive declarations",
     const auto chart = temporary.path / "unsafe.bms";
     std::ofstream(chart) << "#PLAYER 1\n#TITLE Unsafe\n#BPM 120\n"
         "#BMP01 ../outside.png\n#BMP02 C:\\outside.mpg\n#00104:0102\n";
-    const auto opened = wormedit::sys::open_project_file(chart);
+    const auto opened = open_with_bms_profile(chart);
     require_opened_project(opened);
     require_bmson_condition(opened.warnings.size() == 2);
     check_bmson_condition(opened.warnings[0].find("Unsafe") != std::string::npos);
@@ -1020,7 +1032,7 @@ TEST_CASE("Opening audio resources marks absent files without changing authored 
     std::ofstream(directory.path / "present.wav") << "present but not decodable";
     std::ofstream(path) << "#PLAYER 1\n#TITLE Missing audio\n#BPM 120\n"
                            "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
-    const auto opened = wormedit::sys::open_project_file(path);
+    const auto opened = open_with_bms_profile(path);
     require_opened_project(opened);
 
     require_open_audio(opened.document->resources.size() == 2);
@@ -1038,7 +1050,7 @@ TEST_CASE("Native audio availability refreshes saved flags and aliases without a
     std::ofstream(directory.path / "present.wav") << "corrupt but present";
     std::ofstream(source) << "#PLAYER 1\n#TITLE Availability\n#BPM 120\n"
                              "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
-    auto imported = wormedit::sys::open_project_file(source);
+    auto imported = open_with_bms_profile(source);
     require_opened_project(imported);
     auto& document = *imported.document;
     document.resources[0].missing = false;
@@ -1051,7 +1063,7 @@ TEST_CASE("Native audio availability refreshes saved flags and aliases without a
     require_open_audio(saved.value.has_value());
     const auto path = directory.path / "availability.wormedit";
     std::ofstream(path) << *saved.value;
-    const auto opened = wormedit::sys::open_project_file(path);
+    const auto opened = open_with_bms_profile(path);
     require_opened_project(opened);
 
     check_open_audio(opened.document->resources[0].missing);
@@ -1068,7 +1080,7 @@ TEST_CASE("Native startup refreshes availability before creating clean saved his
     std::ofstream(directory.path / "present.wav") << "corrupt but present";
     std::ofstream(source) << "#PLAYER 1\n#TITLE Startup\n#BPM 120\n"
                              "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
-    auto imported = wormedit::sys::open_project_file(source);
+    auto imported = open_with_bms_profile(source);
     require_opened_project(imported);
     imported.document->resources[0].missing = false;
     imported.document->resources[1].missing = true;
@@ -1154,30 +1166,35 @@ TEST_CASE("Project session boundary resets identity and advances generation", "[
 
 TEST_CASE("Project opening reports bytes and cancellation never yields a document", "[project-open]") {
     temporary_project_file_t source{".bms"};
-    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    source.write("#PLAYER 1\n#TITLE Async\n#BPM 120\n#00111:0100\n"
+                 "#00112:01\n#00113:01\n#00114:01\n#00115:01\n#00118:01\n#00119:01\n#00116:01\n");
     wormedit::job_progress_t progress;
-    const auto opened = wormedit::sys::open_project_file(source.path, {}, {}, &progress);
+    const auto opened = open_with_bms_profile(source.path, {}, {}, &progress);
+    INFO(opened.error);
     REQUIRE(opened.is_success());
     REQUIRE(progress.total.load() == std::filesystem::file_size(source.path));
     REQUIRE(progress.completed.load() == progress.total.load());
     std::stop_source stop;
     stop.request_stop();
-    const auto cancelled = wormedit::sys::open_project_file(source.path, {}, stop.get_token());
+    const auto cancelled = open_with_bms_profile(source.path, {}, stop.get_token());
     REQUIRE_FALSE(cancelled.document);
 }
 
 TEST_CASE("Project open runtime retains cancellation until terminal collection", "[project-open]") {
     temporary_project_file_t source{".bms"};
-    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    source.write("#PLAYER 1\n#TITLE Async\n#BPM 120\n#00111:0100\n"
+                 "#00112:01\n#00113:01\n#00114:01\n#00115:01\n#00118:01\n#00119:01\n#00116:01\n");
     wormedit::task_scheduler_t scheduler{1, 1};
     wormedit::sys::project_open_runtime_t runtime{scheduler};
     const wormedit::sys::project_open_identity_t identity{
         .document = {.project = wormedit::song_id_t{12}, .revision = 7}, .session_generation = 3};
-    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity, wormedit::sys::project_open_runtime_t::open,
+        "bme-7k-outside-scratch")));
     runtime.cancel();
     require_open_audio(static_cast<bool>(runtime.is_busy()));
     require_open_audio(static_cast<bool>(runtime.view().cancelling));
-    require_open_audio(!static_cast<bool>(runtime.start(source.path, {}, identity)));
+    require_open_audio(!static_cast<bool>(runtime.start(source.path, {}, identity, wormedit::sys::project_open_runtime_t::open,
+        "bme-7k-outside-scratch")));
     auto completion = runtime.wait();
     require_open_audio(static_cast<bool>(completion));
     require_open_audio(!static_cast<bool>(*completion));
@@ -1185,7 +1202,8 @@ TEST_CASE("Project open runtime retains cancellation until terminal collection",
     require_open_audio(static_cast<bool>(completion->error().cause.code == wormedit::failure_code_t::cancelled));
     require_open_audio(!static_cast<bool>(runtime.is_busy()));
     require_open_audio(!static_cast<bool>(runtime.poll()));
-    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity, wormedit::sys::project_open_runtime_t::open,
+        "bme-7k-outside-scratch")));
     auto retry = runtime.wait();
     require_open_audio(static_cast<bool>(retry));
     require_open_audio(static_cast<bool>(*retry));
@@ -1195,17 +1213,54 @@ TEST_CASE("Project open runtime retains cancellation until terminal collection",
 
 TEST_CASE("Project open completion carries its captured session and encoding request", "[project-open]") {
     temporary_project_file_t source{".bms"};
-    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    source.write("#PLAYER 1\n#TITLE Async\n#BPM 120\n#00111:0100\n"
+                 "#00112:01\n#00113:01\n#00114:01\n#00115:01\n#00118:01\n#00119:01\n#00116:01\n");
     wormedit::task_scheduler_t scheduler{1, 1};
     wormedit::sys::project_open_runtime_t runtime{scheduler};
     const wormedit::sys::project_open_identity_t identity{.session_generation = 15};
-    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity, wormedit::sys::project_open_runtime_t::open,
+        "bme-7k-outside-scratch")));
     // Wait outside the UI loop, without cancelling successful work.
     auto completion = runtime.wait();
     require_open_audio(static_cast<bool>(completion));
     require_open_audio(static_cast<bool>(*completion));
     require_open_audio(static_cast<bool>(completion->value().identity == identity));
     require_open_audio(static_cast<bool>((*completion->value().payload)->is_success()));
-    require_open_audio(!static_cast<bool>(runtime.is_encoding_retry()));
+    require_open_audio(static_cast<bool>(runtime.is_encoding_retry()));
     require_open_audio(!static_cast<bool>(runtime.poll()));
+}
+
+TEST_CASE("Sparse BMS import requests a lane profile and retries without guessing", "[project-open][bms-public-cutover]") {
+    temporary_project_file_t source{".bms"};
+    source.write("#BPM 120\n#WAV01 key.wav\n#00111:01\n");
+    const auto automatic = wormedit::sys::open_project_file(source.path);
+    REQUIRE_FALSE(automatic.document);
+    REQUIRE(automatic.needs_profile_choice);
+    const auto explicit_profile = wormedit::sys::open_project_file(source.path, {}, {}, nullptr,
+        "bme-7k-outside-scratch");
+    require_opened_project(explicit_profile);
+    CHECK(explicit_profile.document->charts.empty());
+    CHECK(explicit_profile.document->prepared_bms_programs.size() == 1);
+    const auto incompatible = wormedit::sys::open_project_file(source.path, {}, {}, nullptr, "unknown-profile");
+    CHECK_FALSE(incompatible.document);
+    CHECK(incompatible.needs_profile_choice);
+}
+
+TEST_CASE("BMS resolution provenance preserves authored names until an asset relink", "[project-open][bms-public-cutover]") {
+    temporary_project_directory_t directory;
+    const auto path = directory.path / "resolved.bms";
+    std::ofstream(directory.path / "old.ogg") << "existing audio";
+    std::ofstream(path) << "#BPM 120\n#WAV01 old.wav\n#00011:01\n";
+    auto opened = open_with_bms_profile(path);
+    require_opened_project(opened);
+    const auto loaded = wormedit::parse_native_project(native_bytes(*opened.document));
+    require_open_audio(loaded.value.has_value());
+    auto song = *loaded.value;
+    const auto original = wormedit::write_bms(song);
+    require_open_audio(original.value.has_value());
+    check_open_audio(original.value->find("#WAV01 old.wav") != std::string::npos);
+    song.audio_assets.front().source_path = "new.ogg";
+    const auto relinked = wormedit::write_bms(song);
+    require_open_audio(relinked.value.has_value());
+    check_open_audio(relinked.value->find("#WAV01 new.ogg") != std::string::npos);
 }

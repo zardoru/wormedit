@@ -84,6 +84,7 @@ struct projection_builder_t {
     auto visual(const std::string& identifier, contribution_t entry) -> resource_id_t;
     void add_owners(std::uint64_t id, contribution_t entry);
     void add_resource_owner(std::uint64_t id, bms_resource_namespace_t ns, const std::string& identifier);
+    auto include_native_resource(contribution_t entry, const bms_native_content_t& value) -> bool;
     void emit(contribution_t entry, const bms_native_content_t& value);
     void emit(contribution_t entry, const bms_note_content_t& value);
     void emit(contribution_t entry, const bms_hold_endpoint_t& value);
@@ -180,6 +181,7 @@ auto projection_builder_t::index_pools(std::size_t& count) -> bool {
         prepared.visual_assets.size(), prepared.bgm_columns.size(), prepared.semantic_layers.size(), prepared.sound_layer_defaults.size()};
     for (const auto size : sizes) if (!checked_math::account_size(count, size, limits.maximum_input_items)) return false;
     for (const auto id : prepared.measures) if (!observe_id(id.value)) return false;
+    if (prepared.settings.layout_segment && !observe_id(prepared.settings.layout_segment->value)) return false;
     for (const auto& lane : prepared.bgm_columns) if (!observe_id(lane.id.value)) return false;
     for (const auto& layer : prepared.semantic_layers) if (!observe_id(layer.id.value)) return false;
     for (const auto& resource : prepared.resources) {
@@ -217,12 +219,18 @@ auto projection_builder_t::prepare() -> bool {
         if (!failed) diagnose(failure_code_t::capacity_exceeded, "Prepared program exceeds projection input or identity limits.");
         return false;
     }
-    if (prepared.measures.empty()) {
+    if (prepared.settings.divisions_per_standard_measure > limits.maximum_resolution) {
+        diagnose(failure_code_t::capacity_exceeded, "Shared grid exceeds the configured projection resolution limit.");
+        return false;
+    }
+    if (prepared.measures.empty() || !prepared.settings.divisions_per_standard_measure) {
         diagnose(failure_code_t::invalid_geometry, "Projection requires shared measures.");
         return false;
     }
     song.id = song_id_t{++next_id};
     song.charts.push_back({.id = chart_id_t{++next_id}, .source_family = format_family_t::bms});
+    chart().divisions_per_standard_measure = prepared.settings.divisions_per_standard_measure;
+    chart().timing_links = prepared.settings.timing_links;
     for (const auto id : prepared.measures) {
         if (!id.value || !measures.emplace(id.value, chart().measures.size()).second) {
             diagnose(failure_code_t::invalid_geometry, "Shared measure identities must be nonzero and unique.");
@@ -230,7 +238,7 @@ auto projection_builder_t::prepare() -> bool {
         }
         chart().measures.push_back({.id = id});
     }
-    const auto layout_id = object_id_t{++next_id};
+    const auto layout_id = prepared.settings.layout_segment.value_or(object_id_t{++next_id});
     if (prepared.lane_profile) {
         chart().lane_layouts.push_back({layout_id, {prepared.measures.front(), 0}, prepared.lane_profile->layout});
         chart().input_profile = prepared.lane_profile->input;
@@ -242,6 +250,7 @@ auto projection_builder_t::prepare() -> bool {
     song.audio_assets = prepared.audio_assets;
     song.visual_assets = prepared.visual_assets;
     chart().semantic_layers = prepared.semantic_layers;
+    if (prepared.settings.show_empty_bgm_columns) chart().bgm_source_lanes = prepared.bgm_columns;
     return true;
 }
 
@@ -389,7 +398,7 @@ void projection_builder_t::declaration(contribution_t entry, const bms_measure_l
         return;
     }
     auto& measure = chart().measures[found->second];
-    measure.definition = {reduce_fraction(value.length), std::nullopt};
+    measure.definition = {reduce_fraction(value.length), value.meter};
     owners.erase(value.measure.value);
     add_owners(value.measure.value, entry);
 }
@@ -432,8 +441,10 @@ void projection_builder_t::collect_declarations() {
     for (const auto& defaults : prepared.sound_layer_defaults)
         if (std::ranges::find(song.resources, defaults.resource, &resource_entry_t::id) != song.resources.end())
             chart().sound_layer_defaults.push_back(defaults);
-    chart().metadata.name = song.metadata.title;
-    chart().metadata.author = song.metadata.artist;
+    chart().metadata.name = prepared.settings.name.value_or(song.metadata.title);
+    chart().metadata.author = prepared.settings.author.value_or(song.metadata.artist);
+    chart().metadata.rating = prepared.settings.rating;
+    chart().metadata.overrides = prepared.settings.overrides;
 
 }
 
@@ -549,12 +560,28 @@ auto projection_builder_t::visual(const std::string& identifier, contribution_t 
     return resource;
 }
 
+auto projection_builder_t::include_native_resource(contribution_t entry, const bms_native_content_t& value) -> bool {
+    if (!value.resource_reference()) {
+        const auto id = event_resource(value.payload());
+        if (id && *id && std::ranges::find(song.resources, *id, &resource_entry_t::id) == song.resources.end()) {
+            const auto found = catalog.find(id->value);
+            if (found == catalog.end()) {
+                diagnose(failure_code_t::not_found, "Native resource binding has no catalog entry.", entry.owner.chart, entry.item->id);
+                return false;
+            }
+            song.resources.push_back(*found->second);
+        }
+    }
+    return true;
+}
+
 void projection_builder_t::emit(contribution_t entry, const bms_native_content_t& value) {
     const auto event = value.build_event(entry.item->id, chart());
     if (!event) {
         diagnose(failure_code_t::invalid_geometry, "Native content cannot use the exact projected grid.", entry.owner.chart, entry.item->id);
         return;
     }
+    if (!include_native_resource(entry, value)) return;
     std::visit([&](auto native) {
         using value_type = std::remove_cvref_t<decltype(native)>;
         if constexpr (requires { native.provenance; }) native.provenance = entry.provenance();

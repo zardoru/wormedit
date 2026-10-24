@@ -56,8 +56,9 @@ auto bga_usage_view_t::from(const song_document_t& document, resource_id_t resou
     std::unordered_map<std::uint64_t, asset_id_t> resources;
     for (const auto& entry : document.resources) resources.emplace(entry.id.value, entry.asset);
     collector_t collector;
-    for (std::size_t i = 0; i < document.charts.size(); ++i)
-        append_chart_uses(document.charts[i], i, resource, view.asset, resources, collector);
+    const auto charts = document.read_charts();
+    for (std::size_t i = 0; i < charts.size(); ++i)
+        append_chart_uses(*charts[i], i, resource, view.asset, resources, collector);
     view.total_matching = collector.total;
     view.truncated = collector.total > resource_usage_projection_limit;
     view.rows = collector.ordered_rows();

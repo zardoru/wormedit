@@ -1,4 +1,5 @@
 #include "fixture_encoding.h"
+#include "../support/bms_profile_fixtures.h"
 #include "sys/project/project_open.h"
 
 #include <wormedit/core/interaction_dispatch.h>
@@ -21,6 +22,7 @@
 
 namespace {
 using wormedit::test::explicit_fixture_encoding;
+using wormedit::test::explicit_fixture_profile;
 
 auto positive_chart_fixtures() -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> paths;
@@ -35,34 +37,6 @@ auto positive_chart_fixtures() -> std::vector<std::filesystem::path> {
 }
 
 
-
-auto explicit_fixture_profile(const std::filesystem::path& path) -> std::optional<std::string> {
-    static const std::map<std::string, std::string> choices{
-        {"bms-5k-standard.bms", "bms-5k-outside-scratch"},
-        {"bms-5k-free-zone.bms", "bms-5k-outside-scratch-free-zone"},
-        {"bms-5k-foot-pedal.bms", "bms-5k-outside-scratch-foot-pedal"},
-        {"bme-7k.bme", "bme-7k-outside-scratch"},
-        {"bme-7k-foot-pedal.bme", "bme-7k-outside-scratch-foot-pedal"},
-        {"bms-10k-standard.bms", "bms-10k-left-outside-right-outside"},
-        {"bms-10k-free-zone.bms", "bms-10k-left-outside-right-outside-free-zone"},
-        {"bms-10k-foot-pedal.bms", "bms-10k-left-outside-right-outside-foot-pedal"},
-        {"bms-10k-scratchless.bms", "bms-10k-scratchless"},
-        {"bme-14k.bme", "bme-14k-left-outside-right-outside"},
-        {"bme-14k-foot-pedal.bme", "bme-14k-left-outside-right-outside-foot-pedal"},
-        {"pms-5button.pms", "pms-standard-5button"},
-        {"pms-9button.pms", "pms-standard-9button"},
-        {"pms-bme-9button.pms", "pms-bme-style-9button"},
-        {"pms-bme-18button.pms", "pms-bme-style-18button"},
-        {"double-scratch-fpp.bms", "bms-double-scratch-fpp"},
-        {"octave-foot-pedal.bms", "bms-octave-foot-pedal"},
-        {"project2dx-7k.bms", "project2dx-7k"}};
-    if (path.filename() == "x-aria-10k-hd.bme") return std::nullopt;
-    const auto found = choices.find(path.filename().string());
-    if (found != choices.end()) return found->second;
-    if (path.extension() == ".pms") return "pms-standard-9button";
-    if (path.extension() == ".bme") return "bme-7k-outside-scratch";
-    return "bms-5k-outside-scratch-free-zone";
-}
 
 auto read_fixture(const std::filesystem::path& path) -> std::string {
     std::ifstream input(path, std::ios::binary);
@@ -131,36 +105,37 @@ void check_fixture_tap_command(const wormedit::song_document_t& document,
                                                           wormedit::place_tap_action_t{position});
     for (const auto& diagnostic : placed.diagnostics) INFO(diagnostic.message);
     REQUIRE(placed.document_changed);
-    CHECK(wormedit::validate_document(history.document).empty());
+    CHECK_FALSE(wormedit::diagnostic_queries::has_errors(wormedit::validate_document(history.document)));
 }
 
-void choose_custom_fixture_authoring_layout(wormedit::song_document_t& document,
-                                            const std::filesystem::path& path) {
-    // PLAYER 7 and channel 1A intentionally remain unmapped. Choose geometry
-    // for new authored notes explicitly; never infer a mapping for raw 1A/31.
-    if (path.filename() != "custom-channel.bme") return;
-    auto& chart = document.charts.front();
-    REQUIRE(chart.lane_layouts.empty());
-    const auto profile = wormedit::make_bme_7k_profile();
-    chart.lane_layouts.push_back({.id = wormedit::object_id_t{1'000'000},
-                                      .position = {chart.measures.front().id, 0},
-                                      .layout = profile.layout});
-    chart.input_profile = profile.input;
+void check_public_profile_refusal(const std::filesystem::path& path) {
+    const auto source = read_fixture(path);
+    const auto parsed = wormedit::parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.file_extension = path.extension().string()});
+    CHECK_FALSE(parsed.value.song);
+    REQUIRE(parsed.value.encoding.original_bytes);
+    CHECK(parsed.value.encoding.original_bytes->size() == source.size());
+    CHECK(std::ranges::any_of(parsed.diagnostics, [](const auto& entry) {
+        return entry.code == wormedit::bms_parse_diagnostic_code_t::unsupported_channel;
+    }));
 }
 
 void check_positive_fixture(const std::filesystem::path& path) {
+    if (path.filename() == "custom-channel.bme") {
+        check_public_profile_refusal(path);
+        return;
+    }
     auto document = parse_positive_fixture(path);
     const auto diagnostics = wormedit::validate_document(document);
     for (const auto& diagnostic : diagnostics) INFO(diagnostic.message);
-    REQUIRE(diagnostics.empty());
-    REQUIRE_FALSE(document.charts.empty());
-    choose_custom_fixture_authoring_layout(document, path);
-    for (const auto& chart : document.charts) check_fixture_tap_command(document, chart);
+    REQUIRE_FALSE(wormedit::diagnostic_queries::has_errors(diagnostics));
+    REQUIRE_FALSE(document.read_charts().empty());
+    for (const auto* chart : document.read_charts()) check_fixture_tap_command(document, *chart);
 }
 
 } // namespace
 
-TEST_CASE("fixture_validation positive charts validate and accept tap placement",
+TEST_CASE("fixture_validation positive charts validate authoring or request an explicit profile",
           "[formats][fixture-validation][project-open]") {
     const auto fixtures = positive_chart_fixtures();
     REQUIRE_FALSE(fixtures.empty());

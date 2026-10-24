@@ -251,7 +251,7 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
     options.chart = chart;
     options.preserve_unchanged_source = false;
     options.branch_policy = bms_branch_policy_t::flatten_active;
-    const auto selected = song.find_chart(chart);
+    const auto selected = song.read_chart(chart);
     if (selected != nullptr && selected->lane_layouts.empty() &&
         !selected->input_profile.profile_id.empty())
         options.lane_profile_id = selected->input_profile.profile_id;

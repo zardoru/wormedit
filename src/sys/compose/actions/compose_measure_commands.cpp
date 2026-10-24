@@ -91,7 +91,7 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
                                  notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
     if (state.virtual_bms_cursor_row) return "Materialize the cursor measure before splitting it.";
-    const auto chart = history.document.find_chart(state.chart);
+    const auto chart = history.read_chart(state.chart);
     if (chart == nullptr) return "The selected chart is unavailable.";
     const auto& index = history.indices(state.chart)->measures;
     const auto* before = index ? &*index : nullptr;
@@ -126,7 +126,7 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
     const auto top = parse_meter_part(numerator);
     const auto bottom = parse_meter_part(denominator);
     if (!top || !bottom) return "A meter needs a non-zero numerator and denominator.";
-    const auto found = history.document.find_chart(state.chart);
+    const auto found = history.read_chart(state.chart);
     if (found == nullptr) return "The selected difficulty is no longer available.";
     const auto measure = found->find_measure(state.cursor.measure);
     if (measure == nullptr) return "The cursor is not inside a materialized measure.";
@@ -200,7 +200,7 @@ auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t
 auto apply_cursor_measure_command(document_history_t& history, editor_interaction_state_t& state,
                                   cursor_measure_command_t command, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto found = history.document.find_chart(state.chart);
+    const auto found = history.read_chart(state.chart);
     if (found == nullptr) return "The selected difficulty is no longer available.";
     const auto measure = found->find_measure(state.cursor.measure);
     if (measure == nullptr) return "The cursor is not inside a materialized measure.";

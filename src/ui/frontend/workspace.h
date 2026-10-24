@@ -43,6 +43,9 @@ struct workspace_view_t {
     std::string_view pending_new_project_audio_path;
     // A BMS-family source whose text encoding must be selected before opening.
     std::string_view pending_bms_encoding_path;
+    bool pending_bms_profile_required{};
+    text_encoding_t pending_bms_encoding{};
+    kind_catalog_view_t<std::string_view> bms_lane_profiles;
     std::string_view project_title;
     std::string_view artist;
     std::string_view selected_difficulty;

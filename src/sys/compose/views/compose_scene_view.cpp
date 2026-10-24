@@ -1,3 +1,4 @@
+#include "sys/resources/bms_catalog_bindings.h"
 #include "sys/compose/views/compose_view_internal.h"
 #include "ui/compose_draw_source_labels.h"
 #include <wormedit/formats/osu_mania.h>
@@ -54,11 +55,12 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
     for (std::size_t index = 0; index < bgm_event_count; ++index)
         if (bgm_events[index].sound) visible_sound_ids.push_back(bgm_events[index].sound->value);
     std::ranges::sort(visible_sound_ids);
+    const bms_catalog_bindings_t bindings(history.document, &projection.inputs.scope.chart_scope.chart);
     for (const auto& resource : history.document.resources) {
         if (!std::ranges::binary_search(visible_sound_ids, resource.id.value) ||
             flattened.compose.sound_labels.contains(resource.id.value)) continue;
         flattened.compose.sound_labels.emplace(resource.id.value,
-                                               compose_resource_sound_label(resource));
+                                               compose_resource_sound_label(bindings.resource(resource)));
     }
 }
 
@@ -520,6 +522,7 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
             ? wormedit::ui::compose_rect_t{scene.bga_lane->bounds.left, scene.bga_lane->bounds.top,
                                 scene.bga_lane->bounds.right, scene.bga_lane->bounds.bottom}
             : wormedit::ui::compose_rect_t{};
+    const bms_catalog_bindings_t bindings(projection.history().document, &projection.inputs.scope.chart_scope.chart);
     for (std::size_t index = 0; index < count; ++index) {
         const auto& event = scene.bga_events[index];
         const auto& document = projection.history().document;
@@ -528,11 +531,11 @@ void build_compose_bga_view(const compose_scene_projection_context_t& projection
         const wormedit::target_resource_identity_t* identity{};
         if (resource != document.resources.end()) {
             const auto target =
-                std::ranges::find_if(resource->target_identities, [](const auto& value) {
+                std::ranges::find_if(bindings.resource(*resource).target_identities, [](const auto& value) {
                     return value.family == wormedit::format_family_t::bms &&
                            value.namespace_name == "BMP";
                 });
-            if (target != resource->target_identities.end())
+            if (target != bindings.resource(*resource).target_identities.end())
                 identity = &*target;
         }
         const auto* name = resource != document.resources.end() && !resource->name.empty()

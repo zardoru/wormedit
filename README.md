@@ -64,7 +64,9 @@ teaches this loop first.
 | osu!mania | `.osu` | 1K to 18K; osu! file format v14 (stable) and v128 (lazer) |
 
 Wormedit opens all of these and exports them through output groups. A headless converter,
-`wormedit-convert`, runs the same conversions from a JSON request.
+`wormedit-convert`, runs the same conversions from a JSON request. Its optional
+`input_bms_lane_profile` names the input lane layout when sparse BMS channels need an
+explicit choice; `target_profile` controls the output profile separately.
 
 ## Getting wormedit
 

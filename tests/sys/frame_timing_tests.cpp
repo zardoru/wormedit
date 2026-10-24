@@ -1,3 +1,4 @@
+#include "../support/native_bms_fixture.h"
 #include "sys/compose/actions/compose_audition_requests.h"
 #include "compose_scene_cache_fixture.h"
 #include "../support/stale_action_assertions.h"
@@ -242,15 +243,16 @@ struct compose_test_fixture_t {
         : history(document_history_t::from(std::move(song))), binding(workspace_controller_t::from(history)) {
         expect_compose_test(binding.value.has_value());
         binding.value->active_tab = workspace_tab_t::compose;
-        binding.value->selected_chart = chart_id_t{1};
+        binding.value->selected_chart = history.document.read_charts().front()->id;
     }
     void project() {
+        application.project.bms_program.synchronize(history, binding.value->selected_chart);
         flattened = {};
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *binding.value, cache, 1280, 980,
                               interaction, application, nullptr);
         CAPTURE(flattened.projection_feedback.size(), cache.frame.projection_error,
-                flattened.view.active_tab, history.document.charts.front().measures.size(),
+                flattened.view.active_tab, history.read_chart(*binding.value->selected_chart)->measures.size(),
                 interaction.has_value());
         for (const auto& feedback : flattened.projection_feedback)
             UNSCOPED_INFO(feedback.message);
@@ -1754,17 +1756,17 @@ TEST_CASE("Owned action sound lists reuse capacity after warming", "[sys][fronte
         std::vector<resource_id_t>{resource_id_t{7}, resource_id_t{11}, resource_id_t{19}});
 }
 
-TEST_CASE("Workspace action copies own branch text and measure positions", "[sys][frontend-actions]") {
+TEST_CASE("Workspace action copies own scoped Text and measure positions", "[sys][frontend-actions]") {
     auto copy = [] {
         ui::workspace_action_t source{};
-        source.compose_branch_statement_text = "#BPM 140";
+        source.bms_program.text = "#BPM 140";
         source.compose_measure_ids = {0, 4, 9};
         auto result = source;
-        source.compose_branch_statement_text.assign(128, 'x');
+        source.bms_program.text.assign(128, 'x');
         source.compose_measure_ids.clear();
         return result;
     }();
-    CHECK(copy.compose_branch_statement_text == "#BPM 140");
+    CHECK(copy.bms_program.text == "#BPM 140");
     CHECK(copy.compose_measure_ids == std::vector<std::uint64_t>{0, 4, 9});
 }
 
@@ -4385,7 +4387,7 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
         {.file_extension = ".bms"});
     expect_compose_test(parsed.value.song.has_value());
     compose_test_fixture_t fixture(std::move(*parsed.value.song));
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.note_endpoints.size() > 0);
     const auto before = fixture.interaction->viewport_scroll_pixels;
@@ -4431,8 +4433,8 @@ void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
     state.fixed_cursor_screen_y_pixels = 48;
     state.cursor_subrow = 7;
     const auto cursor_before = capture_cursor_pose(state);
-    const local_position_t position{fixture.history.document.charts.front().measures.front().id, 240};
-    const auto& chart = fixture.history.document.charts.front();
+    const local_position_t position{(*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().id, 240};
+    const auto& chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart));
     const auto view = inspect_editor_interaction(fixture.history, state);
     const auto y = editor_position_y_pixels(chart,
         std::get<editor_interaction_view_model_t>(view), position);
@@ -4466,7 +4468,7 @@ void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
 void check_note_placement_preserves_cursor(int mode, bool downscroll) {
     INFO("Mode " << mode << ", downscroll " << downscroll);
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     place_pointer_test_note(fixture, mode);
@@ -4496,13 +4498,13 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
 namespace {
 void check_ten_key_note_commit() {
     auto song = cursor_placement_song();
-    auto& chart = song.charts.front();
+    auto chart = *song.read_charts().front();
     const auto profile = *make_osu_mania_profile(10);
     chart.lane_layouts.front().layout = profile.layout;
     chart.input_profile = profile.input;
     for (auto& measure : chart.measures) measure.notes.clear();
-    compose_test_fixture_t fixture{std::move(song)};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    compose_test_fixture_t fixture{test::native_bms_fixture(std::move(song), std::move(chart))};
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.lane_key_bindings.size() == 10);
@@ -4521,7 +4523,7 @@ void check_ten_key_note_commit() {
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
         expect_compose_test(!(fixture.interaction->hold() != nullptr));
     }
-    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    const auto& notes = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().notes;
     expect_compose_test(notes.size() == 10);
     for (const auto& binding : profile.input.bindings)
         expect_compose_test(std::ranges::count(notes, binding.lane, &note_t::lane) == 1);
@@ -4530,7 +4532,7 @@ void check_ten_key_note_commit() {
 
 void check_latched_range_projection(bool downscroll) {
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     auto& state = *fixture.interaction;
@@ -4554,7 +4556,7 @@ void check_latched_range_projection(bool downscroll) {
     expect_compose_test(state.retained_canvas_selection_range.has_value());
     const auto range = *state.retained_canvas_selection_range;
     expect_compose_test(range.end_row - range.begin_row ==
-        fixture.history.document.charts.front().divisions_per_standard_measure / 4);
+        (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).divisions_per_standard_measure / 4);
     expect_compose_test(fixture.history.undo.empty());
 }
 
@@ -4563,7 +4565,7 @@ void check_wheel_displacement(bool downscroll, double delta,
     INFO("downscroll " << downscroll << ", delta " << delta
          << ", kind " << kind << ", playing " << playing);
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
     fixture.project();
     auto& state = *fixture.interaction;
@@ -4603,10 +4605,10 @@ TEST_CASE("Compose batches reject later object or viewport input after an earlie
           "[sys][batch-stamp]") {
     const auto viewport_later = GENERATE(false, true);
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.project();
     auto& state = *fixture.interaction;
-    const auto& chart = fixture.history.document.charts.front();
+    const auto& chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart));
     const auto count = chart.measures.front().notes.size();
     const auto inspected = inspect_editor_interaction(fixture.history, state);
     const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(inspected),
@@ -4636,7 +4638,7 @@ TEST_CASE("Compose batches reject later object or viewport input after an earlie
         state, viewport, navigation, fixture.application, fixture.cache, 0);
     test::check_stale_action_message(status, viewport_later ? "Remaining Compose viewport input" : "Remaining Compose input");
     expect_compose_test(fixture.history.undo.size() == 1);
-    expect_compose_test(fixture.history.document.charts.front().measures.front().notes.size() == count + 1);
+    expect_compose_test((*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().notes.size() == count + 1);
     expect_compose_test(fixture.application.project.compose_gesture.draw_source_id != 999);
     expect_compose_test(state.viewport_scroll_pixels == scroll);
 }
@@ -4679,8 +4681,8 @@ TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolli
 namespace {
 auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -> wormedit::ui::workspace_action_t {
     auto& state = *fixture.interaction;
-    const local_position_t position{fixture.history.document.charts.front().measures.front().id, 240};
-    const auto& chart = fixture.history.document.charts.front();
+    const local_position_t position{(*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().id, 240};
+    const auto& chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart));
     const auto view = inspect_editor_interaction(fixture.history, state);
     const auto y = editor_position_y_pixels(chart,
         std::get<editor_interaction_view_model_t>(view), position);
@@ -4703,7 +4705,7 @@ auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -
 TEST_CASE("Note paint begin input carries the armed sound into the document and advances once",
           "[sys][compose][paint][sound]") {
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.project();
     const auto sound = fixture.history.document.resources.front().id;
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
@@ -4712,7 +4714,7 @@ TEST_CASE("Note paint begin input carries the armed sound into the document and 
     editor_navigation_input_controller_t navigation;
     const auto count_notes_with_sound = [&] {
         std::size_t count{};
-        for (const auto& measure : fixture.history.document.charts.front().measures)
+        for (const auto& measure : (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures)
             for (const auto& note : measure.notes)
                 if (note.sound == sound) ++count;
         return count;
@@ -4736,13 +4738,14 @@ TEST_CASE("Note paint begin input carries the armed sound into the document and 
 namespace {
 void check_armed_layer_placement(int mode, bool no_layer) {
     auto song = cursor_placement_song();
-    auto& chart = song.charts.front();
-    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Chosen"},
-                             {.id = layer_id_t{8}, .name = "Sound default"}};
-    chart.sound_layer_defaults = {{.resource = song.resources.front().id, .layers = {layer_id_t{8}}}};
-    compose_test_fixture_t fixture{std::move(song)};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
-    fixture.application.project.semantic_layer.semantic_layer_target = no_layer ? std::nullopt : std::optional{layer_id_t{7}};
+    auto chart = *song.read_charts().front();
+    chart.semantic_layers = {{.id = layer_id_t{75000}, .name = "Chosen"},
+                             {.id = layer_id_t{85000}, .name = "Sound default"}};
+    chart.sound_layer_defaults = {{.resource = song.resources.front().id, .layers = {layer_id_t{85000}}}};
+    compose_test_fixture_t fixture{test::native_bms_fixture(std::move(song), std::move(chart))};
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
+    const auto chosen = fixture.history.read_chart(*fixture.binding.value->selected_chart)->semantic_layers.front().id;
+    fixture.application.project.semantic_layer.semantic_layer_target = no_layer ? std::nullopt : std::optional{chosen};
     fixture.application.project.semantic_layer.semantic_layer_target_none = no_layer;
     fixture.application.project.compose_gesture.note_paint_mode_active = mode == 0 || mode == 1;
     fixture.project();
@@ -4750,8 +4753,8 @@ void check_armed_layer_placement(int mode, bool no_layer) {
     auto action = paint_stroke_inputs(fixture, sound.value);
     if (mode == 1) {
         place_cursor_at(*fixture.interaction,
-            {fixture.history.document.charts.front().measures.front().id, 240});
-        const auto lane = fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().id;
+            {(*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().id, 240});
+        const auto lane = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).lane_layouts.front().layout.lanes.front().id;
         action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{1}));
         action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {lane.value}};
         action.compose_inputs.resize(std::max(action.compose_inputs.size(), std::size_t{2}));
@@ -4766,14 +4769,14 @@ void check_armed_layer_placement(int mode, bool no_layer) {
     editor_navigation_input_controller_t navigation;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    const auto& notes = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().notes;
     const auto note = std::ranges::find(notes, 240U, [](const auto& value) { return value.position.row; });
     expect_compose_test(note != notes.end());
     expect_compose_test(note->semantic_layers == (no_layer ? std::vector<layer_id_t>{}
-                                                          : std::vector{layer_id_t{7}}));
+                                                          : std::vector{chosen}));
     expect_compose_test(fixture.history.undo.size() == 1);
     expect_compose_test(undo_document_command(fixture.history));
-    const auto& restored = fixture.history.document.charts.front().measures.front().notes;
+    const auto& restored = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).measures.front().notes;
     expect_compose_test(std::ranges::none_of(restored, [](const auto& value) { return value.position.row == 240; }));
 }
 }
@@ -4789,7 +4792,7 @@ TEST_CASE("Compose layer target arms new pointer keyboard and resource notes wit
 TEST_CASE("Compose BMS layout picker includes DP5 without free zones",
           "[sys][compose][dp5-standard]") {
     compose_test_fixture_t fixture{cursor_placement_song()};
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     const auto names = std::span(view.lane_layout_profile_names);
@@ -4808,7 +4811,7 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
         {.file_extension = ".bms"});
     expect_compose_test(parsed.value.song.has_value());
     compose_test_fixture_t fixture(std::move(*parsed.value.song));
-    fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
+    fixture.binding.value->selected_chart = (*fixture.history.read_chart(*fixture.binding.value->selected_chart)).id;
     fixture.project();
     const auto before = fixture.interaction->cursor;
     auto status = finish_compose_action(
@@ -8034,10 +8037,6 @@ TEST_CASE("Remaining Compose leaf families refill retained text without warmed a
     compose_test_fixture_t fixture(std::move(song));
     fixture.application.project.timing_recipe.recipe_selected = 7001;
     fixture.project();
-    fixture.application.project.feedback.bms_branch_statement_feedback =
-        application_command_state_t::bms_branch_statement_feedback_t{
-            .chart = chart_id_t{1}, .revision = fixture.history.document.revision,
-            .message = std::string(100, 'f')};
     auto& app = fixture.application.project.semantic_layer;
     app.note_layer_menu_chart = chart_id_t{1};
     app.note_layer_menu_revision = fixture.history.document.revision;
@@ -8060,8 +8059,7 @@ TEST_CASE("Remaining Compose leaf families refill retained text without warmed a
             stored, fixture.history.document.revision, *fixture.interaction, fixture.application, view);
         compose_projection_detail::populate_compose_recipe_form(fixture.flattened, stored,
             fixture.application, view);
-        compose_projection_detail::build_branch_statement_feedback_view(view, fixture.application,
-            stored.id, fixture.history.document.revision);
+
         return bookmarks && sections && layers;
     };
     expect_compose_test(refill());
@@ -8076,18 +8074,4 @@ TEST_CASE("Remaining Compose leaf families refill retained text without warmed a
     expect_compose_test(view.semantic_layers.size() == 2 && view.note_menu_layers.size() == 2);
     expect_compose_test(view.quantize_presets.size() == 1 && view.recipe_form.visible);
     expect_compose_test(view.measure_rows.front().measure_id == stored.measures.front().id);
-    expect_compose_test(view.branch_diagnostic_count() == 1 && view.branch_diagnostic_at(0) == std::string(100, 'f'));
-}
-
-TEST_CASE("Owned BMS statement projection preserves every retained source byte",
-          "[sys][compose-remaining][bms-branch]") {
-    const bms_control_node_t node{.id = branch_id_t{42}, .kind = bms_control_kind_t::raw_statement,
-        .original_text = std::string{"raw\0tail", 8}, .source_order = 7};
-    std::vector<wormedit::ui::compose_branch_row_view_t> rows{
-        {.has_source_order = true, .source_order = 7, .node_id = branch_id_t{42}, .raw_statement = true}};
-    std::size_t index{};
-    compose_projection_detail::bind_branch_statement_metadata(node, rows, index);
-    expect_compose_test(index == 1);
-    expect_compose_test(rows.front().statement_id == node.id);
-    expect_compose_test(rows.front().statement_text == node.original_text);
 }

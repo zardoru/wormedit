@@ -34,19 +34,21 @@ using native_project_parse_outcome_t = attempt_t<song_document_t, std::vector<na
 
 // The codec is independent of project packaging and filesystem publication. It
 // emits one deterministic, versioned UTF-8 JSON payload containing the complete
-// editable song document, including retained source provenance and BMS trees.
+// editable song document, including scoped BMS programs and read-only source provenance.
 [[nodiscard]] auto write_native_project(const song_document_t& song,
                                         native_project_limits_t limits = {})
     -> native_project_write_outcome_t;
 
 // Parsing is all-or-error: bounded JSON is decoded into a temporary document,
 // enum domains and the complete document graph are validated, and only then is
-// the document published in the result.
+// legacy BMS ownership migrates atomically before the document enters the result.
 [[nodiscard]] auto parse_native_project(std::string_view bytes, native_project_limits_t limits = {})
     -> native_project_parse_outcome_t;
 
-// Prepared, one-way migration only until T-744. Returns a detached proposal;
+// One-way legacy BMS migration returns a detached proposal;
 // unsupported or unprovable legacy state leaves the complete original untouched.
+[[nodiscard]] auto prepare_native_bms_migration(const song_document_t& document,
+    chart_id_t chart, native_project_limits_t limits = {}) -> native_project_parse_outcome_t;
 [[nodiscard]] auto prepare_native_bms_migration(document_history_t& history,
     chart_id_t chart, native_project_limits_t limits = {}) -> native_project_parse_outcome_t;
 

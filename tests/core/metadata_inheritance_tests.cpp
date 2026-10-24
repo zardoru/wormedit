@@ -1,3 +1,4 @@
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/formats/native_project.h>
@@ -22,11 +23,9 @@ auto inherited_song() -> song_document_t {
 }
 void register_override_audio(song_document_t& song, std::string_view path) {
     if (std::ranges::any_of(song.audio_assets, [&](const auto& asset) { return asset.source_path == std::filesystem::path{path}; })) return;
-    std::uint64_t next = 1;
-    for (const auto& asset : song.audio_assets) next = std::max(next, asset.id.value + 1);
-    for (const auto& asset : song.visual_assets) next = std::max(next, asset.id.value + 1);
-    for (const auto& asset : song.midi_assets) next = std::max(next, asset.id.value + 1);
-    song.audio_assets.push_back({.id = asset_id_t{next}, .source_path = std::filesystem::path{path}});
+    const auto next = next_resource_asset_id(song);
+    REQUIRE(next);
+    song.audio_assets.push_back({.id = *next, .source_path = std::filesystem::path{path}});
 }
 void check_override(const song_document_t& song, inherited_metadata_field_t field, std::string_view value) {
     CHECK(resolved_metadata_t::from(song, song.charts.front()).value(field) == value);
@@ -161,21 +160,25 @@ TEST_CASE("BMS exports explicit overrides even when untouched source preservatio
     const auto imported = parse_bms_bytes(fixture_bytes("bms/export-beatoraja-encoding.bms"), {.lane_profile_id = "bme-7k-outside-scratch"});
     require_import(imported);
     auto song = *imported.value.song;
-    const auto before = write_bms(song);
+    register_override_audio(song, "preview.ogg");
+    auto history = document_history_t::from(std::move(song));
+    const auto id = history.document.read_charts().front()->id;
+    const auto before = write_bms(history.document);
     REQUIRE(before.ok());
-    auto& overrides = song.charts.front().metadata.overrides;
+    metadata_overrides_t overrides;
     overrides.value(inherited_metadata_field_t::title) = "Local title";
     overrides.value(inherited_metadata_field_t::subtitle) = "Local subtitle";
     overrides.value(inherited_metadata_field_t::genre) = "Local genre";
-    register_override_audio(song, "preview.ogg");
     overrides.value(inherited_metadata_field_t::preview) = "preview.ogg";
-    const auto output = write_bms(song);
+    REQUIRE(apply_metadata_edit(history, set_chart_metadata_overrides_action_t{id, overrides}).applied);
+    const auto output = write_bms(history.document);
     require_export(output);
     check_export_fields(*output.value, {"#TITLE Local title", "#SUBTITLE Local subtitle", "#GENRE Local genre", "#PREVIEW preview.ogg"});
+    REQUIRE(apply_metadata_edit(history, set_chart_metadata_overrides_action_t{id, {}}).applied);
+    CHECK(write_bms(history.document).value == before.value);
     overrides = {};
-    CHECK(write_bms(song).value == before.value);
     overrides.value(inherited_metadata_field_t::music) = "music.ogg";
-    CHECK_FALSE(write_bms(song).ok());
+    CHECK_FALSE(apply_metadata_edit(history, set_chart_metadata_overrides_action_t{id, overrides}).applied);
 }
 TEST_CASE("BMSON resolves overrides after retained info and resource metadata", "[core][metadata-inheritance][round-trip]") {
     const auto imported = parse_bmson_bytes(fixture_bytes("bmson/slicing-and-mixed-sounds.bmson"));
@@ -229,7 +232,7 @@ TEST_CASE("Recovery anchoring and export staging preserve override audio referen
     check_export_fields(converted_text(converted), {"AudioFilename: assets/local.mp3"});
     check_anchored_music(song, asset);
 }
-TEST_CASE("Conditional BMS extra metadata overrides require explicit flattening", "[core][metadata-inheritance][round-trip]") {
+TEST_CASE("Scoped native metadata overrides follow retained conditional declarations", "[core][metadata-inheritance][round-trip]") {
     const std::string source = "#PLAYER 1\n#TITLE Base\n#ARTIST Artist\n#BPM 120\n#WAV01 tone.wav\n#00011:01\n"
         "#RANDOM 1\n#IF 1\n#GENRE Branch\n#ENDIF\n#ENDRANDOM\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
@@ -237,16 +240,16 @@ TEST_CASE("Conditional BMS extra metadata overrides require explicit flattening"
          .branch_choices = {{.control_source_order = 6, .selected_value = 1}}});
     REQUIRE(parsed.ok());
     REQUIRE(parsed.value.song);
-    auto song = *parsed.value.song;
-    song.charts.front().metadata.overrides.value(inherited_metadata_field_t::genre) = "Local";
-    const auto rejected = write_bms(song);
-    CHECK_FALSE(rejected.ok());
-    REQUIRE_FALSE(rejected.diagnostics.empty());
-    INFO(rejected.diagnostics.front().message);
-    CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.message.find("conditional GENRE") != std::string::npos;
-    }));
-    const auto flattened = write_bms(song, {.branch_policy = bms_branch_policy_t::flatten_active});
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto id = history.document.read_charts().front()->id;
+    metadata_overrides_t overrides;
+    overrides.value(inherited_metadata_field_t::genre) = "Local";
+    REQUIRE(apply_metadata_edit(history, set_chart_metadata_overrides_action_t{id, overrides}).applied);
+    const auto preserved = write_bms(history.document);
+    require_export(preserved);
+    CHECK(preserved.value->find("#RANDOM 1") != std::string::npos);
+    CHECK(preserved.value->rfind("#GENRE Local") > preserved.value->find("#GENRE Branch"));
+    const auto flattened = write_bms(history.document, {.branch_policy = bms_branch_policy_t::flatten_active});
     require_export(flattened);
     CHECK(flattened.value->find("#GENRE Local") != std::string::npos);
 }

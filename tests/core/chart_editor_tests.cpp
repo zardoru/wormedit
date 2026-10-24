@@ -1,4 +1,5 @@
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/preferences.h>
 #include <wormedit/formats/bms.h>
@@ -134,30 +135,22 @@ TEST_CASE("Chart duplicate remaps retained BMS branches and timing projections",
         {.lane_profile_id = "bme-7k-outside-scratch",
          .branch_choices = {{.control_source_order = 1, .selected_value = 1}}});
     require_chart(static_cast<bool>(parsed.value.song));
-    auto& parsed_chart = parsed.value.song->charts.front();
-    require_chart(!parsed_chart.measures.front().notes.empty() && !parsed_chart.active_branch_selection.empty());
-    // Import retains branch ownership in source provenance; also exercise an
-    // explicitly authored semantic branch reference in the document model.
-    parsed_chart.measures.front().notes.front().branch = parsed_chart.active_branch_selection.front().branch;
     auto history = document_history_t::from(*parsed.value.song);
-    const auto result = apply_duplicate_chart_command(history, history.document.charts[0].id);
+    const auto source = history.document.read_charts().front()->id;
+    const auto result = apply_duplicate_chart_command(history, source);
     require_chart(static_cast<bool>(result));
-    expect_chart(static_cast<bool>(validate_document(history.document).empty()));
-    const auto& original = history.document.charts.front();
-    const auto& copy = history.document.charts.back();
-    require_chart(static_cast<bool>(original.bms_control_tree));
-    require_chart(static_cast<bool>(copy.bms_control_tree));
-    expect_chart(static_cast<bool>(copy.bms_control_tree->id != original.bms_control_tree->id));
-    expect_chart(static_cast<bool>(copy.bms_control_tree->children.front().id != original.bms_control_tree->children.front().id));
-    expect_chart(static_cast<bool>(copy.bms_control_tree->children.front().original_text == original.bms_control_tree->children.front().original_text));
-    require_chart(!copy.bms_bpm_projections.empty());
-    expect_chart(copy.bms_bpm_projections.back().event != original.bms_bpm_projections.back().event);
-    expect_chart(copy.bms_bpm_projections.back().imported_position.measure == copy.measures.front().id);
-    require_chart(!copy.active_branch_selection.empty());
-    expect_chart(copy.active_branch_selection.front().branch != original.active_branch_selection.front().branch);
-    require_chart(!copy.measures.front().notes.empty());
-    expect_chart(copy.measures.front().notes.front().branch != original.measures.front().notes.front().branch);
-    expect_chart(copy.measures.front().notes.front().branch == copy.active_branch_selection.front().branch);
+    require_chart(result.payload.chart.has_value());
+    const auto& original = *history.document.find_bms_program(source);
+    const auto& copy = *history.document.find_bms_program(*result.payload.chart);
+    expect_chart(history.document.charts.empty());
+    expect_chart(validate_document(history.document).empty());
+    expect_chart(copy.prepared().program.root() != original.prepared().program.root());
+    expect_chart(copy.prepared().program.nodes().size() == original.prepared().program.nodes().size());
+    require_chart(!copy.evaluation().selections.empty());
+    expect_chart(copy.evaluation().selections.front().branch != original.evaluation().selections.front().branch);
+    require_chart(!copy.read_chart()->measures.front().notes.empty());
+    expect_chart(copy.read_chart()->measures.front().notes.front().id != original.read_chart()->measures.front().notes.front().id);
+    expect_chart(history.document.resources.size() == parsed.value.song->resources.size());
 }
 
 TEST_CASE("Chart management operations undo and redo atomically", "[unit][core][chart-editor]") {
@@ -284,10 +277,10 @@ TEST_CASE("New chart accepts explicit profiles beyond the bounded project table"
     const auto added =
         apply_new_chart_command(history, make_bms_14k_profile(), format_family_t::bms);
     require_chart(static_cast<bool>(added));
-    expect_chart(history.document.charts.size() == 258);
-    expect_chart(added.payload.chart == history.document.charts.back().id);
-    expect_chart(history.document.charts.back().source_family == format_family_t::bms);
-    expect_chart(history.document.charts.back().lane_layouts[0].layout.split_stage);
+    expect_chart(history.document.read_charts().size() == 258);
+    expect_chart(added.payload.chart == history.document.read_charts().back()->id);
+    expect_chart(history.document.read_charts().back()->source_family == format_family_t::bms);
+    expect_chart(history.document.read_charts().back()->lane_layouts[0].layout.split_stage);
     expect_chart(validate_document(history.document).empty());
 }
 

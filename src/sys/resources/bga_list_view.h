@@ -30,7 +30,8 @@ struct bga_list_view_t {
     bms_identifier_capacity_t bms_capacity{};
 
     [[nodiscard]] static auto from(const song_document_t& document,
-                                   const bga_list_request_t& request) -> bga_list_view_t;
+                                   const bga_list_request_t& request,
+                                   const chart_document_t* chart = nullptr) -> bga_list_view_t;
 };
 
 }

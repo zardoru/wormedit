@@ -1,6 +1,8 @@
 #include <wormedit/core/bms36.h>
 #include <wormedit/core/bms_program_edit.h>
 #include "chart_object_ids.h"
+#include "bms_native_content_internal.h"
+#include "resource_assignment_internal.h"
 #include "text_util.h"
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/natural_order.h>
@@ -189,23 +191,23 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
     return transaction.commit("Draw BGA events");
 }
 
-auto bms_occupied(const song_document_t& document, std::string_view name_space,
-                  std::size_t base, std::span<const resource_id_t> ignored = {})
-    -> std::vector<bool> {
-    auto occupied = std::vector<bool>(base * base, false);
-    for (const auto& resource : document.resources) {
-        if (std::ranges::find(ignored, resource.id) != ignored.end()) continue;
-        for (const auto& identity : resource.target_identities) {
-            if (identity.family != format_family_t::bms || identity.namespace_name != name_space ||
-                identity.identifier.size() != 2) continue;
-            const auto high = bms36_value(static_cast<unsigned char>(identity.identifier[0]));
-            const auto low = bms36_value(static_cast<unsigned char>(identity.identifier[1]));
-            if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) < base &&
-                static_cast<std::size_t>(low) < base)
-                occupied[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
+void occupy_bms_identifier(std::vector<bool>& occupied, std::string_view identifier, std::size_t base) {
+    if (identifier.size() != 2) return;
+    const auto high = bms36_value(static_cast<unsigned char>(identifier[0]));
+    const auto low = bms36_value(static_cast<unsigned char>(identifier[1]));
+    if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) < base && static_cast<std::size_t>(low) < base)
+        occupied[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
+}
+void occupy_scoped_bms_identifiers(std::vector<bool>& occupied, const bms_program_t& program,
+    bms_resource_namespace_t name_space, std::size_t base) {
+    for (const auto& node : program.nodes()) {
+        const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+        if (!chart) continue;
+        for (const auto& item : chart->items) {
+            const auto binding = item.resource_identifier();
+            if (binding && binding->name_space == name_space) occupy_bms_identifier(occupied, binding->identifier, base);
         }
     }
-    return occupied;
 }
 
 auto encode_bms_identifier(std::size_t value, std::size_t base) -> std::string {
@@ -381,20 +383,94 @@ auto bms_identifier_capacity(const song_document_t& document, std::string_view n
 }
 
 namespace {
-auto prepared_catalog_rejection(const document_history_t& history)
-    -> std::optional<document_command_result_t> {
-    if (history.document.prepared_bms_programs.empty()) return std::nullopt;
-    return document_command_transaction_t::rejection(history.document.revision,
-        diagnostic_code_t::unsupported_feature,
-        "Prepared scoped catalogs require an explicit shared-pool edit; public catalog migration follows separately.");
+auto renumbered_content(const bms_content_item_t& item, const std::string& identifier)
+    -> bms_content_value_t {
+    return std::visit([&](auto value) -> bms_content_value_t {
+        using value_t = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<value_t, bms_resource_declaration_t>) value.identifier = identifier;
+        else if constexpr (std::same_as<value_t, bms_bga_content_t>) value.bmp = identifier;
+        else if constexpr (requires { value.wav; }) value.wav = identifier;
+        else if constexpr (std::same_as<value_t, bms_native_content_t>) {
+            auto reference = *value.resource_reference();
+            reference.identifier = identifier;
+            return *bms_native_content_t::from(value.payload(),
+                {value.positions().begin(), value.positions().end()}, std::move(reference));
+        }
+        return value;
+    }, item.value);
+}
+
+auto scoped_renumber_map(const bms_program_document_t& owner, const bms_program_edit_target_t& target,
+    std::span<const resource_entry_t* const> resources, std::size_t first, bms_resource_namespace_t ns)
+    -> result_t<std::map<std::string, std::string>, error_t<failure_code_t>> {
+    std::map<std::string, std::string> result;
+    const auto& chart = std::get<bms_chart_content_t>(owner.prepared().program.find(target.chart)->value);
+    std::set<resource_id_t> declared;
+    for (const auto& item : chart.items) {
+        const auto* declaration = std::get_if<bms_resource_declaration_t>(&item.value);
+        if (!declaration || declaration->name_space != ns) continue;
+        const auto found = std::ranges::find(resources, declaration->resource, &resource_entry_t::id);
+        if (found == resources.end()) continue;
+        if (!declared.insert(declaration->resource).second)
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_data,
+                "Renumbering requires one local declaration per selected resource."});
+        result[declaration->identifier] = encode_bms_identifier(first + static_cast<std::size_t>(found - resources.begin()), 36);
+    }
+    if (declared.size() != resources.size()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_data,
+        "Select the Chart owning every selected resource declaration before renumbering."});
+    return result;
+}
+
+void reclaim_scoped_renumber_slots(std::vector<bool>& occupied, document_command_transaction_t& transaction,
+    std::optional<bms_program_target_key_t> selection, std::span<const resource_entry_t* const> resources,
+    bms_resource_namespace_t ns) {
+    const auto& document = transaction.current_document();
+    if (document.prepared_bms_programs.empty()) return;
+    const auto id = selection ? selection->difficulty : document.prepared_bms_programs.front()->difficulty();
+    const auto target = transaction.bms_target(id);
+    if (!target) return;
+    const auto names = scoped_renumber_map(*document.find_bms_program(id), *target, resources, 1, ns);
+    if (!names) return;
+    for (const auto& [name, replacement] : *names) {
+        const auto high = name.size() == 2 ? bms36_value(static_cast<unsigned char>(name[0])) : -1;
+        const auto low = name.size() == 2 ? bms36_value(static_cast<unsigned char>(name[1])) : -1;
+        if (high >= 0 && low >= 0) occupied[static_cast<std::size_t>(high) * 36 + static_cast<std::size_t>(low)] = false;
+    }
+}
+
+auto stage_scoped_renumber(document_command_transaction_t& transaction,
+    std::optional<bms_program_target_key_t> selection, std::span<const resource_entry_t* const> resources,
+    std::size_t first, bms_resource_namespace_t ns) -> attempt_t<document_edit_effect_t> {
+    const auto& document = transaction.current_document();
+    const auto difficulty = selection ? selection->difficulty : document.prepared_bms_programs.front()->difficulty();
+    const auto target = transaction.bms_target(difficulty);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    const auto& owner = *document.find_bms_program(difficulty);
+    const auto names = scoped_renumber_map(owner, *target, resources, first, ns);
+    if (!names) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature, names.error().message)}};
+    bms_program_content_edit_batch_t batch{.target = *target, .label = "Renumber BMS identifiers"};
+    for (const auto& program : document.prepared_bms_programs)
+        for (const auto& node : program->prepared().program.nodes()) {
+            const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+            if (!chart) continue;
+            for (const auto& item : chart->items) {
+                const auto binding = item.resource_identifier();
+                if (!binding || binding->name_space != ns || !names->contains(binding->identifier)) continue;
+                if (program->difficulty() != difficulty || node.id != target->chart)
+                    return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                        "Renumbering would affect another semantic Chart; select resources used only by the target Chart.")}};
+                batch.edits.push_back(bms_program_content_update_t{.owner = {
+                    .scope = target->scope, .chart = target->chart, .item = item.id},
+                    .value = renumbered_content(item, names->at(binding->identifier))});
+            }
+        }
+    return transaction.stage(batch);
 }
 } // namespace
 
 auto apply_bms_identifier_renumber(document_history_t& history,
                                    const renumber_bms_identifiers_action_t& action)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto& ns = action.name_space;
     if (ns != "WAV" && ns != "BMP") {
@@ -408,13 +484,20 @@ auto apply_bms_identifier_renumber(document_history_t& history,
     std::vector<resource_id_t> selected;
     selected.reserve(resources->size());
     for (const auto* resource : *resources) selected.push_back(resource->id);
-    const auto occupied = bms_occupied(history.document, ns, base, selected);
+    auto transaction = document_command_transaction_t(history);
+    auto occupied = bms_occupied(history.document, ns, base, selected);
+    reclaim_scoped_renumber_slots(occupied, transaction, history.bms_edit_target, *resources,
+        ns == "WAV" ? bms_resource_namespace_t::wav : bms_resource_namespace_t::bmp);
     const auto start = first_free_bms_start(occupied, resources->size());
     if (!start) {
         reject(result, diagnostic_code_t::invalid_resolution, "BMS identifier namespace has no contiguous run for renumbering");
         return result;
     }
-    auto transaction = document_command_transaction_t(history);
+    if (!history.document.prepared_bms_programs.empty()) {
+        const auto staged = stage_scoped_renumber(transaction, history.bms_edit_target, *resources, *start,
+            ns == "WAV" ? bms_resource_namespace_t::wav : bms_resource_namespace_t::bmp);
+        if (!staged.value || !staged.ok()) return transaction.finish_execution(staged);
+    }
     auto& proposed = transaction.document();
     for (std::size_t index = 0; index < resources->size(); ++index) {
         auto item = std::ranges::find(proposed.resources, (*resources)[index]->id, &resource_entry_t::id);
@@ -425,6 +508,24 @@ auto apply_bms_identifier_renumber(document_history_t& history,
             encode_bms_identifier(*start + index, base), ns});
     }
     return transaction.commit("Renumber BMS identifiers");
+}
+
+auto bms_occupied(const song_document_t& document, std::string_view name_space,
+                  std::size_t base, std::span<const resource_id_t> ignored)
+    -> std::vector<bool> {
+    auto occupied = std::vector<bool>(base * base, false);
+    for (const auto& resource : document.resources) {
+        if (std::ranges::find(ignored, resource.id) != ignored.end()) continue;
+        for (const auto& identity : resource.target_identities) {
+            if (identity.family != format_family_t::bms || identity.namespace_name != name_space ||
+                identity.identifier.size() != 2) continue;
+            occupy_bms_identifier(occupied, identity.identifier, base);
+        }
+    }
+    const auto expected = name_space == "WAV" ? bms_resource_namespace_t::wav : bms_resource_namespace_t::bmp;
+    for (const auto& owner : document.prepared_bms_programs)
+        occupy_scoped_bms_identifiers(occupied, owner->prepared().program, expected, base);
+    return occupied;
 }
 
 auto resolve_resource_placement_position(const chart_document_t& chart,
@@ -725,28 +826,25 @@ auto stage_scoped_resource_placement(document_command_transaction_t& transaction
 }
 } // namespace
 
-auto apply_resource_placement(document_history_t& history,
-                              const place_resource_action_t& action) -> document_command_result_t {
-    auto scoped = document_command_transaction_t(history);
-    if (scoped.has_bms_program(action.chart))
-        return scoped.finish_execution(stage_scoped_resource_placement(scoped, action));
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (!validate_placement_resource(history.document, action, result)) return result;
+namespace {
+auto stage_resource_placement(document_command_transaction_t& transaction, const place_resource_action_t& action)
+    -> attempt_t<document_edit_effect_t> {
+    if (transaction.has_bms_program(action.chart)) return stage_scoped_resource_placement(transaction, action);
+    document_command_result_t result{.revision = transaction.current_document().revision, .diagnostics = {}};
+    if (!validate_placement_resource(transaction.current_document(), action, result)) return {.diagnostics = std::move(result.diagnostics)};
     auto resolved_action = action;
     if (action.kind == resource_placement_kind_t::bga_background) {
-        resolved_action.bga_kind = resolve_bga_resource_kind(history.document, action.resource,
+        resolved_action.bga_kind = resolve_bga_resource_kind(transaction.current_document(), action.resource,
             action.bga_kind.value_or(visual_event_kind_t::background), result);
-        if (!resolved_action.bga_kind) return result;
+        if (!resolved_action.bga_kind) return {.diagnostics = std::move(result.diagnostics)};
     }
-    auto target = resolve_placement_target(history.document, action, result);
-    if (!target) return result;
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    auto& chart = proposed.charts[target->chart_offset];
+    auto target = resolve_placement_target(transaction.current_document(), action, result);
+    if (!target) return {.diagnostics = std::move(result.diagnostics)};
+    return transaction.stage(action.chart, "Resource placement chart is missing", [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
     auto measure = chart.find_measure(target->position.measure);
     if (measure == nullptr) {
         reject(result, diagnostic_code_t::invalid_measure, "resource placement measure is missing");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     resource_placement_context_t placement{result, chart, *measure, target->index, resolved_action,
                                             target->position, target->row, target->first_id};
@@ -756,8 +854,14 @@ auto apply_resource_placement(document_history_t& history,
     case resource_placement_kind_t::bgm_event: placed = place_bgm_event(placement); break;
     case resource_placement_kind_t::bga_background: placed = place_bga_background(placement); break;
     }
-    if (!placed) return result;
-    return transaction.commit("Place resource");
+    if (!placed) return {.diagnostics = std::move(result.diagnostics)};
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Place resource"}};
+    });
+}
+}
+auto apply_resource_placement(document_history_t& history, const place_resource_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_resource_placement(transaction, action));
 }
 
 namespace {
@@ -1121,350 +1225,180 @@ auto create_bgm_source_lane(chart_document_t& chart, document_command_result_t& 
     return id;
 }
 
-auto apply_bgm_event_move(document_history_t& history,
-                          const move_bgm_event_action_t& action) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto source_chart = history.document.find_chart(action.chart);
-    if (!action.chart || source_chart == nullptr || !action.event) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM move chart or event is missing");
-        return result;
-    }
-    const auto built = measure_index_t::from(*source_chart);
-    if (!built) {
-        reject(result, diagnostic_code_t::invalid_measure, "BGM move chart index is invalid");
-        return result;
-    }
-    const auto target = snap_position_or_exact(*source_chart,
-                                                *built,
-                                                action.position, action.snap);
-    if (!target) {
-        reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
-        return result;
-    }
-    const auto* original = (*source_chart).find_bgm_event(action.event);
-    if (!original) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM move event no longer exists");
-        return result;
-    }
-    std::optional<local_position_t> moved_end;
-    if (original->end) {
-        if (!(moved_end = translate_bgm_end(*built,
-                                            original->position, *target, *original->end))) {
-            reject(result, diagnostic_code_t::row_out_of_range,
-                   "BGM move would place its end outside the chart");
-            return result;
-        }
-    }
-    if (is_branch_bgm_event(*source_chart, *original)) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "BGM move requires an ordinary root event");
-        return result;
-    }
-    const auto preferred = action.source_lane ? action.source_lane : original->source_lane;
-    const auto preferred_lane = std::ranges::find(source_chart->bgm_source_lanes, preferred,
-                                                 &bgm_source_lane_t::id);
-    if (preferred_lane == source_chart->bgm_source_lanes.end()) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM move source lane is missing");
-        return result;
-    }
-    const auto occupied = occupied_bgm_lanes_at(*source_chart, *target, action.event);
+namespace {
+auto bgm_destination_lane(const chart_document_t& chart, object_id_t preferred,
+    local_position_t position, object_id_t event) -> attempt_t<object_id_t> {
+    const auto start_lane = std::ranges::find(chart.bgm_source_lanes, preferred, &bgm_source_lane_t::id);
+    if (start_lane == chart.bgm_source_lanes.end()) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGM move source lane is missing")}};
+    const auto occupied = occupied_bgm_lanes_at(chart, position, event);
     std::vector<const bgm_source_lane_t*> lanes;
-    lanes.reserve(source_chart->bgm_source_lanes.size());
-    for (const auto& lane : source_chart->bgm_source_lanes)
-        lanes.push_back(&lane);
+    for (const auto& lane : chart.bgm_source_lanes) lanes.push_back(&lane);
     std::ranges::sort(lanes, [](const auto* left, const auto* right) {
-        return std::tie(left->source_order, left->id.value) <
-               std::tie(right->source_order, right->id.value);
+        return std::tie(left->source_order, left->id.value) < std::tie(right->source_order, right->id.value);
     });
-    const auto start = std::ranges::find(lanes, &*preferred_lane);
-    object_id_t destination_lane{};
-    for (auto it = start; it != lanes.end(); ++it) {
-        if (!occupied.contains((*it)->id.value)) {
-            destination_lane = (*it)->id;
-            break;
+    const auto start = std::ranges::find(lanes, &*start_lane);
+    for (auto current = start; current != lanes.end(); ++current)
+        if (!occupied.contains((*current)->id.value)) return {.value = (*current)->id};
+    return {.value = object_id_t{}};
+}
+auto plan_bgm_event_move(const chart_document_t& chart, const move_bgm_event_action_t& action)
+    -> attempt_t<bgm_event_t> {
+    const auto index = measure_index_t::from(chart);
+    if (!index) return {.diagnostics = index.error()};
+    const auto position = snap_position_or_exact(chart, *index, action.position, action.snap);
+    if (!position) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart")}};
+    const auto* original = chart.find_bgm_event(action.event);
+    if (!original) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGM move event no longer exists")}};
+    if (is_branch_bgm_event(chart, *original)) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature, "BGM move requires an ordinary root event")}};
+    auto value = *original;
+    if (value.end) {
+        value.end = translate_bgm_end(*index, original->position, *position, *value.end);
+        if (!value.end) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "BGM move would place its end outside the chart")}};
+    }
+    const auto lane = bgm_destination_lane(chart, action.source_lane ? action.source_lane : original->source_lane, *position, action.event);
+    if (!lane.value) return {.diagnostics = lane.diagnostics};
+    if (*position == original->position && *lane.value == original->source_lane) return {.value = *original};
+    value.position = *position; value.source_lane = *lane.value; value.structural_slot = 0; value.provenance = {};
+    return {.value = std::move(value)};
+}
+auto apply_bgm_move(chart_document_t& chart, bgm_event_t value) -> attempt_t<document_edit_effect_t> {
+    const auto* previous = chart.find_bgm_event(value.id);
+    if (!previous) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGM move event no longer exists")}};
+    if (*previous == value) return {.value = document_edit_effect_t{}};
+    for (auto& measure : chart.measures) std::erase_if(measure.bgm_events, [&](const auto& event) { return event.id == value.id; });
+    chart.find_measure(value.position.measure)->bgm_events.push_back(std::move(value));
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Move BGM event"}};
+}
+auto stage_bgm_event_move(document_command_transaction_t& transaction, const move_bgm_event_action_t& action)
+    -> attempt_t<document_edit_effect_t> {
+    const auto* source = transaction.read_chart(action.chart);
+    if (!source || !action.event) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGM move chart or event is missing")}};
+    auto plan = plan_bgm_event_move(*source, action);
+    if (!plan.value || !plan.ok()) return {.diagnostics = plan.diagnostics};
+    if (transaction.has_bms_program(action.chart)) {
+        if (!plan.value->source_lane) {
+            const auto column = transaction.stage_bms_bgm_column(action.chart);
+            if (!column.value || !column.ok()) return {.diagnostics = column.diagnostics};
+            plan.value->source_lane = *column.value;
         }
+        return transaction.stage_bms_native_edit(action.chart, action.event,
+            [&](chart_document_t& chart) -> attempt_t<bms_native_edit_effect_t> {
+                const auto changed = apply_bgm_move(chart, *plan.value);
+                if (!changed.value || !changed.ok()) return {.diagnostics = changed.diagnostics};
+                return {.value = bms_native_edit_effect_t{.effect = *changed.value, .event = *plan.value}};
+            });
     }
-    if (*target == original->position && destination_lane == original->source_lane)
-        return result;
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.data())];
-    if (!destination_lane) {
-        destination_lane = create_bgm_source_lane(chart, result);
-        if (!destination_lane) return result;
-    }
-    bgm_event_t moved;
-    for (auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.bgm_events, action.event, &bgm_event_t::id);
-        if (found == measure.bgm_events.end())
-            continue;
-        moved = std::move(*found);
-        measure.bgm_events.erase(found);
-        break;
-    }
-    moved.position = *target;
-    moved.end = moved_end;
-    moved.source_lane = destination_lane;
-    moved.structural_slot = 0;
-    moved.provenance = {};
-    const auto destination = chart.find_measure(target->measure);
-    destination->bgm_events.push_back(std::move(moved));
-    return transaction.commit("Move BGM event");
+    return transaction.stage(action.chart, "BGM move chart is missing", [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
+        if (!plan.value->source_lane) {
+            plan.value->source_lane = create_bgm_source_lane(chart, transaction.outcome());
+            if (!plan.value->source_lane) return {.diagnostics = transaction.outcome().diagnostics};
+        }
+        return apply_bgm_move(chart, std::move(*plan.value));
+    });
+}
+auto plan_bga_event_move(const song_document_t& catalog, const chart_document_t& chart,
+    const move_bga_event_action_t& action) -> attempt_t<bga_event_t> {
+    const auto found = std::ranges::find(chart.bga_events, action.event, &bga_event_t::id);
+    if (found == chart.bga_events.end()) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGA move event no longer exists")}};
+    if (!editor_bga_lane_index(found->kind)) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature, "This visual event has no editable BGA lane")}};
+    const auto index = measure_index_t::from(chart);
+    if (!index) return {.diagnostics = index.error()};
+    const auto position = snap_position_or_exact(chart, *index, action.position, action.snap);
+    if (!position) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart")}};
+    document_command_result_t validation;
+    const auto kind = resolve_bga_resource_kind(catalog, found->resource, action.bga_kind.value_or(found->kind), validation);
+    if (!kind) return {.diagnostics = std::move(validation.diagnostics)};
+    auto value = *found;
+    value.position = *position; value.kind = *kind;
+    return {.value = std::move(value)};
+}
+auto stage_bga_event_move(document_command_transaction_t& transaction, const move_bga_event_action_t& action)
+    -> attempt_t<document_edit_effect_t> {
+    const auto* source = transaction.read_chart(action.chart);
+    if (!source || !action.event) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGA move chart or event is missing")}};
+    const auto* owner = transaction.current_document().find_bms_program(action.chart);
+    const auto projection = owner ? owner->build_projection(source->bms_authoring_chart)
+        : attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
+    const auto& catalog = projection.value ? projection.value->song() : transaction.current_document();
+    auto plan = plan_bga_event_move(catalog, *source, action);
+    if (!plan.value || !plan.ok()) return {.diagnostics = plan.diagnostics};
+    auto apply = [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+        const auto found = std::ranges::find(chart.bga_events, action.event, &bga_event_t::id);
+        if (found == chart.bga_events.end()) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "BGA move event no longer exists")}};
+        if (*found == *plan.value) return {.value = document_edit_effect_t{}};
+        *found = *plan.value;
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Move BGA event"}};
+    };
+    if (owner) return transaction.stage_bms_native_edit(action.chart, action.event,
+        [&](chart_document_t& chart) -> attempt_t<bms_native_edit_effect_t> {
+            const auto changed = apply(chart);
+            if (!changed.value || !changed.ok()) return {.diagnostics = changed.diagnostics};
+            return {.value = bms_native_edit_effect_t{.effect = *changed.value, .event = *plan.value}};
+        });
+    return transaction.stage(action.chart, "BGA move chart is missing", [&](chart_document_t& chart, song_document_t&) { return apply(chart); });
+}
+} // namespace
+
+auto apply_bgm_event_move(document_history_t& history, const move_bgm_event_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_bgm_event_move(transaction, action));
+}
+auto apply_bga_event_move(document_history_t& history, const move_bga_event_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_bga_event_move(transaction, action));
 }
 
-auto apply_bga_event_move(document_history_t& history,
-                          const move_bga_event_action_t& action) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto source_chart = history.document.find_chart(action.chart);
-    if (!action.chart || source_chart == nullptr || !action.event) {
-        reject(result, diagnostic_code_t::invalid_id, "BGA move chart or event is missing");
-        return result;
-    }
-    const auto found = std::ranges::find(source_chart->bga_events, action.event, &bga_event_t::id);
-    if (found == source_chart->bga_events.end()) {
-        reject(result, diagnostic_code_t::invalid_id, "BGA move event no longer exists");
-        return result;
-    }
-    if (!editor_bga_lane_index(found->kind)) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "This visual event has no editable BGA lane");
-        return result;
-    }
-    const auto built = measure_index_t::from(*source_chart);
-    if (!built) {
-        reject(result, diagnostic_code_t::invalid_measure, "BGA move chart index is invalid");
-        return result;
-    }
-    const auto target = snap_position_or_exact(*source_chart,
-                                                *built,
-                                                action.position, action.snap);
-    if (!target) {
-        reject(result, diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart");
-        return result;
-    }
-    const auto kind = resolve_bga_resource_kind(history.document, found->resource,
-        action.bga_kind.value_or(found->kind), result);
-    if (!kind) return result;
-    if (*target == found->position && *kind == found->kind) return result;
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
-    const auto moved = std::ranges::find(proposed.charts[chart_offset].bga_events,
-                                         action.event, &bga_event_t::id);
-    if (moved == proposed.charts[chart_offset].bga_events.end()) {
-        reject(result, diagnostic_code_t::invalid_id, "BGA move event no longer exists");
-        return result;
-    }
-    moved->position = *target;
-    moved->kind = *kind;
-    return transaction.commit("Move BGA event");
+namespace {
+template<class Edit> auto stage_virtual_bms_edit(document_command_transaction_t& transaction,
+    chart_id_t id, std::uint64_t row, snap_grid_t snap, Edit edit) -> attempt_t<document_edit_effect_t> {
+    const auto* source = transaction.read_chart(id);
+    if (!source || source->source_family != format_family_t::bms)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Virtual placement requires a BMS chart")}};
+    const auto built = build_virtual_canvas(*source);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&built)) return {.diagnostics = *failure};
+    const auto& canvas = std::get<virtual_canvas_t>(built);
+    const auto snapped = snap_canvas_row_or_exact(*source, canvas.authored_index, row, snap, canvas.total_rows);
+    const auto destination = snapped ? canvas.measure_containing(*snapped) : std::nullopt;
+    if (!destination || destination->authored || destination->number >= bms_addressable_measure_count)
+        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "Virtual placement requires an unmaterialized BMS measure")}};
+    attempt_t<document_edit_effect_t> extent;
+    if (transaction.has_bms_program(id)) extent = transaction.stage_bms_measure_extent(id, destination->number + 1);
+    else extent = transaction.stage(id, "Virtual placement chart is missing", [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
+        if (!extend_chart_to_row(chart, *snapped)) return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Virtual measure extent exceeds the configured limits")}};
+        return {.value = document_edit_effect_t{.changed = true}};
+    });
+    if (!extent.value || !extent.ok()) return extent;
+    const auto* chart = transaction.read_chart(id);
+    return edit(local_position_t{chart->measures[destination->number].id, *snapped - destination->begin_row});
 }
-
-auto apply_virtual_bms_resource_placement(
-    document_history_t& history,
+}
+auto apply_virtual_bms_resource_placement(document_history_t& history,
     const place_virtual_bms_resource_action_t& action) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
-    const auto source_chart = history.document.find_chart(action.chart);
-    if (source_chart == nullptr ||
-        source_chart->source_family != format_family_t::bms) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual resource placement requires a BMS chart");
-        return result;
-    }
-    const auto built = build_virtual_canvas(*source_chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
-        result.diagnostics = *diagnostics;
-        return result;
-    }
-    const auto& canvas = std::get<virtual_canvas_t>(built);
-    if (action.canvas_row >= canvas.total_rows ||
-        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual resource placement row or snap is invalid");
-        return result;
-    }
-    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
-                                                  action.canvas_row, action.snap, canvas.total_rows);
-    if (!rounded) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual snap row is invalid or overflows");
-        return result;
-    }
-    const auto snapped_row = *rounded;
-    const auto destination = canvas.measure_containing(snapped_row);
-    if (!destination || destination->authored ||
-        destination->number >= bms_addressable_measure_count) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual resource placement requires an unmaterialized BMS measure");
-        return result;
-    }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.data())];
-    const auto required = destination->number + 1 - chart.measures.size();
-    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
-    if (!first_measure_id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual resource measure ID sequence is exhausted");
-        return result;
-    }
-    chart.measures.reserve(destination->number + 1);
-    for (std::size_t added = 0; added < required; ++added) {
-        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
-                                  .definition = {{1, 1}, meter_t{4, 4}}});
-    }
-    const local_position_t position{chart.measures[destination->number].id,
-                                    snapped_row - destination->begin_row};
-    auto staged = document_history_t::from(std::move(proposed));
-    const auto placed = apply_resource_placement(
-        staged,
-        {.chart = action.chart,
-         .resource = action.resource,
-         .position = position,
-         .lane = action.lane,
-         .source_lane = action.source_lane,
-         .kind = action.kind,
-         .semantic_layers = action.semantic_layers,
-         .bga_kind = action.bga_kind});
-    if (!placed) {
-        result.diagnostics = placed.diagnostics;
-        return result;
-    }
-    transaction.adopt_document(std::move(staged.document));
-    return transaction.commit("Place resource in virtual BMS measure");
+    document_command_transaction_t transaction(history);
+    auto staged = stage_virtual_bms_edit(transaction, action.chart, action.canvas_row, action.snap,
+        [&](local_position_t position) { return stage_resource_placement(transaction,
+            {.chart = action.chart, .resource = action.resource, .position = position, .lane = action.lane,
+                .source_lane = action.source_lane, .kind = action.kind, .semantic_layers = action.semantic_layers, .bga_kind = action.bga_kind}); });
+    if (staged.value) staged.value->command_label = "Place resource in virtual BMS measure";
+    return transaction.finish_execution(std::move(staged));
 }
-
-auto apply_virtual_bms_bgm_event_move(
-    document_history_t& history,
+auto apply_virtual_bms_bgm_event_move(document_history_t& history,
     const move_virtual_bms_bgm_event_action_t& action) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto source_chart = history.document.find_chart(action.chart);
-    if (!action.chart || source_chart == nullptr ||
-        source_chart->source_family != format_family_t::bms) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual BGM move requires a BMS chart");
-        return result;
-    }
-    const auto built = build_virtual_canvas(*source_chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
-        result.diagnostics = *diagnostics;
-        return result;
-    }
-    const auto& canvas = std::get<virtual_canvas_t>(built);
-    if (action.canvas_row >= canvas.total_rows ||
-        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual BGM move row or snap is invalid");
-        return result;
-    }
-    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
-                                                  action.canvas_row, action.snap, canvas.total_rows);
-    if (!rounded) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual snap row is invalid or overflows");
-        return result;
-    }
-    const auto snapped_row = *rounded;
-    const auto destination = canvas.measure_containing(snapped_row);
-    if (!destination || destination->authored ||
-        destination->number >= bms_addressable_measure_count) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual BGM move requires an unmaterialized BMS measure");
-        return result;
-    }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.data())];
-    const auto required = destination->number + 1 - chart.measures.size();
-    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
-    if (!first_measure_id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "virtual BGM move measure ID sequence is exhausted");
-        return result;
-    }
-    chart.measures.reserve(destination->number + 1);
-    for (std::size_t added = 0; added < required; ++added) {
-        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
-                                  .definition = {{1, 1}, meter_t{4, 4}}});
-    }
-    const local_position_t position{chart.measures[destination->number].id,
-                                    snapped_row - destination->begin_row};
-    auto staged = document_history_t::from(std::move(proposed));
-    const auto moved = apply_bgm_event_move(
-        staged,
-        {.chart = action.chart, .event = action.event, .position = position,
-         .source_lane = action.source_lane});
-    if (!moved) {
-        result.diagnostics = moved.diagnostics;
-        return result;
-    }
-    transaction.adopt_document(std::move(staged.document));
-    return transaction.commit("Move BGM event into virtual BMS measure");
+    document_command_transaction_t transaction(history);
+    auto staged = stage_virtual_bms_edit(transaction, action.chart, action.canvas_row, action.snap,
+        [&](local_position_t position) { return stage_bgm_event_move(transaction,
+            {.chart = action.chart, .event = action.event, .position = position, .source_lane = action.source_lane}); });
+    if (staged.value) staged.value->command_label = "Move BGM event into virtual BMS measure";
+    return transaction.finish_execution(std::move(staged));
 }
-
-auto apply_virtual_bms_bga_event_move(
-    document_history_t& history,
+auto apply_virtual_bms_bga_event_move(document_history_t& history,
     const move_virtual_bms_bga_event_action_t& action) -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto source_chart = history.document.find_chart(action.chart);
-    if (!action.chart || source_chart == nullptr ||
-        source_chart->source_family != format_family_t::bms || !action.event) {
-        reject(result, diagnostic_code_t::invalid_id, "virtual BGA move requires a BMS chart and event");
-        return result;
-    }
-    const auto built = build_virtual_canvas(*source_chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
-        result.diagnostics = *diagnostics;
-        return result;
-    }
-    const auto& canvas = std::get<virtual_canvas_t>(built);
-    if (action.canvas_row >= canvas.total_rows ||
-        (action.snap.denominator && !snap_step(*source_chart, action.snap, 0))) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual BGA move row or snap is invalid");
-        return result;
-    }
-    const auto rounded = snap_canvas_row_or_exact(*source_chart, canvas.authored_index,
-                                                  action.canvas_row, action.snap, canvas.total_rows);
-    if (!rounded) {
-        reject(result, diagnostic_code_t::row_out_of_range, "virtual BGA snap row is invalid");
-        return result;
-    }
-    const auto snapped_row = *rounded;
-    const auto destination = canvas.measure_containing(snapped_row);
-    if (!destination || destination->authored ||
-        destination->number >= bms_addressable_measure_count) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "virtual BGA move requires an unmaterialized BMS measure");
-        return result;
-    }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    auto& chart = proposed.charts[static_cast<std::size_t>(
-        source_chart - history.document.charts.data())];
-    const auto required = destination->number + 1 - chart.measures.size();
-    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
-    if (!first_measure_id) {
-        reject(result, diagnostic_code_t::invalid_id, "virtual BGA measure ID sequence is exhausted");
-        return result;
-    }
-    chart.measures.reserve(destination->number + 1);
-    for (std::size_t added = 0; added < required; ++added)
-        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
-                                  .definition = {{1, 1}, meter_t{4, 4}}});
-    const local_position_t position{chart.measures[destination->number].id,
-                                    snapped_row - destination->begin_row};
-    auto staged = document_history_t::from(std::move(proposed));
-    const auto moved = apply_bga_event_move(staged,
-        {.chart = action.chart, .event = action.event, .position = position, .bga_kind = action.bga_kind});
-    if (!moved) {
-        result.diagnostics = moved.diagnostics;
-        return result;
-    }
-    transaction.adopt_document(std::move(staged.document));
-    return transaction.commit("Move BGA event into virtual BMS measure");
+    document_command_transaction_t transaction(history);
+    auto staged = stage_virtual_bms_edit(transaction, action.chart, action.canvas_row, action.snap,
+        [&](local_position_t position) { return stage_bga_event_move(transaction,
+            {.chart = action.chart, .event = action.event, .position = position, .bga_kind = action.bga_kind}); });
+    if (staged.value) staged.value->command_label = "Move BGA event into virtual BMS measure";
+    return transaction.finish_execution(std::move(staged));
 }
 
 auto next_eligible_placement_resource(const song_document_t& document,
@@ -1497,15 +1431,24 @@ auto next_eligible_placement_resource(const song_document_t& document,
     return std::nullopt;
 }
 
-auto apply_resource_creation(document_history_t& history,
-                             const create_resource_action_t& action) -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
+auto stage_bms_resource_declaration(document_command_transaction_t& transaction,
+    const bms_program_edit_target_t& target, bms_resource_declaration_t declaration)
+    -> attempt_t<document_edit_effect_t> {
+    const auto id = transaction.next_bms_program_item_id();
+    if (!id) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped resource identities are exhausted.")}};
+    return transaction.stage(bms_program_content_edit_batch_t{.target = target,
+        .edits = {bms_program_content_insert_t{.item = {.id = *id, .value = std::move(declaration)}}},
+        .label = "Assign BMS resource"});
+}
 
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    if (history.document.resources.size() >= 100'000 || !text_util::is_valid_bounded_text(action.name, 255)) {
+namespace {
+auto make_catalog_resource(const song_document_t& document, const create_resource_action_t& action)
+    -> attempt_t<resource_entry_t> {
+    document_command_result_t result{.revision = document.revision, .diagnostics = {}};
+    if (document.resources.size() >= 100'000 || !text_util::is_valid_bounded_text(action.name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource catalog is full or the resource name is invalid");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     const auto audio_role = action.role == resource_role_t::sample ||
                             action.role == resource_role_t::bgm;
@@ -1513,9 +1456,8 @@ auto apply_resource_creation(document_history_t& history,
     if (!audio_role && !visual_role) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "resource creation requires a Sample, BGM, or BGA role");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
-    const auto& document = history.document;
     const auto audio = document.find_audio_asset(action.asset);
     const auto visual =
         std::ranges::find(document.visual_assets, action.asset, &visual_asset_t::id);
@@ -1523,12 +1465,12 @@ auto apply_resource_creation(document_history_t& history,
         (visual_role && visual == document.visual_assets.end())) {
         reject(result, diagnostic_code_t::dangling_asset,
                "resource creation requires a registered asset of the selected type");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     const auto id = id_ceiling_t<resource_id_t>::from(document).next();
     if (!id) {
         reject(result, diagnostic_code_t::invalid_id, "resource ID space is exhausted");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     auto name = action.name;
     if (name.empty()) {
@@ -1538,7 +1480,7 @@ auto apply_resource_creation(document_history_t& history,
     if (!text_util::is_valid_bounded_text(name, 255)) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "resource source filename exceeds the bounded name limit");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     resource_entry_t resource{.id = *id,
                               .name = std::move(name),
@@ -1552,14 +1494,38 @@ auto apply_resource_creation(document_history_t& history,
         if (!identity) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "BMS resource namespace has no free nonzero identifier");
-            return result;
+            return {.diagnostics = std::move(result.diagnostics)};
         }
         resource.target_identities.push_back(*identity);
     }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    proposed.resources.push_back(std::move(resource));
-    return transaction.commit("Create resource");
+    return {.value = std::move(resource)};
+}
+auto stage_catalog_resource(document_command_transaction_t& transaction,
+    const create_resource_action_t& action, std::optional<bms_program_target_key_t> selection)
+    -> attempt_t<document_edit_effect_t> {
+    auto resource = make_catalog_resource(transaction.current_document(), action);
+    if (!resource.value || !resource.ok()) return {.diagnostics = std::move(resource.diagnostics)};
+    const auto identity = resource.value->target_identities.empty() ? std::optional<target_resource_identity_t>{}
+        : std::optional{resource.value->target_identities.front()};
+    const auto id = resource.value->id;
+    transaction.document().resources.push_back(std::move(*resource.value));
+    if (identity && !transaction.current_document().prepared_bms_programs.empty()) {
+        if (!selection) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Select a scoped Chart before assigning a BMS resource identifier.")}};
+        const auto target = transaction.bms_target(selection->difficulty);
+        if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+        const auto staged = stage_bms_resource_declaration(transaction, *target,
+            {.name_space = identity->namespace_name == "BMP" ? bms_resource_namespace_t::bmp : bms_resource_namespace_t::wav,
+                .identifier = identity->identifier, .resource = id});
+        if (!staged.value || !staged.ok()) return staged;
+    }
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Create resource"}};
+}
+}
+auto apply_resource_creation(document_history_t& history,
+    const create_resource_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_catalog_resource(transaction, action, history.bms_edit_target));
 }
 
 auto next_resource_asset_id(const song_document_t& document) -> std::optional<asset_id_t> {
@@ -1706,20 +1672,16 @@ auto find_primary_music_resource(const song_document_t& document)
 }
 
 auto import_primary_music(document_history_t& history,
-                          const import_resource_asset_action_t& action)
-    -> document_command_result_t {
-    auto draft = document_history_t::from(history.document, 1, false);
-    auto imported = apply_resource_asset_import(draft, action);
-    if (!imported.applied) {
-        imported.revision = history.document.revision;
-        return imported;
-    }
-    auto& roles = draft.document.resources.back().roles;
-    if (std::ranges::find(roles, resource_role_t::music) == roles.end())
-        roles.insert(roles.begin(), resource_role_t::music);
-    auto transaction = document_command_transaction_t(history);
-    transaction.adopt_document(std::move(draft.document));
-    return transaction.commit("Set song audio");
+    const import_resource_asset_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    const auto imported = stage_resource_asset_import(transaction, action, history.bms_edit_target);
+    if (!imported.value || !imported.ok()) return transaction.finish_execution(imported);
+    const auto staged = transaction.stage([](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+        auto& roles = document.resources.back().roles;
+        if (std::ranges::find(roles, resource_role_t::music) == roles.end()) roles.insert(roles.begin(), resource_role_t::music);
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Set song audio"}};
+    });
+    return transaction.finish_execution(staged);
 }
 
 // Repoints the existing music asset so every resource and event that plays the
@@ -1744,47 +1706,41 @@ auto relink_primary_music(document_history_t& history, const resource_entry_t& m
     return transaction.commit("Replace song audio");
 }
 
-auto apply_resource_asset_import(document_history_t& history,
-                                 const import_resource_asset_action_t& action)
-    -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+auto stage_resource_asset_import(document_command_transaction_t& transaction,
+    const import_resource_asset_action_t& action, std::optional<bms_program_target_key_t> selection)
+    -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+    document_command_result_t result{.revision = transaction.current_document().revision, .diagnostics = {}};
     const auto paths = validate_import_source_paths(action, result);
-    if (!paths || !validate_import_source_geometry(action, result)) return result;
+    if (!paths || !validate_import_source_geometry(action, result)) return {.diagnostics = std::move(result.diagnostics)};
     const auto& path = paths->first;
     const auto& registered_copy = paths->second;
     const auto audio_role = action.role == resource_role_t::sample || action.role == resource_role_t::bgm;
     const auto visual_role = action.role == resource_role_t::bga;
-    const auto& document = history.document;
+    const auto& document = transaction.current_document();
     auto asset = find_registered_import_asset(document, action, path, audio_role, visual_role);
     if (asset && action.expected_new_asset_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "reserved import expected a new asset but the source is already registered");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
     if (!asset) {
         if (!append_imported_asset(proposed, action, registered_copy.value_or(path), asset, result))
-            return result;
+            return {.diagnostics = std::move(result.diagnostics)};
     }
-    auto draft = document_history_t::from(std::move(proposed), 1, false);
-    const auto created =
-        apply_resource_creation(draft,
-                                {.asset = asset,
-                                 .role = action.role,
-                                 .name = action.name,
-                                 .allocate_bms_identifier = action.allocate_bms_identifier});
-    if (!created.applied) {
-        result.diagnostics = created.diagnostics;
-        return result;
-    }
+    const auto created = stage_catalog_resource(transaction,
+        {.asset = asset, .role = action.role, .name = action.name,
+            .allocate_bms_identifier = action.allocate_bms_identifier}, selection);
+    if (!created.value || !created.ok()) return created;
     if (action.role == resource_role_t::bgm &&
-        !extend_native_charts_to_audio(draft.document, *action.audio_stream, result))
-        return result;
-    transaction.adopt_document(std::move(draft.document));
-    return transaction.commit("Import resource asset");
+        !extend_native_charts_to_audio(proposed, *action.audio_stream, result)) return {.diagnostics = std::move(result.diagnostics)};
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Import resource asset"}};
+    });
+}
+auto apply_resource_asset_import(document_history_t& history,
+    const import_resource_asset_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_resource_asset_import(transaction, action, history.bms_edit_target));
 }
 
 namespace {
@@ -1933,6 +1889,53 @@ auto import_slot_batch_entry(document_history_t& draft, import_resource_asset_ac
 
 } // namespace
 
+namespace {
+auto scoped_wav_resource(const song_document_t& document, std::string_view identifier)
+    -> std::optional<resource_id_t> {
+    for (const auto& resource : document.resources)
+        for (const auto& identity : resource.target_identities)
+            if (identity.namespace_name == "WAV" && identity.identifier == identifier) return resource.id;
+    return std::nullopt;
+}
+
+auto stage_scoped_wav_import(document_command_transaction_t& transaction,
+    std::optional<bms_program_target_key_t> selection, import_resource_asset_action_t file,
+    std::string identifier, bool confirmed) -> attempt_t<document_edit_effect_t> {
+    if (!selection || file.role != resource_role_t::sample) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "WAV slot assignment requires a selected scoped Chart and a sample import.")}};
+    const auto target = transaction.bms_target(selection->difficulty);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    const auto* owner = transaction.current_document().find_bms_program(selection->difficulty);
+    const auto projection = owner->build_projection(target->chart);
+    if (!projection.value) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped resource view is unavailable.")}};
+    identifier = text_util::ascii_upper(std::move(identifier));
+    const auto ns = bms_resource_namespace_t::wav;
+    const auto existing = scoped_wav_resource(projection.value->song(), identifier);
+    if (existing && !confirmed) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "Replacing an occupied WAV slot requires confirmation.")}};
+    std::optional<bms_program_owner_t> existing_owner;
+    if (existing) {
+        const auto origins = projection.value->owners(existing->value);
+        if (origins.empty() || origins.front().chart != target->chart)
+            return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                "Select the Chart owning the inherited WAV declaration before replacing it.")}};
+        existing_owner = origins.front();
+    }
+    file.allocate_bms_identifier = false;
+    const auto imported = stage_resource_asset_import(transaction, file, selection);
+    if (!imported.value || !imported.ok()) return imported;
+    // Rebinding a local declaration must not relink a shared catalog resource.
+    const auto resource = transaction.current_document().resources.back().id;
+    bms_resource_declaration_t declaration{.name_space = ns,
+        .identifier = std::move(identifier), .resource = resource};
+    if (existing_owner) return transaction.stage(bms_program_content_edit_batch_t{
+        .target = *target,
+        .edits = {bms_program_content_update_t{.owner = *existing_owner, .value = std::move(declaration)}},
+        .label = "Replace BMS WAV slot sound"});
+    return stage_bms_resource_declaration(transaction, *target, std::move(declaration));
+}
+}
+
 auto bms_wav_slot_value(const target_resource_identity_t& identity) -> std::optional<std::size_t> {
     if (!is_bms_wav_identity(identity)) return std::nullopt;
     return decode_supported_wav_identifier(identity.identifier);
@@ -1945,8 +1948,6 @@ auto bms_wav_slot_owner(const song_document_t& document, std::size_t slot) -> bm
 auto apply_bms_wav_slot_assignment(document_history_t& history,
                                    const assign_bms_wav_slot_action_t& action)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto value = decode_supported_wav_identifier(action.identifier);
     if (!value) {
@@ -1958,6 +1959,11 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
         reject(result, diagnostic_code_t::unsupported_feature,
                "BMS WAV slot assignment requires a sample import");
         return result;
+    }
+    if (!history.document.prepared_bms_programs.empty()) {
+        document_command_transaction_t transaction(history);
+        return transaction.finish_execution(stage_scoped_wav_import(transaction, history.bms_edit_target,
+            action.imported_file, action.identifier, action.confirm_replacement));
     }
     const auto owner = find_wav_slot_owner(history.document, *value);
     if (owner.ambiguous) {
@@ -1981,8 +1987,6 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
 auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
                                          const assign_bms_wav_slot_batch_action_t& action)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto first_slot = decode_supported_wav_identifier(action.first_identifier);
     if (!first_slot) {
@@ -1992,6 +1996,15 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
     }
     auto files = batch_slot_files(action, *first_slot, result);
     if (!files) return result;
+    if (!history.document.prepared_bms_programs.empty()) {
+        document_command_transaction_t transaction(history);
+        for (std::size_t index = 0; index < files->size(); ++index) {
+            const auto staged = stage_scoped_wav_import(transaction, history.bms_edit_target, (*files)[index],
+                encode_bms_identifier(*first_slot + index, 36), action.confirm_replacements);
+            if (!staged.value || !staged.ok()) return transaction.finish_execution(staged);
+        }
+        return transaction.commit("Assign BMS WAV slot batch");
+    }
     const auto owners = batch_slot_owners(history.document, *first_slot, files->size(),
                                           action.confirm_replacements, result);
     if (!owners) return result;
@@ -2008,8 +2021,6 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
 auto apply_primary_music_set(document_history_t& history,
                              import_resource_asset_action_t action)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (!action.audio_stream) {
         reject(result, diagnostic_code_t::invalid_id, "song audio requires probed stream geometry");
@@ -2026,8 +2037,6 @@ auto apply_primary_music_set(document_history_t& history,
 auto apply_resource_asset_relink(document_history_t& history,
                                  const relink_resource_asset_action_t& action)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     const auto path = action.source_path.lexically_normal();
     const auto path_text = path.generic_string();
@@ -2133,11 +2142,26 @@ auto remove_empty_sound_groups(song_document_t& document) -> void {
     });
 }
 
+void append_program_reference_counts(const bms_prepared_program_t& prepared, resource_reference_counts_t& counts) {
+        for (const auto& node : prepared.program.nodes()) {
+            const auto* chart = std::get_if<bms_chart_content_t>(&node.value);
+            if (!chart) continue;
+            for (const auto& item : chart->items) {
+                if (const auto* declaration = std::get_if<bms_resource_declaration_t>(&item.value))
+                    ++counts[declaration->resource.value];
+                if (const auto* native = std::get_if<bms_native_content_t>(&item.value))
+                    if (const auto id = event_resource(native->payload())) ++counts[id->value];
+            }
+        }
+        for (const auto& defaults : prepared.sound_layer_defaults) ++counts[defaults.resource.value];
+}
+
 } // namespace
 
 auto count_resource_references(const song_document_t& document) -> resource_reference_counts_t {
     resource_reference_counts_t counts, retained;
     for (const auto& chart : document.charts) append_chart_reference_counts(chart, counts, retained);
+    for (const auto& owner : document.prepared_bms_programs) append_program_reference_counts(owner->prepared(), counts);
     for (const auto& resource : document.resources) {
         const auto found = retained.find(resource.asset.value);
         if (found != retained.end()) counts[resource.id.value] += found->second;
@@ -2145,53 +2169,52 @@ auto count_resource_references(const song_document_t& document) -> resource_refe
     return counts;
 }
 
-auto apply_resource_sound_metadata(document_history_t& history,
-                                   const set_resource_sound_metadata_action_t& action)
-    -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    const auto resource = std::ranges::find(history.document.resources, action.resource,
+auto stage_resource_sound_metadata(document_command_transaction_t& transaction,
+    const set_resource_sound_metadata_action_t& action) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+    document_command_result_t result{.revision = transaction.current_document().revision, .diagnostics = {}};
+    const auto resource = std::ranges::find(transaction.current_document().resources, action.resource,
                                             &resource_entry_t::id);
-    if (!action.resource || resource == history.document.resources.end()) {
+    if (!action.resource || resource == transaction.current_document().resources.end()) {
         reject(result, diagnostic_code_t::invalid_id, "resource sound metadata needs a known resource");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     if (static_cast<std::uint8_t>(action.kind) > static_cast<std::uint8_t>(sound_kind_t::sample)) {
         reject(result, diagnostic_code_t::invalid_id, "resource sound kind is not recognized");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     const auto name = action.name ? normalized_resource_name(*action.name)
                                   : std::optional<std::string>{resource->name};
     if (!name) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource name must be 1-256 bytes without control characters");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
     auto tags = normalized_sound_tags(action.tags);
     if (!tags) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource sound tags must be 1-64 bytes without control characters, at most 32");
-        return result;
+        return {.diagnostics = std::move(result.diagnostics)};
     }
-    if (resource->name == *name && resource->sound_kind == action.kind && resource->tags == *tags) {
-        return result;
-    }
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
+    if (resource->name == *name && resource->sound_kind == action.kind && resource->tags == *tags)
+        return {.value = document_edit_effect_t{}};
     auto& target = proposed.resources[static_cast<std::size_t>(
-        resource - history.document.resources.begin())];
+        resource - proposed.resources.begin())];
     target.name = *name;
     target.sound_kind = action.kind;
     target.tags = std::move(*tags);
-    return transaction.commit("Edit sound metadata");
+    return {.value = document_edit_effect_t{.changed = true, .command_label = "Edit sound metadata"}};
+    });
+}
+auto apply_resource_sound_metadata(document_history_t& history,
+    const set_resource_sound_metadata_action_t& action) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_resource_sound_metadata(transaction, action));
 }
 
 auto apply_resource_deletions(document_history_t& history,
                               std::span<const resource_id_t> resources)
     -> document_command_result_t {
-    if (auto rejected = prepared_catalog_rejection(history)) return std::move(*rejected);
-
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (resources.empty() || resources.size() > maximum_resource_deletions) {
         reject(result, diagnostic_code_t::invalid_resolution,

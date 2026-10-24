@@ -92,7 +92,12 @@ auto mapped_events_match(Source&& source, Target&& target, const timing_position
         const auto id = mapped_identity(identities, original.id);
         if (!id || !map_event(expected, map)) return false;
         expected.id = *id;
-        return expected == actual;
+        auto observed = actual;
+        if constexpr (requires { expected.provenance; }) {
+            expected.provenance = {};
+            observed.provenance = {};
+        }
+        return expected == observed;
     });
 }
 auto recipes_match(const chart_document_t& source, const chart_document_t& target, timing_category_t category,
@@ -236,6 +241,13 @@ void validate_link(const song_document_t& song, const chart_document_t& target,
         report(diagnostic_code_t::invalid_id, "identity mapping is invalid or ambiguous."); return;
     }
     if (link.is_local_override) return;
+    const auto* source_owner = song.find_bms_program(source->id);
+    const auto* target_owner = song.find_bms_program(target.id);
+    if ((source_owner && source_owner->prepared().program.has_control_flow()) ||
+        (target_owner && target_owner->prepared().program.has_control_flow())) {
+        report(diagnostic_code_t::unsupported_feature, "Conditional scoped timing cannot be linked.");
+        return;
+    }
     if (const auto issue = link_provenance_error(*source, target, category)) { report(issue->code, issue->message); return; }
     if (!check_snapshots) return;
     if (!snapshot_matches(*source, target, category.kind, link)) {
@@ -246,10 +258,15 @@ void validate_link(const song_document_t& song, const chart_document_t& target,
     if (const auto issue = link_recipe_grid_error(*source, target, category.kind)) report(issue->code, issue->message);
 }
 auto has_links(const song_document_t& song) -> bool {
-    return std::ranges::any_of(song.charts, [](const auto& chart) {
-        return std::ranges::any_of(chart.timing_links.categories, [](const auto& link) { return link.has_value(); });
-    });
+    const auto linked = [](const timing_links_t& links) {
+        return std::ranges::any_of(links.categories, [](const auto& link) { return link.has_value(); });
+    };
+    return std::ranges::any_of(song.charts, [&](const auto& chart) { return linked(chart.timing_links); }) ||
+        std::ranges::any_of(song.prepared_bms_programs, [&](const auto& owner) {
+            return owner && linked(owner->prepared().settings.timing_links);
+        });
 }
+
 auto local_identity_map(const chart_document_t& chart, timing_category_t category) -> timing_category_link_t {
     timing_category_link_t result;
     (void)visit_timing_events(chart, chart, category, [&](const auto& events, const auto&, timing_event_filter_t filter) {
@@ -265,7 +282,7 @@ auto local_identity_map(const chart_document_t& chart, timing_category_t categor
 }
 void detach_local_writes(const song_document_t& before, song_document_t& proposed) {
     for (auto& chart : proposed.charts) {
-        const auto* previous = before.find_chart(chart.id);
+        const auto* previous = before.read_chart(chart.id);
         if (!previous) continue;
         for (const auto& category : timing_categories) {
             auto& link = chart.timing_links.value(category.kind);
@@ -317,11 +334,13 @@ auto build_linked_events(Source&& source, const timing_position_map_t& map, timi
     }
     return events;
 }
-auto copy_points(const chart_document_t& source, chart_document_t& target, timing_category_t category,
+auto copy_points(const song_document_t& song, const chart_document_t& source, chart_document_t& target, timing_category_t category,
     const timing_position_map_t& map, timing_category_link_t& link) -> std::optional<diagnostic_t> {
     return visit_timing_events(source, target, category,
         [&](const auto& originals, auto& actuals, timing_event_filter_t filter) -> std::optional<diagnostic_t> {
-            auto allocator = timing_identity_allocator_t<object_id_t>::from(target, actuals | std::views::filter(filter), link.objects);
+            auto allocator = song.find_bms_program(target.id)
+                ? timing_identity_allocator_t<object_id_t>::from(song, actuals | std::views::filter(filter), link.objects)
+                : timing_identity_allocator_t<object_id_t>::from(target, actuals | std::views::filter(filter), link.objects);
             std::vector<timing_link_identity_t<object_id_t>> identities;
             auto events = build_linked_events(originals | std::views::filter(filter), map, allocator, link.objects, identities);
             if (!events) return events.error();
@@ -349,13 +368,15 @@ auto copy_recipes(const song_document_t& song, const chart_document_t& source, c
 struct linked_measure_layout_t {
     std::vector<measure_chunk_t> measures;
     std::vector<timing_link_identity_t<measure_id_t>> identities;
-    static auto from(const chart_document_t& source, const chart_document_t& target, const timing_category_link_t& link)
+    static auto from(const song_document_t& song, const chart_document_t& source, const chart_document_t& target, const timing_category_link_t& link)
         -> result_t<linked_measure_layout_t, diagnostic_t> {
         auto previous = link.measures;
         if (previous.empty())
             for (std::size_t index = 0; index < std::min(source.measures.size(), target.measures.size()); ++index)
                 previous.push_back({.source = source.measures[index].id, .target = target.measures[index].id});
-        auto allocator = timing_identity_allocator_t<measure_id_t>::from(target, target.measures, previous);
+        auto allocator = song.find_bms_program(target.id)
+            ? timing_identity_allocator_t<measure_id_t>::from(song, target.measures, previous)
+            : timing_identity_allocator_t<measure_id_t>::from(target, target.measures, previous);
         linked_measure_layout_t result;
         for (const auto& measure : source.measures) {
             const auto id = allocator.assign(measure.id, previous);
@@ -379,9 +400,9 @@ auto remap_local_layout_content(chart_document_t& target, const timing_position_
     }, local_category);
     return valid;
 }
-auto copy_layout(const chart_document_t& source, chart_document_t& target, timing_category_link_t& link)
+auto copy_layout(const song_document_t& song, const chart_document_t& source, chart_document_t& target, timing_category_link_t& link)
     -> std::optional<diagnostic_t> {
-    auto layout = linked_measure_layout_t::from(source, target, link);
+    auto layout = linked_measure_layout_t::from(song, source, target, link);
     if (!layout) return layout.error();
     chart_document_t geometry{.id = target.id, .divisions_per_standard_measure = target.divisions_per_standard_measure,
         .measures = std::move(layout->measures)};
@@ -407,14 +428,14 @@ auto materialized_record_count(const chart_document_t& source, timing_category_t
 }
 auto materialize_category(song_document_t& song, const chart_document_t& source, chart_document_t& target,
     timing_category_t category, timing_category_link_t& link) -> std::optional<diagnostic_t> {
-    if (category == timing_category_t::measures) return copy_layout(source, target, link);
+    if (category == timing_category_t::measures) return copy_layout(song, source, target, link);
     const auto map = timing_position_map_t::from(source, target);
     if (!map) return map.error().front();
     link.measures.clear();
     if (category == timing_category_t::offset) {
         link.objects.clear();
         target.beat_zero_audio_offset_seconds = source.beat_zero_audio_offset_seconds;
-    } else if (auto failure = copy_points(source, target, category, *map, link)) return failure;
+    } else if (auto failure = copy_points(song, source, target, category, *map, link)) return failure;
     return copy_recipes(song, source, target, category, *map, link);
 }
 class timing_resolution_t {
@@ -469,7 +490,7 @@ auto update_link(chart_document_t& chart, const song_document_t& song, const tim
     if (request.operation == timing_link_operation_t::relink && !current)
         return {.diagnostics = {error(diagnostic_code_t::invalid_id, "This timing category has no source to relink.")}};
     const auto source = request.operation == timing_link_operation_t::relink ? current->source : request.source;
-    if (!source || source == chart.id || !song.find_chart(source))
+    if (!source || source == chart.id || !song.read_chart(source))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Timing source must be another chart in this project.")}};
     if (current && current->source == source && !current->is_local_override)
         return {.value = document_edit_effect_t{.command_label = "Link timing"}};
@@ -492,10 +513,25 @@ auto validate_links(const song_document_t& song, bool check_snapshots) -> diagno
     if (check_snapshots && !diagnostic_queries::has_errors(diagnostics)) validate_absolute_grid_clocks(song, diagnostics);
     return diagnostics;
 }
+auto build_timing_document(const song_document_t& source) -> attempt_t<song_document_t> {
+    auto result = source;
+    for (const auto& owner : source.prepared_bms_programs) {
+        const auto* view = owner ? owner->read_chart() : nullptr;
+        if (!view) return {.diagnostics = {error(diagnostic_code_t::invalid_binding,
+            "Timing propagation requires a valid scoped projection.")}};
+        // A temporary algorithm input, never a document publication or edit owner.
+        result.charts.push_back(*view);
+    }
+    return {.value = std::move(result)};
 }
-auto reconcile_timing_links(const song_document_t& before, song_document_t& proposed, timing_link_limits_t limits)
+auto are_timing_views_equal(const chart_document_t& before, const chart_document_t& after) -> bool {
+    if (before.timing_links != after.timing_links) return false;
+    return std::ranges::all_of(timing_categories, [&](const auto& category) {
+        return snapshot_matches(before, after, category.kind, local_identity_map(before, category.kind));
+    });
+}
+auto resolve_timing_links(const song_document_t& before, song_document_t& proposed, timing_link_limits_t limits)
     -> diagnostic_list_t {
-    if (!has_links(proposed)) return {};
     detach_local_writes(before, proposed);
     auto diagnostics = validate_links(proposed, false);
     if (diagnostic_queries::has_errors(diagnostics)) return diagnostics;
@@ -506,10 +542,54 @@ auto reconcile_timing_links(const song_document_t& before, song_document_t& prop
             if (auto failure = resolution.resolve(category.kind)) return {*failure};
     return diagnostics;
 }
+}
+auto reconcile_timing_links(const song_document_t& before, song_document_t& proposed, timing_link_limits_t limits)
+    -> diagnostic_list_t {
+    if (!has_links(proposed)) return {};
+    if (proposed.prepared_bms_programs.empty() && before.prepared_bms_programs.empty()) {
+        if (!has_links(proposed)) return {};
+        return resolve_timing_links(before, proposed, limits);
+    }
+    auto working = build_timing_document(proposed);
+    if (!working.value) return working.diagnostics;
+    const auto previous = build_timing_document(before);
+    if (!previous.value) return previous.diagnostics;
+    auto diagnostics = resolve_timing_links(*previous.value, *working.value, limits);
+    if (diagnostic_queries::has_errors(diagnostics)) return diagnostics;
+    for (auto& owner : proposed.prepared_bms_programs) {
+        const auto* resolved = working.value->find_chart(owner->difficulty());
+        if (are_timing_views_equal(*owner->read_chart(), *resolved)) continue;
+        const auto maximum = std::max(id_ceiling_t<object_id_t>::from(*working.value).maximum,
+            id_ceiling_t<object_id_t>::from(proposed).maximum);
+        if (maximum == UINT64_MAX) return {error(diagnostic_code_t::invalid_id, "Scoped timing identities are exhausted.")};
+        auto replacement = owner->with_resolved_timing(*resolved, object_id_t{maximum + 1});
+        if (!replacement.value || !replacement.ok()) return {error(diagnostic_code_t::invalid_resolution,
+            "Scoped timing propagation cannot preserve exact positions and owners.")};
+        owner = std::move(*replacement.value);
+    }
+    for (auto& chart : proposed.charts) chart = std::move(*working.value->find_chart(chart.id));
+    return diagnostics;
+}
 auto stage_timing_link_edit(document_command_transaction_t& transaction, chart_id_t chart,
     const timing_link_request_t& request) -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(chart, "Timing link refers to an unknown chart.",
-        [&](chart_document_t& target, song_document_t& song) { return update_link(target, song, request); }, true);
+    if (!transaction.has_bms_program(chart))
+        return transaction.stage(chart, "Timing link refers to an unknown chart.",
+            [&](chart_document_t& target, song_document_t& song) { return update_link(target, song, request); }, true);
+    return transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        const auto* owner = song.find_bms_program(chart);
+        auto view = *owner->read_chart();
+        const auto changed = update_link(view, song, request);
+        if (!changed.value || !changed.ok() || !changed.value->changed) return changed;
+        auto prepared = owner->prepared();
+        prepared.settings.timing_links = std::move(view.timing_links);
+        auto replacement = bms_program_document_t::from(chart, std::move(prepared), owner->evaluation());
+        if (!replacement.value || !replacement.ok()) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "Scoped timing association is invalid.")}};
+        const auto destination = std::ranges::find_if(song.prepared_bms_programs,
+            [&](const auto& candidate) { return candidate.get() == owner; });
+        *destination = std::move(*replacement.value);
+        return changed;
+    });
 }
 auto apply_timing_link_edit(document_history_t& history, const chart_stamp_t& stamp,
     const timing_link_request_t& request) -> document_command_result_t {
@@ -517,7 +597,10 @@ auto apply_timing_link_edit(document_history_t& history, const chart_stamp_t& st
     return transaction.finish_execution(stage_timing_link_edit(transaction, stamp.chart, request));
 }
 auto validate_timing_links(const song_document_t& song) -> diagnostic_list_t {
-    return validate_links(song, true);
+    if (!has_links(song)) return {};
+    if (song.prepared_bms_programs.empty()) return validate_links(song, true);
+    const auto working = build_timing_document(song);
+    return working.value ? validate_links(*working.value, true) : working.diagnostics;
 }
 auto timing_category_info_t::requires_link_confirmation(const chart_document_t& chart) const -> bool {
     const auto& link = chart.timing_links.value(kind);

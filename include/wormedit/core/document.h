@@ -11,6 +11,8 @@
 #include <wormedit/core/osu_hitsample.h>
 
 #include <algorithm>
+#include <atomic>
+#include <span>
 #include <array>
 #include <compare>
 #include <cstddef>
@@ -88,6 +90,7 @@ struct midi_destination_t {
 };
 
 struct bms_channel_map_t {
+    [[nodiscard]] auto normalized() const -> std::optional<bms_channel_map_t>;
     [[nodiscard]] static auto from(std::string_view visible) -> bms_channel_map_t;
 
     std::optional<std::string> visible;
@@ -488,6 +491,7 @@ struct audio_stream_info_t {
     std::uint32_t channels{};
     std::optional<std::uint64_t> frame_count;
     bool seekable{false};
+    auto operator==(const audio_stream_info_t&) const -> bool = default;
 };
 
 struct audio_asset_t {
@@ -495,6 +499,7 @@ struct audio_asset_t {
     std::filesystem::path source_path;
     audio_stream_info_t stream;
     std::optional<std::filesystem::path> waveform_cache_path;
+    auto operator==(const audio_asset_t&) const -> bool = default;
 };
 
 struct visual_asset_t {
@@ -503,6 +508,7 @@ struct visual_asset_t {
     std::filesystem::path source_path;
     std::optional<std::uint32_t> width;
     std::optional<std::uint32_t> height;
+    auto operator==(const visual_asset_t&) const -> bool = default;
 };
 
 
@@ -536,6 +542,7 @@ struct resource_entry_t {
     // Free-text user tags: trimmed, non-empty, unique ignoring ASCII case.
     std::vector<std::string> tags;
     std::optional<sound_group_id_t> sound_group;
+    auto operator==(const resource_entry_t&) const -> bool = default;
 };
 
 struct audio_clip_t {
@@ -957,7 +964,22 @@ struct quantization_preset_t {
     auto operator==(const quantization_preset_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 15;
+struct chart_read_index_t;
+struct song_document_t;
+class chart_read_slot_t {
+  public:
+    chart_read_slot_t() = default;
+    chart_read_slot_t(const chart_read_slot_t& other) noexcept : value_(other.value_.load()) {}
+    auto operator=(const chart_read_slot_t& other) noexcept -> chart_read_slot_t& {
+        value_.store(other.value_.load());
+        return *this;
+    }
+  private:
+    friend struct song_document_t;
+    mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
+};
+
+inline constexpr std::uint32_t current_document_schema_version = 16;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;
@@ -972,16 +994,19 @@ struct song_document_t {
     std::vector<generator_recipe_t> generator_recipes;
     std::vector<storyboard_document_t> storyboards;
     std::vector<chart_document_t> charts;
-    // Prepared scoped fixtures only until T-744. These difficulties have no writable
-    // chart-vector counterpart. Immutable semantic snapshots participate in Undo.
+    // BMS difficulties have no writable chart-vector counterpart. Their immutable
+    // scoped semantic snapshots participate in Undo.
     std::vector<std::shared_ptr<const bms_program_document_t>> prepared_bms_programs;
+    std::vector<chart_id_t> chart_order;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
+    chart_read_slot_t chart_read_slot;
     [[nodiscard]] auto find_bms_program(chart_id_t id) const -> const bms_program_document_t*;
     // Read-only prepared projections are available to domain planning; mutable
     // find_chart deliberately continues to resolve authored legacy charts only.
     [[nodiscard]] auto read_chart(chart_id_t id) const -> const chart_document_t*;
-    [[nodiscard]] auto read_charts() const -> std::vector<const chart_document_t*>;
+    void ensure_chart_order();
+    [[nodiscard]] auto read_charts() const -> std::span<const chart_document_t* const>;
     [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;

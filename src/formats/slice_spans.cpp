@@ -243,8 +243,8 @@ auto slice_span_plan_payload_t::from(const song_document_t& song, chart_id_t cha
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_outcome_t {
     slice_span_plan_outcome_t result{};
     plan_context_t context{song, options, result, {}, {}, {}, {}, {}, {}};
-    const auto chart = song.find_chart(chart_id);
-    if (!chart_id || chart == nullptr || std::ranges::count(song.charts, chart_id, &chart_document_t::id) != 1) {
+    const auto chart = song.read_chart(chart_id);
+    if (!chart_id || chart == nullptr || std::ranges::count(song.read_charts(), chart_id, [](const auto* chart) { return chart->id; }) != 1) {
         fail(context, "Slice spans require one unambiguous chart");
         return result;
     }

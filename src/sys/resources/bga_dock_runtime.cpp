@@ -40,7 +40,7 @@ auto make_thumbnail(const visual::rgba_image_t& source, std::uint64_t content) -
 #endif
 }
 struct bga_dock_runtime_t::state_t {
-    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t,
+    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t, const chart_document_t*,
         std::filesystem::path, std::string, std::size_t, std::size_t, bool, bool, resource_use_filter_t>,
         bga_list_view_t> catalog;
     const bga_list_view_t* list{};
@@ -115,7 +115,7 @@ bga_dock_runtime_t::bga_dock_runtime_t() : state_(std::make_unique<state_t>()) {
 bga_dock_runtime_t::~bga_dock_runtime_t() = default;
 void bga_dock_runtime_t::project(const song_document_t& document, const std::filesystem::path& base,
     const wormedit::ui::bga_dock_request_t& request, wormedit::ui::compose_view_t& view,
-    std::uint64_t session_generation) {
+    std::uint64_t session_generation, const chart_document_t* chart) {
     auto& state = *state_;
     state.build_usage_view(document, request, view, session_generation);
     if (state.project != document.id || state.session_generation != session_generation) {
@@ -135,12 +135,12 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     const auto* identity = &document;
     const auto stamp = document_stamp_t::from(document);
     state.list = &state.catalog.get_or_build(
-        std::tie(identity, stamp, session_generation, base, request.search, request.first_row,
+        std::tie(identity, stamp, session_generation, chart, base, request.search, request.first_row,
                  request.row_limit, request.sort_by_id, request.ids_available, request.use_filter), [&] {
             return bga_list_view_t::from(document, {state.search, request.first_row,
                 std::min<std::size_t>(64, request.row_limit),
                 request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
-                request.ids_available, request.use_filter});
+                request.ids_available, request.use_filter}, chart);
         });
     state.update_images(document, base);
     view.bga_matching_ids.clear(); view.bga_all_resource_ids.clear(); view.bga_advance_ids.clear();

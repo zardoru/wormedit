@@ -47,7 +47,8 @@ add_executable(wormedit_core_tests
     ../src/sys/bookmarks/bookmark_rename_commands.cpp
     ../src/sys/compose/input/compose_playhead_skip.cpp
     ../src/sys/compose/compose_bgm_bar.cpp
-    ../src/sys/resources/sound_list_view.cpp
+    ../src/sys/resources/bms_catalog_bindings.cpp
+        ../src/sys/resources/sound_list_view.cpp
     ../src/sys/resources/sound_picker_view.cpp
     ../src/sys/compose/actions/compose_measure_commands.cpp
     ../src/sys/compose/actions/compose_note_to_bgm.cpp
@@ -69,7 +70,6 @@ add_executable(wormedit_core_tests
     core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
-    core/bms_branch_editor_tests.cpp
     core/bms_program_tests.cpp
     core/bms_program_projection_tests.cpp
     core/bms_program_authoring_tests.cpp
@@ -747,6 +747,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/views/compose_selection_view.cpp
         ../src/sys/compose/views/compose_draw_source_view.cpp
         ../src/sys/compose/views/recipe_form.cpp
+        ../src/sys/resources/bms_catalog_bindings.cpp
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/resources/sound_usage_view.cpp
@@ -805,7 +806,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/commands/document_edit_feedback.cpp
             ../src/sys/compose/actions/compose_action_outcome.cpp
             ../src/sys/compose/actions/compose_audition_requests.cpp
-            ../src/sys/compose/actions/compose_bga_actions.cpp ../src/sys/resources/bga_list_view.cpp)
+            ../src/sys/compose/actions/compose_bga_actions.cpp ../src/sys/resources/bga_list_view.cpp
+            ../src/sys/resources/bms_catalog_bindings.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1
             $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
@@ -860,6 +862,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/bms_program_runtime.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
+        ../src/sys/resources/bms_catalog_bindings.cpp
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/resources/sound_usage_view.cpp
@@ -969,6 +972,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/bms_program_runtime.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
+        ../src/sys/resources/bms_catalog_bindings.cpp
         ../src/sys/resources/sound_list_view.cpp
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/timing/timing_view.cpp

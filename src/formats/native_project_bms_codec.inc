@@ -17,7 +17,7 @@ BMS_CODEC_VALUE(bms_bga_content_t, "bga", position, kind, bmp)
 BMS_CODEC_VALUE(bms_timing_definition_t, "timing_definition", kind, identifier, value)
 BMS_CODEC_VALUE(bms_timing_reference_t, "timing_reference", position, kind, identifier)
 BMS_CODEC_VALUE(bms_direct_bpm_t, "direct_bpm", position, value)
-BMS_CODEC_VALUE(bms_measure_length_t, "measure_length", measure, length)
+BMS_CODEC_VALUE(bms_measure_length_t, "measure_length", measure, length, meter)
 BMS_CODEC_VALUE(bms_resource_declaration_t, "resource_declaration", name_space, identifier, resource)
 BMS_CODEC_TAG(bms_metadata_declaration_t, "metadata")
 BMS_CODEC_TAG(bms_native_content_t, "native")
@@ -128,6 +128,10 @@ void to_json(json& value, const bms_chart_content_t& content) { value = {{"items
 void from_json(const json& value, bms_chart_content_t& content) { value.at("items").get_to(content.items); }
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_program_node_t, id, value, children)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_input_profile_t, layout, input)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_difficulty_settings_t, name, author, rating, overrides,
+    divisions_per_standard_measure, layout_segment, timing_links, show_empty_bgm_columns)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_asset_resolution_t, authored, resolved)
 
 void to_json(json& value, const bms_program_document_t& owner) {
     const auto& prepared = owner.prepared();
@@ -137,7 +141,9 @@ void to_json(json& value, const bms_program_document_t& owner) {
         {"bgm_columns", prepared.bgm_columns}, {"resources", prepared.resources},
         {"audio_assets", prepared.audio_assets}, {"visual_assets", prepared.visual_assets},
         {"semantic_layers", prepared.semantic_layers}, {"sound_layer_defaults", prepared.sound_layer_defaults},
-        {"evaluation", owner.evaluation().selections}};
+        {"evaluation", owner.evaluation().selections}, {"settings", prepared.settings},
+        {"source", prepared.source}};
+    if (!prepared.resolved_asset_paths.empty()) value["resolved_asset_paths"] = prepared.resolved_asset_paths;
 }
 auto read_bms_program_document(const json& value) -> std::shared_ptr<const bms_program_document_t> {
     auto program = bms_program_t::from(value.at("nodes").get<std::vector<bms_program_node_t>>());
@@ -151,30 +157,33 @@ auto read_bms_program_document(const json& value) -> std::shared_ptr<const bms_p
             .audio_assets = value.at("audio_assets").get<std::vector<audio_asset_t>>(),
             .visual_assets = value.at("visual_assets").get<std::vector<visual_asset_t>>(),
             .semantic_layers = value.at("semantic_layers").get<std::vector<semantic_layer_t>>(),
-            .sound_layer_defaults = value.at("sound_layer_defaults").get<std::vector<sound_layer_default_t>>()},
+            .sound_layer_defaults = value.at("sound_layer_defaults").get<std::vector<sound_layer_default_t>>(),
+            .settings = value.at("settings").get<bms_difficulty_settings_t>(),
+            .source = value.at("source").get<encoding_provenance_t>(),
+            .resolved_asset_paths = value.value("resolved_asset_paths", std::vector<bms_asset_resolution_t>{})},
         {.selections = value.at("evaluation").get<std::vector<branch_selection_t>>()});
     if (!owner.value || !owner.ok()) throw std::invalid_argument("Invalid scoped BMS document projection.");
     return std::move(*owner.value);
 }
 
-// A shared project asset is serialized once. A numeric pool entry borrows its
+// Each shared project catalog entry is serialized once. A numeric pool entry borrows its
 // immutable value from the project catalog; local inactive assets remain inline.
-template<class Asset> void write_bms_asset_references(json& value, std::string_view key,
+template<class Asset> void write_bms_pool_references(json& value, std::string_view key,
     const std::vector<Asset>& assets) {
     for (auto& entry : value.at(key)) {
-        const auto id = entry.at("id").get<asset_id_t>();
+        const auto id = entry.at("id").get<decltype(Asset{}.id)>();
         const auto found = std::ranges::find(assets, id, &Asset::id);
         if (found == assets.end()) continue;
-        if (entry != json(*found)) throw std::invalid_argument("Scoped and project asset values conflict.");
+        if (entry != json(*found)) throw std::invalid_argument("Scoped and project catalog values conflict.");
         entry = id;
     }
 }
-template<class Asset> void read_bms_asset_references(json& value, std::string_view key,
+template<class Asset> void read_bms_pool_references(json& value, std::string_view key,
     const std::vector<Asset>& assets) {
     for (auto& entry : value.at(key)) {
         if (!entry.is_number_unsigned()) continue;
-        const auto found = std::ranges::find(assets, entry.get<asset_id_t>(), &Asset::id);
-        if (found == assets.end()) throw std::invalid_argument("Scoped shared asset reference is missing.");
+        const auto found = std::ranges::find(assets, entry.get<decltype(Asset{}.id)>(), &Asset::id);
+        if (found == assets.end()) throw std::invalid_argument("Scoped shared catalog reference is missing.");
         entry = *found;
     }
 }

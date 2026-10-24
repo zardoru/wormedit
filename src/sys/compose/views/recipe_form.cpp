@@ -199,7 +199,7 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
                        notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
     applied = false;
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) return "The chart is no longer available.";
     const auto recipe = std::ranges::find(chart->sv_recipes, recipe_id, &sv_recipe_t::id);
     if (recipe == chart->sv_recipes.end()) return "The SV recipe no longer exists.";

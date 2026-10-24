@@ -28,6 +28,7 @@ void initialize_compose_view(wormedit::ui::workspace_view_t& workspace, int widt
     workspace.new_project_layouts = wormedit::sys::new_project_layout_view;
     workspace.playback_rates.refill(wormedit::sys::playback_rate_view);
     workspace.bms_encodings.refill(wormedit::sys::bms_encoding_view);
+    workspace.bms_lane_profiles.refill(wormedit::sys::bms_lane_profile_catalog_view);
     workspace.compose.timing_lanes.refill(wormedit::sys::timing_lane_view);
     workspace.compose.timing_lane_captions.refill(wormedit::sys::timing_caption_view);
     workspace.compose.note_palette.refill(wormedit::sys::note_palette_view);

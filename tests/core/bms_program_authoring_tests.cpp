@@ -842,14 +842,30 @@ TEST_CASE("Unwrap rejects newly simultaneous branch collisions without dropping 
     auto history = history_from("#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
     check_unwrap_refused(history, nodes_of<bms_random_scope_t>(history).front(), diagnostic_code_t::collision);
 }
-TEST_CASE("Native schema 14 migrates unchanged scoped programs to schema 15", "[bms-program-authoring]") {
+namespace {
+void strip_schema16_fields(nlohmann::json& document) {
+    for (auto& owner : document["document"]["prepared_bms_programs"]) {
+        owner.erase("settings"); owner.erase("source"); owner.erase("resolved_asset_paths");
+        for (auto& resource : owner["resources"])
+            if (resource.is_number_unsigned()) resource = *std::ranges::find_if(document["document"]["resources"],
+                [&](const auto& entry) { return entry["id"] == resource; });
+        for (auto& node : owner["nodes"])
+            if (node["value"]["type"] == "chart")
+                for (auto& item : node["value"]["data"]["items"])
+                    if (item["value"]["type"] == "measure_length") item["value"]["data"].erase("meter");
+    }
+}
+}
+TEST_CASE("Native schema 14 migrates unchanged scoped programs to the current schema", "[bms-program-authoring]") {
     auto history = history_from(unwrap_source);
     auto document = nlohmann::json::parse(snapshot(history));
     document["document"]["schema_version"] = 14;
+    strip_schema16_fields(document);
     const auto loaded = parse_native_project(document.dump());
+    for (const auto& diagnostic : loaded.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(loaded.ok());
     REQUIRE(loaded.value);
-    CHECK(loaded.value->schema_version == 15);
+    CHECK(loaded.value->schema_version == current_document_schema_version);
     CHECK(loaded.value->find_bms_program(difficulty)->prepared().program == program(history));
 }
 TEST_CASE("Unwrap preserves external lexical SKIP anchors when promoting a nested body", "[bms-program-authoring]") {

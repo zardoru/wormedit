@@ -38,6 +38,7 @@ struct request_error_t {
 
 struct cli_request_t {
     std::filesystem::path input;
+    std::optional<std::string> input_bms_lane_profile;
     std::filesystem::path output_directory;
     conversion_request_t conversion;
     std::vector<std::size_t> chart_indices;
@@ -155,6 +156,8 @@ auto parse_request(const json& object) -> cli_request_t {
     if (!object.is_object()) throw request_error_t{"the request must be a JSON object"};
     cli_request_t request;
     request.input = string_field(object, "input", true);
+    if (auto profile = string_field(object, "input_bms_lane_profile"); !profile.empty())
+        request.input_bms_lane_profile = std::move(profile);
     request.output_directory = string_field(object, "output_directory", true);
     request.conversion.target = target_family(string_field(object, "target", true));
     request.conversion.target_profile = string_field(object, "target_profile");
@@ -193,11 +196,12 @@ auto read_text(const std::filesystem::path& path, std::size_t limit) -> std::opt
 
 auto select_charts(const song_document_t& song, const std::vector<std::size_t>& indices,
                    conversion_request_t& conversion) -> std::optional<std::string> {
+    const auto charts = song.read_charts();
     for (const auto index : indices) {
-        if (index >= song.charts.size()) {
+        if (index >= charts.size()) {
             return "chart index " + std::to_string(index) + " is out of range";
         }
-        conversion.charts.push_back(song.charts[index].id);
+        conversion.charts.push_back(charts[index]->id);
     }
     return std::nullopt;
 }
@@ -285,7 +289,7 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
 
 auto run_request(const json& body) -> std::pair<int, json> {
     auto request = parse_request(body);
-    const auto opened = sys::open_project_file(request.input);
+    const auto opened = sys::open_project_file(request.input, {}, {}, nullptr, request.input_bms_lane_profile);
     if (!opened.is_success()) return {2, fail_json(opened.error.empty() ? "could not open the input" : opened.error)};
     if (const auto message = select_charts(*opened.document, request.chart_indices,
                                            request.conversion)) {

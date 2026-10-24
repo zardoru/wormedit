@@ -69,7 +69,7 @@ struct preview_audio_mix_t {
     }
 
     auto prepare(const preview_audio_export_request_t& request) -> result_t<void, error_t<failure_code_t>> {
-        const auto* chart = request.document.find_chart(chart_id_t{request.settings.chart});
+        const auto* chart = request.document.read_chart(chart_id_t{request.settings.chart});
         if (!chart) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, "Preview chart is unavailable."});
         const auto timing = timing_index_t::from(*chart, {.allow_bounded_clock = true});
         if (!timing.value) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, "Preview timing is invalid."});
@@ -150,7 +150,7 @@ auto runtime::preview_audio_export_t::start(const song_document_t& document,
     const ui::preview_audio_export_action_t& action, const std::filesystem::path& asset_base,
     const std::filesystem::path& skin, const std::filesystem::path& bundle) -> async_job_start_outcome_t {
     const document_stamp_t stamp{.project = song_id_t{action.project}, .revision = action.revision};
-    if (is_busy() || !stamp.is_current(document) || !document.find_chart(chart_id_t{action.chart}))
+    if (is_busy() || !stamp.is_current(document) || !document.read_chart(chart_id_t{action.chart}))
         return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict, "Preview export is busy or its selection is stale."});
     auto progress = std::make_shared<job_progress_t>();
     auto started = preview_audio_job_.request([&] {

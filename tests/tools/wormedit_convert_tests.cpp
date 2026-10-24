@@ -191,6 +191,7 @@ TEST_CASE("wormedit-convert rejects losses by default and writes nothing",
     std::filesystem::create_directories(output);
     const auto run = run_tool(
         scratch, {{"input", fixture("bms/repeated-bgm-ratio-stop-collision.bms").string()},
+                  {"input_bms_lane_profile", "bme-7k-outside-scratch"},
                   {"target", "stepmania"},
                   {"stepmania", {{"file_profile", "ssc"}, {"timing_syntax", "native_warps"},
                                  {"implementation_profile", "stepmania_5_1"}}},
@@ -210,6 +211,7 @@ TEST_CASE("wormedit-convert reports invalid requests as JSON errors without writ
     std::filesystem::create_directories(output);
     const auto unknown_target = run_tool(
         scratch, {{"input", fixture("bms/repeated-bgm-ratio-stop-collision.bms").string()},
+                  {"input_bms_lane_profile", "bme-7k-outside-scratch"},
                   {"target", "nonsense"},
                   {"output_directory", output.string()}});
     CHECK(unknown_target.status != 0);
@@ -219,6 +221,7 @@ TEST_CASE("wormedit-convert reports invalid requests as JSON errors without writ
 
     const auto bad_chart = run_tool(
         scratch, {{"input", fixture("bms/repeated-bgm-ratio-stop-collision.bms").string()},
+                  {"input_bms_lane_profile", "bme-7k-outside-scratch"},
                   {"target", "bms"},
                   {"charts", json::array({7})},
                   {"output_directory", output.string()}});
@@ -239,6 +242,7 @@ TEST_CASE("wormedit-convert keeps existing files unless overwrite is requested",
     const auto output = scratch.path() / "out";
     std::filesystem::create_directories(output);
     const json request{{"input", fixture("bms/repeated-bgm-ratio-stop-collision.bms").string()},
+                  {"input_bms_lane_profile", "bme-7k-outside-scratch"},
                        {"target", "bms"},
                        {"loss_policy", "allow"},
                        {"output_directory", output.string()}};

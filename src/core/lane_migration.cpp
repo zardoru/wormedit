@@ -491,7 +491,7 @@ auto lane_migration_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t
     proposal_t<lane_migration_proposal_t> pending{.stamp = stamp};
     auto& proposal = pending.payload;
     proposal.target = std::move(target);
-    const auto chart = song.find_chart(stamp.chart);
+    const auto chart = song.read_chart(stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::chart_not_found,
             "The selected difficulty is no longer available.", pending.stamp, std::move(proposal.report)));
@@ -586,6 +586,12 @@ auto lane_migration_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scop
     if (report.collision_count != 0)
         return {.diagnostics = {.issue = lane_migration_issue_t::lane_collision,
             .message = "The mapping merges notes that overlap in the target lane."}};
+    if (transaction.has_bms_program(canonical.stamp.chart)) {
+        const auto staged = transaction.stage_bms_lane_profile(canonical.stamp.chart, canonical.target, canonical.mapping);
+        if (!staged.value || !staged.ok()) return {.diagnostics = {.issue = lane_migration_issue_t::unsupported_branch_identity,
+            .message = staged.diagnostics.empty() ? "Scoped lane migration failed." : staged.diagnostics.front().message}};
+        return {.value = "Migrate chart lane profile"};
+    }
     const auto chart = transaction.source_chart(canonical.stamp.chart);
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
     for (const auto& item : canonical.mapping) mapping.emplace(item.source_lane.value, item.target_lane);

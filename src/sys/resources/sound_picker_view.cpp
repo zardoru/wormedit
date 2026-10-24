@@ -1,3 +1,4 @@
+#include "sys/resources/bms_catalog_bindings.h"
 #include "core/text_util.h"
 #include "sys/resources/sound_picker_view.h"
 
@@ -9,12 +10,6 @@
 namespace wormedit::sys {
 namespace {
 using wormedit::text_util::ascii_lowercase;
-auto slot_for(const resource_entry_t& resource) -> std::string {
-    const auto found = std::ranges::find_if(resource.target_identities, [](const auto& identity) {
-        return identity.family == format_family_t::bms && text_util::ascii_iequal(identity.namespace_name, "wav");
-    });
-    return found == resource.target_identities.end() ? std::string{} : found->identifier;
-}
 auto listed(const resource_entry_t& resource, const chart_document_t& chart) -> bool {
     const auto role = [&](resource_role_t value) {
         return std::ranges::find(resource.roles, value) != resource.roles.end();
@@ -24,13 +19,14 @@ auto listed(const resource_entry_t& resource, const chart_document_t& chart) -> 
 }
 void build_sound_picker_catalog(std::vector<sound_picker_row_t>& catalog, const song_document_t& document,
                      const chart_document_t& chart) {
+    const auto bindings = bms_catalog_bindings_t(document, &chart);
     catalog.clear();
     std::unordered_set<std::uint64_t> audio;
     for (const auto& asset : document.audio_assets) audio.insert(asset.id.value);
     for (const auto& resource : document.resources) {
         if (!audio.contains(resource.asset.value) || !listed(resource, chart)) continue;
         catalog.push_back({resource.id,
-            chart.source_family == format_family_t::bms ? slot_for(resource) : std::string{},
+            chart.source_family == format_family_t::bms ? bindings.wav_identifier(resource) : std::string{},
             resource.name, resource.missing});
     }
 

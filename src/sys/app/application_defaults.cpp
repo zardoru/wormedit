@@ -1,6 +1,8 @@
 #include "sys/app/application_defaults.h"
 
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/bms_program_edit.h>
+#include "core/id_ceiling.h"
 #include <wormedit/core/measure_editor.h>
 
 #include <chrono>
@@ -44,6 +46,22 @@ auto make_bms_initial_chart() -> chart_document_t {
     return chart;
 }
 
+auto scoped_initial_document(song_document_t document) -> std::optional<song_document_t> {
+    if (document.charts.front().source_family != format_family_t::bms) return document;
+    std::uint64_t maximum{};
+    auto observe = [&](object_id_t id) { maximum = std::max(maximum, id.value); return true; };
+    id_declarations_t<object_id_t>::visit_chart_domain(document.charts.front(), observe);
+    for (const auto& asset : document.audio_assets) observe(object_id_t{asset.id.value});
+    for (const auto& resource : document.resources) observe(object_id_t{resource.id.value});
+    if (maximum == UINT64_MAX) return std::nullopt;
+    auto owner = bms_program_document_t::from_empty_chart(document.charts.front(), object_id_t{maximum + 1});
+    if (!owner.value || !owner.ok()) return std::nullopt;
+    document.chart_order = {document.charts.front().id};
+    document.charts.clear();
+    document.prepared_bms_programs.push_back(std::move(*owner.value));
+    return document;
+}
+
 } // namespace
 
 auto create_session_project_id() -> song_id_t {
@@ -68,10 +86,10 @@ auto make_empty_session_document(song_id_t session_id) -> song_document_t {
 }
 
 auto make_initial_document(song_id_t project_id) -> song_document_t {
-    return {.id = project_id,
+    return *scoped_initial_document({.id = project_id,
             .revision = 1,
             .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
-            .charts = {make_bms_initial_chart()}};
+            .charts = {make_bms_initial_chart()}});
 }
 
 auto make_initial_document(song_id_t project_id, std::uint32_t lane_count)
@@ -84,11 +102,11 @@ auto make_initial_document(song_id_t project_id, std::string_view layout_id)
     const auto* layout = find_new_project_layout(layout_id);
     if (!project_id || !layout) return std::nullopt;
     auto chart = make_initial_chart(layout->profile(), layout->source_family());
-    return song_document_t{.id = project_id,
+    return scoped_initial_document(song_document_t{.id = project_id,
                            .revision = 1,
                            .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
                            .charts = {std::move(chart)},
-                           .output_groups = make_new_project_output_groups(*layout, chart_id_t{2})};
+                           .output_groups = make_new_project_output_groups(*layout, chart_id_t{2})});
 }
 
 auto make_audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
@@ -109,7 +127,7 @@ auto make_audio_project_document(song_id_t project_id, std::filesystem::path aud
     auto chart = make_initial_chart(layout->profile(), layout->source_family());
     if (!extend_chart_to_audio_end(chart, stream)) return std::nullopt;
     auto resource_name = audio_source_path.filename().generic_string();
-    return song_document_t{
+    return scoped_initial_document(song_document_t{
         .id = project_id,
         .revision = 1,
         .metadata = {.title = std::move(title), .artist = std::move(artist)},
@@ -121,7 +139,7 @@ auto make_audio_project_document(song_id_t project_id, std::filesystem::path aud
                        .roles = {resource_role_t::music, resource_role_t::bgm}}},
         .charts = {std::move(chart)},
         .output_groups = make_new_project_output_groups(*layout, chart_id_t{2}),
-    };
+    });
 }
 
 } // namespace wormedit::sys

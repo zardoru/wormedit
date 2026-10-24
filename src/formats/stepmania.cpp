@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/rational.h>
 #include "../core/timing_arithmetic.h"
@@ -2246,9 +2247,16 @@ class stepmania_writer_t {
   private:
 
     auto select_and_bake_charts() -> bool {
-    for (const auto& chart : song_.charts)
-        if (!options_.chart || chart.id == *options_.chart)
-            charts_.push_back(&chart);
+    for (const auto* chart : song_.read_charts()) {
+        if (options_.chart && chart->id != *options_.chart) continue;
+        const auto* owner = song_.find_bms_program(chart->id);
+        if (owner && owner->prepared().program.has_control_flow()) {
+            report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                "Select an explicit active-projection conversion for conditional BMS.", "branches");
+            return false;
+        }
+        charts_.push_back(chart);
+    }
     if (charts_.empty()) {
         report(stepmania_write_diagnostic_code_t::missing_chart,
                "No chart matches the requested StepMania output", "NOTES");

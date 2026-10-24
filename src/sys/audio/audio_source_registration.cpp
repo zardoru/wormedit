@@ -147,8 +147,9 @@ auto first_use_asset_order(const song_document_t& document) -> std::vector<asset
     const auto add = [&](asset_id_t asset) {
         if (seen.insert(asset.value).second) order.push_back(asset);
     };
-    if (!document.charts.empty()) {
-        for (const auto& measure : document.charts.front().measures) {
+    const auto charts = document.read_charts();
+    if (!charts.empty()) {
+        for (const auto& measure : charts.front()->measures) {
             std::vector<std::pair<std::uint64_t, resource_id_t>> uses;
             for (const auto& note : measure.notes) {
                 if (note.sound) uses.emplace_back(note.position.row, *note.sound);

@@ -1,4 +1,6 @@
 #include "fixture_encoding.h"
+#include "../support/bms_profile_fixtures.h"
+#include "formats/bms_program_import_internal.h"
 #include "sys/project/project_open.h"
 
 #include <wormedit/formats/bms.h>
@@ -57,10 +59,10 @@ auto load_fixture(const std::filesystem::path& path) -> std::optional<wormedit::
         wormedit::bms_parse_options_t options;
         options.file_extension = extension;
         options.encoding_override = explicit_fixture_encoding(path);
-        options.lane_profile_id = extension == ".pms"   ? "pms-standard-9button"
-                                  : extension == ".bme" ? "bme-7k-outside-scratch"
-                                                        : "bms-5k-outside-scratch-free-zone";
-        auto parsed = wormedit::parse_bms_bytes(bytes, options);
+        options.lane_profile_id = wormedit::test::explicit_fixture_profile(path);
+        // Raw custom evidence remains a legacy input to the conversion refusal matrix.
+        auto parsed = path.filename() == "custom-channel.bme" ? wormedit::parse_bms_legacy_witness(bytes, options)
+            : wormedit::parse_bms_bytes(bytes, options);
         if (!parsed.ok())
             return std::nullopt;
         return std::move(parsed.value.song);

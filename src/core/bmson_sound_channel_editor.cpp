@@ -33,7 +33,7 @@ struct bmson_restart_target_t {
 auto resolve_bmson_restart_target(document_history_t& history, chart_id_t chart,
                                    object_id_t sound_channel_event)
     -> std::variant<bmson_restart_target_t, document_command_result_t> {
-    const auto found_chart = history.document.find_chart(chart);
+    const auto found_chart = history.read_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !sound_channel_event) {
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
@@ -206,7 +206,7 @@ auto translate_hold_end(const measure_index_t& index, local_position_t start,
 auto move_bmson_bgm_marker(document_history_t& history,
                            chart_id_t chart, object_id_t bgm_event, local_position_t target)
     -> document_command_result_t {
-    const auto found_chart = history.document.find_chart(chart);
+    const auto found_chart = history.read_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !bgm_event) {
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
@@ -1292,7 +1292,7 @@ namespace {
 auto reuse_playable_stem_pulse(document_history_t& history, chart_id_t chart_id,
     object_id_t channel_id, local_position_t target, lane_id_t lane)
     -> std::optional<document_command_result_t> {
-    const auto chart = history.document.find_chart(chart_id);
+    const auto chart = history.read_chart(chart_id);
     if (chart == nullptr) return std::nullopt;
     const auto channel = std::ranges::find(chart->sound_channels, channel_id, &sound_channel_t::id);
     if (channel == chart->sound_channels.end()) return std::nullopt;

@@ -14,6 +14,7 @@
 #include <map>
 #include <numeric>
 #include <ranges>
+#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -84,14 +85,51 @@ auto song_document_t::read_chart(chart_id_t id) const -> const chart_document_t*
     const auto* owner = find_bms_program(id);
     return owner ? owner->read_chart() : nullptr;
 }
-auto song_document_t::read_charts() const -> std::vector<const chart_document_t*> {
-    std::vector<const chart_document_t*> result;
-    result.reserve(charts.size() + prepared_bms_programs.size());
-    for (const auto& chart : charts) result.push_back(&chart);
-    for (const auto& owner : prepared_bms_programs)
-        if (owner && !find_chart(owner->difficulty()))
-            if (const auto* chart = owner->read_chart()) result.push_back(chart);
-    return result;
+void song_document_t::ensure_chart_order() {
+    if (!chart_order.empty()) return;
+    for (const auto* chart : read_charts()) chart_order.push_back(chart->id);
+}
+
+struct chart_read_index_t {
+    const chart_document_t* source_data{};
+    std::vector<chart_id_t> source_ids;
+    std::vector<std::shared_ptr<const bms_program_document_t>> source_programs;
+    std::vector<chart_id_t> source_order;
+    std::vector<const chart_document_t*> charts;
+
+    explicit chart_read_index_t(const song_document_t& song)
+        : source_data(song.charts.data()), source_order(song.chart_order) {
+        charts.reserve(song.charts.size() + song.prepared_bms_programs.size());
+        for (const auto& chart : song.charts) {
+            source_ids.push_back(chart.id);
+            charts.push_back(&chart);
+        }
+        for (const auto& owner : song.prepared_bms_programs) {
+            source_programs.push_back(owner);
+            if (owner && !song.find_chart(owner->difficulty()))
+                if (const auto* chart = owner->read_chart()) charts.push_back(chart);
+        }
+        if (source_order.empty()) return;
+        const auto rank = [&](const auto* chart) {
+            return std::ranges::find(source_order, chart->id) - source_order.begin();
+        };
+        std::ranges::stable_sort(charts, {}, rank);
+    }
+    [[nodiscard]] auto matches(const song_document_t& song) const -> bool {
+        return source_data == song.charts.data() && source_order == song.chart_order &&
+            std::ranges::equal(source_ids, song.charts, {}, std::identity{}, &chart_document_t::id) &&
+            source_programs == song.prepared_bms_programs;
+    }
+};
+
+auto song_document_t::read_charts() const -> std::span<const chart_document_t* const> {
+    auto index = chart_read_slot.value_.load();
+    while (!index || !index->matches(*this)) {
+        auto replacement = std::make_shared<const chart_read_index_t>(*this);
+        if (chart_read_slot.value_.compare_exchange_strong(index, replacement))
+            index = std::move(replacement);
+    }
+    return index->charts;
 }
 
 auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
@@ -1869,8 +1907,21 @@ void contextualize_chart_diagnostics(const chart_document_t& chart,
 
 } // namespace
 
+namespace {
+void validate_chart_order(const song_document_t& song, diagnostic_list_t& diagnostics) {
+    if (song.chart_order.empty()) return;
+    std::set<chart_id_t> ordered(song.chart_order.begin(), song.chart_order.end());
+    const auto charts = song.read_charts();
+    if (ordered.size() != song.chart_order.size() || ordered.size() != charts.size() ||
+        std::ranges::any_of(charts, [&](const auto* chart) { return !ordered.contains(chart->id); }))
+        diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "Difficulty order must name every difficulty exactly once."));
+}
+}
+
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     auto diagnostics = validate_prepared_bms_programs(song);
+    validate_chart_order(song, diagnostics);
     auto work = document_validation_work_t{.song = song, .diagnostics = diagnostics};
     validate_song_unique_ids(work);
     collect_song_assets(work);

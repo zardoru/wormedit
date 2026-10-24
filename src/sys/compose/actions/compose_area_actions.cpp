@@ -363,7 +363,7 @@ auto convert_compose_area_to_pause_action_t::perform(compose_action_context_t& c
                                                     notification_source_t::edit,
                                                     compose_feedback_delivery_t::first_diagnostic);
     const auto* chart =
-        context.environment.document.history.document.find_chart(context.state.chart);
+        context.environment.document.history.read_chart(context.state.chart);
     place_cursor_at(context.state, chart->pauses.back().position);
     context.state.retained_selection_range.reset();
     context.state.retained_canvas_selection_range.reset();
@@ -412,7 +412,7 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
 
 auto compose_area_delete_supported(wormedit::document_history_t& history,
                                    const wormedit::editor_interaction_state_t& state) -> bool {
-    const auto* chart = history.document.find_chart(state.chart);
+    const auto* chart = history.read_chart(state.chart);
     if (chart == nullptr)
         return false;
     const auto& measures = history.indices(chart->id)->measures;
@@ -440,7 +440,7 @@ auto process_compose_area_boundary(compose_action_context_t& context)
 template <class Action>
 auto run_routed_area_action(compose_action_context_t& context) -> compose_action_outcome_t {
     const auto* chart =
-        context.environment.document.history.document.find_chart(context.state.chart);
+        context.environment.document.history.read_chart(context.state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
     const auto& indexed = context.environment.document.history.indices(chart->id)->measures;

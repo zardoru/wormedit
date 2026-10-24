@@ -2,6 +2,9 @@
 #include <wormedit/formats/bms.h>
 
 namespace wormedit {
+// Read-only decoder for proving legacy native migrations; never a public editor owner.
+auto parse_bms_legacy_witness(std::span<const std::byte> bytes, bms_parse_options_t options = {})
+    -> bms_parse_outcome_t;
 // Shared legacy source decoder seam. T-744 removes the legacy document adapter;
 // lexical, codec and numeric policies remain shared by scoped import.
 auto parse_bms_source(std::span<const std::byte> bytes, const bms_parse_options_t& options,

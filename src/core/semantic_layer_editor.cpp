@@ -1097,7 +1097,8 @@ auto apply_sound_layer_membership(document_history_t& history,
 }
 
 namespace {
-auto selected_sound_resources(chart_document_t& chart,
+// The existing bounded pointer index borrows a detached chart for this read-only selection query.
+auto selected_sound_resources(chart_document_t chart,
     const add_selected_sounds_to_semantic_layer_action_t& action,
     const semantic_layer_edit_limits_t& limits, document_command_result_t& result)
     -> std::optional<std::vector<resource_id_t>> {
@@ -1140,7 +1141,7 @@ auto selected_sound_resources(chart_document_t& chart,
 auto add_selected_sounds_to_semantic_layer(document_history_t& history, const add_selected_sounds_to_semantic_layer_action_t& action,
     semantic_layer_edit_limits_t limits) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    const auto chart = history.document.find_chart(action.chart);
+    const auto chart = history.read_chart(action.chart);
     if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "selected sound layers refer to an unknown chart");
         return result;

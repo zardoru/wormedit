@@ -524,9 +524,30 @@ auto apply_shift_selection(document_history_t& history,
     return commit_shift(history, std::move(proposed), result, "Shift selection");
 }
 
+auto apply_scoped_shift_from_cursor(document_history_t& history, const shift_from_cursor_action_t& action)
+    -> time_shift_result_t {
+    time_shift_result_t result{.command = {.revision = history.document.revision}};
+    if (action.rows == 0) return result;
+    document_command_transaction_t transaction(history);
+    const auto staged = transaction.stage_bms_structure_edit(action.chart,
+        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+            if (!is_range_shift_supported(chart, action.include_timing, result)) return {.diagnostics = result.command.diagnostics};
+            const auto index = build_shift_index(chart, result);
+            if (!index) return {.diagnostics = result.command.diagnostics};
+            const auto cursor = index->row_of(action.cursor);
+            if (!cursor) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "Time shift cursor is outside the chart.")}};
+            if (!shift_range(chart, action.rows, {.from_row = *cursor}, action.include_timing, result) ||
+                !settle_shifted_chart(chart, result)) return {.diagnostics = result.command.diagnostics};
+            return {.value = document_edit_effect_t{.changed = result.payload.moved_objects != 0, .command_label = "Shift from cursor"}};
+        });
+    result.command = transaction.finish_execution(staged, command_noop_policy_t::accept_without_diagnostics);
+    return result;
+}
+
 auto apply_shift_from_cursor(document_history_t& history,
                              const shift_from_cursor_action_t& action, time_shift_limits_t)
     -> time_shift_result_t {
+    if (history.document.find_bms_program(action.chart)) return apply_scoped_shift_from_cursor(history, action);
     time_shift_result_t result;
     result.command.revision = history.document.revision;
     auto proposed = history.document;

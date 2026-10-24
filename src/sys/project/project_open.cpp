@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include "core/text_util.h"
 #include "sys/project/project_open.h"
 #include "sys/project/project_view.h"
@@ -365,9 +366,23 @@ void take_parsed_document(std::optional<song_document_t>&& document,
     result.error = std::string(format) + " could not be opened: " + detail;
 }
 
+void retain_bms_asset_resolutions(project_open_result_t& result) {
+    for (auto& owner : result.document->prepared_bms_programs) {
+        auto prepared = owner->prepared().with_resolved_catalog(*result.document);
+        auto replacement = bms_program_document_t::from(owner->difficulty(), std::move(prepared), owner->evaluation());
+        if (!replacement.value || !replacement.ok()) {
+            result.error = "Resolved BMS assets cannot retain a valid scoped owner.";
+            result.document.reset();
+            return;
+        }
+        owner = std::move(*replacement.value);
+    }
+}
+
 void parse_selected_file(std::string_view extension, const std::string& source,
                          std::optional<text_encoding_t> encoding_override,
-                         project_open_result_t& result) {
+                         project_open_result_t& result,
+                         const std::optional<std::string>& lane_profile_id) {
     if (extension == ".wormedit") {
         auto parsed = parse_native_project(source);
         take_parsed_document(std::move(parsed.value), parsed.diagnostics, "Native project", result);
@@ -381,6 +396,8 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         auto options = bms_parse_options_t{};
         options.file_extension = std::string(extension);
         options.encoding_override = encoding_override;
+        options.lane_profile_id = lane_profile_id;
+        result.bms_encoding = encoding_override;
         auto parsed = parse_bms_bytes(bytes, std::move(options));
         result.needs_encoding_choice = !encoding_override && std::any_of(
             parsed.diagnostics.begin(), parsed.diagnostics.end(), [](const auto& diagnostic) {
@@ -388,10 +405,14 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                        diagnostic.message.find("without a UTF-8 BOM is ambiguous") !=
                            std::string::npos;
             });
+        result.needs_profile_choice = std::ranges::any_of(parsed.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.code == bms_parse_diagnostic_code_t::missing_profile;
+        });
         take_parsed_document(std::move(parsed.value.song), parsed.diagnostics, "BMS chart", result);
         if (result.document) {
             resolve_audio_assets(*result.document, result.asset_base, result.warnings);
             resolve_visual_assets(*result.document, result.asset_base, result.warnings);
+            retain_bms_asset_resolutions(result);
         }
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
@@ -514,13 +535,20 @@ void begin_project_session(project_identity_t& current, project_chart_runtime_t&
 void refresh_project_audio_availability(song_document_t& document,
                                         const std::filesystem::path& asset_base) {
     mark_audio_availability(document, asset_base);
+    (void)reconcile_bms_program_catalogs({}, document);
 }
 
 void validate_opened_document(project_open_result_t& result) {
     if (!result.document) return;
     normalize_empty_input_profiles(*result.document);
-    const auto diagnostics = validate_document(*result.document);
-    if (diagnostics.empty()) return;
+    auto diagnostics = reconcile_bms_program_catalogs({}, *result.document);
+    if (!diagnostic_queries::has_errors(diagnostics)) diagnostics = validate_document(*result.document);
+    if (!diagnostic_queries::has_errors(diagnostics)) {
+        for (const auto& diagnostic : diagnostics)
+            if (std::ranges::find(result.warnings, diagnostic.message) == result.warnings.end())
+                result.warnings.push_back(diagnostic.message);
+        return;
+    }
     const auto repaired = repair_measure_storage(*result.document, diagnostics);
     if (repaired != 0) {
         result.warnings.push_back("Repaired " + std::to_string(repaired) +
@@ -538,7 +566,8 @@ auto is_supported_project_file_extension(const std::filesystem::path& path) -> b
 
 auto open_project_file(const std::filesystem::path& selected_path,
                        std::optional<text_encoding_t> encoding_override,
-                       std::stop_token stop, job_progress_t* progress)
+                       std::stop_token stop, job_progress_t* progress,
+                       std::optional<std::string> lane_profile_id)
     -> project_open_result_t {
     project_open_result_t result;
     if (selected_path.empty()) {
@@ -561,7 +590,7 @@ auto open_project_file(const std::filesystem::path& selected_path,
     auto source = read_bounded_file(result.source_path, limit, result.error, stop, progress);
     if (stop.stop_requested()) return result;
     if (progress) progress->phase.store(job_phase_t::preparing);
-    if (source) parse_selected_file(extension, *source, encoding_override, result);
+    if (source) parse_selected_file(extension, *source, encoding_override, result, lane_profile_id);
     if (stop.stop_requested()) {
         result.document.reset();
         return result;
@@ -577,13 +606,14 @@ project_open_runtime_t::project_open_runtime_t(task_scheduler_t& scheduler)
 auto project_open_runtime_t::open(const project_open_request_t& request, std::stop_token stop)
     -> project_open_job_t::work_outcome_t {
     return std::make_unique<project_open_result_t>(
-        open_project_file(request.path, request.encoding, stop, request.progress.get()));
+        open_project_file(request.path, request.encoding, stop, request.progress.get(), request.lane_profile_id));
 }
 
 auto project_open_runtime_t::start(std::filesystem::path path,
                                   std::optional<text_encoding_t> encoding,
                                   project_open_identity_t identity,
-                                  project_open_job_t::work_function_t work)
+                                  project_open_job_t::work_function_t work,
+                                  std::optional<std::string> lane_profile_id)
     -> async_job_start_outcome_t {
     if (is_busy())
         return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
@@ -591,12 +621,13 @@ auto project_open_runtime_t::start(std::filesystem::path path,
     auto progress = std::make_shared<job_progress_t>();
     auto started = job_.request([&] {
         return project_open_request_t{.path = std::move(path), .encoding = encoding,
+                                      .lane_profile_id = std::move(lane_profile_id),
                                       .progress = progress};
     }, identity, work);
     if (started) {
         progress_ = std::move(progress);
         cancelling_ = false;
-        encoding_retry_ = encoding.has_value();
+        encoding_retry_ = encoding.has_value() || lane_profile_id.has_value();
     }
     return started;
 }

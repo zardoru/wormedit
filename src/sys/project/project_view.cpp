@@ -114,16 +114,16 @@ auto project_chart_row_view_t::from(const song_document_t& document, const chart
 namespace {
 auto reorder_project_chart(document_history_t& history, const project_chart_command_t& action)
     -> project_chart_command_result_t {
-    const auto& charts = history.document.charts;
-    const auto* source = history.document.find_chart(action.chart);
-    const auto* target = history.document.find_chart(action.target_chart);
+    const auto charts = history.document.read_charts();
+    const auto* source = history.read_chart(action.chart);
+    const auto* target = history.read_chart(action.target_chart);
     if (!source || !target)
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Chart reorder is stale or its source or destination no longer exists."}}}};
-    const auto source_index = static_cast<std::size_t>(source - charts.data());
+    const auto source_index = static_cast<std::size_t>(std::ranges::find(charts, source->id, [](const auto* chart) { return chart->id; }) - charts.begin());
     auto destination =
-        static_cast<std::size_t>(target - charts.data()) + (action.insert_after ? 1 : 0);
+        static_cast<std::size_t>(std::ranges::find(charts, target->id, [](const auto* chart) { return chart->id; }) - charts.begin()) + (action.insert_after ? 1 : 0);
     if (destination > source_index) --destination;
     if (destination == source_index) return {.command = {.revision = history.document.revision}};
     return {.command = apply_reorder_chart_command(history, action.chart, destination)};
@@ -157,27 +157,29 @@ auto apply_project_chart_command(document_history_t& history,
             ? apply_delete_chart_command(history, action.chart)
             : apply_delete_charts_command(history, action.selected_charts)};
 
-    const auto* chart = history.document.find_chart(action.chart);
+    const auto* chart = history.read_chart(action.chart);
     if (chart == nullptr)
         return {.command = {.revision = history.document.revision, .diagnostics = {{
             .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
             .message = "Project chart action is stale or its chart no longer exists."}}}};
     if (action.kind == project_chart_command_kind_t::open)
         return {.command = {.revision = history.document.revision}, .open_chart = action.chart};
-    const auto index = static_cast<std::size_t>(chart - history.document.charts.data());
+    const auto charts = history.document.read_charts();
+    const auto index = static_cast<std::size_t>(std::ranges::find(charts, chart->id, [](const auto* value) { return value->id; }) - charts.begin());
     const bool up = action.kind == project_chart_command_kind_t::move_up;
-    if ((up && index == 0) || (!up && index + 1 == history.document.charts.size()))
+    if ((up && index == 0) || (!up && index + 1 == charts.size()))
         return {.command = {.revision = history.document.revision}};
     return {.command =
                 apply_reorder_chart_command(history, action.chart, up ? index - 1 : index + 1)};
 }
 
 auto project_chart_table_view_t::from(const song_document_t& document) -> project_chart_table_view_t {
-    const auto count = document.charts.size();
-    project_chart_table_view_t table{.total_charts = document.charts.size()};
+    const auto charts = document.read_charts();
+    const auto count = charts.size();
+    project_chart_table_view_t table{.total_charts = count};
     table.rows.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-        table.rows.push_back(project_chart_row_view_t::from(document, document.charts[index]));
+        table.rows.push_back(project_chart_row_view_t::from(document, *charts[index]));
     return table;
 }
 
@@ -466,9 +468,7 @@ void wormedit::ui::setup_view_t::refill(sys::project_chart_runtime_t& runtime,
     if (!visible) return;
     if (!runtime.cache.has_value() || runtime.cache.key()->document.revision != document.revision)
         std::erase_if(runtime.row_errors, [&](const auto& error) {
-            return std::ranges::none_of(document.charts, [&](const auto& chart) {
-                return chart.id.value == error.first;
-            });
+            return document.read_chart(chart_id_t{error.first}) == nullptr;
         });
     const auto& table = project_chart_table_view_t::from(runtime.cache, document, runtime.session_generation);
     charts.resize(table.rows.size());
@@ -494,8 +494,9 @@ void wormedit::ui::setup_view_t::refill(sys::project_chart_runtime_t& runtime,
     session_generation = runtime.session_generation;
     output_suggestions.clear();
     if (document.output_groups.empty()) {
-        const auto* selected = document.find_chart(selected_chart_id);
-        if (!selected && !document.charts.empty()) selected = &document.charts.front();
+        const auto* selected = document.read_chart(selected_chart_id);
+        const auto charts = document.read_charts();
+        if (!selected && !charts.empty()) selected = charts.front();
         if (selected)
             for (const auto& suggestion : suggested_output_groups(*selected))
                 output_suggestions.push_back({.name = suggestion.label, .family = suggestion.family,

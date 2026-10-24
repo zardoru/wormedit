@@ -699,30 +699,7 @@ TEST_CASE("Compose resource dispatcher retains exactly one start and terminal no
     check_action(std::filesystem::is_regular_file(fixture.asset_base / copied_path));
 }
 
-TEST_CASE("Compose workspace boundary publishes branch validation without mutation", "[compose-action-notifications]") {
-    action_notification_fixture_t fixture;
-    metadata_drop_state_t drop;
-    runtime::metadata_asset_t metadata{fixture.sink};
-    std::optional<editor_interaction_state_t> interaction{fixture.state};
-    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE);
-    auto expected = notification_severity_t::warning;
-    SECTION("missing selected control is validation") { action.compose_branch_id.value = 0; }
-    SECTION("core rejection keeps its severity") {
-        action.compose_branch_id.value = 999;
-        expected = notification_severity_t::error;
-    }
-    const auto revision = fixture.history.document.revision;
-    check_action(dispatch_compose_workspace_action(action, fixture.history, fixture.workspace,
-        interaction, 800, fixture.application, {}, fixture.scheduler, fixture.resource_copy,
-        fixture.export_runtime, false, drop, metadata, fixture.sink));
-    const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
-    check_action(entries.front().severity == expected);
-    check_action(entries.front().source == notification_source_t::format);
-    check_action(entries.front().count == 1);
-    check_action(fixture.history.document.revision == revision);
-    check_action(fixture.history.undo.empty());
-}
+
 
 TEST_CASE("Compose measure helpers publish their actual edit and validation outcomes", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
@@ -1534,65 +1511,7 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     check_action(fixture.history.document.charts.front().sound_channels.front().events.back().continuation);
 }
 
-TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and undoes each",
-          "[compose-action-notifications][bms-branch]") {
-    constexpr std::string_view text = "#PLAYER 1\n#TITLE Block action test\n#BPM 120\n"
-                                      "#WAV01 one.wav\n#WAV02 two.wav\n#00011:0100\n";
-    bms_parse_options_t options;
-    options.lane_profile_id = "bme-7k-outside-scratch";
-    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
-    require_action(parsed.value.song.has_value() && parsed.ok());
-    action_notification_fixture_t fixture;
-    fixture.history = document_history_t::from(*parsed.value.song);
-    fixture.workspace = *workspace_controller_t::from(fixture.history).value;
-    fixture.workspace.active_tab = workspace_tab_t::compose;
-    fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
-    fixture.state.chart = fixture.history.document.charts.front().id;
-    metadata_drop_state_t drop;
-    runtime::metadata_asset_t metadata{fixture.sink};
-    std::optional<editor_interaction_state_t> interaction{fixture.state};
-    const auto dispatch = [&](wormedit::ui::workspace_action_t action) {
-        action.compose_input_chart_id.value = fixture.history.document.charts.front().id.value;
-        action.compose_input_document_revision = fixture.history.document.revision;
-        return dispatch_compose_workspace_action(action, fixture.history, fixture.workspace,
-            interaction, 800, fixture.application, {}, fixture.scheduler, fixture.resource_copy,
-            fixture.export_runtime, false, drop, metadata, fixture.sink);
-    };
-    const auto find_node = [&](bms_control_kind_t kind) -> const bms_control_node_t* {
-        const auto* found = static_cast<const bms_control_node_t*>(nullptr);
-        const auto visit = [&](const auto& self, const bms_control_node_t& node) -> void {
-            if (!found && node.kind == kind && node.original_text != "#00011:0100") found = &node;
-            for (const auto& child : node.children) self(self, child);
-        };
-        visit(visit, *fixture.history.document.charts.front().bms_control_tree);
-        return found;
-    };
-    const auto* statement = [&] {
-        const auto* raw = static_cast<const bms_control_node_t*>(nullptr);
-        for (const auto& node : fixture.history.document.charts.front().bms_control_tree->children)
-            if (node.kind == bms_control_kind_t::raw_statement && node.original_text == "#WAV02 two.wav")
-                raw = &node;
-        return raw;
-    }();
-    require_action(statement != nullptr);
-    wormedit::ui::workspace_action_t create{};
-    create.compose_action = WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK;
-    create.compose_branch_statement_id.value = statement->id.value;
-    check_action(dispatch(create));
-    check_action(fixture.history.undo.size() == 1);
-    const auto* block = find_node(bms_control_kind_t::random);
-    require_action(block != nullptr);
-    wormedit::ui::workspace_action_t remove{};
-    remove.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK;
-    remove.compose_branch_id.value = block->id.value;
-    // The created block holds the wrapped statement, so removal rejects without changing history.
-    const auto revision = fixture.history.document.revision;
-    check_action(dispatch(remove));
-    check_action(fixture.history.document.revision == revision && fixture.history.undo.size() == 1);
-    require_action(undo_document_command(fixture.history));
-    check_action(find_node(bms_control_kind_t::random) == nullptr);
-    check_action(fixture.history.undo.empty());
-}
+
 
 TEST_CASE("Quantize Space is the editing grid's space too",
           "[unit][sys][compose-action][quantize-snap][authored-snap]") {
@@ -2318,8 +2237,7 @@ TEST_CASE("Workspace stale actions use the shared message without mutation",
           "[compose-action-notifications][stale-message]") {
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
                               WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
-                              WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK,
-                              WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE);
+                              WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
     action_notification_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
     auto action = fixture.action(kind);
@@ -2415,25 +2333,7 @@ TEST_CASE("Captured BMSON marker batches share stale feedback and keep missing t
     check_action(fixture.history.undo.empty());
 }
 
-TEST_CASE("BMS statement boundary shares stale feedback after missing-target checks",
-          "[compose-action-notifications][bms-statement-stamp]") {
-    action_notification_fixture_t fixture;
-    const bool missing = GENERATE(false, true);
-    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT);
-    --action.compose_input_document_revision;
-    action.compose_branch_statement_id.value = missing ? 0 : 7;
-    std::optional<editor_interaction_state_t> interaction = fixture.state;
-    require_action(fixture.dispatch_workspace(action, interaction));
-    const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
-    check_action(entries.front().message == (missing ? "Select a raw BMS branch statement first."
-        : stale_action_message("BMS branch statement action")));
-    check_action(entries.front().severity == (missing ? notification_severity_t::warning
-                                                    : notification_severity_t::error));
-    check_action(entries.front().source == notification_source_t::format);
-    check_action(fixture.history.document.revision == 1);
-    check_action(fixture.history.undo.empty());
-}
+
 
 TEST_CASE("Standalone sound-import confirmation shares stale feedback",
           "[compose-action-notifications][sound-import-stamp]") {
@@ -2763,9 +2663,7 @@ TEST_CASE("Compose quantize special route records one report and one bound mutat
 
 TEST_CASE("Compose BMS kinds retain the workspace-only view rejection",
           "[compose-action-notifications][route-parity]") {
-    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
-                               WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
-                               WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK);
+    const auto kind = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM;
     action_notification_fixture_t fixture;
     check_action(fixture.dispatch(fixture.action(kind)) ==
           "BMS branch actions must use the workspace action boundary.");

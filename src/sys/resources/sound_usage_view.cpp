@@ -145,8 +145,9 @@ auto sound_usage_view_t::from(const song_document_t& document, resource_id_t res
     projection.valid = true;
     usage_collector_t uses;
     const auto assets = resource_assets(document);
-    for (std::size_t chart_index = 0; chart_index < document.charts.size(); ++chart_index) {
-        const auto& chart = document.charts[chart_index];
+    const auto charts = document.read_charts();
+    for (std::size_t chart_index = 0; chart_index < charts.size(); ++chart_index) {
+        const auto& chart = *charts[chart_index];
         append_resource_uses(chart, chart_index, resource, selected->asset, assets, uses);
         if (selected->asset) {
             const auto measure_order = measure_orders(chart);

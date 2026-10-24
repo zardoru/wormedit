@@ -1,3 +1,4 @@
+#include <wormedit/core/bms_program_edit.h>
 #include <wormedit/audio/audition_resolver.h>
 
 #include <algorithm>
@@ -523,7 +524,9 @@ auto audition_resolve_result_t::from(audition_resolve_outcome_t&& outcome) -> au
 auto audition_resolution_t::from(const song_document_t& song, chart_id_t chart_id, object_id_t object,
                              std::span<const audition_source_binding_t> bindings,
                              audition_resolve_options_t options) -> audition_resolve_outcome_t {
-    const auto* chart = song.find_chart(chart_id);
+    const auto* owner = song.find_bms_program(chart_id);
+    const auto* chart = options.authoring_chart && owner
+        ? owner->read_authoring_chart(*options.authoring_chart) : song.read_chart(chart_id);
     if (chart == nullptr) {
         audition_resolve_outcome_t result{
             .value = {.document_revision = song.revision,
@@ -554,7 +557,7 @@ auto preview_bindings_resolution_t::from(const song_document_t& song, chart_id_t
     preview_bindings_resolve_outcome_t result{
         .value = {.document_revision = song.revision, .chart = chart_id, .bindings = {}},
         .diagnostics = {}};
-    const auto* chart = song.find_chart(chart_id);
+    const auto* chart = song.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics.push_back(
             error(audition_resolve_code_t::missing_chart, "audition chart does not exist"));
@@ -613,7 +616,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song,
                                            stale_action_message("BMSON draft audition")));
         return result;
     }
-    const auto* original = song.find_chart(chart_id);
+    const auto* original = song.read_chart(chart_id);
     if (!original || original->source_family != format_family_t::bmson) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::missing_chart,

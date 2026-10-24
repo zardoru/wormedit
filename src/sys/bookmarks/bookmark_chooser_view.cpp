@@ -20,7 +20,7 @@ auto bookmark_chooser_indices_t::from(const document_history_t& history, const w
     if (!is_open || !compose) return {};
     const auto chart_id = compose->chart;
     const auto* indices = history.indices(chart_id);
-    const auto* chart = history.document.find_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     const auto* clock = indices && indices->measures && chart &&
         cache.is_scene_key_current(history.document, *chart) &&
         cache.scene.cached_measure_index.get() == &*indices->measures
@@ -127,7 +127,7 @@ auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t c
         result.status = "Bookmark chooser page size must be positive.";
         return result;
     }
-    const auto* chart = document.find_chart(chart_id);
+    const auto* chart = document.read_chart(chart_id);
     if (!chart) {
         result.status = "Bookmark chooser requires an active chart.";
         return result;

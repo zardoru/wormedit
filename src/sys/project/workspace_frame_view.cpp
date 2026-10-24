@@ -17,7 +17,7 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
     audio_view.document_revision = args.history.document.revision;
     audio_view.timing_locked = args.timing_locked;
     if (args.selected_chart) {
-        const auto selected = args.history.document.find_chart(*args.selected_chart);
+        const auto selected = args.history.read_chart(*args.selected_chart);
         if (selected != nullptr) {
             audio_view.has_chart = true;
             audio_view.chart_id = selected->id;

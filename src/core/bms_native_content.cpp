@@ -57,6 +57,25 @@ auto bms_program_position_t::from(local_position_t position, const chart_documen
         .fraction = reduce_fraction({position.row, capacity->row_capacity})};
 }
 
+auto bms_native_content_t::position() const -> std::optional<bms_program_position_t> {
+    if (positions_.empty()) return {};
+    return std::visit([&](const auto& value) -> std::optional<bms_program_position_t> {
+        if constexpr (requires { value.position; }) {
+            if constexpr (requires { value.end; }) if (value.end) return positions_.back();
+            return positions_.front();
+        }
+        return {};
+    }, event_);
+}
+auto bms_native_content_t::end_position() const -> std::optional<bms_program_position_t> {
+    if (positions_.empty()) return {};
+    return std::visit([&](const auto& value) -> std::optional<bms_program_position_t> {
+        if constexpr (requires { value.position; value.end; })
+            if (value.end) return positions_.front();
+        return {};
+    }, event_);
+}
+
 auto bms_native_content_t::declared_ids() const -> std::vector<object_id_t> {
     std::vector<object_id_t> result;
     if (const auto* channel = std::get_if<sound_channel_t>(&event_)) {

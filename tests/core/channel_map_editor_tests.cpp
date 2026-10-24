@@ -183,7 +183,7 @@ auto invalid_channel_rejected() -> bool {
            missing_view.diagnostic->issue == channel_map_issue_t::missing_export_channel;
 }
 
-auto branch_map_rejected() -> bool {
+auto scoped_branch_map_applies() -> bool {
     constexpr std::string_view source =
         "#WAV01 key.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00111:01\n"
         "#ENDIF\n#ENDRANDOM\n";
@@ -192,53 +192,31 @@ auto branch_map_rejected() -> bool {
     options.branch_choices = {{1, 1}};
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
                                         options);
-    if (!parsed.value.song || parsed.value.song->charts.empty()) return false;
-    const auto& chart = parsed.value.song->charts.front();
+    if (!parsed.value.song || parsed.value.song->read_charts().empty()) return false;
+    const auto& chart = *parsed.value.song->read_charts().front();
     const auto lane = std::ranges::find_if(chart.lane_layouts.front().layout.lanes,
         [](const auto& item) { return item.bms_channels.visible == "11"; });
     if (lane == chart.lane_layouts.front().layout.lanes.end()) return false;
     const auto change = replacement(*lane, "1A");
-    const auto proposal = channel_map_proposal_t::propose(*parsed.value.song, parsed.value.song->revision,
+    auto history = document_history_t::from(*parsed.value.song);
+    const auto proposal = channel_map_proposal_t::propose(history.document, history.document.revision,
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    const auto view = channel_map_preview_view_t::from(proposal);
-    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::unsupported_branch_channel;
-}
-
-auto branch_hold_source_channel_rejected() -> bool {
-    constexpr std::string_view source =
-        "#WAV01 key.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00111:01\n"
-        "#ENDIF\n#ENDRANDOM\n";
-    bms_parse_options_t options;
-    options.lane_profile_id = "bme-7k-outside-scratch";
-    options.branch_choices = {{1, 1}};
-    auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    if (!parsed.value.song || parsed.value.song->charts.empty()) return false;
-    auto& chart = parsed.value.song->charts.front();
-    const auto lane = std::ranges::find_if(chart.lane_layouts.front().layout.lanes,
-        [](const auto& item) { return item.bms_channels.visible == "11"; });
-    if (lane == chart.lane_layouts.front().layout.lanes.end()) return false;
-    note_t* selected{};
-    for (auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.notes, lane->id, &note_t::lane);
-        if (found == measure.notes.end()) continue;
-        selected = &*found;
-        break;
+    if (!proposal.value) {
+        for (const auto& diagnostic : proposal.diagnostics) UNSCOPED_INFO(diagnostic.message);
+        return false;
     }
-    if (!selected) return false;
-    selected->kind = note_kind_t::hold;
-    selected->end = local_position_t{selected->position.measure, selected->position.row + 1};
-    selected->provenance.source_field = "11 slot 0 object 01";
-    const auto change = replacement(*lane, "1A");
-    const auto proposal = channel_map_proposal_t::propose(*parsed.value.song, parsed.value.song->revision,
-        chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    const auto view = channel_map_preview_view_t::from(proposal);
-    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::unsupported_branch_channel;
+    const auto applied = apply_proposal(history, *proposal.value);
+    if (!applied) { UNSCOPED_INFO(applied.payload.message); return false; }
+    const auto written = write_bms(history.document);
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    return written.value && written.value->find("#0001A:01") != std::string::npos &&
+        written.value->find("#0011A:01") != std::string::npos;
 }
 
 auto root_export_swap_scenario() -> bool {
     auto song = parse_root_chart();
     if (!song) return false;
-    auto& chart = song->charts.front();
+    const auto& chart = *song->read_charts().front();
     const auto& layout = chart.lane_layouts.front();
     const auto first = std::ranges::find_if(layout.layout.lanes, [](const auto& lane) {
         return lane.bms_channels.visible == "11";
@@ -260,7 +238,7 @@ auto root_export_swap_scenario() -> bool {
     const auto reparsed = parse_bms_bytes(std::as_bytes(std::span{
         written.value->data(), written.value->size()}),
         {.lane_profile_id = "bme-7k-outside-scratch"});
-    return reparsed.value.song && reparsed.value.song->charts.front().measures.front().notes.size() == 2;
+    return reparsed.value.song && reparsed.value.song->read_charts().front()->measures.front().notes.size() == 2;
 }
 
 } // namespace
@@ -275,8 +253,7 @@ TEST_CASE("BMS channel-map conflicts name both lanes and invalid values reject",
     CHECK(channel_conflict_scenario());
     CHECK(casefold_scenario());
     CHECK(invalid_channel_rejected());
-    CHECK(branch_map_rejected());
-    CHECK(branch_hold_source_channel_rejected());
+    CHECK(scoped_branch_map_applies());
 }
 
 TEST_CASE("BMS channel-map edits change ordinary root export channels",

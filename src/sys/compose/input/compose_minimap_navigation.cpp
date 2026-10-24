@@ -68,7 +68,7 @@ auto move_compose_minimap_cursor(document_history_t& history, editor_interaction
 auto seek_stopped_compose_transport(document_history_t& history, editor_interaction_state_t& state,
                                     const compose_scene_cache_t& cache, std::uint64_t frame)
     -> compose_action_outcome_t {
-    const auto chart = history.document.find_chart(state.chart);
+    const auto chart = history.read_chart(state.chart);
     if (chart == nullptr) {
         if (cache.stamp().chart != state.chart || cache.stamp().document.revision != history.document.revision ||
             !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)

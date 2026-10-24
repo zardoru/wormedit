@@ -2651,7 +2651,7 @@ auto selected_chart(const wormedit::document_history_t& history,
     if (!workspace.selected_chart) {
         return nullptr;
     }
-    return history.document.find_chart(*workspace.selected_chart);
+    return history.read_chart(*workspace.selected_chart);
 }
 
 auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)

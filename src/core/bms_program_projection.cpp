@@ -44,6 +44,8 @@ struct projection_builder_t {
     std::set<std::uint64_t> identities;
     std::map<std::uint64_t, bms_resource_namespace_t> assets;
     std::set<lane_id_t> lanes;
+    std::map<object_id_t, object_id_t> authoring_pairs;
+    bool warned_authoring_endpoint{};
     std::set<std::pair<branch_id_t, std::optional<branch_id_t>>> skip_points;
 
     auto chart() -> chart_document_t& { return song.charts.front(); }
@@ -66,6 +68,8 @@ struct projection_builder_t {
         -> std::optional<std::int64_t>;
     void skip_at(branch_id_t scope, std::optional<branch_id_t> after, bool* stopped,
         const bms_case_scope_t* owning_case);
+    void evaluate_playback(const bms_program_evaluation_t& evaluation);
+    void evaluate_authoring(branch_id_t chart);
     void collect_declarations();
     void declaration(contribution_t entry, const bms_resource_declaration_t& value);
     void declaration(contribution_t entry, const bms_timing_definition_t& value);
@@ -90,6 +94,9 @@ struct projection_builder_t {
     template<class T> void emit(contribution_t, const T&) {}
     void emit_bgm();
     void pair_holds();
+    void pair_authoring_holds(const std::vector<contribution_t>& entries);
+    void emit_authoring_endpoint(contribution_t entry);
+    void mark_authoring_context(branch_id_t target);
     void emit_hold(contribution_t head, contribution_t tail);
 };
 
@@ -688,6 +695,54 @@ void projection_builder_t::emit_hold(contribution_t head, contribution_t tail) {
     add_owners(head.item->id.value, tail);
     add_resource_owner(head.item->id.value, bms_resource_namespace_t::wav, start.wav);
 }
+void projection_builder_t::emit_authoring_endpoint(contribution_t entry) {
+    const auto& endpoint = std::get<bms_hold_endpoint_t>(entry.item->value);
+    const auto at = position(endpoint.position);
+    if (!at) return;
+    chart().measures[measures.at(at->measure.value)].notes.push_back({.id = entry.item->id,
+        .position = *at, .lane = endpoint.lane, .kind = note_kind_t::tap,
+        .sound = sound(endpoint.wav, entry), .semantic_layers = endpoint.attributes.semantic_layers,
+        .label = endpoint.attributes.label.value_or("Hold endpoint (read-only scope context)"),
+        .provenance = entry.provenance(), .osu_hitsample = endpoint.attributes.osu_hitsample});
+    add_owners(entry.item->id.value, entry);
+    add_resource_owner(entry.item->id.value, bms_resource_namespace_t::wav, endpoint.wav);
+    chart().bms_authoring_read_only.insert(entry.item->id.value);
+    if (!warned_authoring_endpoint) {
+        warned_authoring_endpoint = true;
+        diagnose(failure_code_t::unavailable,
+            "Some hold endpoints cannot be paired in this scope view; they are shown as read-only markers.",
+            entry.owner.chart, entry.item->id, diagnostic_severity_t::warning);
+    }
+}
+void projection_builder_t::pair_authoring_holds(const std::vector<contribution_t>& entries) {
+    std::map<object_id_t, contribution_t> present;
+    for (const auto entry : entries) present.emplace(entry.item->id, entry);
+    std::set<object_id_t> paired;
+    for (const auto entry : entries) {
+        const auto known = authoring_pairs.find(entry.item->id);
+        if (known == authoring_pairs.end()) continue;
+        const auto tail = present.find(known->second);
+        if (tail == present.end()) continue;
+        emit_hold(entry, tail->second);
+        paired.insert(entry.item->id);
+        paired.insert(tail->first);
+        if (entry.owner.chart != tail->second.owner.chart) chart().bms_authoring_read_only.insert(entry.item->id.value);
+    }
+    for (const auto entry : entries) if (!paired.contains(entry.item->id)) emit_authoring_endpoint(entry);
+}
+void projection_builder_t::mark_authoring_context(branch_id_t target) {
+    std::set<std::uint64_t> editable;
+    for (const auto entry : active) {
+        if (entry.owner.chart != target) continue;
+        editable.insert(entry.item->id.value);
+        if (const auto* native = std::get_if<bms_native_content_t>(&entry.item->value))
+            for (const auto id : native->declared_ids()) editable.insert(id.value);
+    }
+    for (const auto& [id, contributors] : owners) {
+        (void)contributors;
+        if (!editable.contains(id)) chart().bms_authoring_read_only.insert(id);
+    }
+}
 void projection_builder_t::pair_holds() {
     // Stable sort preserves authored order for colliding endpoints. Exact rows
     // carry musical order; source offsets never override reordered Chart content.
@@ -698,36 +753,89 @@ void projection_builder_t::pair_holds() {
             const auto b = *position(std::get<bms_hold_endpoint_t>(right.item->value).position);
             return std::pair{measures.at(a.measure.value), a.row} < std::pair{measures.at(b.measure.value), b.row};
         });
+        if (chart().bms_authoring_chart) { pair_authoring_holds(entries); continue; }
         for (std::size_t index = 0; index + 1 < entries.size(); index += 2) emit_hold(entries[index], entries[index + 1]);
         if (entries.size() % 2) diagnose(failure_code_t::invalid_geometry, "Unpaired active hold endpoint.", entries.back().owner.chart, entries.back().item->id);
     }
+}
+void projection_builder_t::evaluate_playback(const bms_program_evaluation_t& evaluation) {
+    if (evaluation.selections.size() > limits.maximum_nodes)
+        diagnose(failure_code_t::capacity_exceeded, "Evaluation choice count exceeds the node limit.");
+    else for (const auto& selection : evaluation.selections) {
+        const auto* node = prepared.program.find(selection.branch);
+        if (!node || (!std::holds_alternative<bms_random_scope_t>(node->value) && !std::holds_alternative<bms_switch_scope_t>(node->value)))
+            diagnose(failure_code_t::invalid_request, "Evaluation choice does not identify a selector.", selection.branch);
+        else if (!choices.emplace(selection.branch.value, selection.selected_value).second)
+            diagnose(failure_code_t::conflict, "Duplicate evaluation choice.", selection.branch);
+    }
+    if (!failed) evaluate(*prepared.program.find(prepared.program.root()), std::nullopt, nullptr, nullptr, 0);
+    for (const auto& [id, value] : choices) {
+        (void)value;
+        if (!visited.contains(id)) diagnose(failure_code_t::unavailable, "Evaluation choice targets an inactive selector.", branch_id_t{id});
+    }
+}
+void projection_builder_t::evaluate_authoring(branch_id_t target) {
+    const auto* selected = prepared.program.find(target);
+    if (!selected || !std::holds_alternative<bms_chart_content_t>(selected->value)) {
+        diagnose(failure_code_t::not_found, "Authoring requires an existing Chart node.", target);
+        return;
+    }
+    std::set<branch_id_t> path;
+    for (auto ancestor = prepared.program.parent(target); ancestor; ancestor = prepared.program.parent(*ancestor))
+        path.insert(*ancestor);
+    struct pending_t { branch_id_t node; std::size_t depth; };
+    std::vector<pending_t> pending{{.node = prepared.program.root(), .depth = 0}};
+    while (!pending.empty() && !failed) {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (current.depth > limits.maximum_depth) {
+            diagnose(failure_code_t::capacity_exceeded, "Authoring nesting limit exceeded.", current.node);
+            return;
+        }
+        const auto& node = *prepared.program.find(current.node);
+        if (std::holds_alternative<bms_chart_content_t>(node.value))
+            evaluate(node, std::nullopt, nullptr, nullptr, current.depth);
+        else if (path.contains(node.id))
+            for (auto child = node.children.rbegin(); child != node.children.rend(); ++child)
+                pending.push_back({.node = *child, .depth = current.depth + 1});
+    }
+    chart().bms_authoring_chart = target;
 }
 } // namespace
 
 auto bms_program_projection_t::from(const bms_prepared_program_t& prepared,
     const bms_program_evaluation_t& evaluation, bms_program_projection_limits_t limits)
     -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> {
+    return build(prepared, evaluation, std::nullopt, limits);
+}
+auto bms_program_projection_t::for_authoring(const bms_prepared_program_t& prepared,
+    branch_id_t chart, const bms_program_evaluation_t& witness, bms_program_projection_limits_t limits)
+    -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> {
+    return build(prepared, witness, chart, limits);
+}
+auto bms_program_projection_t::build(const bms_prepared_program_t& prepared,
+    const bms_program_evaluation_t& evaluation, std::optional<branch_id_t> authoring_chart,
+    bms_program_projection_limits_t limits)
+    -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> {
     projection_builder_t builder{.prepared = prepared, .limits = limits};
     if (!builder.prepare()) return {std::nullopt, std::move(builder.diagnostics)};
-    if (evaluation.selections.size() > limits.maximum_nodes)
-        builder.diagnose(failure_code_t::capacity_exceeded, "Evaluation choice count exceeds the node limit.");
-    else for (const auto& selection : evaluation.selections) {
-        const auto* node = prepared.program.find(selection.branch);
-        if (!node || (!std::holds_alternative<bms_random_scope_t>(node->value) && !std::holds_alternative<bms_switch_scope_t>(node->value)))
-            builder.diagnose(failure_code_t::invalid_request, "Evaluation choice does not identify a selector.", selection.branch);
-        else if (!builder.choices.emplace(selection.branch.value, selection.selected_value).second)
-            builder.diagnose(failure_code_t::conflict, "Duplicate evaluation choice.", selection.branch);
-    }
-    if (!builder.failed) builder.evaluate(*prepared.program.find(prepared.program.root()), std::nullopt, nullptr, nullptr, 0);
-    for (const auto& [id, value] : builder.choices) {
-        (void)value;
-        if (!builder.visited.contains(id)) builder.diagnose(failure_code_t::unavailable, "Evaluation choice targets an inactive selector.", branch_id_t{id});
-    }
+    if (authoring_chart) {
+        const auto witness = from(prepared, evaluation, limits);
+        if (witness.value)
+            for (const auto& measure : witness.value->song().charts.front().measures)
+                for (const auto& note : measure.notes) {
+                    if (!note.end) continue;
+                    const auto endpoints = prepared.program.hold_endpoints(witness.value->owners(note.id.value));
+                    if (endpoints.size() == 2) builder.authoring_pairs.emplace(endpoints.front().item, endpoints.back().item);
+                }
+        builder.evaluate_authoring(*authoring_chart);
+    } else builder.evaluate_playback(evaluation);
     if (!builder.failed) builder.collect_declarations();
     if (!builder.failed && builder.build_geometry()) {
         for (const auto entry : builder.active) std::visit([&](const auto& value) { builder.emit(entry, value); }, entry.item->value);
         builder.emit_bgm();
         builder.pair_holds();
+        if (authoring_chart) builder.mark_authoring_context(*authoring_chart);
     }
     if (builder.failed) return {std::nullopt, std::move(builder.diagnostics)};
     bms_program_projection_t projection;

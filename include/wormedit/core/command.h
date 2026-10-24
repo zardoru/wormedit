@@ -228,6 +228,8 @@ class document_publication_observer_t {
 };
 
 struct document_history_t {
+    // Interactive reads honor the selected authoring Chart; document reads retain playback evaluation.
+    [[nodiscard]] auto read_chart(chart_id_t chart) const -> const chart_document_t*;
     // Starts a bounded history; promotes a zero source revision to the first usable revision.
     [[nodiscard]] static auto from(song_document_t document,
                                   std::size_t maximum_undo_entries = 128,
@@ -426,6 +428,7 @@ class document_command_transaction_t {
     [[nodiscard]] auto source_document() const noexcept -> const song_document_t&;
     [[nodiscard]] auto outcome() noexcept -> document_command_result_t&;
     [[nodiscard]] auto outcome() const noexcept -> const document_command_result_t&;
+    [[nodiscard]] auto read_chart(chart_id_t id) const -> const chart_document_t*;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
     auto document() -> song_document_t&;
     // Staged editors hand over their existing snapshot without copying the live document.

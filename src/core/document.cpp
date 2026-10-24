@@ -84,6 +84,15 @@ auto song_document_t::read_chart(chart_id_t id) const -> const chart_document_t*
     const auto* owner = find_bms_program(id);
     return owner ? owner->read_chart() : nullptr;
 }
+auto song_document_t::read_charts() const -> std::vector<const chart_document_t*> {
+    std::vector<const chart_document_t*> result;
+    result.reserve(charts.size() + prepared_bms_programs.size());
+    for (const auto& chart : charts) result.push_back(&chart);
+    for (const auto& owner : prepared_bms_programs)
+        if (owner && !find_chart(owner->difficulty()))
+            if (const auto* chart = owner->read_chart()) result.push_back(chart);
+    return result;
+}
 
 auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
 auto song_document_t::find_chart(chart_id_t id) const -> const chart_document_t* { return find_id(charts, id); }

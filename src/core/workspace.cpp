@@ -2,6 +2,7 @@
 #include "checked_math.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/core/bms_program_edit.h>
 
 #include <algorithm>
 #include <array>
@@ -99,6 +100,17 @@ auto validate_ids(const auto& values, projection_t projection, std::string_view 
     }
 }
 
+void validate_chart_bindings(const song_document_t& document, const workspace_limits_t& limits,
+    diagnostic_list_t& diagnostics) {
+    if (document.charts.size() + document.prepared_bms_programs.size() > limits.maximum_charts)
+        add_error(diagnostics, diagnostic_code_t::invalid_resolution, "song exceeds the workspace chart cap");
+    validate_ids<chart_id_t>(document.charts, [](const auto& chart) { return chart.id; }, "chart", diagnostics);
+    for (const auto& owner : document.prepared_bms_programs)
+        if (!owner || !owner->difficulty() || document.find_chart(owner->difficulty()) ||
+            document.find_bms_program(owner->difficulty()) != owner.get() || !owner->read_chart())
+            add_error(diagnostics, diagnostic_code_t::invalid_id, "Scoped difficulty has no unique readable owner.");
+}
+
 auto validate_binding_bounds(const song_document_t& document, const workspace_limits_t& limits)
     -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
@@ -110,10 +122,7 @@ auto validate_binding_bounds(const song_document_t& document, const workspace_li
         add_error(diagnostics, diagnostic_code_t::invalid_id,
                   "workspace cannot bind to a song with the reserved zero ID");
     }
-    if (document.charts.size() > limits.maximum_charts) {
-        add_error(diagnostics, diagnostic_code_t::invalid_resolution,
-                  "song exceeds the workspace chart cap");
-    }
+    validate_chart_bindings(document, limits, diagnostics);
     if (document.audio_assets.size() > limits.maximum_audio_assets) {
         add_error(diagnostics, diagnostic_code_t::invalid_resolution,
                   "song exceeds the workspace audio asset cap");
@@ -134,8 +143,6 @@ auto validate_binding_bounds(const song_document_t& document, const workspace_li
         add_error(diagnostics, diagnostic_code_t::invalid_resolution,
                   "song exceeds the workspace storyboard cap");
     }
-    validate_ids<chart_id_t>(
-        document.charts, [](const auto& chart) { return chart.id; }, "chart", diagnostics);
     validate_ids<asset_id_t>(
         document.audio_assets, [](const auto& asset) { return asset.id; }, "audio asset",
         diagnostics);
@@ -185,12 +192,13 @@ auto binding_diagnostics(const song_document_t& document, const workspace_limits
 auto default_comparison_charts(const song_document_t& document, std::size_t maximum)
     -> std::vector<chart_id_t> {
     std::vector<chart_id_t> result;
-    result.reserve(std::min({document.charts.size(), maximum, std::size_t{2}}));
-    for (const auto& chart : document.charts) {
+    const auto charts = document.read_charts();
+    result.reserve(std::min({charts.size(), maximum, std::size_t{2}}));
+    for (const auto* chart : charts) {
         if (result.size() == maximum || result.size() == 2) {
             break;
         }
-        result.push_back(chart.id);
+        result.push_back(chart->id);
     }
     return result;
 }
@@ -198,15 +206,15 @@ auto default_comparison_charts(const song_document_t& document, std::size_t maxi
 auto is_comparison_selection_valid(const song_document_t& document,
                                 const std::vector<chart_id_t>& charts, std::size_t maximum)
     -> bool {
+    const auto count = document.read_charts().size();
     if (charts.size() > maximum ||
-        (document.charts.size() >= 2 ? charts.size() < 2
-                                     : charts.size() > document.charts.size())) {
+        (count >= 2 ? charts.size() < 2 : charts.size() > count)) {
         return false;
     }
     std::unordered_set<std::uint64_t> seen;
     seen.reserve(charts.size());
     return std::ranges::all_of(charts, [&](const auto chart) {
-        return chart && seen.insert(chart.value).second && document.find_chart(chart) != nullptr;
+        return chart && seen.insert(chart.value).second && document.read_chart(chart) != nullptr;
     });
 }
 
@@ -268,7 +276,7 @@ auto has_focus_target(const song_document_t& document, const workspace_focus_tar
             if constexpr (std::is_same_v<id_t, std::monostate>) {
                 return true;
             } else if constexpr (std::is_same_v<id_t, chart_id_t>) {
-                return static_cast<bool>(id) && document.find_chart(id) != nullptr;
+                return static_cast<bool>(id) && document.read_chart(id) != nullptr;
             } else if constexpr (std::is_same_v<id_t, object_id_t>) {
                 return has_object_id(document, id);
             } else if constexpr (std::is_same_v<id_t, asset_id_t>) {
@@ -830,9 +838,8 @@ auto workspace_controller_t::from(const song_document_t& document, const workspa
         .document_revision = document.revision,
         .limits = limits,
     };
-    if (!document.charts.empty()) {
-        workspace.selected_chart = document.charts.front().id;
-    }
+    const auto charts = document.read_charts();
+    if (!charts.empty()) workspace.selected_chart = charts.front()->id;
     const auto music = std::ranges::find_if(document.resources,
         std::bind_back(&resource_entry_t::has_role, resource_role_t::music));
     if (music != document.resources.end() && document.find_audio_asset(music->asset))
@@ -889,9 +896,9 @@ auto rebind_selection(workspace_controller_t& workspace, const song_document_t& 
         workspace.active_tab = workspace_tab_t::setup;
     }
     if (!workspace.selected_chart.has_value() ||
-        document.find_chart(*workspace.selected_chart) == nullptr) {
-        workspace.selected_chart =
-            document.charts.empty() ? std::nullopt : std::optional{document.charts.front().id};
+        document.read_chart(*workspace.selected_chart) == nullptr) {
+        const auto charts = document.read_charts();
+        workspace.selected_chart = charts.empty() ? std::nullopt : std::optional{charts.front()->id};
     }
     if (!is_comparison_selection_valid(document, workspace.comparison_charts,
                                     workspace.limits.maximum_comparison_charts)) {
@@ -972,7 +979,7 @@ auto apply_action(workspace_action_context_t& context,
                   const workspace_select_chart_action_t& action) -> void {
     if (!action.chart) {
         context.reject(diagnostic_code_t::invalid_id, "selected chart uses the reserved zero ID");
-    } else if (context.document.find_chart(action.chart) == nullptr) {
+    } else if (context.document.read_chart(action.chart) == nullptr) {
         context.reject(diagnostic_code_t::invalid_id,
                        "selected chart does not exist in the bound document");
     } else {
@@ -990,7 +997,7 @@ auto apply_action(workspace_action_context_t& context,
     }
     std::unordered_set<std::uint64_t> charts;
     for (const auto chart : action.charts) {
-        if (!chart || context.document.find_chart(chart) == nullptr ||
+        if (!chart || context.document.read_chart(chart) == nullptr ||
             !charts.insert(chart.value).second) {
             context.reject(diagnostic_code_t::invalid_id,
                            "comparison charts must be present and unique");
@@ -1284,7 +1291,7 @@ auto build_metadata_tab(workspace_view_build_context_t& context) -> bool {
 
 auto build_setup_tab(workspace_view_build_context_t& context) -> bool {
     const auto& [workspace, document, chart, result, view] = context;
-    if (!enforce_summary_cap(document.charts.size(), workspace, "chart list", result.diagnostics) ||
+    if (!enforce_summary_cap(document.charts.size() + document.prepared_bms_programs.size(), workspace, "chart list", result.diagnostics) ||
         !enforce_summary_cap(document.audio_assets.size(), workspace, "audio asset list",
                              result.diagnostics) ||
         !enforce_summary_cap(document.visual_assets.size(), workspace, "visual asset list",
@@ -1297,10 +1304,9 @@ auto build_setup_tab(workspace_view_build_context_t& context) -> bool {
         .audio_asset_count = document.audio_assets.size(),
         .visual_asset_count = document.visual_assets.size(),
     };
-    content.charts.reserve(document.charts.size());
-    for (const auto& item : document.charts) {
-        content.charts.push_back(workspace_chart_option_t::from(item));
-    }
+    const auto charts = document.read_charts();
+    content.charts.reserve(charts.size());
+    for (const auto* item : charts) content.charts.push_back(workspace_chart_option_t::from(*item));
     view.tab_view = std::move(content);
     return true;
 }
@@ -1464,7 +1470,8 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
                             const song_document_t& document, workspace_tab_t requested_tab,
                             const diagnostic_list_t* cached_diagnostics,
                             workspace_bms_branch_outline_cache_t* branch_cache,
-                            workspace_binding_validation_cache_t* binding_cache)
+                            workspace_binding_validation_cache_t* binding_cache,
+                            std::optional<branch_id_t> authoring_chart)
     -> workspace_view_outcome_t {
     workspace_view_outcome_t result{};
     if (!document_stamp_t{.project = workspace.song, .revision = workspace.document_revision}
@@ -1483,7 +1490,7 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
         return result;
     }
     if (workspace.selected_chart.has_value() &&
-        document.find_chart(*workspace.selected_chart) == nullptr) {
+        document.read_chart(*workspace.selected_chart) == nullptr) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "workspace selected chart no longer exists; rebind the workspace");
         return result;
@@ -1506,8 +1513,11 @@ auto workspace_view_t::from(const workspace_controller_t& workspace,
     std::optional<workspace_chart_option_t> selected_difficulty;
     const chart_document_t* chart = nullptr;
     if (workspace.selected_chart.has_value()) {
-        chart = document.find_chart(*workspace.selected_chart);
+        chart = document.read_chart(*workspace.selected_chart);
         selected_difficulty = workspace_chart_option_t::from(*chart);
+        if (authoring_chart)
+            if (const auto* owner = document.find_bms_program(*workspace.selected_chart))
+                chart = owner->read_authoring_chart(*authoring_chart);
     }
 
     workspace_view_t view{

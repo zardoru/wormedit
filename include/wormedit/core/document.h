@@ -23,6 +23,7 @@
 #include <utility>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -827,6 +828,12 @@ struct chart_document_t {
     std::uint64_t virtual_tail_measures{};
     // Derived, never serialized. Unchanged snapshot copies share the payload.
     chart_indices_slot_t indices_slot{};
+    // Detached authoring-view origin only; never serialized or published as chart data.
+    std::optional<branch_id_t> bms_authoring_chart;
+    std::unordered_set<std::uint64_t> bms_authoring_read_only;
+    [[nodiscard]] auto is_bms_authoring_read_only(object_id_t id) const -> bool {
+        return bms_authoring_chart && bms_authoring_read_only.contains(id.value);
+    }
     [[nodiscard]] auto query_object_id(object_id_t id) const -> target_identity_query_t;
     template <class Value>
     [[nodiscard]] auto unique_target(std::vector<Value> chart_document_t::*collection, decltype(Value::id) id,
@@ -974,6 +981,7 @@ struct song_document_t {
     // Read-only prepared projections are available to domain planning; mutable
     // find_chart deliberately continues to resolve authored legacy charts only.
     [[nodiscard]] auto read_chart(chart_id_t id) const -> const chart_document_t*;
+    [[nodiscard]] auto read_charts() const -> std::vector<const chart_document_t*>;
     [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;

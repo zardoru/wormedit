@@ -753,32 +753,34 @@ auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t {
 
 namespace wormedit {
 using namespace interaction_detail;
-auto apply_scoped_duration_resize(document_history_t& history, editor_interaction_state_t& state,
-    const duration_resize_plan_t& plan) -> editor_interaction_result_t {
-    document_command_transaction_t transaction(history);
-    auto staged = transaction.stage_bms_native_objects(state.chart, plan.notes, bms_existing_edit_kind_t::update,
-        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
-            bool changed{};
-            for (const auto& candidate : plan.resized) {
-                auto* note = chart.find_note(candidate.id);
-                if (!note) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                    "Scoped duration target no longer exists.", candidate.id)}};
-                const auto kind = candidate.end_position ? note_kind_t::hold : note_kind_t::tap;
-                changed = changed || note->kind != kind || note->end != candidate.end_position;
-                note->kind = kind;
-                note->end = candidate.end_position;
-            }
-            return {.value = document_edit_effect_t{.changed = changed, .command_label = "Resize note duration"}};
-        });
-    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-    return commit_editor_edit(history, state, transaction, {.label = "Resize note duration",
-        .has_document_changes = staged.value->changed, .selection = plan.notes,
-        .cursor = plan.reference_end, .lane = plan.reference_lane});
+auto apply_scoped_duration_resize(editor_edit_context_t& context, const duration_resize_plan_t& plan)
+    -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+        auto staged = transaction.stage_bms_native_objects(context.state.chart, plan.notes, bms_existing_edit_kind_t::update,
+            [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+                bool changed{};
+                for (const auto& candidate : plan.resized) {
+                    auto* note = chart.find_note(candidate.id);
+                    if (!note) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                        "Scoped duration target no longer exists.", candidate.id)}};
+                    const auto kind = candidate.end_position ? note_kind_t::hold : note_kind_t::tap;
+                    changed = changed || note->kind != kind || note->end != candidate.end_position;
+                    note->kind = kind;
+                    note->end = candidate.end_position;
+                }
+                return {.value = document_edit_effect_t{.changed = changed, .command_label = "Resize note duration"}};
+            });
+        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+        return {.value = editor_edit_effect_t{.label = "Resize note duration", .has_document_changes = staged.value->changed,
+            .selection = plan.notes, .cursor = plan.reference_end, .lane = plan.reference_lane}};
+    });
 }
 
-auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
-                                const duration_resize_plan_t& plan) -> editor_interaction_result_t {
-    if (history.document.find_bms_program(state.chart)) return apply_scoped_duration_resize(history, state, plan);
+auto apply_duration_resize_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
+    -> editor_interaction_result_t {
+    auto& history = context.history;
+    auto& state = context.state;
+    if (history.document.find_bms_program(state.chart)) return apply_scoped_duration_resize(context, plan);
 
     auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
@@ -915,31 +917,31 @@ auto stage_scoped_note_move(chart_document_t& chart, const note_move_plan_t& pla
     return {.value = document_edit_effect_t{.changed = changed, .command_label = "Move chart objects"}};
 }
 
-auto apply_scoped_note_move(document_history_t& history, editor_interaction_state_t& state,
-    const note_move_plan_t& plan, const shift_selection_action_t* bar_line_shift) -> editor_interaction_result_t {
+auto apply_scoped_note_move(editor_edit_context_t& context, const note_move_plan_t& plan,
+    const shift_selection_action_t* bar_line_shift) -> editor_interaction_result_t {
     if (plan.staged_bgm_document || !plan.occupants.empty() || !plan.bgm_moves.empty() || move_conflict_count(plan) ||
         (bar_line_shift && bar_line_shift->rows != 0))
         return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
             "Scoped moves cannot implicitly convert owners, displace content or change shared geometry.")}};
-    document_command_transaction_t transaction(history);
-    auto objects = plan.notes;
-    for (const auto& event : plan.bgm_moves) objects.push_back(event.note);
-    auto staged = transaction.stage_bms_native_objects(state.chart, objects, bms_existing_edit_kind_t::update,
-        [&](chart_document_t& chart) { return stage_scoped_note_move(chart, plan, history, state); });
-    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-    return commit_editor_edit(history, state, transaction, {.label = "Move chart objects",
-        .has_document_changes = staged.value->changed, .selection = plan.notes,
-        .cursor = plan.reference_position, .lane = plan.reference_lane},
-        [&](editor_interaction_state_t& selected) {
-            for (const auto& event : plan.bgm_moves)
-                selected.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, event.note});
-        });
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+        auto objects = plan.notes;
+        for (const auto& event : plan.bgm_moves) objects.push_back(event.note);
+        auto staged = transaction.stage_bms_native_objects(context.state.chart, objects, bms_existing_edit_kind_t::update,
+            [&](chart_document_t& chart) { return stage_scoped_note_move(chart, plan, context.history, context.state); });
+        if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+        return {.value = editor_edit_effect_t{.label = "Move chart objects", .has_document_changes = staged.value->changed,
+            .selection = plan.notes, .cursor = plan.reference_position, .lane = plan.reference_lane}};
+    }, [&](editor_interaction_state_t& selected) {
+        for (const auto& event : plan.bgm_moves)
+            selected.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, event.note});
+    });
 }
 
-auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
-                          const note_move_plan_t& plan, const shift_selection_action_t* bar_line_shift)
-    -> editor_interaction_result_t {
-    if (history.document.find_bms_program(state.chart)) return apply_scoped_note_move(history, state, plan, bar_line_shift);
+auto apply_note_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan,
+                          const shift_selection_action_t* bar_line_shift) -> editor_interaction_result_t {
+    auto& history = context.history;
+    auto& state = context.state;
+    if (history.document.find_bms_program(state.chart)) return apply_scoped_note_move(context, plan, bar_line_shift);
 
     auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));

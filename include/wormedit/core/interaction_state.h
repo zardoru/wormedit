@@ -102,6 +102,14 @@ struct editor_interaction_state_t {
     std::optional<std::size_t> selected_canvas_measure;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
+    void clear_authoring_selection() {
+        selected_notes.clear();
+        selected_objects.clear();
+        retained_selection_range.reset();
+        retained_canvas_selection_range.reset();
+        selected_canvas_measure.reset();
+        selection_checked_revision.reset();
+    }
     // Document revision the selection was last checked against (see prune_stale_selection).
     std::optional<std::uint64_t> selection_checked_revision;
     // Edit snapping applies to every pointer-driven object class; while off, edits land on the

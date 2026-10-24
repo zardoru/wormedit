@@ -1,5 +1,6 @@
 #include <wormedit/core/bms_program.h>
 #include <algorithm>
+#include <type_traits>
 #include <unordered_set>
 
 namespace wormedit {
@@ -264,6 +265,40 @@ auto bms_program_t::conditional_selector(branch_id_t id) const -> std::optional<
         if (std::holds_alternative<bms_random_scope_t>(find(*ancestor)->value)) return ancestor;
     return std::nullopt;
 }
+auto bms_program_t::hold_endpoints(std::span<const bms_program_owner_t> contributors) const
+    -> std::vector<bms_program_owner_t> {
+    std::vector<bms_program_owner_t> result;
+    for (const auto contributor : contributors) {
+        const auto* node = find(contributor.chart);
+        if (!node) continue;
+        const auto* content = std::get_if<bms_chart_content_t>(&node->value);
+        if (!content) continue;
+        const auto item = std::ranges::find(content->items, contributor.item, &bms_content_item_t::id);
+        if (item != content->items.end() && std::holds_alternative<bms_hold_endpoint_t>(item->value)) result.push_back(contributor);
+    }
+    return result;
+}
+auto bms_program_t::with_parameter(branch_id_t id, std::optional<std::int64_t> value, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto* node = find(id);
+    if (!node) return std::unexpected(error_t{failure_code_t::not_found, "Parameter node no longer exists."});
+    auto nodes = nodes_;
+    auto& parameter = nodes[indices_.at(id.value)].value;
+    const auto changed = std::visit([&](auto& setting) -> bool {
+        using value_t = std::decay_t<decltype(setting)>;
+        if constexpr (std::is_same_v<value_t, bms_case_scope_t>) { setting.value = value; return true; }
+        else if constexpr (std::is_same_v<value_t, bms_if_scope_t> || std::is_same_v<value_t, bms_else_if_scope_t> ||
+            std::is_same_v<value_t, bms_switch_scope_t> || std::is_same_v<value_t, bms_set_random_t> ||
+            std::is_same_v<value_t, bms_set_switch_t>) {
+            if (!value) return false;
+            setting.value = *value;
+            return true;
+        } else return false;
+    }, parameter);
+    if (!changed) return std::unexpected(error_t{failure_code_t::invalid_request,
+        "This node has no editable scalar parameter; RANDOM uses its range command."});
+    return from(std::move(nodes), limits);
+}
 auto bms_program_t::with_random_range(branch_id_t id, std::int64_t range, bms_program_limits_t limits) const
     -> result_t<bms_program_t, error_t<failure_code_t>> {
     const auto* node = find(id);
@@ -273,18 +308,25 @@ auto bms_program_t::with_random_range(branch_id_t id, std::int64_t range, bms_pr
     std::get<bms_random_scope_t>(nodes[indices_.at(id.value)].value).range = range;
     return from(std::move(nodes), limits);
 }
+auto bms_program_t::is_unreachable_random_arm(branch_id_t id) const -> bool {
+    const auto* arm = find(id);
+    if (!arm) return false;
+    std::optional<std::int64_t> value;
+    if (const auto* conditional = std::get_if<bms_if_scope_t>(&arm->value)) value = conditional->value;
+    if (const auto* conditional = std::get_if<bms_else_if_scope_t>(&arm->value)) value = conditional->value;
+    if (!value) return false;
+    const auto selector = conditional_selector(id);
+    if (!selector) return false;
+    const auto* random = std::get_if<bms_random_scope_t>(&find(*selector)->value);
+    return random && (*value < 1 || *value > random->range);
+}
 auto bms_program_t::unreachable_random_arms(branch_id_t selector) const -> std::vector<branch_id_t> {
     const auto* node = find(selector);
     const auto* random = node ? std::get_if<bms_random_scope_t>(&node->value) : nullptr;
     if (!random) return {};
     std::vector<branch_id_t> result;
-    for (const auto& arm : nodes_) {
-        std::optional<std::int64_t> value;
-        if (const auto* conditional = std::get_if<bms_if_scope_t>(&arm.value)) value = conditional->value;
-        if (const auto* conditional = std::get_if<bms_else_if_scope_t>(&arm.value)) value = conditional->value;
-        if (value && (*value < 1 || *value > random->range) && conditional_selector(arm.id) == selector)
-            result.push_back(arm.id);
-    }
+    for (const auto& arm : nodes_)
+        if (is_unreachable_random_arm(arm.id) && conditional_selector(arm.id) == selector) result.push_back(arm.id);
     return result;
 }
 auto bms_program_evaluation_t::without_invalid_choices(const bms_program_t& program) const -> bms_program_evaluation_t {

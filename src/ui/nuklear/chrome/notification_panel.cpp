@@ -1,6 +1,7 @@
 #include "ui/field/rect.h"
 #include "ui/nuklear/chrome/notification_panel.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/text_block.h"
 #include "ui/nuklear/render/theme.h"
 
 #include <algorithm>
@@ -39,34 +40,6 @@ void render_row_buttons(nk_context* context, const wormedit::ui::notification_hi
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS, row.id);
 }
 
-auto detail_line_length(const nk_user_font& font, std::string_view text, float available) -> int {
-    int length = 0;
-    float width = 0;
-    while (length < static_cast<int>(text.size()) && text[length] != '\n') {
-        nk_rune rune{};
-        const int bytes = std::max(1, nk_utf_decode(text.data() + length, &rune,
-            static_cast<int>(text.size()) - length));
-        const float next = font.width(font.userdata, font.height, text.data() + length, bytes);
-        if (length && width + next > available) break;
-        width += next;
-        length += bytes;
-    }
-    return length;
-}
-
-void render_detail_lines(nk_context* context, std::string_view text) {
-    const auto& font = *context->style.font;
-    const float available = std::max(1.0f, nk_window_get_content_region_size(context).x -
-        2 * context->style.text.padding.x);
-    while (!text.empty()) {
-        const int length = detail_line_length(font, text, available);
-        nk_layout_row_dynamic(context, font.height + 2 * context->style.text.padding.y, 1);
-        nk_text(context, text.data(), length, NK_TEXT_LEFT);
-        text.remove_prefix(static_cast<std::size_t>(length));
-        if (!text.empty() && text.front() == '\n') text.remove_prefix(1);
-    }
-}
-
 void render_expanded_detail(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
                             notification_panel_state_t& state) {
     // The pinned READ_ONLY edit disables all input, including scrolling.
@@ -77,7 +50,7 @@ void render_expanded_detail(nk_context* context, const wormedit::ui::notificatio
     nk_layout_row_dynamic(context, 150, 1);
     if (nk_group_scrolled_offset_begin(context, &state.detail_scroll_x, &state.detail_scroll_y,
                                       "Notification detail", NK_WINDOW_BORDER)) {
-        render_detail_lines(context, state.detail_text.data());
+        chrome::text_block_t{.text = state.detail_text.data()}.render(context);
         nk_group_end(context);
     }
 }

@@ -2178,7 +2178,7 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
             draw_compose_hold_ghost(paint, hold, rect);
             continue;
         }
-        const auto color = hold.proposal_origin
+        const auto color = hold.read_only ? nk_rgb(80, 85, 100) : hold.proposal_origin
                                ? nk_rgb(51, 82, 100)
                                : compose_note_base_fill(
                                      worm_ui_nuklear_compose_state().input_queue.color_view, hold);
@@ -2259,6 +2259,10 @@ static ComposeNoteStyle compose_note_style(const wormedit::ui::compose_view_t& v
     if (compose_note_shows_selection_outline(view, note)) {
         border = compose_selection_outline_color();
         border_width = 2.0f;
+    }
+    if (note.read_only) {
+        fill = nk_rgb(105, 110, 125);
+        border = nk_rgb(155, 160, 175);
     }
     return compose_move_note_style(note, {fill, border, border_width});
 }

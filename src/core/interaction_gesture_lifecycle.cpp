@@ -63,7 +63,7 @@ auto pending_note_duration_gesture_t::apply(editor_edit_context_t& context) cons
     auto planned = make_duration_plan(context, notes, reference_note, preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return editor_interaction_result_t{.diagnostics = *diagnostics};
-    return apply_duration_resize_plan(context.history, context.state, std::get<duration_resize_plan_t>(planned));
+    return apply_duration_resize_plan(context, std::get<duration_resize_plan_t>(planned));
 }
 
 
@@ -296,7 +296,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
         warning.severity = diagnostic_severity_t::warning;
         return editor_interaction_result_t{.diagnostics = {std::move(warning)}};
     }
-    return apply_note_move_plan(context.history, context.state, plan,
+    return apply_note_move_plan(context, plan,
                                 bar_line_shift ? &*bar_line_shift : nullptr);
 }
 

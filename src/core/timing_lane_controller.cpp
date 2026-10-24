@@ -239,7 +239,7 @@ auto timing_lane_pseudonote_preview_t::validate_initial_state(timing_lane_pseudo
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, "timing pseudo-note uses an empty chart ID"));
         return false;
     }
-    const auto* chart = history.document.read_chart(outcome.captured_stamp().chart);
+    const auto* chart = history.read_chart(outcome.captured_stamp().chart);
     if (chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -390,7 +390,7 @@ auto timing_lane_pseudonote_preview_t::load_initial_event(timing_lane_pseudonote
                "existing timing event uses a reserved zero ID"));
         return false;
     }
-    const auto* target_chart = history.document.read_chart(chart);
+    const auto* target_chart = history.read_chart(chart);
     if (target_chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -499,7 +499,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = history.document.read_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group move refers to an unknown chart")};
@@ -627,7 +627,7 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     if (kind == timing_lane_kind_t::bpm &&
-        is_fixed_initial_bpm(*history.document.read_chart(chart), event)) {
+        is_fixed_initial_bpm(*history.read_chart(chart), event)) {
         result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
                                     "the initial BPM cannot be deleted")};
         return result;
@@ -686,7 +686,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
                                     "timing group must contain 1 to 4096 events")};
         return result;
     }
-    const auto* chart = history.document.read_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (chart == nullptr) {
         result.diagnostics = {error(diagnostic_code_t::invalid_id,
                                     "timing group deletion refers to an unknown chart")};

@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/bms_program_runtime.h"
 #include "sys/compose/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
 #include "sys/bookmarks/bookmark_navigation.h"
@@ -682,6 +683,7 @@ struct application_command_state_t {
     bool system_clipboard_has_bms_editor_text{};
 
     struct project_t {
+        bms_program_runtime_t bms_program;
         compose_auditions_t auditions;
 
         struct sound_selection_state_t {

@@ -1,5 +1,6 @@
 #pragma once
 #include "bga_usage.h"
+#include "bms_program.h"
 #include "compose_measure_lane.h"
 #include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
@@ -265,6 +266,7 @@ struct compose_hold_view_t {
     wormedit::lane_key_color_t key_color{};
     uint8_t snap_class{}; // subdivision of the owning note head.
     bool selected{};
+    bool read_only{};
     bool proposal_origin{};
     bool proposal_ghost{};
     bool semantic_color_visible{};
@@ -296,6 +298,7 @@ struct compose_note_view_t {
     wormedit::note_kind_t kind{};
     bool tail{};
     bool selected{};
+    bool read_only{};
     bool proposal_origin{};
     bool proposal_ghost{};
     bool semantic_color_visible{};
@@ -1402,6 +1405,7 @@ struct compose_view_t {
     double space_range_tail_y_pixels{};
     std::vector<wormedit::ui::compose_lane_key_binding_t> lane_key_bindings;
     bool lane_keys_unbound{};
+    bms_program_view_t bms_program;
     bool branch_outline_available{};
     bool branch_rows_truncated{};
     bool branch_choices_truncated{};

@@ -2300,6 +2300,25 @@ struct clear_semantic_layer_target_action_t {
 };
 static_assert(compose_action<clear_semantic_layer_target_action_t, compose_action_context_t>);
 
+struct edit_compose_bms_program_action_t {
+    auto operator==(const edit_compose_bms_program_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
+        const auto& workspace = context.environment.document.workspace;
+        if (workspace.active_tab != workspace_tab_t::compose || workspace.selected_chart != context.action.bms_program.difficulty)
+            return compose_action_outcome_t::blocked(stale_action_message("BMS scope action"), notification_source_t::format);
+        return context.require_no_gesture("Finish or cancel the active gesture before editing BMS scopes.");
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& history = context.environment.document.history;
+        auto& runtime = context.environment.editor.commands.project.bms_program;
+        auto result = runtime.apply(history, context.state, context.action.bms_program);
+        return compose_action_outcome_t::from(std::move(result), compose_action_description_t{
+            .success = "BMS scope updated.", .unchanged = "", .rebind_failure = "BMS scope changed, but workspace rebinding failed.",
+            .source = notification_source_t::format});
+    }
+};
+static_assert(compose_action<edit_compose_bms_program_action_t, compose_action_context_t>);
+
 struct edit_compose_bms_branch_choice_action_t {
     auto operator==(const edit_compose_bms_branch_choice_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -3352,6 +3371,9 @@ constexpr auto local_route_entries = std::array{
                                run_routed_compose_action<toggle_layer_assist_tick_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM,
                            .operation = cancel_compose_bmson_marker_batch},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_BMS_PROGRAM,
+        .operation = run_routed_compose_action<edit_compose_bms_program_action_t>,
+        .bypasses_area_clear = true, .is_workspace_only = true},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
                            .operation =
                                run_routed_compose_action<edit_compose_bms_branch_choice_action_t>,

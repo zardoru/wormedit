@@ -12,7 +12,10 @@ struct compose_scene_source_key_t {
 
     static auto from(const wormedit::song_document_t& document,
                      const wormedit::chart_document_t& chart) -> compose_scene_source_key_t {
-        return {&document, &chart, {.document = {.project = document.id, .revision = document.revision}, .chart = chart.id}};
+        auto stamp = chart_stamp_t{.document = {.project = document.id, .revision = document.revision}, .chart = chart.id};
+        if (chart.bms_authoring_chart)
+            stamp.document.bms_target = {.difficulty = chart.id, .chart = *chart.bms_authoring_chart};
+        return {.document_identity = &document, .chart_identity = &chart, .stamp = stamp};
     }
 };
 

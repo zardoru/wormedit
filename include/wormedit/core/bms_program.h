@@ -235,6 +235,7 @@ struct bms_program_subtree_t {
 // Prepared value model only: T-744 activates it as the document's semantic owner.
 // Musical/resource validation belongs to the projection/edit adapters, not this
 // graph constructor. No live document contains a separately writable mirror.
+struct bms_program_owner_t;
 class bms_program_t {
   public:
     [[nodiscard]] static auto from(std::vector<bms_program_node_t> nodes,
@@ -253,8 +254,11 @@ class bms_program_t {
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_text(branch_id_t node, bms_text_t text,
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_parameter(branch_id_t node, std::optional<std::int64_t> value,
+        bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_random_range(branch_id_t node, std::int64_t range,
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto is_unreachable_random_arm(branch_id_t arm) const -> bool;
     [[nodiscard]] auto unreachable_random_arms(branch_id_t selector) const -> std::vector<branch_id_t>;
     [[nodiscard]] auto with_move(const bms_program_move_t& move, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
@@ -269,6 +273,8 @@ class bms_program_t {
     [[nodiscard]] auto find(branch_id_t id) const -> const bms_program_node_t*;
     [[nodiscard]] auto parent(branch_id_t id) const -> std::optional<branch_id_t>;
     [[nodiscard]] auto conditional_selector(branch_id_t id) const -> std::optional<branch_id_t>;
+    [[nodiscard]] auto hold_endpoints(std::span<const bms_program_owner_t> contributors) const
+        -> std::vector<bms_program_owner_t>;
     [[nodiscard]] auto target_chart(branch_id_t id) const -> std::optional<branch_id_t>;
     auto operator==(const bms_program_t&) const -> bool = default;
   private:
@@ -334,6 +340,10 @@ class bms_program_projection_t {
     [[nodiscard]] static auto from(const bms_prepared_program_t& prepared,
         const bms_program_evaluation_t& evaluation = {}, bms_program_projection_limits_t limits = {})
         -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] static auto for_authoring(const bms_prepared_program_t& prepared, branch_id_t chart,
+        const bms_program_evaluation_t& witness = {},
+        bms_program_projection_limits_t limits = {})
+        -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
     [[nodiscard]] auto song() const -> const song_document_t& { return song_; }
     [[nodiscard]] auto active_charts() const -> std::span<const branch_id_t> { return active_charts_; }
     [[nodiscard]] auto selections() const -> std::span<const branch_selection_t> { return selections_; }
@@ -345,6 +355,10 @@ class bms_program_projection_t {
         -> result_t<bms_program_owner_t, error_t<failure_code_t>>;
   private:
     bms_program_projection_t() = default;
+    [[nodiscard]] static auto build(const bms_prepared_program_t& prepared,
+        const bms_program_evaluation_t& evaluation, std::optional<branch_id_t> authoring_chart,
+        bms_program_projection_limits_t limits)
+        -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
     song_document_t song_;
     std::vector<branch_id_t> active_charts_;
     std::vector<branch_selection_t> selections_;

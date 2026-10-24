@@ -14,10 +14,11 @@ class bms_program_document_t {
         -> attempt_t<std::shared_ptr<const bms_program_document_t>, bms_program_projection_diagnostics_t>;
     [[nodiscard]] auto read_resource(resource_id_t id) const -> const resource_entry_t*;
     [[nodiscard]] auto read_chart() const -> const chart_document_t*;
+    [[nodiscard]] auto read_authoring_chart(branch_id_t chart) const -> const chart_document_t*;
     [[nodiscard]] auto difficulty() const -> chart_id_t { return difficulty_; }
     [[nodiscard]] auto prepared() const -> const bms_prepared_program_t& { return prepared_; }
     [[nodiscard]] auto evaluation() const -> const bms_program_evaluation_t& { return evaluation_; }
-    [[nodiscard]] auto build_projection() const
+    [[nodiscard]] auto build_projection(std::optional<branch_id_t> authoring_chart = {}) const
         -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
   private:
     friend class document_command_transaction_t;
@@ -28,6 +29,7 @@ class bms_program_document_t {
     bms_prepared_program_t prepared_;
     bms_program_evaluation_t evaluation_;
     mutable std::optional<song_document_t> view_;
+    mutable std::optional<std::pair<branch_id_t, song_document_t>> authoring_view_;
 };
 
 struct bms_program_edit_target_t {
@@ -35,6 +37,7 @@ struct bms_program_edit_target_t {
     chart_id_t difficulty;
     branch_id_t scope;
     branch_id_t chart;
+    bool authoring{};
     // No selection means Root; a scope selects its first direct Chart. An
     // explicit Chart remains that Chart. Invalid/hidden selections never default.
     [[nodiscard]] static auto from(const song_document_t& document,
@@ -42,6 +45,9 @@ struct bms_program_edit_target_t {
         -> result_t<bms_program_edit_target_t, error_t<failure_code_t>>;
     [[nodiscard]] static auto from(const song_document_t& document,
         chart_id_t difficulty, object_id_t existing_item)
+        -> result_t<bms_program_edit_target_t, error_t<failure_code_t>>;
+    [[nodiscard]] static auto for_authoring(const song_document_t& document,
+        chart_id_t difficulty, branch_id_t selected, std::optional<object_id_t> existing = {})
         -> result_t<bms_program_edit_target_t, error_t<failure_code_t>>;
     [[nodiscard]] auto validate(const song_document_t& document) const
         -> result_t<const bms_program_document_t*, error_t<failure_code_t>>;

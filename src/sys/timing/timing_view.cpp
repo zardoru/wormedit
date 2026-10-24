@@ -200,16 +200,16 @@ void populate_timing_view_for_compose(
     int window_width, int window_height,
     const timing_grid_state_t& timing_grid,
     const wormedit::timing_lane_pseudonote_outcome_t* stage) {
-    if (!workspace.selected_chart) return;
-    const auto selected = history.document.find_chart(*workspace.selected_chart);
-    if (selected == nullptr) return;
-    const auto& chart = *selected;
     auto& view = flattened.view.timing;
-    view.chart_id = chart.id;
-    view.document_revision = history.document.revision;
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
-    view.total_rows = cache.get_or_build(std::pair{chart.id, history.document.revision},
+    if (!workspace.selected_chart) return;
+    const auto selected = history.read_chart(*workspace.selected_chart);
+    if (selected == nullptr) return;
+    const auto& chart = *selected;
+    view.chart_id = chart.id;
+    view.document_revision = history.document.revision;
+    view.total_rows = cache.get_or_build(compose_scene_source_key_t::from(history.document, chart),
         std::bind_front(build_compose_total_rows, std::cref(chart)));
     view.scene_available = view.total_rows != 0;
     populate_initial_bpm(view, chart);

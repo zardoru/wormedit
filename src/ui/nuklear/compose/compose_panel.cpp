@@ -1416,7 +1416,8 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
     worm_ui_nuklear_dismiss_layer_popup(context);
     state.dock_layout.compact_dock_layout = bounds.w < 700.0f;
     const auto branch = state.dock_layout.branch_panel_visible &&
-        worm_ui_nuklear_bms_branch_panel_visible(view) && bounds.w >= 900.0f;
+        worm_ui_nuklear_bms_branch_panel_visible(view) &&
+        bounds.w >= (view->bms_program.available ? 600.0f : 900.0f);
     const auto branch_width = branch ? std::clamp(bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
     state.dock_layout.branch_dock_width_drawn = branch ? branch_width + 8.0f : 0.0f;
     return {.compose_body_bounds = bounds, .compose_body_height = height, .inspector_drawn = inspector,

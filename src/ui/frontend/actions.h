@@ -1,5 +1,6 @@
 #pragma once
 #include "bga_usage.h"
+#include "bms_program.h"
 #include <wormedit/core/metadata_inheritance_types.h>
 #include "timing_links.h"
 #include "audio_slicer.h"
@@ -213,6 +214,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
+    WORM_UI_COMPOSE_ACTION_BMS_PROGRAM,
     WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
     WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
     WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
@@ -680,6 +682,7 @@ struct workspace_action_t {
     std::optional<resource_role_t> compose_resource_role;
     std::string compose_import_path;
     timing_lane_kind_t compose_timing_lane;
+    bms_program_action_t bms_program;
     wormedit::branch_id_t compose_branch_id;
     int64_t compose_branch_value;
     wormedit::branch_id_t compose_branch_statement_id;

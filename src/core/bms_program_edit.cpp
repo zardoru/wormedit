@@ -14,7 +14,7 @@ namespace wormedit {
 namespace {
 
 auto resolve_target(const song_document_t& document, chart_id_t difficulty,
-    std::optional<branch_id_t> selected)
+    std::optional<branch_id_t> selected, bool authoring = false)
     -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
     const auto* owner = document.find_bms_program(difficulty);
     if (!difficulty || !owner || document.find_chart(difficulty))
@@ -27,57 +27,46 @@ auto resolve_target(const song_document_t& document, chart_id_t difficulty,
         return std::unexpected(error_t<failure_code_t>{failure_code_t::not_found,
             "Selected scope or Chart is unavailable."});
     const auto scope = program.parent(*chart);
-    const auto projection = owner->build_projection();
-    if (!projection.value || !projection.ok())
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::materialize_failed,
-            "Scoped difficulty cannot be evaluated."});
-    if (std::ranges::find(projection.value->active_charts(), *chart) ==
-        projection.value->active_charts().end())
-        return std::unexpected(error_t<failure_code_t>{failure_code_t::unavailable,
-            "Selected Chart is inactive in this evaluation."});
+    if (!authoring) {
+        const auto projection = owner->build_projection();
+        if (!projection.value || !projection.ok())
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::materialize_failed,
+                "Scoped difficulty cannot be evaluated."});
+        if (std::ranges::find(projection.value->active_charts(), *chart) ==
+            projection.value->active_charts().end())
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::unavailable,
+                "Selected Chart is inactive in this evaluation."});
+    }
     return bms_program_edit_target_t{.stamp = document_stamp_t::from(document),
-        .difficulty = difficulty, .scope = *scope, .chart = *chart};
+        .difficulty = difficulty, .scope = *scope, .chart = *chart, .authoring = authoring};
 }
 
 auto resolve_native_target(const song_document_t& document, chart_id_t difficulty,
     std::optional<object_id_t> existing, const std::optional<bms_program_target_key_t>& selection)
     -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
-    if (existing) return bms_program_edit_target_t::from(document, difficulty, *existing);
     if (selection && selection->difficulty != difficulty)
         return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict,
             "Selected semantic Chart belongs to another difficulty."});
-    return bms_program_edit_target_t::from(document, difficulty,
-        selection ? std::optional{selection->chart} : std::nullopt);
+    if (selection) return bms_program_edit_target_t::for_authoring(document, difficulty, selection->chart, existing);
+    if (existing) return bms_program_edit_target_t::from(document, difficulty, *existing);
+    return bms_program_edit_target_t::from(document, difficulty);
 }
 
 auto maximum_program_id(const song_document_t& document) -> std::uint64_t {
     return id_ceiling_t<object_id_t>::from(document).maximum;
 }
 
-auto endpoint_owners(const bms_program_document_t& owner,
-    std::span<const bms_program_owner_t> contributors) -> std::vector<bms_program_owner_t> {
-    std::vector<bms_program_owner_t> endpoints;
-    for (const auto contributor : contributors) {
-        const auto* node = owner.prepared().program.find(contributor.chart);
-        const auto& items = std::get<bms_chart_content_t>(node->value).items;
-        const auto item = std::ranges::find(items, contributor.item, &bms_content_item_t::id);
-        if (item != items.end() && std::holds_alternative<bms_hold_endpoint_t>(item->value))
-            endpoints.push_back(contributor);
-    }
-    return endpoints;
-}
-
 // Declarations also contribute to a projected hold, but are independently
 // editable. Only its authored endpoints determine whether a hold spans owners.
-auto cross_owner_endpoints(const bms_program_document_t& owner)
+auto cross_owner_endpoints(const bms_program_document_t& owner, std::optional<branch_id_t> authoring_chart = {})
     -> std::set<object_id_t> {
     std::set<object_id_t> result;
-    const auto projection = owner.build_projection();
+    const auto projection = owner.build_projection(authoring_chart);
     if (!projection.value) return result;
     for (const auto& measure : projection.value->song().charts.front().measures) {
         for (const auto& note : measure.notes) {
             if (!note.end) continue;
-            const auto endpoints = endpoint_owners(owner, projection.value->owners(note.id.value));
+            const auto endpoints = owner.prepared().program.hold_endpoints(projection.value->owners(note.id.value));
             if (endpoints.size() == 2 && endpoints.front().chart != endpoints.back().chart)
                 for (const auto endpoint : endpoints) result.insert(endpoint.item);
         }
@@ -281,13 +270,14 @@ struct existing_event_normalizer_t {
     }
 };
 
-auto complete_endpoint_ids(const bms_program_document_t& program, std::span<const object_id_t> ids)
+auto complete_endpoint_ids(const bms_program_document_t& program, std::span<const object_id_t> ids,
+    std::optional<branch_id_t> authoring_chart = {})
     -> std::set<object_id_t> {
     std::set<object_id_t> result(ids.begin(), ids.end());
-    const auto projection = program.build_projection();
+    const auto projection = program.build_projection(authoring_chart);
     if (!projection.value) return result;
     for (const auto id : ids) {
-        const auto endpoints = endpoint_owners(program, projection.value->owners(id.value));
+        const auto endpoints = program.prepared().program.hold_endpoints(projection.value->owners(id.value));
         for (const auto endpoint : endpoints) result.insert(endpoint.item);
     }
     return result;
@@ -307,12 +297,13 @@ void assign_new_layer_ids(chart_document_t& chart, const std::set<layer_id_t>& e
 }
 
 auto resolve_object_target(const song_document_t& document, chart_id_t difficulty,
-    std::span<const object_id_t> objects) -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
-    const auto target = bms_program_edit_target_t::from(document, difficulty, objects.front());
+    std::span<const object_id_t> objects, const std::optional<bms_program_target_key_t>& selection)
+    -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
+    const auto target = resolve_native_target(document, difficulty, objects.front(), selection);
     if (!target) return target;
     std::set<object_id_t> unique;
     for (const auto id : objects) {
-        const auto owner = bms_program_edit_target_t::from(document, difficulty, id);
+        const auto owner = resolve_native_target(document, difficulty, id, selection);
         if (!unique.insert(id).second || !owner || owner->chart != target->chart)
             return std::unexpected(error_t<failure_code_t>{failure_code_t::conflict,
                 "Scoped object edits require distinct objects with one complete semantic owner."});
@@ -334,9 +325,9 @@ struct native_batch_builder_t {
         batch.edits.push_back(bms_program_content_delete_t{.owner = owner(id)});
     }
     auto paired_tail(object_id_t id) const -> const bms_content_item_t* {
-        const auto projection = program.build_projection();
+        const auto projection = program.build_projection(batch.target.authoring ? std::optional{batch.target.chart} : std::nullopt);
         if (!projection.value) return nullptr;
-        const auto endpoints = endpoint_owners(program, projection.value->owners(id.value));
+        const auto endpoints = program.prepared().program.hold_endpoints(projection.value->owners(id.value));
         if (endpoints.size() != 2) return nullptr;
         const auto tail = endpoints.front().item == id ? endpoints.back() : endpoints.front();
         if (tail.chart != batch.target.chart) return nullptr;
@@ -412,7 +403,7 @@ struct native_batch_builder_t {
                 if constexpr (requires { edit.owner; }) affected.push_back(edit.owner.item);
             }, operation);
         const std::set requested(affected.begin(), affected.end());
-        for (const auto id : complete_endpoint_ids(program, affected))
+        for (const auto id : complete_endpoint_ids(program, affected, batch.target.authoring ? std::optional{batch.target.chart} : std::nullopt))
             if (!requested.contains(id)) erase(id);
     }
 };
@@ -559,7 +550,7 @@ auto has_changed_cross_owner_hold(const bms_program_document_t& before,
     for (const auto& measure : projection.song().charts.front().measures) {
         for (const auto& note : measure.notes) {
             if (!note.end) continue;
-            const auto endpoints = endpoint_owners(observed, projection.owners(note.id.value));
+            const auto endpoints = observed.prepared().program.hold_endpoints(projection.owners(note.id.value));
             if (endpoints.size() != 2 || endpoints.front().chart == endpoints.back().chart) continue;
             for (const auto endpoint : endpoints)
                 if (!has_unchanged_item(&before, proposed, endpoint.chart, endpoint.item)) return true;
@@ -609,15 +600,29 @@ auto bms_program_document_t::read_chart() const -> const chart_document_t* {
     return &view_->charts.front();
 }
 
+auto bms_program_document_t::read_authoring_chart(branch_id_t chart) const -> const chart_document_t* {
+    if (!authoring_view_ || authoring_view_->first != chart) {
+        auto projection = build_projection(chart);
+        if (!projection.value || !projection.ok()) return nullptr;
+        auto song = projection.value->song();
+        song.charts.front().id = difficulty_;
+        authoring_view_ = std::pair{chart, std::move(song)};
+    }
+    return &authoring_view_->second.charts.front();
+}
+
 auto bms_program_document_t::read_resource(resource_id_t id) const -> const resource_entry_t* {
+    const auto canonical = std::ranges::find(prepared_.resources, id, &resource_entry_t::id);
+    if (canonical != prepared_.resources.end()) return &*canonical;
     if (!read_chart()) return nullptr;
     const auto found = std::ranges::find(view_->resources, id, &resource_entry_t::id);
     return found == view_->resources.end() ? nullptr : &*found;
 }
 
-auto bms_program_document_t::build_projection() const
+auto bms_program_document_t::build_projection(std::optional<branch_id_t> authoring_chart) const
     -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> {
-    return bms_program_projection_t::from(prepared_, evaluation_);
+    return authoring_chart ? bms_program_projection_t::for_authoring(prepared_, *authoring_chart, evaluation_)
+        : bms_program_projection_t::from(prepared_, evaluation_);
 }
 
 auto bms_program_document_t::from(chart_id_t difficulty, bms_prepared_program_t prepared,
@@ -658,12 +663,29 @@ auto bms_program_edit_target_t::from(const song_document_t& document,
         "Existing scoped item no longer exists."});
 }
 
+auto bms_program_edit_target_t::for_authoring(const song_document_t& document,
+    chart_id_t difficulty, branch_id_t selected, std::optional<object_id_t> existing)
+    -> result_t<bms_program_edit_target_t, error_t<failure_code_t>> {
+    auto target = resolve_target(document, difficulty, selected, true);
+    if (!target || !existing) return target;
+    const auto* owner = document.find_bms_program(difficulty);
+    const auto& items = std::get<bms_chart_content_t>(owner->prepared().program.find(target->chart)->value).items;
+    if (std::ranges::find(items, *existing, &bms_content_item_t::id) == items.end())
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::unavailable,
+            "Inherited content is read-only; select its owning node to edit it."});
+    const auto* view = owner->read_authoring_chart(target->chart);
+    if (!view || view->is_bms_authoring_read_only(*existing))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::unavailable,
+            "This object is read-only context in the authoring view."});
+    return target;
+}
+
 auto bms_program_edit_target_t::validate(const song_document_t& document) const
     -> result_t<const bms_program_document_t*, error_t<failure_code_t>> {
     if (!stamp.is_current(document))
         return std::unexpected(error_t<failure_code_t>{failure_code_t::stale_generation,
             stale_action_message("Scoped edit")});
-    const auto current = resolve_target(document, difficulty, chart);
+    const auto current = resolve_target(document, difficulty, chart, authoring);
     if (!current) return std::unexpected(current.error());
     if (current->scope != scope)
         return std::unexpected(error_t<failure_code_t>{failure_code_t::stale_generation,
@@ -687,6 +709,10 @@ auto document_command_transaction_t::next_bms_program_item_id(std::size_t count)
 auto document_command_transaction_t::stage(const bms_program_content_edit_batch_t& edit)
     -> attempt_t<document_edit_effect_t> {
     const auto key = bms_program_target_key_t{.difficulty = edit.target.difficulty, .chart = edit.target.chart};
+    if (edit.target.authoring && bms_target_ && *bms_target_ != key) {
+        (void)reject(diagnostic_code_t::invalid_id, "Authoring target changed; select the owning node again.");
+        return {.diagnostics = outcome().diagnostics};
+    }
     if (bms_write_owner_ && *bms_write_owner_ != key) {
         (void)reject(diagnostic_code_t::invalid_id, "Scoped transaction cannot cross semantic owners.");
         return {.diagnostics = outcome().diagnostics};
@@ -699,7 +725,10 @@ auto document_command_transaction_t::stage(const bms_program_content_edit_batch_
         auto nodes = std::vector<bms_program_node_t>(source.program.nodes().begin(), source.program.nodes().end());
         auto node = std::ranges::find(nodes, edit.target.chart, &bms_program_node_t::id);
         auto& items = std::get<bms_chart_content_t>(node->value).items;
-        const auto cross_owner = cross_owner_endpoints(**owner);
+        auto cross_owner = cross_owner_endpoints(**owner, edit.target.authoring ? std::optional{edit.target.chart} : std::nullopt);
+        if (edit.target.authoring)
+            if (const auto* view = (*owner)->read_authoring_chart(edit.target.chart))
+                for (const auto id : view->bms_authoring_read_only) cross_owner.insert(object_id_t{id});
         const auto next_id = next_bms_program_item_id();
         const auto maximum = next_id ? next_id->value - 1 : std::numeric_limits<std::uint64_t>::max();
         content_editor_t editor{.target = edit.target, .items = items,
@@ -777,10 +806,10 @@ auto document_command_transaction_t::stage_bms_native_objects(chart_id_t difficu
     -> attempt_t<document_edit_effect_t> {
     return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
         if (objects.empty()) return {.value = document_edit_effect_t{}};
-        const auto target = resolve_object_target(document, difficulty, objects);
+        const auto target = resolve_object_target(document, difficulty, objects, bms_target_);
         if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
         const auto* program = document.find_bms_program(difficulty);
-        const auto* original = program->read_chart();
+        const auto* original = target->authoring ? program->read_authoring_chart(target->chart) : program->read_chart();
         if (!original) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped edit has no playable source.")}};
         auto chart = *original;
         const auto staged = edit(chart);
@@ -807,7 +836,7 @@ auto document_command_transaction_t::stage_bms_layer_settings(chart_id_t difficu
     -> attempt_t<document_edit_effect_t> {
     return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
         const auto* source = document.find_bms_program(difficulty);
-        const auto* view = source ? source->read_chart() : nullptr;
+        const auto* view = source ? read_chart(difficulty) : nullptr;
         if (!view) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped layer settings have no source.")}};
         auto chart = *view;
         chart.sound_layer_defaults = source->prepared().sound_layer_defaults;
@@ -874,9 +903,9 @@ auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficul
         return {.diagnostics = outcome().diagnostics};
     }
     bms_program_content_edit_batch_t batch{.target = *target, .label = std::move(label)};
-    const auto complete_removals = complete_endpoint_ids(*current.find_bms_program(difficulty), removals);
+    const auto complete_removals = complete_endpoint_ids(*current.find_bms_program(difficulty), removals, target->authoring ? std::optional{target->chart} : std::nullopt);
     for (const auto id : complete_removals) {
-        const auto owner = bms_program_edit_target_t::from(current, difficulty, id);
+        const auto owner = resolve_native_target(current, difficulty, id, bms_target_);
         if (!owner || owner->chart != target->chart) {
             (void)reject(diagnostic_code_t::invalid_id, "Scoped replacement cannot cross semantic owners.");
             return {.diagnostics = outcome().diagnostics};
@@ -884,7 +913,7 @@ auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficul
         batch.edits.push_back(bms_program_content_delete_t{.owner = {
             .scope = owner->scope, .chart = owner->chart, .item = id}});
     }
-    const auto* geometry = current.read_chart(difficulty);
+    const auto* geometry = read_chart(difficulty);
     const auto first = additions.empty() ? std::optional<object_id_t>{}
         : next_bms_program_item_id(additions.size());
     if (!geometry || (!additions.empty() && !first)) {
@@ -924,7 +953,7 @@ auto document_command_transaction_t::stage_bms_native_edit(chart_id_t difficulty
         const auto target = bms_target(difficulty, existing);
         if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
         const auto* program = document.find_bms_program(difficulty);
-        const auto* original = program->read_chart();
+        const auto* original = target->authoring ? program->read_authoring_chart(target->chart) : program->read_chart();
         if (!original) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped edit has no playable source.")}};
         auto chart = *original;
         const auto staged = edit(chart);

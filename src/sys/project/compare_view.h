@@ -45,7 +45,8 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
                                const wormedit::song_document_t& document);
 [[nodiscard]] auto build_workspace_frame_model(
     compare_scene_cache_t& cache, const wormedit::workspace_controller_t& workspace,
-    const wormedit::song_document_t& document, std::uint64_t session_generation = 0)
+    const wormedit::song_document_t& document, std::uint64_t session_generation = 0,
+    std::optional<wormedit::branch_id_t> authoring_chart = {})
     -> wormedit::workspace_view_outcome_t;
 
 [[nodiscard]] inline auto choose_compare_chart_pair(

@@ -1167,8 +1167,7 @@ auto gesture_finish_message(editor_gesture_kind_t kind) -> const char*;
 auto validate_active_gesture_action(const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
-                                const duration_resize_plan_t& plan) -> editor_interaction_result_t;
+auto apply_duration_resize_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan) -> editor_interaction_result_t;
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
@@ -1177,8 +1176,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                          const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
     -> std::variant<song_document_t, diagnostic_list_t>;
 // `bar_line_shift`, when set, moves the selection's bar lines by the drag's rows in the same commit.
-auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
-                          const note_move_plan_t& plan,
+auto apply_note_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan,
                           const shift_selection_action_t* bar_line_shift = nullptr)
     -> editor_interaction_result_t;
 // Keeps the moved bar lines selected after a commit replaced the selection.

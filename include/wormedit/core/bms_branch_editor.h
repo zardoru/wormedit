@@ -35,6 +35,23 @@ struct bms_program_random_range_command_t {
     bms_program_limits_t limits;
     auto operator==(const bms_program_random_range_command_t&) const -> bool = default;
 };
+struct bms_program_parameter_command_t {
+    chart_stamp_t stamp;
+    branch_id_t node;
+    std::optional<std::int64_t> value;
+    bms_program_limits_t limits;
+    auto operator==(const bms_program_parameter_command_t&) const -> bool = default;
+};
+struct bms_program_preview_command_t {
+    chart_stamp_t stamp;
+    branch_id_t node;
+    std::optional<std::int64_t> value;
+    auto operator==(const bms_program_preview_command_t&) const -> bool = default;
+};
+[[nodiscard]] auto apply_bms_program_parameter_command(document_history_t& history,
+    bms_program_parameter_command_t request) -> document_command_result_t;
+[[nodiscard]] auto apply_bms_program_preview_command(document_history_t& history,
+    bms_program_preview_command_t request) -> document_command_result_t;
 struct bms_program_skip_command_t {
     chart_stamp_t stamp;
     branch_id_t case_node;

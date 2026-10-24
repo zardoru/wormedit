@@ -157,6 +157,21 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     };
 }
 
+namespace {
+auto read_interactive_chart(const song_document_t& document, chart_id_t id,
+    const std::optional<bms_program_target_key_t>& target) -> const chart_document_t* {
+    const auto* owner = document.find_bms_program(id);
+    if (owner && target && target->difficulty == id) return owner->read_authoring_chart(target->chart);
+    return document.read_chart(id);
+}
+} // namespace
+auto document_history_t::read_chart(chart_id_t id) const -> const chart_document_t* {
+    return read_interactive_chart(document, id, bms_edit_target);
+}
+auto document_command_transaction_t::read_chart(chart_id_t id) const -> const chart_document_t* {
+    return read_interactive_chart(current_document(), id, bms_target_);
+}
+
 auto document_history_t::indices_storage(const chart_document_t& chart) const
     -> const std::shared_ptr<const chart_indices_t>& {
     auto& slot = chart.indices_slot.value_;
@@ -165,13 +180,13 @@ auto document_history_t::indices_storage(const chart_document_t& chart) const
 }
 
 auto document_history_t::indices(chart_id_t id) const -> const chart_indices_t* {
-    const auto* chart = document.read_chart(id);
+    const auto* chart = read_chart(id);
     return chart ? indices_storage(*chart).get() : nullptr;
 }
 
 auto document_history_t::indices_snapshot(chart_id_t id) const
     -> std::shared_ptr<const chart_indices_t> {
-    const auto* chart = document.read_chart(id);
+    const auto* chart = read_chart(id);
     return chart ? indices_storage(*chart) : std::shared_ptr<const chart_indices_t>{};
 }
 
@@ -309,8 +324,7 @@ auto document_command_transaction_t::outcome() const noexcept -> const document_
 }
 
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
-    const auto found = history_.document.read_chart(id);
-    return found == nullptr ? nullptr : &*found;
+    return read_interactive_chart(source_document(), id, bms_target_);
 }
 
 auto document_command_transaction_t::document() -> song_document_t& {

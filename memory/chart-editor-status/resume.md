@@ -1,6 +1,22 @@
 # Status: resume checklist
 
-## Active queue (2026-10-23)
+## Active queue (2026-10-24)
+
+Completed **T-743** (2026-10-24): scope authoring tree and one project runtime for node selection,
+recoverable drafts and typed confirmations. Node authoring is independent of playback choices;
+common/ancestor content is read-only, inherited notes are gray, and scope warnings use yellow
+text plus a warning triangle. Exact node/content paths, Add/move/parameter/Text commands,
+explicit preview choices, Delete and Unwrap are available for prepared scoped native fixtures.
+Captured gestures/reads retain their original owner; valid targets remain through Undo/Redo.
+GCC GATE passes **4,873/4,873**; focused core **887 assertions / 66 cases**, scope harness
+**162 / 14**. Complexity passes **31 changed TUs** and **13 final explicit header/gesture
+consumers**, without increased allowances. Inspected isolated **1280×720** and **800×700**
+windows with an unreachable arm selected and playback unchanged.
+[Completed card, bounded test review and verification logs](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
+
+**Next: T-744**, ready; no successor implementation is active. Public import/new-project/load
+cutover and removal of the legacy statement authority remain its work. Do not widen supported
+dialects, conditional timing links or the unapproved multivoice design during that cutover.
 
 Completed **T-739** (2026-10-23): scalar RANDOM range edits retain all arms and report
 unreachable IF/ELSEIF values without renumbering, deleting bodies or changing nested selectors.
@@ -10,13 +26,6 @@ GCC GATE passes **4,845/4,845**; authoring **2,004 assertions / 61 cases**, comb
 **5,951 / 192**. Complexity passes for **three changed TUs** and **46 explicit header consumers**
 without increased allowances.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-739-edit-random-outcome-ranges-without-implicit-arm-edits).
-
-**Next: T-743**, separately committed. Questions 21–24 are answered. The approved node-authoring
-view is separate from playback preview choices; inherited content is read-only until its owning
-node is selected. Target changes clear object selection. Node selection stays outside document
-Undo, retaining valid targets. Structural actions address the selected node; content edits resolve
-its first direct Chart or an explicitly selected Chart node. Playback keeps normal SWITCH fallthrough.
-Public activation stays T-744.
 
 Completed **T-742** (2026-10-23): confirmed unwrap promotes ordered children and offers
 explicit conversion of affected branches into selectorless, always-applying bare scopes, or

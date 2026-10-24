@@ -281,7 +281,7 @@ auto revise_compose_paste(application_command_state_t& application_state,
         return false;
     }
     if (session->anchor == anchor && session->index) return true;
-    const auto source = document.find_chart(chart);
+    const auto source = history.read_chart(chart);
     if (source == nullptr) {
         if (failure) *failure = "The paste preview is stale.";
         session.reset();
@@ -320,7 +320,7 @@ auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool {
     const auto& document = history.document;
-    const auto* source = document.find_chart(state.chart);
+    const auto* source = history.read_chart(state.chart);
     if (!source) {
         application_state.project.clipboard.paste_session.reset();
         status = "The paste chart is unavailable.";
@@ -2535,7 +2535,7 @@ void build_branch_statement_feedback_view(wormedit::ui::compose_view_t& view,
 auto default_song_bar_hidden(const wormedit::song_document_t& document,
                              std::optional<wormedit::chart_id_t> chart) -> bool {
     if (!chart) return false;
-    const auto selected = document.find_chart(*chart);
+    const auto selected = document.read_chart(*chart);
     return selected != nullptr &&
         (selected->source_family == wormedit::format_family_t::bms ||
          selected->source_family == wormedit::format_family_t::bmson);
@@ -2582,10 +2582,11 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
             wormedit::notification_source_t::input);
         return;
     }
-    const auto chart_it = history.document.find_chart(*workspace.selected_chart);
+    const auto chart_it = history.read_chart(*workspace.selected_chart);
     if (chart_it == nullptr) {
         report_compose_projection(flattened, projection_feedback_kind_t::missing_chart,
-            wormedit::notification_severity_t::warning, "The selected difficulty is no longer available.");
+            view.bms_program.available ? wormedit::notification_severity_t::hint : wormedit::notification_severity_t::warning,
+            view.bms_program.available ? "Select a scope or Chart node to edit its content." : "The selected difficulty is no longer available.");
         return;
     }
     const auto& chart = *chart_it;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/project/workspace_view.h"
+#include "sys/compose/compose_source_key.h"
 
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/measure.h>
@@ -24,10 +25,9 @@ struct timing_grid_state_t {
     bool active_was_fallback{};
 };
 
-// Lightweight capacity totals retain the existing chart/revision key. Full
-// measure geometry belongs to the committed document, read only for an active stage.
-using timing_scene_cache_t = wormedit::keyed_cache_t<
-    std::pair<wormedit::chart_id_t, std::uint64_t>, std::uint64_t>;
+// Capacity totals follow the same document and authoring Chart identity as the field.
+// Full measure geometry is read only for an active stage.
+using timing_scene_cache_t = wormedit::keyed_cache_t<compose_scene_source_key_t, std::uint64_t>;
 
 void populate_timing_view_for_compose(
     frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,

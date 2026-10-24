@@ -1134,7 +1134,7 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                      std::string(begin_locked_message)));
         return outcome;
     }
-    const auto* chart = history.document.read_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (chart == nullptr || !chart_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart"));
@@ -1165,7 +1165,7 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                      std::string(begin_locked_message)));
         return outcome;
     }
-    const auto* chart = history.document.read_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (chart == nullptr || !chart_id || !recipe_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                      "SV recipe draft refers to an unknown chart or recipe"));
@@ -1451,7 +1451,7 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
             "SV recipe range dragging is unavailable while timing is locked"));
         return outcome;
     }
-    const auto* chart = history.document.read_chart(chart_id);
+    const auto* chart = history.read_chart(chart_id);
     if (!chart || !recipe_id) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
             "SV recipe range drag refers to an unknown chart or recipe"));
@@ -1581,7 +1581,7 @@ struct sv_recipe_edit_context_t {
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> const chart_document_t* {
-    const auto chart = context.transaction.current_document().read_chart(id);
+    const auto chart = context.transaction.read_chart(id);
     if (!id || chart == nullptr) {
         reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
@@ -1840,7 +1840,7 @@ struct scoped_recipe_editor_t {
     template<class Edit> auto operator()(const Edit& edit) -> attempt_t<document_edit_effect_t> {
         if constexpr (std::same_as<Edit, move_sv_recipe_range_action_t> ||
             std::same_as<Edit, set_sv_recipe_enabled_action_t>) {
-            const auto* chart = transaction.current_document().read_chart(edit.chart);
+            const auto* chart = transaction.read_chart(edit.chart);
             const auto* source = chart ? recipe_by_id(*chart, edit.id) : nullptr;
             if (!source) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped recipe is unavailable.")}};
             auto value = *source;

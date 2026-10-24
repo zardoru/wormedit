@@ -54,7 +54,14 @@ flags without enabling passthrough for sources that were already edited *(T-263)
 Prepared scoped BMS fixtures use immutable `bms_program_document_t` snapshots in
 `song_document_t::prepared_bms_programs`, separate from production chart vectors until T-744.
 `bms_program_edit_target_t` captures the document stamp, difficulty, scope and exact Chart;
-scope selection resolves its first direct Chart, and stale or inactive targets reject.
+scope selection resolves its first direct Chart. The active-preview API rejects inactive targets;
+`for_authoring` explicitly resolves inactive or unreachable nodes without changing evaluation choices.
+`document_history_t::read_chart` and transaction reads use that session target; document-only
+`read_chart` continues to supply playback. The detached authoring view includes the selected
+body's Charts and ancestor/common Charts, marking other owners read-only. Inherited object
+updates require deliberately selecting their owning node. Imported hold endpoints without a
+complete playback witness remain read-only markers with a warning, avoiding invented pairings.
+Authoring-origin and read-only markers are derived metadata, never serialized or published.
 `transaction.stage(bms_program_content_edit_batch_t)` changes authoritative typed content,
 retaining recorded owners for updates/deletions. Cross-scope hold edits require a separate
 explicit operation. The shared publication boundary checks bounded alternative evaluations,
@@ -102,7 +109,15 @@ rebinding a selector.
 Session target selection stays outside document history. Gesture and proposal stamps pin
 that selection, including through terminal gesture cleanup and continuation after a
 partial chord commit. Changing the session selection cannot retarget a captured insert;
-existing-object updates resolve their recorded owner. Project/revision captures reject
+captured existing-object updates resolve their recorded owner. The project-owned BMS scope
+runtime owns node selection, drafts and destructive confirmations. Target changes clear object
+and retained-range selection and transient selection history while preserving cursor/viewport;
+valid nodes remain selected through document Undo. Scope tree and diagnostic views cache by
+revision and selected node, separately from playback. Stale drafts require explicit reload and
+rejected edits retain their text. Widgets emit typed, captured requests and never mutate the graph.
+Delete, unwrap promotion and unconditional conversion use distinct frontend confirmation operations;
+a confirmation cannot authorize a different pending operation.
+Project/revision captures reject
 another project even when its revision happens to match.
 
 Notes/holds, resource placement/strokes/assignment, clipboard content, timing points and

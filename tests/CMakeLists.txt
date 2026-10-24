@@ -73,6 +73,7 @@ add_executable(wormedit_core_tests
     core/bms_program_tests.cpp
     core/bms_program_projection_tests.cpp
     core/bms_program_authoring_tests.cpp
+    core/bms_program_authoring_view_tests.cpp
     core/bms_program_edit_tests.cpp
     core/bmson_sound_channel_editor_tests.cpp
     core/note_to_bgm_tests.cpp
@@ -621,6 +622,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/bms_program_event_harness_tests.cpp
         ui/walkthrough_bms_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
         ../src/sys/app/application_defaults.cpp
@@ -749,6 +751,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/resources/sound_usage_view.cpp
         ../src/sys/project/workspace_view.cpp
+        ../src/sys/bms_program_runtime.cpp
+        ../src/sys/timing/timing_view.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
         "${CMAKE_SOURCE_DIR}/src/sys/app/frame_timing.cpp")
@@ -853,6 +857,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/timing/timing_view.cpp
         ../src/sys/compose/views/recipe_form.cpp
         ../src/sys/project/workspace_view.cpp
+        ../src/sys/bms_program_runtime.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/resources/sound_list_view.cpp
@@ -961,6 +966,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_usage_view.cpp
         ../src/sys/app/frame_timing.cpp
         ../src/sys/project/workspace_view.cpp
+        ../src/sys/bms_program_runtime.cpp
         ../src/sys/bookmarks/bookmark_chooser_view.cpp
         ../src/sys/bookmarks/bookmark_navigation.cpp
         ../src/sys/resources/sound_list_view.cpp

@@ -1134,16 +1134,18 @@ namespace {
 using authored_program_t = result_t<bms_program_t, error_t<failure_code_t>>;
 template<class Edit>
 auto stage_program(document_command_transaction_t& transaction, chart_id_t difficulty, Edit edit,
-    std::string label) -> attempt_t<document_edit_effect_t> {
+    std::string label, std::optional<bms_program_evaluation_t> evaluation_override = {}) -> attempt_t<document_edit_effect_t> {
     return transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
         const auto* owner = song.find_bms_program(difficulty);
         if (!owner) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "No scoped BMS program exists for this difficulty.")}};
         auto program = edit(owner->prepared().program);
         if (!program) return {.diagnostics = {error(diagnostic_code_t::invalid_id, program.error().message)}};
-        if (owner->prepared().program == *program) return {.value = document_edit_effect_t{}};
+        if (owner->prepared().program == *program && (!evaluation_override || *evaluation_override == owner->evaluation()))
+            return {.value = document_edit_effect_t{}};
         auto prepared = owner->prepared();
         prepared.program = std::move(*program);
-        auto evaluation = owner->evaluation().without_invalid_choices(prepared.program);
+        auto evaluation = evaluation_override ? std::move(*evaluation_override) :
+            owner->evaluation().without_invalid_choices(prepared.program);
         auto updated = bms_program_document_t::from(difficulty, std::move(prepared), std::move(evaluation));
         if (!updated.value || !updated.ok()) {
             const auto message = updated.diagnostics.empty() ? "The authored program cannot be projected." :
@@ -1237,6 +1239,31 @@ auto apply_bms_program_random_range_command(document_history_t& history, bms_pro
     auto result = transaction.finish_execution(std::move(staged));
     if (result.applied) result.diagnostics.insert(result.diagnostics.end(), notices.begin(), notices.end());
     return result;
+}
+auto apply_bms_program_parameter_command(document_history_t& history, bms_program_parameter_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Change BMS node parameter");
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) { return program.with_parameter(request.node, request.value, request.limits); },
+        "Change BMS node parameter"));
+}
+auto apply_bms_program_preview_command(document_history_t& history, bms_program_preview_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Change BMS playback choice");
+    const auto* owner = transaction.source_document().find_bms_program(request.stamp.chart);
+    if (!owner) return transaction.reject(diagnostic_code_t::invalid_id, "No scoped BMS program exists for this difficulty.");
+    const auto* node = owner->prepared().program.find(request.node);
+    if (!node || (!std::holds_alternative<bms_random_scope_t>(node->value) && !std::holds_alternative<bms_switch_scope_t>(node->value)))
+        return transaction.reject(diagnostic_code_t::invalid_id, "Playback choices require an existing RANDOM or SWITCH node.");
+    auto evaluation = owner->evaluation();
+    const auto selected = std::ranges::find(evaluation.selections, request.node, &branch_selection_t::branch);
+    if (selected == evaluation.selections.end()) {
+        if (request.value) evaluation.selections.push_back({.branch = request.node, .selected_value = *request.value});
+    } else if (request.value) selected->selected_value = *request.value;
+    else evaluation.selections.erase(selected);
+    return transaction.finish_execution(stage_program(transaction, request.stamp.chart,
+        [](const bms_program_t& program) -> authored_program_t { return program; },
+        "Change BMS playback choice", std::move(evaluation)));
 }
 auto apply_bms_program_skip_command(document_history_t& history, bms_program_skip_command_t request)
     -> document_command_result_t {

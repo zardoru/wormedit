@@ -143,6 +143,8 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             context.application_command_state.metronome_settings().available;
     }
 
+    context.application_command_state.project.bms_program.refill(flattened.view.compose.bms_program, context.history);
+
     {
         frame_phase_scope_t frame_view(frame_phase_t::workspace_frame_view);
         workspace_frame_transport_t frame_transport;

@@ -444,7 +444,7 @@ auto make_scoped_kiai_batch(document_command_transaction_t& transaction,
         diagnostic_code_t::invalid_resolution, std::string(marker_edit_context_t::invalid_limits_message))}};
     const auto target = transaction.bms_target(edit.chart, edit.edit.head);
     if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
-    const auto* original = transaction.current_document().read_chart(edit.chart);
+    const auto* original = transaction.read_chart(edit.chart);
     const auto index = original ? measure_index_t::from(*original) : result_t<measure_index_t, diagnostic_list_t>{std::unexpected(diagnostic_list_t{})};
     if (!index) return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "Scoped Kiai requires exact measure geometry.")}};
     auto chart = *original;

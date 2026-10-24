@@ -359,7 +359,8 @@ struct workspace_view_t {
                                    const song_document_t& document, workspace_tab_t tab,
                                    const diagnostic_list_t* cached_diagnostics = nullptr,
                                    workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
-                                   workspace_binding_validation_cache_t* binding_cache = nullptr)
+                                   workspace_binding_validation_cache_t* binding_cache = nullptr,
+                                   std::optional<branch_id_t> authoring_chart = {})
         -> diagnosed_t<std::optional<workspace_view_t>>;
 
     song_id_t song;

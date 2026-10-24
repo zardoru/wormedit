@@ -419,7 +419,7 @@ auto stage_scoped_notes_to_bgm(document_command_transaction_t& transaction, char
     -> attempt_t<document_edit_effect_t> {
     if (notes.empty() || notes.size() > 4096) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
         "Scoped BGM conversion requires 1 to 4096 notes.")}};
-    const auto* source = transaction.current_document().read_chart(difficulty);
+    const auto* source = transaction.read_chart(difficulty);
     for (const auto id : notes) {
         const auto* note = source ? source->find_note(id) : nullptr;
         if (!note || note->label || note->osu_hitsample ||

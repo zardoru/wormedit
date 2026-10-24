@@ -4602,6 +4602,12 @@ struct application_t::implementation_t {
         {
             wormedit::sys::frame_phase_scope_t preparation(
                 wormedit::sys::frame_phase_t::workspace_preparation);
+            const auto previous_authoring_chart = commands.project.bms_program.content_chart();
+            commands.project.bms_program.synchronize(session.history, session.workspace.selected_chart);
+            if (previous_authoring_chart != commands.project.bms_program.content_chart()) {
+                if (views.compose_interaction_state) views.compose_interaction_state->clear_authoring_selection();
+                session.history.selections = {};
+            }
             cancel_stale_compose_interaction(views.compose_interaction_state, session.history,
                                              session.workspace);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -4626,7 +4632,8 @@ struct application_t::implementation_t {
                                                        views.workspace_edit_feedback);
             model = wormedit::sys::build_workspace_frame_model(
                 views.compare_scene_cache, session.workspace, session.history.document,
-                views.project_chart_runtime.session_generation);
+                views.project_chart_runtime.session_generation,
+                commands.project.bms_program.content_chart());
         }
         views.timing_edit.cancel_if_stale(session.history, session.workspace, commands);
     }

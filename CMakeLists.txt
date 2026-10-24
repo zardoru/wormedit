@@ -589,6 +589,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/project/output_group_export.cpp
         src/sys/audio/player_preview_presenter.cpp
         src/sys/project/workspace_view.cpp
+        src/sys/bms_program_runtime.cpp
         src/sys/project/workspace_frame_view.cpp
         src/sys/audio/transport_player_actions.cpp
         src/sys/preferences/external_player.cpp

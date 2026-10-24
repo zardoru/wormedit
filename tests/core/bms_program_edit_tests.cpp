@@ -71,6 +71,14 @@ auto insert(document_history_t& history, bms_program_edit_target_t destination,
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     return result;
 }
+void check_inherited_edit_rejection(const document_history_t& history, const document_command_result_t& result,
+    const std::shared_ptr<const bms_program_document_t>& before) {
+    CHECK_FALSE(result.applied);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_id);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+}
+
 } // namespace
 
 TEST_CASE("Scoped target defaults to Root and scopes resolve their first direct Chart", "[bms-program-edit]") {
@@ -452,7 +460,7 @@ TEST_CASE("Scoped timing commands cover native timing categories without a writa
     CHECK(std::get<bms_native_content_t>(content(history, target(history).chart).back().value).positions().size() == 1);
 }
 
-TEST_CASE("Scoped timing updates retain their original Chart after selection changes", "[bms-program-edit]") {
+TEST_CASE("Scoped timing updates require deliberately selecting their owning Chart", "[bms-program-edit]") {
     auto history = history_from();
     const auto initial = target(history);
     const auto position = local_position_t{owner(history).prepared().measures.front(), 0};
@@ -461,6 +469,10 @@ TEST_CASE("Scoped timing updates retain their original Chart after selection cha
     const auto id = content(history, initial.chart).back().id;
     history.bms_edit_target = {.difficulty = difficulty,
         .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    const auto before = history.document.prepared_bms_programs.front();
+    check_inherited_edit_rejection(history, apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{
+        .chart = difficulty, .id = id, .value = {.position = position, .settings = {.beats_per_minute = {210, 1}}}}), before);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = initial.chart};
     REQUIRE(apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{.chart = difficulty, .id = id,
         .value = {.position = position, .settings = {.beats_per_minute = {210, 1}}}}).applied);
     CHECK(content(history, initial.chart).back().id == id);
@@ -683,7 +695,7 @@ TEST_CASE("Scoped Kiai areas create both boundaries in the selected Chart", "[bm
     CHECK(history.undo.size() == 1);
 }
 
-TEST_CASE("Scoped conversion retains object identity and semantic ownership", "[bms-program-edit]") {
+TEST_CASE("Scoped conversion requires selecting the recorded owner and retains identity", "[bms-program-edit]") {
     auto history = history_from();
     const auto* chart = history.document.read_chart(difficulty);
     const auto note = chart->measures.front().notes.front();
@@ -692,6 +704,9 @@ TEST_CASE("Scoped conversion retains object identity and semantic ownership", "[
     history.bms_edit_target = {.difficulty = difficulty,
         .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
     const std::array ids{note.id};
+    const auto before = history.document.prepared_bms_programs.front();
+    check_inherited_edit_rejection(history, move_notes_to_bgm(history, difficulty, ids, std::nullopt), before);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = origin->chart};
     const auto moved = move_notes_to_bgm(history, difficulty, ids, std::nullopt);
     for (const auto& diagnostic : moved.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(moved.applied);
@@ -701,7 +716,7 @@ TEST_CASE("Scoped conversion retains object identity and semantic ownership", "[
     CHECK(history.document.read_chart(difficulty)->find_note(note.id));
 }
 
-TEST_CASE("Scoped selection shifts and quantization use recorded owners", "[bms-program-edit]") {
+TEST_CASE("Scoped selection shifts require selecting the recorded owner before quantization", "[bms-program-edit]") {
     auto history = history_from();
     const auto* chart = history.document.read_chart(difficulty);
     const auto note = chart->measures.front().notes.front();
@@ -709,6 +724,10 @@ TEST_CASE("Scoped selection shifts and quantization use recorded owners", "[bms-
     REQUIRE(origin);
     history.bms_edit_target = {.difficulty = difficulty,
         .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
+    const auto before = history.document.prepared_bms_programs.front();
+    check_inherited_edit_rejection(history,
+        apply_shift_selection(history, {.chart = difficulty, .notes = {note.id}, .rows = 1}).command, before);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = origin->chart};
     REQUIRE(apply_shift_selection(history, {.chart = difficulty, .notes = {note.id}, .rows = 1}).command.applied);
     const auto result = apply_quantize_command(history, difficulty, {.divisions = 4,
         .allow_resolution_promotion = true, .selection = quantize_selection_t{.notes = {note.id}}});

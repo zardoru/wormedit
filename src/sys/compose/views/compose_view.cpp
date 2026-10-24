@@ -9,6 +9,7 @@
 #include "sys/compose/compose_sound_selection.h"
 #include "sys/app/frame_timing.h"
 #include "sys/compose/views/recipe_form.h"
+#include "sys/compose/views/generator_view.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/sv_recipe.h>
@@ -2403,6 +2404,9 @@ void populate_compose_final_projection(const compose_projection_context_t<wormed
     (void)compose_project_scene(input, rows);
     populate_compose_bgm_mix(input);
     populate_compose_paste_projection(input);
+    populate_compose_generator(input.frame.flattened, input.frame.history, input.scope.chart_scope.chart,
+        input.scope.interaction_view, input.frame.application_state,
+        input.frame.view(), input.frame.cache.frame.preview_scene_request);
     cache_area_object_geometry(input);
     populate_compose_paint_ghost(input);
 }

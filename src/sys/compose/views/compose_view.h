@@ -64,6 +64,7 @@
 #include <vector>
 
 namespace wormedit::sys {
+class generator_runtime_t;
 struct frontend_workspace_view_t;
 namespace compose_input_detail { struct compose_input_context_t; }
 
@@ -779,6 +780,10 @@ struct application_command_state_t {
             std::optional<bool> bgm_bar_hidden;
         } bgm;
 
+        struct generator_state_t {
+            recipe_id_t selected;
+            std::shared_ptr<generator_runtime_t> runtime;
+        } generator;
         struct timing_recipe_state_t {
             bool timing_locked{};
             std::uint64_t kiai_selected_head{};

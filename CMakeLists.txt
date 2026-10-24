@@ -141,6 +141,7 @@ add_library(wormedit_core
     src/core/storyboard.cpp
     src/core/storyboard_preview.cpp
     src/core/sv_recipe.cpp
+    src/core/generator.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/time_shift.cpp
@@ -227,11 +228,12 @@ if(WORMEDIT_ENABLE_LUA)
         src/scripting/lua_sandbox.cpp
         src/scripting/lua_curve.cpp
         src/scripting/lua_document_api.cpp
+        src/scripting/lua_generator.cpp
     )
     add_library(wormedit::scripting ALIAS wormedit_scripting)
     target_include_directories(wormedit_scripting PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_compile_features(wormedit_scripting PUBLIC cxx_std_23)
-    target_link_libraries(wormedit_scripting PUBLIC Threads::Threads wormedit::core PRIVATE Lua::Lua)
+    target_link_libraries(wormedit_scripting PUBLIC Threads::Threads wormedit::core PRIVATE Lua::Lua nlohmann_json::nlohmann_json)
     target_compile_definitions(wormedit_scripting PUBLIC WORMEDIT_HAS_LUA=1)
     target_link_libraries(wormedit-convert PRIVATE wormedit::scripting)
     wormedit_enable_warnings(wormedit_scripting)
@@ -564,6 +566,10 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/actions/compose_measure_actions.cpp
         src/sys/compose/actions/compose_recipe_actions.cpp
         src/sys/compose/recipe_evaluation_runtime.cpp
+        src/sys/compose/generator_runtime.cpp
+        src/sys/compose/views/generator_view.cpp
+        src/sys/compose/actions/compose_generator_actions.cpp
+        src/ui/nuklear/compose/compose_generator_form.cpp
         src/sys/compose/actions/compose_transform_actions.cpp
         src/sys/compose/actions/compose_sound_actions.cpp
         src/sys/resources/sound_import_staging.cpp

@@ -116,6 +116,7 @@ constexpr auto compose_action_route_t::from(WormUiComposeActionKind kind, bool i
 extern const std::span<const compose_action_route_t> compose_local_routes;
 extern const std::span<const compose_action_route_t> compose_resource_routes;
 extern const std::span<const compose_action_route_t> compose_marker_routes;
+extern const std::span<const compose_action_route_t> compose_generator_routes;
 extern const std::span<const compose_action_route_t> compose_bookmark_routes;
 extern const std::span<const compose_action_route_t> compose_area_routes;
 extern const std::span<const compose_action_route_t> compose_bga_routes;

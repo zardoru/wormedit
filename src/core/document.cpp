@@ -6,6 +6,7 @@
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/generator.h>
 
 #include <algorithm>
 #include <cctype>
@@ -1777,7 +1778,31 @@ void validate_lua_input_assets(document_validation_work_t& work, const sv_recipe
     }
 }
 
+void validate_generator_target(document_validation_work_t& work, const generator_recipe_t& recipe) {
+    if (!recipe.chart) return;
+    const auto* chart = work.song.read_chart(recipe.chart);
+    if (!chart) {
+        add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_binding,
+            "Detach the generator recipe before deleting its target chart");
+        return;
+    }
+    const auto* owner = work.song.find_bms_program(recipe.chart);
+    if (!owner) {
+        if (recipe.bms_scope || recipe.bms_chart)
+            add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_binding,
+                "Generator recipe has a scoped owner on a non-BMS chart");
+        return;
+    }
+    const auto target = bms_program_edit_target_t::for_authoring(work.song, recipe.chart,
+        recipe.bms_chart.value_or(branch_id_t{}));
+    if (!target || target->scope != recipe.bms_scope || target->chart != recipe.bms_chart)
+        add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_binding,
+            "Detach the generator recipe before deleting its saved BMS Chart owner");
+}
+
 auto validate_song_recipes(document_validation_work_t& work) -> void {
+    if (work.song.generator_recipes.size() > maximum_generator_recipes)
+        add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_id, "Too many generator recipes");
     std::unordered_set<std::uint64_t> recipe_ids;
     for (const auto& recipe : work.song.generator_recipes) {
         if (recipe.id && !recipe_ids.insert(recipe.id.value).second) {
@@ -1795,8 +1820,11 @@ auto validate_song_recipes(document_validation_work_t& work) -> void {
         }
     }
     for (const auto& recipe : work.song.generator_recipes) {
-        for (const auto asset : recipe.input_assets) {
-            if (!asset || !work.asset_ids.contains(asset.value)) {
+        const auto diagnostics = validate_generator_recipe(recipe);
+        work.diagnostics.insert(work.diagnostics.end(), diagnostics.begin(), diagnostics.end());
+        validate_generator_target(work, recipe);
+        for (const auto& input : recipe.input_assets) {
+            if (!input.asset || !work.asset_ids.contains(input.asset.value)) {
                 add_diagnostic(work.diagnostics, diagnostic_code_t::dangling_asset,
                                "generator recipe refers to an unknown input asset");
             }

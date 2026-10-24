@@ -571,6 +571,22 @@ immutable proxies. Structured script results leave Lua only after bounded raw in
 stack; Lua errors never unwind host-owned result objects. Host construction and extraction
 charge the complete evaluation budget.
 
+Note generators return keyed descriptors to `generator_preview_t`, a typed core proposal. The
+core owner validates placement, hold spans, layer definitions, target ownership and historical
+output witnesses, then uses the ordinary proposal runner and transaction. Worker snapshots rebuild
+scoped BMS read owners from immutable prepared data so authoring caches stay private; chart
+views are reacquired after proposal validation. Workers capture one
+history identity floor instead of copying Undo/Redo; shared BMS native/layer adapters preserve
+explicit history-safe insertion IDs while retaining their existing normalization/publication
+checks. Generated chart objects remain ordinary editable data. The last materialization stored
+with a recipe is a historical witness, not a writable chart mirror. Stable keys retain IDs;
+changed or deleted authored outputs reject regeneration. Detach removes only recipe ownership.
+`generator_runtime_t` owns explicit Run, hash-change acknowledgement, cancellation, stale checks
+and immutable preview publication through `async_job_t`. Source/input preflight precedes Lua;
+acknowledgement runs the captured bytes. Independent sandbox replay verifies typed output under
+one cumulative budget. Frame-thread Apply consumes the prepared proposal and never runs Lua.
+Schema v19 persists frozen generator metadata and witnesses; loading/saving never regenerates.
+
 SV recipe impulses are structural normalized-position areas, persisted by schema v18 alongside
 their exact millisecond box width. Preparation converts them to right-owned, half-open boxes on
 the exact chart grid; unrepresentable widths, warped spans, range overflow and non-instant

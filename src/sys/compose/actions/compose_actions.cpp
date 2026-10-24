@@ -3026,7 +3026,7 @@ namespace {
 auto build_compose_action_routes() -> std::array<compose_action_route_t, compose_action_kind_count> {
     std::array<compose_action_route_t, compose_action_kind_count> routes{};
     for (const auto module :
-         {compose_local_routes, compose_resource_routes, compose_marker_routes,
+         {compose_local_routes, compose_resource_routes, compose_marker_routes, compose_generator_routes,
           compose_bookmark_routes, compose_area_routes, compose_bga_routes, compose_sound_routes}) {
         for (const auto& route : module) {
             const auto index = static_cast<std::size_t>(route.kind);

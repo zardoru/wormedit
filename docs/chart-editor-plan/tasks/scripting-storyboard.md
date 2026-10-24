@@ -127,26 +127,30 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-159 Run a Lua generator as a previewable command batch
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-158)
+- **Status:** done (2026-10-24)
+- **Completion:** Keyed note/layer proposals use the shared proposal and staging runners, normal placement/layer validation and history-safe IDs. Explicit asynchronous Run produces ordinary scene-index ghosts; Apply is one Undo step and Cancel/stale results cannot publish. Worker-owned BMS caches are isolated and chart views are reacquired after validation; the queued regression fails with isolation removed. Integrated GATE passes 5,008/5,008, complexity passes 42 changed TUs plus six explicit header consumers, and the linux-clang preset builds. Runtime coverage passes 54 assertions / 6 cases; real generator event workflows pass 48 / 3. No complexity allowances increased; two reviewed limits decreased.
 - **Outcome:** a script returns note/layer proposals; the editor shows them as ghosts; Apply commits one command, Cancel discards.
 - **Read first:** `src/scripting/lua_document_api.h`, `src/core/interaction.cpp` (ghost proposals).
-- **Files owned:** new `src/scripting/lua_generator.cpp/.h`, new `tests/lua/lua_generator_tests.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose/compose_inspector.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/core/generator.h`, new `include/wormedit/core/generator_types.h` (lightweight shared limits/counts), `src/core/generator.cpp`, `tests/core/generator_tests.cpp`, new `src/scripting/lua_generator.cpp/.h`, new `tests/lua/lua_generator_tests.cpp`, new `src/sys/compose/generator_runtime.h/.cpp`, new `src/sys/compose/actions/compose_generator_actions.cpp`, new `src/sys/compose/views/generator_view.cpp`, new `src/ui/nuklear/compose/compose_generator_form.cpp/.h`, `src/core/id_ceiling.h`, `src/core/chart_editor.cpp` (shared history identity maximum), `src/core/interaction_internal.h` (shared hold-lane availability), `include/wormedit/core/command.h`, `src/core/command.cpp` (shared const snapshot inspection and semantic-target-preserving command preview), `src/core/bms_program_edit.cpp` (history-safe explicit insertion identities through shared native/layer adapters), `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, Compose action route/header and panel/ghost projection/render owners, `src/sys/app/application.cpp`, `src/ui/nuklear/app/frontend.cpp` (project-session draft/picker reset), `include/wormedit/core/semantic_layer_editor.h`, `src/core/semantic_layer_editor.cpp` (shared definition validation), `src/sys/project/workspace_view.h/.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/complexity_baseline.txt` (reviewed decreases only), focused frontend/event regressions and manual/docs. Coordinator-approved supporting ownership replaces obsolete pre-split paths.
+- **Parallel ownership (2026-10-24):** generator agent owns core/script/runtime/UI and dedicated tests. Root owns schema/model/native integration and build/docs. Document API agent owns sandbox; shared source/header freezes coordinate checks. Single selected chart and exact BMS scope/Chart target; general multi-difficulty DSL stays deferred.
 - **Steps:** 1. Validate every proposal like normal placement. 2. Golden test: fixed script + seed → identical batch. 3. UI: script path field, Run, Apply, Cancel.
 - **Invariants:** fixed seed → identical output on all platforms.
 - **Reject/failure behavior:** any invalid proposal rejects the batch with the first error.
-- **Verify:** standard build/test.
+- **Verify:** GATE
 - **Out of scope:** recipe persistence (T-160).
 
 ## T-160 Persist generator recipes
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-159)
+- **Status:** done (2026-10-24)
+- **Completion:** Native schema19 retains frozen source/hash, typed input hashes, parameters/seed, exact scoped target and stable keyed historical witnesses. Explicit regeneration previews added/changed/removed counts and rejects edited/deleted outputs; Detach keeps ordinary objects. Legacy schema18 metadata migrates without evaluation or field loss. Persistence, shared Apply/Undo/Redo, hash acknowledgement and session-reset coverage pass in the integrated 5,008-test GATE; Lua and ASan/LSan/UBSan pass 497 assertions / 68 cases. Lua-disabled runtime links without Lua and passes 9 / 2; four disabled consumers compile. The manual documents the full flow.
 - **Outcome:** a generator run can be saved as a recipe (script hash, inputs, parameters, seed, materialized output IDs); re-running is explicit and previewed.
 - **Read first:** `include/wormedit/core/document.h` (generator-recipe records), `src/formats/native_project.cpp`.
-- **Files owned:** `src/scripting/lua_generator.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`, `tests/lua/lua_generator_tests.cpp`.
+- **Files owned:** `src/scripting/lua_generator.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`, `tests/lua/lua_generator_tests.cpp`. Supporting ownership: `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project_migrations.cpp`, new `tests/formats/native_project_generator_tests.cpp`, T-159 typed core/runtime/inspector units and tests, `src/sys/project/project_save_paths.cpp` if needed for explicit reload origins, `CMakeLists.txt`, `tests/CMakeLists.txt`, docs/manual/status.
+- **Storage contract (2026-10-24):** schema19 follows impulse schema18. Input identities/hashes share one ordered record array. Frozen source, target chart/optional scoped owner and keyed historical note/layer materialization witnesses persist; live notes remain editable. Explicit regenerate compares the witness, previews counts and rejects edited/deleted outputs rather than silently overwriting them. Detach removes recipe ownership while retaining ordinary objects. Legacy records migrate as unrunnable metadata without losing source path/parameters/seed/hash; no load/save evaluation.
 - **Steps:** 1. Fill the existing record type. 2. Regenerate shows a diff preview (added/removed counts).
 - **Invariants:** never regenerates automatically.
 - **Reject/failure behavior:** script hash mismatch warns before running.
-- **Verify:** standard build/test.
+- **Verify:** GATE
 - **Out of scope:** storyboard generators.
 
 ## T-161 Manage SV recipes in a list

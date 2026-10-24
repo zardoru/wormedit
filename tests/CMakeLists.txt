@@ -61,6 +61,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/compose/views/recipe_form.cpp
     ../src/sys/compose/recipe_evaluation_runtime.cpp
+    ../src/sys/compose/generator_runtime.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/app/application_defaults.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
@@ -114,6 +115,7 @@ add_executable(wormedit_core_tests
     sys/compose_speed_spans_tests.cpp
     sys/compose_clipboard_selection_tests.cpp
     sys/recipe_form_tests.cpp
+    sys/generator_runtime_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp
@@ -185,6 +187,7 @@ add_executable(wormedit_core_tests
     core/storyboard_tests.cpp
     core/sv_recipe_tests.cpp
     core/sv_recipe_impulse_tests.cpp
+    core/generator_tests.cpp
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp
     core/tap_tempo_tests.cpp
@@ -215,6 +218,7 @@ add_executable(wormedit_core_tests
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
     formats/native_project_impulse_tests.cpp
+    formats/native_project_generator_tests.cpp
     formats/native_project_lua_recipe_tests.cpp
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp
@@ -600,6 +604,7 @@ if(WORMEDIT_ENABLE_LUA)
         lua/lua_sandbox_tests.cpp
         lua/lua_curve_tests.cpp
         lua/lua_document_api_tests.cpp
+        lua/lua_generator_tests.cpp
     )
     target_link_libraries(wormedit_lua_tests
         PRIVATE
@@ -636,6 +641,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_import_staging.cpp
         ../src/sys/app/application_defaults.cpp
         ui/widget_lookup_event_harness_tests.cpp
+        ui/generator_event_harness_tests.cpp
         ../src/sys/resources/resource_drop_router.cpp
         ../src/sys/metadata/metadata_actions.cpp
         ../src/sys/metadata/metadata_asset_runtime.cpp
@@ -717,6 +723,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_bookmark_actions.cpp
         ../src/sys/compose/actions/compose_measure_actions.cpp
         ../src/sys/compose/actions/compose_recipe_actions.cpp
+        ../src/sys/compose/actions/compose_generator_actions.cpp
+        ../src/sys/compose/generator_runtime.cpp
+        ../src/sys/compose/views/generator_view.cpp
+        ../src/ui/nuklear/compose/compose_generator_form.cpp
         ../src/sys/compose/recipe_evaluation_runtime.cpp
         ../src/sys/compose/actions/compose_transform_actions.cpp
         ../src/sys/compose/actions/compose_bga_actions.cpp
@@ -901,6 +911,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose/actions/compose_bookmark_actions.cpp
             ../src/sys/compose/actions/compose_measure_actions.cpp
             ../src/sys/compose/actions/compose_recipe_actions.cpp
+            ../src/sys/compose/actions/compose_generator_actions.cpp
+            ../src/sys/compose/generator_runtime.cpp
+            ../src/sys/compose/views/generator_view.cpp
             ../src/sys/compose/recipe_evaluation_runtime.cpp
             ../src/sys/compose/actions/compose_transform_actions.cpp
             ../src/sys/compose/actions/compose_bga_actions.cpp
@@ -990,6 +1003,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/resources/sound_picker_view.cpp
         ../src/sys/timing/timing_view.cpp
         ../src/sys/compose/views/recipe_form.cpp
+        ../src/sys/compose/generator_runtime.cpp
+        ../src/sys/compose/views/generator_view.cpp
         ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/metadata/metadata_view.cpp
         ../src/sys/metadata/metadata_drop_state.cpp
@@ -1095,3 +1110,11 @@ if(WORMEDIT_ENABLE_LUA)
         endif()
     endforeach()
 endif()
+
+# Generator runtime parses durable JSON parameters on its worker.
+foreach(consumer IN ITEMS wormedit_frontend_event_harness_tests wormedit_frame_timing_tests
+        wormedit_frame_projection_arena_tests)
+    if(TARGET ${consumer})
+        target_link_libraries(${consumer} PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+endforeach()

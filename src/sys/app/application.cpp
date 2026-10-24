@@ -1,3 +1,4 @@
+#include "sys/compose/generator_runtime.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include "core/text_util.h"
 #include "sys/resources/catalog_view.h"
@@ -775,16 +776,9 @@ void refresh_resource_paint_command(wormedit::command_registry_t& registry,
         application.project.compose_gesture.resource_paint_mode_active);
 }
 
-void refresh_application_command_states(
-    wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
-    const wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    application_command_state_t& application_state) {
+auto refresh_semantic_layer_target(const wormedit::chart_document_t* chart,
+    application_command_state_t& application_state) -> bool {
     using namespace wormedit;
-    const auto* chart = selected_chart(history, workspace);
-    const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
-                               compose_state && compose_state->chart == chart->id;
-    const bool pending = compose_ready && compose_state->is_pending();
     bool target_valid{};
     if (chart && application_state.project.semantic_layer.semantic_layer_target) {
         const auto target_layer =
@@ -800,6 +794,20 @@ void refresh_application_command_states(
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         }
     }
+    return target_valid;
+}
+
+void refresh_application_command_states(
+    wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    application_command_state_t& application_state) {
+    using namespace wormedit;
+    const auto* chart = selected_chart(history, workspace);
+    const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
+                               compose_state && compose_state->chart == chart->id;
+    const bool pending = compose_ready && compose_state->is_pending();
+    const bool target_valid = refresh_semantic_layer_target(chart, application_state);
     const auto set = [&](std::string id, bool enabled, std::optional<bool> checked = std::nullopt) {
         (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
     };
@@ -4584,6 +4592,13 @@ struct application_t::implementation_t {
         }
     }
 
+    void poll_generator_jobs() {
+        auto& runtime = commands.project.generator.runtime;
+        if (!runtime) return;
+        if (!views.compose_interaction_state) { runtime->cancel(); return; }
+        runtime->poll(session.history, views.compose_interaction_state->chart);
+    }
+
     auto poll_frame_jobs() -> double {
         double compose_viewport_delta_seconds{};
         {
@@ -4594,6 +4609,7 @@ struct application_t::implementation_t {
                 jobs.preview_audio_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
             poll_recipe_evaluation();
+            poll_generator_jobs();
             jobs.audio_slicer_runtime.poll(session.history, session.workspace);
             poll_project_save();
             poll_project_open();

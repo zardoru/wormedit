@@ -134,3 +134,47 @@ BGM, keeping their timing and sounds; kbd:[Shift+`] moves just the next selected
 BGM column with the Draw tool to place a sound there directly.
 On BMSON charts, moving a linked playable note to BGM returns it to its original source stem,
 keeping its timing and slice point.
+
+== Lua note generators
+
+In a Lua-enabled build, expand *Lua note generator* in the Compose inspector. Choose a `.lua`
+file inside the project and set its seed, JSON parameter values and optional imported MIDI
+asset IDs. *Run* prepares a preview; it does not edit the chart. Generated notes appear as green
+ghosts, with separate added, changed and removed counts for notes and layers.
+
+A script returns keyed notes and layers. For example, on an empty chart:
+
+[listing]
+----
+local measure = wormedit.measures[1].id
+local lane = wormedit.lane_profile[1].lanes[1].id
+return {
+  layers = {{key = "generated", name = "Generated"}},
+  notes = {{
+    key = "first", measure = measure, row = 0, lane = lane,
+    kind = "tap", layers = {"generated"}
+  }}
+}
+----
+
+Use stable keys across runs. Measure and lane IDs are decimal strings; rows are exact integers.
+A hold uses `kind = "hold"`, `end_measure` and `end_row`. Optional layer colors use integer
+`r`, `g`, `b`, `a` components from 0 to 255. Parameters are available in the immutable
+`generator.parameters` table; an exact fraction can be entered as `{"num":1,"den":2}`.
+The immutable `wormedit` snapshot exposes the selection, measures, timing, lane layouts, notes,
+layers and declared MIDI inputs. Scripts cannot access files or mutate the document.
+
+*Apply* commits the entire preview as one undoable edit. *Cancel* discards it. Collisions,
+invalid holds and invalid layers reject the whole batch. Choose *Keep recipe* to save the
+frozen source, seed, inputs, parameters and output ownership with the ordinary editable notes.
+Saving or opening a project never executes a generator.
+
+Select a saved recipe and choose *Regenerate* to preview its changes explicitly. Existing keys
+retain their object IDs. If the source or a declared MIDI input changed, the editor shows a
+warning before running Lua; *Run changed script* acknowledges the captured version. You can
+instead choose *Run saved source snapshot*. A changed project or target invalidates the preview.
+For scoped BMS charts, select the recipe's saved Chart owner before regenerating.
+
+Manual edits to generated notes or layers are preserved: regeneration rejects replacing an
+edited or deleted output. *Detach recipe* removes its ownership record while keeping the current
+notes and layers. You can then continue editing those objects normally.

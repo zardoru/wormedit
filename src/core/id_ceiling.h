@@ -203,6 +203,20 @@ template<> struct id_declarations_t<chart_id_t> {
     }
 };
 
+// Identity reservations retain their maximum through Undo/Redo without counting
+// historical declarations toward the current document's capacity.
+template<class Query>
+auto maximum_history_identity(const document_history_t& history, std::uint64_t maximum, Query query) -> std::uint64_t {
+    const auto scan = [&](const auto& records) {
+        for (const auto& record : records) {
+            maximum = std::max(maximum, query(record.before));
+            maximum = std::max(maximum, query(record.after));
+        }
+    };
+    scan(history.undo); scan(history.redo);
+    return maximum;
+}
+
 template<class Id> struct id_ceiling_t {
     std::size_t limit{std::numeric_limits<std::size_t>::max()};
     std::size_t count{};
@@ -214,6 +228,16 @@ template<class Id> struct id_ceiling_t {
         -> id_ceiling_t {
         id_ceiling_t result{.limit = bound};
         (void)id_declarations_t<Id>::visit(owner, result);
+        if constexpr (std::same_as<Owner, song_document_t>) {
+            for (const auto& recipe : owner.generator_recipes) {
+                if constexpr (std::same_as<Id, object_id_t>)
+                    for (const auto& binding : recipe.generated_notes)
+                        result.reserve(Id{binding.value.id.value});
+                if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, layer_id_t>)
+                    for (const auto& binding : recipe.generated_layers)
+                        result.reserve(Id{binding.value.id.value});
+            }
+        }
         if constexpr (std::same_as<Owner, song_document_t> && !std::same_as<Id, object_id_t>) {
             if (!owner.prepared_bms_programs.empty())
                 result.maximum = std::max(result.maximum, id_ceiling_t<object_id_t>::from(owner).maximum);
@@ -221,10 +245,21 @@ template<class Id> struct id_ceiling_t {
         return result;
     }
 
+    static auto from(const document_history_t& history,
+        std::size_t bound = std::numeric_limits<std::size_t>::max()) -> id_ceiling_t {
+        auto result = from(history.document, bound);
+        result.maximum = maximum_history_identity(history, result.maximum,
+            [](const song_document_t& song) { return from(song).maximum; });
+        return result;
+    }
+
+    // Historical witnesses reserve values without counting a live declaration.
+    void reserve(Id id) { maximum = std::max(maximum, id.value); }
+
     auto operator()(Id id) -> bool {
         if (count >= limit) return false;
         ++count;
-        maximum = std::max(maximum, id.value);
+        reserve(id);
         return true;
     }
 

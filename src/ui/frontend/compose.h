@@ -1,4 +1,5 @@
 #pragma once
+#include "generator.h"
 #include "bga_usage.h"
 #include "bms_program.h"
 #include "compose_measure_lane.h"
@@ -1298,6 +1299,8 @@ struct compose_view_t {
     std::vector<wormedit::ui::compose_kiai_span_view_t> kiai_spans;
     std::vector<wormedit::ui::compose_speed_span_view_t> speed_spans;
     wormedit::ui::compose_recipe_form_view_t recipe_form{};
+    wormedit::ui::compose_generator_view_t generator{};
+    std::vector<wormedit::ui::compose_paste_ghost_view_t> generator_ghosts;
     std::vector<wormedit::ui::compose_recipe_area_view_t> recipe_areas;
     std::vector<wormedit::ui::compose_recipe_entry_view_t> recipe_entries;
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> recipe_graph_points;

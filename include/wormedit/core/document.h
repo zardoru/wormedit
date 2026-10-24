@@ -945,16 +945,44 @@ struct midi_asset_t {
 struct generator_parameter_t {
     std::string name;
     std::string serialized_value;
+    auto operator==(const generator_parameter_t&) const -> bool = default;
+};
+
+struct generator_input_t {
+    asset_id_t asset;
+    std::string content_hash;
+    auto operator==(const generator_input_t&) const -> bool = default;
+};
+
+// Historical materialization witnesses, separate from the ordinary editable
+// chart objects. Regeneration checks these before replacing authored changes.
+struct generator_note_binding_t {
+    std::string key;
+    note_t value;
+    auto operator==(const generator_note_binding_t&) const -> bool = default;
+};
+
+struct generator_layer_binding_t {
+    std::string key;
+    semantic_layer_t value;
+    auto operator==(const generator_layer_binding_t&) const -> bool = default;
 };
 
 struct generator_recipe_t {
     recipe_id_t id;
     std::string api_version;
     std::filesystem::path source_path;
-    std::vector<asset_id_t> input_assets;
+    std::vector<generator_input_t> input_assets;
     std::vector<generator_parameter_t> parameters;
     std::uint64_t seed{};
     std::string source_hash;
+    std::string source;
+    chart_id_t chart;
+    std::optional<branch_id_t> bms_scope;
+    std::optional<branch_id_t> bms_chart;
+    std::vector<generator_note_binding_t> generated_notes;
+    std::vector<generator_layer_binding_t> generated_layers;
+    auto operator==(const generator_recipe_t&) const -> bool = default;
 };
 
 struct storyboard_document_t {
@@ -1021,7 +1049,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 18;
+inline constexpr std::uint32_t current_document_schema_version = 19;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

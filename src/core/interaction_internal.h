@@ -636,6 +636,22 @@ struct move_destination_t {
     std::size_t columns{};
 };
 
+inline auto is_lane_available_across(const chart_document_t& chart, const measure_index_t& index,
+    std::uint64_t begin, std::uint64_t end, lane_id_t lane) -> bool {
+    const auto first = position_at(index, begin);
+    const auto last = position_at(index, end);
+    if (!first || !last || !find_active_lane(chart, index, *first, lane) ||
+        !find_active_lane(chart, index, *last, lane))
+        return false;
+    for (const auto& layout : chart.lane_layouts) {
+        const auto row = index.row_of(layout.position);
+        if (row && *row > begin && *row <= end &&
+            !find_active_lane(chart, index, layout.position, lane))
+            return false;
+    }
+    return true;
+}
+
 struct note_move_context_t {
     const chart_document_t& chart;
     const measure_index_t& index;
@@ -652,20 +668,8 @@ struct note_move_context_t {
                        : std::max<std::size_t>(1, count(effective_layout(chart, index, source)));
     }
 
-    auto is_lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const
-        -> bool {
-        const auto first = position_at(index, begin);
-        const auto last = position_at(index, end);
-        if (!first || !last || !find_active_lane(chart, index, *first, lane) ||
-            !find_active_lane(chart, index, *last, lane))
-            return false;
-        for (const auto& layout : chart.lane_layouts) {
-            const auto row = index.row_of(layout.position);
-            if (row && *row > begin && *row <= end &&
-                !find_active_lane(chart, index, layout.position, lane))
-                return false;
-        }
-        return true;
+    auto is_lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const -> bool {
+        return wormedit::interaction_detail::is_lane_available_across(chart, index, begin, end, lane);
     }
 
     auto destination_lane(const note_t& note, local_position_t position)

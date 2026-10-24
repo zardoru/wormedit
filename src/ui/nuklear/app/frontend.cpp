@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
 #include "ui/nuklear/compose/compose_gesture_registry.h"
@@ -634,6 +635,7 @@ static void reset_frontend_session() {
 }
 
 void worm_ui_frontend_begin_project_session() {
+    reset_compose_generator_form();
     worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit = false;
     worm_ui_nuklear_reset_sound_import();
 }

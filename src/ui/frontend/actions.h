@@ -1,5 +1,6 @@
 #pragma once
 #include "bga_usage.h"
+#include "generator.h"
 #include "bms_program.h"
 #include <wormedit/core/metadata_inheritance_types.h>
 #include "timing_links.h"
@@ -235,6 +236,12 @@ typedef enum WormUiComposeActionKind {
     /* Session-only: moved bar lines carry the content after them (off by default). */
     WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME,
     /* Not an action: the number of action kinds, for tables indexed by kind. Keep it last. */
+    WORM_UI_COMPOSE_ACTION_GENERATOR_SELECT,
+    WORM_UI_COMPOSE_ACTION_GENERATOR_RUN,
+    WORM_UI_COMPOSE_ACTION_GENERATOR_CONFIRM,
+    WORM_UI_COMPOSE_ACTION_GENERATOR_APPLY,
+    WORM_UI_COMPOSE_ACTION_GENERATOR_CANCEL,
+    WORM_UI_COMPOSE_ACTION_GENERATOR_DETACH,
     WORM_UI_COMPOSE_ACTION_COUNT,
 } WormUiComposeActionKind;
 
@@ -682,6 +689,7 @@ struct workspace_action_t {
     std::vector<wormedit::ui::compose_input_action_t> compose_inputs;
     std::vector<wormedit::ui::compose_viewport_input_t> compose_viewport_inputs;
     wormedit::ui::timing_recipe_form_t compose_recipe_form;
+    wormedit::ui::generator_form_t compose_generator_form;
     wormedit::recipe_id_t compose_recipe_id;
     std::string timing_meter_numerator_text;
     std::string timing_meter_denominator_text;

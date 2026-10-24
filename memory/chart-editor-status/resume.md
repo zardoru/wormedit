@@ -2,6 +2,16 @@
 
 ## Active queue (2026-10-24)
 
+Completed **T-162**, **T-158**, and **T-159/T-160** (2026-10-24): finite SV impulses,
+owned read-only Lua document access, and explicit generator preview/Apply with saved recipes.
+Schemas18/19 and the manual are updated. GATE passes **5,008/5,008**; complexity passes
+**42 changed TUs plus six header consumers**, with no increased allowances; linux-clang builds.
+Lua and sanitizer coverage pass **497 assertions / 68 cases**; Lua-disabled runtime passes **9 / 2**.
+Real input-harness workflows and isolated inspector checks pass. The selected batch is complete;
+no new card is active. T-157 MIDI parsing, extra MIDI categories (question13), and the broader
+curve/storyboard generator DSL remain outside this batch.
+[Completed cards](../../docs/chart-editor-plan/tasks/scripting-storyboard.md#t-158-give-lua-read-only-access-to-the-document).
+
 Completed **T-191** (2026-10-24): the inspector selects Lua functions, loads/reloads a
 project-relative module, edits its entry point, exact parameters, seed and ordered cycles, and
 shows sampled/composed results. Cancellable owned-snapshot workers evaluate Lua; frame-thread
@@ -12,7 +22,7 @@ passes **22 changed TUs plus eight explicit header consumers**, without increase
 Focused Lua passes **353 assertions / 42 cases**, warmed allocation coverage **10 / 1**; a
 Lua-disabled worker links without Lua and rejects evaluation cleanly. Inspected the real isolated
 1280×720 inspector and composed curve. [Completed card](../../docs/chart-editor-plan/tasks/osbx.md#t-191-edit-lua-curve-recipes-in-the-sv-recipe-inspector).
-No successor is active. T-162 finite impulses remains a separate core/schema card.
+T-162/T-158/T-159/T-160 are complete above.
 
 Completed **T-189** (2026-10-24): API-v1 Lua recipes persist frozen source, module reload
 origin/hash, parameters, inputs, seed and pure/ordered cycle plans in native schema17. Core owns

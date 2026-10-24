@@ -147,6 +147,14 @@ auto document_command_transaction_t::preview(const song_document_t& document,
     return edit(history);
 }
 
+auto document_command_transaction_t::preview(const document_history_t& source,
+    const std::function<document_command_result_t(document_history_t&)>& edit) -> document_command_result_t {
+    return preview(source.document, [&](document_history_t& snapshot) {
+        snapshot.bms_edit_target = source.bms_edit_target;
+        return edit(snapshot);
+    });
+}
+
 auto document_history_t::from(song_document_t document, std::size_t maximum_undo_entries,
                               bool initially_saved) -> document_history_t {
     if (document.revision == 0) {

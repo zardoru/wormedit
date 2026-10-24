@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -18,6 +19,10 @@ struct semantic_layer_edit_limits_t {
     std::size_t maximum_name_bytes{4U * 1024U};
     std::size_t maximum_total_name_bytes{1U * 1024U * 1024U};
 };
+
+// Shared definition validation for ordinary edits and prepared generators.
+[[nodiscard]] auto validate_semantic_layer_definitions(std::span<const semantic_layer_t>,
+    semantic_layer_edit_limits_t limits = {}) -> diagnostic_list_t;
 
 // Layer colors use normalized floating-point components at the editor boundary
 // and are rounded to the document's 8-bit RGBA representation on commit.

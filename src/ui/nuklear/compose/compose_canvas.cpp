@@ -3238,18 +3238,22 @@ static auto compose_timing_ghost_rect(const ComposePaintContext& paint,
     return compose_screen_rect(&bounds, paint.view, paint.viewport);
 }
 
-static void draw_compose_paste_ghosts(const ComposePaintContext& paint) {
+static void draw_compose_ghosts(const ComposePaintContext& paint,
+    std::span<const wormedit::ui::compose_paste_ghost_view_t> ghosts, struct nk_color color) {
     const auto& view = *paint.view;
-    const auto color = view.paste_valid ? nk_rgba(240, 171, 71, 130)
-                                       : nk_rgba(242, 70, 83, 155);
-    for (size_t index = 0; index < view.paste_ghosts.size(); ++index) {
-        const auto& ghost = view.paste_ghosts[index];
-        const auto rect = ghost.kind == wormedit::ui::compose_paste_ghost_kind_t::timing_object ? compose_timing_ghost_rect(paint, ghost)
-                                          : compose_screen_rect(&ghost.bounds, &view, paint.viewport);
+    for (const auto& ghost : ghosts) {
+        const auto rect = ghost.kind == wormedit::ui::compose_paste_ghost_kind_t::timing_object
+            ? compose_timing_ghost_rect(paint, ghost) : compose_screen_rect(&ghost.bounds, &view, paint.viewport);
         if (draw_compose_paste_arrow(paint, ghost, rect, color)) continue;
         field_rect(paint, rect, 0.0f, color, 5);
         field_stroke_rect(paint, rect, 0.0f, 2.0f, color, 5);
     }
+}
+static void draw_compose_paste_ghosts(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    draw_compose_ghosts(paint, view.paste_ghosts,
+        view.paste_valid ? nk_rgba(240, 171, 71, 130) : nk_rgba(242, 70, 83, 155));
+    draw_compose_ghosts(paint, view.generator_ghosts, nk_rgba(100, 210, 170, 150));
 }
 
 static void draw_compose_editor_overlays(const ComposePaintContext& paint,

@@ -671,6 +671,9 @@ void from_json(const json& value, midi_asset_t& asset) {
 }
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_parameter_t, name, serialized_value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_input_t, asset, content_hash)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_note_binding_t, key, value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_layer_binding_t, key, value)
 
 void to_json(json& value, const generator_recipe_t& recipe) {
     value = json{{"id", recipe.id},
@@ -679,7 +682,13 @@ void to_json(json& value, const generator_recipe_t& recipe) {
                  {"input_assets", recipe.input_assets},
                  {"parameters", recipe.parameters},
                  {"seed", recipe.seed},
-                 {"source_hash", recipe.source_hash}};
+                 {"source_hash", recipe.source_hash},
+                 {"source", recipe.source},
+                 {"chart", recipe.chart},
+                 {"bms_scope", recipe.bms_scope},
+                 {"bms_chart", recipe.bms_chart},
+                 {"generated_notes", recipe.generated_notes},
+                 {"generated_layers", recipe.generated_layers}};
 }
 
 void from_json(const json& value, generator_recipe_t& recipe) {
@@ -690,6 +699,12 @@ void from_json(const json& value, generator_recipe_t& recipe) {
     value.at("parameters").get_to(recipe.parameters);
     value.at("seed").get_to(recipe.seed);
     value.at("source_hash").get_to(recipe.source_hash);
+    value.at("source").get_to(recipe.source);
+    value.at("chart").get_to(recipe.chart);
+    value.at("bms_scope").get_to(recipe.bms_scope);
+    value.at("bms_chart").get_to(recipe.bms_chart);
+    value.at("generated_notes").get_to(recipe.generated_notes);
+    value.at("generated_layers").get_to(recipe.generated_layers);
 }
 
 void to_json(json& value, const stepmania_export_policy_t& policy) {

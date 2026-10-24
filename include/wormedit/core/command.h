@@ -238,6 +238,22 @@ struct document_history_t {
                                   std::size_t maximum_undo_entries = 128,
                                   bool initially_saved = true) -> document_history_t;
 
+    // Inspect an isolated owner-thread snapshot. The callback receives a const
+    // history with the captured BMS target; its result must own its data.
+    // References, pointers and range views cannot escape this scope.
+    template<class Reader>
+        requires std::invocable<Reader, const document_history_t&> &&
+            (!std::is_reference_v<std::invoke_result_t<Reader, const document_history_t&>>) &&
+            (!std::is_pointer_v<std::invoke_result_t<Reader, const document_history_t&>>) &&
+            (!std::ranges::view<std::invoke_result_t<Reader, const document_history_t&>>)
+    [[nodiscard]] static auto inspect_snapshot(song_document_t document,
+        std::optional<bms_program_target_key_t> target, Reader&& reader)
+        -> std::invoke_result_t<Reader, const document_history_t&> {
+        auto snapshot = from(std::move(document), 0);
+        snapshot.bms_edit_target = target;
+        return std::invoke(std::forward<Reader>(reader), std::as_const(snapshot));
+    }
+
     // Main-loop-only lazy read. The returned value belongs to the committed snapshot.
     [[nodiscard]] auto indices(chart_id_t chart) const -> const chart_indices_t*;
     // Main-loop-only lazy read; the handle retains immutable indices through source replacement.
@@ -416,6 +432,11 @@ class document_command_transaction_t {
         const std::function<document_command_result_t(document_history_t&)>&)
         -> document_command_result_t;
 
+    // Preview a command against the same selected semantic owner as its source.
+    [[nodiscard]] static auto preview(const document_history_t&,
+        const std::function<document_command_result_t(document_history_t&)>&)
+        -> document_command_result_t;
+
     document_command_transaction_t(document_history_t& history, const document_stamp_t& stamp,
         std::string_view label,
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
@@ -453,14 +474,15 @@ class document_command_transaction_t {
         const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_layer_settings(chart_id_t difficulty,
-        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit,
+        std::span<const layer_id_t> insertion_ids = {})
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_bgm_column(chart_id_t difficulty) -> attempt_t<object_id_t>;
     [[nodiscard]] auto stage_bms_measure_extent(chart_id_t difficulty, std::size_t count)
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto stage_bms_native_events(chart_id_t difficulty,
         std::span<const object_id_t> removals, std::span<const bms_native_event_t> additions,
-        std::string label) -> attempt_t<std::vector<object_id_t>>;
+        std::string label, std::span<const object_id_t> insertion_ids = {}) -> attempt_t<std::vector<object_id_t>>;
     [[nodiscard]] auto stage_bms_native_edit(chart_id_t difficulty, std::optional<object_id_t> existing,
         const std::function<attempt_t<bms_native_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;

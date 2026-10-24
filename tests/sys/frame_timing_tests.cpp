@@ -19,6 +19,8 @@
 #include "sys/compose/compose_playhead_cursor.h"
 #include "sys/compose/actions/compose_quantize.h"
 #include "sys/compose/views/compose_view.h"
+#include "sys/compose/views/generator_view.h"
+#include "sys/compose/generator_runtime.h"
 #include "sys/compose/views/compose_view_internal.h"
 #include "sys/app/frame_timing.h"
 #include <wormedit/core/arena.h>
@@ -49,6 +51,7 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_storage.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <time.h>
 #endif
@@ -8133,3 +8136,108 @@ TEST_CASE("Lua inspector and prepared recipe graph reuse their warmed buffers", 
     fixture.project();
     expect_compose_test(std::strcmp(form.lua_parameters.front().value.numerator, "7") == 0);
 }
+
+#if defined(WORMEDIT_HAS_LUA)
+namespace {
+auto generator_geometry_song() -> song_document_t {
+    auto song = dense_song(2, 0);
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes = {
+        {.id = lane_id_t{72}, .name = "Sparse left", .display_order = 50, .glyph = lane_glyph_t::bar},
+        {.id = lane_id_t{4}, .name = "Sparse right", .display_order = 100, .glyph = lane_glyph_t::arrow_left}};
+    auto later = chart.lane_layouts.front();
+    later.id = object_id_t{900001};
+    later.position.row = 240;
+    later.layout.lanes[0].display_order = 100;
+    later.layout.lanes[0].glyph = lane_glyph_t::square;
+    later.layout.lanes[1].display_order = 50;
+    later.layout.lanes[1].glyph = lane_glyph_t::arrow_up;
+    chart.lane_layouts.push_back(std::move(later));
+    const std::string source = R"(return {layers={{key="generated",name="Generated"}},notes={
+        {key="hold",measure=1,row=120,lane=72,kind="hold",end_measure=1,end_row=360,layers={"generated"}},
+        {key="tap",measure=1,row=480,lane=4}}})";
+    song.generator_recipes.push_back({.id = recipe_id_t{900010}, .api_version = "1",
+        .source_hash = native_project_content_checksum(source), .source = source, .chart = chart.id});
+    return song;
+}
+struct generator_geometry_fixture_t {
+    compose_test_fixture_t compose{generator_geometry_song()};
+    task_scheduler_t scheduler{1, 4};
+    std::shared_ptr<generator_runtime_t> runtime{std::make_shared<generator_runtime_t>(scheduler)};
+    generator_geometry_fixture_t() {
+        compose.project();
+        const auto& recipe = compose.history.document.generator_recipes.front();
+        auto form = ui::generator_form_t::from(recipe);
+        form.use_saved_source = true;
+        compose.application.project.generator.runtime = runtime;
+        compose.application.project.generator.selected = recipe.id;
+        static_cast<void>(runtime->request(compose.history, recipe.chart, form, {}, {}));
+        runtime->wait(compose.history, recipe.chart);
+        expect_compose_test(runtime->result() && runtime->result()->proposal.value && runtime->result()->geometry);
+        compose.project();
+    }
+    void refill() {
+        const auto& chart = compose.history.document.charts.front();
+        populate_compose_generator(compose.flattened, compose.history, chart,
+            *compose.cache.frame.interaction_view, compose.application, compose.flattened.view.compose,
+            compose.cache.frame.preview_scene_request);
+    }
+};
+void check_generator_scene_endpoints(const editor_field_scene_view_t& scene,
+    const ui::compose_view_t& view) {
+    expect_compose_test(scene.note_endpoints.size() == 3);
+    for (const auto& endpoint : scene.note_endpoints) {
+        const auto ghost = std::ranges::find_if(view.generator_ghosts, [&](const auto& value) {
+            return value.kind == ui::compose_paste_ghost_kind_t::note_endpoint &&
+                value.glyph == endpoint.glyph && value.bounds == ui::compose_rect_t::from(endpoint.bounds);
+        });
+        expect_compose_test(ghost != view.generator_ghosts.end());
+    }
+    const auto tail = std::ranges::find(scene.note_endpoints, true, &editor_field_note_endpoint_geometry_t::tail);
+    expect_compose_test(tail != scene.note_endpoints.end() && tail->glyph == lane_glyph_t::square);
+    const auto cursor_lane = std::ranges::find(view.lanes, lane_id_t{72}, &ui::compose_lane_view_t::lane_id);
+    expect_compose_test(cursor_lane != view.lanes.end() && tail->bounds.left > cursor_lane->bounds.left);
+}
+void check_generator_scene_bodies(const editor_field_scene_view_t& scene, const ui::compose_view_t& view) {
+    expect_compose_test(!scene.hold_bodies.empty());
+    for (const auto& body : scene.hold_bodies) {
+        const auto ghost = std::ranges::find_if(view.generator_ghosts, [&](const auto& value) {
+            return value.kind == ui::compose_paste_ghost_kind_t::hold_body &&
+                value.bounds == ui::compose_rect_t::from(body.bounds);
+        });
+        expect_compose_test(ghost != view.generator_ghosts.end());
+    }
+}
+} // namespace
+
+TEST_CASE("Generator ghost field scenes use each sparse reordered layout and both hold endpoints",
+          "[sys][frame-timing][generator][compose-geometry]") {
+    generator_geometry_fixture_t fixture;
+    const auto* scene = fixture.runtime->preview_scene(*fixture.compose.cache.frame.interaction_view,
+        fixture.compose.cache.frame.preview_scene_request);
+    REQUIRE(scene);
+    check_generator_scene_endpoints(*scene, fixture.compose.flattened.view.compose);
+    check_generator_scene_bodies(*scene, fixture.compose.flattened.view.compose);
+    const auto& geometry = *fixture.runtime->result()->geometry;
+    CHECK(geometry.chart.semantic_layers.size() == 1);
+    CHECK(geometry.index->notes.front().semantic_color.has_value());
+    CHECK(fixture.compose.history.document.charts.front().semantic_layers.empty());
+}
+
+TEST_CASE("Warmed generator ghost field scenes reuse their owned geometry and projection without allocations",
+          "[sys][frame-timing][generator][allocation]") {
+    generator_geometry_fixture_t fixture;
+    fixture.refill();
+    const auto* geometry = fixture.runtime->result()->geometry.get();
+    const auto* ghosts = fixture.compose.flattened.view.compose.generator_ghosts.data();
+    allocations = 0;
+    count_allocations = true;
+    fixture.refill();
+    fixture.refill();
+    count_allocations = false;
+    const auto counted = allocations;
+    CHECK(counted == 0);
+    CHECK(fixture.runtime->result()->geometry.get() == geometry);
+    CHECK(fixture.compose.flattened.view.compose.generator_ghosts.data() == ghosts);
+}
+#endif

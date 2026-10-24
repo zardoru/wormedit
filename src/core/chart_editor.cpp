@@ -140,15 +140,7 @@ auto maximum_chart_id(const song_document_t& document) -> std::uint64_t {
 }
 
 auto history_id_ceiling(const document_history_t& history) -> std::uint64_t {
-    auto maximum = maximum_chart_id(history.document);
-    const auto scan = [&](const auto& records) {
-        for (const auto& record : records) {
-            maximum = std::max(maximum, maximum_chart_id(record.before));
-            maximum = std::max(maximum, maximum_chart_id(record.after));
-        }
-    };
-    scan(history.undo); scan(history.redo);
-    return maximum;
+    return maximum_history_identity(history, maximum_chart_id(history.document), maximum_chart_id);
 }
 
 struct chart_id_remap_t {

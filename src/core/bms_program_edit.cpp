@@ -278,11 +278,21 @@ auto complete_endpoint_ids(const bms_program_document_t& program, std::span<cons
     return result;
 }
 
-void assign_new_layer_ids(chart_document_t& chart, const std::set<layer_id_t>& existing, object_id_t first) {
+auto has_safe_layer_ids(std::span<const layer_id_t> ids, std::size_t count,
+    std::optional<object_id_t> first) -> bool {
+    if (ids.empty()) return true;
+    if (ids.size() != count || !first) return false;
+    std::set<layer_id_t> unique;
+    for (const auto id : ids)
+        if (!id || id.value < first->value || !unique.insert(id).second) return false;
+    return true;
+}
+void assign_new_layer_ids(chart_document_t& chart, const std::set<layer_id_t>& existing,
+    object_id_t first, std::span<const layer_id_t> insertion_ids) {
     std::map<layer_id_t, layer_id_t> remapped;
     for (auto& layer : chart.semantic_layers) {
         if (existing.contains(layer.id)) continue;
-        const auto id = layer_id_t{first.value + remapped.size()};
+        const auto id = insertion_ids.empty() ? layer_id_t{first.value + remapped.size()} : insertion_ids[remapped.size()];
         remapped.emplace(layer.id, id);
         layer.id = id;
     }
@@ -1345,7 +1355,8 @@ auto document_command_transaction_t::stage_bms_native_objects(chart_id_t difficu
 }
 
 auto document_command_transaction_t::stage_bms_layer_settings(chart_id_t difficulty,
-    const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit)
+    const std::function<attempt_t<document_edit_effect_t>(chart_document_t&)>& edit,
+    std::span<const layer_id_t> insertion_ids)
     -> attempt_t<document_edit_effect_t> {
     return stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
         const auto* source = document.find_bms_program(difficulty);
@@ -1361,7 +1372,9 @@ auto document_command_transaction_t::stage_bms_layer_settings(chart_id_t difficu
             [&](const auto& layer) { return !existing.contains(layer.id); });
         const auto first = count ? next_bms_program_item_id(static_cast<std::size_t>(count)) : std::nullopt;
         if (count && !first) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped layer identities are exhausted.")}};
-        assign_new_layer_ids(chart, existing, first.value_or(object_id_t{}));
+        if (!has_safe_layer_ids(insertion_ids, static_cast<std::size_t>(count), first))
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Scoped layers need unique unused history-safe insertion identities.")}};
+        assign_new_layer_ids(chart, existing, first.value_or(object_id_t{}), insertion_ids);
         if (chart.semantic_layers == source->prepared().semantic_layers &&
             chart.sound_layer_defaults == source->prepared().sound_layer_defaults) return {.value = document_edit_effect_t{}};
         auto prepared = source->prepared();
@@ -1407,8 +1420,12 @@ auto document_command_transaction_t::stage_bms_bgm_column(chart_id_t difficulty)
 
 auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficulty,
     std::span<const object_id_t> removals, std::span<const bms_native_event_t> additions,
-    std::string label) -> attempt_t<std::vector<object_id_t>> {
+    std::string label, std::span<const object_id_t> insertion_ids) -> attempt_t<std::vector<object_id_t>> {
     if (!is_ready()) return {.diagnostics = outcome().diagnostics};
+    if (!insertion_ids.empty() && insertion_ids.size() != additions.size()) {
+        (void)reject(diagnostic_code_t::invalid_id, "Scoped insertion identities must match the addition count.");
+        return {.diagnostics = outcome().diagnostics};
+    }
     const auto& current = current_document();
     const auto existing = additions.empty() && !removals.empty() ? std::optional{removals.front()} : std::nullopt;
     const auto target = bms_target(difficulty, existing);
@@ -1428,9 +1445,9 @@ auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficul
             .scope = owner->scope, .chart = owner->chart, .item = id}});
     }
     const auto* geometry = read_chart(difficulty);
-    const auto first = additions.empty() ? std::optional<object_id_t>{}
+    const auto first = additions.empty() || !insertion_ids.empty() ? std::optional<object_id_t>{}
         : next_bms_program_item_id(additions.size());
-    if (!geometry || (!additions.empty() && !first)) {
+    if (!geometry || (!additions.empty() && insertion_ids.empty() && !first)) {
         (void)reject(diagnostic_code_t::invalid_id, "Scoped insertion geometry or identity is unavailable.");
         return {.diagnostics = outcome().diagnostics};
     }
@@ -1443,7 +1460,7 @@ auto document_command_transaction_t::stage_bms_native_events(chart_id_t difficul
             (void)reject(diagnostic_code_t::invalid_measure, "Scoped insertion needs an exact measure position.");
             return {.diagnostics = outcome().diagnostics};
         }
-        const auto id = object_id_t{first->value + created.size()};
+        const auto id = insertion_ids.empty() ? object_id_t{first->value + created.size()} : insertion_ids[created.size()];
         created.push_back(id);
         batch.edits.push_back(bms_program_content_insert_t{.item = {.id = id, .value = *native}});
     }

@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose/compose_area_menu.h"
 #include "ui/nuklear/compose/compose_recipe_menu.h"
 #include "ui/nuklear/compose/compose_panel.h"
+#include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include "sys/compose/compose_scroll_geometry.h"
@@ -50,6 +51,7 @@ void worm_ui_nuklear_reset_compose_panel() {
     reset_compose_quantize_popup();
     worm_ui_nuklear_reset_compose_markers();
     worm_ui_nuklear_reset_compose_state();
+    reset_compose_generator_form();
 }
 
 static bool compose_selection_mode_valid(WormUiComposeSelectionMode mode) {
@@ -1431,6 +1433,7 @@ static void render_compose_inspector_contents(nk_context* context,
                                                wormedit::ui::workspace_action_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_recipe_form(inspector);
+    render_compose_generator_form(inspector);
     render_compose_label_search(inspector);
     render_compose_quantize_section(inspector);
     render_compose_transform_section(inspector);

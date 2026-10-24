@@ -30,10 +30,10 @@ auto add_size(std::size_t& total, std::size_t value, std::size_t maximum) -> boo
     return checked_math::account_size(total, value, maximum);
 }
 
-auto validate_layer_names(const chart_document_t& chart, const semantic_layer_edit_limits_t& limits,
+auto validate_layer_names(std::span<const semantic_layer_t> layers, const semantic_layer_edit_limits_t& limits,
                           document_command_result_t& result) -> bool {
     std::size_t total{};
-    for (const auto& layer : chart.semantic_layers) {
+    for (const auto& layer : layers) {
         if (!is_valid_name(layer.name, limits)) {
             reject(result, diagnostic_code_t::unsupported_feature,
                    "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte "
@@ -47,6 +47,11 @@ auto validate_layer_names(const chart_document_t& chart, const semantic_layer_ed
         }
     }
     return true;
+}
+
+auto validate_layer_names(const chart_document_t& chart, const semantic_layer_edit_limits_t& limits,
+    document_command_result_t& result) -> bool {
+    return validate_layer_names(std::span<const semantic_layer_t>{chart.semantic_layers}, limits, result);
 }
 
 auto validate_layer_ids(const chart_document_t& chart, document_command_result_t& result) -> bool {
@@ -1156,5 +1161,14 @@ auto add_selected_sounds_to_semantic_layer(document_history_t& history, const ad
                                                   .assign_unlayered_bgm = true});
 }
 
+
+auto validate_semantic_layer_definitions(std::span<const semantic_layer_t> layers,
+    semantic_layer_edit_limits_t limits) -> diagnostic_list_t {
+    document_command_result_t result;
+    if (layers.size() > limits.maximum_layers)
+        reject(result, diagnostic_code_t::invalid_resolution, "Semantic layer count exceeds the configured cap.");
+    else (void)validate_layer_names(layers, limits, result);
+    return std::move(result.diagnostics);
+}
 
 } // namespace wormedit

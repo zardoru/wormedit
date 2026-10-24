@@ -367,7 +367,25 @@ auto migrate_v17_to_v18(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 17> released_migrations{{
+auto migrate_v18_to_v19(nlohmann::json& document) -> std::string {
+    if (!document.contains("generator_recipes")) return {};
+    if (!document.at("generator_recipes").is_array()) return "generator_recipes must be an array";
+    for (auto& recipe : document.at("generator_recipes")) {
+        if (!recipe.is_object()) return "generator recipe must be an object";
+        if (!recipe.at("input_assets").is_array()) return "generator inputs must be an array";
+        for (auto& input : recipe.at("input_assets"))
+            if (!input.is_object()) input = {{"asset", input}, {"content_hash", ""}};
+        recipe["source"] = "";
+        recipe["chart"] = 0U;
+        recipe["bms_scope"] = nullptr;
+        recipe["bms_chart"] = nullptr;
+        recipe["generated_notes"] = nlohmann::json::array();
+        recipe["generated_layers"] = nlohmann::json::array();
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 18> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -385,6 +403,7 @@ constexpr std::array<migration_t, 17> released_migrations{{
     {15, &migrate_v15_to_v16},
     {16, &migrate_v16_to_v17},
     {17, &migrate_v17_to_v18},
+    {18, &migrate_v18_to_v19},
 }};
 
 } // namespace

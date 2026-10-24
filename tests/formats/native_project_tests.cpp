@@ -106,7 +106,7 @@ auto rich_bmson_song() -> wormedit::song_document_t {
             .id = wormedit::recipe_id_t{904},
             .api_version = "1",
             .source_path = std::filesystem::path{"scripts/pattern.lua"},
-            .input_assets = {song.audio_assets.front().id},
+            .input_assets = {{.asset = song.audio_assets.front().id}},
             .parameters = {{.name = "density", .serialized_value = "0.75"}},
             .seed = 0x1234,
             .source_hash = "sha256:fixture",

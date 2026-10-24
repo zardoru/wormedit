@@ -1143,10 +1143,7 @@ auto stage_program(document_command_transaction_t& transaction, chart_id_t diffi
         if (owner->prepared().program == *program) return {.value = document_edit_effect_t{}};
         auto prepared = owner->prepared();
         prepared.program = std::move(*program);
-        auto evaluation = owner->evaluation();
-        std::erase_if(evaluation.selections, [&](const auto& selection) {
-            return !prepared.program.find(selection.branch);
-        });
+        auto evaluation = owner->evaluation().without_invalid_choices(prepared.program);
         auto updated = bms_program_document_t::from(difficulty, std::move(prepared), std::move(evaluation));
         if (!updated.value || !updated.ok()) {
             const auto message = updated.diagnostics.empty() ? "The authored program cannot be projected." :
@@ -1215,6 +1212,31 @@ auto apply_bms_program_text_command(document_history_t& history, bms_program_tex
             if (!checked) return std::unexpected(checked.error());
             return program.with_text(request.node, std::move(request.text), request.limits);
         }, "Edit BMS Text"));
+}
+auto apply_bms_program_random_range_command(document_history_t& history, bms_program_random_range_command_t request)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history, request.stamp, "Change BMS RANDOM range");
+    diagnostic_list_t notices;
+    auto staged = stage_program(transaction, request.stamp.chart,
+        [&](const bms_program_t& program) -> authored_program_t {
+            auto updated = program.with_random_range(request.node, request.range, request.limits);
+            if (!updated || *updated == program) return updated;
+            for (const auto arm : updated->unreachable_random_arms(request.node))
+                notices.push_back({.severity = diagnostic_severity_t::warning, .code = diagnostic_code_t::invalid_binding,
+                    .message = "IF/ELSEIF value is outside the RANDOM range; its body is retained.",
+                    .object = object_id_t{arm.value}});
+            const auto* owner = transaction.source_document().find_bms_program(request.stamp.chart);
+            const auto& choices = owner->evaluation().selections;
+            const auto selected = std::ranges::find(choices, request.node, &branch_selection_t::branch);
+            if (selected != choices.end() && (selected->selected_value < 1 || selected->selected_value > request.range))
+                notices.push_back({.severity = diagnostic_severity_t::warning, .code = diagnostic_code_t::invalid_binding,
+                    .message = "Out-of-range RANDOM preview choice cleared without selecting a replacement.",
+                    .object = object_id_t{request.node.value}});
+            return updated;
+        }, "Change BMS RANDOM range");
+    auto result = transaction.finish_execution(std::move(staged));
+    if (result.applied) result.diagnostics.insert(result.diagnostics.end(), notices.begin(), notices.end());
+    return result;
 }
 auto apply_bms_program_skip_command(document_history_t& history, bms_program_skip_command_t request)
     -> document_command_result_t {

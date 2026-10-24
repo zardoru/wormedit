@@ -93,14 +93,18 @@ ordered definition/override semantics, not invent a new lexical language.
 The existing Compose/playback chart is a derived projection of the authored
 program under an evaluation environment. It is not another independently editable
 source of truth. Scope/Chart selection and random/switch evaluation choices need
-distinct state and identities; their display interaction is [question 24](../decisions/open-questions.md).
+distinct state and identities. Under approved [question 24](../decisions/open-questions.md),
+selecting a node opens a separate authoring view while playback choices and normal SWITCH
+fallthrough remain unchanged. Inherited ancestor/common content is read-only context; editing
+it requires selecting its owning node. Target changes clear object selection. Node selection
+is session state outside semantic Undo; Undo/Redo retain an existing valid target.
 
 An edit resolves a stable difficulty ID, scope ID and Chart-node ID before the
 existing command transaction changes data. New authored objects go to that Chart
 node. Existing objects retain their semantic owner; scope selection alone is not
 a move-to-another-scope command and must not permit implicit writes into an ancestor,
-sibling or another Chart node. How inherited context is displayed or explicitly
-overridden is part of question 24. Selection, paste, timing, metadata and resource
+sibling or another Chart node. Structural commands operate on the selected node; content
+edits resolve its first direct Chart, or the explicitly selected Chart node. Selection, paste, timing, metadata and resource
 operations must all use the same ownership checks.
 T-731 inventories these paths; T-736 supplies the shared routing mechanism.
 
@@ -129,8 +133,9 @@ create executable bodies. Their settings are authored data, separate from previe
 
 **Change RANDOM range:** validate a positive supported integer and preserve node
 identity and child order. Do not create/delete arms as a side effect. The behavior
-when existing arms or the preview value exceed the new range remains
-[question 21](../decisions/open-questions.md); the UI must not choose it implicitly.
+when existing arms exceed the new range follows approved
+[question 21](../decisions/open-questions.md): keep the arms and warn. Clear an out-of-range
+explicit preview choice without choosing a replacement; never clamp or renumber values.
 
 **Move:** move a whole ordered subtree, retaining its Chart and Text children.
 Reject cycles, invalid parent/child grammar, unresolved definitions and invalid
@@ -199,6 +204,5 @@ the panel, destructive dialogs and target indication; run GATE at every implemen
 card and documentation checks for the initial audit.
 
 This plan is authorization to prepare implementation tasks, not a claim that the
-model or UI has landed. T-731 and T-732 are complete. Questions 22 and 23 are answered
-(2026-10-23); questions 21 and 24 still block only their dependent slices. The approved
-fixed-selector and unwrap policies do not settle range shrinking or scope/preview interaction.
+model or UI has landed. T-731 and T-732 are complete. Questions 21–24 are answered (2026-10-23). The remaining implementation follows
+the approved range, fixed-selector, unwrap and node-authoring/preview policies.

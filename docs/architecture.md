@@ -74,6 +74,12 @@ remain on typed BMS content, and hold edits retain both endpoint identities and 
 New BGM columns and semantic batches use the complete prepared/history identity ceiling.
 A transaction cannot implicitly write multiple semantic Charts.
 
+Prepared RANDOM range edits preserve all nodes and arm values, warn about unreachable
+IF/ELSEIF arms, and clear an invalid explicit preview choice without choosing a replacement.
+Shared evaluation reconciliation removes missing selectors and out-of-range RANDOM choices
+before constructing the proposed immutable owner. The parameter and cleared choice publish
+in one Undo step; invalid fixed settings or unprovable bounded outcomes reject the entire edit.
+
 Prepared structural deletion previews the complete typed subtree and requires an explicit
 confirmation tied to its original project, revision, difficulty and node. It removes only
 that subtree, retains shared pools, and drops evaluation choices only for removed selectors.

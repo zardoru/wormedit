@@ -253,6 +253,9 @@ class bms_program_t {
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_text(branch_id_t node, bms_text_t text,
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_random_range(branch_id_t node, std::int64_t range,
+        bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto unreachable_random_arms(branch_id_t selector) const -> std::vector<branch_id_t>;
     [[nodiscard]] auto with_move(const bms_program_move_t& move, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_unwrap(branch_id_t node, bms_program_limits_t limits = {}) const
@@ -295,6 +298,7 @@ struct bms_prepared_program_t {
 struct bms_program_evaluation_t {
     // Evaluation choices only. Scope/Chart edit targeting is separate state.
     std::vector<branch_selection_t> selections;
+    [[nodiscard]] auto without_invalid_choices(const bms_program_t& program) const -> bms_program_evaluation_t;
     auto operator==(const bms_program_evaluation_t&) const -> bool = default;
 };
 struct bms_program_projection_limits_t {

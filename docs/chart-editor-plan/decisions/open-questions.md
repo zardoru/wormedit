@@ -84,9 +84,9 @@
 
 21. When lowering `#RANDOM n`, what happens to existing IF values or a selected preview value above the new range?
    - **Agreed (2026-10-20):** the range is independent of arm count; editing it does not implicitly delete or renumber children.
-   - **Still open:** keep now-unreachable arms with a warning, or reject the shrink until resolved; whether an out-of-range preview choice is cleared, explicitly replaced, or blocks the edit.
+   - **Answered (2026-10-23):** retain now-unreachable IF/ELSEIF arms with a warning; clear an out-of-range explicit preview choice without selecting a replacement. Preserve all child IDs, values and ordering. The owner accepted these proposed rules after clarifying the target-node vocabulary.
    - **No provisional choice:** do not silently clamp, delete or renumber anything.
-   - **Blocks:** [T-739](../tasks/bms-scoped-authoring.md#t-739-edit-random-outcome-ranges-without-implicit-arm-edits). See the [approved scoped-program contract](../editing/bms-scoped-program.md).
+   - **Unblocks:** [T-739](../tasks/bms-scoped-authoring.md#t-739-edit-random-outcome-ranges-without-implicit-arm-edits). See the [approved scoped-program contract](../editing/bms-scoped-program.md).
 22. Which non-body BMS directives appear as editable scope nodes rather than parameters or structural markers?
    - **Answered (2026-10-23):** `SETRANDOM` and `SETSWITCH` are separate selectable typed nodes with editable settings, retaining their authored program order and existing selector semantics. They do not introduce bodies or receive Chart children.
    - **Accepted:** `SKIP` is typed stop-fallthrough behavior on its case; preserve its execution position and existing profile semantics. Parser-only grouping and closing markers (`ENDIF`, `ENDRANDOM`, `ENDSW`, etc.) are structural syntax handled automatically, without separate selectable nodes.
@@ -101,9 +101,9 @@
    - **Unblocks:** selector-unwrapping behavior in [T-742](../tasks/bms-scoped-authoring.md#t-742-unwrap-controls-as-an-explicit-structural-operation). Confirmation widgets remain T-743.
 24. How does selecting an inactive edit scope interact with the evaluated field and playback preview?
    - **Agreed (2026-10-20):** selecting a control targets its first Chart child; another Chart can be selected explicitly; edits outside a leaf target the containing scope. RANDOM's range and its chosen preview outcome are different settings.
-   - **Still open:** whether selecting a scope adjusts the evaluation environment to reveal it, or opens a distinct scope-authoring projection while preview choices remain separate; specify switch fallthrough, object selection and Undo restoration. Define whether inherited ancestor/common content is read-only context, requires an intentional target switch, or supports an explicit local override/copy.
+   - **Answered (2026-10-23):** selecting a node opens a separate scope-authoring view without changing playback preview choices. Ancestor/common content is read-only context; editing it requires deliberately selecting its owning node. Switching content targets clears object selection. Node/scope selection stays outside document Undo, retaining an existing valid target through Undo/Redo. Playback retains normal SWITCH fallthrough. Selecting a body scope resolves its first direct Chart for content edits; selecting a Chart explicitly chooses that Chart. Structural commands act on the selected node itself.
    - **No provisional choice:** never implicitly mutate another scope/Chart owner, edit hidden unrelated content, silently change authored control parameters, or redirect a missing target to Root.
-   - **Blocks:** final selection/preview integration in [T-743](../tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
+   - **Unblocks:** final selection/preview integration in [T-743](../tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
 
 25. What is the shared authored multivoice sound model for native notes, edited osu! custom sets and BMSON layered sounds?
    - **Agreed (2026-10-20):** plan this extension separately, not as immediate implementation. Imported osu! custom sample-set references remain read-only for faithful playback; editing materializes only the affected notes into the ordinary Sounds model, never every note sharing that set. Include BMSON layered sound authoring in the later design.

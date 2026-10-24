@@ -50,19 +50,41 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-739 Edit RANDOM outcome ranges without implicit arm edits
 
-- **Status:** blocked-on-user
+- **Status:** done (2026-10-23)
 - **Prerequisites:** T-738; [question 21](../decisions/open-questions.md).
 - **Outcome:** a revision-checked command edits RANDOM's positive outcome range independently of child count and preview selection.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `include/wormedit/core/bms_program.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`.
-- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `docs/chart-editor-plan/decisions/open-questions.md`, `docs/chart-editor-plan/editing/bms-scoped-program.md`, `memory/chart-editor-status/resume.md`, `docs/architecture.md`, this card.
+- **Supporting ownership extension (coordinator, 2026-10-23):** graph parameter construction and reachability queries belong on `bms_program_t`; evaluation reconciliation belongs on its value type. The decision/contract/status files record approved questions 21 and 24 and the sequential T-739/T-743 handoff. All supporting paths are listed above before implementation edits.
+- **Architecture extension (coordinator, 2026-10-23):** add `docs/architecture.md` to **Files owned** to describe range changes and shared evaluation reconciliation before snapshot publication.
 - **Steps:**
-  1. STOP until question 21 defines shrinking past existing arms and the current preview value.
+  1. Follow approved question 21: preserve unreachable arms with a warning and clear invalid explicit preview choices without choosing a replacement.
   2. Add the scalar parameter edit with stable node identity, positive supported bounds and the approved reachability/selection diagnostics.
   3. Test grow, unchanged value, invalid value, shrink, sparse IF values, nested RANDOMs, export/reimport and Undo/Redo.
 - **Invariants:** changing `n` does not add/delete/renumber IF arms, Text or Chart children; parameter and preview outcome are not conflated.
 - **Reject/failure behavior:** invalid/stale/refused edits preserve parameter, descendants, preview state and history.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-authoring]'`.
 - **Out of scope:** automatic probability balancing or outcome enumeration changes (not requested); direct controls in the panel (T-743).
+
+- **Completed:** stamped scalar range edits use the shared program staging/publication boundary. Graph queries identify unreachable IF/ELSEIF arms by their nearest RANDOM, independently of nested selectors. Shared evaluation reconciliation clears invalid explicit choices before constructing the immutable proposed owner, preserving valid/other choices and never rewriting fixed settings. Parameter and choice changes share one Undo step. Unreachable bodies, IDs, Text, values and order remain; no-op, invalid/wrong-owner, unbounded and invalid fixed-setting requests preserve the snapshot.
+- **Bounded test-value checkpoint:** baseline 53 retained authoring cases; reviewed eight new bodies for growth, shrink/choice clearing, valid choice retention, no-op, invalid/wrong-owner/budget refusals, nested ownership, retained-body export/native reload and fixed-setting refusal. The family passes **2,004 assertions / 61 cases**; combined BMS families **5,951 / 192**. Old cases are retained conservatively, not newly reviewed as an entire suite. The generic native-reload helper was renamed with `clang-refactor local-rename` and checked for old-name remnants. New/affected functions pass complexity without allowance changes.
+- **Verification tails (2026-10-23):** GCC `/tmp/t739-gate.log` and `/tmp/wormedit-gate.VQ1hyB`; explicit header consumers `/tmp/t739-header-complexity.log`; focused `/tmp/t739-authoring.log`, `/tmp/t739-focused.log`.
+  ```text
+  gate: 4 job(s), set explicitly; logs in /tmp/wormedit-gate.VQ1hyB
+    pass  build
+    pass  ctest
+    pass  whitespace
+    pass  complexity
+    100% tests passed out of 4845
+  gate: passed
+  complexity: checked 3/3
+  complexity: passed (3 translation units)
+  complexity: checked 46/46
+  complexity: passed (46 translation units)
+  All tests passed (2004 assertions in 61 test cases)
+  All tests passed (5951 assertions in 192 test cases)
+  ```
+- **Handoff:** question 24 is answered and T-743 is ready. Its authoring view must use target-node selection while leaving playback preview choices unchanged; confirmation widgets belong there. Public activation stays T-744.
 
 ## T-740 Move whole program subtrees in ordered scopes
 
@@ -195,13 +217,13 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-743 Present the branch panel as a scope authoring tree
 
-- **Status:** blocked-on-user
+- **Status:** ready
 - **Prerequisites:** T-738–T-742; [question 24](../decisions/open-questions.md).
 - **Outcome:** the panel exposes Root, control scopes, Chart and Text nodes, indicates the exact edit target, and offers validated node commands with distinct Delete/Unwrap confirmations.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/actions/compose_actions.cpp`.
 - **Files owned:** new `src/ui/frontend/bms_program.h`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `include/wormedit/core/workspace.h`, `src/core/workspace.cpp`, `src/sys/project/workspace_view.h`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/views/compose_view.h`, `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/actions/compose_actions.cpp`, new `src/sys/bms_program_runtime.h`, new `src/sys/bms_program_runtime.cpp`, `src/ui/nuklear/project/bms_branch_panel.h`, `src/ui/nuklear/project/bms_branch_panel.cpp`, new `tests/ui/bms_program_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
 - **Steps:**
-  1. STOP until question 24 resolves scope selection versus preview choices; migrate the touched branch view/action boundary to C++ values with one runtime owner for session target/drafts.
+  1. Follow approved question 24: separate node authoring from playback choices, show inherited content read-only, clear object selection on target changes and retain valid session targets through semantic Undo; migrate the touched branch view/action boundary to C++ values with one runtime owner for session target/drafts.
   2. Draw the ordered scope tree and exact target path; selecting controls targets first Chart, selecting another Chart overrides it, and meaningful commands do not appear as raw-statement scope rows.
   3. Expose Add, move, parameter edit, Text editing, Delete and Unwrap through typed core capabilities; RANDOM count and preview value have separate labels/actions, and destructive actions show their prepared summaries.
   4. Cover new/empty Root without retained source, nested scope/alternate-Chart targeting, keyboard capture isolation, resizing, Cancel, stale targets and Undo/Redo in the event harness; inspect isolated Xvfb at normal and 800×700 sizes.

@@ -678,7 +678,7 @@ void check_unwrapped_nodes(const bms_program_t& before, const bms_program_t& aft
     children.insert(children.begin() + index, promoted.begin(), promoted.end());
     CHECK(after.find(parent)->children == children);
 }
-void check_unwrap_reload(const document_history_t& history) {
+void check_program_reload(const document_history_t& history) {
     const auto loaded = parse_native_project(snapshot(history));
     REQUIRE(loaded.ok());
     REQUIRE(loaded.value);
@@ -714,7 +714,7 @@ TEST_CASE("Selector unwrap requires explicit unconditional conversion and preser
     CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
     const auto after = program(history);
     check_history_round_trip(history, before, after);
-    check_unwrap_reload(history);
+    check_program_reload(history);
 }
 TEST_CASE("Unwrapped selector exports all bare bodies and Text in order", "[bms-program-authoring]") {
     auto history = history_from(unwrap_source);
@@ -809,7 +809,7 @@ TEST_CASE("SWITCH unwrap makes every CASE and DEF bare and reports removed SKIP 
     check_unwrapped_nodes(before, program(history), proposed.payload.report());
     CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
     CHECK(write(history).find("#SKIP") == std::string::npos);
-    check_unwrap_reload(history);
+    check_program_reload(history);
     const auto after = program(history);
     check_history_round_trip(history, before, after);
 }
@@ -822,7 +822,7 @@ TEST_CASE("Bare scopes can subsequently be unwrapped without merging Chart owner
     REQUIRE(apply_proposal(history, bare, bms_program_unwrap_decision_t::confirm_promotion).applied);
     check_unwrapped_nodes(before, program(history), bare.payload.report());
     CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
-    check_unwrap_reload(history);
+    check_program_reload(history);
 }
 TEST_CASE("Unwrap refuses Root leaves missing targets fixed selectors and insufficient limits", "[bms-program-authoring]") {
     const auto mode = GENERATE(0, 1, 2, 3, 4);
@@ -890,5 +890,131 @@ TEST_CASE("Unwrap retains a case SKIP immediately after the promoted wrapper", "
     CHECK(skips.front().scope == containing);
     CHECK(skips.front().after_child == last_child);
     CHECK(write(history).find("#SKIP") != std::string::npos);
-    check_unwrap_reload(history);
+    check_program_reload(history);
+}
+
+namespace {
+auto change_range(document_history_t& history, branch_id_t node, std::int64_t range)
+    -> document_command_result_t {
+    return apply_bms_program_random_range_command(history,
+        {.stamp = chart_stamp_t::from(history, difficulty), .node = node, .range = range});
+}
+auto range_history(std::string_view source, std::int64_t selected) -> document_history_t {
+    auto input = prepared(source);
+    const auto selector = selectors(input.program).front();
+    auto result = bms_program_document_t::from(difficulty, std::move(input),
+        {.selections = {{.branch = selector, .selected_value = selected}}});
+    REQUIRE(result.value);
+    return document_history_t::from(song_document_t{.id = song_id_t{9001}, .prepared_bms_programs = {*result.value}});
+}
+void check_range_only(const bms_program_t& before, const bms_program_t& after,
+    branch_id_t selector, std::int64_t range) {
+    CHECK(before.nodes().size() == after.nodes().size());
+    for (const auto& node : before.nodes()) {
+        auto expected = node;
+        if (node.id == selector) expected.value = bms_random_scope_t{.range = range};
+        REQUIRE(after.find(node.id));
+        CHECK(*after.find(node.id) == expected);
+    }
+}
+auto range_warnings(const document_command_result_t& result) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::warning && diagnostic.code == diagnostic_code_t::invalid_binding;
+    }));
+}
+void check_range_choice_history(document_history_t& history, const bms_program_t& before,
+    const bms_program_evaluation_t& evaluation, const bms_program_t& after) {
+    REQUIRE(undo_document_command(history));
+    CHECK(program(history) == before);
+    CHECK(owner(history).evaluation() == evaluation);
+    REQUIRE(redo_document_command(history));
+    CHECK(program(history) == after);
+    CHECK(owner(history).evaluation().selections.empty());
+}
+constexpr auto range_source = "#WAV01 a.wav\n#RANDOM 3\n#IF 1\n#00011:01\n#ELSEIF 3\n; retained\n#00111:01\n#ENDIF\n#ENDRANDOM\n";
+}
+TEST_CASE("RANDOM growth changes only the scalar range and preserves preview", "[bms-program-authoring]") {
+    auto history = range_history(range_source, 1);
+    const auto selector = nodes_of<bms_random_scope_t>(history).front();
+    const auto before = program(history);
+    const auto choices = owner(history).evaluation();
+    const auto result = change_range(history, selector, 5);
+    REQUIRE(result.applied);
+    CHECK(result.diagnostics.empty());
+    check_range_only(before, program(history), selector, 5);
+    CHECK(owner(history).evaluation() == choices);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}
+TEST_CASE("RANDOM shrink retains unreachable arms and clears invalid preview atomically", "[bms-program-authoring]") {
+    auto history = range_history(range_source, 3);
+    const auto selector = nodes_of<bms_random_scope_t>(history).front();
+    const auto before = program(history);
+    const auto choices = owner(history).evaluation();
+    const auto result = change_range(history, selector, 2);
+    REQUIRE(result.applied);
+    CHECK(range_warnings(result) == 2);
+    CHECK(owner(history).evaluation().selections.empty());
+    check_range_only(before, program(history), selector, 2);
+    const auto after = program(history);
+    check_range_choice_history(history, before, choices, after);
+}
+TEST_CASE("RANDOM shrink preserves a valid preview and warns about retained sparse arms", "[bms-program-authoring]") {
+    auto history = range_history(range_source, 1);
+    const auto before = owner(history).evaluation();
+    const auto selector = nodes_of<bms_random_scope_t>(history).front();
+    const auto result = change_range(history, selector, 2);
+    REQUIRE(result.applied);
+    CHECK(range_warnings(result) == 1);
+    CHECK(owner(history).evaluation() == before);
+    CHECK(program(history).unreachable_random_arms(selector) == nodes_of<bms_else_if_scope_t>(history));
+}
+TEST_CASE("RANDOM unchanged range has no history or parameter side effects", "[bms-program-authoring]") {
+    auto history = range_history(range_source, 3);
+    const auto original = snapshot(history);
+    const auto result = change_range(history, nodes_of<bms_random_scope_t>(history).front(), 3);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(history.undo.empty());
+    CHECK(snapshot(history) == original);
+}
+TEST_CASE("RANDOM range validation refuses invalid wrong-owner and unbounded requests", "[bms-program-authoring]") {
+    auto history = history_from(range_source);
+    const auto mode = GENERATE(0, 1, 2, 3, 4);
+    const auto root = program(history).root();
+    auto node = nodes_of<bms_random_scope_t>(history).front();
+    if (mode == 3) node = *program(history).target_chart(root);
+    if (mode == 4) node = branch_id_t{99999};
+    const auto range = mode == 0 ? 0 : mode == 1 ? -1 : mode == 2 ? 257 : 2;
+    const auto original = snapshot(history);
+    const auto result = change_range(history, node, range);
+    check_refused(history, result, mode == 2 ? diagnostic_code_t::unsupported_feature : diagnostic_code_t::invalid_id, original);
+}
+TEST_CASE("RANDOM range warnings respect nested selector ownership", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 4\n#IF 4\n#RANDOM 4\n#IF 4\n#ENDIF\n#ENDRANDOM\n#ENDIF\n#ENDRANDOM\n");
+    const auto before = program(history);
+    const auto randoms = nodes_of<bms_random_scope_t>(history);
+    const auto outer_arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto result = change_range(history, randoms.front(), 2);
+    REQUIRE(result.applied);
+    CHECK(range_warnings(result) == 1);
+    CHECK(program(history).unreachable_random_arms(randoms.front()) == std::vector{outer_arm});
+    CHECK(program(history).unreachable_random_arms(randoms.back()).empty());
+    check_range_only(before, program(history), randoms.front(), 2);
+}
+TEST_CASE("RANDOM shrink exports retained bodies and persists the cleared choice", "[bms-program-authoring]") {
+    auto history = range_history(range_source, 3);
+    REQUIRE(change_range(history, nodes_of<bms_random_scope_t>(history).front(), 2).applied);
+    const auto output = write(history);
+    CHECK(output.find("#RANDOM 2") != std::string::npos);
+    CHECK(output.find("#ELSEIF 3") != std::string::npos);
+    CHECK(output.find("; retained") != std::string::npos);
+    check_program_reload(history);
+}
+TEST_CASE("RANDOM shrink never silently rewrites an invalid fixed selector setting", "[bms-program-authoring]") {
+    auto history = range_history("#SETRANDOM 3\n#RANDOM 3\n#IF 3\n#ENDIF\n#ENDRANDOM\n", 3);
+    const auto original = snapshot(history);
+    const auto result = change_range(history, nodes_of<bms_random_scope_t>(history).front(), 2);
+    check_refused(history, result, diagnostic_code_t::invalid_id, original);
+    CHECK(history.undo.empty());
 }

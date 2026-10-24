@@ -264,6 +264,39 @@ auto bms_program_t::conditional_selector(branch_id_t id) const -> std::optional<
         if (std::holds_alternative<bms_random_scope_t>(find(*ancestor)->value)) return ancestor;
     return std::nullopt;
 }
+auto bms_program_t::with_random_range(branch_id_t id, std::int64_t range, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto* node = find(id);
+    if (!node || !std::holds_alternative<bms_random_scope_t>(node->value))
+        return std::unexpected(error_t{failure_code_t::not_found, "Range edits require an existing RANDOM node."});
+    auto nodes = nodes_;
+    std::get<bms_random_scope_t>(nodes[indices_.at(id.value)].value).range = range;
+    return from(std::move(nodes), limits);
+}
+auto bms_program_t::unreachable_random_arms(branch_id_t selector) const -> std::vector<branch_id_t> {
+    const auto* node = find(selector);
+    const auto* random = node ? std::get_if<bms_random_scope_t>(&node->value) : nullptr;
+    if (!random) return {};
+    std::vector<branch_id_t> result;
+    for (const auto& arm : nodes_) {
+        std::optional<std::int64_t> value;
+        if (const auto* conditional = std::get_if<bms_if_scope_t>(&arm.value)) value = conditional->value;
+        if (const auto* conditional = std::get_if<bms_else_if_scope_t>(&arm.value)) value = conditional->value;
+        if (value && (*value < 1 || *value > random->range) && conditional_selector(arm.id) == selector)
+            result.push_back(arm.id);
+    }
+    return result;
+}
+auto bms_program_evaluation_t::without_invalid_choices(const bms_program_t& program) const -> bms_program_evaluation_t {
+    auto result = *this;
+    std::erase_if(result.selections, [&](const auto& choice) {
+        const auto* node = program.find(choice.branch);
+        if (!node) return true;
+        const auto* random = std::get_if<bms_random_scope_t>(&node->value);
+        return random && (choice.selected_value < 1 || choice.selected_value > random->range);
+    });
+    return result;
+}
 namespace {
 struct control_position_t {
     branch_id_t node;

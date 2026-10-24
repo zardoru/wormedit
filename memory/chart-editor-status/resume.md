@@ -2,6 +2,22 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-739** (2026-10-23): scalar RANDOM range edits retain all arms and report
+unreachable IF/ELSEIF values without renumbering, deleting bodies or changing nested selectors.
+Invalid explicit preview choices clear without a replacement; valid choices remain. Both changes
+share one Undo step. Invalid fixed settings and bounded-validation failures reject atomically.
+GCC GATE passes **4,845/4,845**; authoring **2,004 assertions / 61 cases**, combined BMS
+**5,951 / 192**. Complexity passes for **three changed TUs** and **46 explicit header consumers**
+without increased allowances.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-739-edit-random-outcome-ranges-without-implicit-arm-edits).
+
+**Next: T-743**, separately committed. Questions 21–24 are answered. The approved node-authoring
+view is separate from playback preview choices; inherited content is read-only until its owning
+node is selected. Target changes clear object selection. Node selection stays outside document
+Undo, retaining valid targets. Structural actions address the selected node; content edits resolve
+its first direct Chart or an explicitly selected Chart node. Playback keeps normal SWITCH fallthrough.
+Public activation stays T-744.
+
 Completed **T-742** (2026-10-23): confirmed unwrap promotes ordered children and offers
 explicit conversion of affected branches into selectorless, always-applying bare scopes, or
 Cancel with no change. Ordinary promotion confirmation cannot authorize conversion. All bodies,
@@ -13,8 +29,7 @@ without changing existing payloads; BMS emits their contents without conditional
 Move/delete/unwrap share staging and detached preview execution. GCC GATE passes **4,837/4,837**;
 authoring passes **1,810 assertions / 53 cases**, combined BMS families **5,757 / 184**.
 Complexity passes for **five changed TUs** and **46 explicit header consumers** without increased
-allowances. **T-739 and T-743 still need questions 21 and 24**; no successor implementation is
-active. Confirmation UI remains T-743 and public activation T-744.
+allowances. **T-739 is complete above and T-743 is ready with question 24 answered**. Confirmation UI remains T-743 and public activation T-744.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-742-unwrap-controls-as-an-explicit-structural-operation).
 
 Completed **T-741** (2026-10-23): typed, immutable deletion proposals summarize the exact
@@ -28,7 +43,7 @@ Selection stays outside semantic Undo. Root/final-Chart deletion, dangling IF/SK
 references and partial holds refuse. GCC GATE and Linux Clang each pass **4,820/4,820**;
 authoring passes **1,338 assertions / 36 cases** and combined BMS families **5,285 / 167** on both.
 Complexity passes for **four changed TUs** and **46 explicit header consumers** without increased
-allowances. **T-739 and T-743 remain blocked on user decisions** (questions 21 and 24); T-742 is complete above;
+allowances. **T-739 and T-742 are complete above; T-743 is ready**;
 no successor implementation is active. Confirmation UI remains T-743; public activation T-744.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-741-delete-scoped-subtrees-through-explicit-confirmation).
 

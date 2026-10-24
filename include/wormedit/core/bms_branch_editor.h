@@ -28,6 +28,13 @@ struct bms_program_text_command_t {
     bms_program_limits_t limits;
     auto operator==(const bms_program_text_command_t&) const -> bool = default;
 };
+struct bms_program_random_range_command_t {
+    chart_stamp_t stamp;
+    branch_id_t node;
+    std::int64_t range{1};
+    bms_program_limits_t limits;
+    auto operator==(const bms_program_random_range_command_t&) const -> bool = default;
+};
 struct bms_program_skip_command_t {
     chart_stamp_t stamp;
     branch_id_t case_node;
@@ -39,6 +46,8 @@ struct bms_program_skip_command_t {
     bms_program_insert_command_t request) -> document_command_result_t;
 [[nodiscard]] auto apply_bms_program_text_command(document_history_t& history,
     bms_program_text_command_t request) -> document_command_result_t;
+[[nodiscard]] auto apply_bms_program_random_range_command(document_history_t& history,
+    bms_program_random_range_command_t request) -> document_command_result_t;
 [[nodiscard]] auto apply_bms_program_skip_command(document_history_t& history,
     bms_program_skip_command_t request) -> document_command_result_t;
 

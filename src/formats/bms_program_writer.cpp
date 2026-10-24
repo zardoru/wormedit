@@ -66,6 +66,7 @@ struct program_emission_t {
     void emit_children(const bms_program_node_t& node, std::size_t depth);
     void skip_at(branch_id_t scope, std::optional<branch_id_t> after);
     void open(const bms_root_scope_t&) {}
+    void open(const bms_bare_scope_t&) {}
     void open(const bms_random_scope_t& value) { statement("RANDOM", std::to_string(value.range), true); }
     void open(const bms_if_scope_t& value) { statement("IF", std::to_string(value.value), true); }
     void open(const bms_else_if_scope_t& value) { statement("ELSEIF", std::to_string(value.value), true); }
@@ -521,7 +522,9 @@ auto write_bms_program(const bms_prepared_program_t& prepared, bms_program_write
     bms_write_outcome_t result;
     try {
         const auto has_control = std::ranges::any_of(prepared.program.nodes(), [](const auto& node) {
-            return !std::holds_alternative<bms_root_scope_t>(node.value) && (node.is_scope() || std::holds_alternative<bms_set_random_t>(node.value) || std::holds_alternative<bms_set_switch_t>(node.value));
+            return !std::holds_alternative<bms_root_scope_t>(node.value) &&
+                !std::holds_alternative<bms_bare_scope_t>(node.value) &&
+                (node.is_scope() || std::holds_alternative<bms_set_random_t>(node.value) || std::holds_alternative<bms_set_switch_t>(node.value));
         });
         if (has_control && options.format.branch_policy == bms_branch_policy_t::flatten_active) {
             if (options.loss_policy == loss_policy_t::reject) fail(bms_write_diagnostic_code_t::lossy_transform, "Flattening discards control flow and inactive content.", "$.program");

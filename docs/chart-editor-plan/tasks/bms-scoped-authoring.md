@@ -149,24 +149,49 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
   All tests passed (1338 assertions in 36 test cases)
   All tests passed (5285 assertions in 167 test cases)
   ```
-- **Handoff:** T-739, T-742 and T-743 retain their user-decision gates (questions 21, 23 and 24). No successor implementation is active. Confirmation widgets remain T-743 and production activation remains T-744.
+- **Handoff:** T-742 is complete below following the question-23 answer. T-739 and T-743 retain their user-decision gates (questions 21 and 24). Confirmation widgets remain T-743 and production activation remains T-744.
 
 ## T-742 Unwrap controls as an explicit structural operation
 
-- **Status:** blocked-on-user
+- **Status:** done (2026-10-23)
 - **Prerequisites:** T-741; [question 23](../decisions/open-questions.md).
-- **Outcome:** a confirmed valid unwrap replaces one wrapper with its ordered children without deleting content or implicitly changing selector bindings.
+- **Outcome:** a confirmed valid unwrap replaces one wrapper with its ordered children without deleting content; affected dependent branches become explicit selectorless, always-applying scopes only after confirmation.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`.
-- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, this card.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_program_authoring_tests.cpp`, `docs/chart-editor-plan/decisions/open-questions.md`, `docs/chart-editor-plan/editing/bms-scoped-program.md`, `memory/chart-editor-status/resume.md`, this card, `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `src/formats/bms_program_writer.cpp`, `src/formats/native_project_bms_codec.inc`, `include/wormedit/core/document.h`, `src/formats/native_project_migrations.cpp`, `docs/architecture.md`.
+- **Supporting-file extension (coordinator, 2026-10-23):** the decision, model contract and resume files above record the owner's question-23 answer and the resulting implementation gate. Runtime representation and codec ownership extensions must be recorded before implementation edits.
+- **Runtime ownership extension (coordinator, 2026-10-23):** add `include/wormedit/core/bms_program.h`, `src/core/bms_program.cpp`, `src/formats/bms_program_writer.cpp`, `src/formats/native_project_bms_codec.inc`, `include/wormedit/core/document.h` and `src/formats/native_project_migrations.cpp` to **Files owned**. These implement selectorless scope identity, validated promotion, faithful export and schema-v15 persistence/migration. Existing projection traversal already evaluates a nonconditional body scope unconditionally; verify this through command tests. CASE conversion explicitly removes selector-specific SKIP behavior while retaining all bodies; report its count. Fixed-setting control rebinding that cannot be proven safe refuses conservatively.
+- **Runner documentation extension (coordinator, 2026-10-23):** `docs/architecture.md` records confirmed conversion and the shared staging/preview helpers used by move, delete and unwrap rather than adding a third copy of their execution ceremony.
+- **Implementation boundaries:** direct CASE/DEF unwrap refuses because its promoted contents would still be subject to SWITCH entry/fallthrough; the containing SWITCH can be unwrapped with explicit conversion. Fixed-setting programs refuse unproven consumption changes. Neither refusal drops content. Nested conditions independent of the removed selector stay conditional; affected following IF continuations become bare rather than testing a changed predicate prefix. External SKIP anchors retain their lexical position through promotion.
+- **Bounded test-value checkpoint:** baseline is the 36 retained T-738/T-740/T-741 authoring cases. Reviewed the 17 added T-742 bodies for ordered promotion, confirmation distinction/cancellation, selector and continuation conversion, independent nested conditions, outer-selector non-rebinding, CASE/SKIP conversion, lexical SKIP anchors, simultaneous/hidden collisions, target identity, native migration/reload and Undo/Redo. Existing move/delete cases are retained to exercise shared staging/preview extraction; their previous review is not a new whole-suite-value claim. The complete authoring family passes 1,810 assertions / 53 cases; combined BMS families pass 5,757 / 184. Complexity passes for five changed TUs and 46 explicit header consumers without increased allowances. Conclusions apply to the reviewed new bodies, not the value of every retained test.
 - **Steps:**
-  1. STOP until question 23 defines the supported selector-unwrapping behavior; never infer whole-program flattening from the word unwrap.
+  1. Follow question 23's approved policy: when promotion would remove or change a surviving branch's selector, offer explicit conversion of those affected branches into selectorless, always-applying scopes, or Cancel with no change. Never infer whole-program flattening from the word unwrap.
   2. Propose the literal ordered child promotion and its reachability, definition and collision effects; require confirmation before an apply.
   3. Validate grammar, surviving Chart invariants and every affected bounded projection; retain child IDs and positions.
   4. Test valid body-scope unwrap, selector cases under the approved policy, Text order, canceled/stale confirmation, collisions and Undo/Redo.
 - **Invariants:** unwrap is not delete, implicit renumbering, sibling coalescing, or a hidden active-projection export.
-- **Reject/failure behavior:** invalid/orphaned/rebound conditional structure or unresolved content rejects without changing the wrapper or any child.
+- **Reject/failure behavior:** cancellation, unconfirmed conversion, invalid/rebound conditional structure or unresolved content rejects without changing the wrapper or any child. Confirmed conversion retains affected branch bodies and order; it never selects one outcome or discards alternate bodies.
 - **Verify:** GATE; `build/tests/wormedit_core_tests '[bms-program-authoring]'`.
 - **Out of scope:** lossy branch flattening (existing explicit export policy), widgets (T-743).
+
+- **Completed:** immutable stamped proposals preview all affected branches, ordered contents, Chart reachability and potential definition changes. Ordinary promotion confirmation cannot authorize unconditional conversion. Confirmed conversion retains all bodies and IDs, removes only the wrapper and explicitly reported CASE/SKIP behavior, and preserves unrelated selector bindings and external SKIP anchors. Cancel, forged/stale confirmation, invalid structures, unproven fixed settings and hidden collisions publish nothing. Bare scopes persist in native schema v15 (v14 migrates unchanged) and export without conditional markers or a false flatten-loss warning. Move/delete/unwrap share staging and preview execution; shared publication owns bounded validation and Undo/Redo.
+- **Review:** applied the code-style checklist: model construction/queries stay on their types, report construction lives on the report, and the third proposal path extracts existing execution ceremony instead of copying it. No baseline allowances or suppression changes. Initial verification corrected an assertion that confused a retained SKIP anchor with an importer-appended empty Chart; export-equivalence assertions were extracted into a cohesive helper after the complexity check found a 32-point test body. A capped header scan timed out on the existing Compose action TU; its isolated retry and the final complete 46-TU scan pass.
+- **Verification tails (2026-10-23):** GCC GATE `/tmp/t742-gate-final.log`, detail directory `/tmp/t742-gate-run/wormedit-gate.IPHwic`; explicit header consumers `/tmp/t742-header-complexity-verified.log`; authoring `/tmp/t742-authoring-verified.log`; combined families `/tmp/t742-focused-verified.log`.
+  ```text
+  gate: 4 job(s), set explicitly; logs in /tmp/t742-gate-run/wormedit-gate.IPHwic
+    pass  build
+    pass  ctest
+    pass  whitespace
+    pass  complexity
+    100% tests passed out of 4837
+  gate: passed
+  complexity: checked 5/5
+  complexity: passed (5 translation units)
+  complexity: checked 46/46
+  complexity: passed (46 translation units)
+  All tests passed (1810 assertions in 53 test cases)
+  All tests passed (5757 assertions in 184 test cases)
+  ```
+- **Handoff:** T-739 and T-743 retain questions 21 and 24 respectively. Confirmation widgets remain T-743; production activation remains T-744. No successor implementation is active.
 
 ## T-743 Present the branch panel as a scope authoring tree
 

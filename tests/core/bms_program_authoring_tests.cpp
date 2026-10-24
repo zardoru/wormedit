@@ -639,3 +639,256 @@ TEST_CASE("Scoped deletion removes a whole CASE with its typed SKIP behavior", "
     const auto after = program(history);
     check_history_round_trip(history, before, after);
 }
+
+namespace {
+auto prepare_unwrap(const document_history_t& history, branch_id_t node) -> bms_program_unwrap_proposal_t {
+    const auto original = snapshot(history);
+    auto proposed = bms_program_unwrap_edit_t::propose(history.document, difficulty, node);
+    for (const auto& diagnostic : proposed.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(proposed.value);
+    CHECK(snapshot(history) == original);
+    return std::move(*proposed.value);
+}
+void check_unwrap_refused(const document_history_t& history, branch_id_t node,
+    diagnostic_code_t expected = diagnostic_code_t::invalid_id) {
+    const auto original = snapshot(history);
+    const auto result = bms_program_unwrap_edit_t::propose(history.document, difficulty, node);
+    CHECK_FALSE(result.value);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().code == expected);
+    CHECK(snapshot(history) == original);
+}
+void check_unwrapped_nodes(const bms_program_t& before, const bms_program_t& after,
+    const bms_program_unwrap_report_t& report) {
+    const auto removed = report.contents.root;
+    REQUIRE_FALSE(after.find(removed));
+    CHECK(after.nodes().size() + 1 == before.nodes().size());
+    for (const auto& node : before.nodes()) {
+        if (node.id == removed || node.id == report.contents.parent) continue;
+        auto expected = node;
+        if (std::ranges::find(report.unconditional_branches, node.id) != report.unconditional_branches.end())
+            expected.value = bms_bare_scope_t{};
+        CHECK(*after.find(node.id) == expected);
+    }
+    const auto parent = *report.contents.parent;
+    auto children = before.find(parent)->children;
+    const auto index = std::ranges::find(children, removed) - children.begin();
+    children.erase(children.begin() + index);
+    const auto& promoted = before.find(removed)->children;
+    children.insert(children.begin() + index, promoted.begin(), promoted.end());
+    CHECK(after.find(parent)->children == children);
+}
+void check_unwrap_reload(const document_history_t& history) {
+    const auto loaded = parse_native_project(snapshot(history));
+    REQUIRE(loaded.ok());
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->schema_version == current_document_schema_version);
+    CHECK(loaded.value->find_bms_program(difficulty)->prepared().program == program(history));
+}
+void check_bare_export_equivalence(const document_history_t& history, const std::string& output) {
+    const auto flattened = write_bms_program(owner(history).prepared(),
+        {.format = {.branch_policy = bms_branch_policy_t::flatten_active}});
+    REQUIRE(flattened.ok());
+    CHECK(flattened.value == output);
+    const auto imported = prepared(output);
+    const auto projected = bms_program_projection_t::from(imported);
+    REQUIRE(projected.value);
+    CHECK(note_keys(projected.value->song()).size() == 2);
+}
+constexpr auto unwrap_source = "#WAV01 a.wav\n#RANDOM 2\n#IF 1\n; first\n#00011:01\n#ELSE\n; second\n#00111:01\n#ENDIF\n#ENDRANDOM\n";
+}
+TEST_CASE("Selector unwrap requires explicit unconditional conversion and preserves every body", "[bms-program-authoring]") {
+    auto history = selected_move_history(unwrap_source);
+    const auto selector = nodes_of<bms_random_scope_t>(history).front();
+    const auto before = program(history);
+    const auto catalogs = catalog_snapshot(history);
+    auto proposed = prepare_unwrap(history, selector);
+    REQUIRE(proposed.payload.report().unconditional_branches.size() == 2);
+    const auto original = snapshot(history);
+    check_refused(history, apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_promotion),
+        diagnostic_code_t::invalid_id, original);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    check_unwrapped_nodes(before, program(history), proposed.payload.report());
+    CHECK(catalog_snapshot(history) == catalogs);
+    CHECK(owner(history).evaluation().selections.empty());
+    CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+    check_unwrap_reload(history);
+}
+TEST_CASE("Unwrapped selector exports all bare bodies and Text in order", "[bms-program-authoring]") {
+    auto history = history_from(unwrap_source);
+    auto proposed = prepare_unwrap(history, nodes_of<bms_random_scope_t>(history).front());
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    const auto output = write(history);
+    CHECK(output.find("#RANDOM") == std::string::npos);
+    CHECK(output.find("#IF") == std::string::npos);
+    CHECK(output.find("; first") < output.find("; second"));
+    check_bare_export_equivalence(history, output);
+}
+TEST_CASE("Unwrap Cancel preserves graph target choices and Undo", "[bms-program-authoring]") {
+    auto history = selected_move_history(unwrap_source);
+    const auto selector = nodes_of<bms_random_scope_t>(history).front();
+    history.bms_edit_target = {.difficulty = difficulty, .chart = *program(history).target_chart(selector)};
+    const auto original = snapshot(history);
+    const auto target = history.bms_edit_target;
+    const auto count = history.undo.size();
+    auto proposed = prepare_unwrap(history, selector);
+    CHECK_FALSE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::cancel).applied);
+    CHECK(snapshot(history) == original);
+    CHECK(history.bms_edit_target == target);
+    CHECK(history.undo.size() == count);
+}
+TEST_CASE("Unwrap rejects stale or retargeted confirmation", "[bms-program-authoring]") {
+    auto history = history_from(unwrap_source);
+    auto proposed = prepare_unwrap(history, nodes_of<bms_random_scope_t>(history).front());
+    insert(history, program(history).root(), bms_chart_content_t{});
+    const auto original = snapshot(history);
+    check_refused(history, apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion),
+        diagnostic_code_t::invalid_id, original);
+    proposed.stamp = chart_stamp_t::from(history, difficulty);
+    check_refused(history, apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion),
+        diagnostic_code_t::invalid_id, original);
+}
+TEST_CASE("Unwrapping an IF promotes its children and makes following arms bare", "[bms-program-authoring]") {
+    auto history = history_from(unwrap_source);
+    const auto before = program(history);
+    auto proposed = prepare_unwrap(history, nodes_of<bms_if_scope_t>(history).front());
+    REQUIRE(proposed.payload.report().unconditional_branches.size() == 1);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    check_unwrapped_nodes(before, program(history), proposed.payload.report());
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+    CHECK(write(history).find("#ELSE") == std::string::npos);
+}
+TEST_CASE("Ordinary body unwrap preserves selector bindings and target identity", "[bms-program-authoring]") {
+    auto history = selected_move_history("#WAV01 a.wav\n#RANDOM 1\n#IF 1\n; nested\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto chart = *program(history).target_chart(arm);
+    history.bms_edit_target = {.difficulty = difficulty, .chart = chart};
+    const auto before = program(history);
+    auto proposed = prepare_unwrap(history, arm);
+    CHECK(proposed.payload.report().unconditional_branches.empty());
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_promotion).applied);
+    check_unwrapped_nodes(before, program(history), proposed.payload.report());
+    check_bms_target(history, chart);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}
+TEST_CASE("Selector unwrap converts only its own dependents including nested IF scopes", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 2\n#IF 1\n#IF 2\n#ENDIF\n#RANDOM 3\n#IF 3\n#ENDIF\n#ENDRANDOM\n#ENDIF\n#ENDRANDOM\n");
+    const auto selectors = nodes_of<bms_random_scope_t>(history);
+    const auto inner = selectors.back();
+    const auto before = program(history);
+    auto proposed = prepare_unwrap(history, selectors.front());
+    CHECK(proposed.payload.report().unconditional_branches.size() == 2);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    check_unwrapped_nodes(before, program(history), proposed.payload.report());
+    CHECK(*program(history).find(inner) == *before.find(inner));
+    CHECK(nodes_of<bms_if_scope_t>(history).size() == 1);
+    CHECK(write(history).find("#RANDOM 3") != std::string::npos);
+}
+TEST_CASE("Inner selector unwrap never rebinds its arms to an outer RANDOM", "[bms-program-authoring]") {
+    auto history = history_from("#RANDOM 2\n#IF 1\n#RANDOM 3\n#IF 3\n#ELSE\n#ENDIF\n#ENDRANDOM\n#ENDIF\n#ENDRANDOM\n");
+    const auto selectors = nodes_of<bms_random_scope_t>(history);
+    auto proposed = prepare_unwrap(history, selectors.back());
+    const auto outer_arm = nodes_of<bms_if_scope_t>(history).front();
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    CHECK(program(history).conditional_selector(outer_arm) == selectors.front());
+    for (const auto id : proposed.payload.report().unconditional_branches)
+        CHECK_FALSE(program(history).conditional_selector(id));
+    CHECK(nodes_of<bms_bare_scope_t>(history).size() == 2);
+}
+TEST_CASE("SWITCH unwrap makes every CASE and DEF bare and reports removed SKIP behavior", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#SWITCH 2\n#CASE 1\n#00011:01\n#SKIP\n#DEF\n#00111:01\n#ENDSW\n");
+    const auto before = program(history);
+    auto proposed = prepare_unwrap(history, nodes_of<bms_switch_scope_t>(history).front());
+    CHECK(proposed.payload.report().removed_skips == 1);
+    CHECK(proposed.payload.report().unconditional_branches.size() == 2);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    check_unwrapped_nodes(before, program(history), proposed.payload.report());
+    CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
+    CHECK(write(history).find("#SKIP") == std::string::npos);
+    check_unwrap_reload(history);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}
+TEST_CASE("Bare scopes can subsequently be unwrapped without merging Chart owners", "[bms-program-authoring]") {
+    auto history = history_from(unwrap_source);
+    auto selector = prepare_unwrap(history, nodes_of<bms_random_scope_t>(history).front());
+    REQUIRE(apply_proposal(history, selector, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    auto bare = prepare_unwrap(history, nodes_of<bms_bare_scope_t>(history).front());
+    const auto before = program(history);
+    REQUIRE(apply_proposal(history, bare, bms_program_unwrap_decision_t::confirm_promotion).applied);
+    check_unwrapped_nodes(before, program(history), bare.payload.report());
+    CHECK(note_keys(owner(history).build_projection().value->song()).size() == 2);
+    check_unwrap_reload(history);
+}
+TEST_CASE("Unwrap refuses Root leaves missing targets fixed selectors and insufficient limits", "[bms-program-authoring]") {
+    const auto mode = GENERATE(0, 1, 2, 3, 4);
+    auto history = history_from(mode == 3 ? "#SETRANDOM 1\n#RANDOM 2\n#IF 1\n#ENDIF\n#ENDRANDOM\n" : unwrap_source);
+    const auto root = program(history).root();
+    if (mode == 0) check_unwrap_refused(history, root);
+    if (mode == 1) check_unwrap_refused(history, *program(history).target_chart(root));
+    if (mode == 2) check_unwrap_refused(history, branch_id_t{99999});
+    if (mode == 3) check_unwrap_refused(history, nodes_of<bms_random_scope_t>(history).front());
+    if (mode == 4) {
+        auto proposed = bms_program_unwrap_edit_t::propose(history.document, difficulty,
+            nodes_of<bms_random_scope_t>(history).front(), {.maximum_nodes = 1});
+        CHECK_FALSE(proposed.value);
+    }
+}
+TEST_CASE("Unwrap rejects newly simultaneous branch collisions without dropping content", "[bms-program-authoring]") {
+    auto history = history_from("#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
+    check_unwrap_refused(history, nodes_of<bms_random_scope_t>(history).front(), diagnostic_code_t::collision);
+}
+TEST_CASE("Native schema 14 migrates unchanged scoped programs to schema 15", "[bms-program-authoring]") {
+    auto history = history_from(unwrap_source);
+    auto document = nlohmann::json::parse(snapshot(history));
+    document["document"]["schema_version"] = 14;
+    const auto loaded = parse_native_project(document.dump());
+    REQUIRE(loaded.ok());
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->schema_version == 15);
+    CHECK(loaded.value->find_bms_program(difficulty)->prepared().program == program(history));
+}
+TEST_CASE("Unwrap preserves external lexical SKIP anchors when promoting a nested body", "[bms-program-authoring]") {
+    auto history = history_from("#SWITCH 2\n#CASE 1\n#RANDOM 1\n#IF 1\n; nested\n#SKIP\n#ENDIF\n#ENDRANDOM\n#DEF\n#ENDSW\n");
+    const auto arm = nodes_of<bms_if_scope_t>(history).front();
+    const auto parent = *program(history).parent(arm);
+    const auto before = program(history);
+    auto proposed = prepare_unwrap(history, arm);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_promotion).applied);
+    const auto cases = nodes_of<bms_case_scope_t>(history);
+    const auto& original_skip = std::get<bms_case_scope_t>(before.find(cases.front())->value).skips.front();
+    const auto& skips = std::get<bms_case_scope_t>(program(history).find(cases.front())->value).skips;
+    REQUIRE(skips.size() == 1);
+    CHECK(skips.front().scope == parent);
+    CHECK(skips.front().after_child == original_skip.after_child);
+    CHECK(write(history).find("#SKIP") != std::string::npos);
+    const auto after = program(history);
+    check_history_round_trip(history, before, after);
+}
+TEST_CASE("Direct CASE unwrap refuses retained switch entry gating", "[bms-program-authoring]") {
+    auto history = history_from("#SWITCH 2\n#CASE 1\n#DEF\n#ENDSW\n");
+    check_unwrap_refused(history, nodes_of<bms_case_scope_t>(history).front());
+}
+TEST_CASE("Unwrap checks collisions in unrelated inactive selector outcomes", "[bms-program-authoring]") {
+    auto history = selected_move_history("#WAV01 a.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ENDIF\n#ENDRANDOM\n"
+        "#RANDOM 2\n#IF 1\n#00111:01\n#ELSE\n#00011:01\n#ENDIF\n#ENDRANDOM\n");
+    check_unwrap_refused(history, nodes_of<bms_random_scope_t>(history).front(), diagnostic_code_t::collision);
+}
+TEST_CASE("Unwrap retains a case SKIP immediately after the promoted wrapper", "[bms-program-authoring]") {
+    auto history = history_from("#SWITCH 2\n#CASE 1\n#RANDOM 1\n#IF 1\n; nested\n#ENDIF\n#ENDRANDOM\n#SKIP\n#DEF\n#ENDSW\n");
+    const auto wrapper = nodes_of<bms_random_scope_t>(history).front();
+    const auto last_child = program(history).find(wrapper)->children.back();
+    const auto containing = *program(history).parent(wrapper);
+    auto proposed = prepare_unwrap(history, wrapper);
+    REQUIRE(apply_proposal(history, proposed, bms_program_unwrap_decision_t::confirm_unconditional_conversion).applied);
+    const auto& skips = std::get<bms_case_scope_t>(program(history).find(containing)->value).skips;
+    REQUIRE(skips.size() == 1);
+    CHECK(skips.front().scope == containing);
+    CHECK(skips.front().after_child == last_child);
+    CHECK(write(history).find("#SKIP") != std::string::npos);
+    check_unwrap_reload(history);
+}

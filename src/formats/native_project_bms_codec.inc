@@ -22,6 +22,7 @@ BMS_CODEC_VALUE(bms_resource_declaration_t, "resource_declaration", name_space, 
 BMS_CODEC_TAG(bms_metadata_declaration_t, "metadata")
 BMS_CODEC_TAG(bms_native_content_t, "native")
 BMS_CODEC_TAG(bms_root_scope_t, "root")
+BMS_CODEC_TAG(bms_bare_scope_t, "bare")
 BMS_CODEC_VALUE(bms_random_scope_t, "random", range)
 BMS_CODEC_VALUE(bms_if_scope_t, "if", value)
 BMS_CODEC_VALUE(bms_else_if_scope_t, "else_if", previous_arm, value)
@@ -59,6 +60,10 @@ void from_json(const json& value, bms_text_t& text) {
     const auto bytes = hex_to_bytes(value.at("bytes_hex").get<std::string>());
     text.bytes.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     value.at("encoding").get_to(text.encoding);
+}
+void to_json(json& value, const bms_bare_scope_t&) { value = json::object(); }
+void from_json(const json& value, bms_bare_scope_t&) {
+    if (!value.is_object() || !value.empty()) throw std::invalid_argument("Bare scope has no payload fields.");
 }
 void to_json(json& value, const bms_root_scope_t&) { value = json::object(); }
 void from_json(const json& value, bms_root_scope_t&) {

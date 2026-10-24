@@ -145,6 +145,7 @@ struct bms_text_t {
     text_encoding_t encoding{text_encoding_t::unknown};
     auto operator==(const bms_text_t&) const -> bool = default;
 };
+struct bms_bare_scope_t { auto operator==(const bms_bare_scope_t&) const -> bool = default; };
 struct bms_root_scope_t { auto operator==(const bms_root_scope_t&) const -> bool = default; };
 struct bms_random_scope_t {
     std::int64_t range{1};
@@ -190,7 +191,7 @@ struct bms_set_switch_t {
 };
 using bms_program_node_value_t = std::variant<bms_root_scope_t, bms_random_scope_t,
     bms_if_scope_t, bms_else_if_scope_t, bms_else_scope_t, bms_switch_scope_t,
-    bms_case_scope_t, bms_set_random_t, bms_set_switch_t, bms_chart_content_t, bms_text_t>;
+    bms_case_scope_t, bms_set_random_t, bms_set_switch_t, bms_chart_content_t, bms_text_t, bms_bare_scope_t>;
 struct bms_program_node_t {
     branch_id_t id;
     bms_program_node_value_t value;
@@ -254,6 +255,10 @@ class bms_program_t {
         bms_program_limits_t limits = {}) const -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto with_move(const bms_program_move_t& move, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
+    [[nodiscard]] auto with_unwrap(branch_id_t node, bms_program_limits_t limits = {}) const
+        -> result_t<bms_program_t, error_t<failure_code_t>>;
+    // Branches whose conditions must be removed as part of this unwrap.
+    [[nodiscard]] auto unwrap_conversions(branch_id_t node) const -> std::vector<branch_id_t>;
     [[nodiscard]] auto without_subtree(branch_id_t node, bms_program_limits_t limits = {}) const
         -> result_t<bms_program_t, error_t<failure_code_t>>;
     [[nodiscard]] auto root() const -> branch_id_t { return nodes_[root_index_].id; }

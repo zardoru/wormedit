@@ -82,6 +82,17 @@ walk the previous ancestry to the nearest surviving scope and choose its first C
 A valid session target remains selected through semantic Undo; history does not restore
 an old selection. Missing difficulties, projects or previous ancestry clear the target instead.
 
+Prepared unwrap previews ordered child promotion and its reachability/definition effects.
+Affected IF continuations and selector-dependent branches become explicit bare scopes only
+after the caller confirms unconditional conversion; ordinary promotion confirmation cannot
+authorize that conversion. CASE conversion reports removal of selector-specific SKIP behavior.
+All bodies and surviving node identities remain, unrelated nested conditions retain their
+selectors, and the shared publication checks reject newly simultaneous collisions. Move,
+delete and unwrap share proposal staging and detached preview execution. Native schema v15
+adds bare scopes; BMS emits their ordered contents without conditional markers. Direct CASE
+promotion and unproven fixed-setting bindings refuse rather than retaining hidden gating or
+rebinding a selector.
+
 Session target selection stays outside document history. Gesture and proposal stamps pin
 that selection, including through terminal gesture cleanup and continuation after a
 partial chord commit. Changing the session selection cannot retarget a captured insert;
@@ -93,7 +104,7 @@ Kiai spans, recipes, scoped metadata/offsets, selected moves/resize/delete/quant
 hitsounds, labels and layer edits route through these shared prepared boundaries.
 Shared geometry, retained-stem rewrites, broad catalog/import/duplication operations and
 other unadapted operations keep atomic capability refusals. Production activation remains
-T-744. Native schema v14 persists prepared scoped snapshots with stable payload tags,
+T-744. Native schema v15 persists prepared scoped snapshots with stable payload tags,
 exact fractions and opaque Text bytes. Shared project assets are referenced once; conflicting
 values reject. The codec reuses bounded alternative publication validation, preserving
 existing missing bindings while checking graph/geometry beyond the selected outcome.

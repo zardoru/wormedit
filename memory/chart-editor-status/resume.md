@@ -2,6 +2,21 @@
 
 ## Active queue (2026-10-23)
 
+Completed **T-742** (2026-10-23): confirmed unwrap promotes ordered children and offers
+explicit conversion of affected branches into selectorless, always-applying bare scopes, or
+Cancel with no change. Ordinary promotion confirmation cannot authorize conversion. All bodies,
+surviving IDs, Text order, target Charts and unrelated nested conditions remain; external SKIP
+anchors retain their execution positions. CASE conversion reports removal of selector-specific
+SKIP behavior. Direct CASE promotion and unproven fixed-setting programs refuse conservatively;
+hidden collisions reject atomically. Native schema v15 retains bare scopes and migrates v14
+without changing existing payloads; BMS emits their contents without conditional markers.
+Move/delete/unwrap share staging and detached preview execution. GCC GATE passes **4,837/4,837**;
+authoring passes **1,810 assertions / 53 cases**, combined BMS families **5,757 / 184**.
+Complexity passes for **five changed TUs** and **46 explicit header consumers** without increased
+allowances. **T-739 and T-743 still need questions 21 and 24**; no successor implementation is
+active. Confirmation UI remains T-743 and public activation T-744.
+[Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-742-unwrap-controls-as-an-explicit-structural-operation).
+
 Completed **T-741** (2026-10-23): typed, immutable deletion proposals summarize the exact
 subtree, scopes, Charts, Text, fixed settings and semantic content, including native children and
 case SKIP behavior. Explicit Confirm uses the original project/revision/difficulty/node identity;
@@ -13,7 +28,7 @@ Selection stays outside semantic Undo. Root/final-Chart deletion, dangling IF/SK
 references and partial holds refuse. GCC GATE and Linux Clang each pass **4,820/4,820**;
 authoring passes **1,338 assertions / 36 cases** and combined BMS families **5,285 / 167** on both.
 Complexity passes for **four changed TUs** and **46 explicit header consumers** without increased
-allowances. **T-739, T-742 and T-743 remain blocked on user decisions** (questions 21, 23 and 24);
+allowances. **T-739 and T-743 remain blocked on user decisions** (questions 21 and 24); T-742 is complete above;
 no successor implementation is active. Confirmation UI remains T-743; public activation T-744.
 [Completed card and verification tails](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md#t-741-delete-scoped-subtrees-through-explicit-confirmation).
 

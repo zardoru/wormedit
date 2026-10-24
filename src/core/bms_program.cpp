@@ -179,7 +179,7 @@ struct program_validation_t {
 } // namespace
 
 auto bms_program_node_t::is_scope() const -> bool {
-    return std::holds_alternative<bms_root_scope_t>(value) ||
+    return std::holds_alternative<bms_root_scope_t>(value) || std::holds_alternative<bms_bare_scope_t>(value) ||
         std::holds_alternative<bms_random_scope_t>(value) || std::holds_alternative<bms_if_scope_t>(value) ||
         std::holds_alternative<bms_else_if_scope_t>(value) || std::holds_alternative<bms_else_scope_t>(value) ||
         std::holds_alternative<bms_switch_scope_t>(value) || std::holds_alternative<bms_case_scope_t>(value);
@@ -348,6 +348,82 @@ auto bms_program_subtree_t::from(const bms_program_t& program, branch_id_t root)
     }
     return result;
 }
+auto bms_program_t::unwrap_conversions(branch_id_t id) const -> std::vector<branch_id_t> {
+    std::vector<branch_id_t> result;
+    const auto* wrapper = find(id);
+    if (!wrapper) return result;
+    for (const auto& node : nodes_)
+        if (conditional_selector(node.id) == id) result.push_back(node.id);
+    // Removing an arm also removes the predicate prefix of its following arms.
+    if (!wrapper->is_if_arm()) return result;
+    const auto containing = parent(id);
+    if (!containing) return result;
+    const auto& siblings = find(*containing)->children;
+    for (auto next = std::ranges::find(siblings, id) + 1; next != siblings.end(); ++next) {
+        if (!find(*next)->is_if_continuation()) break;
+        result.push_back(*next);
+    }
+    return result;
+}
+namespace {
+void promote_unwrapped_children(std::vector<bms_program_node_t>& nodes, const bms_program_node_t& wrapper,
+    branch_id_t parent) {
+    auto& siblings = std::ranges::find(nodes, parent, &bms_program_node_t::id)->children;
+    const auto position = std::ranges::find(siblings, wrapper.id);
+    const auto previous = position == siblings.begin() ? std::nullopt : std::optional{*(position - 1)};
+    const auto offset = siblings.erase(position) - siblings.begin();
+    siblings.insert(siblings.begin() + offset, wrapper.children.begin(), wrapper.children.end());
+    // Preserve external SKIP execution positions when their lexical scope/anchor moves.
+    for (auto& node : nodes) {
+        auto* arm = std::get_if<bms_case_scope_t>(&node.value);
+        if (!arm) continue;
+        for (auto& skip : arm->skips) {
+            if (skip.scope == wrapper.id) {
+                skip.scope = parent;
+                if (!skip.after_child) skip.after_child = previous;
+            } else if (skip.scope == parent && skip.after_child == wrapper.id) {
+                skip.after_child = wrapper.children.back();
+            }
+        }
+    }
+}
+auto validate_unwrap_bindings(const bms_program_t& before, const bms_program_t& after)
+    -> std::optional<error_t<failure_code_t>> {
+    for (const auto& node : after.nodes()) {
+        if (std::holds_alternative<bms_bare_scope_t>(node.value)) continue;
+        if (before.conditional_selector(node.id) != after.conditional_selector(node.id))
+            return error_t{failure_code_t::invalid_request, "Unwrap would rebind a surviving condition."};
+    }
+    return std::nullopt;
+}
+} // namespace
+
+auto bms_program_t::with_unwrap(branch_id_t id, bms_program_limits_t limits) const
+    -> result_t<bms_program_t, error_t<failure_code_t>> {
+    const auto* wrapper = find(id);
+    const auto containing = parent(id);
+    if (!wrapper || !containing || !wrapper->is_scope())
+        return std::unexpected(error_t{failure_code_t::invalid_request, "Unwrap requires a non-Root body scope."});
+    if (std::holds_alternative<bms_case_scope_t>(wrapper->value))
+        return std::unexpected(error_t{failure_code_t::unsupported,
+            "Unwrap the containing SWITCH to make CASE/DEF bodies unconditional; direct promotion would retain switch entry/fallthrough gating."});
+    const auto has_fixed = std::ranges::any_of(nodes_, [](const auto& node) {
+        return std::holds_alternative<bms_set_random_t>(node.value) || std::holds_alternative<bms_set_switch_t>(node.value);
+    });
+    if (has_fixed)
+        return std::unexpected(error_t{failure_code_t::unsupported,
+            "Unwrap cannot prove unchanged fixed-selector bindings in this program."});
+    auto nodes = nodes_;
+    for (const auto branch : unwrap_conversions(id))
+        nodes[indices_.at(branch.value)].value = bms_bare_scope_t{};
+    promote_unwrapped_children(nodes, *wrapper, *containing);
+    std::erase_if(nodes, [&](const auto& node) { return node.id == id; });
+    auto proposed = from(std::move(nodes), limits);
+    if (!proposed) return proposed;
+    if (const auto failure = validate_unwrap_bindings(*this, *proposed)) return std::unexpected(*failure);
+    return proposed;
+}
+
 auto bms_program_t::without_subtree(branch_id_t id, bms_program_limits_t limits) const
     -> result_t<bms_program_t, error_t<failure_code_t>> {
     const auto subtree = bms_program_subtree_t::from(*this, id);

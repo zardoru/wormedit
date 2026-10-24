@@ -146,7 +146,17 @@ first Chart node; Undo restores a valid target without retaining dangling refere
 **Unwrap:** preserve child order and identities while moving them into the parent.
 Preview the resulting scope/definition effects before confirmation. Reject an
 invalid result rather than dropping colliding objects or binding IF/CASE nodes to
-a different selector. Selector unwrapping needs [question 23](../decisions/open-questions.md).
+a different selector. Under the approved [question 23](../decisions/open-questions.md)
+policy, affected dependent branches may instead become explicit selectorless scopes
+whose bodies always apply in their containing scope. Offer that conversion or Cancel;
+Cancel changes nothing. Retain every affected branch body, identity and order, and
+preserve unrelated nested conditions. Conversion still requires the resulting combined
+content to pass validation; confirmation never authorizes dropping collisions.
+The prepared implementation refuses direct CASE promotion because SWITCH entry/fallthrough
+would still gate it; unwrap the containing SWITCH to make its cases bare. Programs with fixed
+selector settings also refuse when their consumption bindings cannot be proven unchanged.
+CASE conversion reports removal of its selector-specific SKIP behavior. Native schema v15
+retains bare scopes and their identities; BMS export emits their bodies in order without markers.
 
 ## Import persistence and export
 
@@ -189,6 +199,6 @@ the panel, destructive dialogs and target indication; run GATE at every implemen
 card and documentation checks for the initial audit.
 
 This plan is authorization to prepare implementation tasks, not a claim that the
-model or UI has landed. T-731 and T-732 are complete. Question 22 is answered (2026-10-23); questions 21,
-23 and 24 still block only their dependent slices. The fixed-selector clarification
-does not settle range shrinking, selector unwrap or scope/preview interaction.
+model or UI has landed. T-731 and T-732 are complete. Questions 22 and 23 are answered
+(2026-10-23); questions 21 and 24 still block only their dependent slices. The approved
+fixed-selector and unwrap policies do not settle range shrinking or scope/preview interaction.

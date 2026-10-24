@@ -1159,6 +1159,25 @@ auto stage_program(document_command_transaction_t& transaction, chart_id_t diffi
         return {.value = document_edit_effect_t{.changed = true, .command_label = std::move(label)}};
     });
 }
+template<class Edit>
+auto stage_program_proposal(proposal_edit_scope_t<chart_stamp_t>& scope, Edit edit, std::string label)
+    -> attempt_t<std::string> {
+    auto staged = stage_program(scope.transaction(), scope.captured_stamp().chart, std::move(edit), std::move(label));
+    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
+    return {.value = staged.value->changed ? std::optional{std::move(staged.value->command_label)} : std::nullopt,
+        .diagnostics = std::move(staged.diagnostics)};
+}
+template<class Proposal, class Inspect, class... Arguments>
+auto prepare_validated_program_proposal(const song_document_t& song, Proposal proposal,
+    Inspect inspect, Arguments... arguments) -> attempt_t<Proposal> {
+    const auto checked = document_command_transaction_t::preview(song, [&](document_history_t& preview) {
+        auto result = apply_proposal(preview, proposal, arguments...);
+        if (result.applied) inspect(proposal.payload, preview.document);
+        return result;
+    });
+    if (!checked.applied) return {.diagnostics = checked.diagnostics};
+    return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
+}
 auto validate_insert_value(const bms_program_insert_value_t& value) -> std::optional<std::string> {
     if (const auto* chart = std::get_if<bms_chart_content_t>(&value); chart && !chart->items.empty())
         return "A new Chart must be empty; content uses the scoped content editor.";
@@ -1243,31 +1262,20 @@ auto bms_program_move_report_t::from(const bms_program_document_t& owner, branch
 }
 
 auto bms_program_move_edit_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) const -> attempt_t<std::string> {
-    auto staged = stage_program(scope.transaction(), scope.captured_stamp().chart,
+    return stage_program_proposal(scope,
         [&](const bms_program_t& program) { return program.with_move(move, limits); }, "Move BMS subtree");
-    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-    return {.value = staged.value->changed ? std::optional{std::move(staged.value->command_label)} : std::nullopt,
-        .diagnostics = std::move(staged.diagnostics)};
 }
 auto bms_program_move_edit_t::propose(const song_document_t& song, chart_id_t difficulty,
     bms_program_move_t move, bms_program_limits_t limits) -> attempt_t<bms_program_move_proposal_t> {
     auto proposal = bms_program_move_proposal_t::from(chart_stamp_t::from(song, difficulty),
         bms_program_move_edit_t{.move = move, .limits = limits});
-    bms_program_move_report_t report;
-    const auto checked = document_command_transaction_t::preview(song, [&](document_history_t& preview) {
-        auto result = apply_proposal(preview, proposal);
-        if (result.applied) {
-            const auto& before = *song.find_bms_program(difficulty);
-            report = *bms_program_move_report_t::from(before, move.node);
-            const auto projection = preview.document.find_bms_program(difficulty)->build_projection();
+    return prepare_validated_program_proposal(song, std::move(proposal),
+        [&](bms_program_move_edit_t& payload, const song_document_t& after) {
+            payload.report = *bms_program_move_report_t::from(*song.find_bms_program(difficulty), move.node);
+            const auto projection = after.find_bms_program(difficulty)->build_projection();
             const auto charts = projection.value->active_charts();
-            report.after_active_charts.assign(charts.begin(), charts.end());
-        }
-        return result;
-    });
-    if (!checked.applied) return {.diagnostics = checked.diagnostics};
-    proposal.payload.report = std::move(report);
-    return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
+            payload.report.after_active_charts.assign(charts.begin(), charts.end());
+        });
 }
 } // namespace wormedit
 
@@ -1279,11 +1287,8 @@ auto bms_program_delete_edit_t::validate_capture(const chart_stamp_t& stamp) con
 auto bms_program_delete_edit_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
     bms_program_delete_decision_t decision) const -> attempt_t<std::string> {
     if (decision != bms_program_delete_decision_t::confirm) return {};
-    auto staged = stage_program(scope.transaction(), scope.captured_stamp().chart,
+    return stage_program_proposal(scope,
         [&](const bms_program_t& program) { return program.without_subtree(summary_.root, limits_); }, "Delete BMS subtree");
-    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-    return {.value = staged.value->changed ? std::optional{std::move(staged.value->command_label)} : std::nullopt,
-        .diagnostics = std::move(staged.diagnostics)};
 }
 auto bms_program_delete_edit_t::propose(const song_document_t& song, chart_id_t difficulty,
     branch_id_t node, bms_program_limits_t limits) -> attempt_t<bms_program_delete_proposal_t> {
@@ -1294,10 +1299,56 @@ auto bms_program_delete_edit_t::propose(const song_document_t& song, chart_id_t 
     const auto stamp = chart_stamp_t::from(song, difficulty);
     auto proposal = bms_program_delete_proposal_t::from(stamp,
         bms_program_delete_edit_t(stamp, std::move(*summary), limits));
-    const auto checked = document_command_transaction_t::preview(song, [&](document_history_t& preview) {
-        return apply_proposal(preview, proposal, bms_program_delete_decision_t::confirm);
-    });
-    if (!checked.applied) return {.diagnostics = checked.diagnostics};
-    return {.value = std::move(proposal), .diagnostics = checked.diagnostics};
+    return prepare_validated_program_proposal(song, std::move(proposal),
+        [](bms_program_delete_edit_t&, const song_document_t&) {}, bms_program_delete_decision_t::confirm);
+}
+} // namespace wormedit
+
+namespace wormedit {
+auto bms_program_unwrap_report_t::from(const bms_program_document_t& owner, branch_id_t node)
+    -> std::optional<bms_program_unwrap_report_t> {
+    const auto& program = owner.prepared().program;
+    auto contents = bms_program_subtree_t::from(program, node);
+    auto effects = bms_program_move_report_t::from(owner, node);
+    if (!contents || !effects || !program.find(node)->is_scope()) return std::nullopt;
+    bms_program_unwrap_report_t report{.contents = std::move(*contents), .effects = std::move(*effects),
+        .unconditional_branches = program.unwrap_conversions(node)};
+    auto changed = report.unconditional_branches;
+    changed.push_back(node);
+    for (const auto id : changed)
+        if (const auto* arm = std::get_if<bms_case_scope_t>(&program.find(id)->value)) report.removed_skips += arm->skips.size();
+    return report;
+}
+auto bms_program_unwrap_edit_t::validate_capture(const chart_stamp_t& stamp) const -> diagnostic_list_t {
+    if (stamp == stamp_) return {};
+    return {error(diagnostic_code_t::invalid_id, "Unwrap confirmation does not match its prepared project, revision and difficulty.")};
+}
+auto bms_program_unwrap_edit_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
+    bms_program_unwrap_decision_t decision) const -> attempt_t<std::string> {
+    if (decision != bms_program_unwrap_decision_t::confirm_promotion &&
+        decision != bms_program_unwrap_decision_t::confirm_unconditional_conversion) return {};
+    if ((!report_.unconditional_branches.empty() || report_.removed_skips) &&
+        decision != bms_program_unwrap_decision_t::confirm_unconditional_conversion)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "Unwrap requires explicit confirmation to make affected branches unconditional and remove their selector-specific SKIP behavior.")}};
+    return stage_program_proposal(scope,
+        [&](const bms_program_t& program) { return program.with_unwrap(report_.contents.root, limits_); }, "Unwrap BMS scope");
+}
+auto bms_program_unwrap_edit_t::propose(const song_document_t& song, chart_id_t difficulty,
+    branch_id_t node, bms_program_limits_t limits) -> attempt_t<bms_program_unwrap_proposal_t> {
+    const auto* owner = song.find_bms_program(difficulty);
+    if (!owner) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "No scoped BMS program exists for this difficulty.")}};
+    auto report = bms_program_unwrap_report_t::from(*owner, node);
+    if (!report)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Unwrap requires an existing non-Root body scope.")}};
+    const auto stamp = chart_stamp_t::from(song, difficulty);
+    auto proposal = bms_program_unwrap_proposal_t::from(stamp,
+        bms_program_unwrap_edit_t(stamp, std::move(*report), limits));
+    return prepare_validated_program_proposal(song, std::move(proposal),
+        [&](bms_program_unwrap_edit_t& payload, const song_document_t& after) {
+            const auto projection = after.find_bms_program(difficulty)->build_projection();
+            const auto charts = projection.value->active_charts();
+            payload.report_.effects.after_active_charts.assign(charts.begin(), charts.end());
+        }, bms_program_unwrap_decision_t::confirm_unconditional_conversion);
 }
 } // namespace wormedit

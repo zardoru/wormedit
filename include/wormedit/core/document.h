@@ -950,7 +950,7 @@ struct quantization_preset_t {
     auto operator==(const quantization_preset_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 14;
+inline constexpr std::uint32_t current_document_schema_version = 15;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

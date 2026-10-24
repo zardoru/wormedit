@@ -283,7 +283,12 @@ auto migrate_v13_to_v14(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 13> released_migrations{{
+auto migrate_v14_to_v15(nlohmann::json&) -> std::string {
+    // Existing payloads are unchanged; v15 additionally supports selectorless scopes.
+    return {};
+}
+
+constexpr std::array<migration_t, 14> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -297,6 +302,7 @@ constexpr std::array<migration_t, 13> released_migrations{{
     {11, &migrate_v11_to_v12},
     {12, &migrate_v12_to_v13},
     {13, &migrate_v13_to_v14},
+    {14, &migrate_v14_to_v15},
 }};
 
 } // namespace

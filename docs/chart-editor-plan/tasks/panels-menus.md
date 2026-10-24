@@ -135,11 +135,13 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-231 Add the Measures panel (iBMSC measure-length list)
 
-- **Status:** blocked-on T-228
+- **Status:** partial (reconciled 2026-10-24; dock and batch meter editing implemented)
+- **Done so far:** `src/ui/nuklear/compose/compose_measures_panel.cpp` renders a virtualized ratio/meter list, shared Ctrl/Shift selection, select-all/clear, cursor navigation and batch meter Apply. `populate_measure_rows` in `src/sys/compose/views/compose_selection_view.cpp` includes virtual BMS measures; `set_measures_meter_action_t` uses the shared edit path. Existing coverage: "Measures dock selects rows, jumps the cursor and applies one meter to the selection" in `tests/ui/nuklear_event_harness_tests.cpp`. T-228 is done.
+- **Remaining:** add a batch exact length-ratio editor alongside the meter editor; reuse the existing batch-definition and row-preserving materialization helpers in `measure_editor.h` through shared transactions. Cover mixed authored/virtual selections, invalid-ratio atomic rejection, stable IDs and Undo. The list and batch meter control must not be rebuilt.
 - **Outcome:** a list of measures `#000`–`#999` (virtual BMS measures included) showing length as ratio and meter; multi-select with Shift/Ctrl; an editor row applies a length or meter to all selected measures in one command; clicking a row jumps the cursor there.
-- **Read first:** `include/wormedit/core/measure_editor.h`, `include/wormedit/core/virtual_canvas.h`, `src/sys/app/main.cpp` (existing meter form handler), `docs/chart-editor-plan/document-model.md` (measure length paragraph).
-- **Files owned:** new `src/ui/nuklear/measures_panel.cpp/.h`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`.
-- **Steps:** 1. Core batch definition update over a bounded measure list (materializing virtual BMS measures as needed). 2. Virtualized list. 3. Editor row with decimal ratio and meter fields (T-73 suggestions when present).
+- **Read first:** `src/ui/nuklear/compose/compose_measures_panel.cpp`, `src/sys/compose/actions/compose_measure_actions.cpp`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `include/wormedit/core/virtual_canvas.h`, `tests/ui/nuklear_event_harness_tests.cpp` (Measures dock case).
+- **Files owned:** `src/ui/nuklear/compose/compose_measures_panel.cpp/.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `src/sys/compose/actions/compose_measure_actions.cpp`, Compose route/internal action headers, `src/sys/compose/views/compose_selection_view.cpp`, `tests/core/measure_editor_tests.cpp`, focused measure dock/action regressions and test registration if a dedicated file is introduced.
+- **Steps:** 1. Characterize the existing list, meter action and core batch-definition edit. 2. Add only the missing exact ratio form/action through shared staging. 3. Test length/meter independence, virtual materialization, rejection and one Undo; inspect the real dock.
 - **Invariants:** exact ratios; stable measure IDs.
 - **Reject/failure behavior:** any invalid measure rejects the batch.
 - **Verify:** standard build/test.
@@ -147,11 +149,13 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-232 Move Layers and Markers into their own panels
 
-- **Status:** blocked-on T-228, T-207
+- **Status:** partial (reconciled 2026-10-24; all three docks exist, marker editing still in Inspector)
+- **Done so far:** `dock_panel_renderers` in `src/ui/nuklear/compose/compose_panel.cpp` registers Measures, Layers and Markers. The Layers dock renders `compose_layers_panel.cpp`; the Markers dock renders the existing bookmark list and has a stamped-navigation event test in `tests/ui/dock_layout_event_harness_tests.cpp`. T-228 and T-207 are done.
+- **Remaining:** move the existing bookmark/section editing controls from `render_compose_marker_section` in `compose_inspector.cpp` into the Markers dock, retaining the chooser and existing actions. Remove the Inspector duplication only after the dock exposes those controls. A bookmark navigation list alone does not satisfy the full marker/section editing outcome.
 - **Outcome:** Semantic layers and Markers/sections leave the Compose inspector and become dock panels; the Inspector panel keeps only properties of the current selection (note label, BPM value, recipe, BMSON slice state).
-- **Read first:** `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/compose/compose_markers.cpp`, `src/ui/nuklear/dock.h`.
-- **Files owned:** `src/ui/nuklear/compose_inspector.cpp/.h`, `src/ui/nuklear/compose_markers.cpp/.h`, new `src/ui/nuklear/layers_panel.cpp/.h`, `src/ui/nuklear/compose/compose_panel.cpp`, `CMakeLists.txt`.
-- **Steps:** pure moves of the render functions into panel units, then register them with the dock.
+- **Read first:** `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `tests/ui/dock_layout_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose/compose_inspector.cpp/.h`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp/.h`, `src/ui/nuklear/compose/compose_panel.cpp`, focused marker/dock event regressions and test registration if needed. Existing Layers rendering stays with its current owner.
+- **Steps:** 1. Characterize bookmark/section editing and chooser behavior in the existing Inspector and dock. 2. Move existing editing controls into the registered Markers dock. 3. Verify add/edit/delete/navigation, chooser interaction, keyboard capture and stale actions; inspect narrow and normal windows.
 - **Invariants:** identical actions and behavior.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; smoke PNGs.

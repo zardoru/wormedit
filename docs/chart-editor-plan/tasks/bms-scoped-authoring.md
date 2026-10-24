@@ -217,7 +217,7 @@ questions 21, 23 and 24 remain explicit gates. T-744 owns public activation.
 
 ## T-743 Present the branch panel as a scope authoring tree
 
-- **Status:** complete
+- **Status:** done (already implemented: `src/ui/nuklear/project/bms_branch_panel.cpp`; reconciled complete → done, 2026-10-24)
 - **Prerequisites:** T-738–T-742; [question 24](../decisions/open-questions.md).
 - **Outcome:** the panel exposes Root, control scopes, Chart and Text nodes, indicates the exact edit target, and offers validated node commands with distinct Delete/Unwrap confirmations.
 - **Read first:** `docs/chart-editor-plan/editing/bms-scoped-program.md`, `docs/chart-editor-plan/decisions/open-questions.md`, `src/ui/nuklear/project/bms_branch_panel.cpp`, `src/sys/project/workspace_view.cpp`, `src/sys/compose/actions/compose_actions.cpp`.

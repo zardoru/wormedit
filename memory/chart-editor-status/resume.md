@@ -2,6 +2,11 @@
 
 ## Active queue (2026-10-24)
 
+[Backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md) is complete:
+622 done, 2 ready, 11 partial, 4 blocked, 40 deferred and 2 superseded (681 total).
+Ready: **T-58**, **T-293**. T-231/T-232/T-250/T-275/T-287 have implemented checkpoints and
+explicit remaining work; T-272 is superseded. No implementation card is active.
+
 Completed **T-162**, **T-158**, and **T-159/T-160** (2026-10-24): finite SV impulses,
 owned read-only Lua document access, and explicit generator preview/Apply with saved recipes.
 Schemas18/19 and the manual are updated. GATE passes **5,008/5,008**; complexity passes
@@ -968,7 +973,7 @@ Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take th
 18g. T-105 (2026-10-01, headless tests): BMSON slicing rules audit is done in `tests/core/sound_slice_rules_tests.cpp`; every rule passes, no gaps found.
 18h. T-77 core (2026-10-01, headless tests): `navigate_markers` accepts an optional timing index and projects audio-time bookmarks/sections onto rows; passing the index and enabling the commands in `src/sys/main.cpp` (step 3) remain.
 19. Note and lane colors by instrument key (scratch red, black keys darker, PMS buttons) with an iBMSC-style green selection outline — [T-269](../../docs/chart-editor-plan/tasks/compose-ux.md) (profile data), then T-270 (drawing).
-20. [Live transport frame time](../../docs/chart-editor-plan/tasks/live-transport.md) (T-272–T-278): T-272 arena-allocates the flattened view in fill order after T-271 (today it reallocates 29 containers per frame); ready now are T-273 (stop opening a decoder per audio asset synchronously at load and after Save As), T-278 (thread priorities); T-276 is integrated; then T-274 (start keysound preload right after parsing), T-275 (revision-cached projection), T-277 (throttling and present-time playhead).
+20. [Live transport frame time](../../docs/chart-editor-plan/tasks/live-transport.md): reconciled 2026-10-24. T-272 is superseded by completed T-690–T-699; T-275 is partial on current owned-view/keyed-cache architecture; T-277 waits on its remaining measured projection work. Earlier arena work and checkpoints are historical.
 21. Decisions of 2026-09-30 recorded in [open questions](../../docs/chart-editor-plan/decisions/open-questions.md); new ready cards: T-71 (remove nonempty measures), T-283 (local beat fit), T-280 (time-anchoring policy), T-281 (`wormedit-convert`), T-282 (beatoraja BMS profile), T-284–T-286 (Pump 5K/Solo 6K, DP5/DP7 + scratchless 10K, ITG snap palette), T-287 (per-chart branch sources with repair proposals). Lua SV recipes (T-156, T-161, T-162, T-189–T-191) are un-deferred.
 22. Format scope (2026-09-30): robust non-gameplay round-trip for BMS (T-288) and osu!mania (T-289); BMS exports UTF-8 for beatoraja (T-282 step 4); pin the latest osu!mania format (T-291). SM/SSC stays at its current preserved subset.
 23. Freeze, do first: UI stuck in an unbounded swapchain present (`SDL_RenderPresent` → Vulkan acquire) under niri via XWayland — [T-293](../../docs/chart-editor-plan/tasks/rendering.md): the compositor throttled the window to ~1 fps and Nuklear dropped same-frame clicks; prefer native Wayland, non-blocking present with own pacing, split press/release across frames, recover focus from input, stall/throttle watchdog.

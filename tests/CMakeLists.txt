@@ -60,6 +60,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/views/compose_recipe_areas.cpp
     ../src/sys/compose/compose_speed_spans.cpp
     ../src/sys/compose/views/recipe_form.cpp
+    ../src/sys/compose/recipe_evaluation_runtime.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/app/application_defaults.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
@@ -713,6 +714,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_bookmark_actions.cpp
         ../src/sys/compose/actions/compose_measure_actions.cpp
         ../src/sys/compose/actions/compose_recipe_actions.cpp
+        ../src/sys/compose/recipe_evaluation_runtime.cpp
         ../src/sys/compose/actions/compose_transform_actions.cpp
         ../src/sys/compose/actions/compose_bga_actions.cpp
         ../src/sys/compose/actions/compose_measure_commands.cpp
@@ -896,6 +898,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose/actions/compose_bookmark_actions.cpp
             ../src/sys/compose/actions/compose_measure_actions.cpp
             ../src/sys/compose/actions/compose_recipe_actions.cpp
+            ../src/sys/compose/recipe_evaluation_runtime.cpp
             ../src/sys/compose/actions/compose_transform_actions.cpp
             ../src/sys/compose/actions/compose_bga_actions.cpp
             ../src/sys/compose/actions/compose_measure_commands.cpp

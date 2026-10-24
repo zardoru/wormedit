@@ -1,4 +1,5 @@
 #include "sys/compose/views/recipe_form.h"
+#include "core/text_util.h"
 #include "sys/notifications/projection_notification_feedback.h"
 #include "wormedit/core/numeric_text.h"
 
@@ -68,6 +69,29 @@ auto set_parameter(signed_rational_t& target, const wormedit::ui::timing_recipe_
     return parsed.has_value();
 }
 
+auto set_lua_parameters(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
+    const auto seed = parse_unsigned(form.lua_seed);
+    if (!seed) return false;
+    auto descriptor = candidate.lua.value_or(sv_recipe_lua_t{});
+    descriptor.entry_point = form.lua_entry_point;
+    descriptor.seed = *seed;
+    descriptor.mode = form.lua_mode;
+    descriptor.source_reference = *form.lua_source_reference
+        ? std::optional<std::filesystem::path>{text_util::path_from_utf8(form.lua_source_reference)} : std::nullopt;
+    descriptor.parameters.clear();
+    for (const auto& input : form.lua_parameters) {
+        const auto value = parse_signed_rational(input.value);
+        if (!value) return false;
+        descriptor.parameters.push_back({.name = input.name, .value = *value});
+    }
+    descriptor.cycles.clear();
+    if (form.lua_mode == sv_recipe_lua_mode_t::ordered)
+        for (const auto count : form.lua_cycles)
+            descriptor.cycles.push_back({.emission_count = count});
+    candidate.lua = std::move(descriptor);
+    return true;
+}
+
 auto set_curve_parameters(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     auto& values = candidate.parameters;
     switch (candidate.curve) {
@@ -84,7 +108,7 @@ auto set_curve_parameters(sv_recipe_t& candidate, const wormedit::ui::timing_rec
                set_parameter(values.bump_length, form.bump_length) &&
                set_parameter(values.bump_x, form.bump_x) && set_parameter(values.bump_y, form.bump_y);
     case sv_recipe_curve_t::lua_expression:
-        return true;  // the expression keeps its source and parameters
+        return set_lua_parameters(candidate, form);
     }
     return false;
 }
@@ -145,7 +169,10 @@ auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_r
     auto candidate = current;
     candidate.output = static_cast<sv_recipe_output_t>(form.output);
     candidate.curve = static_cast<sv_recipe_curve_t>(form.curve);
-    if (candidate.curve != sv_recipe_curve_t::lua_expression) candidate.expression_source.clear();
+    if (candidate.curve != sv_recipe_curve_t::lua_expression) {
+        candidate.expression_source.clear();
+        candidate.lua.reset();
+    }
     if (!set_curve_parameters(candidate, form) || !set_sampling(candidate, form) ||
         !set_transition(candidate, form))
         return std::nullopt;
@@ -162,7 +189,8 @@ auto recipe_form_preview_t::revise(recipe_form_outcome_t previous,
     const song_document_t& document, const chart_document_t& chart,
     const sv_recipe_t& recipe, const wormedit::ui::timing_recipe_form_t& form) -> recipe_form_outcome_t {
     auto candidate = recipe_from_form(form, recipe);
-    recipe_form_report_t report{.candidate = candidate ? std::move(*candidate) : recipe};
+    recipe_form_report_t report{.candidate = candidate ? std::move(*candidate) : recipe,
+        .has_valid_form = candidate.has_value()};
     previous.diagnostics.clear();
     if (!candidate) {
         previous.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
@@ -188,6 +216,7 @@ auto apply_recipe_form(document_history_t& history, const recipe_form_outcome_t&
         document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
     const auto& candidate = pending.payload.report.candidate;
+    const sv_recipe_prepared_scope_t prepared_scope{pending.payload.report.prepared};
     return apply_sv_recipe_edit(
         transaction, wormedit::update_edit_t<wormedit::sv_recipe_t>{.chart = pending.stamp.chart,
                                                                     .id = candidate.id,
@@ -226,8 +255,39 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
 
 auto wormedit::ui::timing_recipe_form_t::from(const wormedit::sv_recipe_t& recipe)
     -> timing_recipe_form_t {
+    timing_recipe_form_t form;
+    form.refill(recipe);
+    return form;
+}
+
+void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& recipe) {
     using namespace wormedit::sys;
-    wormedit::ui::timing_recipe_form_t form{};
+    auto parameters = std::move(lua_parameters);
+    auto cycles = std::move(lua_cycles);
+    *this = {};
+    lua_parameters = std::move(parameters);
+    lua_cycles = std::move(cycles);
+    lua_parameters.clear();
+    lua_cycles.clear();
+    auto& form = *this;
+    // An absent descriptor uses the inline-function API defaults too.
+    form.lua_entry_point[0] = '\0';
+    if (recipe.lua) {
+        const auto& lua = *recipe.lua;
+        if (lua.source_reference)
+            (void)std::snprintf(form.lua_source_reference, sizeof(form.lua_source_reference), "%s",
+                text_util::path_utf8(*lua.source_reference).c_str());
+        (void)std::snprintf(form.lua_entry_point, sizeof(form.lua_entry_point), "%s", lua.entry_point.c_str());
+        (void)std::snprintf(form.lua_seed, sizeof(form.lua_seed), "%llu", static_cast<unsigned long long>(lua.seed));
+        form.lua_mode = lua.mode;
+        for (const auto& parameter : lua.parameters) {
+            timing_recipe_lua_parameter_form_t field;
+            (void)std::snprintf(field.name, sizeof(field.name), "%s", parameter.name.c_str());
+            set_text(field.value, parameter.value);
+            form.lua_parameters.push_back(field);
+        }
+        for (const auto& cycle : lua.cycles) form.lua_cycles.push_back(cycle.emission_count);
+    }
     form.output = recipe.output;
     form.curve = recipe.curve;
     form.sampling_mode = recipe.sampling.mode;
@@ -249,5 +309,4 @@ auto wormedit::ui::timing_recipe_form_t::from(const wormedit::sv_recipe_t& recip
                         static_cast<unsigned long long>(recipe.sampling.fixed_step_rows.value_or(1)));
     (void)std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "%u",
                         recipe.sampling.max_points);
-    return form;
 }

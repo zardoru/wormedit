@@ -8075,3 +8075,61 @@ TEST_CASE("Remaining Compose leaf families refill retained text without warmed a
     expect_compose_test(view.quantize_presets.size() == 1 && view.recipe_form.visible);
     expect_compose_test(view.measure_rows.front().measure_id == stored.measures.front().id);
 }
+
+namespace {
+void refill_lua_recipe_views(compose_test_fixture_t& fixture) {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto& interaction = *fixture.cache.frame.interaction_view;
+    auto& view = fixture.flattened.view.compose;
+    const auto& state = fixture.application.project.timing_recipe;
+    compose_projection_detail::populate_compose_recipe_form(fixture.flattened, chart,
+        fixture.application, view);
+    compose_projection_detail::populate_compose_recipe_areas(fixture.flattened,
+        chart, fixture.cache, interaction, view, false, compose_pixels_per_row(chart, interaction),
+        fixture.cache.scene.index.value()->measures.total_rows, state.recipe_selected,
+        state.recipe_preview ? &*state.recipe_preview : nullptr);
+}
+void prepare_lua_recipe_view(compose_test_fixture_t& fixture) {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto& recipe = chart.sv_recipes.front();
+    auto preview = recipe_form_preview_t::propose(fixture.history.document, chart, recipe,
+        ui::timing_recipe_form_t::from(recipe));
+    const std::vector emissions{sv_recipe_emission_t{240, 1}, sv_recipe_emission_t{480, 2}, sv_recipe_emission_t{720, 3}};
+    auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    expect_compose_test(prepared.diagnostics.empty());
+    preview.report()->composed_points = prepared.value.samples().points;
+    preview.report()->prepared.push_back(std::move(prepared.value));
+    fixture.application.project.timing_recipe.recipe_selected = recipe.id.value;
+    fixture.application.project.timing_recipe.recipe_preview = std::move(preview);
+}
+}
+
+TEST_CASE("Lua inspector and prepared recipe graph reuse their warmed buffers", "[sys][recipe-form][recipe-areas][allocation]") {
+    auto song = recipe_test_song();
+    auto& recipe = song.charts.front().sv_recipes.front();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "function(p,ctx) return 1+p end";
+    recipe.lua = sv_recipe_lua_t{.source_reference = "scripts/a-long-retained-lua-module-reference.lua",
+        .parameters = {{"gain", {3, 2}}},
+        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}}};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    prepare_lua_recipe_view(fixture);
+    refill_lua_recipe_views(fixture);
+    auto& form = fixture.flattened.view.compose.recipe_form.form;
+    const auto* parameters = form.lua_parameters.data();
+    const auto* cycles = form.lua_cycles.data();
+    const auto* points = fixture.flattened.compose.timing_geometry.recipe_preview.points.data();
+    const auto before = frame_heap_allocation_snapshot();
+    refill_lua_recipe_views(fixture);
+    const auto after = frame_heap_allocation_snapshot();
+    check_heap_counter(after.count, before.count);
+    check_heap_counter(after.bytes, before.bytes);
+    expect_compose_test(form.lua_parameters.data() == parameters && form.lua_cycles.data() == cycles);
+    expect_compose_test(fixture.flattened.compose.timing_geometry.recipe_preview.points.data() == points);
+    expect_compose_test(!fixture.flattened.view.compose.recipe_form.sampled_points.empty());
+    fixture.history.document.charts.front().sv_recipes.front().lua->parameters.front().value = {7, 2};
+    ++fixture.history.document.revision;
+    fixture.project();
+    expect_compose_test(std::strcmp(form.lua_parameters.front().value.numerator, "7") == 0);
+}

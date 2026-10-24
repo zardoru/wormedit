@@ -53,6 +53,7 @@ struct frontend_workspace_view_t {
             std::vector<wormedit::exact_chart_row_t> row;
         } grid;
         std::vector<std::string> recipe_area_labels;
+        std::optional<std::tuple<song_id_t, chart_id_t, std::uint64_t, recipe_id_t, std::uint64_t>> recipe_form_source;
         std::vector<std::string> dead_span_labels;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
@@ -67,6 +68,7 @@ struct frontend_workspace_view_t {
             sv_graph_t sv_graph;
             sv_graph_t speed_graph;
             recipe_graph_t recipe_graph;
+            recipe_area_t recipe_preview;
         } timing_geometry;
     } compose;
     keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, chart_id_t,

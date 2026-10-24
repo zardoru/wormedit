@@ -2896,3 +2896,51 @@ TEST_CASE("New project exports group charts with an excluded difficulty active",
     }
     std::filesystem::remove_all(root);
 }
+
+TEST_CASE("Lua recipe Apply requires the exact successful worker draft", "[compose-action-notifications][recipe-runtime]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    sv_recipe_t recipe{.id = recipe_id_t{1}, .name = "Lua",
+        .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}},
+        .curve = sv_recipe_curve_t::lua_expression, .expression_source = "return 1"};
+    recipe.lua = sv_recipe_lua_t{.source_reference = "curve.lua"};
+    chart.sv_recipes.push_back(recipe);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM);
+    action.compose_recipe_id = recipe.id;
+    action.compose_recipe_form = ui::timing_recipe_form_t::from(recipe);
+    auto proposal = recipe_form_preview_t::propose(fixture.history.document, chart, recipe,
+        action.compose_recipe_form);
+    require_action(proposal.value.has_value());
+    const std::vector emissions{sv_recipe_emission_t{0, 1}, sv_recipe_emission_t{480, 1}};
+    auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    require_action(prepared.diagnostics.empty());
+    proposal.report()->prepared.push_back(std::move(prepared.value));
+    proposal.report()->requested_form = action.compose_recipe_form;
+    SECTION("different source reference") {
+        std::snprintf(action.compose_recipe_form.lua_source_reference,
+            sizeof(action.compose_recipe_form.lua_source_reference), "other.lua");
+    }
+    SECTION("last good display after evaluation failure") {
+        proposal.diagnostics.push_back({.severity = diagnostic_severity_t::error,
+            .code = diagnostic_code_t::invalid_binding, .message = "module failed"});
+        proposal.complete(false);
+    }
+    fixture.application.project.timing_recipe.recipe_preview = std::move(proposal);
+    check_action(fixture.dispatch(action) == "Wait for a successful preview of these settings before Apply.");
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("switching away from Lua still requires a verified worker draft", "[compose-action-notifications][recipe-runtime]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    sv_recipe_t recipe{.id = recipe_id_t{1}, .name = "Lua",
+        .range = {{measure_id_t{1}, 0}, {measure_id_t{1}, 480}},
+        .curve = sv_recipe_curve_t::lua_expression, .expression_source = "return 1"};
+    chart.sv_recipes.push_back(recipe);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM);
+    action.compose_recipe_id = recipe.id;
+    action.compose_recipe_form = ui::timing_recipe_form_t::from(recipe);
+    action.compose_recipe_form.curve = sv_recipe_curve_t::linear;
+    check_action(fixture.dispatch(action) == "Wait for a successful preview of these settings before Apply.");
+    check_action(fixture.history.undo.empty());
+}

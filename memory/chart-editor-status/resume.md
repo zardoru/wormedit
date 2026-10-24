@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-24)
 
+Completed **T-191** (2026-10-24): the inspector selects Lua functions, loads/reloads a
+project-relative module, edits its entry point, exact parameters, seed and ordered cycles, and
+shows sampled/composed results. Cancellable owned-snapshot workers evaluate Lua; frame-thread
+Apply consumes the exact verified immutable result as one Undo step. Errors retain the last good
+graph without authorizing stale settings. Warmed form/graph projection reuses its buffers.
+The manual covers the new flow. Final Lua-enabled GATE passes **4,933/4,933**; complexity
+passes **22 changed TUs plus eight explicit header consumers**, without increased allowances.
+Focused Lua passes **353 assertions / 42 cases**, warmed allocation coverage **10 / 1**; a
+Lua-disabled worker links without Lua and rejects evaluation cleanly. Inspected the real isolated
+1280×720 inspector and composed curve. [Completed card](../../docs/chart-editor-plan/tasks/osbx.md#t-191-edit-lua-curve-recipes-in-the-sv-recipe-inspector).
+No successor is active. T-162 finite impulses remains a separate core/schema card.
+
 Completed **T-189** (2026-10-24): API-v1 Lua recipes persist frozen source, module reload
 origin/hash, parameters, inputs, seed and pure/ordered cycle plans in native schema17. Core owns
 sampling and immutable prepared composition; bounded sandbox sessions retain ordered state across
@@ -10,9 +22,7 @@ state and reverse/repeated queries. Export workers and the headless converter us
 Lua-enabled GATE passes **4,928/4,928**; focused Lua **350 assertions / 41 cases**; sandbox
 ASan/LSan/UBSan **250 / 31**. Complexity passes **20 changed TUs**, no increased allowances.
 Lua-disabled syntax checks pass four consumers. [Completed card](../../docs/chart-editor-plan/tasks/osbx.md#t-189-evaluate-lua-curve-functions-in-sv-recipes).
-**T-191 is active:** inspector integration is implemented and passes the above gate; final review
-is replacing per-frame Lua form/graph allocations with persistent buffers before its final gate.
-T-162 finite impulses remains separate and serialized because it overlaps core/schema ownership.
+**T-191 is complete above.** T-162 finite impulses remains separate.
 
 Completed **T-156** (2026-10-24): the optional Lua sandbox owns one move-only evaluation
 session with cumulative memory/VM budgets, cooperative cancellation, text-only loading and
@@ -23,7 +33,7 @@ Lua-enabled GATE passes **4,887/4,887**, including **20 Lua cases**; focused san
 **160 assertions / 18 cases**. ASan/LSan/UBSan pass **167 / 20**, including the instrumented
 pinned Lua runtime. Complexity passes both new TUs and a separate three-TU check without
 increased allowances. [Completed card and bounded review](../../docs/chart-editor-plan/tasks/scripting-storyboard.md#t-156-create-a-sandboxed-bounded-lua-state).
-**T-189 is complete above; T-191 remains active** for final inspector verification. Enable the optional target with
+**T-189 and T-191 are complete above.** Enable the optional target with
 `-DWORMEDIT_ENABLE_LUA=ON`; it remains off by default.
 
 Completed **T-743** (2026-10-24): scope authoring tree and one project runtime for node selection,

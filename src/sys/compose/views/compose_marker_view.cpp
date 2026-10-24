@@ -611,6 +611,40 @@ void build_compose_recipe_entries(wormedit::ui::compose_view_t& view,
     }
 }
 
+namespace {
+auto refill_recipe_area_preview(const wormedit::chart_document_t& chart,
+    const wormedit::sys::recipe_area_t& stored, const recipe_form_report_t* report,
+    wormedit::sys::recipe_area_t& area) -> bool {
+    if (!report) return false;
+    const bool selected = report->candidate.id == stored.recipe;
+    const auto found = std::ranges::find_if(report->prepared, [&](const auto& value) {
+        return value.recipe().id == stored.recipe;
+    });
+    const auto* prepared = found != report->prepared.end() ? &*found : nullptr;
+    if (!prepared && !selected) return false;
+    area.recipe = stored.recipe;
+    area.name.assign(stored.name);
+    area.output = stored.output;
+    area.curve = stored.curve;
+    area.enabled = stored.enabled;
+    area.begin_row = stored.begin_row;
+    area.end_row = stored.end_row;
+    area.points.clear();
+    if (prepared) {
+        const auto& points = selected && !report->composed_points.empty()
+            ? report->composed_points : prepared->samples().points;
+        for (const auto& point : points)
+            area.points.push_back({point.absolute_row, point.value});
+    } else if (report->candidate.curve != wormedit::sv_recipe_curve_t::lua_expression) {
+        const auto sampled = wormedit::sample_sv_recipe(chart, report->candidate);
+        for (const auto& point : sampled.points)
+            area.points.push_back({point.absolute_row, point.value});
+    }
+    area.evaluable = !area.points.empty();
+    return true;
+}
+} // namespace
+
 void populate_compose_recipe_areas(
     frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
@@ -636,20 +670,10 @@ void populate_compose_recipe_areas(
         total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
     flattened.compose.recipe_area_labels.resize(cache.timing.recipe_areas->areas.size());
     for (const auto& stored_area : cache.timing.recipe_areas->areas) {
-        const auto* shown = &stored_area;
-        wormedit::sys::recipe_area_t previewed;
         const bool previewing = report && report->candidate.id == stored_area.recipe;
-        if (previewing) {
-            // The unapplied candidate replaces the stored values in this area's graph.
-            previewed = stored_area;
-            const auto sampled = wormedit::sample_sv_recipe(chart, report->candidate);
-            previewed.evaluable = sampled.diagnostics.empty() && !sampled.points.empty();
-            previewed.points.clear();
-            for (const auto& point : sampled.points)
-                previewed.points.push_back({point.absolute_row, point.value});
-            shown = &previewed;
-        }
-        const auto& area = *shown;
+        auto& previewed = flattened.compose.timing_geometry.recipe_preview;
+        const auto& area = refill_recipe_area_preview(chart, stored_area, report, previewed)
+            ? previewed : stored_area;
         if (area.end_row <= first || area.begin_row >= last)
             continue;
         const auto begin_y = row_to_y(area.begin_row);
@@ -743,7 +767,7 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
         preview.reset();
 }
 
-void populate_compose_recipe_form(frontend_workspace_view_t&,
+void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
                                   wormedit::ui::compose_view_t& view) {
@@ -753,11 +777,19 @@ void populate_compose_recipe_form(frontend_workspace_view_t&,
     view.recipe_form.name = {};
     view.recipe_form.expression_source = {};
     view.recipe_form.status_text = {};
-    view.recipe_form.form = {};
     view.recipe_form.postprocess_labels.clear();
+    view.recipe_form.sampled_points.clear();
+    view.recipe_form.composed_point_count = 0;
+    view.recipe_form.evaluation_busy = application_state.project.timing_recipe.evaluation &&
+        application_state.project.timing_recipe.evaluation->is_busy();
     const auto recipe = std::ranges::find(chart.sv_recipes,
         wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected}, &wormedit::sv_recipe_t::id);
-    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end()) return;
+    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end()) {
+        flattened.compose.recipe_form_source.reset();
+        view.recipe_form.form.lua_parameters.clear();
+        view.recipe_form.form.lua_cycles.clear();
+        return;
+    }
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id.value = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;
@@ -769,6 +801,20 @@ void populate_compose_recipe_form(frontend_workspace_view_t&,
         !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
         ? std::string_view{application_state.project.timing_recipe.recipe_preview->diagnostics.front().message}
         : std::string_view{};
-    view.recipe_form.form = wormedit::ui::timing_recipe_form_t::from(*recipe);
+    const auto source = std::tuple{view.project_id, chart.id, view.document_revision, recipe->id,
+        flattened.query_session_generation};
+    if (flattened.compose.recipe_form_source != source) {
+        view.recipe_form.form.refill(*recipe);
+        flattened.compose.recipe_form_source = source;
+    }
+    if (const auto& preview = application_state.project.timing_recipe.recipe_preview; preview && preview->report()) {
+        const auto& report = *preview->report();
+        view.recipe_form.composed_point_count = report.composed_points.size();
+        for (const auto& prepared : report.prepared) {
+            if (prepared.recipe().id != recipe->id) continue;
+            for (const auto& point : prepared.samples().points)
+                view.recipe_form.sampled_points.push_back({point.absolute_row, point.value});
+        }
+    }
 }
 } // namespace wormedit::sys::compose_projection_detail

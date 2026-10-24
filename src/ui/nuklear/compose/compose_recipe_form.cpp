@@ -3,6 +3,9 @@
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 
+#include "ui/nuklear/chrome/file_dialog_slot.h"
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -68,7 +71,7 @@ const char* curve_label(wormedit::sv_recipe_curve_t curve) {
     case wormedit::sv_recipe_curve_t::linear: return "Linear";
     case wormedit::sv_recipe_curve_t::exponential: return "Exponential";
     case wormedit::sv_recipe_curve_t::bump: return "Bump";
-    case wormedit::sv_recipe_curve_t::lua_expression: return "Lua expression";
+    case wormedit::sv_recipe_curve_t::lua_expression: return "Lua function";
     }
     return "Linear";
 }
@@ -83,6 +86,110 @@ bool cycle_button(nk_context* context, const char* label, const char* current, i
     nk_layout_row_end(context);
     if (clicked) value = (value + 1) % count;
     return clicked;
+}
+
+bool text_field(nk_context* context, const char* label, auto& buffer) {
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, label, NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 24, 1);
+    return edit_text(context, buffer, nk_filter_default);
+}
+
+wormedit::ui::file_dialog_slot_t module_picker;
+struct module_picker_origin_t { std::uint64_t project{}, chart{}, revision{}, recipe{}; };
+module_picker_origin_t module_picker_origin;
+std::string module_picker_error;
+
+void SDLCALL module_picked(void* userdata, const char* const* paths, int) {
+    const auto generation = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(userdata));
+    const bool cancelled = paths && !paths[0];
+    module_picker.complete(generation, paths && paths[0] ? std::string{paths[0]} : std::string{},
+        paths ? std::string{} : std::string{SDL_GetError()}, cancelled);
+}
+
+bool module_file(nk_context* context, const wormedit::ui::compose_view_t& view,
+                 wormedit::ui::timing_recipe_form_t& form) {
+    bool changed = text_field(context, "Module file", form.lua_source_reference);
+    nk_layout_row_dynamic(context, 24, 2);
+    if (nk_button_label(context, "Choose module…")) {
+        if (const auto generation = module_picker.begin()) {
+            module_picker_origin = {view.project_id.value, view.chart_id.value, view.document_revision, view.recipe_form.recipe_id.value};
+            static constexpr SDL_DialogFileFilter filter{"Lua modules", "lua"};
+            SDL_ShowOpenFileDialog(module_picked, reinterpret_cast<void*>(static_cast<std::uintptr_t>(*generation)),
+                SDL_GetKeyboardFocus(), &filter, 1, nullptr, false);
+        }
+    }
+    if (nk_button_label(context, "Reload")) { form.lua_reload = true; changed = true; }
+    if (auto picked = module_picker.take(); picked &&
+        module_picker_origin.project == view.project_id.value && module_picker_origin.chart == view.chart_id.value && module_picker_origin.revision == view.document_revision &&
+        module_picker_origin.recipe == view.recipe_form.recipe_id.value) {
+        if (!*picked) module_picker_error = picked->error().message;
+        else if (!picked->value().canceled) {
+            std::snprintf(form.lua_source_reference, sizeof(form.lua_source_reference), "%s", picked->value().path.c_str());
+            form.lua_reload = true;
+            module_picker_error.clear();
+            changed = true;
+        }
+    }
+    if (!module_picker_error.empty()) {
+        nk_layout_row_dynamic(context, 36, 1);
+        nk_label_wrap(context, module_picker_error.c_str());
+    }
+    return changed;
+}
+
+bool lua_parameter_fields(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
+    bool changed = false;
+    for (auto& parameter : form.lua_parameters) {
+        changed |= text_field(context, "Parameter name", parameter.name);
+        changed |= rational_field(context, "Value", parameter.value);
+    }
+    nk_layout_row_dynamic(context, 24, 2);
+    if (nk_button_label(context, "Add parameter") && form.lua_parameters.size() < 64) {
+        wormedit::ui::timing_recipe_lua_parameter_form_t parameter;
+        std::snprintf(parameter.name, sizeof(parameter.name), "parameter%zu", form.lua_parameters.size() + 1);
+        std::snprintf(parameter.value.numerator, sizeof(parameter.value.numerator), "0");
+        std::snprintf(parameter.value.denominator, sizeof(parameter.value.denominator), "1");
+        form.lua_parameters.push_back(parameter);
+        changed = true;
+    }
+    if (nk_button_label(context, "Remove last") && !form.lua_parameters.empty()) {
+        form.lua_parameters.pop_back(); changed = true;
+    }
+    return changed;
+}
+
+bool lua_cycle_fields(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
+    bool changed = false;
+    for (auto& count : form.lua_cycles) {
+        int value = static_cast<int>(count);
+        nk_layout_row_dynamic(context, 24, 1);
+        nk_property_int(context, "Cycle emissions", 1, &value, 4096, 1, 1);
+        changed |= value != static_cast<int>(count);
+        count = static_cast<std::uint32_t>(value);
+    }
+    nk_layout_row_dynamic(context, 24, 2);
+    if (nk_button_label(context, "Add cycle") && form.lua_cycles.size() < 4096) {
+        form.lua_cycles.push_back(1); changed = true;
+    }
+    if (nk_button_label(context, "Remove cycle") && !form.lua_cycles.empty()) {
+        form.lua_cycles.pop_back(); changed = true;
+    }
+    return changed;
+}
+
+bool lua_fields(nk_context* context, const wormedit::ui::compose_view_t& view,
+                wormedit::ui::timing_recipe_form_t& form) {
+    bool changed = module_file(context, view, form);
+    changed |= text_field(context, "Entry point", form.lua_entry_point);
+    changed |= count_field(context, "Seed", form.lua_seed, sizeof(form.lua_seed));
+    int mode = static_cast<int>(form.lua_mode);
+    changed |= cycle_button(context, "Execution", mode == 0 ? "Pure" : "Ordered", mode, 2);
+    form.lua_mode = static_cast<wormedit::sv_recipe_lua_mode_t>(mode);
+    changed |= lua_parameter_fields(context, form);
+    if (form.lua_mode == wormedit::sv_recipe_lua_mode_t::ordered)
+        changed |= lua_cycle_fields(context, form);
+    return changed;
 }
 
 bool curve_values(nk_context* context, wormedit::ui::timing_recipe_form_t& form) {
@@ -161,6 +268,7 @@ void synchronize_buffers(const wormedit::ui::compose_view_t& view) {
 void queue(const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
+    action.compose_input_project_id.value = view.project_id.value;
     action.compose_input_chart_id.value = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_recipe_id.value = view.recipe_form.recipe_id.value;
@@ -216,6 +324,27 @@ void render_recipe_order(const ComposeInspectorContext& inspector) {
     if (last) nk_widget_disable_end(context);
 }
 
+void render_lua_preview(nk_context* context, const wormedit::ui::compose_view_t& view, bool lua) {
+    if (view.recipe_form.evaluation_busy) {
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_label(context, "Evaluating…", NK_TEXT_LEFT);
+    }
+    if (lua && !view.recipe_form.sampled_points.empty()) {
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_labelf(context, NK_TEXT_LEFT, "%zu sampled points", view.recipe_form.sampled_points.size());
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_labelf(context, NK_TEXT_LEFT, "Composed curve: %zu points", view.recipe_form.composed_point_count);
+        if (nk_tree_push(context, NK_TREE_TAB, "Sampled points", NK_MINIMIZED)) {
+            for (const auto& point : view.recipe_form.sampled_points) {
+                nk_layout_row_dynamic(context, 18, 1);
+                nk_labelf(context, NK_TEXT_LEFT, "Row %llu: %.8g",
+                    static_cast<unsigned long long>(point.absolute_row), point.value);
+            }
+            nk_tree_pop(context);
+        }
+    }
+}
+
 } // namespace
 
 void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
@@ -237,23 +366,17 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
     int output = static_cast<int>(form.output);
     changed |= cycle_button(context, "Output", output_label(form.output), output, 3);
     form.output = static_cast<wormedit::sv_recipe_output_t>(output);
+    int curve = static_cast<int>(form.curve);
+    changed |= cycle_button(context, "Curve", curve_label(form.curve), curve, 5);
+    form.curve = static_cast<wormedit::sv_recipe_curve_t>(curve);
     const bool lua = form.curve == wormedit::sv_recipe_curve_t::lua_expression;
-    if (lua) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Curve: Lua expression (not evaluated yet)", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(context, 54, 1);
-        nk_label_wrap(context, view.recipe_form.expression_source.data());
-    } else {
-        int curve = static_cast<int>(form.curve);
-        changed |= cycle_button(context, "Curve", curve_label(form.curve), curve, 4);
-        form.curve = static_cast<wormedit::sv_recipe_curve_t>(curve);
-        changed |= curve_values(context, form);
-    }
+    changed |= lua ? lua_fields(context, view, form) : curve_values(context, form);
     changed |= sampling_values(context, form);
     changed |= transition_values(context, form);
     if (changed) {
         state.recipe_editor.recipe_edit_dirty = true;
         queue(view, *action, WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM);
+        form.lua_reload = false;
     }
     for (const auto label : view.recipe_form.postprocess_labels) {
         nk_layout_row_dynamic(context, 22, 1);
@@ -263,6 +386,7 @@ void render_compose_recipe_form(const ComposeInspectorContext& inspector) {
         nk_layout_row_dynamic(context, 36, 1);
         nk_label_wrap(context, view.recipe_form.status_text.data());
     }
+    render_lua_preview(context, view, lua);
     nk_layout_row_dynamic(context, 24, 2);
     if (nk_button_label(context, "Apply")) {
         state.recipe_editor.recipe_edit_apply_pending = true;

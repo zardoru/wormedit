@@ -210,7 +210,19 @@ struct timing_recipe_rational_text_t {
 } // namespace wormedit::ui
 
 namespace wormedit::ui {
+struct timing_recipe_lua_parameter_form_t {
+    char name[129]{};
+    timing_recipe_rational_text_t value{};
+    auto operator==(const timing_recipe_lua_parameter_form_t&) const -> bool = default;
+};
 struct timing_recipe_form_t {
+    char lua_source_reference[4097]{};
+    char lua_entry_point[129]{"curve"};
+    char lua_seed[32]{"0"};
+    wormedit::sv_recipe_lua_mode_t lua_mode{wormedit::sv_recipe_lua_mode_t::pure};
+    std::vector<timing_recipe_lua_parameter_form_t> lua_parameters;
+    std::vector<std::uint32_t> lua_cycles;
+    bool lua_reload{};
     wormedit::sv_recipe_output_t output{};
     wormedit::sv_recipe_curve_t curve{};
     wormedit::sv_recipe_sampling_mode_t sampling_mode{};
@@ -230,14 +242,23 @@ struct timing_recipe_form_t {
     char adaptive_max_points[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES]{};
     auto operator==(const timing_recipe_form_t&) const -> bool = default;
     [[nodiscard]] static auto from(const wormedit::sv_recipe_t&) -> timing_recipe_form_t;
+    void refill(const wormedit::sv_recipe_t&);
 };
 } // namespace wormedit::ui
 
 /* The selected SV recipe's editable form, as stored in the document. name and expression_source
-   are valid for the frame; expression_source is non-empty only for a Lua expression recipe, whose
-   curve cannot be edited yet. status_text carries the last preview or apply diagnostic. */
+   are valid for the frame; expression_source is the frozen module source of a Lua recipe.
+   status_text carries the last preview or apply diagnostic. */
 namespace wormedit::ui {
+struct compose_recipe_sample_view_t {
+    std::uint64_t absolute_row{};
+    double value{};
+    auto operator==(const compose_recipe_sample_view_t&) const -> bool = default;
+};
 struct compose_recipe_form_view_t {
+    std::vector<compose_recipe_sample_view_t> sampled_points;
+    std::size_t composed_point_count{};
+    bool evaluation_busy{};
     std::vector<std::string_view> postprocess_labels;
     bool visible{};
     bool enabled{};

@@ -6,6 +6,7 @@
 
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/document.h>
+#include <wormedit/core/sv_recipe.h>
 
 #include <cstdint>
 #include <optional>
@@ -16,14 +17,18 @@ namespace wormedit::sys {
 // The recipe `current` with the form's output, curve, values, sampling and (for SPEEDS) transition
 // applied. Nothing is validated beyond syntax: out-of-range values are the core validator's to
 // reject, so an invalid recipe stays editable. Returns nothing when the form is malformed (an
-// unknown enum value, a non-numeric or zero-denominator fraction). A Lua expression recipe keeps
-// its source and parameters; only its sampling and transition follow the form.
+// unknown enum value, a non-numeric or zero-denominator fraction). Lua settings follow the form;
+// frozen source and declared input hashes remain until an asynchronous Reload replaces source.
 [[nodiscard]] auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_recipe_t& current)
     -> std::optional<sv_recipe_t>;
 
 // A rejected form keeps its display candidate outside the applicable proposal.
 struct recipe_form_report_t {
     sv_recipe_t candidate;
+    std::optional<ui::timing_recipe_form_t> requested_form;
+    bool has_valid_form{true};
+    std::vector<sv_recipe_prepared_t> prepared;
+    std::vector<sv_recipe_point_t> composed_points;
     auto operator==(const recipe_form_report_t&) const -> bool = default;
 };
 struct recipe_form_preview_t;

@@ -24,6 +24,28 @@ auto propose_recipe_form_action_t::validate(compose_action_context_t& context)
 
 auto propose_recipe_form_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
+    auto& state = context.environment.editor.commands.project.timing_recipe;
+    const bool needs_worker = context.action.compose_recipe_form.curve == sv_recipe_curve_t::lua_expression ||
+        std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
+            return recipe.enabled && recipe.curve == sv_recipe_curve_t::lua_expression;
+        });
+    if (needs_worker) {
+        if (!context.environment.resources)
+            return compose_action_outcome_t::blocked("Lua recipe evaluation is unavailable in this context.");
+        const auto& resources = *context.environment.resources;
+        if (!state.evaluation)
+            state.evaluation = std::make_shared<recipe_evaluation_runtime_t>(resources.jobs.scheduler);
+        const auto* baseline = target->recipe;
+        if (state.recipe_preview && state.recipe_preview->captured_stamp() ==
+            chart_stamp_t::from(context.environment.document.history.document, target->chart->id) &&
+            state.recipe_preview->report() && state.recipe_preview->report()->candidate.id == baseline->id)
+            baseline = &state.recipe_preview->report()->candidate;
+        return compose_action_outcome_t::from(state.evaluation->request(
+            context.environment.document.history.document, *target->chart, *baseline,
+            context.action.compose_recipe_form, resources.asset_base), notification_severity_t::hint,
+            notification_source_t::input);
+    }
+    if (state.evaluation) state.evaluation->cancel();
     auto& previous = context.environment.editor.commands.project.timing_recipe.recipe_preview;
     auto preview = recipe_form_preview_t::revise(
         previous ? std::move(*previous) : recipe_form_outcome_t{},
@@ -54,6 +76,27 @@ auto apply_recipe_form_action_t::validate(compose_action_context_t& context)
 
 auto apply_recipe_form_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
+    auto& state = context.environment.editor.commands.project.timing_recipe;
+    const bool needs_worker = context.action.compose_recipe_form.curve == sv_recipe_curve_t::lua_expression ||
+        std::ranges::any_of(target->chart->sv_recipes, [](const auto& recipe) {
+            return recipe.enabled && recipe.curve == sv_recipe_curve_t::lua_expression;
+        });
+    if (needs_worker) {
+        const auto* report = state.recipe_preview ? state.recipe_preview->report() : nullptr;
+        auto form = context.action.compose_recipe_form;
+        form.lua_reload = false;
+        if (!state.recipe_preview || !state.recipe_preview->value || !report || report->prepared.empty() ||
+            !report->requested_form || form != *report->requested_form ||
+            (state.evaluation && state.evaluation->is_busy()))
+            return compose_action_outcome_t::blocked("Wait for a successful preview of these settings before Apply.");
+        const auto result = apply_recipe_form(context.environment.document.history, *state.recipe_preview);
+        auto outcome = compose_action_outcome_t::from(
+            result.applied ? "SV recipe updated." : result.diagnostics.empty() ? "SV recipe is unchanged." : result.diagnostics.front().message,
+            result.applied ? notification_severity_t::success : notification_severity_t::warning,
+            notification_source_t::edit, result.applied, result.applied);
+        if (result.applied) state.recipe_preview.reset();
+        return outcome;
+    }
     bool applied = false;
     auto severity = notification_severity_t::warning;
     auto status = wormedit::sys::apply_recipe_form(
@@ -75,7 +118,9 @@ auto clear_recipe_form_preview_action_t::validate(compose_action_context_t&) con
 
 auto clear_recipe_form_preview_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
-    context.environment.editor.commands.project.timing_recipe.recipe_preview.reset();
+    auto& state = context.environment.editor.commands.project.timing_recipe;
+    if (state.evaluation) state.evaluation->cancel();
+    state.recipe_preview.reset();
     return compose_action_outcome_t::from("SV recipe preview cleared.",
                                           notification_severity_t::hint,
                                           notification_source_t::input);

@@ -21,6 +21,7 @@
 #include "sys/compose/views/compose_recipe_areas.h"
 #include "sys/compose/compose_speed_spans.h"
 #include "sys/compose/views/recipe_form.h"
+#include "sys/compose/recipe_evaluation_runtime.h"
 #include "sys/compose/compose_sv_graph.h"
 #include "sys/compose/actions/compose_quantize_preview.h"
 #include "sys/compose/compose_scroll_geometry.h"
@@ -783,6 +784,7 @@ struct application_command_state_t {
             std::uint64_t kiai_selected_head{};
             std::uint64_t recipe_selected{};
             std::optional<recipe_form_outcome_t> recipe_preview;
+            std::shared_ptr<recipe_evaluation_runtime_t> evaluation;
             bool audio_offset_locked{};
         } timing_recipe;
 

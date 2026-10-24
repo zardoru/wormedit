@@ -2047,7 +2047,7 @@ struct application_t::implementation_t {
 
     struct background_jobs_t {
         notification_sink_t& notifications;
-        task_scheduler_t resource_copy_scheduler{1, 1, background_scheduler_options()};
+        task_scheduler_t resource_copy_scheduler{1, 4, background_scheduler_options()};
         runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
         runtime::preview_audio_export_t preview_audio_runtime{resource_copy_scheduler, notifications};
         runtime::audio_slicer_t audio_slicer_runtime{resource_copy_scheduler, notifications};
@@ -4550,6 +4550,37 @@ struct application_t::implementation_t {
         }
     }
 
+    void poll_recipe_evaluation() {
+        auto& state = commands.project.timing_recipe;
+        if (!views.compose_interaction_state) {
+            if (state.evaluation) state.evaluation->cancel();
+            return;
+        }
+        const auto* chart = session.history.read_chart(views.compose_interaction_state->chart);
+        if (!chart) {
+            if (state.evaluation) state.evaluation->cancel();
+            return;
+        }
+        const recipe_id_t selected{state.recipe_selected};
+        const auto recipe = std::ranges::find(chart->sv_recipes, selected, &sv_recipe_t::id);
+        if (recipe == chart->sv_recipes.end()) {
+            if (state.evaluation) state.evaluation->cancel();
+            return;
+        }
+        const bool has_lua = std::ranges::any_of(chart->sv_recipes, [](const auto& value) {
+            return value.enabled && value.curve == sv_recipe_curve_t::lua_expression;
+        });
+        if (!state.evaluation && !has_lua) return;
+        if (!state.evaluation)
+            state.evaluation = std::make_shared<recipe_evaluation_runtime_t>(jobs.resource_copy_scheduler);
+        state.evaluation->poll(session.history.document, chart->id, selected, state.recipe_preview);
+        if (state.evaluation->requested_stamp() != chart_stamp_t::from(session.history.document, chart->id) ||
+            state.evaluation->requested_recipe() != selected) {
+            static_cast<void>(state.evaluation->request(session.history.document, *chart, *recipe,
+                ui::timing_recipe_form_t::from(*recipe), session.project_identity.asset_base));
+        }
+    }
+
     auto poll_frame_jobs() -> double {
         double compose_viewport_delta_seconds{};
         {
@@ -4559,6 +4590,7 @@ struct application_t::implementation_t {
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
                 jobs.preview_audio_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
+            poll_recipe_evaluation();
             jobs.audio_slicer_runtime.poll(session.history, session.workspace);
             poll_project_save();
             poll_project_open();

@@ -1,4 +1,10 @@
 #include "sys/compose/views/recipe_form.h"
+#include "core/text_util.h"
+#include "sys/compose/recipe_evaluation_runtime.h"
+#include "../support/temporary_directory.h"
+#include <wormedit/formats/native_project_storage.h>
+#include <fstream>
+#include <latch>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -343,4 +349,243 @@ TEST_CASE("ordinary recipe form edits preserve the stored postprocess order", "[
     const auto candidate = recipe_from_form(form, recipe);
     REQUIRE(candidate);
     CHECK(candidate->postprocess == recipe.postprocess);
+}
+
+namespace {
+void check_lua_form_edit(const std::optional<sv_recipe_t>& edited, const sv_recipe_t& original) {
+    REQUIRE(edited);
+    CHECK(edited->lua->parameters.front().value == signed_rational_t{-7, 3});
+    CHECK(edited->lua->seed == UINT64_MAX);
+    CHECK(edited->lua->inputs == original.lua->inputs);
+    CHECK(edited->expression_source == original.expression_source);
+}
+void check_builtin_switch(const ui::timing_recipe_form_t& form, const sv_recipe_t& original) {
+    const auto edited = recipe_from_form(form, original);
+    REQUIRE(edited);
+    CHECK_FALSE(edited->lua);
+    CHECK(edited->expression_source.empty());
+}
+auto require_prepared_preview(const std::optional<recipe_form_outcome_t>& preview)
+    -> const recipe_form_report_t& {
+    REQUIRE(preview);
+    REQUIRE(preview->value);
+    REQUIRE(preview->report());
+    REQUIRE(preview->report()->prepared.size() == 1);
+    CHECK_FALSE(preview->report()->composed_points.empty());
+    REQUIRE(preview->report()->requested_form);
+    return *preview->report();
+}
+void check_frozen_module(const recipe_form_report_t& report, const std::string& source,
+    const ui::timing_recipe_form_t& requested) {
+    REQUIRE(report.candidate.lua);
+    CHECK(report.candidate.expression_source == source);
+    CHECK(report.candidate.lua->source_reference == std::filesystem::path{"curve.lua"});
+    CHECK(report.candidate.lua->source_hash == native_project_content_checksum(source));
+    REQUIRE(report.requested_form);
+    CHECK(*report.requested_form == requested);
+}
+#if defined(WORMEDIT_HAS_LUA)
+void check_loaded_recipe_apply(document_history_t& history, const recipe_form_outcome_t& preview) {
+    const auto original = history.document.charts.front().sv_recipes;
+    CHECK(sv_recipe_evaluation_scope_t::current() == nullptr);
+    CHECK(sv_recipe_prepared_scope_t::current() == nullptr);
+    const auto result = apply_recipe_form(history, preview);
+    REQUIRE(result.applied);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().sv_recipes == original);
+}
+#endif
+} // namespace
+
+TEST_CASE("Lua form preserves frozen source and hidden input hashes while editing settings", "[unit][sys][recipe-form]") {
+    auto recipe = sample_recipe();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "function curve(p) return p end";
+    recipe.lua = sv_recipe_lua_t{.entry_point = "curve", .source_reference = text_util::path_from_utf8("scripts/曲線.lua"),
+        .source_hash = "frozen", .parameters = {{"gain", {3, 2}}},
+        .inputs = {{asset_id_t{4}, "input-hash"}}, .seed = 92,
+        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    CHECK(recipe_from_form(form, recipe) == recipe);
+    set(form.lua_parameters.front().value, "-7", "3");
+    std::snprintf(form.lua_seed, sizeof(form.lua_seed), "18446744073709551615");
+    auto edited = recipe_from_form(form, recipe);
+    check_lua_form_edit(edited, recipe);
+    set(form.lua_parameters.front().value, "1", "0");
+    CHECK_FALSE(recipe_from_form(form, recipe));
+    form.lua_mode = sv_recipe_lua_mode_t::pure;
+    set(form.lua_parameters.front().value, "1", "1");
+    edited = recipe_from_form(form, recipe);
+    REQUIRE(edited);
+    CHECK(edited->lua->cycles.empty());
+    form.curve = sv_recipe_curve_t::linear;
+    check_builtin_switch(form, recipe);
+}
+
+TEST_CASE("recipe evaluation publishes prepared results and retains last good geometry on failure", "[unit][sys][recipe-form][recipe-runtime]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& recipe = chart.sv_recipes.front();
+    task_scheduler_t scheduler{1, 4};
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    runtime.request(history.document, chart, recipe, form, {});
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    const auto good = require_prepared_preview(preview).prepared;
+    set(form.value_to, "invalid", "1");
+    runtime.request(history.document, chart, recipe, form, {});
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    CHECK_FALSE(preview->value);
+    CHECK_FALSE(preview->diagnostics.empty());
+    CHECK(preview->report()->prepared == good);
+}
+
+TEST_CASE("recipe evaluation discards stale revisions and cancellation", "[unit][sys][recipe-form][recipe-runtime]") {
+    auto history = form_history();
+    const auto chart = history.document.charts.front();
+    const auto recipe = chart.sv_recipes.front();
+    task_scheduler_t scheduler{1, 4};
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    const auto form = ui::timing_recipe_form_t::from(recipe);
+    runtime.request(history.document, chart, recipe, form, {});
+    ++history.document.revision;
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    CHECK_FALSE(preview);
+    runtime.request(history.document, chart, recipe, form, {});
+    runtime.cancel();
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    CHECK_FALSE(preview);
+}
+
+TEST_CASE("module Reload freezes bounded source and records the exact requested form", "[unit][sys][recipe-form][recipe-runtime]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const std::string source = "function(p,ctx) return 1+p end";
+    { std::ofstream file{directory->path() / "curve.lua"}; file << source; }
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& recipe = chart.sv_recipes.front();
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    form.curve = sv_recipe_curve_t::lua_expression;
+    form.lua_entry_point[0] = '\0';
+    std::snprintf(form.lua_source_reference, sizeof(form.lua_source_reference), "%s",
+        (directory->path() / "curve.lua").string().c_str());
+    form.lua_reload = true;
+    task_scheduler_t scheduler{1, 4};
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    runtime.request(history.document, chart, recipe, form, directory->path());
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    REQUIRE(preview);
+    REQUIRE(preview->report());
+    const auto& report = *preview->report();
+    form.lua_reload = false;
+    check_frozen_module(report, source, form);
+    std::snprintf(form.lua_source_reference, sizeof(form.lua_source_reference), "different.lua");
+    CHECK(*report.requested_form != form);
+#if defined(WORMEDIT_HAS_LUA)
+    static_cast<void>(require_prepared_preview(preview));
+    check_loaded_recipe_apply(history, *preview);
+#else
+    CHECK_FALSE(preview->value);
+    CHECK_FALSE(preview->diagnostics.empty());
+#endif
+}
+
+namespace {
+using blocker_job_t = async_job_t<std::latch*, int, int>;
+auto hold_recipe_worker(std::latch* const& release, std::stop_token) -> blocker_job_t::work_outcome_t {
+    release->wait();
+    return 1;
+}
+}
+TEST_CASE("recipe evaluation retries the newest draft after shared scheduler admission fails", "[unit][sys][recipe-form][recipe-runtime]") {
+    auto history = form_history();
+    const auto& chart = history.document.charts.front();
+    const auto& recipe = chart.sv_recipes.front();
+    task_scheduler_t scheduler{1, 1};
+    std::latch release{1};
+    blocker_job_t blocker{scheduler, 1, "invalid", "full", "missing"};
+    REQUIRE(blocker.request([&] { return &release; }, 1, hold_recipe_worker));
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    runtime.request(history.document, chart, recipe, form, {});
+    set(form.value_to, "7", "1");
+    runtime.request(history.document, chart, recipe, form, {});
+    CHECK(runtime.is_busy());
+    release.count_down();
+    REQUIRE(blocker.wait());
+    runtime.poll(history.document, chart.id, recipe.id, preview);
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    const auto& report = require_prepared_preview(preview);
+    CHECK(report.candidate.parameters.value_to == signed_rational_t{7, 1});
+    CHECK(*report.requested_form == form);
+}
+
+TEST_CASE("recipe form refill retains Lua vector storage across curve changes", "[unit][sys][recipe-form]") {
+    auto recipe = sample_recipe();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.lua = sv_recipe_lua_t{.entry_point = "curve", .parameters = {{"gain", {3, 2}}},
+        .mode = sv_recipe_lua_mode_t::ordered, .cycles = {{3}, {2}}};
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    const auto expected = form;
+    const auto* parameters = form.lua_parameters.data();
+    const auto* cycles = form.lua_cycles.data();
+    const auto parameter_capacity = form.lua_parameters.capacity();
+    const auto cycle_capacity = form.lua_cycles.capacity();
+    form.refill(sample_recipe());
+    CHECK(form == ui::timing_recipe_form_t::from(sample_recipe()));
+    CHECK(form.lua_parameters.capacity() == parameter_capacity);
+    CHECK(form.lua_cycles.capacity() == cycle_capacity);
+    form.refill(recipe);
+    CHECK(form == expected);
+    CHECK(form.lua_parameters.data() == parameters);
+    CHECK(form.lua_cycles.data() == cycles);
+}
+
+TEST_CASE("legacy inline Lua forms keep the default empty entry point", "[unit][sys][recipe-form]") {
+    auto history = form_history();
+    auto recipe = history.document.charts.front().sv_recipes.front();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "function(p) return 1+p end";
+    recipe.lua.reset();
+    const auto form = ui::timing_recipe_form_t::from(recipe);
+    CHECK(form.lua_entry_point[0] == '\0');
+    const auto rebuilt = recipe_from_form(form, recipe);
+    REQUIRE(rebuilt);
+    REQUIRE(rebuilt->lua);
+    CHECK(rebuilt->lua->entry_point.empty());
+}
+
+TEST_CASE("frozen Lua source evaluates without implicitly reloading a file", "[unit][sys][recipe-form][recipe-runtime]") {
+    auto history = form_history();
+    auto& chart = history.document.charts.front();
+    auto& recipe = chart.sv_recipes.front();
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "function(p) return 1+p end";
+    recipe.lua.reset();
+    auto form = ui::timing_recipe_form_t::from(recipe);
+    SECTION("legacy recipe without a descriptor") {}
+    SECTION("clearing the reload origin retains frozen source") {
+        recipe.lua = sv_recipe_lua_t{.source_reference = "missing.lua"};
+        form = ui::timing_recipe_form_t::from(recipe);
+        form.lua_source_reference[0] = '\0';
+    }
+    task_scheduler_t scheduler{1, 4};
+    recipe_evaluation_runtime_t runtime{scheduler};
+    std::optional<recipe_form_outcome_t> preview;
+    runtime.request(history.document, chart, recipe, form, {});
+    runtime.wait(history.document, chart.id, recipe.id, preview);
+    REQUIRE(preview);
+#if defined(WORMEDIT_HAS_LUA)
+    REQUIRE(preview->value);
+    CHECK_FALSE(preview->report()->prepared.empty());
+#else
+    REQUIRE_FALSE(preview->diagnostics.empty());
+    CHECK(preview->diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+#endif
 }

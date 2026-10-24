@@ -180,3 +180,21 @@ TEST_CASE("Lua curve backend checks frozen source hashes without reading referen
     const auto bad=backend.start(chart(),value);
     CHECK_FALSE(bad.ok()); CHECK_FALSE(bad.value);
 }
+
+TEST_CASE("pure Lua one plus p matches built-in linear recipe inspection", "[lua-curve]") {
+    const auto document = chart();
+    const auto scripted = recipe("function(p) return 1+p end");
+    auto linear = scripted;
+    linear.curve = sv_recipe_curve_t::linear;
+    linear.expression_source.clear();
+    linear.lua.reset();
+    linear.parameters.value_from = {1, 1};
+    linear.parameters.value_to = {2, 1};
+    lua_curve_backend_t backend;
+    const sv_recipe_evaluation_scope_t scope{backend};
+    const auto actual = sample_sv_recipe(document, scripted);
+    const auto expected = sample_sv_recipe(document, linear);
+    REQUIRE(actual);
+    REQUIRE(expected);
+    CHECK(actual.points == expected.points);
+}

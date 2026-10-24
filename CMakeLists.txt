@@ -562,6 +562,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/actions/compose_bookmark_actions.cpp
         src/sys/compose/actions/compose_measure_actions.cpp
         src/sys/compose/actions/compose_recipe_actions.cpp
+        src/sys/compose/recipe_evaluation_runtime.cpp
         src/sys/compose/actions/compose_transform_actions.cpp
         src/sys/compose/actions/compose_sound_actions.cpp
         src/sys/resources/sound_import_staging.cpp

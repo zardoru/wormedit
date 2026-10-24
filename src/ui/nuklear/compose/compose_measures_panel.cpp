@@ -61,31 +61,52 @@ void row(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit
         action.compose_measure_number = value.number;
 }
 
-void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& view, wormedit::ui::workspace_action_t& action,
-                    worm_ui_nuklear_compose_state_t& state) {
-    nk_layout_row_template_begin(context, 27);
-    nk_layout_row_template_push_static(context, 38.0f);
-    nk_layout_row_template_push_variable(context, 40.0f);
-    nk_layout_row_template_push_static(context, 10.0f);
-    nk_layout_row_template_push_variable(context, 40.0f);
-    nk_layout_row_template_push_static(context, 58.0f);
-    nk_layout_row_template_end(context);
-    nk_label(context, "Meter", NK_TEXT_LEFT);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-        state.measures_dock.measures_meter_numerator.data(), static_cast<int>(state.measures_dock.measures_meter_numerator.size()),
-        nk_filter_decimal);
-    nk_label(context, "/", NK_TEXT_CENTERED);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-        state.measures_dock.measures_meter_denominator.data(), static_cast<int>(state.measures_dock.measures_meter_denominator.size()),
-        nk_filter_decimal);
-    const auto none = state.measures_dock.measure_selection.selected.empty();
-    if (none) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply");
-    if (none) nk_widget_disable_end(context);
-    if (!apply || none || !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
+struct measure_definition_row_t {
+    const char* label;
+    std::span<char> numerator;
+    std::span<char> denominator;
+    const char* button;
+    auto render(nk_context* context, bool disabled) const -> bool {
+        nk_layout_row_template_begin(context, 27);
+        nk_layout_row_template_push_static(context, 52.0f);
+        nk_layout_row_template_push_variable(context, 40.0f);
+        nk_layout_row_template_push_static(context, 10.0f);
+        nk_layout_row_template_push_variable(context, 40.0f);
+        nk_layout_row_template_push_static(context, 58.0f);
+        nk_layout_row_template_end(context);
+        nk_label(context, label, NK_TEXT_LEFT);
+        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+            numerator.data(), static_cast<int>(numerator.size()), nk_filter_decimal);
+        nk_label(context, "/", NK_TEXT_CENTERED);
+        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+            denominator.data(), static_cast<int>(denominator.size()), nk_filter_decimal);
+        if (disabled) nk_widget_disable_begin(context);
+        const auto clicked = nk_button_label(context, button);
+        if (disabled) nk_widget_disable_end(context);
+        return clicked && !disabled;
+    }
+};
+
+void meter_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
+                    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+    const measure_definition_row_t row{.label = "Meter", .numerator = state.measures_dock.measures_meter_numerator,
+        .denominator = state.measures_dock.measures_meter_denominator, .button = "Apply"};
+    if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
+        !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)) return;
     action.compose_measure_ids = state.measures_dock.measure_selection.selected;
-    action.timing_meter_numerator_text = state.measures_dock.measures_meter_numerator.data();
-    action.timing_meter_denominator_text = state.measures_dock.measures_meter_denominator.data();
+    action.timing_meter_numerator_text = row.numerator.data();
+    action.timing_meter_denominator_text = row.denominator.data();
+}
+
+void length_controls(nk_context* context, const wormedit::ui::compose_view_t& view,
+                     wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
+    const measure_definition_row_t row{.label = "Length", .numerator = state.measures_dock.measures_length_numerator,
+        .denominator = state.measures_dock.measures_length_denominator, .button = "Set"};
+    if (!row.render(context, state.measures_dock.measure_selection.selected.empty()) ||
+        !raise(action, view, WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH)) return;
+    action.compose_measure_ids = state.measures_dock.measure_selection.selected;
+    action.compose_measure_length_numerator_text = row.numerator.data();
+    action.compose_measure_length_denominator_text = row.denominator.data();
 }
 } // namespace
 
@@ -99,6 +120,9 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit
     if (nk_button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
     if (nk_button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);
     meter_controls(context, *view, *action, *state);
+    length_controls(context, *view, *action, *state);
+    nk_layout_row_dynamic(context, 34, 1);
+    nk_label_wrap(context, "Length clears incompatible meters.");
     worm_ui_keysound_prune(state->measures_dock.measure_selection, ids_of(*view));
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "No.   Meter   Length", NK_TEXT_LEFT);

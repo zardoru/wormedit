@@ -297,6 +297,13 @@ struct set_measures_meter_action_t {
 };
 static_assert(compose_action<set_measures_meter_action_t, compose_action_context_t>);
 
+struct set_measures_length_action_t {
+    auto operator==(const set_measures_length_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_measures_length_action_t, compose_action_context_t>);
+
 struct move_compose_bar_line_action_t {
     auto operator==(const move_compose_bar_line_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const

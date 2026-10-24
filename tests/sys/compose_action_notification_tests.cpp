@@ -317,6 +317,7 @@ TEST_CASE("Compose edits reject a stale boundary before reaching synchronous han
     action_notification_fixture_t fixture;
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
                                WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
+                               WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH,
                                WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
                                WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
                                WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,

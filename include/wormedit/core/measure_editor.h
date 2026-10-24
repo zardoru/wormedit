@@ -44,6 +44,9 @@ struct resize_measure_keep_rows_action_t {
     chart_id_t chart;
     std::vector<std::size_t> measure_indices;
     measure_definition_t definition;
+    // Ratio-only edits retain matching meter notation; incompatible meters clear.
+    bool preserve_meter{};
+    [[nodiscard]] auto definition_for(const measure_definition_t& current) const -> measure_definition_t;
 };
 
 // Moves the bar line that ends `measure_index`: that measure takes `before` and the next one

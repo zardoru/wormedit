@@ -79,6 +79,7 @@ typedef enum WormUiComposeActionKind {
     /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo
        step. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
+    WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH,
     /* Shift+Alt bar line drag: compose_measure_ids[0] is the measure the line ends; it takes the
        timing_meter_*_text meter and the next measure takes compose_second_meter_*. */
     WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
@@ -691,6 +692,8 @@ struct workspace_action_t {
     wormedit::ui::timing_recipe_form_t compose_recipe_form;
     wormedit::ui::generator_form_t compose_generator_form;
     wormedit::recipe_id_t compose_recipe_id;
+    std::string compose_measure_length_numerator_text;
+    std::string compose_measure_length_denominator_text;
     std::string timing_meter_numerator_text;
     std::string timing_meter_denominator_text;
     std::optional<timing_anchoring_t> timing_anchoring;

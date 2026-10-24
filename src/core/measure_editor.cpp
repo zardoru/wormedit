@@ -22,6 +22,14 @@
 #include <variant>
 
 namespace wormedit {
+auto resize_measure_keep_rows_action_t::definition_for(const measure_definition_t& current) const
+    -> measure_definition_t {
+    auto result = definition;
+    if (preserve_meter && (!current.meter || reduce_fraction(current.length) == reduce_fraction(definition.length)))
+        result.meter = current.meter;
+    return result;
+}
+
 namespace {
 
 auto validate_definition(const chart_document_t& chart, const measure_definition_t& definition,
@@ -937,8 +945,9 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     for (const auto at : sorted) {
-        if (measure_definition_equal(chart->measures[at].definition, edit.definition)) continue;
-        const measure_assignment_t assignment{at, edit.definition};
+        const auto definition = edit.definition_for(chart->measures[at].definition);
+        if (measure_definition_equal(chart->measures[at].definition, definition)) continue;
+        const measure_assignment_t assignment{at, definition};
         if (!resize_keeping_rows(*chart, std::span{&assignment, 1}, context.limits)) {
             reject(context.result, diagnostic_code_t::invalid_measure,
                    "the measure cannot be resized without losing objects beyond the chart");

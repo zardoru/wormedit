@@ -58,6 +58,13 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty,
                                         std::string_view denominator,
                                         notification_severity_t* severity = nullptr) -> std::string;
 
+// Exact positive whole-note length ratio; matching meters remain, incompatible
+// meters clear, and objects keep absolute song rows. Virtual measures use the shared materialization path.
+[[nodiscard]] auto apply_measures_length(document_history_t& history, chart_id_t chart,
+                                        std::span<const std::uint64_t> measure_indices,
+                                        std::string_view numerator,
+                                        std::string_view denominator) -> document_command_result_t;
+
 // Moves the bar line that ends the measure at `measure_index` (a chart position, virtual tail
 // included): that measure takes the first meter and the next measure the second, and no other bar
 // line or object row changes. One undo step.

@@ -716,6 +716,8 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_keysound_selection_t measure_selection;
         std::array<char, 32> measures_meter_numerator{'4'};
         std::array<char, 32> measures_meter_denominator{'4'};
+        std::array<char, 32> measures_length_numerator{'1'};
+        std::array<char, 32> measures_length_denominator{'1'};
     } measures_dock;
 
     struct bga_catalog_t {

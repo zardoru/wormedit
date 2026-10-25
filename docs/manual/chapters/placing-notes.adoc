@@ -3,7 +3,7 @@
 
 == The three tools
 
-The tool column at the left of Compose, and kbd:[Alt+1] to kbd:[Alt+3], choose what the mouse does
+The three tool buttons in Compose's top toolbar, and kbd:[Alt+1] to kbd:[Alt+3], choose what the mouse does
 on the canvas:
 
 [cols="1,2,4",options="header"]
@@ -27,6 +27,9 @@ erases`.
 |Click or drag over notes to add them to the targeted layer; kbd:[Alt]-drag removes them (see
 <<layers>>).
 |===
+
+.Select notes with the toolbar's Select tool; Draw and Layer are beside it (captured at {shot-select-layer-tools-revision})
+image::select-layer-tools.png[Selected notes on the Compose field and the three tools in the top toolbar]
 
 [#lane-keys]
 == Lane keys

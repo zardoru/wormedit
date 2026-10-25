@@ -185,6 +185,9 @@ Open the Layers dock with kbd:[Ctrl+L] and create a layer with kbd:[Ctrl+Shift+L
 be hidden, locked or soloed, and the *Require* and *Exclude* filters show only notes with (or
 without) a layer.
 
+.A target layer and the active Layer brush (captured at {shot-layers-dock-revision})
+image::layers-dock.png[Melody selected in the Layers dock and Layer active in the toolbar]
+
 === Targeting a layer
 
 Click a layer in the dock to make it the *target*, or press kbd:[Ctrl+1] to kbd:[Ctrl+9] for the

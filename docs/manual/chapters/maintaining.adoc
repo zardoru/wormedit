@@ -19,3 +19,25 @@ to the program, so packages such as `scripts/windows-cross-package.sh` include i
 `-DWORMEDIT_INSTALL_MANUAL=OFF` (for the Windows script, `CMAKE_ARGS=-DWORMEDIT_INSTALL_MANUAL=OFF`).
 Without Asciidoctor a build only warns, but installing fails until it is installed or the manual is
 turned off.
+
+The build also copies `docs/manual/fixtures/` to `manual/fixtures/` and installs it there, so the
+walkthrough exercises work from an installed manual. Captures use temporary copies of fixture
+directories, keeping project edits and recovery journals out of the source examples. The
+sound-import shot requires Zenity and forces its X11 backend inside the isolated display.
+Its file picker is disconnected from the desktop session bus so a portal cannot forward it to
+the user's desktop. `cmake --install build --component Manual --prefix <directory>` installs
+just the book, images and exercise fixtures for a packaging check.
+
+== Reader trial
+
+The automated checks do not replace a first-time reader. Give someone who has not used Wormedit
+the installed book and its fixtures, without coaching them through the UI:
+
+. Have them create a project, import or arm a sound, place taps and a hold, move a note and Undo.
+. Ask them to change the snap, play from the cursor and follow both walkthrough exercises.
+. Ask them to preview an export and explain which files would be written before exporting.
+. Record their platform, the manual revision, each step where they hesitated and the words or
+  screenshot that would have helped. Separate manual ambiguity from an editor defect.
+
+T-432 remains open for this independent reader trial. A maintainer reproducing the steps or
+running the event harness is useful verification, but must not be recorded as that trial.

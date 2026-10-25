@@ -1,0 +1,92 @@
+[#troubleshooting]
+= Troubleshooting
+
+Open notification history with kbd:[Ctrl+Shift+M] to read the complete message. A refused edit
+normally leaves the chart unchanged. Check the named object, target or file before retrying;
+Undo is for an edit that actually succeeded. Some messages add a filename or a more specific
+reason after the text below.
+
+[cols="2,3",options="header"]
+|===
+|Message or symptom |What to do
+|`Timing is locked.`
+|Press kbd:[Ctrl+Shift+T] to unlock timing, make the intended timing edit, then lock it again.
+|`Inherited content is read-only; select its owning node to edit it.`
+|In the BMS Scope tree select the Chart owning that content. Selecting a branch for authoring
+does not change playback preview. See <<bms-branches>>.
+|`Some hold endpoints cannot be paired in this scope view; they are shown as read-only markers.`
+|Use a scope/outcome with a complete hold pairing. Do not treat the gray endpoint as a new editable
+hold; the editor cannot safely infer its other end in this view.
+|`The document changed. Reload before saving this draft.`
+|In the branch panel use *Reload / discard*, review the current node value and enter the edit again.
+The old draft cannot overwrite a newer document.
+|`BMS editor clipboard was not pasted:`
+|Read the appended reason. Check the source clipboard format, matching WAV IDs and available chart
+measures. Recopy in the source editor before retrying. See <<pasting-from-bms-editors>>.
+|`That sound's file is missing.`
+|Restore the file, then arm/audition it again. If Sounds reports *Found nearby* or *Several files
+match*, right-click that sound and choose the appropriate *Use <filename>* candidate to relink it.
+Changing the sound's name or WAV number does not repair its file path.
+|`Save the project and wait for current file jobs before slicing.`
+|Save the native project and let the current import/save/export finish, then reopen the slice action.
+|`Choose a player in Options → External players.`
+|Select a player, enter its executable/wrapper path and click Apply. See <<settings>>.
+|`External preview requires a selected BMS chart.`
+|Choose a BMS-family difficulty; use ordinary playback for osu!mania, StepMania or BMSON.
+|`Place the Compose cursor before playing externally from here.`
+|Click a chart position or move the cursor with the navigation keys, then retry Here.
+|`Player argument template has an unmatched quote.`
+|Balance single/double quotes in the relevant external-player argument field and Apply.
+|`External preview is still in use by the previous player.`
+|Close or stop that preview process before launching another. Configuring External Stop requires
+the player's own stop command; it is not a generic process kill.
+|`Cannot exclusively create file:`
+|For external preview, check the destination directory's permissions and whether the temporary
+preview name already exists. Preserve unfamiliar files; choose another chart/resource directory
+or remove a leftover only after verifying it is yours and no player uses it.
+|`External player launch failed:`
+|Check the path, executable permissions and wrapper/interpreter setup. Test the player directly
+with the same argument format; shell commands do not run inside the argument template.
+|===
+
+== Export is refused or nothing appears
+
+Save the `.wormedit` project first. On Project, check the target's destination, included
+difficulties and file profile, then run its *Preview*. Resolve the reported unsupported layout,
+conversion loss, conflicting metadata or missing resource before Export. A disabled chart in a
+target's membership checklist includes the incompatibility reason.
+
+If files already exist, *Ask* opens a conflict confirmation, *Keep* leaves existing files alone
+and *Replace* allows replacement. Preview does not publish files. Read the completion notification
+for the actual destination; do not assume the working directory is the export directory.
+
+== No sound or an input key does nothing
+
+* Stop playback, select the output device on *Options → Playback & audio*, Apply and try again.
+  Use Refresh devices after a device change. Check the app/device volume and missing-file status.
+* Check that the intended sound is armed and that the chart is not using a muted BGM lane.
+  If keysounds were skipped for the memory budget, raise it as described in <<settings>>.
+* Close text fields, menus and dialogs before using lane keys. Select Draw for keyboard note
+  entry; in Select, lane keys move selected notes. Check *Lane keys…* for the current layout's
+  bindings, and Input & shortcuts for command conflicts.
+* For gray BMS content, select its owning Chart. For a timing edit, check timing lock.
+
+== Recover after a crash or failed save
+
+Reopen Wormedit and inspect the recovery banner before replacing any primary project. Recover
+the offered snapshot into the session, review it, then save a separate copy if needed. A damaged
+last journal record may leave earlier valid edits recoverable. Keep the original project and
+recovery files until you have checked the recovered chart and assets. See <<opening>>.
+
+If a save reports that copying an external asset failed, its original link is retained. Restore
+access to that file and destination folder before saving again; copying the project file alone
+does not collect an asset whose copy failed.
+
+== Graphics requirements at startup
+
+On Linux, a message beginning `Bounded Vulkan presentation requires` names driver features
+needed for safe presentation recovery. Update the graphics driver and Vulkan runtime, then
+retry in a supported desktop session. Keep the complete error text, GPU/driver version and
+display-session type when reporting a startup failure. Changing chart timing or audio settings
+cannot fix a missing graphics extension. This Linux requirement does not replace the native
+SDL graphics backend on macOS or Windows.

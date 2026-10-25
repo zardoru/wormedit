@@ -24,6 +24,11 @@ the editor's own code, and every screenshot is captured from the real applicatio
 caption names the commit it was captured from; if the interface has changed since, the picture
 may be out of date.
 
+Open this book from *Help → User manual*, or *Help → About WormEdit → Open user manual*.
+Packages include the HTML book and example projects unless the manual was explicitly disabled
+when building the package. Examples are in `fixtures/` beside `index.html`; in a source
+checkout they are under `docs/manual/fixtures/`.
+
 Keys are written with Linux and Windows names. On macOS, kbd:[Ctrl] in the tables is
 kbd:[Cmd]{nbsp}(⌘) and kbd:[Alt] is kbd:[Option].
 
@@ -43,11 +48,17 @@ include::chapters/measures.adoc[leveloffset=+1]
 
 include::chapters/timing.adoc[leveloffset=+1]
 
+include::chapters/bms-branches.adoc[leveloffset=+1]
+
 include::chapters/comparing.adoc[leveloffset=+1]
 
 include::chapters/walkthrough-bms.adoc[leveloffset=+1]
 
 include::chapters/walkthrough-osu-stepmania.adoc[leveloffset=+1]
+
+include::chapters/settings.adoc[leveloffset=+1]
+
+include::chapters/troubleshooting.adoc[leveloffset=+1]
 
 include::chapters/keyboard-reference.adoc[leveloffset=+1]
 

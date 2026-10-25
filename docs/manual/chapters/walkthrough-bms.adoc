@@ -105,6 +105,9 @@ reason and changes nothing.
 
 == 7. Save and export
 
+.A new BME project's BMS export target and its Export action (captured at {shot-project-output-groups-revision})
+image::project-output-groups.png[Project tab with a BMS target, chart membership, Export and target menu]
+
 . Press kbd:[Ctrl+S] and choose where to save the `.wormedit` project. Exporting needs a saved
 project.
 . If an imported sound is linked outside the project, saving copies it into the project's `assets/`
@@ -130,3 +133,22 @@ Charts without control flow export edited BPM changes and BMS STOP events normal
 changes made by a time shift. Root comments and unknown headers are retained. When control flow
 is present, preservation safeguards remain in force: exporting only the active projection and
 discarding inactive branches is a separate, explicit conversion policy.
+
+== Try it with the bundled tutorial
+
+Open `fixtures/tutorial/tutorial-empty.wormedit` beside this HTML manual (in a source checkout,
+`docs/manual/fixtures/tutorial/tutorial-empty.wormedit`).
+Use *File → Save project as…* to make a working copy in another directory before experimenting. Its four
+short keysounds are already imported, so this exercise needs no external song download.
+
+. Show Sounds from the right dock strip and arm the `01` row for `keysound-c4.ogg`.
+. In Draw, place a tap with lane key 2, step one snap with Up and place a second tap with key 3.
+. Step Up once more. Keep key 4 held while stepping three more snaps, then release to finish a hold.
+. Use Select to move one tap, then Undo. Confirm only that move is undone.
+. Select the taps and use *Move to BGM* (kbd:[`]). Undo and check that their keysounds return
+  with the notes.
+. Save the working copy. On Project, review the BMS target's destination and run Preview before Export.
+
+You should finish with two playable taps and one hold, their original sound assignments, and a
+preview naming the BMS chart and its assets. `tutorial.wormedit` in the same folder provides a
+populated example to inspect. See <<bms-branches>> when adding conditional alternatives.

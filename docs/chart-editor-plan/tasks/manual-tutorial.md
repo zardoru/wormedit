@@ -20,6 +20,7 @@ scripts so they can be regenerated after UI changes, never by hand.
 **Owner follow-up (2026-10-25):** fill the remaining manual gaps. T-432/T-433 also own
 `docs/manual/chapters/bms-branches.adoc`, `settings.adoc`, `troubleshooting.adoc`, the
 book index/maintaining appendix, `shots/lib/compose.sh`, all existing shot-script/capture refreshes,
+`shots/bms-branches.sh` and its image for the new branch-authoring guide,
 and `scripts/manual-captures.sh` for current wizard/dock coordinates, isolated fixture copies and
 an isolated Zenity picker. T-705's supporting scope includes `cmake/wormedit_manual.cmake`
 (package exercise fixtures), `src/ui/nuklear/app/manual_location.h`, `frontend.cpp`, `menu_bar.cpp`,
@@ -54,6 +55,7 @@ the requested documentation and discoverability outcome; they do not change char
 ## T-431 Generate manual screenshots from scripted Xvfb runs
 
 - **Status:** done (2026-10-18)
+- **Refresh (2026-10-25):** all 18 shots regenerate successfully at `01ad358`, with no stale revisions. The current family/layout wizard and right dock strip replace obsolete coordinates. New Select/Layer, Layers, sound-import review, Project exports and BMS branch captures are included. Each shot edits a temporary fixture copy; an isolated Zenity picker cannot use the desktop portal. Fixture sources remain unchanged and journal-free. `bash -n`, the full capture run, visual inspection and `--check-stale` pass.
 - **Done:** `scripts/manual-captures.sh` runs each `docs/manual/shots/<id>.sh` (a STEPS file with `# mode:` and `# project:` headers) through the smoke script in a 1600×900 window, writes `docs/manual/images/<id>.png`, and stamps the commit (with `+dirty` for uncommitted UI changes) into the PNG comment and `docs/manual/images/revisions.adoc`; captions print it (owner request: stamp shots with a revision). `--check-stale` lists shots whose UI sources changed after their stamp, replacing the pixel comparison planned below. Fixture projects live in `docs/manual/fixtures/`.
 - **Outcome:** `scripts/manual-captures.sh` opens fixture projects in isolated Xvfb, drives each shot listed in `docs/manual/shots.txt` with xdotool steps, and writes `docs/manual/images/<shot>.png`. With `--check`, it compares fresh captures against the checked-in ones using `scripts/compare-ui-captures.py`, and lists the shots that drifted.
 - **Read first:** `scripts/smoke-compose-virtual-x.sh`, `scripts/compare-ui-captures.py`, `docs/fixtures/`.
@@ -64,14 +66,15 @@ the requested documentation and discoverability outcome; they do not change char
   3. Add the `--check` mode.
 - **Invariants:** captures never open on the user's desktop. They run only inside isolated Xvfb.
 - **Reject/failure behavior:** a step that fails names its shot and stops, without overwriting the existing images.
-- **Verify:** `scripts/manual-captures.sh --check` on a clean tree reports no drift.
+- **Verify:** `scripts/manual-captures.sh --check-stale` on a clean UI tree reports no stale revisions; inspect regenerated PNGs for the intended workflow.
 - **Out of scope:** video (T-435).
 
 ## T-432 Write the Getting started and Compose basics chapters
 
-- **Status:** partial (2026-10-18)
+- **Status:** partial (2026-10-25; content and captures complete; independent reader trial remains)
 - **Done so far:** chapters the-wormedit-way, getting-started, navigating, placing-notes (with Alt-drag lengthening), sounds-and-layers, measures (bar lines as objects in the measure lane; owner emphasis 2026-10-18 on lengthening, page keys with Tab acceleration and bar-line editing); keyboard reference generated from the command registry by `wormedit-manual-reference` (`documentation.manual_reference` keeps it current), with a hand-written table of non-command keys. Gestures were checked against the code, and the keyboard loop, keyboard hold and paste in isolated Xvfb.
-- **Remaining:** step 4 (a reader unfamiliar with Wormedit follows the chapters); screenshots of the Select/Layer tools, the Layers dock and the sound import review.
+- **Done so far (2026-10-25):** Select/Layer tools, the Layers dock and sound-import review now have linked, scripted captures. Tool-location prose matches the current toolbar. The maintaining appendix supplies a reader-trial checklist; all 18 captures are refreshed at `01ad358`.
+- **Remaining:** step 4 only: a reader unfamiliar with Wormedit follows the chapters and their confusion is recorded. Maintainer verification and automated tests are not recorded as this independent trial.
 - **Outcome:** the Getting started and Compose basics chapters let a new user create a project,
   import a chart, place, select and move notes, change snaps, and play back, using only the manual.
   Every screenshot has a matching reproducible script in `docs/manual/shots/`.
@@ -93,15 +96,15 @@ the requested documentation and discoverability outcome; they do not change char
   4. Ask someone unfamiliar with wormedit to follow the chapter, and record what confused them.
 - **Invariants:** shortcut names match the shortcut profile.
 - **Reject/failure behavior:** not applicable.
-- **Verify:** `ctest --test-dir build -R '^documentation\.'`; `scripts/manual-captures.sh --check`.
+- **Verify:** `ctest --test-dir build -R '^documentation\.'`; `scripts/manual-captures.sh --check-stale`.
 - **Out of scope:** the workflow chapters (T-433).
 
 ## T-433 Write the workflow chapters
 
-- **Status:** partial (2026-10-18)
+- **Status:** done (2026-10-25)
 - **Done so far:** the BMS walkthrough (with BMSE/iBMSC paste, wired in T-700) and the osu!mania/StepMania walkthrough.
 - **Done so far (2026-10-18, owner's second pass):** timing chapter (lanes, inline editing, Timing focus, tap tempo, beat fitting, offset, lock, the area menu's stop/delay conversion and SV recipes); command palette chapter; importing into specific BMS slots; Ctrl+M toggling (T-701); wide-layout lane keys (T-702) in the generated layout table. Twelve shots captured at `f1dad8d`.
-- **Remaining:** Troubleshooting from notification texts, "try it" exercises, and walkthrough screenshots of the Project tab output groups and export.
+- **Completion (2026-10-25):** Troubleshooting maps actual diagnostics to recovery actions, including BMS read-only/stale drafts, clipboard refusals, missing files, external playback, export, recovery and Linux graphics startup. Both walkthroughs end with exercises using the packaged examples. New BMS branch and settings/external-player chapters explain content ownership versus playback choice, RANDOM alternatives, node edits/confirmations, per-page Apply and immediate shortcut saves. Project output groups/Export and the branch panel have scripted captures; all 18 shots are current. GATE for the associated Help/package implementation passes 5,280/5,280 and four changed-TU complexity checks; the manual builds without Asciidoctor warnings. Documentation checks pass 5/5, manual component and complete DESTDIR-staged installs include all nine fixture files, and rendered chapter checks show no missing images or desktop overflow. An independent reader trial remains exclusively on T-432.
 - **Outcome:** both walkthroughs end with a short "try it" exercise on a bundled fixture;
   Troubleshooting maps the actual notification text to a recovery step; and the Project output-group
   capture shows Preview and Export where the walkthrough tells the reader to use them.
@@ -121,7 +124,7 @@ the requested documentation and discoverability outcome; they do not change char
   3. Build Troubleshooting from the actual diagnostic messages users see (the notification texts), each with a fix.
 - **Invariants:** as in T-432.
 - **Reject/failure behavior:** not applicable.
-- **Verify:** `ctest --test-dir build -R '^documentation\.'`; `scripts/manual-captures.sh --check`.
+- **Verify:** `ctest --test-dir build -R '^documentation\.'`; `scripts/manual-captures.sh --check-stale`.
 - **Out of scope:** deferred features (storyboard, OSBX, Quaver) until they ship.
 
 ## T-434 Write the tutorial video script and shot list

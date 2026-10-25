@@ -1,0 +1,103 @@
+[#bms-branches]
+= Editing BMS branches
+
+BMS files can contain several possible charts in one difficulty. `RANDOM`, `IF`, `SWITCH`
+and `CASE` decide which parts play together. Compose shows their structure in the left-hand
+*Scope tree*. A plain BMS chart has a Root and Chart too; you do not need to add branches to
+edit it normally.
+
+== Choose what to edit and what to hear
+
+There are three labels to watch:
+
+* *Selected node* is the tree item whose settings and structural actions appear below the tree.
+* *Content target* is the *Chart* receiving note, timing and resource edits. Selecting a scope
+  targets its first direct Chart. A node without Chart content cannot receive canvas edits.
+* *Playing* marks content included in the current playback preview. Selecting an *Inactive*
+  branch for editing does not make it play.
+
+Select the desired Chart before drawing or applying a recipe. Common and ancestor content is
+shown in gray as read-only context; select its owning node to edit it. Some imported hold
+endpoints cannot be paired in an inactive view and remain read-only markers. Selecting their
+branch does not invent a hold pairing.
+
+Changing the content target clears object and range selection, keeping the cursor and viewport.
+Tree selection is navigation: Undo does not restore an earlier selection.
+
+== Set branch values and preview choices
+
+Select a RANDOM node and edit *RANDOM range (outcome count)*, then click *Save node*. Its range
+is the number of possible outcomes, starting at 1. Reducing it keeps existing arms; arms that
+can no longer be reached have yellow warning text and an icon. Increase the range or deliberately
+edit/remove those arms if they should become reachable again.
+
+IF, ELSEIF, SWITCH, CASE, SETRANDOM and SETSWITCH expose *Node value*. DEFAULT uses `DEF`.
+*SETRANDOM* and *SETSWITCH* are separate ordered nodes with their own settings; they do not
+contain the branches that follow them. Their placement matters to selector bindings.
+
+For a RANDOM or SWITCH node, enter a value in the preview field and click *Set preview* to
+choose the outcome used for playback. *Clear preview* removes that explicit choice. These
+controls are separate from *Save node*: listening to an alternative and changing the authored
+program are different actions. An invalid choice is refused. If a range edit invalidates an
+old explicit choice, that choice is cleared rather than silently replaced.
+
+*Reload / discard* discards the selected node's settings draft and reads the current document.
+If the document changes while a draft is open, the panel says to reload before saving; rejected
+edits retain the draft so you can correct it.
+
+== Add and move nodes
+
+Use *Add node…* to add a scope, Chart, selector-setting node or Text item. A scope receives the
+new item at the end of its children; selecting a leaf inserts after it. ELSEIF/ELSE continue a
+preceding IF chain. CASE/DEFAULT belong inside a SWITCH. Illegal placement is refused without
+changing the program.
+
+A new scope starts with a fresh Chart. Use that Chart for content common to that scope;
+conditional alternatives go in the Charts inside its IF/CASE children.
+
+*Move node…* lists *Inside* destinations for scopes and *After* destinations for leaf nodes.
+Moving a scope moves its subtree. The editor checks the possible outcomes before committing:
+a move that creates a collision, invalid reference or unprovable selector binding is refused.
+Check the selected path and Content target again after moving.
+
+== Make two RANDOM alternatives
+
+. Select Root, choose *Add node… → RANDOM*, then select the new RANDOM row.
+. Set its range to `2` and click *Save node*.
+. With RANDOM selected, choose *Add node… → IF*. Select that IF and use its Chart for the
+  first variant; its default Node value is `1`.
+. Select the RANDOM row again and add a second IF. Select the new IF, change its Node value
+  to `2` and Save node, then put the second variant in its Chart.
+. Select RANDOM and use *Set preview* with `1`, then `2`, to audition the alternatives.
+  Selecting IF 2 for editing alone does not select playback outcome 2.
+
+Root's Chart remains common to both outcomes. So does a Chart directly inside RANDOM; put
+notes that should vary in the IF Charts. For SWITCH, use CASE and DEFAULT child scopes instead.
+
+.Authored range and playback preview have separate controls (captured at {shot-bms-branches-revision})
+image::bms-branches.png[RANDOM range 2, its content Chart target, and playback preview choice 2 in the BMS branches panel]
+
+== Delete or unwrap a scope
+
+*Delete…* previews removal of the entire selected subtree, including its Charts. Read the
+summary and click *Confirm*, or *Cancel*. Root cannot be deleted. After a deletion, selection
+falls back to surviving context rather than keeping a missing target.
+
+*Unwrap…* removes a wrapper while promoting its ordered contents. When this would leave a
+branch without its selector, the confirmation offers *Make branches always apply*. Accepting
+that converts the affected branch into an *Always* scope: its contents now apply unconditionally.
+Choose *Cancel* to leave the program as it is. This is a separate decision from deleting a
+subtree; read its warning before confirming. New collisions or unsupported CASE/selector
+relationships can still prevent the operation.
+
+Accepted document edits are undoable. If the document changes after a destructive preview,
+prepare a fresh preview instead of confirming the old one.
+
+== Export and compare
+
+Normal BMS export preserves the complete program, including inactive branches. Flattening to
+the playback outcome is an explicit conversion choice. External-player preview uses that active
+outcome; it is not a way to publish the complete branching file.
+
+The <<comparing,comparison flow>> compares the selected difficulties' playback projections.
+Choosing an inactive authoring Chart does not turn it into a branch-to-branch comparison.

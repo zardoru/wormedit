@@ -84,3 +84,24 @@ Save the project before exporting. Saving copies linked assets outside the proje
 StepMania exports copy the song audio next to the chart file. A project with more than one music
 resource cannot be exported to them, even if the resources refer to the same file; Wormedit reports
 the refusal without publishing partial files.
+
+== Try it without an external song
+
+First open the bundled `fixtures/comparison/comparison.wormedit` beside this HTML manual
+(`docs/manual/fixtures/comparison/comparison.wormedit` in a source checkout). Its Baseline and
+Variation difficulties give you a populated 4-lane example: try the <<comparing,comparison exercise>>,
+then return to Project to inspect their notes and ratings. Leave this reference unchanged.
+
+Now create a new *4 keys* osu!mania project. Its matching StepMania outputs let you practice the
+editing/export flow with no downloaded assets. Save the project to a disposable directory.
+
+. Leave the sound source unarmed, select Draw, and place four taps in different lanes one snap apart.
+. Hold one lane key while advancing four snaps; release it and check the hold's tail.
+. Duplicate the difficulty on Project. Remove two taps from the duplicate and give it a different
+  name/rating. The original difficulty should retain all four taps.
+. Include both difficulties in the osu!mania and StepMania targets. Set separate destination
+  folders and run Preview on each; inspect its files and warnings before Export.
+. In <<comparing,Compare / Validate>>, check that the tap removals appear as differences.
+
+This is an editing and export-planning exercise; a chart without song audio is not a finished
+playable song. For the audio workflow, repeat it using your own licensed song as in step 1.

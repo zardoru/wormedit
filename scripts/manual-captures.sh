@@ -58,26 +58,54 @@ record_revision() {
     rm -f "$temp"
 }
 
-capture() {
-    local id=$1 shot="$shots_dir/$1.sh" mode project steps revision output
+capture() (
+    local id=$1 shot="$shots_dir/$1.sh" mode project steps revision output dialog_driver fixture_dir=
     [[ -f $shot ]] || { echo "No shot named $id ($shot)" >&2; return 1; }
     mode=$(header_value "$shot" mode); mode=${mode:-compose}
     project=$(header_value "$shot" project)
+    if [[ -n $project ]]; then
+        fixture_dir=$(mktemp -d /tmp/wormedit-manual-fixture.XXXXXX)
+        cp -R "$root_dir/$(dirname "$project")/." "$fixture_dir/"
+        # Prior captures may have left a journal alongside an old source fixture.
+        # Never copy those into the isolated project or edit the checked-in fixture.
+        for stale in "$fixture_dir"/*.bak* "$fixture_dir"/*.journal*; do
+            [[ ! -f $stale ]] || rm -- "$stale"
+        done
+        project="$fixture_dir/$(basename "$project")"
+    fi
+    dialog_driver=$(header_value "$shot" file-dialog-driver)
+    if [[ -n $dialog_driver ]] && ! command -v "$dialog_driver" >/dev/null; then
+        echo "$id requires $dialog_driver for its isolated file picker." >&2
+        return 1
+    fi
+    local dialog_session=()
+    if [[ -n $dialog_driver ]]; then
+        # Do not let GTK forward a native picker to the desktop's portal/session.
+        dialog_session=(env -u WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/wormedit-manual-bus-$BASHPID")
+    fi
     revision=$(ui_revision)
     output="$images_dir/$id.png"
     steps=$(mktemp)
+    trap 'rm -f -- "$steps"; [[ -z $fixture_dir ]] || rm -r -- "$fixture_dir"' EXIT
     # The wrapper ends with kill -9: an edited project would otherwise wait on its unsaved dialog.
     # Shots run in a 1600x900 window; their coordinates assume that size.
-    printf '%s\nsource %q\nimport -window "$window_id" "$output"\nkill -9 "$app_pid" 2>/dev/null || true\n' \
-        'xdotool windowsize --sync "$window_id" 1600 900; sleep 1.5' "$shot" > "$steps"
-    WORMEDIT_SMOKE_SCREEN=1920x1080 STEPS="$steps" \
-        "$root_dir/scripts/smoke-compose-virtual-x.sh" "$output" "$mode" \
-        ${project:+"$root_dir/$project"} >/dev/null
+    cat > "$steps" <<'EOF'
+trap 'kill -9 "$app_pid" 2>/dev/null || true; cleanup' EXIT
+xdotool windowsize --sync "$window_id" 1600 900
+sleep 1.5
+EOF
+    printf 'source %q\nimport -window "$window_id" "$output"\nkill -9 "$app_pid" 2>/dev/null || true\n' \
+        "$shot" >> "$steps"
+    GDK_BACKEND=x11 GDK_DEBUG=no-portals GTK_USE_PORTAL=0 GSK_RENDERER=cairo \
+        SDL_FILE_DIALOG_DRIVER="${dialog_driver:-${SDL_FILE_DIALOG_DRIVER:-}}" \
+        WORMEDIT_SMOKE_SCREEN=1920x1080 STEPS="$steps" \
+        "${dialog_session[@]}" "$root_dir/scripts/smoke-compose-virtual-x.sh" "$output" "$mode" \
+        ${project:+"$project"} >/dev/null
     rm -f "$steps"
     mogrify -set comment "wormedit $revision" "$output"
     record_revision "$id" "$revision"
     echo "$id: $revision"
-}
+)
 
 if [[ ${1:-} == --check-stale ]]; then
     check_stale

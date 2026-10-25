@@ -1,0 +1,78 @@
+[#settings]
+= Settings and external players
+
+Open *Options* with kbd:[Ctrl+,]. These are application settings: they follow you between
+projects and do not mark a chart dirty. Project settings on the *Project* tab and export
+policies on individual target cards belong to the project instead.
+
+== Apply, revert and preview
+
+Most Options controls edit a draft. *Apply* validates and saves the current page. *Revert* restores
+that page's saved values; *Restore defaults* resets that page's draft, which still needs Apply.
+Switching pages keeps their drafts: Apply each changed page before closing. *Close* or kbd:[Escape]
+discards unapplied changes. Appearance controls preview skins and opacity immediately;
+discarding the draft restores the saved appearance.
+
+Shortcut capture is an exception: *Change* saves a command's new chord immediately. Closing or
+reverting the other Options controls does not undo a shortcut remap. The separate *Lane keys…*
+dialog has its own Apply and Cancel controls; see <<keyboard-reference>>.
+
+== Find the right page
+
+[cols="1,3",options="header"]
+|===
+|Page |Use it for
+|General |Autosave interval, recent-file count and unsaved-close confirmation.
+|Editor |Note-click audition, default snap, move collisions, scroll direction, wheel inversion,
+following anchor, lane legend and note-kind palette.
+|Playback & audio |Output device, buffer size, audio levels, keysound memory budget and osu!
+hitsound skin folder. Use *Refresh devices* after connecting an output. Device/buffer changes
+made during playback wait until Stop.
+|Appearance |Default and per-layout field skins, scratch placement, snap colors and grid opacity.
+|Input & shortcuts |Per-layout Lane keys, default bindings for new/imported charts and command
+shortcut capture. Click *Change*, press a chord, or Escape to cancel capture. Conflicts remain
+visible so you can resolve them.
+|External players |Your player executable or wrapper and its launch arguments.
+|===
+
+If keysounds are skipped because of the memory budget, raise it on Playback & audio. Raising it
+loads skipped keysounds for the open project; lowering it limits future loads without unloading
+sounds already playing. A missing audio file must still be restored or relinked.
+
+== Configure an external BMS player
+
+. Open *Options → External players*. Select an existing entry or click *Add*.
+. Give it a name and put the executable or wrapper's path in *Player or wrapper path*. Enter
+  the path itself, without wrapping it in command-line quotes.
+. Fill *Play from start arguments*, *Play from here arguments* and *Stop arguments* according
+  to that player's command-line interface. The selected radio entry is the player Wormedit uses.
+. Click *Apply*, then *Close*.
+. Select a BMS difficulty. Use *Playback → External Play from Start*, *External Play from Here*
+  or *External Stop*, also available by searching `external` in the command palette. For Here,
+  first place the Compose cursor at the desired measure.
+
+Argument templates support these substitutions:
+
+[cols="1,3",options="header"]
+|===
+|Placeholder |Value
+|`<apppath>` |Wormedit's application directory.
+|`<filename>` |The temporary BMS preview file's full path (Play actions).
+|`<measure>` |The source measure number for playback from the cursor.
+|===
+
+For a player that accepts a chart filename as its sole argument, use `"<filename>"` for Play
+from start. Other flags and the meaning of a start-measure option are player-specific; consult
+that player's instructions. Quote a multiword argument with single or double quotes. Wormedit
+launches the process directly: shell operators, environment-variable expansion and command
+substitution are not evaluated. Put more elaborate setup in a wrapper executable/script.
+
+Play writes a temporary preview beside the source chart/resources and launches the configured
+player with it. The preview reflects current edits and the active BMS outcome; it leaves the
+source chart intact. For a new native BMS project, save it first so it has an asset directory.
+An existing `___wormedit_preview` file is not overwritten unless Wormedit owns it. A previous
+player still using that preview must finish before another preview can replace it.
+
+*External Stop* launches your configured stop arguments; it does not forcibly terminate an
+arbitrary player. Its filename substitution is empty, so configure Stop with the player's own
+stop/remote-control option. Use ordinary in-editor playback for other chart formats.

@@ -102,6 +102,9 @@ click the *+* button at the top of the Sounds dock. Wormedit shows a *Review sou
 groups, add one with *Create new group*, or choose *Leave all ungrouped*.
 * *Confirm import* adds everything in one step that a single Undo reverses.
 
+.Review a staged sound before importing it (captured at {shot-sound-import-review-revision})
+image::sound-import-review.png[Review sound import dialog with a staged keysound and Cancel and Confirm import buttons]
+
 Sounds can be grouped later too: select them in the Sounds dock and click *Group…*. Its *Keep IDs
 together* option keeps the group's BMS `#WAV` numbers next to each other.
 

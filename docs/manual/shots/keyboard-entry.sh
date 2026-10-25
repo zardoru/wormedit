@@ -2,11 +2,10 @@
 # project: docs/manual/fixtures/tutorial/tutorial-empty.wormedit
 # The keyboard loop: Draw tool (Alt+2), arm a sound by double-clicking it, then lane keys with
 # Up stepping the cursor one snap at a time.
-click_at 1444 122
-click_at 1390 122
+source "$root_dir/docs/manual/shots/lib/compose.sh"
+manual_compose_sounds
 xdotool key --window "$window_id" alt+2; sleep 0.8
-xdotool mousemove --window "$window_id" 1290 470; sleep 0.3
-xdotool click --repeat 2 --delay 80 1; sleep 1
+manual_arm_c4
 for lane in 2 3 4 3 2; do
     xdotool keydown --window "$window_id" "$lane"; sleep 0.3
     xdotool keyup --window "$window_id" "$lane"; sleep 0.6

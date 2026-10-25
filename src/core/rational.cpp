@@ -1,6 +1,9 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/numeric_text.h>
 
+#include "text_util.h"
+#include "timing_arithmetic.h"
+
 #include <algorithm>
 #include <bit>
 #include <charconv>
@@ -300,6 +303,54 @@ auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> max
         mantissa->scale -= *exponent;
     }
     return scaled_decimal(*mantissa, negative);
+}
+
+auto parse_exact_rational(std::string_view text) -> std::optional<signed_rational_t> {
+    text = text_util::trim(text, " \t\r\n");
+    const auto slash = text.find('/');
+    if (slash == std::string_view::npos) return parse_exact_decimal(text);
+    std::int64_t numerator{};
+    std::uint64_t denominator{};
+    const auto denominator_text = text.substr(slash + 1);
+    if (!parse_integer(text.substr(0, slash), numerator) ||
+        denominator_text.starts_with('+') || !parse_integer(denominator_text, denominator) ||
+        denominator == 0)
+        return std::nullopt;
+    return timing_arithmetic::try_normalize({numerator, denominator});
+}
+
+auto format_exact_rational(signed_rational_t value, std::size_t maximum_fraction_digits)
+    -> std::string {
+    const auto reduced = timing_arithmetic::try_normalize(value);
+    if (!reduced) return {};
+    const auto magnitude = checked_math::magnitude(reduced->numerator);
+    std::string text = reduced->numerator < 0 ? "-" : "";
+    text += std::to_string(magnitude / reduced->denominator);
+    auto remainder = magnitude % reduced->denominator;
+    if (remainder == 0) return text;
+    std::string digits;
+    for (std::size_t digit = 0; digit < maximum_fraction_digits && remainder != 0 &&
+         remainder <= maximum_u64 / 10; ++digit) {
+        remainder *= 10;
+        digits.push_back(static_cast<char>('0' + remainder / reduced->denominator));
+        remainder %= reduced->denominator;
+    }
+    if (remainder == 0) return text + "." + digits;
+    return std::to_string(reduced->numerator) + "/" + std::to_string(reduced->denominator);
+}
+
+auto offset_by_steps(signed_rational_t value, signed_rational_t step, std::int64_t count)
+    -> std::optional<signed_rational_t> {
+    const auto unit = timing_arithmetic::try_normalize(step);
+    if (!unit) return std::nullopt;
+    const auto factor = checked_math::magnitude(count);
+    const auto scaled = checked_math::checked_multiply(
+        wide_math::u128_t{0, checked_math::magnitude(unit->numerator)}, factor);
+    if (!scaled || !wide_math::can_fit_u64(*scaled)) return std::nullopt;
+    const auto numerator = timing_arithmetic::signed_value(scaled->low,
+        (unit->numerator < 0) != (count < 0));
+    if (!numerator) return std::nullopt;
+    return timing_arithmetic::add_exact(value, {*numerator, unit->denominator});
 }
 
 auto rationalized_value_t::from(double value, const rationalization_options_t& options)

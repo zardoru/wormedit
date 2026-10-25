@@ -14,8 +14,8 @@
 
 namespace wormedit::sys {
 
-// The recipe `current` with the form's output, curve, values, sampling and (for SPEEDS) transition
-// applied. Nothing is validated beyond syntax: out-of-range values are the core validator's to
+// The recipe `current` with the form's output, curve, values, sampling, (for SPEEDS) transition,
+// postprocess stages and impulses applied. Values are decimal or fraction text. Nothing is validated beyond syntax: out-of-range values are the core validator's to
 // reject, so an invalid recipe stays editable. Returns nothing when the form is malformed (an
 // unknown enum value, a non-numeric or zero-denominator fraction). Lua settings follow the form;
 // frozen source and declared input hashes remain until an asynchronous Reload replaces source.

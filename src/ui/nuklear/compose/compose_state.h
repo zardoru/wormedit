@@ -9,6 +9,7 @@
 #include "ui/nuklear/compose/compose_sound_picker.h"
 #include "ui/nuklear/compose/compose_bookmark_rename.h"
 #include "ui/nuklear/chrome/context_menu.h"
+#include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/resources/sound_slot_batch.h"
 #include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/audio/preview_audio_dialog.h"
@@ -387,6 +388,12 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t recipe_edit_revision{};
         bool recipe_edit_dirty{};
         bool recipe_edit_apply_pending{};
+        // A settled edit (Enter, leaving a field, a release, a pick) waits to be applied once its
+        // preview has been queued and any evaluation has finished.
+        bool recipe_edit_commit_pending{};
+        wormedit::ui::chrome::NumberDrag recipe_number_drag{};
+        bool recipe_output_focused{};
+        bool recipe_points_focused{};
         // Typed time signature for the cursor measure (Measure at cursor section).
         std::array<char, 32> meter_numerator{'4'};
         std::array<char, 32> meter_denominator{'4'};

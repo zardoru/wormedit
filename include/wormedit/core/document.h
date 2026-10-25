@@ -1049,7 +1049,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 19;
+inline constexpr std::uint32_t current_document_schema_version = 20;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

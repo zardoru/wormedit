@@ -14,47 +14,42 @@
 namespace wormedit::sys {
 namespace {
 
+constexpr const char* malformed_form_message =
+    "Values must be numbers or fractions such as 0.5 or 1/2, and counts whole numbers.";
+
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {
     return wormedit::parse_integer<std::uint64_t>(text);
 }
 
-auto parse_signed(const char* text) -> std::optional<std::int64_t> {
-    return wormedit::parse_integer<std::int64_t>(text);
-}
-
 auto parse_signed_rational(const wormedit::ui::timing_recipe_rational_text_t& text)
     -> std::optional<signed_rational_t> {
-    const auto numerator = parse_signed(text.numerator);
-    const auto denominator = parse_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) return std::nullopt;
-    return signed_rational_t{*numerator, *denominator};
+    return wormedit::parse_exact_rational(text.text);
 }
 
 auto parse_unsigned_rational(const wormedit::ui::timing_recipe_rational_text_t& text)
     -> std::optional<rational_t> {
-    const auto numerator = parse_unsigned(text.numerator);
-    const auto denominator = parse_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) return std::nullopt;
-    return rational_t{*numerator, *denominator};
+    const auto parsed = parse_signed_rational(text);
+    if (!parsed || parsed->numerator < 0) return std::nullopt;
+    return rational_t{static_cast<std::uint64_t>(parsed->numerator), parsed->denominator};
 }
 
 void set_text(wormedit::ui::timing_recipe_rational_text_t& target, signed_rational_t value) {
-    (void)std::snprintf(target.numerator, sizeof(target.numerator), "%lld",
-                        static_cast<long long>(value.numerator));
-    (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
-                        static_cast<unsigned long long>(value.denominator));
+    (void)std::snprintf(target.text, sizeof(target.text), "%s",
+                        wormedit::format_exact_rational(value).c_str());
 }
 
 void set_text(wormedit::ui::timing_recipe_rational_text_t& target, rational_t value) {
-    (void)std::snprintf(target.numerator, sizeof(target.numerator), "%llu",
-                        static_cast<unsigned long long>(value.numerator));
-    (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
-                        static_cast<unsigned long long>(value.denominator));
+    if (value.numerator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        (void)std::snprintf(target.text, sizeof(target.text), "%llu/%llu",
+                            static_cast<unsigned long long>(value.numerator),
+                            static_cast<unsigned long long>(value.denominator));
+        return;
+    }
+    set_text(target, signed_rational_t{static_cast<std::int64_t>(value.numerator), value.denominator});
 }
 
 auto form_enums_valid(const wormedit::ui::timing_recipe_form_t& form) -> bool {
-    return form.output >= wormedit::sv_recipe_output_t::sv &&
-           form.output <= wormedit::sv_recipe_output_t::speeds &&
+    return wormedit::is_known_sv_recipe_output(form.output) &&
            form.curve >= wormedit::sv_recipe_curve_t::constant &&
            form.curve <= wormedit::sv_recipe_curve_t::lua_expression &&
            form.sampling_mode >= wormedit::sv_recipe_sampling_mode_t::fixed &&
@@ -160,6 +155,17 @@ auto set_transition(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_fo
     return true;
 }
 
+auto set_postprocess(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
+    candidate.postprocess.clear();
+    for (const auto& stage : form.postprocess) {
+        const auto value = parse_signed_rational(stage.value);
+        if (!value) return false;
+        candidate.postprocess.push_back(
+            {.kind = stage.kind, .mode = stage.mode, .solve = stage.solve, .value = *value});
+    }
+    return true;
+}
+
 auto set_impulses(sv_recipe_t& candidate, const wormedit::ui::timing_recipe_form_t& form) -> bool {
     const auto width = parse_unsigned_rational(form.finite_box_width_milliseconds);
     if (!width) return false;
@@ -188,7 +194,8 @@ auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_r
         candidate.lua.reset();
     }
     if (!set_curve_parameters(candidate, form) || !set_sampling(candidate, form) ||
-        !set_transition(candidate, form) || !set_impulses(candidate, form))
+        !set_transition(candidate, form) || !set_impulses(candidate, form) ||
+        !set_postprocess(candidate, form))
         return std::nullopt;
     return candidate;
 }
@@ -209,7 +216,7 @@ auto recipe_form_preview_t::revise(recipe_form_outcome_t previous,
     if (!candidate) {
         previous.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::invalid_rational,
-            .message = "Values must be exact fractions and counts must be whole numbers."});
+            .message = malformed_form_message});
     } else {
         previous.diagnostics = validate_sv_recipe(chart, report.candidate);
     }
@@ -247,7 +254,7 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     const auto recipe = std::ranges::find(chart->sv_recipes, recipe_id, &sv_recipe_t::id);
     if (recipe == chart->sv_recipes.end()) return "The SV recipe no longer exists.";
     auto candidate = recipe_from_form(form, *recipe);
-    if (!candidate) return "Values must be exact fractions and counts must be whole numbers.";
+    if (!candidate) return malformed_form_message;
     // This synchronous path leaves semantic validation to the native command, once.
     const recipe_form_outcome_t proposal{recipe_form_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart_id),
@@ -279,13 +286,16 @@ void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& rec
     auto parameters = std::move(lua_parameters);
     auto cycles = std::move(lua_cycles);
     auto retained_impulses = std::move(impulses);
+    auto retained_postprocess = std::move(postprocess);
     *this = {};
     lua_parameters = std::move(parameters);
     lua_cycles = std::move(cycles);
     impulses = std::move(retained_impulses);
+    postprocess = std::move(retained_postprocess);
     lua_parameters.clear();
     lua_cycles.clear();
     impulses.clear();
+    postprocess.clear();
     auto& form = *this;
     // An absent descriptor uses the inline-function API defaults too.
     form.lua_entry_point[0] = '\0';
@@ -313,6 +323,11 @@ void wormedit::ui::timing_recipe_form_t::refill(const wormedit::sv_recipe_t& rec
         set_text(field.at, impulse.at);
         set_text(field.area, impulse.area);
         form.impulses.push_back(field);
+    }
+    for (const auto& stage : recipe.postprocess) {
+        timing_recipe_postprocess_form_t field{.kind = stage.kind, .mode = stage.mode, .solve = stage.solve};
+        set_text(field.value, stage.value);
+        form.postprocess.push_back(field);
     }
     form.sampling_mode = recipe.sampling.mode;
     form.fixed_extent = recipe.sampling.fixed_step_rows ? wormedit::ui::timing_recipe_fixed_extent_t::step_rows

@@ -33,8 +33,7 @@ auto sample_recipe() -> sv_recipe_t {
 }
 
 void set(wormedit::ui::timing_recipe_rational_text_t& field, const char* numerator, const char* denominator) {
-    std::snprintf(field.numerator, sizeof(field.numerator), "%s", numerator);
-    std::snprintf(field.denominator, sizeof(field.denominator), "%s", denominator);
+    std::snprintf(field.text, sizeof(field.text), "%s/%s", numerator, denominator);
 }
 
 } // namespace
@@ -42,8 +41,8 @@ void set(wormedit::ui::timing_recipe_rational_text_t& field, const char* numerat
 TEST_CASE("a recipe survives a trip through its form unchanged", "[unit][sys][recipe-form]") {
     const auto recipe = sample_recipe();
     const auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
-    CHECK(std::strcmp(form.value_to.numerator, "-5") == 0);
-    CHECK(std::strcmp(form.value_to.denominator, "2") == 0);
+    CHECK(std::strcmp(form.value_to.text, "-2.5") == 0);
+    CHECK(std::strcmp(form.shape.text, "1/3") == 0);
     CHECK(std::strcmp(form.fixed_point_count, "5") == 0);
     const auto back = recipe_from_form(form, recipe);
     REQUIRE(back.has_value());
@@ -84,11 +83,11 @@ TEST_CASE("SPEEDS recipes carry a transition and other outputs drop it", "[unit]
     CHECK(speeds->output == sv_recipe_output_t::speeds);
     CHECK(speeds->transition_duration == rational_t{3, 2});
     CHECK(speeds->transition_is_seconds == true);
-    form.output = wormedit::sv_recipe_output_t::scrolls;
-    const auto scrolls = recipe_from_form(form, *speeds);
-    REQUIRE(scrolls.has_value());
-    CHECK_FALSE(scrolls->transition_duration.has_value());
-    CHECK_FALSE(scrolls->transition_is_seconds.has_value());
+    form.output = wormedit::sv_recipe_output_t::sv;
+    const auto sv = recipe_from_form(form, *speeds);
+    REQUIRE(sv.has_value());
+    CHECK_FALSE(sv->transition_duration.has_value());
+    CHECK_FALSE(sv->transition_is_seconds.has_value());
 }
 
 TEST_CASE("a step-rows sampling form switches the fixed extent", "[unit][sys][recipe-form]") {
@@ -112,12 +111,38 @@ TEST_CASE("a malformed form is refused", "[unit][sys][recipe-form]") {
     auto zero_denominator = wormedit::ui::timing_recipe_form_t::from(recipe);
     set(zero_denominator.shape, "1", "0");
     CHECK_FALSE(recipe_from_form(zero_denominator, recipe).has_value());
+    set(zero_denominator.shape, "1", "-2");
+    CHECK_FALSE(recipe_from_form(zero_denominator, recipe).has_value());
     auto bad_enum = wormedit::ui::timing_recipe_form_t::from(recipe);
     bad_enum.curve = static_cast<wormedit::sv_recipe_curve_t>(9);
     CHECK_FALSE(recipe_from_form(bad_enum, recipe).has_value());
     auto too_many = wormedit::ui::timing_recipe_form_t::from(recipe);
     std::snprintf(too_many.fixed_point_count, sizeof(too_many.fixed_point_count), "4294967296");
     CHECK_FALSE(recipe_from_form(too_many, recipe).has_value());
+}
+
+TEST_CASE("postprocess stages round-trip through the form", "[unit][sys][recipe-form]") {
+    auto recipe = sample_recipe();
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::multiply, .value = {3, 2}},
+                          {.kind = sv_recipe_postprocess_kind_t::normalize,
+                           .mode = sv_recipe_normalization_t::preserve_average, .value = {1, 1}}};
+    const auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    REQUIRE(form.postprocess.size() == 2);
+    CHECK(std::strcmp(form.postprocess[0].value.text, "1.5") == 0);
+    CHECK(recipe_from_form(form, recipe) == std::optional{recipe});
+}
+
+TEST_CASE("form values accept decimals, and removing a stage removes it", "[unit][sys][recipe-form]") {
+    auto recipe = sample_recipe();
+    recipe.postprocess = {{.kind = sv_recipe_postprocess_kind_t::multiply, .value = {3, 2}},
+                          {.kind = sv_recipe_postprocess_kind_t::normalize, .value = {1, 1}}};
+    auto form = wormedit::ui::timing_recipe_form_t::from(recipe);
+    std::snprintf(form.value_to.text, sizeof(form.value_to.text), " 0.125 ");
+    form.postprocess.erase(form.postprocess.begin());
+    const auto back = recipe_from_form(form, recipe);
+    REQUIRE(back.has_value());
+    CHECK((back->parameters.value_to == signed_rational_t{1, 8}));
+    CHECK((back->postprocess == std::vector{recipe.postprocess.back()}));
 }
 
 TEST_CASE("a Lua expression recipe keeps its source and parameters through the form",

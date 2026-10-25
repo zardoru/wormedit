@@ -248,8 +248,7 @@ auto recipe_by_id(const chart_document_t& chart, recipe_id_t id) -> const sv_rec
 
 auto is_valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) -> bool {
     const auto valid =
-        static_cast<unsigned int>(recipe.output) <=
-            static_cast<unsigned int>(sv_recipe_output_t::speeds) &&
+        is_known_sv_recipe_output(recipe.output) &&
         static_cast<unsigned int>(recipe.curve) <=
             static_cast<unsigned int>(sv_recipe_curve_t::lua_expression) &&
         static_cast<unsigned int>(recipe.sampling.mode) <=
@@ -1436,7 +1435,7 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
                              const sv_recipe_prepared_t* prepared_candidate = nullptr)
     -> sv_recipe_compilation_outcome_t {
     sv_recipe_compilation_outcome_t result{.value = {.output = output}};
-    if (static_cast<unsigned int>(output) > static_cast<unsigned int>(sv_recipe_output_t::speeds)) {
+    if (!is_known_sv_recipe_output(output)) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "SV compilation requested an unknown output family");
         return result;
@@ -1482,7 +1481,7 @@ auto sv_recipe_compiled_output_t::from(const chart_document_t& chart, sv_recipe_
 auto sv_recipe_compiled_output_t::from(const chart_document_t& chart, sv_recipe_output_t output,
     std::span<const sv_recipe_prepared_t> recipes) -> sv_recipe_compilation_outcome_t {
     sv_recipe_compilation_outcome_t result{.value = {.output = output}};
-    if (static_cast<unsigned int>(output) > static_cast<unsigned int>(sv_recipe_output_t::speeds)) {
+    if (!is_known_sv_recipe_output(output)) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "SV compilation requested an unknown output family");
         return result;
@@ -1741,7 +1740,7 @@ auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
     if (ranges.empty()) {
         return true;
     }
-    const auto points = compiled_points_for_export(chart, sv_recipe_output_t::scrolls, diagnostics);
+    const auto points = compiled_points_for_export(chart, sv_recipe_output_t::sv, diagnostics);
     if (!points.has_value()) {
         return false;
     }
@@ -1815,11 +1814,6 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
         result.value = std::move(baked);
         return result;
     }
-    for (auto& recipe : baked.sv_recipes) {
-        if (recipe.output == sv_recipe_output_t::sv) {
-            recipe.output = sv_recipe_output_t::scrolls;
-        }
-    }
     for (const auto& recipe : baked.sv_recipes) {
         if (recipe.enabled) {
             const auto diagnostics = validate_sv_recipe(baked, recipe);
@@ -1842,7 +1836,7 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
         return result;
     }
     auto next_id = first_id->value;
-    const auto scroll_ranges = active_recipe_ranges(baked, sv_recipe_output_t::scrolls, index);
+    const auto scroll_ranges = active_recipe_ranges(baked, sv_recipe_output_t::sv, index);
     const auto speed_ranges = active_recipe_ranges(baked, sv_recipe_output_t::speeds, index);
     if (!bake_scroll_events(baked, index, scroll_ranges, next_id, result.diagnostics) ||
         !bake_speed_events(baked, index, speed_ranges, next_id, result.diagnostics)) {

@@ -1022,7 +1022,7 @@ bool populate_semantic_layer_palette(
 // timing lane, so only vertical geometry is projected here.
 
 
-// Stored SV recipes as areas in the SV (sv/scrolls output) or SPD (speeds output) lane, each with
+// Stored SV recipes as areas in the SV (sv output) or SPD (speeds output) lane, each with
 // its relative value as a line graph normalized to what is visible.
 
 // SPEEDS transitions as spans in the SPD lane, those that reach the viewport.
@@ -2008,7 +2008,8 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
                                   pixels_per_row, canvas_rows, application_state.project.timing_recipe.recipe_selected,
                                   application_state.project.timing_recipe.recipe_preview ? &*application_state.project.timing_recipe.recipe_preview
                                                                    : nullptr);
-    populate_compose_recipe_form(flattened, chart, application_state, view);
+    populate_compose_recipe_form(flattened, chart, application_state,
+                                 interaction_view.supported_snap_denominators, view);
     prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
     const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
         {.bgm_lane_widths_pixels = cache.scene.bgm_lane_widths_pixels});

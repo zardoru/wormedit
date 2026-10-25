@@ -11,8 +11,7 @@ struct timing_category_info_t {
     [[nodiscard]] auto requires_link_confirmation(const chart_document_t&) const -> bool;
     [[nodiscard]] static constexpr auto for_recipe(sv_recipe_output_t output) -> timing_category_t {
         switch (output) {
-        case sv_recipe_output_t::sv:
-        case sv_recipe_output_t::scrolls: return timing_category_t::scroll;
+        case sv_recipe_output_t::sv: return timing_category_t::scroll;
         case sv_recipe_output_t::speeds: return timing_category_t::speed;
         }
         return timing_category_t::count;

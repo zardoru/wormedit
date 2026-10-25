@@ -1001,7 +1001,7 @@ TEST_CASE("StepMania export bakes parametric SV recipes into SCROLLS",
         .id = wormedit::recipe_id_t{900001},
         .name = "export guard",
         .range = {{chart.measures[0].id, 0}, {chart.measures[1].id, 0}},
-        .output = wormedit::sv_recipe_output_t::scrolls,
+        .output = wormedit::sv_recipe_output_t::sv,
         .curve = wormedit::sv_recipe_curve_t::constant,
         .parameters = {.value_from = {2, 1}},
     });

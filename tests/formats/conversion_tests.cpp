@@ -831,7 +831,7 @@ void add_linked_scroll_recipe(wormedit::test::timing_links_fixture_t& fixture, s
     transaction.document().find_chart(fixture.source_id)->sv_recipes.push_back({.id = recipe_id_t{90001},
         .name = "Linked constant scroll", .range = {.begin = {.measure = source.measures.front().id},
             .end = {.measure = source.measures.front().id, .row = end_row}},
-        .output = sv_recipe_output_t::scrolls, .curve = sv_recipe_curve_t::constant,
+        .output = sv_recipe_output_t::sv, .curve = sv_recipe_curve_t::constant,
         .parameters = {.value_from = {2, 1}, .value_to = {2, 1}}});
     const auto staged = stage_timing_link_edit(transaction, fixture.target_id,
         {.category = timing_category_t::scroll, .source = fixture.source_id});

@@ -263,9 +263,9 @@ struct sv_recipe_draft_preview_t {
     std::span<const diagnostic_t> recent_diagnostics = {}) -> sv_recipe_draft_preview_t;
 
 
-// Builds an export-only chart copy. Generic SV and SCROLLS recipes become
-// ordinary instantaneous scroll events; SPEEDS recipes become ordinary speed
-// events. The source chart remains parametric and unchanged.
+// Builds an export-only chart copy. SV recipes become ordinary instantaneous
+// scroll events; SPEEDS recipes become ordinary speed events. The source chart
+// remains parametric and unchanged.
 [[nodiscard]] auto bake_sv_recipes_for_export(const chart_document_t& chart)
     -> sv_recipe_export_bake_outcome_t;
 

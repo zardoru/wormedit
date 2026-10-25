@@ -5,7 +5,9 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <string>
 
 namespace wormedit::ui::chrome {
 namespace {
@@ -322,6 +324,71 @@ auto Segmented::render(nk_context* context) const -> int {
     }
     tooltip_if_hovered(context, hit, tooltip);
     return enabled ? result : selected;
+}
+
+namespace {
+
+auto is_number_field_hovered(const nk_context* context, struct nk_rect bounds) -> bool {
+    if (!context->current || !context->current->layout) return false;
+    if (context->active != context->current && !popup_panel(context)) return false;
+    return nk_input_is_mouse_hovering_rect(&context->input, bounds) &&
+           nk_input_is_mouse_hovering_rect(&context->input, context->current->layout->clip);
+}
+
+// Arms on a press inside the field, starts once the pointer has moved a few pixels, and reports
+// whole steps as the pointer travels; a release ends it.
+auto track_number_drag(nk_context* context, const NumberField& field, struct nk_rect bounds)
+    -> NumberField::Result {
+    NumberField::Result result;
+    auto& drag = *field.drag;
+    const auto& input = context->input;
+    if (nk_input_is_mouse_pressed(&input, NK_BUTTON_LEFT) && is_number_field_hovered(context, bounds))
+        drag = {.field = field.text, .anchor_y = input.mouse.pos.y};
+    if (drag.field != field.text) return result;
+    if (!nk_input_is_mouse_down(&input, NK_BUTTON_LEFT)) {
+        result.settled = drag.dragging;
+        drag = {};
+        return result;
+    }
+    const auto travel = drag.anchor_y - input.mouse.pos.y;
+    if (!drag.dragging && std::abs(travel) >= metrics::gap_small) {
+        drag.dragging = true;
+        nk_edit_unfocus(context);
+    }
+    if (!drag.dragging) return result;
+    const auto total = static_cast<int>(travel / NumberField::pixels_per_step);
+    result.steps = total - drag.applied_steps;
+    result.fine = nk_input_is_key_down(&input, NK_KEY_SHIFT) != 0;
+    drag.applied_steps = total;
+    return result;
+}
+
+// Small up and down marks at the right edge say the field can be dragged.
+void draw_number_drag_marks(nk_context* context, struct nk_rect bounds, bool active) {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto tint = active ? color(UiColor::text_bright) : color(UiColor::text_muted);
+    const auto x = bounds.x + bounds.w - metrics::gap_medium;
+    const auto y = bounds.y + bounds.h * 0.5f;
+    nk_fill_triangle(canvas, x - 3.0f, y - 2.0f, x + 3.0f, y - 2.0f, x, y - 6.0f, tint);
+    nk_fill_triangle(canvas, x - 3.0f, y + 2.0f, x + 3.0f, y + 2.0f, x, y + 6.0f, tint);
+}
+
+} // namespace
+
+auto NumberField::render(nk_context* context) const -> Result {
+    const auto bounds = nk_widget_bounds(context);
+    auto result = drag ? track_number_drag(context, *this, bounds) : Result{};
+    const std::string before{text};
+    const auto flags = worm_ui_nuklear_text_field(context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
+                                                  text, capacity, filter);
+    result.edited = before != text;
+    result.settled = result.settled || (flags & (NK_EDIT_COMMITED | NK_EDIT_DEACTIVATED)) != 0;
+    const bool dragging = drag && drag->field == text && drag->dragging;
+    const bool hovered = is_number_field_hovered(context, bounds);
+    if (hovered || dragging) draw_number_drag_marks(context, bounds, dragging);
+    if (hovered && !dragging && tooltip && tooltip[0] && nuklear::tooltip::hovered(context, bounds))
+        nuklear::tooltip::text(context, tooltip);
+    return result;
 }
 
 namespace {

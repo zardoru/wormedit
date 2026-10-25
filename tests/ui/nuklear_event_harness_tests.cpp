@@ -8966,6 +8966,8 @@ TEST_CASE("Compose recipe inspector duplicates and disables the first order boun
     t422_fixture_t fixture{recipe_management_song()};
     prepare_recipe_inspector(fixture);
     CHECK_FALSE(click_recipe(fixture.harness, "Earlier"));
+    (void)click_button(fixture.harness, "More");
+    (void)fixture.harness.frame();
     const auto duplicated = click_recipe(fixture.harness, "Duplicate");
     REQUIRE(duplicated);
     CHECK(fixture.dispatch(*duplicated) == "SV recipe duplicated.");

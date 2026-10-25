@@ -385,7 +385,20 @@ auto migrate_v18_to_v19(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 18> released_migrations{{
+// Schema 20 folds the former `scrolls` output (1) into `sv` (0): both always multiplied the
+// chart's scroll events, but were composed as separate families until export.
+void migrate_scrolls_output_recipe(nlohmann::json& recipe) {
+    if (recipe.contains("output") && recipe.at("output") == 1U) recipe["output"] = 0U;
+}
+
+auto migrate_v19_to_v20(nlohmann::json& document) -> std::string {
+    if (auto error = migrate_chart_recipes(document, migrate_scrolls_output_recipe); !error.empty())
+        return error;
+    migrate_scoped_recipes(document, migrate_scrolls_output_recipe);
+    return {};
+}
+
+constexpr std::array<migration_t, 19> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -404,6 +417,7 @@ constexpr std::array<migration_t, 18> released_migrations{{
     {16, &migrate_v16_to_v17},
     {17, &migrate_v17_to_v18},
     {18, &migrate_v18_to_v19},
+    {19, &migrate_v19_to_v20},
 }};
 
 } // namespace

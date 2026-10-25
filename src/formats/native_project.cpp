@@ -1062,7 +1062,7 @@ auto is_valid_chart_effect_domains(const chart_document_t& chart) -> bool {
         return false;
     }
     if (!std::ranges::all_of(chart.sv_recipes, [](const auto& recipe) {
-            return is_enum_at_most(recipe.output, sv_recipe_output_t::speeds) &&
+            return is_known_sv_recipe_output(recipe.output) &&
                    is_enum_at_most(recipe.curve, sv_recipe_curve_t::lua_expression) &&
                    is_enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive) &&
                    (!recipe.lua || is_enum_at_most(recipe.lua->mode, sv_recipe_lua_mode_t::ordered));

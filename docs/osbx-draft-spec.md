@@ -265,14 +265,14 @@ The editor validates and previews the typed diff. Commit applies it as one undoa
 
 ## Parametric scroll and speed generation
 
-Chart modules may generate generic SV events, StepMania `SCROLLS`, or StepMania `SPEEDS` from a function of normalized parameter `p` over a selected chart interval. `p = 0` is the interval start and `p = 1` is its end. The interval declares whether interpolation follows musical position, chart time, or audio time; musical position is the default for scroll authoring.
+Chart modules may generate SV events (osu! SV, StepMania `SCROLLS`) or StepMania `SPEEDS` from a function of normalized parameter `p` over a selected chart interval. `p = 0` is the interval start and `p = 1` is its end. The interval declares whether interpolation follows musical position, chart time, or audio time; musical position is the default for scroll authoring.
 
 Provisional Premake-style syntax:
 
 ```lua
 scroll_curve "chorus-rise"
   range { from = at_measure(32), to = at_measure(40), domain = "beat" }
-  output "scrolls" -- "sv", "scrolls", or "speeds"
+  output "sv" -- "sv" or "speeds"; "scrolls" is another name for "sv"
   sampling { mode = "adaptive", tolerance = 0.002, max_points = 256 }
   values(curve.exponential {
     from = 0.75,

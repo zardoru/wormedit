@@ -131,7 +131,7 @@ auto rich_bmson_song() -> wormedit::song_document_t {
         .id = wormedit::recipe_id_t{10000},
         .name = "chorus scroll",
         .range = {{first_measure, 0}, {first_measure, 1}},
-        .output = wormedit::sv_recipe_output_t::scrolls,
+        .output = wormedit::sv_recipe_output_t::sv,
         .curve = wormedit::sv_recipe_curve_t::linear,
         .parameters = {.value_from = {3, 4}, .value_to = {2, 1}},
     });

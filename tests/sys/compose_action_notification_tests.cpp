@@ -787,15 +787,15 @@ TEST_CASE("Compose recipe form preview and edit preserve typed helper outcomes",
         check_action(fixture.history.undo.empty());
     }
     SECTION("invalid syntax") {
-        std::snprintf(action.compose_recipe_form.value_to.numerator, sizeof(action.compose_recipe_form.value_to.numerator), "%s", "bad");
-        check_action(fixture.dispatch(action) == "Values must be exact fractions and counts must be whole numbers.");
+        std::snprintf(action.compose_recipe_form.value_to.text, sizeof(action.compose_recipe_form.value_to.text), "%s", "bad");
+        check_action(fixture.dispatch(action) == "Values must be numbers or fractions such as 0.5 or 1/2, and counts whole numbers.");
         expected = notification_severity_t::warning;
         source = notification_source_t::edit;
         check_action(fixture.history.undo.empty());
     }
     SECTION("committed form") {
         action.compose_action = WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM;
-        std::snprintf(action.compose_recipe_form.value_to.numerator, sizeof(action.compose_recipe_form.value_to.numerator), "%s", "3");
+        std::snprintf(action.compose_recipe_form.value_to.text, sizeof(action.compose_recipe_form.value_to.text), "%s", "3");
         check_action(fixture.dispatch(action) == "SV recipe updated.");
         expected = notification_severity_t::success;
         source = notification_source_t::edit;

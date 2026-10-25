@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace wormedit {
@@ -30,5 +31,18 @@ template <class Integer>
 [[nodiscard]] auto parse_exact_decimal(std::string_view text,
     std::optional<std::uint32_t> maximum_exponent = std::nullopt)
     -> std::optional<signed_rational_t>;
+
+// An exact value typed as a decimal ("-0.25", "1e-3") or a fraction ("-1/4"), with surrounding
+// whitespace ignored. Fractions take a signed integer over a positive one. The result is reduced.
+[[nodiscard]] auto parse_exact_rational(std::string_view text) -> std::optional<signed_rational_t>;
+
+// The text parse_exact_rational reads back to `value`: a terminating decimal of at most
+// `maximum_fraction_digits` digits, otherwise the reduced fraction.
+[[nodiscard]] auto format_exact_rational(signed_rational_t value,
+    std::size_t maximum_fraction_digits = 6) -> std::string;
+
+// `value + count * step`, exactly; nothing when the result does not fit.
+[[nodiscard]] auto offset_by_steps(signed_rational_t value, signed_rational_t step,
+    std::int64_t count) -> std::optional<signed_rational_t>;
 
 } // namespace wormedit

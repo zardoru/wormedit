@@ -580,6 +580,7 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
 void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
+                                  std::span<const std::uint64_t> snap_denominators,
                                   wormedit::ui::compose_view_t& view);
 
 auto converted_bgm_preview_count(const wormedit::editor_interaction_state_t& state) -> std::size_t;

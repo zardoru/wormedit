@@ -1,5 +1,6 @@
 #include "sys/compose/views/compose_recipe_areas.h"
 
+#include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -84,11 +85,29 @@ TEST_CASE("recipe areas skip invalid ranges and are bounded", "[unit][sys][recip
     CHECK(cut.truncated);
 }
 
-TEST_CASE("recipe graphs are continuous lines normalized to the visible window",
+TEST_CASE("SV recipe graphs hold each value until the next point",
           "[unit][sys][recipe-areas]") {
     auto chart = base_chart();
     chart.sv_recipes.push_back(linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1}));
     const auto area = project(chart).areas.front();
+
+    // Points at rows 0, 480 and 960 (1, 2, 3): the span shows 1 then 2, the end point is outside.
+    const auto full = build_recipe_graph(area, 0, 960, y_of);
+    CHECK(full.maximum == Catch::Approx(2.0));
+    REQUIRE(full.points.size() == 4);
+    // The change at row 480 is a vertical edge from the held 1 to 2.
+    CHECK(full.points[1].y == full.points[2].y);
+    CHECK((std::array{full.points[1].x, full.points[2].x, full.points[3].x} == std::array{0.0, 1.0, 1.0}));
+    // A window inside one step is flat.
+    CHECK(build_recipe_graph(area, 500, 900, y_of).points.front().x == 0.5);
+}
+
+TEST_CASE("SPEEDS recipe graphs are continuous lines normalized to the visible window",
+          "[unit][sys][recipe-areas]") {
+    auto chart = base_chart();
+    chart.sv_recipes.push_back(linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1}));
+    auto area = project(chart).areas.front();
+    area.output = sv_recipe_output_t::speeds;
 
     const auto full = build_recipe_graph(area, 0, 960, y_of);
     CHECK(full.minimum == Catch::Approx(1.0));

@@ -2752,6 +2752,53 @@ TEST_CASE("Compose projects SPEEDS transitions as spans and names the transition
     CHECK(named);
 }
 
+namespace {
+// "rise" (7001), a later SV recipe sharing its last rows (7002), and the same rows as SPEEDS (7003).
+auto overlapping_recipe_song() -> song_document_t {
+    auto song = recipe_test_song();
+    auto& chart = song.charts.front();
+    auto overlapping = chart.sv_recipes.front();
+    overlapping.id = recipe_id_t{7002};
+    overlapping.range.begin.row = 600;
+    auto other_family = overlapping;
+    other_family.id = recipe_id_t{7003};
+    other_family.output = sv_recipe_output_t::speeds;
+    other_family.transition_duration = rational_t{0, 1};
+    other_family.transition_is_seconds = false;
+    chart.sv_recipes.push_back(overlapping);
+    chart.sv_recipes.push_back(other_family);
+    return song;
+}
+}
+TEST_CASE("the selected recipe's entries mark recipes sharing its rows and output family",
+          "[sys][recipe-areas][recipe-form]") {
+    compose_test_fixture_t fixture{overlapping_recipe_song()};
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
+    fixture.project();
+    const auto& entries = fixture.flattened.view.compose.recipe_entries;
+    REQUIRE(entries.size() == 3);
+    CHECK(entries[0].overlaps_selection);
+    CHECK(entries[1].overlaps_selection);
+    CHECK_FALSE(entries[2].overlaps_selection);
+}
+
+TEST_CASE("the selected recipe's form view carries its whole shape and the chart's grids",
+          "[sys][recipe-areas][recipe-form]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.application.project.timing_recipe.recipe_selected = 7001;
+    fixture.project();
+    const auto& form = fixture.flattened.view.compose.recipe_form;
+    // Three points (1, 2, 3) step across the whole span; the end point lies past it.
+    REQUIRE(form.shape_points.size() >= 2);
+    CHECK(form.shape_points.front().position == 0.0);
+    CHECK(form.shape_points.back().position == 1.0);
+    CHECK(form.shape_points.back().value == 1.0);
+    CHECK(form.shape_maximum == 2.0);
+    const auto measure = fixture.history.document.charts.front().divisions_per_standard_measure;
+    CHECK(std::ranges::any_of(form.spacing_options,
+        [&](const auto& option) { return option.denominator * option.rows == measure; }));
+}
+
 TEST_CASE("the selected recipe's form and its unapplied preview reach the Compose view",
           "[sys][recipe-areas][recipe-form]") {
     compose_test_fixture_t fixture{recipe_test_song()};
@@ -2766,13 +2813,13 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK(form_view.recipe_id == recipe_id_t{7001});
     CHECK(std::string(form_view.name) == "rise");
     CHECK(form_view.form.curve == wormedit::sv_recipe_curve_t::linear);
-    CHECK(std::string(form_view.form.value_to.numerator) == "3");
+    CHECK(std::string(form_view.form.value_to.text) == "3");
     CHECK(form_view.status_text.empty());
 
     // A preview replaces that recipe's graph until the selection or the document moves on.
     const auto& chart = fixture.history.document.charts.front();
     auto form = wormedit::ui::timing_recipe_form_t::from(chart.sv_recipes.front());
-    std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
+    std::snprintf(form.value_to.text, sizeof(form.value_to.text), "9");
     fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
@@ -2780,7 +2827,7 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
 
     form.curve = wormedit::sv_recipe_curve_t::exponential;
-    std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
+    std::snprintf(form.shape.text, sizeof(form.shape.text), "99");
     fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
@@ -8061,7 +8108,7 @@ TEST_CASE("Remaining Compose leaf families refill retained text without warmed a
         compose_projection_detail::populate_quantize_preview(fixture.cache, fixture.history.document,
             stored, fixture.history.document.revision, *fixture.interaction, fixture.application, view);
         compose_projection_detail::populate_compose_recipe_form(fixture.flattened, stored,
-            fixture.application, view);
+            fixture.application, fixture.interaction->supported_snap_denominators, view);
 
         return bookmarks && sections && layers;
     };
@@ -8086,7 +8133,7 @@ void refill_lua_recipe_views(compose_test_fixture_t& fixture) {
     auto& view = fixture.flattened.view.compose;
     const auto& state = fixture.application.project.timing_recipe;
     compose_projection_detail::populate_compose_recipe_form(fixture.flattened, chart,
-        fixture.application, view);
+        fixture.application, interaction.supported_snap_denominators, view);
     compose_projection_detail::populate_compose_recipe_areas(fixture.flattened,
         chart, fixture.cache, interaction, view, false, compose_pixels_per_row(chart, interaction),
         fixture.cache.scene.index.value()->measures.total_rows, state.recipe_selected,
@@ -8134,7 +8181,7 @@ TEST_CASE("Lua inspector and prepared recipe graph reuse their warmed buffers", 
     fixture.history.document.charts.front().sv_recipes.front().lua->parameters.front().value = {7, 2};
     ++fixture.history.document.revision;
     fixture.project();
-    expect_compose_test(std::strcmp(form.lua_parameters.front().value.numerator, "7") == 0);
+    expect_compose_test(std::strcmp(form.lua_parameters.front().value.text, "3.5") == 0);
 }
 
 #if defined(WORMEDIT_HAS_LUA)

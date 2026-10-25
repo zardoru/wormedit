@@ -148,7 +148,7 @@ struct compose_sv_graph_point_view_t {
 };
 } // namespace wormedit::ui
 
-/* One stored SV recipe, shown as an area in its timing lane (SV for sv/scrolls output, SPD for
+/* One stored SV recipe, shown as an area in its timing lane (SV for sv output, SPD for
    speeds). Only top/bottom of bounds are meaningful. The recipe's own relative value is drawn as a
    continuous line normalized to the visible range: graph_count vertices starting at graph_first
    in the view's recipe_graph_points. */
@@ -160,6 +160,9 @@ enum class compose_recipe_command_t : std::uint8_t {
 struct compose_recipe_entry_view_t {
     wormedit::recipe_id_t id{};
     std::string label;
+    // Shares rows and an output family with the selected recipe (or is it), so their stored
+    // order decides which value wins.
+    bool overlaps_selection{};
     auto operator==(const compose_recipe_entry_view_t&) const -> bool = default;
 };
 
@@ -203,9 +206,9 @@ struct compose_speed_span_view_t {
 namespace wormedit::ui {
 enum class timing_recipe_fixed_extent_t { point_count, step_rows };
 
+// One exact value as typed: a decimal or a fraction (see parse_exact_rational).
 struct timing_recipe_rational_text_t {
-    char numerator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES]{};
-    char denominator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES]{};
+    char text[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES]{};
     auto operator==(const timing_recipe_rational_text_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
@@ -221,6 +224,13 @@ struct timing_recipe_impulse_form_t {
     timing_recipe_rational_text_t area{};
     auto operator==(const timing_recipe_impulse_form_t&) const -> bool = default;
 };
+struct timing_recipe_postprocess_form_t {
+    wormedit::sv_recipe_postprocess_kind_t kind{wormedit::sv_recipe_postprocess_kind_t::multiply};
+    wormedit::sv_recipe_normalization_t mode{wormedit::sv_recipe_normalization_t::preserve_displacement};
+    wormedit::sv_recipe_bump_solve_t solve{wormedit::sv_recipe_bump_solve_t::y};
+    timing_recipe_rational_text_t value{};
+    auto operator==(const timing_recipe_postprocess_form_t&) const -> bool = default;
+};
 struct timing_recipe_form_t {
     char lua_source_reference[4097]{};
     char lua_entry_point[129]{"curve"};
@@ -229,6 +239,7 @@ struct timing_recipe_form_t {
     std::vector<timing_recipe_lua_parameter_form_t> lua_parameters;
     std::vector<std::uint32_t> lua_cycles;
     std::vector<timing_recipe_impulse_form_t> impulses;
+    std::vector<timing_recipe_postprocess_form_t> postprocess;
     timing_recipe_rational_text_t finite_box_width_milliseconds{};
     bool lua_reload{};
     wormedit::sv_recipe_output_t output{};
@@ -268,8 +279,28 @@ struct compose_recipe_impulse_box_view_t {
     double raw_area{}, area{}, realized_area{}, area_error{}, width_milliseconds{};
     auto operator==(const compose_recipe_impulse_box_view_t&) const -> bool = default;
 };
+// A whole-note grid the recipe can sample on, as rows between points ("1/16" is 1/16 of a
+// standard measure).
+struct compose_recipe_spacing_view_t {
+    std::uint64_t denominator{};
+    std::uint64_t rows{};
+    auto operator==(const compose_recipe_spacing_view_t&) const -> bool = default;
+};
+// A vertex of the selected recipe's whole-span shape: `position` and `value` both in [0, 1],
+// the value normalized to the span's own range (a flat curve sits at 0.5).
+struct compose_recipe_shape_point_view_t {
+    double position{};
+    double value{};
+    auto operator==(const compose_recipe_shape_point_view_t&) const -> bool = default;
+};
 struct compose_recipe_form_view_t {
     std::vector<compose_recipe_sample_view_t> sampled_points;
+    std::vector<compose_recipe_spacing_view_t> spacing_options;
+    std::vector<compose_recipe_shape_point_view_t> shape_points;
+    double shape_minimum{};
+    double shape_maximum{};
+    // The shape and lane show the edited candidate rather than the stored recipe.
+    bool previewing{};
     std::vector<compose_recipe_impulse_box_view_t> impulse_boxes;
     std::size_t composed_point_count{};
     bool evaluation_busy{};

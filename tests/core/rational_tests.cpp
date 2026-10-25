@@ -238,3 +238,41 @@ TEST_CASE("unsigned exact subtraction rejects negatives and malformed fractions 
     REQUIRE(zero);
     CHECK(zero->numerator == 0);
 }
+
+TEST_CASE("Exact rational text reads decimals and signed fractions",
+          "[unit][core][rational][numeric-text]") {
+    const std::pair<std::string_view, signed_rational_t> accepted[] = {
+        {" -3/6 ", {-1, 2}}, {"0.25", {1, 4}}, {"2", {2, 1}}};
+    for (const auto& [text, expected] : accepted) {
+        INFO(text);
+        CHECK(parse_exact_rational(text) == expected);
+    }
+    for (const auto text : {"", "1/", "/2", "1/0", "1/-2", "1/+2", "a", "1//2", "0.5/2"}) {
+        INFO(text);
+        CHECK_FALSE(parse_exact_rational(text));
+    }
+}
+
+TEST_CASE("Exact rational text writes short decimals or fractions that read back",
+          "[unit][core][rational][numeric-text]") {
+    struct case_t {
+        signed_rational_t value;
+        std::string_view text;
+        signed_rational_t reduced;
+    };
+    const case_t cases[] = {{{-1, 4}, "-0.25", {-1, 4}}, {{6, 3}, "2", {2, 1}}, {{1, 3}, "1/3", {1, 3}},
+                            {{-2, 6}, "-1/3", {-1, 3}}, {{0, 1}, "0", {0, 1}}};
+    for (const auto& [value, text, reduced] : cases) {
+        INFO(text);
+        CHECK(format_exact_rational(value) == text);
+        CHECK(parse_exact_rational(text) == reduced);
+    }
+}
+
+TEST_CASE("Exact steps add whole multiples of a step without leaving the exact domain",
+          "[unit][core][rational]") {
+    CHECK((offset_by_steps({1, 1}, {1, 10}, 3) == signed_rational_t{13, 10}));
+    CHECK((offset_by_steps({1, 4}, {1, 16}, -5) == signed_rational_t{-1, 16}));
+    CHECK_FALSE(offset_by_steps({INT64_MAX, 1}, {1, 1}, 1));
+    CHECK_FALSE(offset_by_steps({0, 1}, {1, 0}, 1));
+}

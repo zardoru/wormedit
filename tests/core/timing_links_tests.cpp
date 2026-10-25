@@ -125,7 +125,7 @@ TEST_CASE("Linked scroll recipes map spans and fixed row steps with stable recip
     auto& target = song.charts.back();
     source.sv_recipes.push_back({.id = recipe_id_t{31}, .name = "Scroll", .range = {
         .begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 480}},
-        .output = sv_recipe_output_t::scrolls, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
+        .output = sv_recipe_output_t::sv, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
     auto recipe = source.sv_recipes.front();
     recipe.id = recipe_id_t{32};
     recipe.range = {.begin = {.measure = measure_id_t{21}, .row = 0}, .end = {.measure = measure_id_t{22}, .row = 240}};
@@ -392,7 +392,7 @@ namespace {
 void add_source_scroll_recipe(song_document_t& song) {
     song.charts.front().sv_recipes.push_back({.id = recipe_id_t{41}, .name = "Linked scroll",
         .range = {.begin = {.measure = measure_id_t{11}, .row = 0}, .end = {.measure = measure_id_t{12}, .row = 480}},
-        .output = sv_recipe_output_t::scrolls, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
+        .output = sv_recipe_output_t::sv, .sampling = {.fixed_point_count = std::nullopt, .fixed_step_rows = 240}});
 }
 void link_scroll_recipe(document_history_t& history) {
     require_timing_command(apply_timing_link_edit(history, chart_stamp_t::from(history.document, chart_id_t{20}),
@@ -428,7 +428,7 @@ TEST_CASE("Changing a local recipe output detaches both affected linked categori
     require_timing_command(transaction.commit("Change local recipe output"));
     CHECK(history.document.charts.back().timing_links.value(timing_category_t::scroll)->is_local_override);
     CHECK(history.document.charts.back().timing_links.value(timing_category_t::speed)->is_local_override);
-    CHECK(history.document.charts.front().sv_recipes.front().output == sv_recipe_output_t::scrolls);
+    CHECK(history.document.charts.front().sv_recipes.front().output == sv_recipe_output_t::sv);
     CHECK(history.undo.size() == 2);
     require_valid_links(history.document);
 }

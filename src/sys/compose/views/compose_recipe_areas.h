@@ -10,8 +10,8 @@
 namespace wormedit::sys {
 
 // A stored SV recipe as Compose shows it: an area over its rows with the recipe's own relative
-// value drawn as a line graph. Recipes are continuous, so unlike the latched SV step graph the
-// graph connects the sampled points with straight lines.
+// value drawn as a graph of its sampled points. SV and scroll values hold until the next point,
+// so their graph steps; SPEEDS ease toward each value, so theirs joins the points with lines.
 struct recipe_value_point_t {
     std::uint64_t row{};
     double value{};
@@ -62,8 +62,8 @@ struct recipe_graph_t {
     double maximum{1.0};
 };
 
-// The part of `area` between first_row and last_row (clipped by interpolating at the window
-// edges), normalized to the values that remain visible; a single value centers at 0.5.
+// The part of `area` between first_row and last_row (clipped at the window edges), normalized
+// to the values that remain visible; a single value centers at 0.5.
 // `row_to_y` maps an absolute row to viewport pixels in drawn orientation.
 template <typename RowToY>
 [[nodiscard]] auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row,

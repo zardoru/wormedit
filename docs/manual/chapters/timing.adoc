@@ -145,17 +145,24 @@ were in.
 For osu!mania and StepMania scroll effects, select an area, right-click and choose *Add SV recipe*.
 A recipe is a scroll curve over that area, kept as a curve rather than a cloud of SV points:
 
-* *Shape*: constant, linear, exponential or a curve, with its values.
-* *Output*: osu!mania/StepMania scrolls (`#SCROLLS`) or StepMania speeds (`#SPEEDS`).
-* *Sampling*: adaptive (with a tolerance) or fixed steps; points are only generated when the chart
+* *Output*: *SV* (osu!mania SV, StepMania `#SCROLLS`) or *Speeds* (StepMania `#SPEEDS`).
+* *Curve*: constant, linear, exponential, bump or a Lua function, with its values. A small plot
+above the values shows the whole span as it will be written.
+* *Points*: *Count* (evenly spaced), *Grid* (one per line of a snap grid, such as every 1/16) or
+*Auto* (added where the curve bends, up to a maximum). Points are only generated when the chart
 is exported.
 
 *Add SPEEDS span* does the same for a StepMania speed change across the area.
 
-Recipes appear as areas in the SV (or SPD) lane. Select one to edit its form in the inspector
-(*Apply* keeps the changes, *Revert* drops them); its menu enables, disables or deletes it.
+Recipes appear as areas in the SV (or SPD) lane. Select one to edit it in the inspector. Values
+accept decimals or fractions (`0.5`, `1/2`); drag a value up or down to change it, holding Shift
+for finer steps. Edits preview in the lane as you make them and apply as one undo step when you
+press Enter, leave the field, release a drag or pick an option; Undo reverts them. When values
+are rejected the inspector says why and offers *Revert*. The header turns the recipe on or off,
+and *More* duplicates, materializes or deletes it. When recipes overlap, an *Order* row lists
+them; overlapping recipes multiply, and for Speeds the last one sets the transition.
 
-Stored recipes can also carry an ordered post-process pipeline, listed in the inspector.
+Under *Adjust*, a recipe can carry an ordered post-process pipeline.
 *Multiply* scales the batch. *Normalize displacement* (also called *Normalize average*)
 preserves the authored baseline's signed integral; *Normalize distance* preserves its
 absolute integral. Each accepts a target factor, defaulting to one. *Balance bump* keeps

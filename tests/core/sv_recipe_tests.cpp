@@ -1212,7 +1212,7 @@ TEST_CASE("prepared SV composition rejects a different geometry or output family
     REQUIRE(prepared.diagnostics.empty());
     if (scenario == 0) chart.id = chart_id_t{99};
     if (scenario == 1) chart.measures.front().definition = {{3, 2}, meter_t{6, 4}};
-    const auto output = scenario == 2 ? sv_recipe_output_t::scrolls : sv_recipe_output_t::sv;
+    const auto output = scenario == 2 ? sv_recipe_output_t::speeds : sv_recipe_output_t::sv;
     const auto compiled = sv_recipe_compiled_output_t::from(chart, output, std::span{&prepared.value, 1});
     REQUIRE_FALSE(compiled.diagnostics.empty());
     CHECK(compiled.diagnostics.front().code == diagnostic_code_t::invalid_binding);

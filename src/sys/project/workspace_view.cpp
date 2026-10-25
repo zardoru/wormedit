@@ -1230,6 +1230,8 @@ void wormedit::ui::compose_view_t::reset() {
         generator_ghosts,
         recipe_form.postprocess_labels,
         recipe_form.sampled_points,
+        recipe_form.spacing_options,
+        recipe_form.shape_points,
         recipe_form.form,
         sv_graph_points,
         speed_graph_points,

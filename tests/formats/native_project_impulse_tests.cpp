@@ -79,3 +79,32 @@ TEST_CASE("native impulse declarations reject invalid rational domains",
     SECTION("negative width") { recipe["finite_box_width_milliseconds"]["numerator"] = -1; }
     CHECK_FALSE(parse_native_project(encoded.dump()).value);
 }
+
+TEST_CASE("schema nineteen scrolls recipes load as SV recipes in charts and BMS scopes",
+          "[unit][format][native-project][sv-recipe][migration]") {
+    auto encoded = impulse_json();
+    auto& document = encoded["document"];
+    document["schema_version"] = 19U;
+    document["charts"][0]["sv_recipes"][0]["output"] = 1;
+    const auto loaded = parse_native_project(encoded.dump());
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->charts.front().sv_recipes.front().output == sv_recipe_output_t::sv);
+
+    auto recipe = impulse_json()["document"]["charts"][0]["sv_recipes"][0];
+    recipe["output"] = 1;
+    json payload = {{"type", "sv_recipe"}, {"data", recipe}};
+    json item = {{"value", {{"type", "native"}, {"data", {{"payload", payload}}}}}};
+    json node = {{"value", {{"type", "chart"}, {"data", {{"items", json::array({item})}}}}}};
+    json scoped = {{"schema_version", 19U}, {"charts", json::array()},
+        {"prepared_bms_programs", json::array({{{"nodes", json::array({node})}}})}};
+    REQUIRE(native_project_internal::migrate_document(scoped, 20, native_project_internal::default_migrations()));
+    CHECK(scoped["prepared_bms_programs"][0]["nodes"][0]["value"]["data"]["items"][0]["value"]["data"]
+              ["payload"]["data"]["output"] == 0);
+}
+
+TEST_CASE("current native recipes reject the retired scrolls output value",
+          "[unit][format][native-project][sv-recipe]") {
+    auto encoded = impulse_json();
+    encoded["document"]["charts"][0]["sv_recipes"][0]["output"] = 1;
+    CHECK_FALSE(parse_native_project(encoded.dump()).value);
+}

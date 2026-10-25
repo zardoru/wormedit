@@ -222,6 +222,36 @@ struct Segmented {
     auto render(nk_context* context) const -> int;
 };
 
+// The one number field being dragged, owned by the form that draws the fields.
+struct NumberDrag {
+    const void* field{};
+    float anchor_y{};
+    int applied_steps{};
+    bool dragging{};
+};
+
+// A text field for a number that can also be dragged: pressing it and moving the pointer up or
+// down steps the value, and a press without movement edits the text as usual. The caller owns
+// the value's meaning, so it receives steps and writes the new text itself.
+struct NumberField {
+    struct Result {
+        int steps{};       // up is positive; whole steps since the previous frame
+        bool fine{};       // Shift was held: the caller takes a smaller step
+        bool edited{};     // typed text changed
+        bool settled{};    // Enter, leaving the field, or releasing a drag
+    };
+    static constexpr float pixels_per_step = 6.0f;
+
+    char* text;
+    int capacity;
+    nk_plugin_filter filter;
+    NumberDrag* drag;
+    const char* tooltip{};
+
+    // Fills the next layout cell.
+    auto render(nk_context* context) const -> Result;
+};
+
 // One chip in the caller's current layout row (the grid uses the same visual style).
 struct Chip {
     const char* label;

@@ -1,5 +1,6 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/snap.h>
 #include "sys/compose/views/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
@@ -645,6 +646,43 @@ auto refill_recipe_area_preview(const wormedit::chart_document_t& chart,
 }
 } // namespace
 
+namespace {
+auto find_recipe_area(const wormedit::sys::recipe_areas_view_t& areas, std::uint64_t id)
+    -> const wormedit::sys::recipe_area_t* {
+    const auto found = std::ranges::find(areas.areas, id,
+        [](const auto& area) { return area.recipe.value; });
+    return found != areas.areas.end() ? &*found : nullptr;
+}
+
+auto is_overlapping(const wormedit::sys::recipe_area_t& left, const wormedit::sys::recipe_area_t& right) -> bool {
+    return left.output == right.output && left.begin_row < right.end_row &&
+        right.begin_row < left.end_row;
+}
+
+void mark_overlapping_recipe_entries(wormedit::ui::compose_view_t& view,
+    const wormedit::sys::recipe_areas_view_t& areas, std::uint64_t selected_recipe) {
+    const auto* selected = find_recipe_area(areas, selected_recipe);
+    for (auto& entry : view.recipe_entries) {
+        const auto* area = find_recipe_area(areas, entry.id.value);
+        entry.overlaps_selection = entry.id.value == selected_recipe ||
+            (selected && area && is_overlapping(*selected, *area));
+    }
+}
+
+// The selected recipe's whole span, independent of how much of it is scrolled into view.
+void build_recipe_shape_view(frontend_workspace_view_t& flattened,
+    const wormedit::sys::recipe_area_t& area, wormedit::ui::compose_recipe_form_view_t& form) {
+    const auto span = static_cast<double>(area.end_row - area.begin_row);
+    auto& graph = flattened.compose.timing_geometry.recipe_graph;
+    wormedit::sys::build_recipe_graph(area, area.begin_row, area.end_row, [&](std::uint64_t row) {
+        return span > 0.0 ? static_cast<double>(row - area.begin_row) / span : 0.0;
+    }, graph);
+    for (const auto& point : graph.points) form.shape_points.push_back({.position = point.y, .value = point.x});
+    form.shape_minimum = graph.minimum;
+    form.shape_maximum = graph.maximum;
+}
+} // namespace
+
 void populate_compose_recipe_areas(
     frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
@@ -653,7 +691,12 @@ void populate_compose_recipe_areas(
     const recipe_form_outcome_t* preview) {
     view.recipe_areas.clear();
     view.recipe_graph_points.clear();
+    view.recipe_form.shape_points.clear();
+    view.recipe_form.shape_minimum = view.recipe_form.shape_maximum = 0.0;
+    view.recipe_form.previewing = false;
     build_compose_recipe_entries(view, chart);
+    if (cache.timing.recipe_areas)
+        mark_overlapping_recipe_entries(view, *cache.timing.recipe_areas, selected_recipe);
 
     if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;
@@ -674,6 +717,10 @@ void populate_compose_recipe_areas(
         auto& previewed = flattened.compose.timing_geometry.recipe_preview;
         const auto& area = refill_recipe_area_preview(chart, stored_area, report, previewed)
             ? previewed : stored_area;
+        if (area.recipe.value == selected_recipe) {
+            build_recipe_shape_view(flattened, area, view.recipe_form);
+            view.recipe_form.previewing = previewing;
+        }
         if (area.end_row <= first || area.begin_row >= last)
             continue;
         const auto begin_y = row_to_y(area.begin_row);
@@ -767,9 +814,22 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
         preview.reset();
 }
 
+namespace {
+// The note grids the chart can snap to, as sampling steps in rows.
+void build_recipe_spacing_view(const wormedit::chart_document_t& chart,
+    std::span<const std::uint64_t> snap_denominators, wormedit::ui::compose_recipe_form_view_t& form) {
+    form.spacing_options.clear();
+    const auto measure = chart.divisions_per_standard_measure;
+    for (const auto denominator : snap_denominators)
+        if (const auto rows = wormedit::snap_step(measure, {.denominator = denominator}, measure))
+            form.spacing_options.push_back({.denominator = denominator, .rows = *rows});
+}
+} // namespace
+
 void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
+                                  std::span<const std::uint64_t> snap_denominators,
                                   wormedit::ui::compose_view_t& view) {
     view.recipe_form.visible = false;
     view.recipe_form.enabled = false;
@@ -792,6 +852,7 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
         return;
     }
     view.recipe_form.visible = true;
+    build_recipe_spacing_view(chart, snap_denominators, view.recipe_form);
     view.recipe_form.recipe_id.value = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;
     view.recipe_form.name = recipe->name;

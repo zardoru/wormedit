@@ -288,11 +288,16 @@ enum class stage_group_t {
     right,
 };
 
+// SV and scrolls are one family: both multiply the chart's scroll events. Stored value 1 was a
+// separate `scrolls` output until schema 20 folded it into `sv`; the gap keeps `speeds` stable.
 enum class sv_recipe_output_t {
-    sv,
-    scrolls,
-    speeds,
+    sv = 0,
+    speeds = 2,
 };
+
+[[nodiscard]] constexpr auto is_known_sv_recipe_output(sv_recipe_output_t output) noexcept -> bool {
+    return output == sv_recipe_output_t::sv || output == sv_recipe_output_t::speeds;
+}
 
 inline constexpr std::size_t maximum_sv_recipe_postprocess_stages = 32;
 inline constexpr std::size_t maximum_sv_recipe_impulses = 256;

@@ -34,6 +34,13 @@ auto read_visible(const json_t& value, ui_layout_preferences_t& layout) -> bool 
     }
     return true;
 }
+auto has_layout_shape(const json_t& value) -> bool {
+    if (!value.is_object()) return false;
+    const auto version = value.value("version", json_t{});
+    if (version == 1) return value.size() == 5;
+    return version == 2 && value.size() == 6 && value.contains("side_by_side") &&
+        value.at("side_by_side").is_boolean();
+}
 auto read_dimensions(const json_t& value, ui_layout_preferences_t& layout) -> bool {
     const auto width = value.find("width");
     const auto split = value.find("split");
@@ -52,7 +59,7 @@ auto ui_layout_preferences_t::from(std::string_view text)
         "Dock layout is invalid or unsupported; defaults retained."};
     if (text.size() > 4096) return std::unexpected(failure);
     const auto value = json_t::parse(text, nullptr, false);
-    if (!value.is_object() || value.size() != 5 || value.value("version", json_t{}) != 1)
+    if (!has_layout_shape(value))
         return std::unexpected(failure);
     const auto order = value.find("order");
     const auto visible = value.find("visible");
@@ -62,6 +69,7 @@ auto ui_layout_preferences_t::from(std::string_view text)
     if (!ordered || !read_visible(*visible, layout) || !read_dimensions(value, layout))
         return std::unexpected(failure);
     layout.order_ = *ordered;
+    layout.side_by_side_ = value.value("side_by_side", false);
     return layout;
 }
 auto ui_layout_preferences_t::serialized() const -> std::string {
@@ -72,8 +80,8 @@ auto ui_layout_preferences_t::serialized() const -> std::string {
         order.push_back(key);
         if (is_visible(panel)) visible.push_back(key);
     }
-    return json_t{{"version", 1}, {"order", order}, {"visible", visible},
-                  {"width", width_}, {"split", split_}}.dump();
+    return json_t{{"version", 2}, {"order", order}, {"visible", visible},
+                  {"width", width_}, {"split", split_}, {"side_by_side", side_by_side_}}.dump();
 }
 auto ui_layout_preferences_t::is_visible(dock_panel_t panel) const -> bool {
     const auto index = static_cast<std::size_t>(panel);

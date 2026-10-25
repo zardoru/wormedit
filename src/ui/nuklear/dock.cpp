@@ -1,6 +1,7 @@
 #include "ui/nuklear/dock.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/chrome/tooltip.h"
+#include "ui/nuklear/render/vector_icons.h"
 #include <nuklear.h>
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -24,16 +25,21 @@ auto glyph(dock_panel_t panel) -> lucide::Glyph {
     }
     return Glyph::panel_right_open;
 }
-void begin_capture(nk_context* context, dock_capture_t kind, const ui_layout_preferences_t& layout,
+void begin_capture(nk_context* context, dock_capture_t kind, const dock_geometry_t& geometry,
                     dock_pointer_t& pointer) {
     pointer.capture = kind;
     pointer.x = context->input.mouse.pos.x;
     pointer.y = context->input.mouse.pos.y;
-    pointer.width = layout.width();
-    pointer.split = layout.split();
+    if (!geometry.panes[0]) return;
+    const auto& first = geometry.panes[0]->bounds;
+    pointer.width = static_cast<float>(geometry.strip.left - 4 - first.left);
+    if (geometry.panes[1]) {
+        const auto extent = geometry.is_side_by_side() ? first.right - first.left : first.bottom - first.top;
+        pointer.split = static_cast<float>(extent / geometry.split_extent());
+    }
 }
 void render_handle(nk_context* context, const compose_rect_t& bounds, const char* tip,
-                    dock_capture_t capture, const ui_layout_preferences_t& layout,
+                    dock_capture_t capture, const dock_geometry_t& geometry,
                     dock_pointer_t& pointer) {
     nk_layout_space_push(context, rect(bounds));
     const chrome::NativeIconCell cell{context, pointer.is_active() && pointer.capture == capture,
@@ -45,15 +51,18 @@ void render_handle(nk_context* context, const compose_rect_t& bounds, const char
                  highlighted ? cell.tint() : context->style.window.border_color);
     if (capture == dock_capture_t::none || !nk_input_is_mouse_hovering_rect(&context->input, actual)) return;
     if (!pointer.is_active() && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT))
-        begin_capture(context, capture, layout, pointer);
+        begin_capture(context, capture, geometry, pointer);
 }
 void update_resize(nk_context* context, const dock_geometry_t& geometry,
                      ui_layout_preferences_t& layout, dock_pointer_t& pointer) {
     const auto& mouse = context->input.mouse.pos;
-    if (pointer.capture == dock_capture_t::width) layout.set_width(pointer.width + pointer.x - mouse.x);
+    if (pointer.capture == dock_capture_t::width) {
+        const auto width = pointer.width + pointer.x - mouse.x;
+        layout.set_width(geometry.is_side_by_side() ? (width - 6) / 2 : width);
+    }
     if (pointer.capture == dock_capture_t::split) {
-        const auto height = std::max(1.0, geometry.strip.bottom - geometry.strip.top - 6);
-        layout.set_split(pointer.split + static_cast<float>((mouse.y - pointer.y) / height));
+        const auto delta = geometry.is_side_by_side() ? mouse.x - pointer.x : mouse.y - pointer.y;
+        layout.set_split(pointer.split + static_cast<float>(delta / geometry.split_extent()));
     }
     if (pointer.capture != dock_capture_t::panel &&
         nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT)) pointer = {};
@@ -77,13 +86,19 @@ void finish_panel_drag(nk_context* context, std::optional<dock_panel_t> hovered,
     }
     pointer = {};
 }
+void draw_side_by_side(nk_command_buffer* canvas, struct nk_rect bounds, nk_color tint) {
+    const auto frame = vector_icons::Frame::fit(bounds);
+    nk_stroke_rect(canvas, nk_rect(frame.px(2), frame.py(3), 20 * frame.scale, 18 * frame.scale),
+                   2 * frame.scale, frame.stroke(), tint);
+    nk_stroke_line(canvas, frame.px(12), frame.py(3), frame.px(12), frame.py(21), frame.stroke(), tint);
+}
 void render_strip(nk_context* context, const dock_geometry_t& geometry,
                     ui_layout_preferences_t& layout, dock_pointer_t& pointer,
-                    const std::array<bool, 6>& available) {
+                    const std::array<bool, 6>& available, bool input_available) {
     static const auto tips = [] {
         std::array<std::string, 6> result;
         for (std::size_t i = 0; i < result.size(); ++i)
-            result[i] = std::string{dock_panel_catalog[i].title} + " panel (Shift-click to stack; drag to reorder)";
+            result[i] = std::string{dock_panel_catalog[i].title} + " panel (Shift-click to add; drag to reorder)";
         return result;
     }();
     nk_layout_space_push(context, rect(geometry.strip));
@@ -103,21 +118,28 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
         if (available[index] && nk_input_is_mouse_hovering_rect(&context->input, bounds)) hovered = panel;
     }
     if (hovered && !pointer.is_active() && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT)) {
-        begin_capture(context, dock_capture_t::panel, layout, pointer);
+        begin_capture(context, dock_capture_t::panel, geometry, pointer);
         pointer.panel = hovered;
     }
     finish_panel_drag(context, hovered, layout, pointer);
+    nk_layout_row_dynamic(context, 30, 1);
+    if (chrome::DrawnIconButton{.draw = draw_side_by_side, .tooltip = "Side-by-side panels",
+            .selected = layout.is_side_by_side(), .enabled = input_available}.render(context))
+        layout.set_side_by_side(!layout.is_side_by_side());
     nk_group_end(context);
 }
 }
 auto dock_geometry_t::from(float width, float height, const ui_layout_preferences_t& layout,
-                           const std::array<bool, 6>& available) -> dock_geometry_t {
+                           const std::array<bool, 6>& available, float reserved_left_width) -> dock_geometry_t {
     dock_geometry_t result{.strip = {width - 40, 8, width - 8, height - 8}, .reserved_width = 44};
     std::array<std::optional<dock_panel_t>, 2> visible;
     std::size_t count{};
     for (const auto panel : layout.order())
         if (layout.is_visible(panel) && available[static_cast<std::size_t>(panel)]) visible[count++] = panel;
-    const auto panel_width = std::min(layout.width(), width - 250);
+    const auto column_space = width - 250 - reserved_left_width;
+    const auto columns = count == 2 && layout.is_side_by_side() && column_space >= 2 * dock_minimum_width + 6;
+    const auto desired_width = columns ? 2 * layout.width() + 6 : layout.width();
+    const auto panel_width = std::min(desired_width, columns ? column_space : width - 250);
     if (!count || panel_width < dock_minimum_width || height < 140) return result;
     const auto right = width - 44;
     const auto left = right - panel_width;
@@ -125,15 +147,33 @@ auto dock_geometry_t::from(float width, float height, const ui_layout_preference
     result.width_handle = compose_rect_t{left - 6, 8, left - 1, height - 8};
     result.panes[0] = dock_pane_t{*visible[0], {left, 8, right, height - 8}};
     if (count == 2) {
-        const auto split = 8 + (height - 22) * layout.split();
-        result.panes[0]->bounds.bottom = split;
-        result.split_handle = compose_rect_t{left, split, right, split + 6};
-        result.panes[1] = dock_pane_t{*visible[1], {left, split + 6, right, height - 8}};
+        if (columns) {
+            const auto first_width = std::clamp((panel_width - 6) * layout.split(),
+                dock_minimum_width, panel_width - 6 - dock_minimum_width);
+            const auto split = left + first_width;
+            result.panes[0]->bounds.right = split;
+            result.split_handle = compose_rect_t{split, 8, split + 6, height - 8};
+            result.panes[1] = dock_pane_t{*visible[1], {split + 6, 8, right, height - 8}};
+        } else {
+            const auto split = 8 + (height - 22) * layout.split();
+            result.panes[0]->bounds.bottom = split;
+            result.split_handle = compose_rect_t{left, split, right, split + 6};
+            result.panes[1] = dock_pane_t{*visible[1], {left, split + 6, right, height - 8}};
+        }
     }
     return result;
 }
 auto dock_geometry_t::is_visible(dock_panel_t panel) const -> bool {
     return std::ranges::any_of(panes, [panel](const auto& pane) { return pane && pane->panel == panel; });
+}
+auto dock_geometry_t::is_side_by_side() const -> bool {
+    return panes[0] && panes[1] && panes[0]->bounds.right < panes[1]->bounds.left;
+}
+auto dock_geometry_t::split_extent() const -> double {
+    if (!panes[0] || !panes[1]) return 1;
+    const auto& first = panes[0]->bounds;
+    const auto& last = panes[1]->bounds;
+    return std::max(1.0, is_side_by_side() ? last.right - first.left - 6 : last.bottom - first.top - 6);
 }
 void render_dock_controls(nk_context* context, const dock_geometry_t& geometry,
                           ui_layout_preferences_t& layout, dock_pointer_t& pointer,
@@ -143,10 +183,10 @@ void render_dock_controls(nk_context* context, const dock_geometry_t& geometry,
     if (!input_available) { pointer = {}; nk_widget_disable_begin(context); }
     update_resize(context, geometry, layout, pointer);
     if (geometry.width_handle)
-        render_handle(context, *geometry.width_handle, "Resize dock width", input_available ? dock_capture_t::width : dock_capture_t::none, layout, pointer);
+        render_handle(context, *geometry.width_handle, "Resize dock width", input_available ? dock_capture_t::width : dock_capture_t::none, geometry, pointer);
     if (geometry.split_handle)
-        render_handle(context, *geometry.split_handle, "Resize dock split", input_available ? dock_capture_t::split : dock_capture_t::none, layout, pointer);
-    render_strip(context, geometry, layout, pointer, input_available ? available : std::array<bool, 6>{});
+        render_handle(context, *geometry.split_handle, "Resize dock split", input_available ? dock_capture_t::split : dock_capture_t::none, geometry, pointer);
+    render_strip(context, geometry, layout, pointer, input_available ? available : std::array<bool, 6>{}, input_available);
     if (!input_available) { pointer = {}; nk_widget_disable_end(context); }
 }
 } // namespace wormedit::ui

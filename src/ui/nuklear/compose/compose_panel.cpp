@@ -1412,15 +1412,16 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
     const std::array available{
         wormedit::ui::compose_inspector_available(compose_mode_of(*view)),
         notes && view->keysounds_available, view->scene_available, notes, notes, view->scene_available};
-    const auto right = wormedit::ui::dock_geometry_t::from(bounds.w, height, state.dock_layout.layout, available);
-    const auto inspector = right.is_visible(wormedit::dock_panel_t::inspector);
-    close_hidden_layer_actions(right.is_visible(wormedit::dock_panel_t::layers));
-    worm_ui_nuklear_dismiss_layer_popup(context);
-    state.dock_layout.compact_dock_layout = bounds.w < 700.0f;
     const auto branch = state.dock_layout.branch_panel_visible &&
         worm_ui_nuklear_bms_branch_panel_visible(view) &&
         bounds.w >= (view->bms_program.available ? 600.0f : 900.0f);
     const auto branch_width = branch ? std::clamp(bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
+    const auto right = wormedit::ui::dock_geometry_t::from(bounds.w, height, state.dock_layout.layout, available,
+        branch ? branch_width + 8.0f : 0.0f);
+    const auto inspector = right.is_visible(wormedit::dock_panel_t::inspector);
+    close_hidden_layer_actions(right.is_visible(wormedit::dock_panel_t::layers));
+    worm_ui_nuklear_dismiss_layer_popup(context);
+    state.dock_layout.compact_dock_layout = bounds.w < 700.0f;
     state.dock_layout.branch_dock_width_drawn = branch ? branch_width + 8.0f : 0.0f;
     return {.compose_body_bounds = bounds, .compose_body_height = height, .inspector_drawn = inspector,
         .branch_drawn = branch, .branch_width = branch_width, .side_width = right.reserved_width,

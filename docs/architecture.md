@@ -206,10 +206,13 @@ visual decoding, resource-copy and inspection requests, and conversion previews 
 and queue/progress services retain their domain lifecycles and publication rules; see
 [async task scheduling](async-task-scheduling.md).
 
-Compose's right dock uses `ui_layout_preferences_t` as its sole visibility/order/size owner.
+Compose's right dock uses `ui_layout_preferences_t` as its sole visibility/order/size/arrangement owner.
 `src/ui/nuklear/dock.cpp` handles the strip, split and width captures; `compose_panel.cpp` wraps
 existing panel renderers in independent scrolling groups. The typed record is stored under
-`layout.compose_dock` in the existing atomic application preferences file. Drag captures defer
+`layout.compose_dock` in the existing atomic application preferences file. Dock record version2
+adds the side-by-side preference; version1 records retain their stacked arrangement. Geometry
+falls back to stacking when two minimum-width columns do not fit, without changing the preference.
+The right strip owns panel activation and the arrangement toggle. Drag captures defer
 publication until release; hiding Compose or losing input cancels capture without a late click.
 Markers embeds the same bounded bookmark-list controls and projection as the popup chooser.
 

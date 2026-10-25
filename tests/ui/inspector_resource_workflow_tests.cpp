@@ -96,18 +96,21 @@ auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool
            text.find("Layers  0") != std::string::npos;
 }
 
-auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> std::string_view {
+auto compact_strip_sounds_toggle_status(nuklear_event_harness_t& harness) -> std::string_view {
     auto& state = worm_ui_nuklear_compose_state();
-    (void)harness.hover_widget("Hide sounds list");
-    if (harness.drawn_text().find("Hide sounds list") == std::string::npos)
-        return "hover did not identify Hide sounds list";
-    (void)harness.click_widget("Hide sounds list");
+    (void)harness.hover_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    if (harness.drawn_text().find("Sounds panel (Shift-click to add; drag to reorder)") == std::string::npos)
+        return "hover did not identify Sounds panel (Shift-click to add; drag to reorder)";
+    (void)harness.click_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    (void)harness.click_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    (void)harness.frame();
     if (state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) || state.sounds_dock.sound_list_valid)
         return "click did not hide the Sounds dock";
-    (void)harness.hover_widget("Show sounds list");
-    if (harness.drawn_text().find("Show sounds list") == std::string::npos)
-        return "hidden dock did not expose Show sounds list";
-    (void)harness.click_widget("Show sounds list");
+    (void)harness.hover_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    if (harness.drawn_text().find("Sounds panel (Shift-click to add; drag to reorder)") == std::string::npos)
+        return "hidden dock did not expose Sounds panel (Shift-click to add; drag to reorder)";
+    (void)harness.click_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    (void)harness.frame();
     if (!state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) || !state.sounds_dock.sound_list_valid)
         return "click did not reopen the Sounds dock hit region";
     return harness.drawn_text().find("Sounds  1") != std::string::npos
@@ -160,7 +163,7 @@ TEST_CASE("Compact and wide Compose layouts keep the chosen Sounds and Layers pa
         state.dock_layout.layout.show(wormedit::dock_panel_t::layers, true);
         (void)compact.frame();
         CHECK(compact_layout_keeps_sound_picker(compact));
-        const auto toggle_status = compact_toolbar_sounds_toggle_status(compact);
+        const auto toggle_status = compact_strip_sounds_toggle_status(compact);
         INFO(toggle_status);
         INFO(compact.drawn_text());
         CHECK(toggle_status.empty());

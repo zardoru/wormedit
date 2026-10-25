@@ -2,6 +2,18 @@
 
 ## Active queue (2026-10-24)
 
+Completed the owner-requested **T-228 dock follow-up** (2026-10-24): the right strip can
+arrange two panels as full-height columns or a vertical stack. Version2 application preferences
+persist the arrangement; version1 stacks retain their layout. Columns respect minimum widths,
+reserve room for the left BMS branch dock, and temporarily stack in narrow windows. Redundant
+top-toolbar panel buttons are removed. Marker headings and preview controls reflow at narrow
+column widths. GATE passes **5,057/5,057**, whitespace and **10 changed-TU complexity checks**;
+two explicit preference consumers also pass, without increased allowances. Clang checks all ten
+changed TUs plus the options-runtime consumer. Focused coverage: **61 assertions / 8 core cases**
+and **200 / 28 frontend cases**. Isolated 1280×720 and 800×700 columns, 700×700 fallback,
+horizontal divider resizing, widening and a fresh-process layout restore were inspected.
+The manual and architecture describe the updated controls; no new card is active.
+
 Integrated **wyrm/t729-t749** into main (2026-10-24): preview persistence uses schema20,
 following the Lua/impulse/generator migrations in schemas17–19. Migration coverage includes
 schemas16–19. The merged suite passes **5,048/5,048** with two workers; preview core/format

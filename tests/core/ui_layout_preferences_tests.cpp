@@ -25,6 +25,7 @@ TEST_CASE("Dock order and dimensions round trip through application preferences"
     layout.reorder(dock_panel_t::sounds, 0);
     layout.set_width(410);
     layout.set_split(0.65f);
+    layout.set_side_by_side(true);
     const auto text = serialize_program_preferences(preferences);
     REQUIRE(text);
     const auto parsed = preferences_parse_effect_t::from(*text);
@@ -81,4 +82,21 @@ TEST_CASE("Programmatic dock activation keeps an already selected sole panel ope
     const auto before = layout;
     layout.activate(dock_panel_t::sounds, false);
     CHECK(layout == before);
+}
+
+TEST_CASE("Version one dock preferences retain their vertical stack", "[core][dock-layout]") {
+    auto record = nlohmann::json::parse(ui_layout_preferences_t{}.serialized());
+    record["version"] = 1;
+    record.erase("side_by_side");
+    record["width"] = 410;
+    const auto parsed = ui_layout_preferences_t::from(record.dump());
+    REQUIRE(parsed);
+    CHECK_FALSE(parsed->is_side_by_side());
+    CHECK(parsed->width() == 410);
+    CHECK(parsed->visible_panels()[1] == dock_panel_t::sounds);
+}
+TEST_CASE("Dock arrangement rejects an invalid preference without changing other settings", "[core][dock-layout]") {
+    auto record = nlohmann::json::parse(ui_layout_preferences_t{}.serialized());
+    record["side_by_side"] = "columns";
+    CHECK_FALSE(ui_layout_preferences_t::from(record.dump()));
 }

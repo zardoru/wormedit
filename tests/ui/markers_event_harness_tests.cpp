@@ -233,3 +233,15 @@ TEST_CASE("The Song preview group exports the authored span", "[unit][frontend-s
     const auto& dialog = worm_ui_nuklear_compose_state().preview_audio;
     CHECK((dialog.open && dialog.draft.begin_row == 240 && dialog.draft.end_row == 1200));
 }
+
+TEST_CASE("Minimum-width marker columns keep audio headings above their controls", "[event-harness][markers][dock-layout]") {
+    markers_fixture_t fixture;
+    worm_ui_nuklear_compose_state().dock_layout.layout.set_width(240);
+    (void)fixture.harness.frame();
+    const auto bookmarks = fixture.harness.drawn_text_center("Audio-time bookmarks");
+    const auto sections = fixture.harness.drawn_text_center("Audio-time sections");
+    REQUIRE(bookmarks);
+    REQUIRE(sections);
+    CHECK(fixture.harness.widget_center("Add a bookmark at the typed time").second > bookmarks->second);
+    CHECK(fixture.harness.widget_center("Add a section from the typed times").second > sections->second);
+}

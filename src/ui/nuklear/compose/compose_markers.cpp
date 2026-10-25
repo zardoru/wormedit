@@ -172,12 +172,22 @@ auto render_group_header(struct nk_context* context, const header_spec_t& spec) 
     namespace chrome = wormedit::ui::chrome;
     namespace icons = wormedit::ui::vector_icons;
     using wormedit::ui::lucide::Glyph;
+    const auto title_width = chrome::text_width(context->style.font, spec.title);
+    const auto inline_title = title_width + 104 + 4 * context->style.window.spacing.x <=
+        nk_window_get_content_region(context).w;
+    if (!inline_title) {
+        nk_layout_row_dynamic(context, header_height, 1);
+        nk_label_colored(context, spec.title, NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
+    }
     nk_layout_row_template_begin(context, header_height);
     nk_layout_row_template_push_dynamic(context);
     chrome::IconButton::layout_columns(context, 4, 26.0f);
     nk_layout_row_template_end(context);
-    nk_label_colored(context, spec.title, NK_TEXT_LEFT,
-                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
+    if (inline_title)
+        nk_label_colored(context, spec.title, NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
+    else nk_spacing(context, 1);
     header_clicks_t clicks;
     clicks.previous = render_header_button(context, spec.navigation_enabled,
         chrome::IconButton{Glyph::chevron_left, spec.previous_tip});
@@ -498,7 +508,7 @@ void render_audio_bookmarks(struct nk_context* context, const wormedit::ui::comp
     render_audio_form_fields(context, true);
     nk_layout_row_dynamic(context, 24, 1);
     if (!editable || !selected) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply label and time to selected");
+    const auto apply = nk_button_label(context, "Apply label and time");
     if (!editable || !selected) nk_widget_disable_end(context);
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (clicks.add && editable) fill_audio_bookmark_action(action, false);
@@ -540,7 +550,7 @@ void render_audio_sections(struct nk_context* context, const wormedit::ui::compo
     render_audio_form_fields(context, false);
     nk_layout_row_dynamic(context, 24, 1);
     if (!editable || !selected) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply label and times to selected");
+    const auto apply = nk_button_label(context, "Apply label and times");
     if (!editable || !selected) nk_widget_disable_end(context);
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (clicks.add && editable) fill_audio_section_action(action, false);
@@ -560,12 +570,13 @@ void render_song_preview_buttons(struct nk_context* context, const wormedit::ui:
         if (!enabled) nk_widget_disable_end(context);
         return clicked && enabled;
     };
-    nk_layout_row_dynamic(context, 24, 2);
+    const auto columns = nk_window_get_content_region(context).w >= 280 ? 2 : 1;
+    nk_layout_row_dynamic(context, 24, columns);
     const auto apply = button("Apply typed times", view.scene_available);
     const auto cursor = button("Start at cursor", view.scene_available);
     const auto selection = button("From selection", view.preview_audio_range.available);
     const auto clear = button("Clear preview", span.available && !span.chart_override);
-    nk_layout_row_dynamic(context, 24, span.chart_override ? 2 : 1);
+    nk_layout_row_dynamic(context, 24, span.chart_override ? columns : 1);
     const auto song = span.chart_override && button("Use song preview", true);
     if (button("Export preview audio…", span.available))
         worm_ui_nuklear_compose_state().preview_audio.begin_from_preview(view);
@@ -590,7 +601,10 @@ void render_song_preview(struct nk_context* context, const wormedit::ui::compose
     if (!view.preview_span.available) render_empty_list(context, "No preview set");
     nk_layout_row_dynamic(context, 18, 2);
     nk_label(context, "Start (ms)", NK_TEXT_LEFT);
-    nk_label(context, "End (ms, optional)", NK_TEXT_LEFT);
+    const auto end_label = nk_widget_bounds(context);
+    nk_label(context, "End (ms)", NK_TEXT_LEFT);
+    if (wormedit::ui::nuklear::tooltip::hovered(context, end_label))
+        wormedit::ui::nuklear::tooltip::text(context, "Leave the end empty for a point-only preview.");
     nk_layout_row_dynamic(context, 25, 2);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.preview_start.data(), state.preview_start.size(), nk_filter_decimal);

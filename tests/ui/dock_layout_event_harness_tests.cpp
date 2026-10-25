@@ -2,13 +2,14 @@
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/dock.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <array>
 #include <algorithm>
 using namespace wormedit;
 namespace {
-constexpr auto inspector_tip = "Inspector panel (Shift-click to stack; drag to reorder)";
-constexpr auto sounds_tip = "Sounds panel (Shift-click to stack; drag to reorder)";
-constexpr auto images_tip = "Images panel (Shift-click to stack; drag to reorder)";
+constexpr auto inspector_tip = "Inspector panel (Shift-click to add; drag to reorder)";
+constexpr auto sounds_tip = "Sounds panel (Shift-click to add; drag to reorder)";
+constexpr auto images_tip = "Images panel (Shift-click to add; drag to reorder)";
 struct dock_fixture_t {
     nuklear_event_harness_t harness{1280, 1000};
     dock_fixture_t() {
@@ -64,13 +65,16 @@ TEST_CASE("Dock strip dragging reorders both stacked panes without chart actions
 }
 TEST_CASE("Dock resize captures defer preference publication until release", "[event-harness][dock-layout]") {
     dock_fixture_t f;
+    f.layout().set_side_by_side(GENERATE(false, true));
+    f.click(sounds_tip, SDL_KMOD_SHIFT);
+    const auto expected_width = f.layout().is_side_by_side() ? 370 : 420;
     const auto [x, y] = f.press("Resize dock width");
     CHECK(worm_ui_frontend_dock_layout_is_editing());
     (void)f.harness.frame(std::array{test::mouse_motion(x - 100, y)});
-    CHECK(f.layout().width() == 420);
+    CHECK(f.layout().width() == expected_width);
     const auto released = f.harness.frame(std::array{test::mouse_button(false, x - 100, y)});
     CHECK_FALSE(worm_ui_frontend_dock_layout_is_editing());
-    CHECK(worm_ui_frontend_dock_layout().width() == 420);
+    CHECK(worm_ui_frontend_dock_layout().width() == expected_width);
     CHECK(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 TEST_CASE("Dock split captures cancel on focus loss without a late panel action", "[event-harness][dock-layout]") {
@@ -138,4 +142,71 @@ TEST_CASE("Minimum width Sounds dock keeps its final toolbar control reachable",
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_NONE &&
                frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE;
     }));
+}
+
+TEST_CASE("Right dock strip switches a pair to full-height side-by-side columns", "[event-harness][dock-layout]") {
+    dock_fixture_t f;
+    f.click(sounds_tip, SDL_KMOD_SHIFT);
+    f.click("Side-by-side panels");
+    const auto geometry = ui::dock_geometry_t::from(1280, 700, f.layout(), {true, true, true, true, true, true});
+    REQUIRE(geometry.is_side_by_side());
+    CHECK(f.layout().is_side_by_side());
+    CHECK(geometry.panes[0]->bounds.top == geometry.panes[1]->bounds.top);
+    CHECK(geometry.panes[0]->bounds.bottom == geometry.panes[1]->bounds.bottom);
+    f.click("Side-by-side panels");
+    CHECK_FALSE(f.layout().is_side_by_side());
+}
+TEST_CASE("Side-by-side dock geometry preserves minimum column widths", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    layout.set_side_by_side(true);
+    layout.set_split(0.2f);
+    const auto width = GENERATE(800.0f, 1280.0f);
+    const auto geometry = ui::dock_geometry_t::from(width, 700, layout, {true, true, true, true, true, true});
+    REQUIRE(geometry.is_side_by_side());
+    CHECK(geometry.panes[0]->bounds.right - geometry.panes[0]->bounds.left >= dock_minimum_width);
+    CHECK(geometry.panes[1]->bounds.right - geometry.panes[1]->bounds.left >= dock_minimum_width);
+    CHECK(geometry.panes[0]->bounds.bottom == geometry.panes[1]->bounds.bottom);
+}
+TEST_CASE("Narrow windows temporarily stack columns and restore them when widened", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    layout.set_side_by_side(true);
+    const std::array available{true, true, true, true, true, true};
+    const auto narrow = ui::dock_geometry_t::from(700, 700, layout, available);
+    REQUIRE(narrow.panes[1]);
+    CHECK_FALSE(narrow.is_side_by_side());
+    CHECK(layout.is_side_by_side());
+    CHECK(ui::dock_geometry_t::from(1280, 700, layout, available).is_side_by_side());
+}
+TEST_CASE("Column divider drags start from the rendered split and publish on release", "[event-harness][dock-layout]") {
+    dock_fixture_t f;
+    f.click(sounds_tip, SDL_KMOD_SHIFT);
+    f.layout().set_split(0.2f);
+    f.click("Side-by-side panels");
+    const auto [x, y] = f.press("Resize dock split");
+    CHECK(worm_ui_frontend_dock_layout_is_editing());
+    (void)f.harness.frame(std::array{test::mouse_motion(x + 20, y)});
+    CHECK(f.layout().split() > 0.375f);
+    const auto release = f.harness.frame(std::array{test::mouse_button(false, x + 20, y)});
+    CHECK_FALSE(worm_ui_frontend_dock_layout_is_editing());
+    CHECK(worm_ui_frontend_dock_layout().is_side_by_side());
+    CHECK(release.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+TEST_CASE("Close confirmation blocks the dock arrangement toggle", "[event-harness][dock-layout]") {
+    dock_fixture_t f;
+    f.harness.view().close_confirmation.visible = true;
+    (void)f.harness.frame();
+    f.click("Side-by-side panels");
+    CHECK_FALSE(f.layout().is_side_by_side());
+}
+
+TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    layout.set_side_by_side(true);
+    const std::array available{true, true, true, true, true, true};
+    const auto narrow = ui::dock_geometry_t::from(800, 700, layout, available, 268);
+    CHECK_FALSE(narrow.is_side_by_side());
+    const auto wide = ui::dock_geometry_t::from(1280, 700, layout, available, 328);
+    REQUIRE(wide.is_side_by_side());
+    CHECK(wide.panes[0]->bounds.left >= 328 + 200);
+    CHECK(layout.is_side_by_side());
 }

@@ -1359,15 +1359,15 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_reserved = true;
     compose.bgm_bar_available = false;
     (void)harness.frame();
-    (void)harness.hover_widget("Hide sounds list");
-    check_tooltip_text(harness, "Hide sounds list");
+    (void)harness.hover_widget("Sounds panel (Shift-click to add; drag to reorder)");
+    check_tooltip_text(harness, "Sounds panel (Shift-click to add; drag to reorder)");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    (void)harness.hover_widget("Show layers");
-    check_tooltip_text(harness, "Show layers");
+    (void)harness.hover_widget("Layers panel (Shift-click to add; drag to reorder)");
+    check_tooltip_text(harness, "Layers panel (Shift-click to add; drag to reorder)");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 351, 120);
     check_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    check_no_tooltip_text(harness, "Hide sounds list");
+    check_no_tooltip_text(harness, "Sounds panel (Shift-click to add; drag to reorder)");
 }
 
 TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",

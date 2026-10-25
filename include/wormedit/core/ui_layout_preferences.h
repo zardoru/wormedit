@@ -37,6 +37,8 @@ class ui_layout_preferences_t {
     [[nodiscard]] auto order() const -> const std::array<dock_panel_t, 6>& { return order_; }
     [[nodiscard]] auto width() const -> float { return width_; }
     [[nodiscard]] auto split() const -> float { return split_; }
+    [[nodiscard]] auto is_side_by_side() const -> bool { return side_by_side_; }
+    void set_side_by_side(bool enabled) { side_by_side_ = enabled; }
     void show(dock_panel_t panel, bool visible = true);
     void activate(dock_panel_t panel, bool stacked);
     void reorder(dock_panel_t panel, std::size_t destination);
@@ -49,5 +51,6 @@ class ui_layout_preferences_t {
     std::array<bool, 6> visible_{true, true, false, false, false, false};
     float width_{320.0f};
     float split_{0.5f};
+    bool side_by_side_{};
 };
 } // namespace wormedit

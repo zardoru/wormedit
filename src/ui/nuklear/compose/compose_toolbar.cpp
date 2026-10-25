@@ -22,10 +22,6 @@
 
 using wormedit::ui::lucide::Glyph;
 
-static auto compose_inspector_icon(bool visible) -> Glyph {
-    return visible ? Glyph::panel_right_close : Glyph::panel_right_open;
-}
-
 static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
                                          const wormedit::ui::compose_view_t* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
@@ -235,32 +231,12 @@ static void render_color_view_group(const ComposeToolbarContext& toolbar) {
             state.input_queue.color_view = views[index];
 }
 
-static void render_panel_group(const ComposeToolbarContext& toolbar) {
-    auto* context = toolbar.context;
-    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector)),
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector) ? "Hide inspector" : "Show inspector",
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector)}.render(context))
-        state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::inspector));
-    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::sound_list,
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds) ? "Hide sounds list" : "Show sounds list",
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds)}.render(context))
-        state.dock_layout.layout.show(wormedit::dock_panel_t::sounds, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::sounds));
+static void render_auxiliary_view_group(const ComposeToolbarContext& toolbar) {
     if (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) &&
         wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
             state.dock_layout.branch_panel_visible ? "Hide BMS branches" : "Show BMS branches",
-            state.dock_layout.branch_panel_visible}.render(context))
+            state.dock_layout.branch_panel_visible}.render(toolbar.context))
         state.dock_layout.branch_panel_visible = !state.dock_layout.branch_panel_visible;
-    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_list,
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures) ? "Hide measures list" : "Show measures list",
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures)}.render(context))
-        state.dock_layout.layout.show(wormedit::dock_panel_t::measures, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::measures));
-    if (wormedit::ui::chrome::IconButton{Glyph::layers,
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers) ? "Hide layers" : "Show layers",
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers)}.render(context))
-        state.dock_layout.layout.show(wormedit::dock_panel_t::layers, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::layers));
-    if (wormedit::ui::chrome::IconButton{Glyph::eye,
-            state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images) ? "Hide BGA list" : "Show BGA list", state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images)}.render(context))
-        state.dock_layout.layout.show(wormedit::dock_panel_t::images, !state.dock_layout.layout.is_visible(wormedit::dock_panel_t::images));
     render_compose_bgm_bar_toggle(toolbar);
 }
 
@@ -687,13 +663,12 @@ static void layout_toolbar_icons(nk_context* context, int count) {
     wormedit::ui::chrome::IconButton::layout_columns(context, count, 24.0f);
 }
 
-// The full toolbar needs about 1,150 px (with the measure lane toggles). Narrower than that its tail is clipped, so the dock toggles
-// stay in the middle (where they are always reachable) and move to the right edge only when it fits.
-static auto dock_toggles_at_end(nk_context* context) -> bool {
+// Keep the auxiliary canvas controls near the tools when the toolbar is narrow.
+static auto auxiliary_toggles_at_end(nk_context* context) -> bool {
     return nk_window_get_bounds(context).w >= 1160.0f;
 }
 
-// `panel_icons` is the dock toggle count; the BMS branch toggle exists only for charts with branches.
+// `panel_icons` counts the overview and optional branch toggle; the BMS branch toggle exists only for charts with branches.
 // `tool_icons` grows by one while the measure lane shows its time-propagation toggle.
 static void layout_compose_toolbar(nk_context* context, int tool_icons, int panel_icons, bool timing_focus) {
     const auto width = nk_window_get_bounds(context).w;
@@ -704,7 +679,7 @@ static void layout_compose_toolbar(nk_context* context, int tool_icons, int pane
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
-    if (!dock_toggles_at_end(context)) {
+    if (!auxiliary_toggles_at_end(context)) {
         layout_toolbar_icons(context, panel_icons); // Panels.
         wormedit::ui::chrome::layout_separator(context);
     }
@@ -724,8 +699,8 @@ static void layout_compose_toolbar(nk_context* context, int tool_icons, int pane
     layout_toolbar_icons(context, 1);
     nk_layout_row_template_push_static(context, 42);
     layout_toolbar_icons(context, 1);
-    if (dock_toggles_at_end(context)) {
-        // The dock toggles close the row at the right edge, after the BGM scroll bar's spacer.
+    if (auxiliary_toggles_at_end(context)) {
+        // Auxiliary canvas toggles follow the BGM scroll controls.
         wormedit::ui::chrome::layout_separator(context);
         layout_toolbar_icons(context, panel_icons); // Panels.
     }
@@ -749,7 +724,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
                                                   nk_vec2(3.0f, spacing.y)) != 0;
     layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0) +
                                resource_brush_tool_count(*toolbar.view),
-                           6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
+                           1 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
                            toolbar.view->timing_focus);
     render_navigation_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
@@ -757,8 +732,8 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     wormedit::ui::chrome::toolbar_separator(context);
     render_color_view_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
-    if (!dock_toggles_at_end(context)) {
-        render_panel_group(toolbar);
+    if (!auxiliary_toggles_at_end(context)) {
+        render_auxiliary_view_group(toolbar);
         wormedit::ui::chrome::toolbar_separator(context);
     }
     if (toolbar.view->timing_focus) {
@@ -768,9 +743,9 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
         wormedit::ui::chrome::toolbar_separator(context);
     }
     render_compose_bgm_scroll_controls(toolbar);
-    if (dock_toggles_at_end(context)) {
+    if (auxiliary_toggles_at_end(context)) {
         wormedit::ui::chrome::toolbar_separator(context);
-        render_panel_group(toolbar);
+        render_auxiliary_view_group(toolbar);
     }
     render_click_audition_toggle(toolbar);
     if (spacing_pushed) (void)nk_style_pop_vec2(context);

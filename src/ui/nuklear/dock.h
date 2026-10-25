@@ -18,8 +18,10 @@ struct dock_geometry_t {
     std::optional<compose_rect_t> split_handle;
     float reserved_width{};
     [[nodiscard]] static auto from(float width, float height, const ui_layout_preferences_t& layout,
-                                  const std::array<bool, 6>& available) -> dock_geometry_t;
+                                  const std::array<bool, 6>& available, float reserved_left_width = 0) -> dock_geometry_t;
     [[nodiscard]] auto is_visible(dock_panel_t panel) const -> bool;
+    [[nodiscard]] auto is_side_by_side() const -> bool;
+    [[nodiscard]] auto split_extent() const -> double;
     [[nodiscard]] auto widget_count() const -> int {
         auto count = 1 + static_cast<int>(width_handle.has_value()) + static_cast<int>(split_handle.has_value());
         for (const auto& pane : panes) if (pane) ++count;

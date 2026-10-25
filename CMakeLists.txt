@@ -355,6 +355,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     endif()
 
     FetchContent_MakeAvailable(SDL3 nuklear)
+    include(cmake/sdl/bounded-presentation.cmake)
+    wormedit_enable_bounded_sdl_presentation("${sdl3_SOURCE_DIR}")
 
     find_package(Git QUIET)
 
@@ -597,6 +599,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/app/application_frame_services.cpp
         src/sys/resources/resource_drop_router.cpp
         src/sys/app/frame_pacing.cpp
+        src/sys/app/display_health.cpp
+        src/sys/app/display_watchdog.cpp
         src/sys/resources/sound_drop_transaction.cpp
         src/sys/app/application_startup.cpp
         src/sys/app/application_lifetime.cpp

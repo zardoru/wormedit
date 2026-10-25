@@ -1,4 +1,5 @@
 #include "core/text_util.h"
+#include "common/window_presentation.h"
 #include "sys/app/application_frame_services.h"
 #include "sys/app/application_edit_inputs.h"
 
@@ -82,7 +83,7 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
 
 } // namespace
 
-auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& environment,
+auto poll_frontend_events(WormWindow& window, frontend_event_batch_t& batch, const frontend_event_inputs_t& environment,
                           bool offer_audio_project_drop, std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
                           std::vector<sound_drop_batch_t>& pending_resource_batches) -> bool {
@@ -96,7 +97,11 @@ auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& env
     bool running = true;
     SDL_Event event;
     worm_ui_frontend_begin_input();
-    while (SDL_PollEvent(&event)) {
+    batch.begin();
+    auto pending = batch.pending();
+    while (pending || SDL_PollEvent(&event)) {
+        if (pending) { event = *pending; pending.reset(); }
+        if (!batch.admit(event)) break;
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
         if (event.type == SDL_EVENT_CLIPBOARD_UPDATE) environment.system_clipboard_changed = true;
@@ -170,14 +175,21 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace, document_his
 }
 
 void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) {
+    const auto presentation = common::window_presentation_t::from(window.handle);
+    const auto inactive = presentation.is_inactive();
+    if (inactive) {
+        worm_ui_frontend_discard_frame();
+        const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), true);
+        if (remainder) SDL_WaitEventTimeout(nullptr, static_cast<int>(remainder / 1'000'000));
+        return;
+    }
     int width = 0;
     int height = 0;
     worm_window_get_size(&window, &width, &height);
-    worm_ui_frontend_render(width, height);
+    const auto pending = presentation.is_pending();
+    if (pending) worm_ui_frontend_discard_frame();
+    else worm_ui_frontend_render(width, height);
     worm_window_swap(&window);
-    const auto flags = window.handle ? SDL_GetWindowFlags(window.handle) : SDL_WindowFlags{0};
-    const auto inactive = (flags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED |
-                                    SDL_WINDOW_OCCLUDED)) != 0;
     const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), inactive);
     if (remainder != 0) SDL_DelayPrecise(remainder);
 }

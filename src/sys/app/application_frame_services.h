@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/app/application_edit_inputs.h"
+#include "sys/app/frontend_event_batch.h"
 
 #include "sys/metadata/metadata_asset_runtime.h"
 #include "sys/metadata/metadata_drop_state.h"
@@ -22,7 +23,7 @@ struct WormWindow;
 namespace wormedit::sys {
 
 // Returns false after receiving a window close or quit event.
-auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& environment,
+auto poll_frontend_events(WormWindow& window, frontend_event_batch_t& batch, const frontend_event_inputs_t& environment,
                           bool offer_audio_project_drop, std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
                           std::vector<sound_drop_batch_t>& pending_resource_batches) -> bool;

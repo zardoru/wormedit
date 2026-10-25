@@ -53,6 +53,7 @@ wormedit::ui::workspace_action_t worm_ui_frontend_workspace_error(
     const wormedit::ui::close_confirmation_view_t* close);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);
+void worm_ui_frontend_discard_frame();
 
 namespace wormedit::ui {
 struct frame_timing_stats_view_t {

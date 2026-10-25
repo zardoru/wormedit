@@ -1568,27 +1568,41 @@ static bool handle_frontend_text_input(const SDL_Event& event) {
     return nk_sdl_handle_event(g_context, &copy) != 0;
 }
 
+static void lose_workspace_focus() {
+    g_window_focused = false;
+    cancel_command_menu();
+    wormedit::ui::chrome::context_menu_cancel_keyboard();
+    g_tap_key_captured = false;
+    g_audio.offset_cancel_pending = true;
+    worm_ui_nuklear_compose_state().inline_offset.inline_offset_cancel_pending = true;
+    g_shortcut_event_count = 0;
+    g_double_click_count = 0;
+    worm_ui_nuklear_compose_handle_focus_lost();
+    worm_ui_nuklear_cancel_setup_drag();
+    worm_ui_nuklear_cancel_options_drag();
+    worm_ui_nuklear_cancel_metadata_tag_drag();
+    apply_stem_resize_cursor(false);
+    g_ime_composition_active = false;
+}
+
+static void reconcile_workspace_focus(const SDL_Event& event) {
+    if (!g_window || g_headless || SDL_GetWindowFromEvent(&event) != g_window) return;
+    const auto input = event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_MOUSE_WHEEL;
+    if (!input && event.type != SDL_EVENT_WINDOW_EXPOSED) return;
+    const auto focused = SDL_GetKeyboardFocus() == g_window;
+    if (g_window_focused && !focused) lose_workspace_focus();
+    else g_window_focused = focused;
+}
+
 static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
     }
+    reconcile_workspace_focus(*event);
     track_compose_draw_pointer(*event);
     if (queue_compose_pinch_event(*event)) return true;
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
-        g_window_focused = false;
-        cancel_command_menu();
-        wormedit::ui::chrome::context_menu_cancel_keyboard();
-        g_tap_key_captured = false;
-        g_audio.offset_cancel_pending = true;
-        worm_ui_nuklear_compose_state().inline_offset.inline_offset_cancel_pending = true;
-        g_shortcut_event_count = 0;
-        g_double_click_count = 0;
-        worm_ui_nuklear_compose_handle_focus_lost();
-        worm_ui_nuklear_cancel_setup_drag();
-        worm_ui_nuklear_cancel_options_drag();
-        worm_ui_nuklear_cancel_metadata_tag_drag();
-        apply_stem_resize_cursor(false);
-        g_ime_composition_active = false;
+        lose_workspace_focus();
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
@@ -3709,6 +3723,11 @@ bool worm_ui_frontend_hide_notification_history_for_testing(void) {
     return true;
 }
 
+void worm_ui_frontend_discard_frame() {
+    nk_sdl_discard_frame(g_context);
+    if (g_notification_context_initialized) nk_sdl_discard_frame(&g_notification_context);
+}
+
 void worm_ui_frontend_render(int window_width, int window_height) {
     apply_stem_resize_cursor(worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested);
     if (window_width <= 0 || window_height <= 0) {
@@ -3718,8 +3737,7 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         window_height = g_interface_scale.logical_extent(window_height);
     }
     if (g_headless && g_context) {
-        nk_clear(g_context);
-        if (g_notification_context_initialized) nk_clear(&g_notification_context);
+        worm_ui_frontend_discard_frame();
         return;
     }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {

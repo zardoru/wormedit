@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 
 namespace wormedit::sys {
 enum class frame_phase_t : std::size_t {
@@ -140,6 +141,30 @@ struct frame_counter_summary_t {
     double average{};
     double p99{};
 };
+struct frame_progress_t {
+    std::uint64_t timestamp_ns{};
+    frame_phase_t phase{frame_phase_t::count};
+};
+class frame_progress_publisher_t {
+  public:
+    frame_progress_publisher_t() = default;
+    frame_progress_publisher_t(const frame_progress_publisher_t& other) { publish(other.read()); }
+    auto operator=(const frame_progress_publisher_t& other) -> frame_progress_publisher_t& {
+        publish(other.read());
+        return *this;
+    }
+    [[nodiscard]] auto read() const noexcept -> frame_progress_t {
+        return {timestamp_.load(std::memory_order_acquire), phase_.load(std::memory_order_relaxed)};
+    }
+    void publish(frame_progress_t progress) noexcept {
+        phase_.store(progress.phase, std::memory_order_relaxed);
+        timestamp_.store(progress.timestamp_ns, std::memory_order_release);
+    }
+  private:
+    std::atomic<std::uint64_t> timestamp_{};
+    std::atomic<frame_phase_t> phase_{frame_phase_t::count};
+};
+
 class frame_timing_t {
   public:
     void begin_frame();
@@ -147,6 +172,9 @@ class frame_timing_t {
     auto enter(frame_phase_t phase) -> frame_phase_t;
     void restore(frame_phase_t phase);
     void record(const frame_timing_sample_t& sample);
+    [[nodiscard]] auto progress() const noexcept -> frame_progress_t {
+        return progress_.read();
+    }
     void record_gpu_work(const frame_gpu_work_t& work,
                          frame_gpu_work_source_t source = frame_gpu_work_source_t::application);
     auto gpu_work_summary(std::size_t metric,
@@ -166,6 +194,7 @@ class frame_timing_t {
 
   private:
     void checkpoint();
+    void publish_progress();
     auto summarize(frame_phase_t phase, bool cpu) const -> frame_timing_summary_t;
     std::array<frame_timing_sample_t, frame_timing_capacity> samples_{};
     frame_timing_sample_t current_{};
@@ -181,6 +210,7 @@ class frame_timing_t {
     std::uint64_t involuntary_begin_{};
     frame_phase_t phase_{frame_phase_t::count};
     bool active_{};
+    frame_progress_publisher_t progress_;
 };
 auto frame_timing() -> frame_timing_t&;
 class frame_phase_scope_t {

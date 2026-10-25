@@ -1,3 +1,4 @@
+#include "common/window_presentation.h"
 #include "sys/compose/generator_runtime.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include "core/text_util.h"
@@ -15,9 +16,11 @@
 #include "sys/app/macos_menu.h"
 #endif
 #include "sys/app/frame_timing.h"
+#include "sys/app/display_watchdog.h"
 #include "sys/app/thread_priority.h"
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
+#include <SDL3/SDL_hints.h>
 
 #include "sys/commands/application_commands.h"
 #include "sys/app/application_startup.h"
@@ -2041,6 +2044,8 @@ struct application_t::implementation_t {
         std::optional<frontend_notification_sink_t> frontend_notifications{};
         result_t<std::filesystem::path, std::string> recovery_directory{};
         application_startup_arguments_t arguments{};
+        frontend_event_batch_t event_batch;
+        std::optional<display_watchdog_t> display_watchdog;
     } platform;
 
     struct document_session_t {
@@ -4152,13 +4157,26 @@ struct application_t::implementation_t {
         post_shortcut_startup_diagnostic(platform.notification_sink, shortcut_startup);
         views.compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
         started_ = true;
+        start_display_watchdog();
         return true;
+    }
+
+    void start_display_watchdog() {
+        auto log = platform.recovery_directory ? *platform.recovery_directory / "display-stalls.log" : std::filesystem::path{};
+        const auto* actual = SDL_GetCurrentVideoDriver();
+        platform.display_watchdog.emplace(frame_timing(), platform.notification_sink,
+            actual ? actual : "unknown", std::move(log));
+        const auto* requested = SDL_GetHint(SDL_HINT_VIDEO_DRIVER);
+        if (requested && actual && std::string_view{requested} == "wayland,x11" && std::string_view{actual} == "x11")
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system,
+                "Native Wayland initialization failed; using X11.");
     }
 
     void shutdown() noexcept {
         if (shutdown_started_)
             return;
         shutdown_started_ = true;
+        platform.display_watchdog.reset();
         jobs.project_open_runtime.shutdown();
         jobs.resource_copy_runtime.cancel();
         jobs.preview_audio_runtime.cancel();
@@ -4544,7 +4562,7 @@ struct application_t::implementation_t {
         {
             wormedit::sys::frame_phase_scope_t input(wormedit::sys::frame_phase_t::events_input);
             if (!wormedit::sys::poll_frontend_events(
-                    platform.lifetime.runtime.window, frontend_inputs(),
+                    platform.lifetime.runtime.window, platform.event_batch, frontend_inputs(),
                     can_offer_audio_project_drop(session.project_identity.session_loaded,
                                                  session.project_identity.fresh_blank_project,
                                                  session.history),
@@ -5010,6 +5028,12 @@ struct application_t::implementation_t {
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
         wormedit::sys::render_application_frame(platform.lifetime.runtime.window, frame_start_ns);
         wormedit::sys::frame_timing().end_frame();
+        if (platform.display_watchdog) {
+            auto* window = platform.lifetime.runtime.window.handle;
+            const auto presentation = wormedit::common::window_presentation_t::from(window);
+            const auto pending = !presentation.is_inactive() && presentation.is_pending();
+            platform.display_watchdog->record_frame(SDL_GetTicksNS() - frame_start_ns, pending);
+        }
     }
 
     void run_frame() {
@@ -5030,6 +5054,11 @@ struct application_t::implementation_t {
         const auto frame_start_ns = SDL_GetTicksNS();
         const auto notification_now = notification_frame_time();
         begin_frame(notification_now);
+        if (platform.display_watchdog) {
+            auto* window = platform.lifetime.runtime.window.handle;
+            platform.display_watchdog->publish_window(SDL_GetWindowFlags(window),
+                SDL_GetKeyboardFocus() == window);
+        }
         poll_frame_events();
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();

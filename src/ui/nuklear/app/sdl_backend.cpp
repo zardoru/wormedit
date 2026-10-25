@@ -21,6 +21,8 @@
  * SOFTWARE.
  */
 
+#include "common/window_presentation.h"
+
 #define NK_IMPLEMENTATION
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -691,6 +693,10 @@ NK_API void nk_sdl_begin_frame(struct nk_context* ctx) {
         sdl->field_frames[index]->marker_count = 0;
     sdl->field = sdl->field_frames[0];
     sdl->next_field_frame = 0;
+}
+
+NK_API void nk_sdl_discard_frame(struct nk_context* ctx) {
+    if (ctx && ctx->userdata.ptr) finish_nuklear_frame(ctx, static_cast<nk_sdl*>(ctx->userdata.ptr));
 }
 
 NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
@@ -1446,6 +1452,13 @@ auto compose_canvas_cache(nk_context* context) -> std::unique_ptr<compose_canvas
 }
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
     return static_cast<nk_sdl*>(context->userdata.ptr)->field->geometry;
+}
+auto can_draw_compose_field(nk_context* context) -> bool {
+    const auto* backend = static_cast<const nk_sdl*>(context->userdata.ptr);
+    auto* window = SDL_GetRenderWindow(backend->renderer);
+    // Surface software renderers have no presentation window; their independent
+    // hidden input window does not make offscreen rendering unavailable.
+    return common::window_presentation_t::from(window).can_draw();
 }
 auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     -> wormedit::ui::field::renderer_t& {

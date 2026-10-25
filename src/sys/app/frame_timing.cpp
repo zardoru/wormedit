@@ -272,6 +272,10 @@ void frame_timing_t::begin_frame() {
     current_.cpu_measured = cpu_begin_ms_ >= 0.0;
     current_.switches_measured = thread_switches(voluntary_begin_, involuntary_begin_);
     active_ = true;
+    publish_progress();
+}
+void frame_timing_t::publish_progress() {
+    progress_.publish({SDL_GetTicksNS(), phase_});
 }
 void frame_timing_t::checkpoint() {
     if (!active_)
@@ -314,11 +318,13 @@ auto frame_timing_t::enter(frame_phase_t phase) -> frame_phase_t {
     checkpoint();
     const auto previous = phase_;
     phase_ = phase;
+    publish_progress();
     return previous;
 }
 void frame_timing_t::restore(frame_phase_t phase) {
     checkpoint();
     phase_ = phase;
+    publish_progress();
 }
 void frame_timing_t::end_frame() {
     if (!active_)

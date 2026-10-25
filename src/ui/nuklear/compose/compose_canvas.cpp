@@ -3579,6 +3579,11 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
     last_compose_viewport_for_testing = wormedit::ui::testing_rect_view_t{
         viewport.x, viewport.y, viewport.w, viewport.h};
     quantize_overlay_viewport = last_compose_viewport_for_testing;
+    if (!wormedit::ui::nuklear::can_draw_compose_field(context)) {
+        auto& owner = wormedit::ui::nuklear::compose_canvas_cache(context);
+        if (owner) static_cast<canvas_cache_state_t&>(*owner).static_work = {};
+        return;
+    }
     bind_compose_field_layout(*view);
     wormedit::ui::nuklear::begin_compose_field(context,
                                               {viewport.x, viewport.y, viewport.w, viewport.h});

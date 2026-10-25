@@ -461,6 +461,11 @@ catch_discover_tests(wormedit_player_preview_status_tests
 )
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_display_health_tests sys/display_health_tests.cpp
+        ../src/sys/app/display_health.cpp)
+    target_include_directories(wormedit_display_health_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(wormedit_display_health_tests PRIVATE SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_display_health_tests TEST_PREFIX "display-health." ADD_TAGS_AS_LABELS)
     add_executable(wormedit_options_state_tests
         ui/nuklear_options_state_tests.cpp
         ../src/sys/preferences/options_runtime.cpp
@@ -694,6 +699,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/keep_pitch_event_harness_tests.cpp
         ui/markers_event_harness_tests.cpp
         ui/export_cut_event_harness_tests.cpp
+        ui/presentation_event_harness_tests.cpp
         ui/export_cut_drag_event_harness_tests.cpp
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/dock_shortcut_event_harness_tests.cpp

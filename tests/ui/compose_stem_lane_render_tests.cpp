@@ -17,14 +17,15 @@ struct field_submission_fixture_t {
     SDL_Surface* surface{};
     SDL_Renderer* renderer{};
     nk_context* context{};
-    field_submission_fixture_t() {
+    explicit field_submission_fixture_t(bool window_backed = false) {
         SDL_setenv_unsafe("SDL_VIDEODRIVER", "dummy", 1);
         SDL_setenv_unsafe("SDL_AUDIODRIVER", "dummy", 1);
         if (!SDL_Init(SDL_INIT_VIDEO)) return;
         window = SDL_CreateWindow("clipped stem", 128, 128, SDL_WINDOW_HIDDEN);
         surface = SDL_CreateSurface(128, 128, SDL_PIXELFORMAT_RGBA32);
         if (!window || !surface) return;
-        renderer = SDL_CreateSoftwareRenderer(surface);
+        renderer = window_backed ? SDL_CreateRenderer(window, "software")
+                                 : SDL_CreateSoftwareRenderer(surface);
         if (!renderer) return;
         context = nk_sdl_init(window, renderer, nk_sdl_allocator());
         if (context) nk_sdl_style_set_debug_font(context);
@@ -509,4 +510,105 @@ TEST_CASE("Static pixel coverage gate detects missing thin glyphs and shifts bey
     CHECK(static_pixel_difference(mutation_glyph_pixels(40,1),empty).coverage>0);
     CHECK(static_pixel_difference(mutation_glyph_pixels(40,8),mutation_glyph_pixels(42,8)).coverage>0);
     CHECK(static_pixel_difference(mutation_glyph_pixels(40,8),mutation_glyph_pixels(41,8)).coverage==0);
+}
+
+namespace {
+auto presentation_test_view(const wormedit::ui::compose_view_t& source) -> wormedit::ui::compose_view_t {
+    wormedit::ui::compose_view_t view;
+    view.scene_available = true;
+    view.viewport_width_pixels = view.viewport_height_pixels = 128;
+    view.pixels_per_standard_measure = 192;
+    view.static_scene = &source;
+    view.static_scene_style_generation = view.static_scene_source_generation = 1;
+    view.static_scene_covered_begin_pixels = -2048;
+    view.static_scene_covered_end_pixels = 2048;
+    project_edge_notes(view, source, .25);
+    return view;
+}
+
+void check_suspended_viewport() {
+    const auto viewport = compose_canvas_viewport_for_testing();
+    REQUIRE(viewport);
+    CHECK(viewport->width == 128);
+}
+
+void check_suspended_field(field_submission_fixture_t& fixture,
+                            const wormedit::ui::compose_view_t& view) {
+    using namespace wormedit::ui::nuklear;
+    REQUIRE_FALSE(can_draw_compose_field(fixture.context));
+    measure_compose_static_work_for_testing(fixture.context, true);
+    draw_static_work_frame(fixture, view);
+    const auto& field = compose_field(fixture.context);
+    CHECK(field.vertices().empty());
+    CHECK(field.indices().empty());
+    CHECK(field.tile_work().raster_draws == 0);
+    CHECK(compose_static_work_for_testing(fixture.context) == compose_static_work_t{});
+    check_suspended_viewport();
+    nk_sdl_discard_frame(fixture.context);
+}
+
+void check_resumed_field(field_submission_fixture_t& fixture,
+                          const wormedit::ui::compose_view_t& view) {
+    using namespace wormedit::ui::nuklear;
+    REQUIRE(SDL_ShowWindow(fixture.window));
+    REQUIRE(SDL_SetBooleanProperty(SDL_GetWindowProperties(fixture.window),
+        "wormedit.gpu.presentation_pending", false));
+    REQUIRE(can_draw_compose_field(fixture.context));
+    std::size_t raster_draws{};
+    for (unsigned frame = 0; frame < 24; ++frame) {
+        draw_static_work_frame(fixture, view);
+        raster_draws += compose_field(fixture.context).tile_work().raster_draws;
+        nk_sdl_discard_frame(fixture.context);
+    }
+    CHECK_FALSE(compose_field(fixture.context).vertices().empty());
+    CHECK(raster_draws > 0);
+}
+
+void check_hidden_field_diagnostics_reset(field_submission_fixture_t& fixture,
+                                          const wormedit::ui::compose_view_t& view) {
+    using namespace wormedit::ui::nuklear;
+    REQUIRE(compose_static_work_for_testing(fixture.context).vertices > 0);
+    REQUIRE(SDL_HideWindow(fixture.window));
+    draw_static_work_frame(fixture, view);
+    CHECK(compose_static_work_for_testing(fixture.context) == compose_static_work_t{});
+    nk_sdl_discard_frame(fixture.context);
+}
+
+void check_window_field_suspension(bool pending) {
+    field_submission_fixture_t fixture{true};
+    REQUIRE(fixture.context);
+    REQUIRE(SDL_GetRenderWindow(fixture.renderer) == fixture.window);
+    if (pending) {
+        REQUIRE(SDL_ShowWindow(fixture.window));
+        REQUIRE(SDL_SetBooleanProperty(SDL_GetWindowProperties(fixture.window),
+            "wormedit.gpu.presentation_pending", true));
+    }
+    const auto source = edge_note_source(192);
+    const auto view = presentation_test_view(source);
+    check_suspended_field(fixture, view);
+    check_resumed_field(fixture, view);
+    check_hidden_field_diagnostics_reset(fixture, view);
+}
+} // namespace
+
+TEST_CASE("Cold hidden Compose windows skip field geometry and tile rasterization before discard",
+          "[ui][field][presentation][isolated-software-render]") {
+    check_window_field_suspension(false);
+}
+
+TEST_CASE("Pending Compose windows skip field geometry and tile rasterization and resume",
+          "[ui][field][presentation][isolated-software-render]") {
+    check_window_field_suspension(true);
+}
+
+TEST_CASE("Offscreen Compose surface renderers allow their separate hidden input window",
+          "[ui][field][presentation][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    CHECK(SDL_GetRenderWindow(fixture.renderer) == nullptr);
+    CHECK(wormedit::ui::nuklear::can_draw_compose_field(fixture.context));
+    const auto source = edge_note_source(192);
+    const auto view = presentation_test_view(source);
+    draw_static_work_frame(fixture, view);
+    CHECK_FALSE(wormedit::ui::nuklear::compose_field(fixture.context).vertices().empty());
 }

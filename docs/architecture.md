@@ -216,6 +216,17 @@ The right strip owns panel activation and the arrangement toggle. Drag captures 
 publication until release; hiding Compose or losing input cancels capture without a late click.
 Markers embeds the same bounded bookmark-list controls and projection as the popup chooser.
 
+Display service ownership lives in `sys/app/application_frame_services`: the
+event batch retains a second edge for the same key/button until the next frame,
+leaving subsequent SDL events queued in order. Hidden/minimized/occluded frames
+retire frontend commands without submitting them, while input, audio, jobs and
+autosave continue. The application-owned display watchdog reads atomic progress,
+reports a presentation stall once, and stops before SDL teardown.
+SDL remains the cross-platform renderer abstraction. The audited private SDL
+source override uses bounded acquire/recovery polling with presentation fences
+on Linux, requires the maintenance extensions at startup, and preserves Metal
+on Apple platforms. See [the override contract and checks](../cmake/sdl/README.md).
+
 Cross-chart sound/BGA use activation and notification jumps build a detached
 `workspace_navigation_t` in `src/sys/project/workspace_navigation.h`. It opens the chart and
 moves the cursor through normal workspace and editor actions before publishing both view states.

@@ -1,8 +1,10 @@
 #include "sys/app/application_startup.h"
+#include "sys/app/display_health.h"
 
 #include "ui/frontend.h"
 
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_hints.h>
 
 #include <cstdio>
 
@@ -45,6 +47,12 @@ auto select_initial_application_status(
 }
 
 auto initialize_sdl_runtime(application_runtime_t& runtime) -> bool {
+    const auto env = [](const char* name) -> std::string_view {
+        const auto* value = SDL_getenv(name);
+        return value ? std::string_view{value} : std::string_view{};
+    };
+    if (const auto drivers = preferred_video_drivers(env("WAYLAND_DISPLAY"), env("SDL_VIDEODRIVER")))
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, drivers->data());
     if (!SDL_Init(0)) {
         std::fprintf(stderr, "SDL init failed\n");
         return false;

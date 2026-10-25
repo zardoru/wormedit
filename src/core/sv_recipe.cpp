@@ -2231,8 +2231,12 @@ struct scoped_recipe_editor_t {
                     return {.diagnostics = {error(diagnostic_code_t::invalid_resolution, "Selected chart exceeds the SV recipe cap.")}};
                 auto diagnostics = validate_sv_recipe(target, value);
                 if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
-                return {.value = bms_native_edit_effect_t{.effect = {.changed = true,
-                    .command_label = "Edit SV recipe"}, .event = value}};
+                attempt_t<bms_native_edit_effect_t> result{};
+                auto& edited = result.value.emplace();
+                edited.effect.changed = true;
+                edited.effect.command_label = "Edit SV recipe";
+                edited.event = value;
+                return result;
             });
     }
     auto operator()(const insert_edit_t<sv_recipe_t>& edit) -> attempt_t<document_edit_effect_t> {

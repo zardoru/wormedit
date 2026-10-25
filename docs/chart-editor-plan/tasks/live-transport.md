@@ -121,18 +121,18 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 | Measured owner/context (stable unless noted) | Before mean ms | After mean ms |
 |---|---:|---:|
-| Compose flatten | 0.441191 | 0.199315 |
-| Compose controls | 0.481473 | 0.254709 |
-| Metadata flatten | 0.183807 | 0.189147 |
-| Metadata row projection | 0.013257 | 0.003200 |
-| BMSON row projection stage | 0.020088 | 0.007407 |
-| Full application projection, BMSON | 3.487673 | 1.181540 |
-| Full application projection, BMSON playhead | 3.454933 | 1.188837 |
-| Selected-but-stable transport, Compose controls | 0.978715 | 0.730643 |
+| Compose flatten | 0.441191 | 0.199039 |
+| Compose controls | 0.481473 | 0.261948 |
+| Metadata flatten | 0.183807 | 0.181076 |
+| Metadata row projection | 0.013257 | 0.006885 |
+| BMSON row projection stage | 0.020088 | 0.007491 |
+| Full application projection, BMSON | 3.487673 | 1.183329 |
+| Full application projection, BMSON playhead | 3.454933 | 1.175147 |
+| Selected-but-stable transport, Compose controls | 0.978715 | 0.754882 |
 
 - **Measured rebuild counts:** stable/playhead/scroll retained-pane frames have zero deltas across all 13 eligible products: `resource_rows`, `keysound_rows`, `branch_rows`, `recipe_rows`, `metadata_rows`, `scene_index`, `static_source`, `timing_payload`, `resource_catalog`, `keysound_source`, `metadata_inheritance`, `metadata_lane_targets`, `metadata_model_rows`. Before, the four Compose presentation groups or two visible Metadata groups each refilled 30 times. Selection refreshes the actual keysound dependencies; edits rebuild revision products; resize rebuilds viewport/static geometry. In the real BMSON application context, stable/playhead source-index and selection builds stay zero; actual outer row refills fall from 30 (derived from measured dispatches and the audited unconditional old refill) to zero. Scroll/selection/edit/resize refill BMSON rows 30 times. Dispatch/source-query calls still occur 30 times; those are not rebuild counts. The inner selection counter resets with parent-index replacement, so its end-minus-start delta is meaningful only while the source index stays stable.
 - **Validation evidence:** matched benchmark runs pass: 270 assertions for application/BMSON, 552 for pane scenarios, and 36 each for before/after selected-stable transport. Regression coverage includes cold-content equivalence across all six scenarios, source replacement, same-size selected IDs, hidden/reopened rows, zoom, async recipe publication, unchanged-revision Metadata drops, and BMSON analysis/binding/scalar-header invalidation. Final GATE passes **5,219/5,219**, build, whitespace and **33 changed-TU complexity checks** without increased allowances (`/tmp/wormedit-gate.km3gjZ`). Same-revision source/output path rebasing retains its value-keyed refresh; BMSON retains analysis evidence from existing provider calls, preserving the established cold-request count and warmed allocation contract.
-- **Limits:** these are headless projection costs, not native complete-frame/display certification. Whole application-frame allocations remain nonzero: 1,170 to 1,080 over 30 stable/playhead samples. Changing selection/edit frames remain expensive (approximately 1,409/351 ms in the dense BMSON fixture); this card does not claim to eliminate work caused by those changes or their static-scene reconstruction.
+- **Limits:** these are headless projection costs, not native complete-frame/display certification. Whole application-frame allocations remain nonzero: 1,170 to 1,080 over 30 stable/playhead samples. Changing selection/edit frames remain expensive (approximately 1,492/358 ms in the dense BMSON fixture); this card does not claim to eliminate work caused by those changes or their static-scene reconstruction.
 - **Invariants:** any edit, selection, zoom, or resize refreshes everything on the next frame.
 - **Reject/failure behavior:** a missed dependency shows stale UI; tests guard each sub-projection's key.
 - **Verify:** standard build/test; T-211/T-243 before/after tables.

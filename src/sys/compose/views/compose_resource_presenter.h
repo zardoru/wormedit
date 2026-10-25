@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <tuple>
 #include <vector>
 
 namespace wormedit::sys {
@@ -76,6 +77,7 @@ struct compose_resource_catalog_key_t {
 
 struct compose_resource_catalog_cache_t {
     keyed_cache_t<compose_resource_catalog_key_t, compose_resource_catalog_t> catalog;
+    keyed_cache_t<std::tuple<std::size_t, std::optional<asset_id_t>, std::optional<asset_id_t>>, bool> selection;
 };
 
 using compose_sound_labels_t =

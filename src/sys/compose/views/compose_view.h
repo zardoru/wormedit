@@ -67,6 +67,7 @@
 namespace wormedit::sys {
 class generator_runtime_t;
 struct frontend_workspace_view_t;
+struct bmson_projection_cache_t;
 namespace compose_input_detail { struct compose_input_context_t; }
 
 struct compose_bga_move_preview_input_t {
@@ -400,6 +401,8 @@ struct compose_scene_cache_t {
         // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
         // reserved up front so the view's row pointers stay valid through the frame).
         std::vector<stem_waveform_cache_t> stem_waveforms;
+        std::shared_ptr<bmson_projection_cache_t> rows;
+        std::size_t row_refills{};
         packed_waveform_index_t packed_waveform_index;
         audio::display_row_table_t packed_waveform_row_table;
         std::vector<stem_waveform_cache_t> packed_waveforms;
@@ -423,6 +426,8 @@ struct compose_scene_cache_t {
             return packed_waveforms.back();
         }
 #endif
+        std::size_t visible_channel_queries{};
+        std::size_t waveform_projection_calls{};
     } stems;
 
     struct waveform_state_t {

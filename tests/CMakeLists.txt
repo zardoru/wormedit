@@ -866,6 +866,12 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        ../src/sys/app/application_frame_view.cpp
+        ../src/sys/compose/views/compose_waveform_overlays.cpp
+        ../src/sys/project/workspace_frame_view.cpp
+        ../src/sys/audio/player_preview_presenter.cpp
+        ../src/sys/metadata/metadata_view.cpp
+        ../src/sys/metadata/metadata_actions.cpp
         sys/compare_view_tests.cpp
         ../src/sys/project/compare_view.cpp
         ../src/sys/resources/bga_dock_runtime.cpp
@@ -971,6 +977,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/manual_sound_group_command_tests.cpp
             sys/sound_properties_actions_tests.cpp
             sys/audio_waveform_projection_tests.cpp
+            sys/bmson_projection_cache_tests.cpp
             ../src/sys/compose/actions/compose_sound_actions.cpp
             ../src/sys/commands/application_command_dispatch.cpp
             ../src/sys/commands/application_commands.cpp

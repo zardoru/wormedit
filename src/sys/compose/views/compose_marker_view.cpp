@@ -872,6 +872,35 @@ void build_recipe_spacing_view(const wormedit::chart_document_t& chart,
         if (const auto rows = wormedit::snap_step(measure, {.denominator = denominator}, measure))
             form.spacing_options.push_back({.denominator = denominator, .rows = *rows});
 }
+auto refill_recipe_auxiliary_rows(frontend_workspace_view_t& flattened,
+                                  const chart_document_t& chart, const sv_recipe_t& recipe,
+                                  std::span<const std::uint64_t> snap_denominators,
+                                  const std::optional<recipe_form_outcome_t>& preview) -> bool {
+    auto& view = flattened.view.compose;
+    ++flattened.compose.recipe_auxiliary_refills;
+    view.recipe_form.postprocess_labels.clear();
+    view.recipe_form.sampled_points.clear();
+    view.recipe_form.impulse_boxes.clear();
+    build_recipe_spacing_view(chart, snap_denominators, view.recipe_form);
+    for (const auto& stage : recipe.postprocess)
+        view.recipe_form.postprocess_labels.push_back(stage.label());
+    if (preview && preview->report()) {
+        const auto& report = *preview->report();
+        for (const auto& prepared : report.prepared) {
+            if (prepared.recipe().id != recipe.id)
+                continue;
+            for (const auto& point : prepared.samples().points)
+                view.recipe_form.sampled_points.push_back({point.absolute_row, point.value});
+            for (const auto& box : prepared.impulse_boxes())
+                view.recipe_form.impulse_boxes.push_back(
+                    {box.entry_row, box.exit_row, static_cast<double>(box.raw_area),
+                     static_cast<double>(box.area), static_cast<double>(box.realized_area),
+                     static_cast<double>(box.area_error),
+                     static_cast<double>(box.width_milliseconds)});
+        }
+    }
+    return true;
+}
 } // namespace
 
 void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
@@ -885,51 +914,65 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
     view.recipe_form.name = {};
     view.recipe_form.expression_source = {};
     view.recipe_form.status_text = {};
-    view.recipe_form.postprocess_labels.clear();
-    view.recipe_form.sampled_points.clear();
-    view.recipe_form.impulse_boxes.clear();
     view.recipe_form.composed_point_count = 0;
-    view.recipe_form.evaluation_busy = application_state.project.timing_recipe.evaluation &&
+    view.recipe_form.evaluation_busy =
+        application_state.project.timing_recipe.evaluation &&
         application_state.project.timing_recipe.evaluation->is_busy();
-    const auto recipe = std::ranges::find(chart.sv_recipes,
-        wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected}, &wormedit::sv_recipe_t::id);
-    if (application_state.project.timing_recipe.recipe_selected == 0 || recipe == chart.sv_recipes.end()) {
+    const auto recipe = std::ranges::find(
+        chart.sv_recipes,
+        wormedit::recipe_id_t{application_state.project.timing_recipe.recipe_selected},
+        &wormedit::sv_recipe_t::id);
+    if (application_state.project.timing_recipe.recipe_selected == 0 ||
+        recipe == chart.sv_recipes.end()) {
         flattened.compose.recipe_form_source.reset();
+        flattened.compose.recipe_rows.invalidate();
+        view.recipe_form.postprocess_labels.clear();
+        view.recipe_form.spacing_options.clear();
+        view.recipe_form.sampled_points.clear();
+        view.recipe_form.impulse_boxes.clear();
         view.recipe_form.form.lua_parameters.clear();
         view.recipe_form.form.lua_cycles.clear();
         return;
     }
     view.recipe_form.visible = true;
-    build_recipe_spacing_view(chart, snap_denominators, view.recipe_form);
     view.recipe_form.recipe_id.value = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;
     view.recipe_form.name = recipe->name;
     view.recipe_form.expression_source = recipe->expression_source;
-    for (const auto& stage : recipe->postprocess)
-        view.recipe_form.postprocess_labels.push_back(stage.label());
-    view.recipe_form.status_text = application_state.project.timing_recipe.recipe_preview &&
-        !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
-        ? std::string_view{application_state.project.timing_recipe.recipe_preview->diagnostics.front().message}
-        : std::string_view{};
-    const auto source = std::tuple{view.project_id, chart.id, view.document_revision, recipe->id,
-        flattened.query_session_generation};
+    view.recipe_form.status_text =
+        application_state.project.timing_recipe.recipe_preview &&
+                !application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
+            ? std::string_view{application_state.project.timing_recipe.recipe_preview->diagnostics
+                                   .front()
+                                   .message}
+            : std::string_view{};
+    const auto source = std::tuple{view.project_id,
+                                   chart.id,
+                                   view.document_revision,
+                                   recipe->id,
+                                   flattened.query_session_generation,
+                                   &chart};
     if (flattened.compose.recipe_form_source != source) {
         view.recipe_form.form.refill(*recipe);
         flattened.compose.recipe_form_source = source;
     }
-    if (const auto& preview = application_state.project.timing_recipe.recipe_preview; preview && preview->report()) {
-        const auto& report = *preview->report();
-        view.recipe_form.composed_point_count = report.composed_points.size();
-        for (const auto& prepared : report.prepared) {
-            if (prepared.recipe().id != recipe->id) continue;
-            for (const auto& point : prepared.samples().points)
-                view.recipe_form.sampled_points.push_back({point.absolute_row, point.value});
-            for (const auto& box : prepared.impulse_boxes())
-                view.recipe_form.impulse_boxes.push_back({box.entry_row, box.exit_row,
-                    static_cast<double>(box.raw_area), static_cast<double>(box.area),
-                    static_cast<double>(box.realized_area), static_cast<double>(box.area_error),
-                    static_cast<double>(box.width_milliseconds)});
-        }
-    }
+    const auto& preview = application_state.project.timing_recipe.recipe_preview;
+    if (preview && preview->report())
+        view.recipe_form.composed_point_count = preview->report()->composed_points.size();
+    const compose_scene_source_key_t source_identity{
+        .document_identity = nullptr,
+        .chart_identity = &chart,
+        .stamp = {.document = {.project = view.project_id, .revision = view.document_revision},
+                  .chart = chart.id}};
+    (void)flattened.compose.recipe_rows.get_or_build(
+        compose_recipe_rows_query_t{.source = source_identity,
+                                    .session = flattened.query_session_generation,
+                                    .publication = preview ? preview->publication_generation() : 0,
+                                    .recipe = recipe->id,
+                                    .snaps = snap_denominators},
+        [&] {
+            return refill_recipe_auxiliary_rows(flattened, chart, *recipe, snap_denominators,
+                                                preview);
+        });
 }
 } // namespace wormedit::sys::compose_projection_detail

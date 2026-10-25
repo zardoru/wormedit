@@ -76,7 +76,9 @@ class recipe_form_outcome_t : public proposal_outcome_t<recipe_form_preview_t> {
         static constexpr chart_stamp_t empty{};
         return captured ? captured->stamp : empty;
     }
+    [[nodiscard]] auto publication_generation() const noexcept -> std::uint64_t { return publication_generation_; }
     void complete(bool is_accepted) {
+        advance_publication_generation();
         if (is_accepted) {
             if (!value && rejected_) value = std::move(rejected_);
             rejected_.reset();
@@ -88,6 +90,10 @@ class recipe_form_outcome_t : public proposal_outcome_t<recipe_form_preview_t> {
 
 
   private:
+    friend class recipe_evaluation_runtime_t;
+    [[nodiscard]] static auto next_publication_generation() -> std::uint64_t;
+    void advance_publication_generation() { publication_generation_ = next_publication_generation(); }
+    std::uint64_t publication_generation_{next_publication_generation()};
     std::optional<recipe_form_proposal_t> rejected_;
 };
 

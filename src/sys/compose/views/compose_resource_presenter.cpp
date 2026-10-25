@@ -125,7 +125,10 @@ auto compose_resource_catalog_t::from(compose_resource_catalog_cache_t& cache,
     auto& catalog = cache.catalog.get_or_build(query, [&] {
         return compose_resource_catalog_t::from(document, std::nullopt, maximum_entries);
     });
-    catalog.select(selected_audio_asset, selected_visual_asset);
+    (void)cache.selection.get_or_build(std::tuple{cache.catalog.build_count(), selected_audio_asset, selected_visual_asset}, [&] {
+        catalog.select(selected_audio_asset, selected_visual_asset);
+        return true;
+    });
     return catalog;
 }
 

@@ -25,6 +25,7 @@
 #include <wormedit/formats/conversion.h>
 
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -40,6 +41,33 @@ namespace wormedit::sys {
 
 struct application_frame_projection_context_t;
 
+struct compose_recipe_rows_query_t {
+    compose_scene_source_key_t source;
+    std::uint64_t session{}, publication{};
+    recipe_id_t recipe;
+    std::span<const std::uint64_t> snaps;
+};
+struct compose_recipe_rows_key_t {
+    compose_scene_source_key_t source;
+    std::uint64_t session{}, publication{};
+    recipe_id_t recipe;
+    std::vector<std::uint64_t> snaps;
+    auto operator==(const compose_recipe_rows_key_t&) const -> bool = default;
+    [[nodiscard]] auto operator==(const compose_recipe_rows_query_t& query) const -> bool {
+        return source == query.source && session == query.session && publication == query.publication &&
+            recipe == query.recipe && std::ranges::equal(snaps, query.snaps);
+    }
+    void assign(const compose_recipe_rows_query_t& query) {
+        source = query.source; session = query.session; publication = query.publication; recipe = query.recipe;
+        snaps.assign(query.snaps.begin(), query.snaps.end());
+    }
+    [[nodiscard]] static auto from(const compose_recipe_rows_query_t& query) -> compose_recipe_rows_key_t {
+        compose_recipe_rows_key_t key;
+        key.assign(query);
+        return key;
+    }
+};
+
 struct frontend_workspace_view_t {
     wormedit::ui::workspace_view_t view{};
     std::vector<projection_feedback_t> projection_feedback;
@@ -49,12 +77,28 @@ struct frontend_workspace_view_t {
     void reset();
 
     struct {
+        // Owner work counters distinguish retained presentation refills from
+        // cached domain products and frame-only transport updates.
+        std::size_t resource_rows_refills{};
+        std::size_t keysound_rows_refills{};
+        std::size_t branch_outline_refills{};
+        std::size_t recipe_auxiliary_refills{};
+        std::uint64_t bmson_rows_epoch{};
+        keyed_cache_t<compose_recipe_rows_key_t, bool> recipe_rows;
+        keyed_cache_t<std::tuple<const compose_resource_catalog_cache_t*, std::size_t,
+            std::optional<asset_id_t>, std::optional<asset_id_t>, std::uint64_t>, bool> resource_rows;
+        keyed_cache_t<std::tuple<const keysound_list_view_t*, std::size_t, std::uint64_t>, bool> keysound_rows;
+        keyed_cache_t<std::tuple<workspace_shared_bms_branch_outline_t, const song_document_t*, chart_stamp_t, std::uint64_t>, std::size_t> branch_rows;
+        keyed_cache_t<std::size_t, bool> slot_rows;
+        keyed_cache_t<std::tuple<const sound_picker_cache_t*, std::size_t, std::uint64_t, document_stamp_t>, bool> picker_rows;
+        keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t>, bool> sound_groups;
+
         struct {
             std::vector<wormedit::exact_chart_row_t> row;
         } grid;
         std::vector<std::string> recipe_area_labels;
         std::optional<std::tuple<song_id_t, chart_id_t, std::uint64_t, recipe_id_t, std::uint64_t>> generator_form_source;
-        std::optional<std::tuple<song_id_t, chart_id_t, std::uint64_t, recipe_id_t, std::uint64_t>> recipe_form_source;
+        std::optional<std::tuple<song_id_t, chart_id_t, std::uint64_t, recipe_id_t, std::uint64_t, const chart_document_t*>> recipe_form_source;
         std::vector<std::string> dead_span_labels;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;

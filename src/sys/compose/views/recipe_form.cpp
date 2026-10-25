@@ -1,3 +1,4 @@
+#include <atomic>
 #include "sys/compose/views/recipe_form.h"
 #include "core/text_util.h"
 #include "sys/notifications/projection_notification_feedback.h"
@@ -198,6 +199,13 @@ auto recipe_from_form(const wormedit::ui::timing_recipe_form_t& form, const sv_r
         !set_postprocess(candidate, form))
         return std::nullopt;
     return candidate;
+}
+
+auto recipe_form_outcome_t::next_publication_generation() -> std::uint64_t {
+    static std::atomic<std::uint64_t> next{1};
+    auto generation = next.fetch_add(1, std::memory_order_relaxed);
+    if (!generation) generation = next.fetch_add(1, std::memory_order_relaxed);
+    return generation;
 }
 
 auto recipe_form_preview_t::propose(const song_document_t& document,

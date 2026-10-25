@@ -1913,16 +1913,35 @@ void build_compose_lane_key_view(
     view.lane_keys_unbound = profile.bindings.empty();
 }
 
+auto selected_hitsound(const wormedit::chart_document_t& chart,
+    const wormedit::editor_hit_test_index_t& index, wormedit::object_id_t id)
+    -> std::optional<wormedit::osu_hitsample_t> {
+    const wormedit::editor_selection_object_t object{wormedit::editor_selection_object_kind_t::note, id};
+    const auto found = std::ranges::lower_bound(index.hover_objects_by_id, object, {},
+        &wormedit::editor_hover_index_entry_t::object);
+    if (found == index.hover_objects_by_id.end() || found->object != object ||
+        found->source_group >= chart.measures.size()) return {};
+    const auto& notes = chart.measures[found->source_group].notes;
+    if (found->source_index >= notes.size() || notes[found->source_index].id != id) return {};
+    return notes[found->source_index].osu_hitsample.value_or(wormedit::osu_hitsample_t{});
+}
+
 void populate_compose_hitsounds(const wormedit::chart_document_t& chart,
-    const wormedit::editor_interaction_state_t& state, wormedit::ui::compose_view_t& view) {
+    const wormedit::editor_interaction_state_t& state, wormedit::ui::compose_view_t& view,
+    compose_scene_cache_t& cache) {
     const auto selected = view.resource_paint_mode_active ? std::vector<wormedit::object_id_t>{}
         : wormedit::editor_quantize_selection(state).notes;
-    std::unordered_set<std::uint64_t> ids;
-    for (const auto id : selected) ids.insert(id.value);
+    if (selected.empty()) {
+        const std::array samples{state.armed_hitsample.value_or(wormedit::osu_hitsample_t{})};
+        view.hitsounds = wormedit::ui::hitsound_palette_view_t::from(
+            state.has_hitsound_palette(chart.source_family), samples);
+        return;
+    }
+    const auto* index = cache.hit_test_index_for(chart, view.document_revision);
     std::vector<wormedit::osu_hitsample_t> samples;
-    for (const auto& measure : chart.measures)
-        for (const auto& note : measure.notes)
-            if (ids.contains(note.id.value)) samples.push_back(note.osu_hitsample.value_or(wormedit::osu_hitsample_t{}));
+    samples.reserve(selected.size());
+    if (index) for (const auto id : selected)
+        if (const auto sample = selected_hitsound(chart, *index, id)) samples.push_back(*sample);
     if (samples.empty()) samples.push_back(state.armed_hitsample.value_or(wormedit::osu_hitsample_t{}));
     view.hitsounds = wormedit::ui::hitsound_palette_view_t::from(
         state.has_hitsound_palette(chart.source_family), samples);
@@ -1948,7 +1967,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         application_state.project.compose_gesture.resource_paint_mode_active = false;
     view.resource_paint_mode_active = application_state.project.compose_gesture.resource_paint_mode_active;
     view.resource_paint_has_sample = application_state.project.compose_gesture.sample_resource(history.document).has_value();
-    populate_compose_hitsounds(chart, *retained_state, view);
+    populate_compose_hitsounds(chart, *retained_state, view, cache);
     view.allowed_note_kind_mask = 0;
     for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
         if (wormedit::is_note_kind_allowed(chart, static_cast<wormedit::note_kind_t>(kind)))

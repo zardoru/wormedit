@@ -160,6 +160,7 @@ void recipe_evaluation_runtime_t::publish(std::optional<job_t::completion_t> com
             report->composed_points = preview->report()->composed_points;
         }
     }
+    result.advance_publication_generation();
     preview = std::move(result);
 }
 void recipe_evaluation_runtime_t::cancel() { job_.cancel(); pending_.reset(); requested_.reset(); stamp_ = {}; recipe_ = {}; }

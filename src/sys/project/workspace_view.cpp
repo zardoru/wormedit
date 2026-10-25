@@ -300,50 +300,67 @@ void populate_metadata_summary(const workspace_projection_context_t& projection,
     }
 }
 
-void populate_metadata_tab(const workspace_projection_context_t& projection, const wormedit::workspace_metadata_view_t& tab) {
+auto refill_metadata_model_rows(const workspace_projection_context_t& projection,
+                                const workspace_metadata_view_t& tab) -> metadata_model_header_t {
+    auto& result = projection.result;
+    auto& metadata = result.view.metadata;
+    ++result.metadata_projection_cache.model_rows_refills;
+    populate_metadata_search_tags(result, tab, metadata);
+    populate_metadata_format_fields(result, tab, metadata);
+    populate_metadata_format_targets(projection, tab, metadata);
+    populate_metadata_summary(projection, tab);
+    return metadata_model_header_t{.summary_size = result.summary_size,
+                                 .field_count = metadata.format_field_total_count,
+                                 .search_tags_editable = metadata.search_tags_editable};
+}
+
+void populate_metadata_tab(const workspace_projection_context_t& projection,
+                           const wormedit::workspace_metadata_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
-                result.view.project_title = tab.title.c_str();
-                result.view.artist = tab.artist.c_str();
-                auto& metadata = result.view.metadata;
-                metadata.visible = true;
-                metadata.document_revision = source.document_revision;
-                metadata.title = tab.title.c_str();
-                metadata.artist = tab.artist.c_str();
-                metadata.song_fields_editable =
-                    tab.title.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
-                    tab.artist.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
-                    tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
-                metadata.search_tags_editable =
-                    tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
-                populate_metadata_search_tags(result, tab, metadata);
-                metadata.song_fields_editable =
-                    metadata.song_fields_editable && metadata.search_tags_editable;
-                metadata.has_chart = tab.selected_difficulty.has_value();
-                metadata.audio_offset_editable = metadata.has_chart;
-                if (tab.selected_difficulty) {
-                    metadata.chart_id = tab.selected_difficulty->id;
-                    metadata.chart_name = tab.selected_difficulty->difficulty_name.c_str();
-                    metadata.chart_author = tab.chart_author.c_str();
-                    metadata.chart_fields_editable =
-                        tab.selected_difficulty->difficulty_name.size() <=
-                            wormedit::default_metadata_edit_limits.maximum_chart_text_bytes &&
-                        tab.chart_author.size() <= wormedit::default_metadata_edit_limits.maximum_chart_text_bytes;
-                    metadata.has_chart_rating = tab.selected_difficulty->rating.has_value();
-                    if (tab.selected_difficulty->rating) {
-                        metadata.chart_rating_numerator =
-                            tab.selected_difficulty->rating->numerator;
-                        metadata.chart_rating_denominator =
-                            tab.selected_difficulty->rating->denominator;
-                    }
-                    metadata.audio_offset_numerator = tab.beat_zero_audio_offset_seconds.numerator;
-                    metadata.audio_offset_denominator =
-                        tab.beat_zero_audio_offset_seconds.denominator;
-                }
-                populate_metadata_format_fields(result, tab, metadata);
-                populate_metadata_format_targets(projection, tab, metadata);
-    populate_metadata_summary(projection, tab);
+    result.view.project_title = tab.title.c_str();
+    result.view.artist = tab.artist.c_str();
+    auto& metadata = result.view.metadata;
+    metadata.visible = true;
+    metadata.document_revision = source.document_revision;
+    metadata.title = tab.title.c_str();
+    metadata.artist = tab.artist.c_str();
+    metadata.song_fields_editable =
+        tab.title.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
+        tab.artist.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
+        tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
+    metadata.search_tags_editable =
+        tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
 
+    metadata.has_chart = tab.selected_difficulty.has_value();
+    metadata.audio_offset_editable = metadata.has_chart;
+    if (tab.selected_difficulty) {
+        metadata.chart_id = tab.selected_difficulty->id;
+        metadata.chart_name = tab.selected_difficulty->difficulty_name.c_str();
+        metadata.chart_author = tab.chart_author.c_str();
+        metadata.chart_fields_editable =
+            tab.selected_difficulty->difficulty_name.size() <=
+                wormedit::default_metadata_edit_limits.maximum_chart_text_bytes &&
+            tab.chart_author.size() <=
+                wormedit::default_metadata_edit_limits.maximum_chart_text_bytes;
+        metadata.has_chart_rating = tab.selected_difficulty->rating.has_value();
+        if (tab.selected_difficulty->rating) {
+            metadata.chart_rating_numerator = tab.selected_difficulty->rating->numerator;
+            metadata.chart_rating_denominator = tab.selected_difficulty->rating->denominator;
+        }
+        metadata.audio_offset_numerator = tab.beat_zero_audio_offset_seconds.numerator;
+        metadata.audio_offset_denominator = tab.beat_zero_audio_offset_seconds.denominator;
+    }
+    const auto& rows = result.metadata_projection_cache.model_rows.get_or_build(
+        std::tuple{&projection.document, document_stamp_t::from(projection.document),
+                   metadata.chart_id, result.query_session_generation},
+        [&] { return refill_metadata_model_rows(projection, tab); });
+    result.summary_size = rows.summary_size;
+    metadata.format_field_total_count = rows.field_count;
+    metadata.search_tags_editable = rows.search_tags_editable;
+    metadata.song_fields_editable = metadata.song_fields_editable && metadata.search_tags_editable;
+    if (const auto* chart = projection.document.read_chart(metadata.chart_id))
+        metadata.selected_chart_source_family = chart->source_family;
 }
 void populate_timing_tab(const workspace_projection_context_t& projection, const wormedit::workspace_timing_view_t& tab) {
     auto& result = projection.result;
@@ -393,19 +410,11 @@ void populate_compose_output_groups(const workspace_projection_context_t& projec
     });
 }
 
-void populate_compose_resources(const workspace_projection_context_t& projection) {
+auto refill_compose_resource_rows(const workspace_projection_context_t& projection,
+                                  const compose_resource_catalog_t& catalog) -> bool {
     auto& view = projection.result.view.compose;
-    compose_resource_catalog_t uncached;
-    const auto maximum = std::numeric_limits<std::size_t>::max();
-    const auto& catalog = projection.resource_catalog_cache
-        ? compose_resource_catalog_t::from(*projection.resource_catalog_cache, projection.document,
-              projection.source.transport.audio_asset, maximum,
-              projection.source.selected_visual_asset, projection.result.query_session_generation)
-        : (uncached = compose_resource_catalog_t::from(projection.document,
-              projection.source.transport.audio_asset, maximum,
-              projection.source.selected_visual_asset));
+    ++projection.result.compose.resource_rows_refills;
     view.resources.resize(catalog.entries.size());
-    view.resource_total_count = catalog.total_count;
     for (std::size_t index = 0; index < catalog.entries.size(); ++index) {
         const auto& source = catalog.entries[index];
         auto& row = view.resources[index];
@@ -425,6 +434,34 @@ void populate_compose_resources(const workspace_projection_context_t& projection
         row.source_path = source.source_path;
         row.use_count = source.use_count;
     }
+    return true;
+}
+
+void populate_compose_resources(const workspace_projection_context_t& projection) {
+    auto& view = projection.result.view.compose;
+    compose_resource_catalog_t uncached;
+    const auto maximum = std::numeric_limits<std::size_t>::max();
+    const auto& catalog = projection.resource_catalog_cache
+                              ? compose_resource_catalog_t::from(
+                                    *projection.resource_catalog_cache, projection.document,
+                                    projection.source.transport.audio_asset, maximum,
+                                    projection.source.selected_visual_asset,
+                                    projection.result.query_session_generation)
+                              : (uncached = compose_resource_catalog_t::from(
+                                     projection.document, projection.source.transport.audio_asset,
+                                     maximum, projection.source.selected_visual_asset));
+    view.resource_total_count = catalog.total_count;
+    const auto refill = [&] { return refill_compose_resource_rows(projection, catalog); };
+    if (!projection.resource_catalog_cache) {
+        (void)refill();
+        return;
+    }
+    (void)projection.result.compose.resource_rows.get_or_build(
+        std::tuple{projection.resource_catalog_cache,
+                   projection.resource_catalog_cache->catalog.build_count(),
+                   projection.source.transport.audio_asset, projection.source.selected_visual_asset,
+                   projection.result.query_session_generation},
+        refill);
 }
 
 auto select_compose_keysounds(const workspace_projection_context_t& projection,
@@ -475,34 +512,20 @@ auto select_compose_keysounds(const workspace_projection_context_t& projection,
 
 void populate_compose_sound_groups(const workspace_projection_context_t& projection) {
     auto& groups = projection.result.view.compose.compose_sound_groups;
-    groups.resize(projection.document.sound_groups.size());
-    for (std::size_t index = 0; index < groups.size(); ++index) {
-        groups[index].group_id = projection.document.sound_groups[index].id;
-        groups[index].name = projection.document.sound_groups[index].name;
-    }
+    (void)projection.result.compose.sound_groups.get_or_build(
+        std::tuple{&projection.document, document_stamp_t::from(projection.document),
+                   projection.result.query_session_generation},
+        [&] {
+            groups.resize(projection.document.sound_groups.size());
+            for (std::size_t index = 0; index < groups.size(); ++index) {
+                groups[index].group_id = projection.document.sound_groups[index].id;
+                groups[index].name = projection.document.sound_groups[index].name;
+            }
+            return true;
+        });
 }
 
-void populate_compose_sound_slots(const workspace_projection_context_t& projection,
-                                  const chart_document_t* chart) {
-    auto& view = projection.result.view.compose;
-    const auto& request = projection.keysound_request;
-    view.sound_slots_mode = view.keysound_ids_available && request.slots_mode;
-    if (!view.sound_slots_mode) { view.sound_slots.clear(); return; }
-    // The slot query cache retains names and paths for an unchanged document/request.
-    const auto* identity = &projection.document;
-    const auto stamp = document_stamp_t::from(projection.document);
-    const auto& list = projection.result.compose.sound_slots_cache.get_or_build(
-        std::tie(identity, stamp, projection.result.query_session_generation, chart, request.search,
-                 request.selected_slot, request.first_row, request.row_limit, request.use_filter), [&] {
-            return sound_slots_view_t::from(projection.document,
-                {.search = std::string{request.search}, .selected_slot = request.selected_slot,
-                 .first_row = request.first_row, .row_limit = request.row_limit,
-                 .use_filter = request.use_filter}, chart);
-        });
-    view.sound_slot_selected_number = request.selected_slot;
-    view.sound_slot_selected_row = list.selected_row;
-    view.sound_slot_first_row = list.first_row;
-    view.sound_slot_total_matching = list.total_matching;
+auto refill_compose_slot_rows(ui::compose_view_t& view, const sound_slots_view_t& list) -> bool {
     view.sound_slots.resize(list.rows.size());
     for (std::size_t index = 0; index < list.rows.size(); ++index) {
         const auto& source = list.rows[index];
@@ -516,6 +539,41 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
         row.placeable = source.placeable;
         row.source_path = source.source_path;
     }
+    return true;
+}
+
+void populate_compose_sound_slots(const workspace_projection_context_t& projection,
+                                  const chart_document_t* chart) {
+    auto& view = projection.result.view.compose;
+    const auto& request = projection.keysound_request;
+    view.sound_slots_mode = view.keysound_ids_available && request.slots_mode;
+    if (!view.sound_slots_mode) {
+        view.sound_slots.clear();
+        projection.result.compose.slot_rows.invalidate();
+        return;
+    }
+    // The slot query cache retains names and paths for an unchanged document/request.
+    const auto* identity = &projection.document;
+    const auto stamp = document_stamp_t::from(projection.document);
+    const auto& list = projection.result.compose.sound_slots_cache.get_or_build(
+        std::tie(identity, stamp, projection.result.query_session_generation, chart, request.search,
+                 request.selected_slot, request.first_row, request.row_limit, request.use_filter),
+        [&] {
+            return sound_slots_view_t::from(projection.document,
+                                            {.search = std::string{request.search},
+                                             .selected_slot = request.selected_slot,
+                                             .first_row = request.first_row,
+                                             .row_limit = request.row_limit,
+                                             .use_filter = request.use_filter},
+                                            chart);
+        });
+    view.sound_slot_selected_number = request.selected_slot;
+    view.sound_slot_selected_row = list.selected_row;
+    view.sound_slot_first_row = list.first_row;
+    view.sound_slot_total_matching = list.total_matching;
+    (void)projection.result.compose.slot_rows.get_or_build(
+        projection.result.compose.sound_slots_cache.build_count(),
+        [&] { return refill_compose_slot_rows(view, list); });
 }
 
 void refill_keysound_rows(std::vector<ui::compose_keysound_row_view_t>& rows,
@@ -594,37 +652,74 @@ void populate_sound_picker(const workspace_projection_context_t& projection,
                            const wormedit::chart_document_t& chart) {
     auto& view = projection.result.view.compose.sound_picker;
     const auto& request = projection.keysound_request;
-    if (!request.sound_picker_open) { view.rows.clear(); view.query.clear(); view.ready = false; return; }
+    if (!request.sound_picker_open) {
+        view.rows.clear();
+        view.query.clear();
+        view.ready = false;
+        projection.result.compose.picker_rows.invalidate();
+        return;
+    }
     sound_picker_cache_t uncached;
     auto* cache = &uncached;
     if (projection.keysound_cache) {
         auto& stored = projection.keysound_cache->sound_picker;
-        if (!stored) stored = std::make_shared<sound_picker_cache_t>();
+        if (!stored)
+            stored = std::make_shared<sound_picker_cache_t>();
         cache = stored.get();
     }
     const auto query = request.sound_picker_query.substr(0, ui::sound_picker_query_byte_limit);
-    const auto& result = sound_picker_view_result_t::from(*cache, projection.document, chart, query);
+    const auto& result =
+        sound_picker_view_result_t::from(*cache, projection.document, chart, query);
     view.query = query;
     view.total_count = result.total;
-    view.rows.resize(result.rows.size());
-    for (std::size_t index = 0; index < result.rows.size(); ++index) {
-        const auto& source = result.rows[index];
-        auto& row = view.rows[index];
-        row.resource_id = source.resource;
-        row.missing = source.missing;
-        row.label.clear();
-        if (!source.slot.empty()) { row.label += source.slot; row.label += " · "; }
-        row.label += source.name.empty() ? std::string_view{"(unnamed sound)"}
-                                         : std::string_view{source.name};
-        if (source.missing) row.label += " · Missing";
-        row.label += "  (#";
-        char number[32];
-        const auto length = std::snprintf(number, sizeof(number), "%llu",
-            static_cast<unsigned long long>(source.resource.value));
-        row.label.append(number, static_cast<std::size_t>(length));
-        row.label += ')';
-    }
+    const auto refill = [&] {
+        view.rows.resize(result.rows.size());
+        for (std::size_t index = 0; index < result.rows.size(); ++index) {
+            const auto& source = result.rows[index];
+            auto& row = view.rows[index];
+            row.resource_id = source.resource;
+            row.missing = source.missing;
+            row.label.clear();
+            if (!source.slot.empty()) {
+                row.label += source.slot;
+                row.label += " · ";
+            }
+            row.label += source.name.empty() ? std::string_view{"(unnamed sound)"}
+                                             : std::string_view{source.name};
+            if (source.missing)
+                row.label += " · Missing";
+            row.label += "  (#";
+            char number[32];
+            const auto length =
+                std::snprintf(number, sizeof(number), "%llu",
+                              static_cast<unsigned long long>(source.resource.value));
+            row.label.append(number, static_cast<std::size_t>(length));
+            row.label += ')';
+        }
+        return true;
+    };
+    if (cache == &uncached)
+        (void)refill();
+    else
+        (void)projection.result.compose.picker_rows.get_or_build(
+            std::tuple{static_cast<const sound_picker_cache_t*>(cache),
+                       cache->matches.build_count(), projection.result.query_session_generation,
+                       document_stamp_t::from(projection.document)},
+            refill);
     view.ready = true;
+}
+
+auto refill_compose_keysound_rows(frontend_workspace_view_t& result,
+                                  const keysound_list_view_t& list) -> bool {
+    auto& view = result.view.compose;
+    ++result.compose.keysound_rows_refills;
+    refill_keysound_rows(view.keysounds, list.rows);
+    refill_keysound_rows(view.keysound_selected_rows, list.selected_rows);
+    refill_keysound_layers(view.keysound_layers, list.layers);
+    refill_keysound_layers(view.keysound_filter_layers, list.filter_layers);
+    refill_keysound_metadata(view, list);
+    refill_keysound_indices(view, list);
+    return true;
 }
 
 void populate_compose_keysounds(const workspace_projection_context_t& projection,
@@ -634,15 +729,26 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     const auto* tab = std::get_if<workspace_compose_view_t>(&projection.source.tab_view);
     const auto* owner = projection.document.find_bms_program(chart_id);
     const auto* chart = owner && tab && tab->authoring_chart
-        ? owner->read_authoring_chart(*tab->authoring_chart) : projection.document.read_chart(chart_id);
+                            ? owner->read_authoring_chart(*tab->authoring_chart)
+                            : projection.document.read_chart(chart_id);
     view.keysounds_available = chart != nullptr;
     if (!view.keysounds_available) {
-        view.keysounds.clear(); view.keysound_selected_rows.clear();
-        view.keysound_selection_rows.clear(); view.keysound_display_rows.clear();
-        view.keysound_advance_rows.clear(); view.keysound_listed_resource_ids.clear();
-        view.keysound_all_resource_ids.clear(); view.compose_sound_groups.clear();
-        view.keysound_layers.clear(); view.keysound_filter_layers.clear(); view.sound_slots.clear();
-        view.sound_picker.rows.clear(); view.sound_picker.ready = false;
+        result.compose.keysound_rows.invalidate();
+        result.compose.slot_rows.invalidate();
+        result.compose.picker_rows.invalidate();
+        view.keysounds.clear();
+        view.keysound_selected_rows.clear();
+        view.keysound_selection_rows.clear();
+        view.keysound_display_rows.clear();
+        view.keysound_advance_rows.clear();
+        view.keysound_listed_resource_ids.clear();
+        view.keysound_all_resource_ids.clear();
+        view.compose_sound_groups.clear();
+        view.keysound_layers.clear();
+        view.keysound_filter_layers.clear();
+        view.sound_slots.clear();
+        view.sound_picker.rows.clear();
+        view.sound_picker.ready = false;
         return;
     }
     populate_sound_picker(projection, *chart);
@@ -658,10 +764,11 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysound_primary_display_index = list.primary_display_index.value_or(0);
     const auto& request = projection.keysound_request;
     view.keysound_projected_primary_resource_id.value = request.primary_resource_id.value;
-    view.keysound_projected_filters_unrestricted = !request.slots_mode &&
-        request.automatic_search.empty() && !request.group_filter_active &&
+    view.keysound_projected_filters_unrestricted =
+        !request.slots_mode && request.automatic_search.empty() && !request.group_filter_active &&
         request.layer_filter_kind == keysound_layer_filter_kind_t::any &&
-        request.collapsed_group_ids.empty() && !request.ungrouped_collapsed && request.include_ungrouped;
+        request.collapsed_group_ids.empty() && !request.ungrouped_collapsed &&
+        request.include_ungrouped;
     view.keysound_filter_layer_first = list.filter_layer_first;
     view.keysound_filter_layer_total = list.filter_layer_total;
     view.keysound_filter_selected_layer_valid = list.selected_filter_layer_valid;
@@ -670,12 +777,14 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysound_ids_used = list.bms_capacity.used;
     view.keysound_ids_total = list.bms_capacity.total;
     view.keysound_largest_free_run = list.bms_capacity.largest_free_run;
-    refill_keysound_rows(view.keysounds, list.rows);
-    refill_keysound_rows(view.keysound_selected_rows, list.selected_rows);
-    refill_keysound_layers(view.keysound_layers, list.layers);
-    refill_keysound_layers(view.keysound_filter_layers, list.filter_layers);
-    refill_keysound_metadata(view, list);
-    refill_keysound_indices(view, list);
+    const auto refill = [&] { return refill_compose_keysound_rows(result, list); };
+    if (!projection.keysound_cache)
+        (void)refill();
+    else
+        (void)result.compose.keysound_rows.get_or_build(
+            std::tuple{&list, projection.keysound_cache->projection_build_count(),
+                       result.query_session_generation},
+            refill);
     populate_compose_sound_groups(projection);
     populate_compose_sound_slots(projection, chart);
 }
@@ -738,6 +847,7 @@ void populate_compose_branch_diagnostics(
 void populate_compose_branch_outline(frontend_workspace_view_t& result,
                                      const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
+    ++result.compose.branch_outline_refills;
     view.branch_outline_available = outline.available;
     view.branch_display_text_truncated = outline.display_text_truncated;
     populate_compose_branch_rows(result, outline);
@@ -778,26 +888,42 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     }
 }
 
-void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
+void populate_compose_tab(const workspace_projection_context_t& projection,
+                          const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
-                result.view.compose.visible = true;
-                const auto& outline = tab.bms_branch_outline();
-                auto& compose = result.view.compose;
-                compose.selected_audio_asset_id.value =
-                    source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
-                compose.selected_visual_asset_id.value =
-                    source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
-                populate_compose_resources(projection);
-                populate_compose_keysounds(projection, tab.chart);
-                populate_bookmark_chooser(projection, tab.chart);
-                populate_compose_branch_outline(result, outline);
-                append_workspace_count(projection, "Measures: ", static_cast<std::size_t>(tab.measure_count));
-                append_workspace_count(projection, "Notes: ", static_cast<std::size_t>(tab.note_count));
-                append_workspace_count(projection, "Layout segments: ", static_cast<std::size_t>(tab.layout_segment_count));
-                append_workspace_count(projection, "Visible lane definitions: ", static_cast<std::size_t>(tab.lane_count));
-                append_workspace_count(projection, "Semantic layers: ", static_cast<std::size_t>(tab.layer_count));
-
+    result.view.compose.visible = true;
+    const auto& outline = tab.bms_branch_outline();
+    auto& compose = result.view.compose;
+    compose.selected_audio_asset_id.value =
+        source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
+    compose.selected_visual_asset_id.value =
+        source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
+    populate_compose_resources(projection);
+    populate_compose_keysounds(projection, tab.chart);
+    populate_bookmark_chooser(projection, tab.chart);
+    compose.branch_outline_available = outline.available;
+    compose.branch_display_text_truncated = outline.display_text_truncated;
+    compose.branch_rows_truncated = outline.rows_truncated;
+    compose.branch_choices_truncated = outline.choices_truncated;
+    compose.branch_diagnostics_truncated = outline.diagnostics_truncated;
+    chart_stamp_t stamp{.document = document_stamp_t::from(projection.document),
+                        .chart = tab.chart};
+    if (tab.authoring_chart) stamp.document.bms_target = {.difficulty = tab.chart, .chart = *tab.authoring_chart};
+    result.summary_size = result.compose.branch_rows.get_or_build(
+        std::tuple{tab.shared_bms_branch_outline, &projection.document, stamp, result.query_session_generation}, [&] {
+            populate_compose_branch_outline(result, outline);
+            append_workspace_count(projection,
+                                   "Measures: ", static_cast<std::size_t>(tab.measure_count));
+            append_workspace_count(projection, "Notes: ", static_cast<std::size_t>(tab.note_count));
+            append_workspace_count(projection, "Layout segments: ",
+                                   static_cast<std::size_t>(tab.layout_segment_count));
+            append_workspace_count(
+                projection, "Visible lane definitions: ", static_cast<std::size_t>(tab.lane_count));
+            append_workspace_count(projection,
+                                   "Semantic layers: ", static_cast<std::size_t>(tab.layer_count));
+            return result.summary_size;
+        });
 }
 void populate_storyboard_tab(const workspace_projection_context_t& projection, const wormedit::workspace_storyboard_view_t& tab) {
     const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
@@ -1108,8 +1234,30 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
         keysound_cache, bookmark_indices, resource_catalog_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
-    if (!view.metadata.visible) view.metadata.output_groups.clear();
+    if (!view.metadata.visible) {
+        metadata_projection_cache.invalidate_rows();
+        view.metadata.output_groups.clear();
+        view.metadata.format_targets.clear();
+        view.metadata.format_fields.clear();
+        view.metadata.search_tags.clear();
+        view.metadata.chart_choices.clear();
+        view.metadata.timing_links.clear();
+        view.metadata.channel_map_lanes.clear();
+        view.metadata.lane_profile_choices.clear();
+        view.metadata.inheritance.clear();
+    }
     if (!view.compose.visible) {
+        if (!view.compose.stem_waveforms.empty() || !view.compose.stem_cuts.empty() ||
+            !view.compose.channel_waveform_rows.empty()) ++compose.bmson_rows_epoch;
+        view.compose.stem_waveforms.clear();
+        view.compose.stem_cuts.clear();
+        view.compose.channel_waveform_rows.clear();
+        compose.resource_rows.invalidate();
+        compose.keysound_rows.invalidate();
+        compose.branch_rows.invalidate();
+        compose.slot_rows.invalidate();
+        compose.picker_rows.invalidate();
+        compose.sound_groups.invalidate();
         view.compose.beat_bookmarks.clear();
         view.compose.beat_sections.clear();
         view.compose.audio_bookmarks.clear();
@@ -1195,7 +1343,6 @@ void metadata_view_t::reset() {
     channel_map_preview_message.clear();
     lane_profile_preview_message.clear();
     audio_waveform_columns.clear();
-    format_targets.clear();
 }
 
 void audio_slices_view_t::reset() {
@@ -1345,9 +1492,6 @@ void wormedit::ui::compose_view_t::reset() {
     bgm_lanes.clear();
     bgm_events.clear();
     waveform_rows.clear();
-    stem_waveforms.clear();
-    stem_cuts.clear();
-    channel_waveform_rows.clear();
     waveform_overview_rows.clear();
     bgm_bar_rows.clear();
     bgm_bar_marks.clear();

@@ -88,7 +88,10 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
 
 auto prepare_frame_stems(const application_frame_projection_context_t& context,
                          const frontend_workspace_view_t& flattened)
-    -> std::vector<const sound_channel_t*> {
+    -> std::span<const sound_channel_t* const> {
+    auto& visible = context.compose_scene_cache.stems.visible_channels;
+    visible.clear();
+    context.compose_scene_cache.stems.source_bindings.clear();
     if (!flattened.view.compose.visible || !flattened.view.compose.scene_available ||
         !context.workspace.selected_chart || !context.compose_interaction_state ||
         context.workspace.active_tab != workspace_tab_t::compose)
@@ -100,13 +103,16 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         context.compose_scene_cache.stamp().document.revision == context.history.document.revision &&
         context.compose_scene_cache.timing.marker_timing_index.has_value();
     const auto* timing = timing_matches ? &*context.compose_scene_cache.timing.marker_timing_index : nullptr;
-    const auto bindings = context.audition_sources.bindings(context.history.document);
+    auto& bindings = context.compose_scene_cache.stems.source_bindings;
+    context.audition_sources.bindings(context.history.document, bindings);
     const auto& measures = context.history.indices(chart->id)->measures;
-    return indexed_visible_stem_channels(context.compose_scene_cache.stems.stem_index,
+    ++context.compose_scene_cache.stems.visible_channel_queries;
+    indexed_visible_stem_channels(context.compose_scene_cache.stems.stem_index,
         context.history.document, *chart, context.compose_interaction_state->cursor.measure,
         stem_window_measures(flattened.view.compose.viewport_height_pixels,
-                             flattened.view.compose.pixels_per_standard_measure), bindings, wormedit::sys::stem_geometry_indices_t{.timing = timing,
+                             flattened.view.compose.pixels_per_standard_measure), bindings, visible, wormedit::sys::stem_geometry_indices_t{.timing = timing,
             .measures = &measures});
+    return visible;
 }
 #endif
 
@@ -117,7 +123,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
     auto& flattened = *this;
     flattened.query_session_generation = context.project_session_generation;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    std::vector<const sound_channel_t*> frame_visible_stems;
+    std::span<const sound_channel_t* const> frame_visible_stems;
 #endif
     static const std::string empty_legacy_feedback;
     {

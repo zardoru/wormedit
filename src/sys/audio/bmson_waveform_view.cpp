@@ -15,6 +15,36 @@
 #include <functional>
 
 namespace wormedit::sys {
+
+struct bmson_projection_cache_t {
+    struct basis_t {
+        const compose_scene_cache_t* owner{};
+        const frontend_workspace_view_t* target{};
+        const song_document_t* document{};
+        const chart_document_t* chart{};
+        chart_stamp_t stamp;
+        std::uint64_t source_generation{}, timing_fingerprint{}, row_clock{}, epoch{};
+        double scroll{}, height{}, zoom{};
+        measure_id_t cursor;
+        std::uint64_t selected_bgm{}, selected_note{};
+        std::optional<asset_id_t> transport_asset, channel_asset;
+        std::shared_ptr<const audio::waveform_analysis_result_t> transport_analysis, channel_analysis;
+        std::shared_ptr<const export_cut_axis_t> axis;
+        bool visible{}, scene{}, timing{}, stems{}, provided_visible{};
+        auto operator==(const basis_t&) const -> bool = default;
+    };
+    struct analysis_t {
+        asset_id_t asset;
+        std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+    };
+    std::optional<basis_t> basis;
+    std::vector<audio::decoded_source_binding_t> bindings;
+    std::vector<const sound_channel_t*> visible;
+    std::vector<analysis_t> analyses;
+    std::array<std::size_t, 3> published_sizes{};
+    object_id_t selected_source_lane;
+};
+
 namespace {
 
 auto projection_ready(const bmson_waveform_projection_context_t& context) -> bool {
@@ -173,6 +203,16 @@ auto stem_analysis_for(const bmson_waveform_projection_context_t& context, asset
     return context.stem_analysis ? context.stem_analysis(asset) : nullptr;
 }
 
+// Retain evidence already requested by projection; do not query producers twice.
+void retain_bmson_analysis(const bmson_waveform_projection_context_t& context, asset_id_t asset,
+    const std::shared_ptr<const audio::waveform_analysis_result_t>& analysis) {
+    auto& retained = *context.cache.stems.rows;
+    const auto found = std::ranges::find(retained.analyses, asset,
+        &bmson_projection_cache_t::analysis_t::asset);
+    if (found == retained.analyses.end()) retained.analyses.push_back({asset, analysis});
+    else found->analysis = analysis;
+}
+
 // Retained slice-point event → the note or BGM marker that stands for it.
 void rebuild_point_refs(const chart_document_t& chart, const sound_channel_t& channel,
                         compose_scene_cache_t::stem_waveform_cache_t::point_refs_t& refs) {
@@ -248,6 +288,7 @@ auto build_stem_view(const bmson_waveform_projection_context_t& context, const c
     const auto binding = context.audition_sources.binding(context.history.document, asset);
     const auto stored = context.history.document.find_audio_asset(asset);
     const auto analysis = stem_analysis_for(context, asset);
+    retain_bmson_analysis(context, asset, analysis);
     if (!binding || stored == nullptr ||
         !stored_source_matches(*stored, *binding) || !analysis_matches_binding(analysis, *binding)) return false;
     const audio::channel_waveform_source_geometry_t source{
@@ -276,7 +317,8 @@ auto build_stem_view(const bmson_waveform_projection_context_t& context, const c
 auto stem_source_bindings(const bmson_waveform_projection_context_t& context)
     -> std::span<const audio::decoded_source_binding_t> {
     auto& bindings = context.cache.stems.source_bindings;
-    context.audition_sources.bindings(context.history.document, bindings);
+    if (!context.visible_stems)
+        context.audition_sources.bindings(context.history.document, bindings);
     return bindings;
 }
 
@@ -459,6 +501,7 @@ auto build_packed_piece_view(const bmson_waveform_projection_context_t& context,
     const audio::display_row_table_t& table, bool downscroll) -> bool {
     const auto binding = context.audition_sources.binding(context.history.document, piece.clip.source);
     const auto analysis = stem_analysis_for(context, piece.clip.source);
+    retain_bmson_analysis(context, piece.clip.source, analysis);
     const auto stored = context.history.document.find_audio_asset(piece.clip.source);
     if (!binding || stored == nullptr ||
         !stored_source_matches(*stored, *binding) || !analysis_matches_binding(analysis, *binding) ||
@@ -567,16 +610,9 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
     return prepared;
 }
 
-void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
+void build_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
     context.flattened.view.compose.channel_waveform_rows.clear();
     context.flattened.view.compose.channel_waveform_source_lane_id = {};
-    if (context.cache.timing.marker_timing_index && context.interaction_state) {
-        const auto& compose = context.flattened.view.compose;
-        (void)prepare_compose_display_row_table(context.cache,
-            {context.interaction_state->viewport_scroll_pixels, compose.viewport_height_pixels,
-             compose.pixels_per_standard_measure},
-            {compose.project_id.value, context.cache.stamp().chart.value, context.history.document.revision});
-    }
     populate_stem_waveforms(context);
     populate_packed_waveforms(context);
     if (!projection_ready(context))
@@ -638,6 +674,94 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
         flattened.view.compose.channel_waveform_rows.assign(rows.begin(), rows.end());
         flattened.view.compose.channel_waveform_source_lane_id = selection->source_lane;
     }
+}
+
+namespace {
+
+auto bmson_projection_basis(const bmson_waveform_projection_context_t& context)
+    -> bmson_projection_cache_t::basis_t {
+    const auto& view = context.flattened.view.compose;
+    const auto* state = context.interaction_state;
+    const auto* chart = context.workspace.selected_chart
+        ? context.history.read_chart(*context.workspace.selected_chart) : nullptr;
+    const auto& timing = context.cache.timing.marker_timing_index;
+    return {.owner = &context.cache, .target = &context.flattened,
+        .document = &context.history.document, .chart = chart,
+        .stamp = chart ? chart_stamp_t::from(context.history.document, chart->id) : chart_stamp_t{},
+        .source_generation = context.audition_source_generation,
+        .timing_fingerprint = timing ? timing->source_fingerprint : 0,
+        .row_clock = context.cache.waveform.waveform_row_table.clock.value().generation,
+        .epoch = context.flattened.compose.bmson_rows_epoch,
+        .scroll = state ? state->viewport_scroll_pixels : 0,
+        .height = view.viewport_height_pixels, .zoom = view.pixels_per_standard_measure,
+        .cursor = state ? state->cursor.measure : measure_id_t{},
+        .selected_bgm = view.selected_bmson_bgm_event_id.value,
+        .selected_note = view.selected_bmson_note_event_id.value,
+        .transport_asset = context.transport_waveform.asset,
+        .channel_asset = context.channel_waveform.asset,
+        .transport_analysis = context.transport_waveform.analysis,
+        .channel_analysis = context.channel_waveform.analysis,
+        .axis = state ? state->cut_axis : nullptr,
+        .visible = view.visible, .scene = view.scene_available, .timing = timing.has_value(),
+        .stems = static_cast<bool>(context.stem_analysis),
+        .provided_visible = context.visible_stems.has_value()};
+}
+
+auto bmson_published_sizes(const bmson_waveform_projection_context_t& context)
+    -> std::array<std::size_t, 3> {
+    const auto& view = context.flattened.view.compose;
+    return {view.stem_waveforms.size(), view.stem_cuts.size(), view.channel_waveform_rows.size()};
+}
+
+auto can_reuse_bmson_rows(const bmson_waveform_projection_context_t& context,
+                         const bmson_projection_cache_t& retained,
+                         const bmson_projection_cache_t::basis_t& basis,
+                         std::span<const audio::decoded_source_binding_t> bindings) -> bool {
+    if (!retained.basis || *retained.basis != basis ||
+        retained.published_sizes != bmson_published_sizes(context) ||
+        !std::ranges::equal(retained.bindings, bindings)) return false;
+    if (context.visible_stems && !std::ranges::equal(retained.visible, *context.visible_stems))
+        return false;
+    return std::ranges::all_of(retained.analyses, [&context](const auto& source) {
+        return stem_analysis_for(context, source.asset) == source.analysis;
+    });
+}
+
+void prepare_bmson_row_clock(const bmson_waveform_projection_context_t& context) {
+    if (!context.cache.timing.marker_timing_index || !context.interaction_state) return;
+    const auto& compose = context.flattened.view.compose;
+    (void)prepare_compose_display_row_table(context.cache,
+        {.viewport_scroll_pixels = context.interaction_state->viewport_scroll_pixels,
+         .viewport_height_pixels = compose.viewport_height_pixels,
+         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
+         .cut_axis = context.interaction_state->cut_axis},
+        {compose.project_id.value, context.cache.stamp().chart.value, context.history.document.revision});
+}
+
+} // namespace
+
+void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
+    ++context.cache.stems.waveform_projection_calls;
+    prepare_bmson_row_clock(context);
+    auto& storage = context.cache.stems.rows;
+    if (!storage) storage = std::make_shared<bmson_projection_cache_t>();
+    const auto basis = bmson_projection_basis(context);
+    const auto bindings = stem_source_bindings(context);
+    if (can_reuse_bmson_rows(context, *storage, basis, bindings)) {
+        context.flattened.view.compose.channel_waveform_source_lane_id = storage->selected_source_lane;
+        return;
+    }
+    // Store source evidence before projection helpers reuse their scratch buffers.
+    storage->bindings.assign(bindings.begin(), bindings.end());
+    storage->visible.clear();
+    if (context.visible_stems)
+        storage->visible.assign(context.visible_stems->begin(), context.visible_stems->end());
+    storage->analyses.clear();
+    build_bmson_waveform_projection(context);
+    storage->basis = basis;
+    storage->published_sizes = bmson_published_sizes(context);
+    storage->selected_source_lane = context.flattened.view.compose.channel_waveform_source_lane_id;
+    ++context.cache.stems.row_refills;
 }
 
 } // namespace wormedit::sys

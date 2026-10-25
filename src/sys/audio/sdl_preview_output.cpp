@@ -6,6 +6,7 @@
 #include "sys/audio/sdl_audio_output_config.h"
 
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_timer.h>
 
 #include <algorithm>
 #include <cmath>
@@ -536,13 +537,17 @@ void sdl_preview_output_t::publish_output_playhead() noexcept {
     const bool looping = loop_enabled_.load(std::memory_order_acquire);
     const auto begin = loop_begin_frame_.load(std::memory_order_relaxed);
     const auto end = loop_end_frame_.load(std::memory_order_relaxed);
+    const auto unwrapped = audible;
     if (looping && end > begin && audible >= begin) audible = begin + (audible - begin) % (end - begin);
     published_latency_frames_.store(latency, std::memory_order_release);
     session_.set_output_latency_frames(latency);
     session_.set_output_playhead(output_generation_, audible);
     output_playhead_.publish({.active = playing(), .timeline_frame = audible,
         .start_frame = looping ? begin : start, .generation = output_generation_,
-        .transport_generation = output_transport_generation_, .source_finished = source_finished_});
+        .transport_generation = output_transport_generation_, .source_finished = source_finished_,
+        .report_time_ns = SDL_GetTicksNS(), .unwrapped_frame = unwrapped,
+        .rendered_frame = rendered, .loop_end_frame = looping ? end : 0,
+        .rate_index = active_rate_index_.load(std::memory_order_acquire)});
 }
 
 void sdl_preview_output_t::clear_output_playhead() noexcept {

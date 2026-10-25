@@ -65,6 +65,7 @@
 #include <wormedit/formats/bms.h>
 
 #include <SDL3/SDL.h>
+#include "ui/frontend/transport_status.h"
 class RenderSubphaseScope {
   public:
     explicit RenderSubphaseScope(WormUiFrameRenderPhase phase)
@@ -2070,13 +2071,19 @@ static void render_elided_status_label(std::string_view text, nk_flags alignment
     nk_label_colored(g_context, label.c_str(), alignment, color);
 }
 
-static auto workspace_status_line(const wormedit::ui::workspace_view_t& view, std::size_t selected) -> std::string {
+static auto workspace_status_text(const wormedit::ui::workspace_view_t& view, std::size_t selected)
+    -> const wormedit::ui::transport_status_text_t& {
+    static wormedit::ui::transport_status_text_t text;
     const auto line = view.notifications.current_text.empty()
         ? view.status_text : view.notifications.current_text;
-    std::string status{line};
-    if (selected != 0)
-        status = std::to_string(selected) + " objects selected · " + status;
-    return status;
+    const bool input = std::ranges::any_of(g_context->input.mouse.buttons,
+        [](const auto& button) { return button.clicked != 0; }) ||
+        std::ranges::any_of(g_context->input.keyboard.keys,
+        [](const auto& key) { return key.clicked != 0; });
+    const auto rate = view.transport_sample_rate == 0 ? 1U : view.transport_sample_rate;
+    text.refresh({line, view.artist, view.selected_difficulty, selected,
+        view.transport_frame / rate, view.transport_playing, input}, SDL_GetTicksNS());
+    return text;
 }
 
 static void render_transport_rate(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t* action) {
@@ -2239,18 +2246,13 @@ static void render_status_bar(const wormedit::ui::workspace_view_t* view,
     if (zoom_label_visible)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
-    const auto status = workspace_status_line(*view, selected);
-    render_elided_status_label(status, NK_TEXT_LEFT, notification_status_color(view->notifications));
+    const auto& status = workspace_status_text(*view, selected);
+    render_elided_status_label(status.status(), NK_TEXT_LEFT, notification_status_color(view->notifications));
     if (notification_badge_visible(view->notifications))
         render_notification_badge(view->notifications, *action);
     else nk_spacing(g_context, 1);
-    const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
-    const auto seconds = view->transport_frame / sample_rate;
-    nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
-              static_cast<unsigned long long>(seconds / 60),
-              static_cast<unsigned long long>(seconds % 60));
-    const auto details = std::string{view->artist} + " · " + std::string{view->selected_difficulty};
-    render_elided_status_label(details, NK_TEXT_RIGHT, g_context->style.text.color);
+    nk_label(g_context, status.elapsed().c_str(), NK_TEXT_RIGHT);
+    render_elided_status_label(status.details(), NK_TEXT_RIGHT, g_context->style.text.color);
 }
 
 static auto workspace_content_flags(bool compose_visible, bool form_screen) -> nk_flags {

@@ -2,6 +2,7 @@
 
 The one model to learn before reading wormedit's code (owner, 2026-10-15). With domain knowledge of
 the chart formats, this page should be enough to find any edit and go down into its details.
+
 Names marked *(T-6xx)* are what that card is putting in place; follow them in new code now.
 
 ## The model
@@ -542,6 +543,18 @@ transport without removing their compiled bindings. Changing it refreshes prefet
 the audible frame, preserving loop, rate and pitch mode. Click audition remains governed by its
 independent existing preference, and offline export retains the authored mix rather than the
 live-monitoring policy.
+
+Chart playback publishes audible frame, observation time, effective rate, loop bounds
+and the rendered frontier through the existing coherent audio snapshot. The frame
+thread projects that evidence once to expected presentation time; following, transport
+and BGA read the same cached chart frame. Prediction cannot pass rendered PCM and
+holds after 100 ms without a report. Genuine seeks/rate changes reset correction;
+ordinary loop wraps retain the unwrapped clock. Frame timing estimates presentation
+latency from recent completed work, excluding explicit pacing sleep. This changes
+display projection only, without advancing audio or changing paused positions.
+The status text owner refreshes playback text at 12 Hz and invalidates immediately
+on input or changed status/selection metadata. Overview/playhead geometry keeps the
+display cadence; revision-stable inspector/BGM rows retain their existing owners.
 
 ## Composing edits
 

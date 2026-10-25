@@ -4,6 +4,7 @@
 #include <SDL3/SDL_stdinc.h>
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <new>
@@ -353,6 +354,26 @@ void frame_timing_t::record(const frame_timing_sample_t& sample) {
     samples_[next_] = sample;
     next_ = (next_ + 1) % frame_timing_capacity;
     size_ = std::min(size_ + 1, frame_timing_capacity);
+}
+auto frame_timing_t::expected_presentation_ns(std::uint64_t frame_start_ns) const -> std::uint64_t {
+    double total_ms = 0.0;
+    std::size_t count = 0;
+    const auto render = static_cast<std::size_t>(frame_phase_t::render);
+    const auto present = static_cast<std::size_t>(frame_phase_t::render_present);
+    const auto first = size_ > 8 ? size_ - 8 : 0;
+    for (auto i = first; i < size_; ++i) {
+        const auto& measured = sample(i);
+        if (!measured.measured[render] || !measured.measured[present]) continue;
+        auto latency = measured.frame_ms - measured.phase_ms[render];
+        for (const auto phase : {frame_phase_t::render_convert, frame_phase_t::render_submit,
+                                 frame_phase_t::render_present})
+            latency += measured.phase_ms[static_cast<std::size_t>(phase)];
+        if (!std::isfinite(latency) || latency < 0.0) continue;
+        total_ms += std::min(latency, 50.0);
+        ++count;
+    }
+    const auto latency_ns = count ? static_cast<std::uint64_t>(total_ms / count * 1'000'000) : 0;
+    return frame_start_ns > UINT64_MAX - latency_ns ? UINT64_MAX : frame_start_ns + latency_ns;
 }
 auto frame_timing_t::gpu_work(const frame_timing_sample_t& sample, frame_gpu_work_source_t source)
     -> const frame_gpu_work_t& {

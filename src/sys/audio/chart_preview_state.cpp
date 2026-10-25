@@ -276,9 +276,34 @@ std::uint64_t chart_preview_t::current_frame(
     return playing(session) ? session.timeline_frame() : resume_frame;
 }
 
+void chart_preview_t::update_presentation_frame(std::uint64_t expected_presentation_ns) {
+    presentation_frame.reset();
+    if (!output_observer || expected_presentation_ns == 0) {
+        presentation_clock.reset();
+        return;
+    }
+    presentation_report = output_observer->playhead();
+    if (!presentation_report.active) {
+        presentation_clock.reset();
+        return;
+    }
+    presentation_frame = presentation_clock.frame(presentation_report, expected_presentation_ns,
+                                                  audio::output_sample_rate);
+}
+
 auto chart_preview_t::display_frame(const audio::preview_session_t& session) const -> std::uint64_t {
-    const auto frame = current_frame(session);
+    auto frame = current_frame(session);
     if (!playing(session)) return frame;
+    if (presentation_frame && output_observer) {
+        const auto report = output_observer->playhead();
+        if (report.active && report.generation == presentation_report.generation &&
+            (report.transport_generation == presentation_report.transport_generation ||
+             report.loop_end_frame > report.start_frame) &&
+            report.start_frame == presentation_report.start_frame &&
+            report.rate_index == presentation_report.rate_index &&
+            report.loop_end_frame == presentation_report.loop_end_frame)
+            frame = *presentation_frame;
+    }
     const auto delta = static_cast<std::int64_t>(display_latency_ms) * audio::output_sample_rate / 1000;
     if (delta < 0) return frame - std::min(frame, static_cast<std::uint64_t>(-delta));
     const auto advance = static_cast<std::uint64_t>(delta);

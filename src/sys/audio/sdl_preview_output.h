@@ -63,6 +63,9 @@ class sdl_preview_output_t {
     [[nodiscard]] auto playing() const noexcept -> bool;
     // Callback-resolution audible clock; reading never queries or locks SDL.
     [[nodiscard]] auto timeline_frame() const noexcept -> std::uint64_t;
+    [[nodiscard]] auto playhead() const noexcept -> audio::playhead_state_t {
+        return read_output_playhead();
+    }
     // Queries SDL, which takes the stream lock that the audio callback holds while rendering;
     // only the callback and one-off transport changes call it. Per-frame checks read
     // published_latency_frames() instead.

@@ -23,6 +23,7 @@ void service_audio_transport_frame(
     const song_document_t& document, const workspace_controller_t& workspace,
     runtime::chart_preview_t& preview_state, audio::preview_session_t& preview_session,
     sdl_audition_output_t& audition_output, sdl_preview_output_t& preview_output,
-    std::optional<double>& preview_playhead_absolute_row, const notification_sink_t& notifications);
+    std::optional<double>& preview_playhead_absolute_row, const notification_sink_t& notifications,
+    std::uint64_t expected_presentation_ns = 0);
 
 } // namespace wormedit::sys

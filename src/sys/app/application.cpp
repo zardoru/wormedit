@@ -4656,7 +4656,7 @@ struct application_t::implementation_t {
         return compose_viewport_delta_seconds;
     }
 
-    void service_frame_audio() {
+    void service_frame_audio([[maybe_unused]] std::uint64_t expected_presentation_ns) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
         post_audio_inventory_feedback(
@@ -4687,7 +4687,7 @@ struct application_t::implementation_t {
             session.history.document, session.workspace, audio_runtime.preview_state,
             audio_runtime.preview_session, audio_runtime.audition_output,
             audio_runtime.preview_output, commands.project.transport.preview_playhead_absolute_row,
-            platform.notification_sink);
+            platform.notification_sink, expected_presentation_ns);
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         audio_runtime.waveform_runtime.service(
             session.history.document, session.workspace, views.compose_scene_cache,
@@ -5063,7 +5063,7 @@ struct application_t::implementation_t {
         import_frame_drops();
         const auto viewport_delta = poll_frame_jobs();
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
-        service_frame_audio();
+        service_frame_audio(wormedit::sys::frame_timing().expected_presentation_ns(frame_start_ns));
         const auto field_skin_lanes = configure_frame_field_skin();
         workspace_view_outcome_t model;
         prepare_frame_model(model);

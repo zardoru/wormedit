@@ -284,6 +284,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         ../src/sys/audio/export_cut_preview.cpp
         core/audio_preview_pump_tests.cpp
         core/audio_playhead_snapshot_tests.cpp
+        audio/presentation_clock_tests.cpp
         core/audio_preview_session_tests.cpp
         core/audio_resident_samples_tests.cpp
         core/audio_playback_rate_tests.cpp
@@ -884,6 +885,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/timing_lane_ui_tests.cpp
         ../src/sys/compose/views/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
+        sys/presentation_latency_tests.cpp
+        sys/transport_status_tests.cpp
         sys/compose_notification_tests.cpp
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp

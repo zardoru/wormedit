@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_session.h>
+#include <wormedit/audio/presentation_clock.h>
 #include "sys/audio/project_audio_sources.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
@@ -75,6 +76,10 @@ struct chart_preview_t {
         return metronome ? metronome->settings.count_in : 0;
     }
     const sdl_preview_output_t* output_observer{};
+    audio::presentation_clock_t presentation_clock;
+    std::optional<std::uint64_t> presentation_frame;
+    audio::playhead_state_t presentation_report;
+    void update_presentation_frame(std::uint64_t expected_presentation_ns);
     preview_feedback_t feedback;
 
     auto report(notification_severity_t severity, bool accepted, std::string message) -> std::string;

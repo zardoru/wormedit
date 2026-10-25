@@ -191,6 +191,9 @@ class frame_timing_t {
     auto summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
     // The same statistics over thread CPU time; count is 0 where the platform cannot measure it.
     auto cpu_summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
+    // Recent measured work through presentation, excluding the explicit frame-pacing wait.
+    // A stalled driver cannot make the next frame predict arbitrarily far ahead.
+    [[nodiscard]] auto expected_presentation_ns(std::uint64_t frame_start_ns) const -> std::uint64_t;
 
   private:
     void checkpoint();

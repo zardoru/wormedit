@@ -1242,6 +1242,12 @@ TEST_CASE("SDL warm compressed-source seeks resume audible output within fifty m
 
 namespace wormedit::sys {
 struct sdl_preview_output_test_access_t {
+    static void publish_presentation_report(sdl_preview_output_t& output,
+                                             const audio::playhead_state_t& report) {
+        output.output_playhead_.publish(report);
+        output.output_playing_.store(report.active, std::memory_order_release);
+        output.output_playhead_cleared_.store(false, std::memory_order_release);
+    }
     static auto lock_stream(sdl_preview_output_t& output) -> bool {
         return output.stream_ != nullptr && SDL_LockAudioStream(output.stream_);
     }
@@ -1903,4 +1909,103 @@ TEST_CASE("Failed preview recompilation preserves prior compiled products", "[in
     CHECK(preview.compiled.is_bound_to(key));
     CHECK(preview.compiled.build_count() == builds);
     CHECK(preview.compiled.value().timing->rows.data() == rows);
+}
+
+namespace {
+auto initialize_presentation_audio() -> bool {
+    return SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy") && SDL_InitSubSystem(SDL_INIT_AUDIO);
+}
+
+struct presentation_stream_guard_t {
+    wormedit::sys::sdl_preview_output_t& output;
+    bool locked;
+    explicit presentation_stream_guard_t(wormedit::sys::sdl_preview_output_t& value)
+        : output(value), locked(wormedit::sys::sdl_preview_output_test_access_t::lock_stream(output)) {}
+    ~presentation_stream_guard_t() {
+        if (locked) wormedit::sys::sdl_preview_output_test_access_t::unlock_stream(output);
+    }
+};
+
+auto presentation_report(t276_output_fixture_t& fixture) -> wormedit::audio::playhead_state_t {
+    const auto current = fixture.session.playhead();
+    return {.active = true, .timeline_frame = 66'150, .generation = current.generation,
+        .transport_generation = current.transport_generation,
+        .report_time_ns = 1'000'000'000, .unwrapped_frame = 66'150,
+        .rendered_frame = 100'000};
+}
+}
+
+namespace {
+void install_presentation_cuts(wormedit::sys::runtime::chart_preview_t& preview) {
+    using namespace wormedit;
+    const std::array cuts{export_cut_t{.id = object_id_t{1},
+        .begin_milliseconds = 1000, .end_milliseconds = 2000}};
+    const auto timeline = export_cut_timeline_t::from(cuts);
+    REQUIRE(timeline.diagnostics.empty());
+    const auto frames = export_cut_frame_timeline_t::from(timeline.value, audio::output_sample_rate);
+    REQUIRE(frames.diagnostics.empty());
+    preview.compiled.value().cut_frames = frames.value;
+}
+
+void check_cut_presentation_projection(wormedit::sys::runtime::chart_preview_t& preview,
+                                       t276_output_fixture_t& fixture) {
+    CHECK(preview.presentation_frame == 67'032);
+    CHECK(preview.display_frame(fixture.session) == 67'473);
+    CHECK(preview.source_frame(preview.display_frame(fixture.session)) == 111'573);
+    CHECK(fixture.output.timeline_frame() == 66'150);
+}
+
+void check_paused_presentation_projection(wormedit::sys::runtime::chart_preview_t& preview,
+                                          t276_output_fixture_t& fixture,
+                                          wormedit::audio::playhead_state_t& report) {
+    using namespace wormedit;
+    report.active = false;
+    sys::sdl_preview_output_test_access_t::publish_presentation_report(fixture.output, report);
+    preview.pause_at(1234);
+    preview.update_presentation_frame(1'040'000'000);
+    CHECK_FALSE(preview.presentation_frame);
+    CHECK(preview.display_frame(fixture.session) == 1234);
+}
+} // namespace
+
+TEST_CASE("Chart presentation projection shares the audible estimate with display offset and cut inverse",
+          "[audio][sdl][preview][presentation-clock]") {
+    using namespace wormedit;
+    REQUIRE(initialize_presentation_audio());
+    preview_audio_subsystem_t subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    presentation_stream_guard_t guard{fixture.output};
+    REQUIRE(guard.locked);
+    const auto report = presentation_report(fixture);
+    sys::sdl_preview_output_test_access_t::publish_presentation_report(fixture.output, report);
+    sys::runtime::chart_preview_t preview;
+    preview.output_observer = &fixture.output;
+    preview.display_latency_ms = 10;
+    install_presentation_cuts(preview);
+    preview.update_presentation_frame(1'020'000'000);
+    check_cut_presentation_projection(preview, fixture);
+}
+
+TEST_CASE("Chart presentation projection invalidates changed output evidence and leaves pause exact",
+          "[audio][sdl][preview][presentation-clock]") {
+    using namespace wormedit;
+    REQUIRE(initialize_presentation_audio());
+    preview_audio_subsystem_t subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    presentation_stream_guard_t guard{fixture.output};
+    REQUIRE(guard.locked);
+    auto report = presentation_report(fixture);
+    sys::sdl_preview_output_test_access_t::publish_presentation_report(fixture.output, report);
+    sys::runtime::chart_preview_t preview;
+    preview.output_observer = &fixture.output;
+    preview.display_latency_ms = 10;
+    preview.update_presentation_frame(1'020'000'000);
+    report.rate_index = static_cast<std::uint64_t>(audio::playback_rate_id_t::half);
+    sys::sdl_preview_output_test_access_t::publish_presentation_report(fixture.output, report);
+    CHECK(preview.display_frame(fixture.session) == 66'591);
+    preview.update_presentation_frame(1'020'000'000);
+    CHECK(preview.display_frame(fixture.session) == 67'032);
+    check_paused_presentation_projection(preview, fixture, report);
 }

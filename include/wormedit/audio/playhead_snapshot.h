@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/audio/playback_rate.h>
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -17,6 +19,13 @@ struct playhead_state_t {
     std::uint64_t transport_generation{};
     // Output owners may retain the audible clock while completed PCM drains.
     bool source_finished{};
+    // Output-clock evidence, published with the audible frame. Zero timestamp
+    // means the producer has no wall-clock observation to extrapolate.
+    std::uint64_t report_time_ns{};
+    std::uint64_t unwrapped_frame{};
+    std::uint64_t rendered_frame{};
+    std::uint64_t loop_end_frame{};
+    std::uint64_t rate_index{static_cast<std::uint64_t>(playback_rate_id_t::normal)};
 };
 
 // Single writer, serialized by the session mutex. Readers make bounded attempts,
@@ -38,6 +47,11 @@ class playhead_snapshot_t {
         generation_.store(state.generation, std::memory_order_relaxed);
         transport_generation_.store(state.transport_generation, std::memory_order_relaxed);
         source_finished_.store(state.source_finished, std::memory_order_relaxed);
+        report_time_ns_.store(state.report_time_ns, std::memory_order_relaxed);
+        unwrapped_frame_.store(state.unwrapped_frame, std::memory_order_relaxed);
+        rendered_frame_.store(state.rendered_frame, std::memory_order_relaxed);
+        loop_end_frame_.store(state.loop_end_frame, std::memory_order_relaxed);
+        rate_index_.store(state.rate_index, std::memory_order_relaxed);
         sequence_.store(sequence + 2, std::memory_order_release);
     }
 
@@ -51,7 +65,12 @@ class playhead_snapshot_t {
                 .start_frame = start_frame_.load(std::memory_order_relaxed),
                 .generation = generation_.load(std::memory_order_relaxed),
                 .transport_generation = transport_generation_.load(std::memory_order_relaxed),
-                .source_finished = source_finished_.load(std::memory_order_relaxed)};
+                .source_finished = source_finished_.load(std::memory_order_relaxed),
+                .report_time_ns = report_time_ns_.load(std::memory_order_relaxed),
+                .unwrapped_frame = unwrapped_frame_.load(std::memory_order_relaxed),
+                .rendered_frame = rendered_frame_.load(std::memory_order_relaxed),
+                .loop_end_frame = loop_end_frame_.load(std::memory_order_relaxed),
+                .rate_index = rate_index_.load(std::memory_order_relaxed)};
             std::atomic_thread_fence(std::memory_order_acquire);
             if (sequence_.load(std::memory_order_relaxed) != before) continue;
             remember(state);
@@ -105,6 +124,11 @@ class playhead_snapshot_t {
     std::atomic<std::uint64_t> transport_generation_{};
     std::atomic<std::uint64_t> published_generation_{};
     std::atomic<bool> source_finished_{};
+    std::atomic<std::uint64_t> report_time_ns_{};
+    std::atomic<std::uint64_t> unwrapped_frame_{};
+    std::atomic<std::uint64_t> rendered_frame_{};
+    std::atomic<std::uint64_t> loop_end_frame_{};
+    std::atomic<std::uint64_t> rate_index_{static_cast<std::uint64_t>(playback_rate_id_t::normal)};
 };
 
 } // namespace wormedit::audio

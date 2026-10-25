@@ -9,6 +9,7 @@
 #include "project.h"
 #include "metadata_audio.h"
 #include "timing_preview.h"
+#include "transport_status.h"
 
 #include <algorithm>
 #include <array>
@@ -67,6 +68,7 @@ struct workspace_view_t {
     uint64_t transport_frame;
     uint64_t transport_end_frame;
     uint32_t transport_sample_rate;
+    std::optional<transport_position_view_t> transport_position;
     std::vector<std::string> summary_lines;
     bool history_available;
     bool dirty;

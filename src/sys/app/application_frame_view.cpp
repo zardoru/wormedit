@@ -13,9 +13,42 @@
 #include <wormedit/window.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace wormedit::sys {
 namespace {
+
+void build_transport_position_view(frontend_workspace_view_t& flattened,
+                                   const application_frame_projection_context_t& context) {
+    auto& view = flattened.view;
+    view.transport_position.reset();
+    const auto& cache = context.compose_scene_cache;
+    if (!context.workspace.selected_chart || !cache.scene.cached_measure_index ||
+        !cache.timing.marker_timing_index || view.transport_sample_rate == 0 ||
+        view.transport_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+        !cache.stamp().is_current(context.history.document, *context.workspace.selected_chart))
+        return;
+    const auto chart = context.history.read_chart(*context.workspace.selected_chart);
+    const auto& measures = *cache.scene.cached_measure_index;
+    if (!chart || measures.entries.empty()) return;
+    auto row = cache.timing.marker_timing_index->row_at(
+        {static_cast<std::int64_t>(view.transport_frame), view.transport_sample_rate},
+        chart_end_policy_t::extrapolate_tail, {.extrapolate_before_chart = true}).absolute_row;
+    const auto& state = context.compose_interaction_state;
+    if (!view.transport_playing && !view.transport_paused && state && state->chart == chart->id) {
+        const auto cursor_row = state->cursor_canvas_row(measures);
+        if (cursor_row && *cursor_row <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            row = signed_rational_t{static_cast<std::int64_t>(*cursor_row), 1};
+    }
+    if (!row || row->denominator == 0 ||
+        row->denominator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return;
+    const auto [measure, beat] = beat_at_row(*chart, measures, *row);
+    auto whole_row = row->numerator / static_cast<std::int64_t>(row->denominator);
+    if (row->numerator < 0 && row->numerator % static_cast<std::int64_t>(row->denominator) != 0)
+        --whole_row;
+    view.transport_position = ui::transport_position_view_t{
+        .row = whole_row, .measure = measure, .beat = beat};
+}
 
 void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,
                           const workspace_controller_t& workspace, compose_scene_cache_t& cache) {
@@ -330,6 +363,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             flattened.view.compose.bgm_bar_rows.size() != 0 ||
             flattened.view.compose.waveform_overview_rows.size() != 0;
     }
+    build_transport_position_view(flattened, context);
     build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);
 }

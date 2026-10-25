@@ -47,6 +47,8 @@ auto frame_time_label(wide_signed_t time_numerator, wide_unsigned_t time_denomin
     return written > 0 && static_cast<std::size_t>(written) < output_size;
 }
 
+} // namespace
+
 auto beat_at_row(const chart_document_t& chart, const measure_index_t& measures,
                  signed_rational_t row) -> std::pair<std::uint64_t, std::int64_t> {
     if (row.denominator == 0 || chart.divisions_per_standard_measure == 0)
@@ -91,8 +93,6 @@ auto beat_at_row(const chart_document_t& chart, const measure_index_t& measures,
     if (scaled < 0 && scaled % beat_units != 0) --beat_index;
     return {measure_index + 1, static_cast<std::int64_t>(beat_index + 1)};
 }
-
-} // namespace
 
 auto format_compose_hover_timing(const chart_document_t& chart,
                                  const measure_index_t& measures,

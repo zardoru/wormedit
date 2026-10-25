@@ -2529,6 +2529,55 @@ TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and s
     CHECK(fixture.history.undo.size() == 3);
 }
 
+namespace {
+// One 960-row measure at 120 BPM: row 240 is 500 ms, row 480 is 1000 ms.
+auto preview_test_song(std::optional<std::int64_t> length) -> song_document_t {
+    auto song = compose_test_song();
+    song.metadata.preview = song_preview_t{.start_milliseconds = 500, .length_milliseconds = length};
+    return song;
+}
+void project_with_eighth_snap(compose_test_fixture_t& fixture) {
+    fixture.application.project.compose_view.requested_snap_denominators.emplace(
+        fixture.history.document.charts.front().id.value, 8);
+    fixture.project();
+}
+auto preview_drag(compose_test_fixture_t& fixture, std::uint8_t edge, std::uint64_t from_row,
+                  std::uint64_t to_row) -> std::string {
+    auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT, 0, edge,
+                             kiai_screen_y(fixture, to_row), kiai_screen_y(fixture, from_row));
+    return dispatch_paste_action(fixture, action);
+}
+} // namespace
+
+TEST_CASE("A preview end drag snaps the length and is one undo step", "[sys][song-preview]") {
+    compose_test_fixture_t fixture{preview_test_song(500)};
+    project_with_eighth_snap(fixture);
+    expect_compose_test(fixture.flattened.view.compose.preview_span.available);
+    expect_compose_test(preview_drag(fixture, WORM_UI_SPAN_HANDLE_END, 480, 700) == "Preview edited.");
+    expect_compose_test(fixture.history.document.metadata.preview ==
+                        song_preview_t{.start_milliseconds = 500, .length_milliseconds = 1000});
+    expect_compose_test(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Dragging a point-only preview start moves the point without inventing a length",
+          "[sys][song-preview]") {
+    compose_test_fixture_t fixture{preview_test_song(std::nullopt)};
+    project_with_eighth_snap(fixture);
+    expect_compose_test(!fixture.flattened.view.compose.preview_span.has_length);
+    preview_drag(fixture, WORM_UI_SPAN_HANDLE_BEGIN, 240, 470);
+    expect_compose_test(fixture.history.document.metadata.preview == song_preview_t{.start_milliseconds = 1000});
+}
+
+TEST_CASE("A stale preview drag publishes nothing", "[sys][song-preview]") {
+    compose_test_fixture_t fixture{preview_test_song(500)};
+    project_with_eighth_snap(fixture);
+    auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT, 0, WORM_UI_SPAN_HANDLE_END,
+                             kiai_screen_y(fixture, 700), kiai_screen_y(fixture, 480));
+    ++action.compose_inputs[0].timing_document_revision;
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), "Preview edit");
+    expect_compose_test(fixture.history.undo.empty());
+}
+
 TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys][kiai-spans]") {
     compose_test_fixture_t fixture{kiai_test_song()};
     fixture.application.project.compose_view.requested_snap_denominators.emplace(

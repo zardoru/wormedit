@@ -463,7 +463,9 @@ void from_json(const json& value, metadata_overrides_t& overrides) {
         throw std::invalid_argument("metadata overrides must contain exactly six slots");
     value.get_to(overrides.values);
 }
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups, overrides)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_preview_t, start_milliseconds, length_milliseconds)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups, overrides,
+                                   preview_override)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_command_t, opcode, easing, start_time_ms, end_time_ms,
                                    from, to, value_count, source_order)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_node_t, kind, command, loop_start_time_ms,
@@ -473,7 +475,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_sprite_t, stable_id, source_order,
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_top_level_line_t, source_order, text)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_document_model_t, sprites, retained_top_level_lines)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_metadata_t, title, artist, ordered_search_tags,
-                                   format_groups)
+                                   format_groups, preview)
 
 void to_json(json& value, const storyboard_document_t& storyboard) {
     value = json{{"id", storyboard.id},

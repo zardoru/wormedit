@@ -9,6 +9,7 @@
 #include <wormedit/core/storyboard.h>
 #include <wormedit/core/vocabulary.h>
 #include <wormedit/core/osu_hitsample.h>
+#include <wormedit/core/song_preview.h>
 
 #include <algorithm>
 #include <atomic>
@@ -765,6 +766,8 @@ struct chart_metadata_t {
     std::optional<signed_rational_t> rating;
     std::vector<format_metadata_t> format_groups;
     metadata_overrides_t overrides;
+    // Set only when an imported difficulty's preview differs from the song's.
+    std::optional<song_preview_t> preview_override;
 
     [[nodiscard]] auto format_group_for(format_family_t family) -> format_metadata_t&;
 };
@@ -1013,6 +1016,7 @@ struct song_metadata_t {
     std::string artist;
     std::vector<std::string> ordered_search_tags;
     std::vector<format_metadata_t> format_groups;
+    std::optional<song_preview_t> preview;
 
     [[nodiscard]] auto format_group_for(format_family_t family) -> format_metadata_t&;
 };
@@ -1049,7 +1053,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 19;
+inline constexpr std::uint32_t current_document_schema_version = 20;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;
@@ -1081,6 +1085,9 @@ struct song_document_t {
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
+    // The chart's preview override, otherwise the song preview.
+    [[nodiscard]] auto effective_preview(const chart_document_t& chart) const
+        -> const std::optional<song_preview_t>&;
     // Longest known positive duration among linked Music/BGM resources.
     [[nodiscard]] auto longest_music_or_bgm_stream() const -> const audio_stream_info_t*;
     void reset_chart_indices() noexcept;

@@ -531,6 +531,28 @@ struct compose_audio_bookmark_view_t {
 };
 } // namespace wormedit::ui
 
+/* The authored song preview (open question 26) as a band. Without an authored length the end
+   is the audition default, which is never stored. Rows are chart rows for Export preview audio. */
+namespace wormedit::ui {
+struct compose_preview_span_view_t {
+    bool available{};
+    bool has_length{};
+    bool chart_override{};
+    int64_t start_milliseconds{};
+    int64_t end_milliseconds{};
+    uint64_t begin_row{};
+    uint64_t end_row{};
+    bool begin_projection_visible{};
+    bool end_projection_visible{};
+    bool span_projection_visible{};
+    double projected_begin_y_pixels{};
+    double projected_end_y_pixels{};
+    double projected_span_top_y_pixels{};
+    double projected_span_bottom_y_pixels{};
+    auto operator==(const compose_preview_span_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+
 namespace wormedit::ui {
 struct compose_audio_section_view_t {
     wormedit::object_id_t section_id{};
@@ -1204,6 +1226,7 @@ struct compose_view_t {
     uint64_t beat_section_selection_end_row{};
     std::vector<wormedit::ui::compose_audio_bookmark_view_t> audio_bookmarks;
     std::vector<wormedit::ui::compose_audio_section_view_t> audio_sections;
+    wormedit::ui::compose_preview_span_view_t preview_span{};
     bool semantic_layer_assist_available{};
     std::vector<wormedit::ui::compose_semantic_layer_view_t> semantic_layers;
     size_t semantic_layer_total_count{};

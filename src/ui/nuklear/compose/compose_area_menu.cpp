@@ -141,7 +141,7 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
         return;
     }
     if (!chrome::context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view),
-                                    nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 13)))) {
+                                    nk_vec2(320.0f, chrome::context_menu_height(14)))) {
         retire_sound_layer_window(action);
         consumed = true;
         return;
@@ -163,6 +163,9 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
         worm_ui_nuklear_compose_state().preview_audio.begin(view);
         consumed = true;
     }
+    menu_entry(context, "Set song preview from selection",
+               reason_unless(view.preview_audio_range.available, "Select a nonempty materialized audio interval"),
+               WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION, action);
     menu_entry(context, "Create section",
                reason_unless(view.beat_section_selection_span_available, materialize),
                WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION, action);

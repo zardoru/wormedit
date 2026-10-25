@@ -1510,7 +1510,8 @@ auto reveal_compose_bga_lane_input(const wormedit::ui::compose_input_action_t& i
     return compose_input_family_result_t::continue_with_result();
 }
 
-// Kiai area and SV recipe inputs from the timing lanes. Returns nothing for any other input.
+// Kiai area and SV recipe inputs from the timing lanes, and song-preview span drags.
+// Returns nothing for any other input.
 auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
@@ -1528,6 +1529,10 @@ auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t&
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
         if (const auto error = edit_compose_speed_span(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT:
+        if (const auto error = edit_compose_preview_span(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
@@ -1716,6 +1721,7 @@ auto compose_input_notification_source(WormUiComposeInputKind kind)
         kind == WORM_UI_COMPOSE_INPUT_UNDO || kind == WORM_UI_COMPOSE_INPUT_REDO ||
         kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT || kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE ||
         kind == WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT ||
+        kind == WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND)
@@ -1741,6 +1747,7 @@ auto input_result_severity(const wormedit::ui::compose_input_action_t& input,
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
     case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
+    case WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
     case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:

@@ -1114,6 +1114,7 @@ void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
         view.compose.beat_sections.clear();
         view.compose.audio_bookmarks.clear();
         view.compose.audio_sections.clear();
+        view.compose.preview_span = {};
         view.compose.semantic_layers.clear();
         view.compose.note_menu_layers.clear();
         view.compose.branch_rows.clear();

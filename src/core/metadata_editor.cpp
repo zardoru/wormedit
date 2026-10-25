@@ -297,11 +297,30 @@ auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& g
     context.changed = true;
 }
 
+// The typed song preview owns these fields; raw edits would give them a second owner.
+template <typename Edit>
+auto is_preview_owned_edit(const format_metadata_t& group, const Edit& edit) -> bool {
+    bool existing = false;
+    if constexpr (std::same_as<Edit, edit_format_metadata_field_action_t>) {
+        if (is_song_preview_field(group.family, edit.name)) return true;
+        existing = edit.mode == format_metadata_field_mode_t::replace;
+    } else {
+        existing = true;
+    }
+    return existing && edit.index < group.ordered_fields.size() &&
+           is_song_preview_field(group.family, group.ordered_fields[edit.index].first);
+}
+
 template <typename Edit>
 auto apply_format_metadata_action(metadata_edit_context_t& context, const Edit& edit) -> void {
     auto* groups = resolve_format_group(context.proposed, edit.target, context.result.diagnostics);
     if (!groups) return;
     auto& group = *groups;
+    if (is_preview_owned_edit(group, edit)) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "This field follows the song preview; set the preview in Compose instead."));
+        return;
+    }
     apply_metadata_field(context, group, edit);
 }
 
@@ -599,6 +618,28 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
     if (limits.maximum_total_metadata_bytes == 0 || !is_metadata_within_limits(proposed, limits))
         return transaction.reject(diagnostic_code_t::invalid_id, "document metadata exceeds its total byte cap");
     return transaction.commit("Edit chart metadata batch");
+}
+
+auto apply_song_preview_edit(document_history_t& history, const song_preview_edit_t& edit)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    auto staged = transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        if (edit.preview && !edit.preview->is_valid())
+            return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+                "The preview must start inside the song and have a positive length.")}};
+        auto* owner = &song.metadata.preview;
+        if (edit.chart) {
+            auto* chart = song.find_chart(*edit.chart);
+            if (!chart) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                "The preview override refers to an unknown difficulty.")}};
+            owner = &chart->metadata.preview_override;
+        }
+        if (*owner == edit.preview) return {.value = document_edit_effect_t{}};
+        *owner = edit.preview;
+        const auto* label = edit.preview ? "Set preview" : edit.chart ? "Use song preview" : "Clear preview";
+        return {.value = document_edit_effect_t{.changed = true, .command_label = label}};
+    });
+    return transaction.finish_execution(std::move(staged));
 }
 
 auto apply_metadata_edit(document_history_t& history,

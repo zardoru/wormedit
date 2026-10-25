@@ -32,6 +32,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/interaction_state.h>
 #include <wormedit/core/lane_layout_editor.h>
 #include <wormedit/core/lane_profile_switch.h>
@@ -193,6 +194,20 @@ struct edit_audio_section_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<edit_audio_section_action_t, compose_action_context_t>);
+
+// The authored song preview (open question 26): typed milliseconds, the retained
+// selection, the cursor, Clear and Use song preview. A chart with its own preview
+// edits that override; otherwise the song preview.
+auto make_song_preview_edit(compose_action_context_t& context, const wormedit::chart_document_t& chart)
+    -> std::variant<wormedit::song_preview_edit_t, std::string>;
+
+struct edit_song_preview_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const edit_song_preview_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_song_preview_action_t, compose_action_context_t>);
 
 auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)

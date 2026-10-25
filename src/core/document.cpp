@@ -141,6 +141,10 @@ void song_document_t::reset_chart_indices() noexcept {
 }
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
+auto song_document_t::effective_preview(const chart_document_t& chart) const
+    -> const std::optional<song_preview_t>& {
+    return chart.metadata.preview_override ? chart.metadata.preview_override : metadata.preview;
+}
 auto song_document_t::longest_music_or_bgm_stream() const -> const audio_stream_info_t* {
     const audio_stream_info_t* longest{};
     long double duration{};
@@ -794,6 +798,13 @@ auto validate_object_id(diagnostic_list_t& diagnostics,
     }
 }
 
+void validate_preview(const std::optional<song_preview_t>& preview, std::string_view owner,
+                      diagnostic_list_t& diagnostics) {
+    if (preview && !preview->is_valid())
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_rational,
+                       std::string(owner) + " preview must start inside the song and have a positive length");
+}
+
 void validate_format_groups(const std::vector<format_metadata_t>& groups,
                             diagnostic_list_t& diagnostics) {
     for (const auto& group : groups) {
@@ -1285,6 +1296,7 @@ auto validate_chart(const chart_document_t& chart,
                     diagnostic_list_t& diagnostics) -> void {
     validate_bms_control_tree(chart, diagnostics);
     validate_format_groups(chart.metadata.format_groups, diagnostics);
+    validate_preview(chart.metadata.preview_override, "chart", diagnostics);
     const auto overrides = validate_metadata_overrides(chart.metadata.overrides, format_family_t::native_project);
     diagnostics.insert(diagnostics.end(), overrides.begin(), overrides.end());
     if (chart.divisions_per_standard_measure == 0) {
@@ -1621,6 +1633,7 @@ struct document_validation_work_t {
 auto validate_song_unique_ids(document_validation_work_t& work) -> void {
     require_id(work.diagnostics, work.song.id, "song");
     validate_format_groups(work.song.metadata.format_groups, work.diagnostics);
+    validate_preview(work.song.metadata.preview, "song", work.diagnostics);
     check_unique_ids(
         work.diagnostics, work.song.audio_assets, [](const auto& asset) { return asset.id; },
         "audio asset");

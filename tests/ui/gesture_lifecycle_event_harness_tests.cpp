@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <array>
+#include <cmath>
 #include <tuple>
 
 namespace {
@@ -39,7 +40,7 @@ void lifecycle_check(bool value) { CHECK(value); }
 
 enum class lifecycle_family { paint, erase, semantic, pointer_hold, lane_hold, range,
     area, move, kiai, speed, recipe, timing_marker, timing_stage, beat_fit, offset_fit,
-    overview, measure, stem, bga, bookmark, bmson, beat_zero, chip, mix, razor, navigation };
+    overview, measure, stem, bga, bookmark, preview, bmson, beat_zero, chip, mix, razor, navigation };
 
 struct lifecycle_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
@@ -160,7 +161,7 @@ struct lifecycle_fixture_t {
         if (family == lifecycle_family::area || family == lifecycle_family::move ||
             family == lifecycle_family::erase || family == lifecycle_family::timing_marker ||
             family == lifecycle_family::bga || family == lifecycle_family::bookmark ||
-            family == lifecycle_family::bmson) {
+            family == lifecycle_family::preview || family == lifecycle_family::bmson) {
             const auto move = lifecycle_motion(x, y + 30);
             result = harness.frame(std::span{&move, 1}, modifiers);
         }
@@ -254,6 +255,10 @@ struct lifecycle_fixture_t {
             bookmark.projection_visible = true; bookmark.projected_y_pixels = 300;
             v.beat_bookmarks = {bookmark}; v.beat_bookmarks.resize(1);
         }
+        if (family == lifecycle_family::preview)
+            v.preview_span = {.available = true, .has_length = true, .start_milliseconds = 500,
+                              .end_milliseconds = 2000, .begin_row = 240, .end_row = 960,
+                              .begin_projection_visible = true, .projected_begin_y_pixels = 300};
     }
     void choose_other_pointer() {
         switch (family) {
@@ -285,6 +290,7 @@ struct lifecycle_fixture_t {
         case lifecycle_family::stem: return s.stem_lanes.stem_lane_resize.has_value();
         case lifecycle_family::bga: return s.bga_interaction.bga_event_move_active;
         case lifecycle_family::bookmark: return s.bookmark_ui.bookmark_move_active;
+        case lifecycle_family::preview: return s.preview_drag.active;
         case lifecycle_family::bmson: return s.bmson_input.bmson_marker_move_active;
         case lifecycle_family::beat_zero: return s.waveform_drag.waveform_beat_zero_drag_active;
         case lifecycle_family::chip: return s.pointer_capture.tool_chip_pointer_active;
@@ -366,7 +372,7 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
         lifecycle_family::timing_marker, lifecycle_family::timing_stage,
         lifecycle_family::beat_fit, lifecycle_family::offset_fit, lifecycle_family::overview,
         lifecycle_family::measure, lifecycle_family::stem, lifecycle_family::bga,
-        lifecycle_family::bookmark, lifecycle_family::bmson, lifecycle_family::beat_zero,
+        lifecycle_family::bookmark, lifecycle_family::preview, lifecycle_family::bmson, lifecycle_family::beat_zero,
         lifecycle_family::chip, lifecycle_family::mix, lifecycle_family::razor, lifecycle_family::navigation);
     const auto transition = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
     INFO("family=" << static_cast<int>(family) << " transition=" << transition);
@@ -671,6 +677,43 @@ TEST_CASE("A bookmark click replays painting without emitting a bookmark move",
     lifecycle_check(!lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE));
 }
 
+namespace {
+auto last_input(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind)
+    -> const wormedit::ui::compose_input_action_t* {
+    for (std::size_t i = action.compose_inputs.size(); i > 0; --i)
+        if (action.compose_inputs[i - 1].kind == kind) return &action.compose_inputs[i - 1];
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("A song preview start-line drag emits one span edit with its edge and anchor",
+          "[frontend-state][event-harness][song-preview]") {
+    lifecycle_fixture_t f{lifecycle_family::preview};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    const auto release = lifecycle_button(f.x, f.y + 30, false);
+    const auto result = f.harness.frame(std::span{&release, 1});
+    const auto* edit = last_input(result.get(), WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT);
+    lifecycle_require(edit != nullptr);
+    lifecycle_check(edit->span_edge == WORM_UI_SPAN_HANDLE_BEGIN);
+    lifecycle_check(std::abs(edit->span_anchor_y_pixels - 300.0) < 0.5 && edit->y_pixels > 310.0);
+    lifecycle_check(!f.active());
+}
+
+TEST_CASE("A song preview label click replays painting without editing the preview",
+          "[frontend-state][event-harness][song-preview]") {
+    lifecycle_fixture_t f{lifecycle_family::preview};
+    f.harness.view().compose.note_paint_mode_active = true;
+    const auto label_y = f.screen_y(300 - 8);
+    const std::array press{lifecycle_motion(f.x, label_y), lifecycle_button(f.x, label_y, true)};
+    (void)f.harness.frame(press);
+    lifecycle_check(worm_ui_nuklear_compose_state().preview_drag.edge == WORM_UI_SPAN_HANDLE_BODY);
+    const auto release = lifecycle_button(f.x, label_y, false);
+    const auto result = f.harness.frame(std::span{&release, 1});
+    lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
+    lifecycle_check(!lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT));
+}
+
 TEST_CASE("Compose input claims preserve consumer differences and read live state",
           "[frontend-state][event-harness][compose-input-queries]") {
     nuklear_event_harness_t harness{1280, 900};
@@ -747,6 +790,7 @@ TEST_CASE("Production Compose captures preserve hover and paint participation",
         std::tuple{lifecycle_family::stem, false, false},
         std::tuple{lifecycle_family::bga, false, false},
         std::tuple{lifecycle_family::bookmark, false, false},
+        std::tuple{lifecycle_family::preview, false, false},
         std::tuple{lifecycle_family::bmson, true, true},
         std::tuple{lifecycle_family::beat_zero, true, false},
         std::tuple{lifecycle_family::chip, false, false},

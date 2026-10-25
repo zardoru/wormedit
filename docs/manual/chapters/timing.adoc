@@ -127,8 +127,9 @@ Lock timing as soon as it is right.
 == The area menu
 
 Drag across empty space with the Select tool to select an area (whole rows), then right-click it.
-Besides the timing tools below, the menu quantizes the selection, creates a section, loops
-playback over the area, and adds the selected sounds to a layer.
+Besides the timing tools below, the menu quantizes the selection, creates a section, sets the
+<<song-preview,song preview>> to the area, loops playback over the area,
+and adds the selected sounds to a layer.
 
 .The area menu on an area selection (captured at {shot-area-menu-revision})
 image::area-menu.png[Right-click menu on an area with Convert to Stop, Convert to Delay, Add SV recipe and Add SPEEDS span]

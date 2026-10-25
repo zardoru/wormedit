@@ -223,6 +223,7 @@ add_executable(wormedit_core_tests
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
+    formats/song_preview_tests.cpp
     formats/fixture_validation_tests.cpp
 )
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")

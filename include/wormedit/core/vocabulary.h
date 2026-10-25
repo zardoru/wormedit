@@ -289,7 +289,7 @@ enum class stage_group_t {
 };
 
 // SV and scrolls are one family: both multiply the chart's scroll events. Stored value 1 was a
-// separate `scrolls` output until schema 20 folded it into `sv`; the gap keeps `speeds` stable.
+// separate `scrolls` output until schema 21 folded it into `sv`; the gap keeps `speeds` stable.
 enum class sv_recipe_output_t {
     sv = 0,
     speeds = 2,

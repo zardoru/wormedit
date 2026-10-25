@@ -457,6 +457,19 @@ struct worm_ui_nuklear_compose_state_t {
         float bookmark_move_anchor_screen_y{};
     } bookmark_ui;
 
+    // The song preview's begin line, end line or label grabbed (open question 26); `active`
+    // once the pointer moved past the threshold. Release commits one PREVIEW_SPAN_EDIT.
+    struct preview_drag_t {
+        bool candidate_active{};
+        bool active{};
+        std::uint8_t edge{};
+        std::uint64_t chart_id{};
+        std::uint64_t revision{};
+        double anchor_y_pixels{};
+        double current_y_pixels{};
+        float anchor_screen_y{};
+    } preview_drag;
+
     struct sound_picker_ui_t {
         sound_picker_state_t sound_picker;
     } sound_picker_ui;
@@ -723,6 +736,8 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_keysound_selection_t measure_selection;
         std::array<char, 32> measures_meter_numerator{'4'};
         std::array<char, 32> measures_meter_denominator{'4'};
+        std::array<char, 32> measures_length_numerator{'1'};
+        std::array<char, 32> measures_length_denominator{'1'};
     } measures_dock;
 
     struct bga_catalog_t {

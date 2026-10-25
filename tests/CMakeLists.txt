@@ -223,6 +223,7 @@ add_executable(wormedit_core_tests
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
+    formats/song_preview_tests.cpp
     formats/fixture_validation_tests.cpp
 )
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
@@ -681,6 +682,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/dock_shortcut_event_harness_tests.cpp
         ui/dock_layout_event_harness_tests.cpp
+        ui/measure_length_event_harness_tests.cpp
         ui/snap_grid_event_harness_tests.cpp
         ui/lane_keys_event_harness_tests.cpp
         ../src/sys/preferences/lane_keys_runtime.cpp

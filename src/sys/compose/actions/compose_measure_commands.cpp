@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/numeric_text.h>
+#include <wormedit/core/rational.h>
 #include <wormedit/core/timing.h>
 #include <cstdint>
 #include <limits>
@@ -172,6 +174,27 @@ auto apply_measures_meter(document_history_t& history, editor_interaction_state_
                               ? notification_severity_t::info
                               : to_notification_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
+}
+
+auto apply_measures_length(document_history_t& history, chart_id_t chart,
+                           std::span<const std::uint64_t> measure_indices, std::string_view numerator,
+                           std::string_view denominator) -> document_command_result_t {
+    std::uint64_t top{}, bottom{};
+    if (!parse_integer(numerator, top) || !parse_integer(denominator, bottom) || !top || !bottom)
+        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_measure,
+            "A length ratio needs a positive integer numerator and denominator.");
+    if (measure_indices.empty())
+        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_measure,
+            "Select at least one measure first.");
+    resize_measure_keep_rows_action_t action{
+        .chart = chart, .definition = {.length = reduce_fraction({top, bottom})}, .preserve_meter = true};
+    for (const auto index : measure_indices) {
+        if (index > std::numeric_limits<std::size_t>::max())
+            return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_measure,
+                "The measure index is too large.");
+        action.measure_indices.push_back(static_cast<std::size_t>(index));
+    }
+    return apply_measure_edit(history, action);
 }
 
 auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t& state,

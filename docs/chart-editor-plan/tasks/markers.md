@@ -70,7 +70,8 @@ Bookmark editing already exists in the Markers panel
 
 ## T-729 Plan selection-created export-cut sections
 
-- **Status:** deferred (was: ready; user request 2026-10-19, not immediate work)
+- **Status:** done (2026-10-24: owner picked it up; design answered as [open question 27](../decisions/open-questions.md); implementation split into T-756–T-759 below)
+- **Audit (step 2, 2026-10-24):** the area menu's Create section (`compose_area_menu.cpp`, T-200) and `compose_bookmark_actions.cpp` already turn a selection into a `section_t` anchored to beats or to an audio-millisecond span through `marker_editor.h`. However, sections are per chart (`chart_document_t::sections`) while cuts are song-wide, so a cut is a new song-level list that reuses the selection-to-audio-span conversion and not a flag on `section_t`. `compose_dead_spans.cpp` already builds the warp/pause dead-span overlay that the cut styling extends.
 - **Outcome:** A reviewed design and bounded implementation cards cover creating a section from a selection, marking it as a song interval cut out on export, skipping it entirely in ordinary Compose waveform/timeline/playback/navigation, and exposing its distinct dead-span overlay only in Timing focus mode.
 - **Read first:** `docs/chart-editor-plan/editing/metadata-interop.md`; `src/sys/compose/actions/compose_bookmark_actions.cpp`; `src/ui/nuklear/compose/compose_area_menu.cpp`; `src/sys/compose/compose_dead_spans.cpp`; `src/sys/project/output_group_export.cpp`.
 - **Files owned:** `docs/chart-editor-plan/editing/metadata-interop.md`, `docs/chart-editor-plan/tasks/markers.md`, `docs/chart-editor-plan/tasks.md`; future implementation-card files only after recording their paths here.
@@ -84,3 +85,67 @@ Bookmark editing already exists in the Markers panel
 - **Verify:** For this planning record, `ctest --test-dir build/release -R '^documentation\.chart_editor_state$' --output-on-failure` and `git diff --check` pass. Future implementation cards must specify GATE, native-project round-trip/Undo checks, export/audio boundary cases, continuous Compose waveform/skip playback/navigation checks, and mode-switch/Timing-focus visibility/color checks.
 - **Design questions for pickup:** Are cuts song-wide across difficulties or scoped to charts/output groups? How are exported audio and chart timelines spliced/rebased together? What happens to holds, keysounds/BGM, BGA and timing state crossing a cut, and to overlapping/adjacent cuts? How does Timing-focus audition handle the original intervals (ordinary Compose skips them)? What selection and anchoring rules apply?
 - **Out of scope:** Implementing the feature or selecting it as immediate work (explicit user deferral, 2026-10-19); final audio, boundary and export policies await the design pass above. Existing ordinary section creation is covered by T-200.
+
+## T-756 Persist song-wide export cuts and create them from a selection
+
+- **Status:** ready
+- **Outcome:** `song_document_t` owns an ordered list of export cuts, each with an ID, an optional label and a source-song audio-millisecond interval ([open question 27](../decisions/open-questions.md)). The area menu offers Create export cut next to Create section. Cuts can be renamed, moved, resized and deleted with one Undo step each, and native projects round-trip them (schema bump with migration).
+- **Read first:** `include/wormedit/core/document.h` (`song_document_t`, `section_t`), `include/wormedit/core/marker_editor.h`, `src/sys/compose/actions/compose_bookmark_actions.cpp` (the `ADD_AUDIO_SECTION` path), `src/ui/nuklear/compose/compose_area_menu.cpp`, `src/formats/native_project.cpp`, `docs/architecture.md`.
+- **Files owned:** this card, `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/core/marker_editor.h`, `src/core/marker_editor.cpp`, `src/formats/native_project.cpp`, `src/sys/compose/actions/compose_bookmark_actions.cpp`, `src/ui/nuklear/compose/compose_area_menu.cpp`, `src/ui/frontend/actions.h`, `tests/core/marker_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`.
+- **Steps:**
+  1. Stale-plan check: `grep -rn "export_cut" include src`.
+  2. Add the song-level type and validation (positive length, nonnegative start, bounded count; overlap allowed).
+  3. Add create/edit/delete commands through the shared transaction, reusing the selection-to-audio-span conversion of audio sections. With the Compose snap toggle on, edges come from snapped positions; with it off, from the exact pointer or selection time.
+  4. Add the area-menu entry and a Markers-panel list.
+  5. Native round trip, migration from the previous schema and Undo/Redo tests.
+- **Invariants:** cuts never change chart content, timing or audio; ordinary sections behave as before.
+- **Reject/failure behavior:** an empty, inverted or unmaterialized interval rejects with an inline reason and no edit.
+- **Verify:** GATE; event-harness test for the area-menu entry.
+- **Out of scope:** export (T-757), Compose skipping (T-758), Timing-focus drawing (T-759).
+
+## T-757 Apply export cuts to exported audio and charts
+
+- **Status:** blocked-on T-756
+- **Outcome:** every export target removes the union of the song's cuts. The exported song audio is spliced once, and every chart's notes, timing and events are rebased identically. Objects fully inside a cut are dropped with a diagnostic. Holds, keysounds/BGM and BGA that cross a cut boundary reject the export with targeted diagnostics. Timing state in effect at a cut end carries over. The source audio and the authored project are never modified.
+- **Read first:** `src/sys/project/output_group_export.cpp`, `src/sys/audio/preview_audio_export.cpp` (audio render/encode path), `include/wormedit/core/notifications.h` (diagnostic targets, T-224), [open question 27](../decisions/open-questions.md).
+- **Files owned:** this card, `src/sys/project/output_group_export.cpp`, `src/sys/project/output_group_export.h`, `include/wormedit/core/export_cut.h` (new), `src/core/export_cut.cpp` (new), `tests/core/export_cut_tests.cpp` (new), `tests/sys/output_group_export_tests.cpp`. The first step must name the exact audio-splice and chart-rebase consumers and record extensions here.
+- **Steps:**
+  1. Audit how exports read song audio and chart timing today; record the consumer list.
+  2. Build one pure core transformation from a song and its cuts to a rebased export document plus diagnostics.
+  3. Splice and encode the cut audio once per export, in the existing export job.
+  4. Boundary tests: cut at song start or end, adjacent and overlapping cuts, a BPM change inside a cut, a stop or warp at a boundary, a hold crossing a boundary, and BGM or BGA starting inside a cut.
+- **Invariants:** an export without cuts is byte-identical to today's; the source project and published outputs stay unchanged on rejection.
+- **Reject/failure behavior:** crossing objects block the whole export with diagnostics that select the offending object; there is no partial publication.
+- **Verify:** GATE; export round-trip tests for BMS, osu!mania and SM/SSC with cuts.
+- **Out of scope:** Compose display (T-758, T-759); clipping holds or sounds (rejected by question 27).
+
+## T-758 Skip export cuts in ordinary Compose
+
+- **Status:** blocked-on T-756
+- **Outcome:** outside Timing focus, each cut collapses out of the waveform and the displayed timeline, and playback, seeking and navigation pass over it as though it never existed. Mode switches keep the full source song and the cut definitions.
+- **Read first:** `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/views/compose_waveform_overlays.cpp`, `src/sys/compose/compose_scroll_geometry.h`, `src/sys/audio/audio_transport_frame.cpp`, `src/sys/audio/transport_player_actions.cpp`, `src/ui/compose_mode.h`.
+- **Files owned:** this card; the first step must name the exact projection, transport and navigation consumers and record them here before edits.
+- **Steps:**
+  1. Audit how Compose maps audio time to screen rows and how transport seeks; record the consumers.
+  2. Introduce one cut-timeline mapping owned by a single type and route projection, waveform, playback and navigation through it.
+  3. Event-harness tests for scrolling, seeking and bookmark jumps across a cut; continuous-playback test across a cut.
+- **Invariants:** with no cuts, projection and transport are unchanged; editing still targets source positions.
+- **Reject/failure behavior:** a cut covering the whole song leaves Compose on the full timeline and reports why.
+- **Verify:** GATE; isolated Xvfb capture of a collapsed cut.
+- **Out of scope:** Timing focus (T-759); export (T-757).
+
+## T-759 Show export cuts in Timing focus
+
+- **Status:** blocked-on T-756, T-758
+- **Outcome:** Timing focus shows each cut over its original interval with warp-dead-span styling in a dedicated color that is distinct from warps, plays the original audio through it, and allows editing the cut's edges.
+- **Read first:** `src/sys/compose/compose_dead_spans.cpp`, `src/ui/compose_mode.h`, `src/ui/nuklear/compose/compose_canvas.cpp`, the color scheme files from [color-schemes.md](color-schemes.md).
+- **Files owned:** this card, `src/sys/compose/compose_dead_spans.cpp`, `src/sys/compose/compose_dead_spans.h`, `src/ui/nuklear/compose/compose_canvas.cpp`; the first step must name the theme and gesture files and record them here.
+- **Steps:**
+  1. Audit the dead-span view and theme ownership.
+  2. Add the cut kind with its own theme color; draw it only in Timing focus.
+  3. Add edge-drag editing through the shared gesture runner, snapping edges when the snap toggle is on, with Escape cancel and one Undo step.
+  4. Mode-switch tests: cuts are visible only in Timing focus and the transport plays through them there.
+- **Invariants:** warp and pause spans are unchanged; ordinary Compose does not draw cuts.
+- **Reject/failure behavior:** a drag that would produce an empty or inverted cut is clamped to the minimum length or cancelled.
+- **Verify:** GATE; isolated Xvfb captures in both modes.
+- **Out of scope:** export; ordinary Compose skipping.

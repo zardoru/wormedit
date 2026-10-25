@@ -1,6 +1,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/song_preview_timing.h>
 #include "sys/compose/views/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto populate_compose_audio_bookmark(
@@ -378,12 +379,57 @@ bool compose_audio_marker_y_visible(double y, const wormedit::ui::compose_view_t
     return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
 }
 
+namespace {
+void project_compose_preview_span(wormedit::ui::compose_preview_span_view_t& span,
+                                  std::optional<double> begin, std::optional<double> end,
+                                  const wormedit::ui::compose_view_t& view) {
+    if (!begin || !end) return;
+    span.begin_projection_visible = compose_audio_marker_y_visible(*begin, view);
+    span.end_projection_visible = compose_audio_marker_y_visible(*end, view);
+    span.projected_begin_y_pixels = span.begin_projection_visible ? *begin : 0.0;
+    span.projected_end_y_pixels = span.end_projection_visible ? *end : 0.0;
+    const auto top = std::min(*begin, *end);
+    const auto bottom = std::max(*begin, *end);
+    span.span_projection_visible = bottom >= 0.0 && top <= view.viewport_height_pixels;
+    if (!span.span_projection_visible) return;
+    span.projected_span_top_y_pixels = std::clamp(top, 0.0, view.viewport_height_pixels);
+    span.projected_span_bottom_y_pixels = std::clamp(bottom, 0.0, view.viewport_height_pixels);
+}
+
+// The chart's effective song preview (open question 26). A point-only preview ends at
+// the audition default, which only this projection and the export dialog use.
+void build_compose_preview_span_view(const compose_projection_context_t<>& input,
+                                     const wormedit::timing_index_t& timing) {
+    auto& span = input.frame.view().preview_span;
+    span = {};
+    const auto& chart = input.scope.chart_scope.chart;
+    const auto& preview = input.history().document.effective_preview(chart);
+    if (!preview) return;
+    const auto rows = wormedit::song_preview_rows(timing, *preview);
+    if (!rows || rows->end <= rows->begin) return;
+    // A clamped audition default ends where the chart does.
+    const auto end = preview->end_milliseconds().value_or(
+        wormedit::song_preview_milliseconds_at(timing, rows->end).value_or(preview->start_milliseconds));
+    span = {.available = true,
+            .has_length = preview->length_milliseconds.has_value(),
+            .chart_override = chart.metadata.preview_override.has_value(),
+            .start_milliseconds = preview->start_milliseconds,
+            .end_milliseconds = end,
+            .begin_row = rows->begin,
+            .end_row = rows->end};
+    project_compose_preview_span(span, build_compose_audio_marker_y_view(input, timing, preview->start_milliseconds),
+                                 build_compose_audio_marker_y_view(input, timing, end), input.frame.view());
+}
+} // namespace
+
 void build_compose_audio_markers_view(const compose_projection_context_t<>& input) {
+    input.frame.view().preview_span = {};
     if (!input.cache().timing.marker_timing_index)
         return;
     const auto& timing_index = *input.cache().timing.marker_timing_index;
     build_compose_audio_bookmarks_view(input, timing_index);
     build_compose_audio_sections_view(input, timing_index);
+    build_compose_preview_span_view(input, timing_index);
 }
 
 void build_compose_markers_view(

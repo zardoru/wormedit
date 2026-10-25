@@ -2,10 +2,35 @@
 
 ## Active queue (2026-10-24)
 
-[Backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md) is complete:
-622 done, 2 ready, 11 partial, 4 blocked, 40 deferred and 2 superseded (681 total).
-Ready: **T-58**, **T-293**. T-231/T-232/T-250/T-275/T-287 have implemented checkpoints and
-explicit remaining work; T-272 is superseded. No implementation card is active.
+Integrated **wyrm/t729-t749** into main (2026-10-24): preview persistence uses schema20,
+following the Lua/impulse/generator migrations in schemas17–19. Migration coverage includes
+schemas16–19. The merged suite passes **5,048/5,048** with two workers; preview core/format
+coverage passes **111 assertions / 21 cases**. Complexity passes **24 changed TUs plus three
+header consumers**, without increased allowances; Clang compiles all 24 changed TUs.
+The preview controls were inspected in isolated **1280×720** and **800×700** windows,
+including the shortened end-time label in the Markers dock.
+
+Completed **T-749** (2026-10-24, branch `wyrm/t729-t749`): one song-wide preview in source-song
+milliseconds with chart overrides only for differing imported osu! difficulties. Native schema v20
+lifts retained osu!/SM fields; writers reuse unchanged spellings, osu! reports a dropped length and
+the raw field editor refuses preview-owned fields. Markers panel, area menu and a snapped canvas
+drag edit it with one Undo step; Export preview audio renders the authored span. GCC GATE passes
+**4,889/4,889**. T-729 is planned as T-756–T-759 ([open question 27](../../docs/chart-editor-plan/decisions/open-questions.md)); T-756 is ready.
+[Completed card](../../docs/chart-editor-plan/tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration).
+
+Completed **T-231** and **T-232** (2026-10-24): the Measures dock applies exact length
+ratios to authored/virtual selections in one Undo step; matching meters survive and incompatible
+meters clear. Bookmark/section editing now lives in the Markers dock with searchable navigation
+and the existing chooser. The manual covers both flows. GATE passes **5,015/5,015**;
+complexity passes **12 changed TUs plus four header consumers**, without increased allowances.
+Focused measures pass **534 assertions / 40 cases**, dock/marker workflows **148 / 17**.
+The full linux-clang build passes; isolated **1280×720** and **800×700** windows inspected.
+Both selected cards are complete; no new card is active.
+
+Current inventory after the [backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md)
+and the T-231/T-232 and wyrm branch completions: **626 done, 3 ready, 9 partial, 7 blocked, 38 deferred and 2 superseded**
+(685 total). Ready: **T-58**, **T-293**, **T-756**. T-250/T-275/T-287 retain implemented checkpoints
+and explicit remaining work; T-272 is superseded.
 
 Completed **T-162**, **T-158**, and **T-159/T-160** (2026-10-24): finite SV impulses,
 owned read-only Lua document access, and explicit generator preview/Apply with saved recipes.

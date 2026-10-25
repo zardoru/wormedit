@@ -96,6 +96,7 @@ add_library(wormedit_core
     src/core/interaction_selection.cpp
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
+    src/core/song_preview.cpp
     src/core/kiai_spans.cpp
     src/core/marker_navigation.cpp
     src/core/timing_links.cpp

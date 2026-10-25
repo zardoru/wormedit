@@ -75,6 +75,19 @@ auto set_measures_meter_action_t::perform(compose_action_context_t& context) con
     return outcome;
 }
 
+auto set_measures_length_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
+    return context.require_no_gesture("Finish or cancel the active Compose gesture before editing measures.");
+}
+
+auto set_measures_length_action_t::perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+    return compose_action_outcome_t::from(apply_measures_length(context.environment.document.history, context.state.chart,
+        context.action.compose_measure_ids, context.action.compose_measure_length_numerator_text,
+        context.action.compose_measure_length_denominator_text),
+        compose_action_description_t{.rebind_failure = "Measure lengths edited, but workspace rebinding failed.",
+            .source = notification_source_t::edit});
+}
+
 auto move_compose_bar_line_action_t::validate(compose_action_context_t& context) const
     -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(

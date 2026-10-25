@@ -90,6 +90,12 @@ Treat BMSE and iBMSC clipboard formats as external compatibility formats with fi
 
 Cut deletes source events only after at least one requested clipboard representation is written successfully. Malformed or unsupported clipboard input must leave the document and existing selection unchanged.
 
+## Song preview and export cuts
+
+The song preview is one song-wide owner anchored to source-song audio time: a start point and an optional duration ([question 26](../decisions/open-questions.md), [T-749](../tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration)). osu! stores the point in every difficulty, SM/SSC stores start and length for the song, and BMS/BMSON store only a preview file, which Export preview audio renders from the authored span by default. Point-only targets never gain a fabricated duration.
+
+Export cuts are song-wide audio-time intervals removed from every exported song and chart ([question 27](../decisions/open-questions.md), [T-756–T-759](../tasks/markers.md#t-756-persist-song-wide-export-cuts-and-create-them-from-a-selection)). Ordinary Compose skips them; Timing focus shows and plays them. Content fully inside a cut is dropped on export with a diagnostic, while content crossing a boundary blocks the export.
+
 ## Authored multivoice sounds (deferred)
 
 Owner request (2026-10-20): plan a shared authored sound model for several voices

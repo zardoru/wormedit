@@ -1,5 +1,8 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/song_preview_timing.h>
+#include <wormedit/core/span_manipulation.h>
 #include "core/timing_arithmetic.h"
 #include "sys/compose/input/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
@@ -151,6 +154,85 @@ auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, c
     result.document_changed = edited.applied;
     result.diagnostics = edited.diagnostics;
     accepted = edited.applied ? "Kiai area edited." : "Kiai area unchanged.";
+    return std::nullopt;
+}
+
+namespace {
+auto preview_span_rows(const wormedit::timing_index_t& timing, const wormedit::song_preview_t& preview)
+    -> std::optional<wormedit::span_rows_t> {
+    const auto rows = wormedit::song_preview_rows(timing, preview);
+    if (!rows) return std::nullopt;
+    return wormedit::span_rows_t{rows->begin, rows->end};
+}
+
+auto preview_from_rows(const wormedit::timing_index_t& timing, wormedit::span_rows_t rows, bool has_length)
+    -> std::optional<wormedit::song_preview_t> {
+    const auto begin = wormedit::song_preview_milliseconds_at(timing, rows.begin);
+    const auto end = wormedit::song_preview_milliseconds_at(timing, rows.end);
+    if (!begin || (has_length && (!end || *end <= *begin))) return std::nullopt;
+    return wormedit::song_preview_t{.start_milliseconds = *begin,
+                                    .length_milliseconds = has_length ? std::optional{*end - *begin} : std::nullopt};
+}
+
+auto preview_span_handle(std::uint8_t edge) -> wormedit::span_handle_t {
+    if (edge == WORM_UI_SPAN_HANDLE_END) return wormedit::span_handle_t::end;
+    if (edge == WORM_UI_SPAN_HANDLE_BEGIN) return wormedit::span_handle_t::begin;
+    return wormedit::span_handle_t::body;
+}
+
+// A point-only preview has no end to keep: its start line and label shift the point by the
+// drag, and its end line gives it a length.
+auto moved_preview_rows(const wormedit::song_preview_t& preview, wormedit::span_rows_t original,
+                        wormedit::span_handle_t handle, std::uint64_t anchor, std::uint64_t pointer,
+                        std::uint64_t total_rows) -> std::optional<wormedit::span_rows_t> {
+    if (preview.length_milliseconds || handle == wormedit::span_handle_t::end)
+        return wormedit::manipulate_span(original, handle, anchor, pointer, total_rows);
+    if (total_rows == 0) return std::nullopt;
+    const auto shifted = static_cast<long double>(original.begin) + static_cast<long double>(pointer) -
+                         static_cast<long double>(anchor);
+    const auto begin = static_cast<std::uint64_t>(
+        std::clamp(shifted, 0.0L, static_cast<long double>(total_rows - 1)));
+    return wormedit::span_rows_t{begin, begin};
+}
+} // namespace
+
+// A song-preview edge or the whole span dragged (open question 26). Rows snap like other
+// timing pointers, then become source-song milliseconds; one Undo step per release. The
+// preview is metadata, so the timing lock does not apply.
+auto edit_compose_preview_span(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
+                               wormedit::editor_interaction_result_t& result,
+                               std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    auto& history = context.environment.document.history;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(history, context.state);
+    if (!chart || !view) return "The preview edit is stale.";
+    if (!context.is_timing_input_current(input)) return stale_action_message("Preview edit");
+    const auto& preview = history.document.effective_preview(*chart);
+    const auto* indices = history.indices(chart->id);
+    if (!preview || !indices || !indices->measures || !indices->timing.value)
+        return "The song preview is no longer available.";
+    const auto& timing = *indices->timing.value;
+    const auto row = timing_pointer_row(context, *chart, *view, *indices->measures, input.y_pixels);
+    const auto anchor = timing_pointer_row(context, *chart, *view, *indices->measures, input.span_anchor_y_pixels);
+    const auto original = preview_span_rows(timing, *preview);
+    if (!row || !anchor || !original) return "The preview edit has no valid destination row.";
+    const auto handle = preview_span_handle(input.span_edge);
+    const auto moved = moved_preview_rows(*preview, *original, handle, *anchor, *row, timing.total_rows);
+    const auto edited = moved && *moved != *original
+        ? preview_from_rows(timing, *moved, preview->length_milliseconds || handle == span_handle_t::end)
+        : std::nullopt;
+    if (!edited) {
+        result.accepted = true;
+        accepted = "Preview unchanged.";
+        return std::nullopt;
+    }
+    const auto owner = chart->metadata.preview_override ? std::optional{chart->id} : std::nullopt;
+    const auto applied = apply_song_preview_edit(history, {.chart = owner, .preview = *edited});
+    result.accepted = applied.applied || applied.diagnostics.empty();
+    result.document_changed = applied.applied;
+    result.diagnostics = applied.diagnostics;
+    accepted = applied.applied ? "Preview edited." : "Preview unchanged.";
     return std::nullopt;
 }
 

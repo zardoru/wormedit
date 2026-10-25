@@ -41,6 +41,17 @@ struct batch_chart_metadata_action_t {
     std::optional<signed_rational_t> rating; // nullopt explicitly clears when edit_rating is true.
 };
 
+// Sets or clears the song preview, or one chart's preview override when `chart`
+// is set; clearing an override returns the chart to the song preview. One Undo
+// step each (open question 26).
+struct song_preview_edit_t {
+    std::optional<chart_id_t> chart;
+    std::optional<song_preview_t> preview;
+};
+
+[[nodiscard]] auto apply_song_preview_edit(document_history_t& history, const song_preview_edit_t& edit)
+    -> document_command_result_t;
+
 // One undoable transaction for 1..256 selected charts; every ID must exist and occur exactly once.
 [[nodiscard]] auto apply_batch_chart_metadata_edit(document_history_t& history,
     const batch_chart_metadata_action_t& action,

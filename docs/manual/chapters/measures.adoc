@@ -78,3 +78,16 @@ Each is one Undo step, and no other object moves in time.
 The command menu (kbd:[Ctrl+Shift+P]) has *Insert Measure Before*, *Insert Measure After* and
 *Remove Empty Measure* for the measure at the cursor, and the inspector's *Measure at cursor*
 section shows that measure's details.
+
+== Edit several measure lengths
+
+Open the *Measures* dock and select rows with Ctrl-click or Shift-click; *Select all* selects the
+whole list. The *Length* row takes an exact numerator and denominator: `3 / 2` means one and a
+half standard measures. Press *Set* to apply that ratio to the selection as one Undo step.
+A matching meter is retained (for example 2/4 for a half-length measure); an incompatible
+meter is cleared. Notes and timing objects keep their absolute song rows.
+Selecting virtual BMS measures materializes them through the same edit. Invalid or
+unrepresentable ratios reject the whole selection.
+
+The separate *Meter* row changes both the signature and its corresponding length. Use it when
+you want a time-signature change rather than an independent length override.

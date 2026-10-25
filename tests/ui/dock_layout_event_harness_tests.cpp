@@ -24,6 +24,12 @@ struct dock_fixture_t {
         (void)harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(false, x, y)}, modifiers);
         (void)harness.frame();
     }
+    void open_marker_search() {
+        const auto find = harness.drawn_text_center("Find marker");
+        REQUIRE(find);
+        (void)wormedit::test::click_at(harness, find->first, find->second);
+        (void)harness.frame();
+    }
     auto press(std::string_view tip) -> std::pair<float, float> {
         const auto point = harness.widget_center(tip);
         (void)harness.frame(std::array{test::mouse_motion(point.first, point.second),
@@ -101,6 +107,7 @@ TEST_CASE("Markers dock activates existing bookmark navigation with a stamped ta
         .rows = {{.bookmark_id = object_id_t{77}, .display_label = "Chorus marker", .navigation_available = true}},
         .total_count = 1};
     (void)f.harness.frame();
+    f.open_marker_search();
     const auto point = f.harness.drawn_text_center("Chorus marker");
     REQUIRE(point);
     const auto [x, y] = *point;

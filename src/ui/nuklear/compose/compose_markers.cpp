@@ -36,6 +36,8 @@ struct compose_marker_state_t {
     std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_bookmark_time{};
     std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_section_begin{};
     std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_section_end{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> preview_start{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> preview_end{};
 };
 
 compose_marker_state_t state;
@@ -123,6 +125,9 @@ void synchronize(const wormedit::ui::compose_view_t& view) {
         copy_time(state.audio_section_begin, 0);
         copy_time(state.audio_section_end, 1'000);
     }
+    copy_time(state.preview_start, view.preview_span.available ? view.preview_span.start_milliseconds : 0);
+    state.preview_end.fill('\0');
+    if (view.preview_span.has_length) copy_time(state.preview_end, view.preview_span.end_milliseconds);
     state.project_id = view.project_id.value;
     state.chart_id = view.chart_id.value;
     state.document_revision = view.document_revision;
@@ -546,6 +551,54 @@ void render_audio_sections(struct nk_context* context, const wormedit::ui::compo
     }
 }
 
+void render_song_preview_buttons(struct nk_context* context, const wormedit::ui::compose_view_t& view,
+                                 wormedit::ui::workspace_action_t& action) {
+    const auto& span = view.preview_span;
+    const auto button = [&](const char* label, bool enabled) {
+        if (!enabled) nk_widget_disable_begin(context);
+        const auto clicked = nk_button_label(context, label);
+        if (!enabled) nk_widget_disable_end(context);
+        return clicked && enabled;
+    };
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto apply = button("Apply typed times", view.scene_available);
+    const auto cursor = button("Start at cursor", view.scene_available);
+    const auto selection = button("From selection", view.preview_audio_range.available);
+    const auto clear = button("Clear preview", span.available && !span.chart_override);
+    nk_layout_row_dynamic(context, 24, span.chart_override ? 2 : 1);
+    const auto song = span.chart_override && button("Use song preview", true);
+    if (button("Export preview audio…", span.available))
+        worm_ui_nuklear_compose_state().preview_audio.begin_from_preview(view);
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (apply) {
+        action.compose_marker_audio_begin = state.preview_start.data();
+        action.compose_marker_audio_end = state.preview_end.data();
+        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_PREVIEW;
+    } else if (cursor) action.compose_action = WORM_UI_COMPOSE_ACTION_SET_PREVIEW_START_AT_CURSOR;
+    else if (selection) action.compose_action = WORM_UI_COMPOSE_ACTION_SET_PREVIEW_FROM_SELECTION;
+    else if (clear) action.compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW;
+    else if (song) action.compose_action = WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW;
+}
+
+// The song preview (open question 26): typed start and optional end in milliseconds.
+// An empty end keeps the preview point-only.
+void render_song_preview(struct nk_context* context, const wormedit::ui::compose_view_t& view,
+                         wormedit::ui::workspace_action_t& action) {
+    nk_layout_row_dynamic(context, header_height, 1);
+    nk_label_colored(context, view.preview_span.chart_override ? "Song preview · this chart's own" : "Song preview",
+                     NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
+    if (!view.preview_span.available) render_empty_list(context, "No preview set");
+    nk_layout_row_dynamic(context, 18, 2);
+    nk_label(context, "Start (ms)", NK_TEXT_LEFT);
+    nk_label(context, "End (ms, optional)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 2);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        state.preview_start.data(), state.preview_start.size(), nk_filter_decimal);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        state.preview_end.data(), state.preview_end.size(), nk_filter_decimal);
+    render_song_preview_buttons(context, view, action);
+}
+
 } // namespace
 
 void worm_ui_nuklear_reset_compose_markers(void) {
@@ -563,4 +616,5 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
     render_sections(context, *view, *action);
     render_audio_bookmarks(context, *view, *action);
     render_audio_sections(context, *view, *action);
+    render_song_preview(context, *view, *action);
 }

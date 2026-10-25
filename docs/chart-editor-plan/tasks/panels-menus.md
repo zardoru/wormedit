@@ -135,30 +135,32 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-231 Add the Measures panel (iBMSC measure-length list)
 
-- **Status:** partial (reconciled 2026-10-24; dock and batch meter editing implemented)
+- **Status:** done (2026-10-24; batch exact length ratios through shared measure transactions)
 - **Done so far:** `src/ui/nuklear/compose/compose_measures_panel.cpp` renders a virtualized ratio/meter list, shared Ctrl/Shift selection, select-all/clear, cursor navigation and batch meter Apply. `populate_measure_rows` in `src/sys/compose/views/compose_selection_view.cpp` includes virtual BMS measures; `set_measures_meter_action_t` uses the shared edit path. Existing coverage: "Measures dock selects rows, jumps the cursor and applies one meter to the selection" in `tests/ui/nuklear_event_harness_tests.cpp`. T-228 is done.
-- **Remaining:** add a batch exact length-ratio editor alongside the meter editor; reuse the existing batch-definition and row-preserving materialization helpers in `measure_editor.h` through shared transactions. Cover mixed authored/virtual selections, invalid-ratio atomic rejection, stable IDs and Undo. The list and batch meter control must not be rebuilt.
+- **Completion:** the Length row accepts exact positive integer ratios and applies one row-preserving batch command, including virtual BMS measures. Matching meter notation survives; incompatible meters clear. Invalid input or selections reject atomically. Command and event coverage verifies canonical ratios, mixed authored/virtual measures, stable IDs, owned payloads, stale boundaries and one Undo.
 - **Outcome:** a list of measures `#000`–`#999` (virtual BMS measures included) showing length as ratio and meter; multi-select with Shift/Ctrl; an editor row applies a length or meter to all selected measures in one command; clicking a row jumps the cursor there.
 - **Read first:** `src/ui/nuklear/compose/compose_measures_panel.cpp`, `src/sys/compose/actions/compose_measure_actions.cpp`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `include/wormedit/core/virtual_canvas.h`, `tests/ui/nuklear_event_harness_tests.cpp` (Measures dock case).
 - **Files owned:** `src/ui/nuklear/compose/compose_measures_panel.cpp/.h`, `src/ui/nuklear/compose/compose_state.h`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `src/sys/compose/actions/compose_measure_actions.cpp`, Compose route/internal action headers, `src/sys/compose/views/compose_selection_view.cpp`, `tests/core/measure_editor_tests.cpp`, focused measure dock/action regressions and test registration if a dedicated file is introduced.
+- **Supporting ownership (coordinator, 2026-10-24):** `src/sys/compose/actions/compose_measure_commands.cpp/.h` owns ratio parsing and the existing measure command adapter; `tests/sys/compose_measure_commands_tests.cpp` verifies row/meter/virtual-measure behavior; `tests/sys/compose_action_notification_tests.cpp` verifies the shared stale boundary; new `tests/ui/measure_length_event_harness_tests.cpp` and `tests/CMakeLists.txt` verify the owned UI payload. `docs/manual/chapters/measures.adoc` and resume/status record the user flow and evidence.
 - **Steps:** 1. Characterize the existing list, meter action and core batch-definition edit. 2. Add only the missing exact ratio form/action through shared staging. 3. Test length/meter independence, virtual materialization, rejection and one Undo; inspect the real dock.
 - **Invariants:** exact ratios; stable measure IDs.
 - **Reject/failure behavior:** any invalid measure rejects the batch.
-- **Verify:** standard build/test.
+- **Verify:** GATE passes 5,015/5,015 tests, whitespace and 12 changed-TU complexity checks; four explicit header consumers also pass. Focused measure coverage: 534 assertions / 40 cases; dock/marker coverage: 148 / 17. Isolated 1280×720 and 800×700 window captures inspected. Full linux-clang build passes.
 - **Out of scope:** inserting/removing measures (T-70).
 
 ## T-232 Move Layers and Markers into their own panels
 
-- **Status:** partial (reconciled 2026-10-24; all three docks exist, marker editing still in Inspector)
+- **Status:** done (2026-10-24; existing marker/section editing lives in the Markers dock)
 - **Done so far:** `dock_panel_renderers` in `src/ui/nuklear/compose/compose_panel.cpp` registers Measures, Layers and Markers. The Layers dock renders `compose_layers_panel.cpp`; the Markers dock renders the existing bookmark list and has a stamped-navigation event test in `tests/ui/dock_layout_event_harness_tests.cpp`. T-228 and T-207 are done.
-- **Remaining:** move the existing bookmark/section editing controls from `render_compose_marker_section` in `compose_inspector.cpp` into the Markers dock, retaining the chooser and existing actions. Remove the Inspector duplication only after the dock exposes those controls. A bookmark navigation list alone does not satisfy the full marker/section editing outcome.
+- **Completion:** the Markers dock reuses the existing beat/audio bookmark and section editor, with searchable navigation under Find marker. Inspector duplication is removed. Chooser interaction, stamped navigation, add/delete guards and double-click rename retain their existing actions and coverage.
 - **Outcome:** Semantic layers and Markers/sections leave the Compose inspector and become dock panels; the Inspector panel keeps only properties of the current selection (note label, BPM value, recipe, BMSON slice state).
 - **Read first:** `src/ui/nuklear/compose/compose_inspector.cpp`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp`, `src/ui/nuklear/compose/compose_panel.cpp`, `tests/ui/dock_layout_event_harness_tests.cpp`.
 - **Files owned:** `src/ui/nuklear/compose/compose_inspector.cpp/.h`, `src/ui/nuklear/compose/compose_markers.cpp/.h`, `src/ui/nuklear/compose/compose_bookmark_chooser.cpp/.h`, `src/ui/nuklear/compose/compose_panel.cpp`, focused marker/dock event regressions and test registration if needed. Existing Layers rendering stays with its current owner.
+- **Supporting ownership (coordinator, 2026-10-24):** `tests/ui/markers_event_harness_tests.cpp` exercises the moved editing controls; `tests/ui/dock_layout_event_harness_tests.cpp` retains searchable navigation; `docs/manual/chapters/navigating.adoc` and resume/status document the new location.
 - **Steps:** 1. Characterize bookmark/section editing and chooser behavior in the existing Inspector and dock. 2. Move existing editing controls into the registered Markers dock. 3. Verify add/edit/delete/navigation, chooser interaction, keyboard capture and stale actions; inspect narrow and normal windows.
 - **Invariants:** identical actions and behavior.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; smoke PNGs.
+- **Verify:** GATE passes 5,015/5,015 tests, whitespace and 12 changed-TU complexity checks; four explicit header consumers also pass. Focused measure coverage: 534 assertions / 40 cases; dock/marker coverage: 148 / 17. Isolated 1280×720 and 800×700 window captures inspected. Full linux-clang build passes.
 - **Out of scope:** new layer features.
 
 ## T-312 Move the note palette into a tall left toolbar in Compose

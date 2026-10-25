@@ -60,6 +60,11 @@ finest row instead.
 |Choose a bookmark by name.
 |===
 
+Open the *Markers* dock to add, rename, move or delete bookmarks and sections. It contains
+beat-based and audio-time groups. Click a beat marker to navigate and double-click its label to
+rename it. Expand *Find marker* for the searchable navigation list; Ctrl+Shift+G still opens the
+bookmark chooser. Marker editing controls live in this dock.
+
 Double-click a bookmark's line or label to rename it.
 
 == Mouse wheel and zoom

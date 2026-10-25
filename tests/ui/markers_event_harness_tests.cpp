@@ -37,17 +37,6 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
             harness.frame(std::array{motion_to(x, y), button(false, x, y)})};
 }
 
-void scroll_inspector(nuklear_event_harness_t& harness, int notches) {
-    (void)harness.frame(std::array{motion_to(1500.0f, 800.0f)});
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.mouse_x = 1500.0f;
-    wheel.wheel.mouse_y = 800.0f;
-    wheel.wheel.y = -1.0f;
-    for (int count = 0; count < notches; ++count) (void)harness.frame(std::array{wheel});
-}
-
 struct markers_fixture_t {
     nuklear_event_harness_t harness{1600, 900};
     std::array<wormedit::ui::compose_bookmark_view_t, 2> bookmarks{{
@@ -68,12 +57,8 @@ struct markers_fixture_t {
         view.beat_sections.assign(sections.begin(), sections.end());
         view.beat_sections.resize(sections.size());
         view.beat_marker_navigation_available = true;
+        worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::markers, false);
         (void)harness.frame();
-        scroll_inspector(harness, 40);
-        const auto tree = harness.drawn_text_center("Bookmarks and sections");
-        REQUIRE(tree.has_value());
-        (void)click(harness, tree->first, tree->second);
-        scroll_inspector(harness, 40);
         REQUIRE(harness.drawn_text().find("Bookmarks") != std::string::npos);
     }
 
@@ -192,4 +177,59 @@ TEST_CASE("renaming a section from the list stages the label update with its ide
     CHECK(std::string{committed.compose_marker_label} == "intro");
     CHECK(committed.compose_input_chart_id.value == 7);
     CHECK(committed.compose_input_document_revision == 12);
+}
+
+TEST_CASE("marker editing lives in the Markers dock instead of the Inspector", "[event-harness][markers]") {
+    markers_fixture_t fixture;
+    CHECK(fixture.harness.drawn_text().find("Audio-time bookmarks") != std::string::npos);
+    worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::inspector, false);
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Audio-time bookmarks") == std::string::npos);
+    CHECK(fixture.harness.drawn_text().find("Bookmarks and sections") == std::string::npos);
+}
+TEST_CASE("Markers dock yields its controls to the bookmark chooser and restores them after closing", "[event-harness][markers]") {
+    markers_fixture_t fixture;
+    worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open = true;
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Bookmark chooser is open.") != std::string::npos);
+    worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open = false;
+    (void)fixture.harness.frame();
+    CHECK(fixture.harness.drawn_text().find("Bookmarks") != std::string::npos);
+}
+
+namespace {
+// Setting a preview changes the group's height; let the scrolled panel settle before clicking.
+auto clicked_action(nuklear_event_harness_t& harness, const char* label) -> WormUiComposeActionKind {
+    for (int frame = 0; frame < 3; ++frame) (void)harness.frame();
+    const auto center = harness.drawn_text_center(label);
+    if (!center) return WORM_UI_COMPOSE_ACTION_NONE;
+    for (const auto& frame : click(harness, center->first, center->second))
+        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE) return frame.get().compose_action;
+    return WORM_UI_COMPOSE_ACTION_NONE;
+}
+auto song_preview_view(bool chart_override) -> wormedit::ui::compose_preview_span_view_t {
+    return {.available = true, .has_length = true, .chart_override = chart_override,
+            .start_milliseconds = 500, .end_milliseconds = 2500, .begin_row = 240, .end_row = 1200};
+}
+} // namespace
+
+TEST_CASE("The Song preview group clears a song preview", "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(false);
+    CHECK(clicked_action(fixture.harness, "Clear preview") == WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW);
+}
+
+TEST_CASE("The Song preview group returns a chart's own preview to the song's",
+          "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(true);
+    CHECK(clicked_action(fixture.harness, "Use song preview") == WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW);
+}
+
+TEST_CASE("The Song preview group exports the authored span", "[unit][frontend-state][event-harness][markers][song-preview]") {
+    markers_fixture_t fixture;
+    fixture.harness.view().compose.preview_span = song_preview_view(false);
+    (void)clicked_action(fixture.harness, "Export preview audio…");
+    const auto& dialog = worm_ui_nuklear_compose_state().preview_audio;
+    CHECK((dialog.open && dialog.draft.begin_row == 240 && dialog.draft.end_row == 1200));
 }

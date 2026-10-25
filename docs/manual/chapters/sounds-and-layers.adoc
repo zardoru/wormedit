@@ -129,9 +129,42 @@ custom-set authoring interface.
 It does not mute music or ordinary BMS keysounds. Preview-audio export still includes the authored
 mix, regardless of this live-monitoring setting.
 
+[#song-preview]
+== Song preview
+
+The song preview is one start point, with an optional length, in the song's audio time. It
+belongs to the song, so every difficulty shares it. Moving BPM changes or the offset leaves it
+on the same audio. The *Song preview* group at the end of the Markers panel shows and edits it:
+
+* Type a start and an end in milliseconds and click *Apply typed times*. Leave the end empty
+  for a point-only preview.
+* *Start at cursor* moves the start to the Compose cursor and keeps the length.
+* *From selection* (or *Set song preview from selection* in the area menu) uses the selected
+  area as the whole span.
+* *Clear preview* removes it.
+
+Compose draws the preview as a green band labelled _Preview_. A point-only preview shows a
+fainter band for the 15 seconds wormedit plays and exports by default; that length is never
+saved. Drag the start or end line to resize the span, or drag the _Preview_ label to move all of
+it. Edges land on the grid while snapping is on. Dragging a point-only preview's start line
+moves the point, and dragging its end line gives it a length. Each drag is one Undo step, and
+Escape cancels it.
+
+Each format keeps what it can store. osu! saves only the start (`PreviewTime`) and warns when a
+length is dropped. StepMania saves the start and, when set, the length (`SAMPLESTART` and
+`SAMPLELENGTH`). BMS and BMSON name a preview file instead, which you make with
+*Export preview audio…*. An unchanged preview keeps its original spelling in the file, and the
+raw format-field editor in Metadata refuses to change these fields.
+
+When you import an osu! difficulty whose preview differs from the song's, that difficulty keeps
+its own preview. The band then reads _Preview (this chart)_, and *Use song preview* returns it
+to the song's.
+
 == Exporting preview audio
 
-Select a materialized area in Compose, right-click it and choose *Export preview audio…*.
+Click *Export preview audio…* in the Song preview group to render the song preview. To render
+another interval once, select a materialized area in Compose, right-click it and choose
+*Export preview audio…*.
 The dialog shows the resolved source interval. Choose an `.ogg` filename, optionally shorten
 the duration (trimming the end), and set a fade-out. Relative filenames are next to the project;
 the default is `preview.ogg`. A render can be at most ten minutes.

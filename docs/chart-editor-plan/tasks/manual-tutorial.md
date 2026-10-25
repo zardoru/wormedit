@@ -17,6 +17,16 @@ milestone** is reached when no card from the 2026-10-05 feedback batches
 The manual documents what exists. Screenshots and video shots are produced by
 scripts so they can be regenerated after UI changes, never by hand.
 
+**Owner follow-up (2026-10-25):** fill the remaining manual gaps. T-432/T-433 also own
+`docs/manual/chapters/bms-branches.adoc`, `settings.adoc`, `troubleshooting.adoc`, the
+book index/maintaining appendix, `shots/lib/compose.sh`, all existing shot-script/capture refreshes,
+and `scripts/manual-captures.sh` for current wizard/dock coordinates, isolated fixture copies and
+an isolated Zenity picker. T-705's supporting scope includes `cmake/wormedit_manual.cmake`
+(package exercise fixtures), `src/ui/nuklear/app/manual_location.h`, `frontend.cpp`, `menu_bar.cpp`,
+`src/ui/workspace_menu.h` and their existing backend/menu tests (open the installed book from
+Help/About, escape local URL paths, and report an omitted manual). These extensions implement
+the requested documentation and discoverability outcome; they do not change chart editing.
+
 ## T-430 Set up the manual skeleton and its link check
 
 - **Status:** done (2026-10-18; owner started the manual ahead of the docs milestone)

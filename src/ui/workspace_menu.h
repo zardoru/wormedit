@@ -12,7 +12,7 @@ enum class workspace_menu_action_t {
     undo, redo, delete_selection, select_all, select_all_objects, select_all_after_cursor,
     select_all_objects_after_cursor, invert_selection, clear_selection,
     new_chart, timing_lock, insert_bpm, insert_sv, play_stop, play_pause, play_start, stop, metronome,
-    sounds, layers, about, shortcuts, export_output_group, playback_audition,
+    sounds, layers, about, shortcuts, export_output_group, playback_audition, manual,
     recent_first = 1000, recent_last = 1099
 };
 

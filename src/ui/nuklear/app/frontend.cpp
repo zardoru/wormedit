@@ -67,6 +67,7 @@
 #include <SDL3/SDL.h>
 #include "ui/frontend/transport_status.h"
 #include "ui/nuklear/render/sdl_region_scope.h"
+#include "ui/nuklear/app/manual_location.h"
 class RenderSubphaseScope {
   public:
     explicit RenderSubphaseScope(WormUiFrameRenderPhase phase)
@@ -1789,6 +1790,15 @@ static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& v
     }
 }
 
+static void open_user_manual() {
+    const auto* base = SDL_GetBasePath();
+    const auto manual = wormedit::ui::nuklear::manual_location_t::from(base ? base : "");
+    if (manual && manual->open()) return;
+    const auto* message = manual ? SDL_GetError() :
+        "The user manual is not installed. Build or install Wormedit with WORMEDIT_INSTALL_MANUAL enabled.";
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not open user manual", message, SDL_GetKeyboardFocus());
+}
+
 static void apply_workspace_menu_action(MenuAction chosen,
                                          wormedit::ui::workspace_action_t& action) {
     const auto found = std::ranges::find(g_workspace_menu, chosen, &wormedit::ui::workspace_menu_item_t::action);
@@ -1803,6 +1813,7 @@ static void apply_workspace_menu_action(MenuAction chosen,
         return;
     }
     switch (chosen) {
+    case MenuAction::manual: open_user_manual(); break;
     case MenuAction::open: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE); break;
     case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
     case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;
@@ -2792,6 +2803,8 @@ static void render_about_body(const wormedit::ui::workspace_view_t& view) {
     nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
     if (nk_button_label(g_context, "github.com/zardoru/wormedit"))
         (void)SDL_OpenURL("https://github.com/zardoru/wormedit");
+    nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
+    if (nk_button_label(g_context, "Open user manual")) open_user_manual();
 }
 
 static void render_shortcut_sheet(const wormedit::ui::workspace_view_t& view) {

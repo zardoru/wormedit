@@ -156,6 +156,7 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 ## T-705 Ship the manual in packages, opt-out
 
 - **Status:** done (2026-10-18; owner: "Manual should be an opt-out part of package scripts")
+- **Follow-up (2026-10-25):** Help → User manual and About → Open user manual open the installed local HTML, with escaped file URLs and an explicit missing-manual error. Build/install now include tutorial fixtures; the optional `Manual` install component can be checked independently. GATE passes 5,280/5,280 with four changed-TU complexity checks; the isolated Help action reaches the expected local URL through a stub browser. The manual component install and full DESTDIR-staged install both pass, including exercise projects/audio. A plain prefix-only recursive install hits the existing Vorbis absolute include destination; DESTDIR staging keeps the complete install inside the verification directory.
 - **Outcome:** The default build renders `docs/manual` to HTML (target `manual`) and `cmake --install` places it in `manual/` next to the program, so `scripts/windows-cross-package.sh` zips include it; `-DWORMEDIT_INSTALL_MANUAL=OFF` opts out. The packaged copy uses no web or icon fonts.
 - **Read first:** `cmake/wormedit_manual.cmake`.
 - **Files owned:** `cmake/wormedit_manual.cmake`, `CMakeLists.txt` (include), `docs/manual/chapters/maintaining.adoc`, this card.

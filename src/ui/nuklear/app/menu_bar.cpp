@@ -160,6 +160,7 @@ auto build_workspace_menu(const wormedit::ui::workspace_view_t& view, bool block
     append_view(menu, view, !blocked, frame_timing);
     append_chart(menu, !blocked && !text_owner);
     append_playback(menu, !blocked && !text_owner);
+    menu.push_back({"Help", "User manual", Action::manual, nullptr, !blocked});
     menu.push_back({"Help", "Shortcut cheat sheet", Action::shortcuts, nullptr, !blocked});
     menu.push_back({"Help", "About WormEdit", Action::about, nullptr, !blocked});
     apply_command_rows(menu, view);

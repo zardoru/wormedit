@@ -1,5 +1,8 @@
 #include "pixel_comparison.h"
 #include "ui/nuklear/app/sdl_backend.h"
+#include "ui/nuklear/app/manual_location.h"
+#include "../support/temporary_directory.h"
+#include <fstream>
 #include "ui/nuklear/compose/compose_canvas.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
@@ -103,6 +106,24 @@ void send_backend_key(backend_fixture_t& backend, SDL_Keycode key, bool down,
     expect_backend(nk_sdl_handle_event(backend.context, &event));
 }
 } // namespace
+
+TEST_CASE("Installed manual location rejects missing files and escapes local URL bytes", "[ui][manual]") {
+    auto directory = wormedit::test::temporary_directory_t::from();
+    expect_backend(directory);
+    const auto base = directory->path() / "manual space # %";
+    expect_backend(std::filesystem::create_directories(base / "manual"));
+    expect_backend(!manual_location_t::from(base.string()));
+    expect_backend(!manual_location_t::from(""));
+    std::ofstream(base / "manual/index.html") << "<html>Manual</html>";
+    const auto manual = manual_location_t::from(base.string());
+    expect_backend(manual);
+    expect_backend(manual->url().starts_with("file:///"));
+    expect_backend(manual->url().find("manual%20space%20%23%20%25/manual/index.html") != std::string::npos);
+    expect_backend(manual->url().find(' ') == std::string::npos);
+    const auto with_slash = manual_location_t::from(base.string() + "/");
+    expect_backend(with_slash);
+    expect_backend(with_slash->url() == manual->url());
+}
 
 TEST_CASE("SDL ordinary letters never press their inactive editing shortcuts", "[ui][sdl-keyboard]") {
     backend_fixture_t backend;

@@ -157,7 +157,7 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
         Action::copy, Action::cut, Action::paste, Action::select_same_sound, Action::move_to_bgm,
         Action::reset_view, Action::tap_timing, Action::timing_settings, Action::notifications,
         Action::preview, Action::external_preferences, Action::external_start, Action::external_here,
-        Action::external_stop, Action::about}) check_menu(item(model, action).title != nullptr);
+        Action::external_stop, Action::manual, Action::about}) check_menu(item(model, action).title != nullptr);
     check_menu(item(model, Action::frame_timing).checked);
     const auto separator = std::ranges::find(model, Action::none, &ui::workspace_menu_item_t::action);
     require_menu(separator != model.end());

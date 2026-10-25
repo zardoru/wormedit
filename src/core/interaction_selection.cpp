@@ -46,6 +46,10 @@ void editor_selection_history_t::record(document_history_t& history,
 }
 
 namespace {
+
+auto is_hidden_selection_span(const export_cut_axis_t* axis, std::uint64_t begin, std::uint64_t end) -> bool {
+    return axis && axis->contains_span(begin, end);
+}
 auto restore_history_selection(const document_history_t& history, editor_interaction_state_t& state,
     const editor_selection_snapshot_t& selection) -> bool {
     if (selection.chart != state.chart) {
@@ -197,10 +201,8 @@ struct note_area_query_t {
     }
 
     auto is_point_intersecting(lane_id_t lane, std::uint64_t row) -> bool {
-        const auto y = static_cast<long double>(row) *
-            static_cast<long double>(view.pixels_per_standard_measure) /
-            static_cast<long double>(chart.divisions_per_standard_measure) -
-            static_cast<long double>(view.viewport_scroll_pixels);
+        if (view.cut_axis && view.cut_axis->contains_row(row)) return false;
+        const auto y = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).y_for_row(row);
         return y >= static_cast<long double>(bounds.top) &&
                y <= static_cast<long double>(bounds.bottom) &&
                is_lane_intersecting(layout_at(static_cast<long double>(row)), lane);
@@ -208,6 +210,7 @@ struct note_area_query_t {
 
     auto is_body_intersecting(lane_id_t lane, std::uint64_t begin_row,
                          std::uint64_t end_row) -> bool {
+        if (is_hidden_selection_span(view.cut_axis.get(), begin_row, end_row)) return false;
         auto begin = std::max(bounds.minimum_row, static_cast<long double>(begin_row));
         auto end = std::min(bounds.maximum_row, static_cast<long double>(end_row));
         if (begin > end || begin_row == end_row || layouts.empty()) return false;
@@ -272,12 +275,10 @@ auto area_selection_bounds_t::from(const chart_document_t& chart,
         result.empty = true;
         return result;
     }
-    const auto row_at = [&](double y) {
-        return (static_cast<long double>(y) + view.viewport_scroll_pixels) *
-               static_cast<long double>(chart.divisions_per_standard_measure) /
-               static_cast<long double>(view.pixels_per_standard_measure);
+    const auto row_at = [&](double y, bool before_seam = false) {
+        return editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).row_at_y(y, before_seam);
     };
-    result.minimum_row = std::max(row_at(result.top), 0.0L);
+    result.minimum_row = std::max(row_at(result.top, true), 0.0L);
     result.maximum_row = std::min(row_at(result.bottom),
         static_cast<long double>(index.measures.total_rows - 1));
     if (result.minimum_row > result.maximum_row) {
@@ -441,7 +442,7 @@ auto is_valid_non_note_area(const chart_document_t& chart, const editor_hit_test
         index.selection_span_tree_max_end.size() == index.selection_span_tree_leaf_base * 2;
 }
 
-auto collect_float_selection(const editor_hit_test_index_t& index,
+auto collect_float_selection(const editor_hit_test_index_t& index, const export_cut_axis_t* axis,
                              editor_selection_scope_t scope, long double low, long double high,
                              std::size_t candidate_count,
                              std::vector<editor_selection_object_t>& selected,
@@ -451,16 +452,17 @@ auto collect_float_selection(const editor_hit_test_index_t& index,
     if (last - first == 1) {
         if (first >= index.selection_spans.size()) return;
         const auto& span = index.selection_spans[first];
-        if (static_cast<long double>(span.begin_row) > high ||
+        if (is_hidden_selection_span(axis, span.begin_row, span.end_row) ||
+            static_cast<long double>(span.begin_row) > high ||
             static_cast<long double>(span.end_row) < low ||
             !is_scope_accepted(scope, span.object.kind)) return;
         selected.push_back(span.object);
         return;
     }
     const auto middle = first + (last - first) / 2;
-    collect_float_selection(index, scope, low, high, candidate_count, selected,
+    collect_float_selection(index, axis, scope, low, high, candidate_count, selected,
                             node * 2, first, middle);
-    collect_float_selection(index, scope, low, high, candidate_count, selected,
+    collect_float_selection(index, axis, scope, low, high, candidate_count, selected,
                             node * 2 + 1, middle, last);
 }
 
@@ -534,7 +536,8 @@ auto append_non_note_area_selection(const chart_document_t& chart,
         return append_projected_area_selection(chart, view, request, selected);
     if (!(request.scope.bgm || request.scope.timing || request.scope.bga)) return std::nullopt;
     const auto maximum_scroll = maximum_viewport_scroll(
-        chart, index.measures, view.pixels_per_standard_measure, view.viewport_height_pixels);
+        chart, index.measures, view.pixels_per_standard_measure, view.viewport_height_pixels,
+        view.viewport_end_margin_fraction, view.cut_axis.get());
     if (!is_valid_non_note_area(chart, index, view, request, maximum_scroll))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "area selection geometry or index is invalid")};
@@ -542,13 +545,11 @@ auto append_non_note_area_selection(const chart_document_t& chart,
     const auto bottom = std::min(view.viewport_height_pixels,
                                  std::max(request.start_y_pixels, request.end_y_pixels));
     if (top > bottom) return std::nullopt;
-    const auto row_at = [&](double y) {
-        return (static_cast<long double>(y) + view.viewport_scroll_pixels) *
-               static_cast<long double>(chart.divisions_per_standard_measure) /
-               static_cast<long double>(view.pixels_per_standard_measure);
+    const auto row_at = [&](double y, bool before_seam = false) {
+        return editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).row_at_y(y, before_seam);
     };
     const auto max_row = static_cast<long double>(index.measures.total_rows - 1);
-    const auto low = std::max(row_at(top), 0.0L);
+    const auto low = std::max(row_at(top, true), 0.0L);
     const auto high = std::min(row_at(bottom), max_row);
     const editor_selection_scope_t scope{.notes = false, .bgm = request.scope.bgm,
         .timing = request.scope.timing, .bga = request.scope.bga};
@@ -559,7 +560,7 @@ auto append_non_note_area_selection(const chart_document_t& chart,
     const auto count = static_cast<std::size_t>(
         std::distance(index.selection_spans.begin(), after));
     if (count != 0 && low <= high)
-        collect_float_selection(index, scope, low, high, count, selected,
+        collect_float_selection(index, view.cut_axis.get(), scope, low, high, count, selected,
                                  1, 0, index.selection_span_tree_leaf_base);
     return std::nullopt;
 }

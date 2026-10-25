@@ -1,6 +1,10 @@
 # Status: resume checklist
 
-## Active queue (2026-10-24)
+## Active queue (2026-10-25)
+
+Completed **T-756–T-759** (2026-10-25): song-wide export cuts have schema22 persistence, selection creation and Markers editing, exact chart/audio export with atomic publication, collapsed ordinary Compose playback/waveforms/navigation, and pink Timing-focus bands with snapped edge drags. Conditional BMS outcomes retain their graph when their exact mappings are compatible; unsupported exact timing carries reject with targeted diagnostics. BMS, osu!mania, SM and SSC cut round trips pass. Preview export shares conversion preparation, including BMSON continuations and fresh Lua sessions. The manual and architecture are updated.
+
+Final GATE passes **5,176/5,176**, whitespace and **88 changed-TU complexity checks**, without increased allowances. Optimized GCC compilation passes **27/27 changed core/format units**. Isolated final Compose and Timing-focus windows were inspected. Logs: `/tmp/wormedit-gate.oofWGd`, `/tmp/wormedit-cut-optimized-check.log`; captures: `/tmp/wormedit-cut-visual/compose-final.png` and `timing-final.png`. No card remains active. The preceding GCC Release warning fix was verified and checkpointed as `0c60878`.
 
 Completed the owner-requested **T-228 dock follow-up** (2026-10-24): the right strip can
 arrange two panels as full-height columns or a vertical stack. Version2 application preferences
@@ -27,7 +31,7 @@ milliseconds with chart overrides only for differing imported osu! difficulties.
 lifts retained osu!/SM fields; writers reuse unchanged spellings, osu! reports a dropped length and
 the raw field editor refuses preview-owned fields. Markers panel, area menu and a snapped canvas
 drag edit it with one Undo step; Export preview audio renders the authored span. GCC GATE passes
-**4,889/4,889**. T-729 is planned as T-756–T-759 ([open question 27](../../docs/chart-editor-plan/decisions/open-questions.md)); T-756 is ready.
+**4,889/4,889**. T-729 is planned as T-756–T-759 ([open question 27](../../docs/chart-editor-plan/decisions/open-questions.md)); T-756–T-759 are complete above.
 [Completed card](../../docs/chart-editor-plan/tasks/resources-audio.md#t-749-author-preview-points-and-spans-with-format-aware-duration).
 
 Completed **T-231** and **T-232** (2026-10-24): the Measures dock applies exact length
@@ -40,8 +44,8 @@ The full linux-clang build passes; isolated **1280×720** and **800×700** windo
 Both selected cards are complete; no new card is active.
 
 Current inventory after the [backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md)
-and the T-231/T-232 and wyrm branch completions: **626 done, 3 ready, 9 partial, 7 blocked, 38 deferred and 2 superseded**
-(685 total). Ready: **T-58**, **T-293**, **T-756**. T-250/T-275/T-287 retain implemented checkpoints
+and the T-231/T-232, wyrm branch and T-756–T-759 completions: **630 done, 2 ready, 9 partial, 4 blocked, 38 deferred and 2 superseded**
+(685 total). Ready: **T-58**, **T-293**. T-250/T-275/T-287 retain implemented checkpoints
 and explicit remaining work; T-272 is superseded.
 
 Completed **T-162**, **T-158**, and **T-159/T-160** (2026-10-24): finite SV impulses,

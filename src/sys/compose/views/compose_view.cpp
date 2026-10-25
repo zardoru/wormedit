@@ -12,6 +12,7 @@
 #include "sys/compose/views/generator_view.h"
 #include "ui/nuklear/render/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
+#include <wormedit/core/editor_axis.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>
@@ -70,6 +71,8 @@ void compose_scene_cache_t::invalidate_scene_cache() {
     scene.bgm_rows_by_id.clear();
     scene.hit_test_index = {};
     timing.marker_timing_index.reset();
+    timing.cut_axis = {};
+    timing.cut_axis_error.clear();
     timing.dead_spans.reset();
     timing.kiai_spans.reset();
     timing.sv_steps.reset();
@@ -684,7 +687,7 @@ void populate_lane_layout_segments(frontend_workspace_view_t& flattened,
         const auto measure_number = static_cast<std::size_t>(measure - measures.entries.data()) + 1;
         const auto projected_y = compose_project_y(*row, pixels_per_row,
                                                    interaction.viewport_scroll_pixels,
-                                                   view.viewport_height_pixels, downscroll);
+                                                   view.viewport_height_pixels, downscroll, interaction.cut_axis.get());
         storage.push_back({.segment_id = {segment.id.value},
                                 .measure_number = static_cast<std::uint32_t>(std::min<std::size_t>(
                                     measure_number, std::numeric_limits<std::uint32_t>::max())),
@@ -747,8 +750,8 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart,
 }
 
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
-                       double viewport_height, bool downscroll) -> double {
-    const auto offset = row * pixels_per_row - scroll;
+                       double viewport_height, bool downscroll, const wormedit::export_cut_axis_t* cut_axis) -> double {
+    const auto offset = (cut_axis ? cut_axis->collapsed_row(row) : row) * pixels_per_row - scroll;
     return static_cast<double>(downscroll ? viewport_height - offset : offset);
 }
 
@@ -1314,8 +1317,9 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
 
 std::optional<wormedit::editor_interaction_view_model_t> prepare_compose_interaction(
     const compose_interaction_population_context_t& input) {
-    if (!initialize_compose_interaction(input) || !update_compose_snap_preferences(input))
-        return std::nullopt;
+    if (!initialize_compose_interaction(input)) return std::nullopt;
+    prepare_compose_cut_axis(input);
+    if (!update_compose_snap_preferences(input)) return std::nullopt;
     return inspect_compose_interaction(input);
 }
 
@@ -1358,7 +1362,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         const auto pixels_per_row = input.scope.pixels_per_row;
         const auto playhead_y = compose_project_y(
             *application_state.project.transport.preview_playhead_absolute_row, pixels_per_row,
-            interaction_view.viewport_scroll_pixels, view.viewport_height_pixels, downscroll);
+            interaction_view.viewport_scroll_pixels, view.viewport_height_pixels, downscroll, interaction_view.cut_axis.get());
         if (std::isfinite(playhead_y) && playhead_y >= 0.0 &&
             playhead_y <= view.viewport_height_pixels) {
             view.playhead_visible = true;
@@ -1374,9 +1378,8 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
             canvas_rows = canvas->total_rows;
     }
-    const auto content_height = static_cast<double>(canvas_rows) *
-                                interaction_view.pixels_per_standard_measure /
-                                static_cast<double>(chart.divisions_per_standard_measure);
+    const auto content_height = wormedit::editor_axis_projection_t::from(interaction_view,
+        chart.divisions_per_standard_measure).content_height(canvas_rows);
     const auto maximum_scroll = std::max(0.0, content_height -
         view.viewport_height_pixels * retained_state->viewport_end_margin_fraction);
     set_viewport_scroll_pixels(*retained_state, std::clamp(
@@ -1476,10 +1479,10 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
             const auto last_row = preview.last_row;
             const auto first_y = compose_project_y(first_row, pixels_per_row,
                                                    interaction_view.viewport_scroll_pixels,
-                                                   view.viewport_height_pixels, downscroll);
+                                                   view.viewport_height_pixels, downscroll, interaction_view.cut_axis.get());
             const auto last_y = compose_project_y(last_row + (pending.minimum_span_rows == 0 ? 1 : 0), pixels_per_row,
                                                   interaction_view.viewport_scroll_pixels,
-                                                  view.viewport_height_pixels, downscroll);
+                                                  view.viewport_height_pixels, downscroll, interaction_view.cut_axis.get());
             const auto top = std::min(first_y, last_y);
             const auto bottom = std::max(first_y, last_y);
             view.space_range_preview_visible = true;
@@ -1494,7 +1497,7 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
                 return std::clamp(compose_project_y(
                                       static_cast<long double>(row) + 0.5L, pixels_per_row,
                                       interaction_view.viewport_scroll_pixels,
-                                      view.viewport_height_pixels, downscroll),
+                                      view.viewport_height_pixels, downscroll, interaction_view.cut_axis.get()),
                                   0.0, view.viewport_height_pixels);
             };
             view.space_range_anchor_y_pixels = row_center(pending.anchor_canvas_row);
@@ -2220,7 +2223,7 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
             return std::nullopt;
         return compose_project_y(*row, pixels_per_row,
                                  input.scope.interaction_view.viewport_scroll_pixels, height,
-                                 input.scope.downscroll);
+                                 input.scope.downscroll, input.scope.interaction_view.cut_axis.get());
     };
     const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
     if (!preview.report) return;
@@ -2340,10 +2343,8 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
     if (!target) return;
     const auto row = (input.scope.chart_scope.measures).row_of(target->position);
     if (!row) return;
-    const auto source_y = static_cast<double>(*row) *
-                              input.scope.interaction_view.pixels_per_standard_measure /
-                              input.scope.chart_scope.chart.divisions_per_standard_measure -
-                          input.scope.interaction_view.viewport_scroll_pixels;
+    const auto source_y = wormedit::editor_axis_projection_t::from(input.scope.interaction_view,
+        input.scope.chart_scope.chart.divisions_per_standard_measure).y_for_row(*row);
     const auto ghost_y = input.scope.downscroll ? view.viewport_height_pixels - source_y : source_y;
     const auto lanes = std::span(view.lanes);
     const auto lane = std::ranges::find_if(lanes, [&](const auto& value) {
@@ -2460,6 +2461,10 @@ void populate_bgm_only_compose_projection(
     compose_frame_inputs_t frame{flattened,        history,           cache,
                                  projection_state, application_state, timing_stage,
                                  comparison_rows,  bga_move_preview};
+    const wormedit::chart_scope_t chart_scope{chart, measures};
+    prepare_compose_cut_axis({frame, chart_scope, downscroll});
+    interaction_view.cut_axis = projection_state->cut_axis;
+    interaction_view.viewport_scroll_pixels = projection_state->viewport_scroll_pixels;
     const auto final_scope = compose_chart_scope_t<wormedit::editor_interaction_view_model_t>::from(
         {chart, measures},
         interaction_view,

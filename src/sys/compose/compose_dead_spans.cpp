@@ -92,15 +92,16 @@ auto dead_spans_view_t::from(const chart_document_t& chart, const measure_index_
     return result;
 }
 
-void build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
-                             double scroll_pixels, double viewport_height, bool downscroll,
+void build_dead_span_bands_view(const dead_spans_view_t& projection,
+                             const wormedit::editor_axis_projection_t& axis, double viewport_height, bool downscroll,
                              double pause_band_pixels, std::vector<dead_span_band_t>& bands) {
     bands.clear();
-    if (!(pixels_per_row > 0.0)) return;
+    if (!(axis.pixels_per_row > 0.0)) return;
     const auto source_y = [&](std::uint64_t row) {
-        return static_cast<double>(row) * pixels_per_row - scroll_pixels;
+        return axis.y_for_row(row);
     };
     for (const auto& span : projection.spans) {
+        if (axis.contains_row(span.begin_row) && axis.contains_row(span.end_row)) continue;
         double begin = source_y(span.begin_row);
         double end = source_y(span.end_row);
         if (span.kind == dead_span_kind_t::stop) end = begin + pause_band_pixels;
@@ -114,6 +115,13 @@ void build_dead_span_bands_view(const dead_spans_view_t& projection, double pixe
         bands.push_back({span.kind, span.object, top, bottom, span.seconds});
     }
     return;
+}
+
+void build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
+    double scroll_pixels, double viewport_height, bool downscroll, double pause_band_pixels,
+    std::vector<dead_span_band_t>& bands) {
+    build_dead_span_bands_view(projection, editor_axis_projection_t{.pixels_per_row = pixels_per_row,
+        .viewport_scroll_pixels = scroll_pixels}, viewport_height, downscroll, pause_band_pixels, bands);
 }
 
 auto build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,

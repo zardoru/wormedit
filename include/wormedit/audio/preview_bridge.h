@@ -127,6 +127,8 @@ class preview_transport_bridge_t {
   private:
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_outcome_t;
 
+    void load_music_segment(std::size_t index, std::uint64_t seek_frame);
+    std::size_t music_segment_index_{};
     void record_assist_handoff(bool assist, std::uint64_t frame);
     void advance_voice_ids(std::size_t source_count);
     void refill_assist_clicks(std::uint64_t exclusive_end_frame, std::uint64_t current_frame);

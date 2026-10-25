@@ -190,15 +190,15 @@ TEST_CASE("count-in setting recompiles preview pulses without resetting paused m
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     sys::runtime::chart_preview_t preview;
     REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
-    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
+    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures(), false}));
     preview.pause_at(3000);
     sys::metronome_t metronome;
     project_sources.metronome = &metronome;
     preview.metronome = &metronome;
     metronome.settings.count_in = 2;
-    CHECK_FALSE(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
+    CHECK_FALSE(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures(), false}));
     REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
-    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
+    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures(), false}));
     CHECK(preview.resume_frame == 3000);
     CHECK(preview.paused);
     REQUIRE(preview.compiled.value().schedule);
@@ -211,7 +211,7 @@ TEST_CASE("bookmark insertion can advance only the matching compiled preview rev
           "[integration][sys][chart-preview][bookmarks]") {
     wormedit::sys::runtime::chart_preview_t preview;
     static_cast<void>(preview.compiled.get_or_build(
-        wormedit::sys::runtime::chart_preview_t::source_key_t{wormedit::chart_id_t{9}, 12, std::nullopt, 0},
+        wormedit::sys::runtime::chart_preview_t::source_key_t{wormedit::chart_id_t{9}, 12, std::nullopt, 0, false},
         [](auto& data) { data.schedule.emplace(); data.timing.emplace(); }));
 
     CHECK(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 12, 13));
@@ -1635,7 +1635,7 @@ TEST_CASE("Layer assist runtime filters stable memberships and deduplicates chor
     using namespace wormedit;
     sys::runtime::chart_preview_t preview;
     static_cast<void>(preview.compiled.get_or_build(
-        sys::runtime::chart_preview_t::source_key_t{chart_id_t{7}, 0, std::nullopt, 0}, [](auto&) {}));
+        sys::runtime::chart_preview_t::source_key_t{chart_id_t{7}, 0, std::nullopt, 0, false}, [](auto&) {}));
     preview.layer_assist_chart = chart_id_t{7};
     preview.layer_assist_layers = {layer_id_t{11}, layer_id_t{12}};
     preview.compiled.value().schedule = preview_schedule_t{};

@@ -93,7 +93,8 @@
     "timing_hover": "#ffdc70",
     "timing_title_bg": "#12151dd7",
     "tail": "#71c9d8",
-    "arrow_selection": "#dcf7ff"
+    "arrow_selection": "#dcf7ff",
+    "export_cut": "#ec68ae"
   },
   "key_colors": {
     "generic": {

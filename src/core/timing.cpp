@@ -3428,4 +3428,17 @@ auto timing_index_t::row_at_frame(std::uint64_t frame, std::uint32_t sample_rate
     return row_at_approx({static_cast<std::int64_t>(frame), sample_rate}, policy, options);
 }
 
+auto timing_arithmetic::compare(signed_rational_t left, signed_rational_t right) -> std::optional<int> {
+    return compare_exact(left, right);
+}
+
+auto timing_arithmetic::multiply(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> { return multiply_exact(left, right); }
+auto timing_arithmetic::interpolate(signed_rational_t begin, signed_rational_t end, signed_rational_t progress)
+    -> std::optional<signed_rational_t> { return interpolate_exact(begin, end, progress); }
+auto timing_arithmetic::speed_value(const speed_curve_segment_t& segment, signed_rational_t row,
+    signed_rational_t seconds, std::uint64_t divisions) -> std::optional<signed_rational_t> {
+    return speed_segment_value(segment, row, seconds, divisions);
+}
+
 } // namespace wormedit

@@ -3,6 +3,9 @@
 // written; invalid requests and rejected conversions write nothing.
 #include "sys/project/project_open.h"
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/formats/export_cut_audio.h>
+#endif
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/conversion_publication.h>
@@ -252,8 +255,13 @@ auto write_outputs(const conversion_result_t& converted, const std::filesystem::
 }
 
 auto prepare_cli_slices(const song_document_t& song, cli_request_t& request) -> std::optional<std::string> {
-    if (!is_conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
 #ifdef WORMEDIT_HAS_AUDIO_DECODER
+    if (!song.export_cuts.empty()) {
+        auto sources = prepare_export_cut_sources(song, request.input.parent_path());
+        if (!sources.ok()) return sources.diagnostics.front().message;
+        request.conversion.export_cut_sources = std::move(sources.value);
+    }
+    if (!is_conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
     return prepare_conversion_slice_sources(song, request.conversion, request.input.parent_path());
 #else
     // The pure planner accepts soundless BMSON; audible sources reject missing geometry.
@@ -285,7 +293,7 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
     return std::nullopt;
 #else
     (void)song;
-    if (!converted.slice_plans.empty() || !converted.asset_copies.empty() || !converted.silent_files.empty())
+    if (!converted.slice_plans.empty() || !converted.cut_audio_plans.empty() || !converted.asset_copies.empty() || !converted.silent_files.empty())
         return "BMSON sliced-audio conversion requires the audio decoder build";
     return write_outputs(converted, request.output_directory, artifacts);
 #endif
@@ -320,7 +328,7 @@ auto run_request(const json& body) -> std::pair<int, json> {
         result["error"] = *conflict;
         return {1, result};
     }
-    const auto failure = is_conversion_needs_slice_spans(*opened.document, request.conversion)
+    const auto failure = (is_conversion_needs_slice_spans(*opened.document, request.conversion) || !converted.cut_audio_plans.empty())
         ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
         : write_outputs(converted, request.output_directory, result["artifacts"]);
     if (failure) {

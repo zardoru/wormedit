@@ -1,4 +1,5 @@
 #include "../core/text_util.h"
+#include "../core/filename_reservations.h"
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/core/sound_slice.h>
 
@@ -224,16 +225,16 @@ auto append_semantics(plan_context_t& context, const chart_document_t& chart) ->
 }
 
 void name_spans(plan_context_t& context) {
-    std::set<std::string> occupied;
-    for (const auto& name : context.options.occupied_filenames) occupied.insert(ascii_lowercase(name));
+    filename_reservations_t occupied;
+    for (const auto& name : context.options.occupied_filenames) occupied.reserve(name);
     std::size_t number{};
     for (auto& span : context.result.value.spans) {
         const auto stem = filename_stem(context.assets.at(span.asset.value)->source_path, span.asset);
-        do {
+        span.filename = occupied.allocate([&] {
             auto suffix = std::to_string(++number);
             suffix.insert(0, suffix.size() < 3 ? 3 - suffix.size() : 0, '0');
-            span.filename = stem + "_" + suffix + ".wav";
-        } while (!occupied.insert(ascii_lowercase(span.filename)).second);
+            return stem + "_" + suffix + ".wav";
+        }).generic_string();
     }
 }
 

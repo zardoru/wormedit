@@ -129,6 +129,9 @@ auto append_generated_files(const std::filesystem::path& project_directory,
         for (const auto& span : slice_plan.value.spans)
             if (auto failure = append_generated_file(span.filename, project_directory, directory,
                     request.overwrite, plan, destinations)) return failure;
+    for (const auto& cut : converted.cut_audio_plans)
+        if (auto failure = append_generated_file(cut.filename, project_directory, directory,
+                request.overwrite, plan, destinations)) return failure;
     for (const auto& name : converted.silent_files)
         if (auto failure = append_generated_file(name, project_directory, directory,
                 request.overwrite, plan, destinations)) return failure;

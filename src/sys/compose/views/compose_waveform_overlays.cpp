@@ -1,6 +1,7 @@
 #include "sys/compose/views/compose_projection_context.h"
 #include <wormedit/core/rational.h>
 #include "sys/compose/views/compose_waveform_overlays.h"
+#include <wormedit/core/editor_axis.h>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/core/bpm_editor.h>
@@ -88,14 +89,14 @@ struct proposed_grid_context_t {
     }
     auto old_y(std::uint64_t row) const -> double {
         return compose_project_y(row, scope.pixels_per_row, interaction.viewport_scroll_pixels,
-                                 view().viewport_height_pixels, scope.downscroll);
+                                 view().viewport_height_pixels, scope.downscroll, interaction.cut_axis.get());
     }
     auto projected_geometry_y(double old_screen_y) const -> std::optional<double> {
         const auto source_y = compose_source_y(
             old_screen_y, scope.interaction_view.viewport_height_pixels, scope.downscroll);
         const auto row =
-            (static_cast<long double>(source_y) + scope.interaction_view.viewport_scroll_pixels) *
-            original.divisions_per_standard_measure / view().pixels_per_standard_measure;
+            wormedit::editor_axis_projection_t::from(scope.interaction_view, original.divisions_per_standard_measure)
+                .row_at_y(source_y);
         if (!std::isfinite(row) || row < 0.0L || row > original.total_rows)
             return std::nullopt;
         constexpr std::uint64_t fractional_scale = 1'000'000;
@@ -516,19 +517,16 @@ void build_beat_fit_positions_view(wormedit::ui::compose_view_t& compose,
     if (anchor_row)
         compose.beat_fit_anchor_y_pixels = compose_project_y(
             *anchor_row, pixels_per_row, interaction.viewport_scroll_pixels,
-            compose.viewport_height_pixels, downscroll);
+            compose.viewport_height_pixels, downscroll, interaction.cut_axis.get());
     compose.beat_fit_beat_y_pixels = compose_project_y(
         compose.beat_fit_chart_row, pixels_per_row, interaction.viewport_scroll_pixels,
-        compose.viewport_height_pixels, downscroll);
+        compose.viewport_height_pixels, downscroll, interaction.cut_axis.get());
     const auto target = timing.query_position({static_cast<std::int64_t>(drag.proposed_sample_frame), drag.sample_rate});
     if (!target) return;
     const auto& row = target->value;
-    const auto source_y = static_cast<double>(
-        wormedit::to_long_double(row) *
-        compose.pixels_per_standard_measure / timing.divisions_per_standard_measure -
-        interaction.viewport_scroll_pixels);
-    compose.beat_fit_target_y_pixels = compose_source_y(
-        source_y, compose.viewport_height_pixels, downscroll);
+    compose.beat_fit_target_y_pixels = compose_project_y(wormedit::to_long_double(row),
+        compose.pixels_per_standard_measure / timing.divisions_per_standard_measure,
+        interaction.viewport_scroll_pixels, compose.viewport_height_pixels, downscroll, interaction.cut_axis.get());
 }
 
 void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,

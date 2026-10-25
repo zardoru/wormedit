@@ -10,6 +10,7 @@
 #include <wormedit/core/vocabulary.h>
 #include <wormedit/core/osu_hitsample.h>
 #include <wormedit/core/song_preview.h>
+#include <wormedit/core/export_cut.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1053,7 +1054,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 21;
+inline constexpr std::uint32_t current_document_schema_version = 22;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;
@@ -1074,6 +1075,7 @@ struct song_document_t {
     std::vector<chart_id_t> chart_order;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
+    std::vector<export_cut_t> export_cuts;
     chart_read_slot_t chart_read_slot;
     [[nodiscard]] auto find_bms_program(chart_id_t id) const -> const bms_program_document_t*;
     // Read-only prepared projections are available to domain planning; mutable
@@ -1085,6 +1087,8 @@ struct song_document_t {
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
+    [[nodiscard]] auto find_export_cut(object_id_t id) -> export_cut_t*;
+    [[nodiscard]] auto find_export_cut(object_id_t id) const -> const export_cut_t*;
     // The chart's preview override, otherwise the song preview.
     [[nodiscard]] auto effective_preview(const chart_document_t& chart) const
         -> const std::optional<song_preview_t>&;

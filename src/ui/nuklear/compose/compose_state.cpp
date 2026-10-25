@@ -3,6 +3,7 @@
 #include <wormedit/core/rational.h>
 #include "core/text_util.h"
 #include "ui/nuklear/compose/compose_state.h"
+#include <wormedit/core/export_cut_frames.h>
 #include "ui/nuklear/compose/compose_resources.h"
 #include "ui/nuklear/chrome/popup_lifecycle.h"
 #include "ui/nuklear/render/arrow_glyph.h"
@@ -688,7 +689,10 @@ auto worm_ui_nuklear_overview_source_fraction(const wormedit::ui::compose_view_t
         (static_cast<long double>(view.source_playhead_sample_rate) *
             view.waveform_overview_total_frames);
     if (fraction < 0.0L || fraction >= 1.0L) return std::nullopt;
-    return std::min(static_cast<double>(fraction), std::nextafter(1.0, 0.0));
+    const auto collapsed = view.waveform_cut_frames
+        ? view.waveform_cut_frames->collapsed_fraction(static_cast<std::uint64_t>(std::round(fraction * view.waveform_overview_total_frames)), view.waveform_overview_total_frames)
+        : std::optional{static_cast<double>(fraction)};
+    return collapsed ? std::optional{std::min(*collapsed, std::nextafter(1.0, 0.0))} : std::nullopt;
 }
 
 auto worm_ui_nuklear_compose_measure_number(const wormedit::ui::compose_view_t& view, const char* text)

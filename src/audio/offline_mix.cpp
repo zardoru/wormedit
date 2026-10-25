@@ -150,6 +150,10 @@ auto apply_fade(std::vector<float>& samples, std::uint64_t frames, std::uint32_t
 
 } // namespace
 
+void apply_offline_mix_fade(std::vector<float>& samples, std::uint32_t fade_ms) {
+    apply_fade(samples, samples.size() / output_channel_count, fade_ms);
+}
+
 auto render_offline_interval(decoded_source_registry_t& sources, const preview_schedule_t& schedule,
                              std::span<const preview_object_source_binding_t> objects,
                              std::uint64_t begin_frame, std::uint64_t end_frame,

@@ -207,7 +207,7 @@ auto clicked_action(nuklear_event_harness_t& harness, const char* label) -> Worm
         if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE) return frame.get().compose_action;
     return WORM_UI_COMPOSE_ACTION_NONE;
 }
-auto song_preview_view(bool chart_override) -> wormedit::ui::compose_preview_span_view_t {
+auto song_preview_view(bool chart_override) -> wormedit::ui::compose_audio_span_view_t {
     return {.available = true, .has_length = true, .chart_override = chart_override,
             .start_milliseconds = 500, .end_milliseconds = 2500, .begin_row = 240, .end_row = 1200};
 }

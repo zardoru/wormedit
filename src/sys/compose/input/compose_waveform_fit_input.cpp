@@ -1,6 +1,14 @@
 #include <wormedit/core/rational.h>
 #include "sys/compose/input/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
+namespace {
+auto waveform_source_fraction(const compose_scene_cache_t& cache, double fraction) -> double {
+    const auto& frames = cache.waveform.waveform_cut_frames;
+    if (!frames || cache.waveform.waveform_overview_total_frames < 2) return fraction;
+    const auto source = frames->source_frame_at_fraction(fraction, cache.waveform.waveform_overview_total_frames);
+    return source ? static_cast<double>(*source) / (cache.waveform.waveform_overview_total_frames - 1) : fraction;
+}
+}
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto fit_visible_source_frame(const wormedit::timing_index_t& timing,
                               const wormedit::editor_interaction_state_t& state,
@@ -12,10 +20,10 @@ auto fit_visible_source_frame(const wormedit::timing_index_t& timing,
         !std::isfinite(state.viewport_height_pixels))
         return std::nullopt;
     const auto pixel = state.viewport_scroll_pixels + (end ? state.viewport_height_pixels : 0);
-    const auto row =
-        std::clamp(static_cast<long double>(pixel) * timing.divisions_per_standard_measure /
-                       state.pixels_per_standard_measure,
-                   0.0L, static_cast<long double>(timing.total_rows));
+    const auto display_row = static_cast<long double>(pixel) * timing.divisions_per_standard_measure /
+        state.pixels_per_standard_measure;
+    const auto row = std::clamp(state.cut_axis ? state.cut_axis->source_boundary_row(display_row) : display_row,
+        0.0L, static_cast<long double>(timing.total_rows));
     const auto at =
         timing.seconds_at(static_cast<std::uint64_t>(end ? std::ceil(row) : std::floor(row)),
                   end ? wormedit::timing_boundary_side_t::after_stops
@@ -382,7 +390,7 @@ auto seek_compose_waveform(const wormedit::ui::compose_input_action_t& input, co
             "Finish or cancel the active gesture before navigating the waveform.");
     const auto& timing = *cache.timing.marker_timing_index;
     const auto frame = static_cast<std::int64_t>(
-        input.audio_fraction * static_cast<long double>(cache.waveform.waveform_overview_total_frames - 1));
+        waveform_source_fraction(cache, input.audio_fraction) * static_cast<long double>(cache.waveform.waveform_overview_total_frames - 1));
     const auto musical =
         timing.row_at(signed_rational_t{frame, cache.waveform.waveform_overview_sample_rate});
     long double row = 0.0L;
@@ -398,7 +406,8 @@ auto seek_compose_waveform(const wormedit::ui::compose_input_action_t& input, co
             row = audio_seconds >= end_seconds ? static_cast<long double>(timing.total_rows) : 0.0L;
         }
     }
-    const auto target = static_cast<double>(row * state.pixels_per_standard_measure /
+    const auto display_row = state.cut_axis ? state.cut_axis->collapsed_row(row) : row;
+    const auto target = static_cast<double>(display_row * state.pixels_per_standard_measure /
                                                 timing.divisions_per_standard_measure -
                                             state.viewport_height_pixels * 0.5);
     result = scroll_compose_navigation_view(context.environment.document.history, context.state, target);
@@ -423,9 +432,9 @@ auto click_compose_waveform(const wormedit::ui::compose_input_action_t& input, c
             ? context.environment.commands.services.transport_preview_end_frame()
             : std::nullopt;
     const auto target = compose_minimap_target(
-        input.audio_fraction, cache.waveform.waveform_overview_total_frames,
+        waveform_source_fraction(cache, input.audio_fraction), cache.waveform.waveform_overview_total_frames,
         cache.waveform.waveform_overview_sample_rate, audio::output_sample_rate, *cache.timing.marker_timing_index,
-        cache.scene.index.value()->measures, edit_snap_grid(*context.input_chart, context.state), end);
+        cache.scene.index.value()->measures, edit_snap_grid(*context.input_chart, context.state), context.state.cut_axis ? std::nullopt : end);
     if (!target)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
     const auto position = (cache.scene.index.value()->measures).position_at(target->snapped_row);

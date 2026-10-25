@@ -44,6 +44,26 @@ template<> struct chart_edit_native_collection_t<section_edit_value_t> {
     static constexpr auto member = &chart_document_t::sections;
 };
 
+// The chart member on these shared edit payloads is not an owner: cuts belong
+// to the song and use source-song audio milliseconds across every difficulty.
+struct export_cut_edit_value_t {
+    std::optional<std::string> label;
+    std::int64_t begin_milliseconds{};
+    std::int64_t end_milliseconds{};
+    [[nodiscard]] auto with_id(object_id_t id) const -> export_cut_t {
+        return {.id = id, .label = label, .begin_milliseconds = begin_milliseconds,
+                .end_milliseconds = end_milliseconds};
+    }
+    auto operator==(const export_cut_edit_value_t&) const -> bool = default;
+};
+using export_cut_edit_action_t = std::variant<insert_edit_t<export_cut_edit_value_t>,
+    update_edit_t<export_cut_edit_value_t>, delete_edit_t<export_cut_edit_value_t>>;
+
+[[nodiscard]] auto apply_export_cut_edit(document_history_t& history, const export_cut_edit_action_t& action)
+    -> document_command_result_t;
+[[nodiscard]] auto apply_export_cut_edit(document_command_transaction_t& transaction,
+    const export_cut_edit_action_t& action) -> document_command_result_t;
+
 struct timing_kiai_value_t {
     bool enabled{true};
     std::uint32_t retained_effect_bits{};

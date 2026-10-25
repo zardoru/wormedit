@@ -25,6 +25,7 @@ struct compose_mode_profile_t {
     // Gestures on a timing lane.
     bool ctrl_click_inserts_matching_bpm;
     bool alt_click_inserts_anchor;
+    bool export_cuts_visible;
 };
 
 inline constexpr compose_mode_profile_t compose_mode_full_profile{
@@ -35,6 +36,7 @@ inline constexpr compose_mode_profile_t compose_mode_full_profile{
     .inspector_available = true,
     .ctrl_click_inserts_matching_bpm = false,
     .alt_click_inserts_anchor = false,
+    .export_cuts_visible = false,
 };
 
 inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
@@ -45,6 +47,7 @@ inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
     .inspector_available = false,
     .ctrl_click_inserts_matching_bpm = true,
     .alt_click_inserts_anchor = true,
+    .export_cuts_visible = true,
 };
 
 [[nodiscard]] constexpr auto compose_mode_profile(compose_mode_t mode) noexcept
@@ -76,6 +79,10 @@ inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
 [[nodiscard]] constexpr auto compose_alt_click_inserts_anchor(compose_mode_t mode) noexcept
     -> bool {
     return compose_mode_profile(mode).alt_click_inserts_anchor;
+}
+
+[[nodiscard]] constexpr auto compose_export_cuts_visible(compose_mode_t mode) noexcept -> bool {
+    return compose_mode_profile(mode).export_cuts_visible;
 }
 
 // Lane mask in force for drawing and hit testing.

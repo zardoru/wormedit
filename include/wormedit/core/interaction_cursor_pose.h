@@ -3,6 +3,7 @@
 // Edit cursor and viewport placement over editor_interaction_state_t.
 
 #include <wormedit/core/interaction_state.h>
+#include <wormedit/core/editor_axis.h>
 
 #include <cstdint>
 #include <optional>
@@ -123,8 +124,7 @@ inline auto editor_cursor_screen_y_pixels(const editor_interaction_view_model_t&
     std::optional<double> anchor = std::nullopt) -> double {
     if (anchor) return *anchor;
     if (view.fixed_cursor_screen_y_pixels) return *view.fixed_cursor_screen_y_pixels;
-    const auto source = static_cast<double>((row + view.cursor_subrow) *
-        view.pixels_per_standard_measure / divisions) - view.viewport_scroll_pixels;
+    const auto source = editor_axis_projection_t::from(view, divisions).y_for_row(row + view.cursor_subrow);
     return direction == editor_field_scroll_direction_t::down ? view.viewport_height_pixels - source : source;
 }
 

@@ -123,6 +123,11 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 }
 
 auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
+    if (!song.export_cuts.empty())
+        return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+            .code = bms_write_diagnostic_code_t::unsupported_feature,
+            .message = "Export cuts require convert_document so chart transformation and generated audio are planned together.", .location = "export_cuts"}}};
+
     const auto charts = song.read_charts();
     const auto id = options.chart.value_or(charts.size() == 1 ? charts.front()->id : chart_id_t{});
     const auto* owner = song.find_bms_program(id);

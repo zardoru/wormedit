@@ -13,6 +13,13 @@
 
 namespace wormedit::timing_arithmetic {
 
+[[nodiscard]] auto compare(signed_rational_t left, signed_rational_t right) -> std::optional<int>;
+[[nodiscard]] auto multiply(signed_rational_t left, signed_rational_t right) -> std::optional<signed_rational_t>;
+[[nodiscard]] auto interpolate(signed_rational_t begin, signed_rational_t end, signed_rational_t progress)
+    -> std::optional<signed_rational_t>;
+[[nodiscard]] auto speed_value(const speed_curve_segment_t& segment, signed_rational_t row,
+    signed_rational_t seconds, std::uint64_t divisions) -> std::optional<signed_rational_t>;
+
 inline constexpr auto positive_limit = static_cast<std::uint64_t>(
     std::numeric_limits<std::int64_t>::max());
 inline constexpr auto negative_limit = positive_limit + 1;

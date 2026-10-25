@@ -66,7 +66,7 @@ constexpr std::array<std::string_view, static_cast<size_t>(ComposeColor::count)>
     "timing_hover",
     "timing_title_bg",
     "tail",
-    "arrow_selection"};
+    "arrow_selection", "export_cut"};
 // Indexed by wormedit::lane_key_color_t; the names match its enumerators.
 constexpr std::array<std::string_view, 11> key_names{
     "generic",   "white",      "black",     "scratch",  "foot_pedal", "free_zone",
@@ -95,7 +95,7 @@ std::array<nk_color, compose_names.size()> compose_colors{
     nk_rgba(27, 31, 43, 255),    nk_rgba(80, 91, 112, 255),   nk_rgba(61, 70, 87, 255),
     nk_rgba(79, 67, 91, 255),    nk_rgba(18, 22, 31, 255),    nk_rgba(55, 64, 79, 255),
     nk_rgba(116, 92, 49, 255),   nk_rgba(255, 220, 112, 255), nk_rgba(18, 21, 29, 215),
-    nk_rgba(113, 201, 216, 255), nk_rgb(220, 247, 255)};
+    nk_rgba(113, 201, 216, 255), nk_rgb(220, 247, 255), nk_rgb(236, 104, 174)};
 // Built-in Wormedit fallback remains complete if the default asset is missing.
 auto builtin_key_colors() -> std::array<key_color_t, key_names.size()> {
     std::array<key_color_t, key_names.size()> colors{};

@@ -1841,6 +1841,15 @@ struct tap_clock_context_t {
 #endif
 };
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+auto preview_music_frame(const wormedit::preview_schedule_t& schedule, std::uint64_t frame)
+    -> std::optional<std::uint64_t> {
+    for (const auto& music : schedule.music_events())
+        if (const auto source = wormedit::preview_music_source_frame_at(music, frame)) return source;
+    return std::nullopt;
+}
+#endif
+
 auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_clock_t {
         wormedit::sys::tap_timing_clock_t clock;
         clock.observed_ns = SDL_GetTicksNS();
@@ -1864,10 +1873,9 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
         clock.keep_pitch = keep_pitch;
         clock.playing = playing && context.output.playing();
         if (token == context.bridge.session_token() && rate == context.output.playback_rate() &&
-            keep_pitch == context.output.keep_pitch() && context.preview.compiled.value().schedule &&
-            context.preview.compiled.value().schedule->music) {
-            clock.source_frame = wormedit::preview_music_source_frame_at(*context.preview.compiled.value().schedule->music, frame);
-            clock.beats_per_measure = tap_meter_at(context.document, context.preview, frame);
+            keep_pitch == context.output.keep_pitch() && context.preview.compiled.value().schedule) {
+            clock.source_frame = preview_music_frame(*context.preview.compiled.value().schedule, frame);
+            clock.beats_per_measure = tap_meter_at(context.document, context.preview, context.preview.source_frame(frame));
         }
 #endif
         return clock;
@@ -3285,8 +3293,15 @@ struct application_t::implementation_t {
             views.compose_interaction_state->chart != chart_id ||
             !views.compose_interaction_state->retained_selection_range)
             return false;
-        const auto region = loop_region_for_selection(
+        if (audio_runtime.preview_state.compile_if_needed(*chart, session.history.document, audio_runtime.project_sources))
+            return false;
+        auto region = loop_region_for_selection(
             session.history, *chart, *views.compose_interaction_state->retained_selection_range, begin_row, end_row);
+        if (region) {
+            region->begin_frame = audio_runtime.preview_state.collapsed_frame(region->begin_frame);
+            region->end_frame = audio_runtime.preview_state.collapsed_frame(region->end_frame);
+            if (region->begin_frame >= region->end_frame) return false;
+        }
         if (!region || (audio_runtime.preview_output.playing() &&
                         !audio_runtime.preview_state.matches_selection(session.history.document,
                                                                        session.workspace)))
@@ -3310,7 +3325,7 @@ struct application_t::implementation_t {
                 chart, session.history.document, audio_runtime.project_sources,
                 audio_runtime.audition_output,
                 audio_runtime.preview_session, audio_runtime.preview_output, std::nullopt, false,
-                region->begin_frame));
+                audio_runtime.preview_state.source_frame(region->begin_frame)));
             if (!audio_runtime.preview_output.playing()) {
                 audio_runtime.preview_state.resume_frame = previous_frame;
                 audio_runtime.preview_state.paused = was_paused;
@@ -4294,7 +4309,7 @@ struct application_t::implementation_t {
                     wormedit::notification_source_t::input);
             return wormedit::sys::seek_stopped_compose_transport(session.history,
                                                                  *views.compose_interaction_state,
-                                                                 views.compose_scene_cache, frame);
+                                                                 views.compose_scene_cache, audio_runtime.preview_state.source_frame(frame));
         }
         const auto result = audio_runtime.preview_state.seek(
             frame, session.history.document, session.workspace, audio_runtime.audition_output,
@@ -4476,6 +4491,9 @@ struct application_t::implementation_t {
         commands.bookmarks.workspace = &session.workspace;
         commands.bookmarks.preview_output = &audio_runtime.preview_output;
         commands.bookmarks.preview = &audio_runtime.preview_state;
+        commands.services.transport_preview_frame_from_source = [this](std::uint64_t frame) {
+            return audio_runtime.preview_state.collapsed_frame(frame);
+        };
         commands.services.transport_preview_end_frame = [this]() -> std::optional<std::uint64_t> {
             return on_transport_preview_end_frame();
         };
@@ -4639,6 +4657,14 @@ struct application_t::implementation_t {
         sync_layer_assist_selection();
         sync_bgm_mix_selection();
         service_audio_options();
+        if (const auto changed = audio_runtime.preview_state.synchronize_timing_focus(
+                commands.project.compose_view.compose_timing_focus,
+                selected_chart(session.history, session.workspace), session.history.document,
+                audio_runtime.project_sources, audio_runtime.audition_output,
+                audio_runtime.preview_session, audio_runtime.preview_output)) {
+            platform.notification_sink.post(audio_runtime.preview_state.feedback.severity,
+                wormedit::notification_source_t::audio, *changed);
+        }
         wormedit::sys::service_audio_transport_frame(
             session.history.document, session.workspace, audio_runtime.preview_state,
             audio_runtime.preview_session, audio_runtime.audition_output,

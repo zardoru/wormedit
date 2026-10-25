@@ -1,5 +1,6 @@
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/export_cut_audio.h>
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/atomic_file_storage.h>
 
@@ -260,6 +261,12 @@ auto render_conversion_slice_plans(const song_document_t& song, const conversion
     }
     for (const auto& copy : converted.asset_copies)
         if (auto failure = copy_conversion_asset(song, copy, options)) return failure;
+    if (!converted.cut_audio_plans.empty()) {
+        const auto timeline = export_cut_timeline_t::from(song.export_cuts);
+        if (!timeline.ok()) return "Invalid source export cuts";
+        const auto rendered = render_export_cut_audio_plans(song, converted.cut_audio_plans, timeline.value, options);
+        if (!rendered.succeeded) return rendered.error;
+    }
     auto rendering = options;
     rendering.preserve_float_samples = true;
     for (const auto& plan : converted.slice_plans) {

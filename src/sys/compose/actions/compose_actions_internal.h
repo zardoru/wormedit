@@ -209,6 +209,13 @@ struct edit_song_preview_action_t {
 };
 static_assert(compose_action<edit_song_preview_action_t, compose_action_context_t>);
 
+struct edit_export_cut_action_t {
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_export_cut_action_t, compose_action_context_t>);
+
+
 auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;

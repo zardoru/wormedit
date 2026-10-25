@@ -85,6 +85,7 @@ struct output_group_export_preparation_t {
     std::vector<std::filesystem::path> conflicts;
     std::vector<output_group_export_file_plan_t> files;
     std::string blocking_error;
+    notification_target_t blocking_target;
 };
 
 struct output_group_export_task_result_t {
@@ -93,6 +94,7 @@ struct output_group_export_task_result_t {
     std::string message;
     notification_severity_t severity{notification_severity_t::error};
     std::string detail;
+    notification_target_t target;
 };
 
 [[nodiscard]] auto run_output_group_export(const output_group_export_request_t& request,

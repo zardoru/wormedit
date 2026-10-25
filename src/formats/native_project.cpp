@@ -463,6 +463,16 @@ void from_json(const json& value, metadata_overrides_t& overrides) {
         throw std::invalid_argument("metadata overrides must contain exactly six slots");
     value.get_to(overrides.values);
 }
+void to_json(json& value, const export_cut_t& cut) {
+    value = {{"id", cut.id}, {"label", cut.label},
+        {"begin_milliseconds", cut.begin_milliseconds}, {"end_milliseconds", cut.end_milliseconds}};
+}
+void from_json(const json& value, export_cut_t& cut) {
+    value.at("id").get_to(cut.id);
+    value.at("label").get_to(cut.label);
+    cut.begin_milliseconds = strict_signed_64(value.at("begin_milliseconds"));
+    cut.end_milliseconds = strict_signed_64(value.at("end_milliseconds"));
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_preview_t, start_milliseconds, length_milliseconds)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups, overrides,
                                    preview_override)
@@ -871,7 +881,8 @@ void to_json(json& value, const song_document_t& song) {
                  {"storyboards", song.storyboards},
                  {"charts", song.charts},
                  {"output_groups", song.output_groups},
-                 {"quantization_presets", song.quantization_presets}};
+                 {"quantization_presets", song.quantization_presets},
+                 {"export_cuts", song.export_cuts}};
     if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
     if (!song.chart_order.empty()) value["chart_order"] = song.chart_order;
     if (!song.prepared_bms_programs.empty()) {
@@ -905,6 +916,7 @@ void from_json(const json& value, song_document_t& song) {
     value.at("charts").get_to(song.charts);
     value.at("output_groups").get_to(song.output_groups);
     value.at("quantization_presets").get_to(song.quantization_presets);
+    value.at("export_cuts").get_to(song.export_cuts);
     song.sound_groups = value.value("sound_groups", std::vector<sound_group_t>{});
     song.chart_order = value.value("chart_order", std::vector<chart_id_t>{});
     song.prepared_bms_programs.clear();

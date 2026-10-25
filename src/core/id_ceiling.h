@@ -42,7 +42,8 @@ template<> struct id_declarations_t<object_id_t> {
             !visit_declared_id_values(song.midi_assets, identities) ||
             !visit_declared_id_values(song.generator_recipes, identities) ||
             !visit_declared_id_values(song.storyboards, identities) ||
-            !visit_declared_id_values(song.sound_groups, identities)) return false;
+            !visit_declared_id_values(song.sound_groups, identities) ||
+            !visit_declared_id_values(song.export_cuts, identities)) return false;
         for (const auto& chart : song.charts)
             if (!visit_chart_domain(chart, visitor)) return false;
         for (const auto& owner : song.prepared_bms_programs)

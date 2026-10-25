@@ -1,5 +1,6 @@
 #include "sys/audio/chart_preview_state.h"
 #include "sys/audio/preview_cursor_frame.h"
+#include "sys/audio/export_cut_preview.h"
 #include "sys/timing/timing_settings.h"
 
 #include <wormedit/audio/audition_resolver.h>
@@ -65,15 +66,12 @@ auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnosti
 
 using audio::preview_music_object;
 
-auto registered_music_asset(const song_document_t& document,
+auto registered_music_asset(const song_document_t& document, const chart_document_t& chart,
                             project_audio_sources_t& sources)
     -> std::optional<std::pair<resource_id_t, asset_id_t>> {
-    const auto music = std::ranges::find_if(document.resources, [&](const auto& resource) {
-        return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end() &&
-               sources.binding(document, resource.asset).has_value();
-    });
-    if (music == document.resources.end()) return std::nullopt;
-    return std::pair{music->id, music->asset};
+    const auto selected = audio::preview_music_selection_t::from(document, chart);
+    if (!selected.ok() || !selected.value || !sources.binding(document, selected.value->asset)) return {};
+    return std::pair{selected.value->resource, selected.value->asset};
 }
 
 auto preview_end_frame(
@@ -108,11 +106,9 @@ auto preview_end_frame(
             end_frame = std::max(end_frame, event.sample_frame + binding->voice.frame_count);
         }
     }
-    if (schedule.music && schedule.music->frame_count <=
-                              std::numeric_limits<std::uint64_t>::max() -
-                                  schedule.music->sample_frame)
-        end_frame = std::max(end_frame,
-                             schedule.music->sample_frame + schedule.music->frame_count);
+    for (const auto& music : schedule.music_events())
+        if (music.frame_count <= std::numeric_limits<std::uint64_t>::max() - music.sample_frame)
+            end_frame = std::max(end_frame, music.sample_frame + music.frame_count);
     return end_frame;
 }
 
@@ -191,11 +187,11 @@ auto chart_preview_t::compile_if_needed(
     metronome = sources.metronome;
     const auto metronome_bindings = sources.metronome_bindings();
     sources.registry().await_pending();
-    const auto selected_music = registered_music_asset(document, sources);
+    const auto selected_music = registered_music_asset(document, selected_chart, sources);
     const auto selected_music_asset = selected_music
                                           ? std::optional<asset_id_t>{selected_music->second}
                                           : std::nullopt;
-    const source_key_t key{selected_chart.id, document.revision, selected_music_asset, count_in_measures()};
+    const source_key_t key{selected_chart.id, document.revision, selected_music_asset, count_in_measures(), timing_focus && !document.export_cuts.empty()};
     const auto retained_resume = compiled.value().schedule && chart() == selected_chart.id &&
         revision() == document.revision && music_asset() == selected_music_asset ? resume_frame : 0;
     const compilation_request_t request{selected_chart, document, sources, metronome_bindings, selected_music};
@@ -254,7 +250,18 @@ auto chart_preview_t::build_compiled(const compilation_request_t& request, compi
     data.bindings = std::move(resolved.value.bindings);
     assign_preview_bgm_mix_groups(selected_chart, data.bindings);
     data.retained_metronome_bindings.assign(metronome_bindings.begin(), metronome_bindings.end());
-    data.end_frame = compiled_end_frame;
+    data.cut_frames.reset();
+    data.cut_warning.clear();
+    if (!timing_focus) {
+        auto cuts = prepare_export_cut_preview(*data.schedule, data.bindings, document.export_cuts, compiled_end_frame);
+        if (!cuts.diagnostics.empty()) {
+            if (std::ranges::any_of(cuts.diagnostics, [](const auto& value) { return value.severity == diagnostic_severity_t::error; }))
+                return preview_diagnostic_feedback(*this, cuts.diagnostics, "Export cuts could not be prepared.");
+            data.cut_warning = cuts.diagnostics.front().message;
+        }
+        data.cut_frames = std::move(cuts.value);
+    }
+    data.end_frame = data.cut_frames ? data.cut_frames->collapsed_frame(compiled_end_frame) : compiled_end_frame;
     data.skipped_unavailable_audio_objects = resolved.value.skipped_unavailable_objects;
     return std::nullopt;
 }
@@ -314,6 +321,25 @@ auto milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
 
 } // namespace
 
+namespace {
+auto preview_started_feedback(chart_preview_t& preview, bool from_beginning, bool was_paused, bool at_cursor)
+    -> std::string {
+    const auto& data = preview.compiled.value();
+    std::string status = from_beginning ? "Chart preview started from the beginning."
+           : was_paused ? "Chart preview resumed."
+           : at_cursor ? "Chart preview started at the cursor."
+                          : "Chart preview started.";
+    if (data.skipped_unavailable_audio_objects != 0) {
+        status += " Audio unavailable for " +
+                  std::to_string(data.skipped_unavailable_audio_objects) +
+                  " chart object(s); preview continues silently for them.";
+    }
+    if (!data.cut_warning.empty()) status += " " + data.cut_warning;
+    return preview.report((data.skipped_unavailable_audio_objects || !data.cut_warning.empty()) ? notification_severity_t::warning
+                                                  : notification_severity_t::success, true, std::move(status));
+}
+} // namespace
+
 auto chart_preview_t::play_pause(
     const chart_document_t* selected_chart, const song_document_t& document,
     project_audio_sources_t& sources,
@@ -340,13 +366,13 @@ auto chart_preview_t::play_pause(
         resume_frame = 0;
         paused = false;
     } else if (!paused && exact_start_frame) {
-        resume_frame = std::min(*exact_start_frame, compiled.value().end_frame);
+        resume_frame = std::min(collapsed_frame(*exact_start_frame), compiled.value().end_frame);
     } else if (!paused && start_cursor) {
         const auto frame = wormedit::sys::preview_cursor_frame(*selected_chart, *compiled.value().timing,
                                                               *start_cursor, start_cursor_subrow, geometry);
         if (const auto* error = std::get_if<std::string>(&frame))
             return report(notification_severity_t::warning, false, *error);
-        resume_frame = std::get<std::uint64_t>(frame);
+        resume_frame = collapsed_frame(std::get<std::uint64_t>(frame));
     }
 
     static_cast<void>(audition_output.stop());
@@ -357,17 +383,7 @@ auto chart_preview_t::play_pause(
         return report(notification_severity_t::error, false,
                       started.message().empty() ? "Chart preview could not start." : std::string{started.message()});
     paused = false;
-    std::string status = from_beginning ? "Chart preview started from the beginning."
-           : was_paused ? "Chart preview resumed."
-           : start_cursor ? "Chart preview started at the cursor."
-                          : "Chart preview started.";
-    if (compiled.value().skipped_unavailable_audio_objects != 0) {
-        status += " Audio unavailable for " +
-                  std::to_string(compiled.value().skipped_unavailable_audio_objects) +
-                  " chart object(s); preview continues silently for them.";
-    }
-    return report(compiled.value().skipped_unavailable_audio_objects ? notification_severity_t::warning
-                                                  : notification_severity_t::success, true, std::move(status));
+    return preview_started_feedback(*this, from_beginning, was_paused, start_cursor.has_value());
 }
 
 namespace {
@@ -415,7 +431,7 @@ auto chart_preview_t::audio_milliseconds(
     const audio::preview_session_t& session) const -> std::optional<std::int64_t> {
     if (!compiled.value().schedule || !matches_selection(document, workspace))
         return std::nullopt;
-    return frame_to_milliseconds(current_frame(session), audio::output_sample_rate);
+    return frame_to_milliseconds(source_frame(current_frame(session)), audio::output_sample_rate);
 }
 
 auto chart_preview_t::seek_audio_milliseconds(
@@ -426,7 +442,8 @@ auto chart_preview_t::seek_audio_milliseconds(
     if (!audio_milliseconds(document, workspace, preview_session))
         return report(notification_severity_t::warning, false,
                       "Chart preview seek is unavailable for the selected chart.");
-    const auto unclamped = milliseconds_to_frame(milliseconds, audio::output_sample_rate);
+    const auto requested_source = milliseconds_to_frame(milliseconds, audio::output_sample_rate);
+    const auto unclamped = collapsed_frame(requested_source);
     const auto frame = std::min(unclamped, compiled.value().end_frame);
     const auto seek_status = seek(frame, document, workspace, audition_output, preview_session,
                                   preview_output);
@@ -434,10 +451,48 @@ auto chart_preview_t::seek_audio_milliseconds(
         return seek_status;
     if (milliseconds < 0)
         return report(notification_severity_t::warning, true, "Audio marker precedes the source; chart preview clamped to 0 ms.");
-    if (unclamped > compiled.value().end_frame)
+    if (requested_source > source_frame(compiled.value().end_frame))
         return report(notification_severity_t::warning, true, "Audio marker follows the compiled timeline; chart preview clamped to its end.");
     return report(notification_severity_t::hint, true,
                   "Chart preview moved to the audio marker at " + std::to_string(milliseconds) + " ms.");
+}
+
+
+auto chart_preview_t::source_frame(std::uint64_t frame) const -> std::uint64_t {
+    return compiled.value().cut_frames ? compiled.value().cut_frames->source_frame(frame) : frame;
+}
+
+auto chart_preview_t::collapsed_frame(std::uint64_t frame) const -> std::uint64_t {
+    return compiled.value().cut_frames ? compiled.value().cut_frames->collapsed_frame(frame) : frame;
+}
+
+auto chart_preview_t::synchronize_timing_focus(bool focus, const chart_document_t* selected,
+    const song_document_t& document, project_audio_sources_t& sources,
+    sdl_audition_output_t& audition, audio::preview_session_t& session, sdl_preview_output_t& output)
+    -> std::optional<std::string> {
+    if (timing_focus == focus) return std::nullopt;
+    timing_focus = focus;
+    if (document.export_cuts.empty() || !selected || !compiled.value().schedule) return std::nullopt;
+    const auto source = source_frame(current_frame(session));
+    const bool active = playing(session);
+    const bool retained_pause = paused;
+    auto loop = session.loop_region();
+    if (loop) {
+        loop->begin_frame = source_frame(loop->begin_frame);
+        loop->end_frame = source_frame(loop->end_frame);
+    }
+    if (active) static_cast<void>(output.stop());
+    if (auto error = compile_if_needed(*selected, document, sources)) return error;
+    resume_frame = std::min(collapsed_frame(source), compiled.value().end_frame);
+    paused = retained_pause;
+    if (loop) {
+        loop->begin_frame = collapsed_frame(loop->begin_frame);
+        loop->end_frame = collapsed_frame(loop->end_frame);
+        if (loop->begin_frame >= loop->end_frame) loop.reset();
+        static_cast<void>(output.set_loop_region(loop));
+    }
+    if (!active) return std::nullopt;
+    return play_pause(selected, document, sources, audition, session, output, std::nullopt, false, source);
 }
 
 void chart_preview_t::stop(sdl_audition_output_t& audition_output,
@@ -463,6 +518,8 @@ void chart_preview_t::invalidate() {
         data.timing.reset();
         data.bindings.clear();
         data.retained_metronome_bindings.clear();
+        data.cut_frames.reset();
+        data.cut_warning.clear();
         data.end_frame = 0;
         data.skipped_unavailable_audio_objects = 0;
     });

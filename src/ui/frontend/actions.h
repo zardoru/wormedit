@@ -243,6 +243,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_PREVIEW_START_AT_CURSOR,
     WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW,
     WORM_UI_COMPOSE_ACTION_USE_SONG_PREVIEW,
+    WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION,
+    WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT,
+    WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT,
     /* Not an action: the number of action kinds, for tables indexed by kind. Keep it last. */
     WORM_UI_COMPOSE_ACTION_GENERATOR_SELECT,
     WORM_UI_COMPOSE_ACTION_GENERATOR_RUN,
@@ -366,6 +369,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE,
     /* A song-preview edge or body drag (open question 26), with span_edge and span_anchor_y_pixels. */
     WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT,
+    WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -643,6 +647,7 @@ struct workspace_action_t {
     std::string compose_note_label;
     wormedit::object_id_t compose_bookmark_id;
     wormedit::object_id_t compose_section_id;
+    wormedit::object_id_t compose_export_cut_id;
     std::string compose_marker_label;
     std::string compose_marker_audio_begin;
     std::string compose_marker_audio_end;

@@ -699,6 +699,14 @@ auto validate_evaluation(const bms_program_document_t* previous,
 }
 } // namespace
 
+auto bms_program_document_t::bounded_evaluations(std::size_t maximum) const
+    -> result_t<std::vector<bms_program_evaluation_t>, error_t<failure_code_t>> {
+    auto result = evaluation_candidates(*this, maximum);
+    if (!result) return result;
+    for (auto& evaluation : *result) evaluation = reachable_evaluation(*this, std::move(evaluation));
+    return result;
+}
+
 auto bms_program_document_t::read_chart() const -> const chart_document_t* {
     std::call_once(playback_once_, [this] {
         const auto projection = build_projection();
@@ -1242,6 +1250,32 @@ struct structure_program_builder_t {
         return prepared;
     }
 };
+}
+
+auto normalized_native_event_values(const chart_document_t& chart)
+    -> std::optional<std::vector<bms_native_content_t>> {
+    std::vector<bms_native_content_t> result;
+    for (auto [id, event] : native_event_map(chart)) {
+        (void)id;
+        clear_native_source_provenance(event);
+        const auto value = bms_native_content_t::from(std::move(event), chart);
+        if (!value) return {};
+        result.push_back(*value);
+    }
+    return result;
+}
+auto bms_program_document_t::build_rebased_program(const chart_document_t& before,
+    const chart_document_t& after, object_id_t first_id) const
+    -> result_t<bms_prepared_program_t, diagnostic_list_t> {
+    if (!first_id) return std::unexpected(diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+        "Scoped export rebasing requires an unused content identity.")});
+    const auto remaining = std::numeric_limits<std::uint64_t>::max() - first_id.value + 1;
+    const auto events = id_ceiling_t<object_id_t>::from(after).count;
+    if (events > remaining - 1 || after.measures.size() > remaining - 1 - events)
+        return std::unexpected(diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "Scoped export rebasing exceeds the unused content identity range.")});
+    return structure_program_builder_t{.owner = *this, .before = before, .after = after,
+        .next = first_id.value, .nodes = {prepared_.program.nodes().begin(), prepared_.program.nodes().end()}}.build();
 }
 
 namespace {

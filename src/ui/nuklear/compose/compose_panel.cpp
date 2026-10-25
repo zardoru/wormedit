@@ -1,3 +1,4 @@
+#include <wormedit/core/export_cut_frames.h>
 #include "ui/nuklear/compose/compose_input_queries.h"
 #include "ui/nuklear/compose/compose_gesture_registry.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
@@ -867,9 +868,10 @@ void report_compose_bgm_hover(struct nk_context* context, const wormedit::ui::co
         view->waveform_overview_sample_rate == 0) {
         return;
     }
-    const auto frame_value = static_cast<long double>(
-        geometry.fraction_at(context->input.mouse.pos.x)) *
-        (view->waveform_overview_total_frames - 1);
+    const auto fraction = geometry.fraction_at(context->input.mouse.pos.x);
+    const auto frame_value = view->waveform_cut_frames
+        ? static_cast<long double>(view->waveform_cut_frames->source_frame_at_fraction(fraction, view->waveform_overview_total_frames).value_or(0))
+        : static_cast<long double>(fraction) * (view->waveform_overview_total_frames - 1);
     if (frame_value > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
         return;
     }

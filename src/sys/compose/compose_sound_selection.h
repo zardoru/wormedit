@@ -3,6 +3,7 @@
 #include "sys/compose/views/compose_view.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <variant>
 #include <wormedit/core/sound_selection.h>
 
@@ -58,18 +59,33 @@ inline auto compose_same_sound_objects(const wormedit::song_document_t& song,
     if (visible && state.pixels_per_standard_measure > 0) {
         const auto rows_per_pixel = static_cast<double>(chart.divisions_per_standard_measure) /
                                     state.pixels_per_standard_measure;
+        const auto source = [&](double row) { return state.cut_axis ? static_cast<double>(state.cut_axis->source_row(row)) : row; };
+        const auto first = state.viewport_scroll_pixels * rows_per_pixel;
         range = sound_selection_range_t{
-            state.viewport_scroll_pixels * rows_per_pixel,
-            (state.viewport_scroll_pixels + state.viewport_height_pixels) * rows_per_pixel};
+            state.cut_axis ? static_cast<double>(state.cut_axis->source_row_before_seam(first)) : first,
+            source((state.viewport_scroll_pixels + state.viewport_height_pixels) * rows_per_pixel)};
     }
-    return select_same_sound(song, chart,
-                             {.keys = keys,
+    sound_selection_query_t query{.keys = keys,
                               .visible = range,
                               .hidden_layers = application.project.semantic_layer.excluded_semantic_layer_filters,
                               .required_layers = application.project.semantic_layer.required_semantic_layer_filters,
                               .solo_layer = application.project.semantic_layer.semantic_layer_solo_active
                                                 ? application.project.semantic_layer.semantic_layer_target
-                                                : std::nullopt});
+                                                : std::nullopt};
+    if (!range || !state.cut_axis) return select_same_sound(song, chart, query);
+    std::vector<editor_selection_object_t> result;
+    for (const auto& kept : state.cut_axis->kept_intervals(range->begin_row, range->end_row)) {
+        auto begin = static_cast<double>(kept.begin);
+        if (begin < kept.begin) begin = std::nextafter(begin, std::numeric_limits<double>::infinity());
+        const auto end = kept.begin == kept.end ? begin
+            : std::nextafter(static_cast<double>(kept.end), -std::numeric_limits<double>::infinity());
+        query.visible = sound_selection_range_t{begin, end};
+        auto selected = select_same_sound(song, chart, query);
+        result.insert(result.end(), selected.begin(), selected.end());
+    }
+    std::ranges::sort(result);
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
 }
 // The menu supplies its clicked source; shortcuts use hover/selection/dock order.
 // Scope changes the query range, never the guards or empty-source behavior.

@@ -28,6 +28,9 @@ struct offline_mix_t {
     auto operator==(const offline_mix_t&) const -> bool = default;
 };
 
+// Applies the same endpoint fade as offline rendering to bounded stereo PCM.
+void apply_offline_mix_fade(std::vector<float>& interleaved_stereo, std::uint32_t fade_out_ms);
+
 // Mixes [begin_frame, end_frame) through the same preview bridge and transport
 // used by playback, without metronome clicks. Renders from timeline zero and
 // discards the prefix so earlier voices retain their tails inside the selection.

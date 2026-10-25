@@ -290,7 +290,7 @@ struct lifecycle_fixture_t {
         case lifecycle_family::stem: return s.stem_lanes.stem_lane_resize.has_value();
         case lifecycle_family::bga: return s.bga_interaction.bga_event_move_active;
         case lifecycle_family::bookmark: return s.bookmark_ui.bookmark_move_active;
-        case lifecycle_family::preview: return s.preview_drag.active;
+        case lifecycle_family::preview: return s.audio_span_drag.active;
         case lifecycle_family::bmson: return s.bmson_input.bmson_marker_move_active;
         case lifecycle_family::beat_zero: return s.waveform_drag.waveform_beat_zero_drag_active;
         case lifecycle_family::chip: return s.pointer_capture.tool_chip_pointer_active;
@@ -707,7 +707,7 @@ TEST_CASE("A song preview label click replays painting without editing the previ
     const auto label_y = f.screen_y(300 - 8);
     const std::array press{lifecycle_motion(f.x, label_y), lifecycle_button(f.x, label_y, true)};
     (void)f.harness.frame(press);
-    lifecycle_check(worm_ui_nuklear_compose_state().preview_drag.edge == WORM_UI_SPAN_HANDLE_BODY);
+    lifecycle_check(worm_ui_nuklear_compose_state().audio_span_drag.edge == WORM_UI_SPAN_HANDLE_BODY);
     const auto release = lifecycle_button(f.x, label_y, false);
     const auto result = f.harness.frame(std::span{&release, 1});
     lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));

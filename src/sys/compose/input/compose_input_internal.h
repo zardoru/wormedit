@@ -1362,6 +1362,8 @@ auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, c
 auto edit_compose_preview_span(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> std::optional<std::string>;
+auto edit_compose_export_cut_span(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
+    wormedit::editor_interaction_result_t& result, std::string_view& accepted) -> std::optional<std::string>;
 
 auto speed_transition_between(const wormedit::chart_document_t& chart,
                               const wormedit::timing_index_t* timing,

@@ -59,6 +59,17 @@ struct audition_resolution_t {
 using audition_resolve_outcome_t =
     diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
 
+// Effective per-chart Music uses metadata inheritance, including an explicit
+// empty override. Asset-only overrides receive a transient unused schedule
+// resource identity; the authored document is unchanged.
+struct preview_music_selection_t {
+    [[nodiscard]] static auto from(const song_document_t&, const chart_document_t&)
+        -> diagnosed_t<std::optional<preview_music_selection_t>>;
+    resource_id_t resource;
+    asset_id_t asset;
+    auto operator==(const preview_music_selection_t&) const -> bool = default;
+};
+
 struct preview_bindings_resolution_t {
     void append_music(resource_id_t resource, const decoded_source_binding_t& source,
                        preview_schedule_t& schedule);

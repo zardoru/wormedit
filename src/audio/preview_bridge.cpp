@@ -272,11 +272,6 @@ auto is_valid_assist_grid(const preview_assist_click_grid_t& grid) -> bool {
         grid.playback_rate.numerator != 0 && grid.playback_rate.denominator != 0;
 }
 
-auto assist_timeline_offset(const preview_schedule_t& schedule) -> long double {
-    if (!schedule.music) return 0;
-    return static_cast<long double>(schedule.music->sample_frame) - schedule.music->source_start_frame;
-}
-
 auto assist_first_beat(const preview_assist_click_grid_t& grid, long double offset,
                        std::uint64_t minimum) -> std::optional<std::int64_t> {
     const auto period = static_cast<long double>(grid.sample_rate) * 60 / grid.bpm;
@@ -296,12 +291,11 @@ auto assist_beat_frame(const preview_assist_click_grid_t& grid, long double offs
     return static_cast<std::uint64_t>(frame);
 }
 
-auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
-                        const preview_schedule_t& schedule, std::uint64_t minimum,
+auto fill_assist_segment(const preview_assist_click_grid_t& grid,
+                        long double offset, std::uint64_t minimum,
                         std::uint64_t end,
-                        std::array<preview_metronome_event_t, maximum_assist_clicks>& clicks)
+                        std::span<preview_metronome_event_t> clicks)
     -> std::size_t {
-    const auto offset = assist_timeline_offset(schedule);
     const auto first = assist_first_beat(grid, offset, minimum);
     if (!first) return 0;
     std::size_t count{};
@@ -318,6 +312,31 @@ auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
         }
         if (beat == std::numeric_limits<std::int64_t>::max()) break;
         ++beat;
+    }
+    return count;
+}
+
+auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
+    const preview_schedule_t& schedule, std::uint64_t minimum, std::uint64_t end,
+    std::array<preview_metronome_event_t, maximum_assist_clicks>& clicks) -> std::size_t {
+    const auto music = schedule.music_events();
+    if (schedule.music_segments.empty()) {
+        if (!schedule.music) return fill_assist_segment(grid, 0, minimum, end, clicks);
+        const auto& source = *schedule.music;
+        const auto offset = static_cast<long double>(source.sample_frame) - source.source_start_frame;
+        const auto finish = std::min(end, source.sample_frame + std::min(source.frame_count,
+            std::numeric_limits<std::uint64_t>::max() - source.sample_frame));
+        return fill_assist_segment(grid, offset, minimum, finish, clicks);
+    }
+    std::size_t count{};
+    for (const auto& segment : music) {
+        const auto begin = std::max(minimum, segment.sample_frame);
+        const auto finish = std::min(end, segment.sample_frame + std::min(segment.frame_count,
+            std::numeric_limits<std::uint64_t>::max() - segment.sample_frame));
+        if (begin >= finish) continue;
+        const auto offset = static_cast<long double>(segment.sample_frame) - segment.source_start_frame;
+        count += fill_assist_segment(grid, offset, begin, finish, std::span{clicks}.subspan(count));
+        if (count == clicks.size()) break;
     }
     return count;
 }
@@ -390,6 +409,22 @@ auto preview_transport_bridge_t::seek_preview(std::uint64_t sample_frame)
     return begin_session(sample_frame);
 }
 
+void preview_transport_bridge_t::load_music_segment(std::size_t index, std::uint64_t seek_frame) {
+    music_segment_index_ = index;
+    music_pending_ = false;
+    const auto music = schedule_->music_events();
+    if (index >= music.size()) return;
+    const auto& event = music[index];
+    if (event.frame_count > std::numeric_limits<std::uint64_t>::max() - event.sample_frame) return;
+    const auto begin = std::max(event.sample_frame, seek_frame);
+    if (begin >= event.sample_frame + event.frame_count) return;
+    const auto skipped = begin - event.sample_frame;
+    music_pending_ = true;
+    music_timeline_frame_ = begin;
+    music_source_frame_ = event.source_start_frame + skipped;
+    music_frame_count_ = event.frame_count - skipped;
+}
+
 auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
     -> preview_bridge_start_outcome_t {
     const auto token = transport_.start();
@@ -412,21 +447,12 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
                        seek_frame);
     seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
                        metronome_head_, seek_frame);
-    music_pending_ = false;
-    if (schedule_->music) {
-        const auto& music = *schedule_->music;
-        if (music.frame_count <= std::numeric_limits<std::uint64_t>::max() - music.sample_frame) {
-            const auto music_end = music.sample_frame + music.frame_count;
-            const auto begin = std::max(music.sample_frame, seek_frame);
-            if (music_end > begin) {
-                const auto skipped = begin - music.sample_frame;
-                music_pending_ = true;
-                music_timeline_frame_ = begin;
-                music_source_frame_ = music.source_start_frame + skipped;
-                music_frame_count_ = music.frame_count - skipped;
-            }
-        }
-    }
+    const auto music = schedule_->music_events();
+    const auto first_music = std::ranges::find_if(music, [seek_frame](const auto& event) {
+        return event.frame_count <= std::numeric_limits<std::uint64_t>::max() - event.sample_frame &&
+            event.sample_frame + event.frame_count > seek_frame;
+    });
+    load_music_segment(static_cast<std::size_t>(first_music - music.begin()), seek_frame);
     layer_tick_head_ = static_cast<std::size_t>(
         std::ranges::lower_bound(layer_tick_frames_, seek_frame) - layer_tick_frames_.begin());
     assist_grid_.reset();
@@ -532,11 +558,6 @@ void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::ui
         grid.playback_rate.numerator / grid.playback_rate.denominator / 5));
     auto bounded_end = std::min(static_cast<long double>(end),
                                static_cast<long double>(assist_begin_frame_) + horizon);
-    if (schedule_->music) {
-        const auto& music = *schedule_->music;
-        bounded_end = std::min(bounded_end, static_cast<long double>(music.sample_frame) +
-                                           music.frame_count);
-    }
     assist_count_ = fill_assist_clicks(grid, *schedule_, minimum,
                                       static_cast<std::uint64_t>(bounded_end), assist_clicks_);
 }
@@ -615,6 +636,7 @@ auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end
             music_source_frame_ += music_segment;
             music_frame_count_ -= music_segment;
             music_pending_ = music_frame_count_ != 0;
+            if (!music_pending_) load_music_segment(music_segment_index_ + 1, 0);
         } else {
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
                               resumed_bgm_head_, metronome_head_, music_pending_, assist_head_,

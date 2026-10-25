@@ -2276,6 +2276,9 @@ auto passthrough_fields(const chart_document_t& chart, const song_document_t& so
 template <typename fail_t>
 auto select_osu_chart(const song_document_t& song, const osu_mania_write_options_t& options,
                       fail_t&& fail) -> const chart_document_t* {
+    if (!song.export_cuts.empty())
+        fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+             "Export cuts require convert_document so chart transformation and generated audio are planned together.", "export_cuts");
     if (options.chart) {
         const auto found = song.read_chart(*options.chart);
         if (found == nullptr)

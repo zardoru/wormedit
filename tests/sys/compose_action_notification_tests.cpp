@@ -318,6 +318,9 @@ TEST_CASE("Compose edits reject a stale boundary before reaching synchronous han
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
                                WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
                                WORM_UI_COMPOSE_ACTION_SET_MEASURES_LENGTH,
+                               WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION,
+                               WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT,
+                               WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT,
                                WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
                                WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
                                WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,
@@ -2993,4 +2996,116 @@ TEST_CASE("Song preview Clear and Use song preview have their own owners", "[com
     check_action(!fixture.history.document.charts.front().metadata.preview_override);
     fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_CLEAR_PREVIEW));
     check_action(!song_preview(fixture) && fixture.history.undo.size() == 3);
+}
+
+namespace {
+auto typed_export_cut_action(const action_notification_fixture_t& fixture, std::string begin, std::string end)
+    -> wormedit::ui::workspace_action_t {
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT);
+    action.compose_export_cut_id = object_id_t{10};
+    action.compose_marker_label = "Changed cut";
+    action.compose_marker_audio_begin = std::move(begin);
+    action.compose_marker_audio_end = std::move(end);
+    return action;
+}
+void seed_export_cut(action_notification_fixture_t& fixture) {
+    fixture.history.document.export_cuts = {{.id = object_id_t{10}, .label = "Original cut",
+        .begin_milliseconds = 0, .end_milliseconds = 500}};
+}
+} // namespace
+
+TEST_CASE("Export-cut selection actions use source milliseconds and the edit snap toggle",
+          "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    const auto snapped = GENERATE(false, true);
+    fixture.state.snap_enabled = snapped;
+    fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 130}, {measure_id_t{1}, 610}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION);
+    action.compose_marker_label = "Selected cut";
+    check_action(fixture.dispatch(action) == "Export cut updated.");
+    require_action(fixture.history.document.export_cuts.size() == 1);
+    const auto& cut = fixture.history.document.export_cuts.front();
+    check_action(cut.begin_milliseconds == (snapped ? 500 : 271));
+    check_action(cut.end_milliseconds == (snapped ? 1500 : 1271));
+    check_action(cut.label == "Selected cut");
+    check_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.export_cuts.empty());
+}
+
+TEST_CASE("Export cuts retain source-song offset instead of a rebased chart clock", "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().beat_zero_audio_offset_seconds = {1, 1};
+    fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 240}};
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION)) == "Export cut updated.");
+    require_action(fixture.history.document.export_cuts.size() == 1);
+    check_action(fixture.history.document.export_cuts.front().begin_milliseconds == 1000);
+    check_action(fixture.history.document.export_cuts.front().end_milliseconds == 1500);
+}
+
+TEST_CASE("Export-cut actions reject absent unmaterialized and collapsed selections", "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    SECTION("no selected area") {}
+    SECTION("unknown measure") {
+        fixture.state.retained_selection_range = position_span_t{{measure_id_t{999}, 0}, {measure_id_t{1}, 240}};
+    }
+    SECTION("empty selection") {
+        fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 240}};
+    }
+    SECTION("snap collapses the area") {
+        fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 130}, {measure_id_t{1}, 200}};
+    }
+    SECTION("negative source time") {
+        fixture.history.document.charts.front().beat_zero_audio_offset_seconds = {-3, 1};
+        fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 240}};
+    }
+    const auto message = fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION));
+    check_action(!message.empty());
+    check_action(fixture.history.document.export_cuts.empty());
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.revision == 1);
+}
+
+TEST_CASE("Export-cut typed edits and deletion each publish one Undo step", "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    seed_export_cut(fixture);
+    check_action(fixture.dispatch(typed_export_cut_action(fixture, "200", "700")) == "Export cut updated.");
+    require_action(fixture.history.document.export_cuts.size() == 1);
+    check_action(fixture.history.document.export_cuts.front() == export_cut_t{.id = object_id_t{10},
+        .label = "Changed cut", .begin_milliseconds = 200, .end_milliseconds = 700});
+    auto remove = fixture.action(WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT);
+    remove.compose_export_cut_id = object_id_t{10};
+    check_action(fixture.dispatch(remove) == "Export cut updated.");
+    check_action(fixture.history.document.export_cuts.empty());
+    check_action(fixture.history.undo.size() == 2);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.export_cuts.front().label == "Changed cut");
+}
+
+TEST_CASE("Export-cut typed invalid intervals refuse atomically", "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    seed_export_cut(fixture);
+    const auto original = fixture.history.document.export_cuts;
+    const auto pair = GENERATE(std::pair<std::string, std::string>{"-1", "3"},
+        std::pair<std::string, std::string>{"3", "3"}, std::pair<std::string, std::string>{"4", "3"},
+        std::pair<std::string, std::string>{"0", "1.5"}, std::pair<std::string, std::string>{"0", ""},
+        std::pair<std::string, std::string>{"9223372036854775808", "9223372036854775809"});
+    const auto message = fixture.dispatch(typed_export_cut_action(fixture, pair.first, pair.second));
+    check_action(message == "Enter a nonnegative cut start and a later end in whole milliseconds.");
+    check_action(fixture.history.document.export_cuts == original);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.revision == 1);
+}
+
+TEST_CASE("Export-cut mutations reject active chart gestures before editing the song", "[compose-action][export-cut]") {
+    action_notification_fixture_t fixture;
+    seed_export_cut(fixture);
+    fixture.capture_hold();
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION,
+        WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT, WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT);
+    auto action = fixture.action(kind);
+    action.compose_export_cut_id = object_id_t{10};
+    check_action(fixture.dispatch(action) == "Finish or cancel the active Compose gesture before editing export cuts.");
+    check_action(fixture.history.document.export_cuts.size() == 1);
+    check_action(fixture.history.undo.empty());
 }

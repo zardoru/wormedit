@@ -40,7 +40,7 @@ auto schedule_end(const preview_schedule_t& schedule,
     for (const auto& event : schedule.metronome)
         for (const auto& binding : metronome)
             if (event.accent == binding.accent) extend(event.sample_frame, binding.voice.frame_count);
-    if (schedule.music) extend(schedule.music->sample_frame, schedule.music->frame_count);
+    for (const auto& music : schedule.music_events()) extend(music.sample_frame, music.frame_count);
     return end;
 }
 

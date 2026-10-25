@@ -686,3 +686,29 @@ TEST_CASE("Inactive export confirmation safely populates Compose text views",
     check_resource_notification(view.export_confirmation_message.empty());
     check_resource_notification(view.export_confirmation_detail.empty());
 }
+
+TEST_CASE("A crossing export object remains the background error Go to target", "[sys][export-cut][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    const std::string source = "osu file format v14\n[General]\nMode:3\n"
+        "[Metadata]\nTitle:Cut target\nArtist:Test\nVersion:Normal\n"
+        "[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n"
+        "[HitObjects]\n64,192,0,128,0,1500:0:0:0:0:\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_resource_notification(parsed.ok() && parsed.value.has_value());
+    fixture.history = document_history_t::from(std::move(*parsed.value));
+    const auto object = fixture.history.document.charts.front().measures.front().notes.front().id;
+    fixture.history.document.export_cuts = {{.id = object_id_t{900000},
+        .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    auto plan = output_group_export_plan_t::from(fixture.history.document,
+        {.family = format_family_t::native_project,
+         .charts = {fixture.history.document.charts.front().id}, .relative_output_path = "exports/song.wormedit"});
+    runtime::output_group_export_t exports{fixture.sink};
+    require_resource_notification(static_cast<bool>(exports.start(fixture.history.document, std::move(plan), fixture.project)));
+    require_resource_notification(wait_for_export_result(exports, fixture.history).has_value());
+    const auto entries = fixture.entries();
+    require_resource_notification(!entries.empty());
+    INFO(entries.front().message);
+    CAPTURE(entries.front().target.index(), object.value);
+    check_resource_notification(entries.front().target == notification_target_t{object});
+    check_resource_notification(!std::filesystem::exists(fixture.project / "exports"));
+}

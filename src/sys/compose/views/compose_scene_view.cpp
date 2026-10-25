@@ -1,5 +1,6 @@
 #include "sys/resources/bms_catalog_bindings.h"
 #include "sys/compose/views/compose_view_internal.h"
+#include <wormedit/core/editor_axis.h>
 #include "ui/compose_draw_source_labels.h"
 #include <wormedit/formats/osu_mania.h>
 namespace wormedit::sys::compose_projection_detail {
@@ -442,9 +443,8 @@ auto bga_preview_virtual_row(const compose_scene_projection_context_t& projectio
         !has_chart_virtual_tail(projection.inputs.scope.chart_scope.chart))
         return std::nullopt;
     const auto& interaction = projection.inputs.scope.interaction_view;
-    const auto raw = (static_cast<long double>(interaction.viewport_scroll_pixels) + source_y) *
-                     projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure /
-                     interaction.pixels_per_standard_measure;
+    const auto raw = editor_axis_projection_t::from(interaction,
+        projection.inputs.scope.chart_scope.chart.divisions_per_standard_measure).row_at_y(source_y);
     if (!std::isfinite(raw) || raw < 0.0L ||
         raw >= static_cast<long double>(std::numeric_limits<std::uint64_t>::max()))
         return std::nullopt;
@@ -494,7 +494,8 @@ void build_compose_bga_move_preview_view(const compose_scene_projection_context_
     view.bga_move_preview_y_pixels =
         compose_project_y(*row, projection.inputs.scope.pixels_per_row,
                           projection.inputs.scope.interaction_view.viewport_scroll_pixels,
-                          view.viewport_height_pixels, projection.inputs.scope.downscroll);
+                          view.viewport_height_pixels, projection.inputs.scope.downscroll,
+                          projection.inputs.scope.interaction_view.cut_axis.get());
 }
 
 void build_compose_bga_view(const compose_scene_projection_context_t& projection) {
@@ -605,6 +606,9 @@ bool initialize_compose_view_state(
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
+    view.export_cuts.clear();
+    view.cut_axis.reset();
+    view.waveform_cut_frames.reset();
     if (!view.visible) {
         cache.frame.interaction_view.reset();
         cache.frame.hover.reset();

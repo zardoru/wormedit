@@ -79,6 +79,7 @@ enum class ComposeColor {
     timing_title_bg,
     tail,
     arrow_selection,
+    export_cut,
     count
 };
 

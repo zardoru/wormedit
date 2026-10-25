@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_markers.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/compose/compose_note_label_inline.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/render/lucide_icons.h"
@@ -626,6 +627,7 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
         return;
     }
     synchronize(*view);
+    worm_ui_nuklear_render_compose_export_cuts(context, *view, *action);
     render_bookmarks(context, *view, *action);
     render_sections(context, *view, *action);
     render_audio_bookmarks(context, *view, *action);

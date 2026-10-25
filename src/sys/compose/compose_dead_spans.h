@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/editor_axis.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -72,6 +73,10 @@ struct dead_span_band_t {
     -> std::vector<dead_span_band_t>;
 
 // Refill a retained projection buffer without discarding its capacity.
+void build_dead_span_bands_view(const dead_spans_view_t& projection,
+    const wormedit::editor_axis_projection_t& axis, double viewport_height, bool downscroll,
+    double pause_band_pixels, std::vector<dead_span_band_t>& bands);
+
 void build_dead_span_bands_view(const dead_spans_view_t& projection,
                                 double pixels_per_row, double scroll_pixels,
                                 double viewport_height, bool downscroll,

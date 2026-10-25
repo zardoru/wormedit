@@ -141,7 +141,7 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
         return;
     }
     if (!chrome::context_menu_begin(menu, context, wormedit::ui::chrome::PopupContextStamp::from(view),
-                                    nk_vec2(320.0f, chrome::context_menu_height(14)))) {
+                                    nk_vec2(320.0f, chrome::context_menu_height(15)))) {
         retire_sound_layer_window(action);
         consumed = true;
         return;
@@ -169,6 +169,9 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
     menu_entry(context, "Create section",
                reason_unless(view.beat_section_selection_span_available, materialize),
                WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION, action);
+    menu_entry(context, "Create export cut",
+               reason_unless(view.preview_audio_range.available, "Select a nonempty materialized audio interval"),
+               WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION, action);
     const bool can_loop = view.transport_loop_selection_available && !view.area_range_virtual &&
         view.area_range_begin_row < view.area_range_end_row;
     if (chrome::context_menu_item(menu, context, "Loop playback",
@@ -218,10 +221,11 @@ void update_capture(nk_context* context, const wormedit::ui::compose_view_t& vie
     }
     const auto y = (mouse.pos.y - viewport.y) * view.viewport_height_pixels / viewport.h;
     const auto source_y = wormedit::sys::compose_source_y(y, view.viewport_height_pixels, view.downscroll);
-    const auto row = std::clamp((source_y + view.area_scroll_pixels) *
-                                    static_cast<double>(view.area_rows_per_measure) /
-                                    view.pixels_per_standard_measure,
-                                0.0, static_cast<double>(view.area_canvas_rows - 1));
+    const wormedit::editor_axis_projection_t axis{.cut_axis = view.cut_axis.get(),
+        .pixels_per_row = view.pixels_per_standard_measure / static_cast<double>(view.area_rows_per_measure),
+        .viewport_scroll_pixels = view.area_scroll_pixels};
+    const auto row = std::clamp(axis.row_at_y(source_y), 0.0L,
+        static_cast<long double>(view.area_canvas_rows - 1));
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
     action.compose_area_begin_row =
         capture.begin_edge ? static_cast<std::uint64_t>(std::llround(row)) : capture.begin;

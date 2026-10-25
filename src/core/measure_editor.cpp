@@ -324,9 +324,11 @@ struct rowed_free_t {
 auto append_default_measures(chart_document_t& chart, std::size_t count,
                              const measure_edit_limits_t& limits) -> bool {
     if (count > limits.maximum_measures) return false;
+    auto ids = id_ceiling_t<measure_id_t>::from(chart);
     while (chart.measures.size() < count) {
-        const auto id = id_ceiling_t<measure_id_t>::from(chart).next();
+        const auto id = ids.next();
         if (!id) return false;
+        ids.reserve(*id);
         chart.measures.push_back(measure_chunk_t{.id = *id});
     }
     return true;
@@ -1085,6 +1087,28 @@ auto has_measure_positioned_objects(const chart_document_t& chart, measure_id_t 
         found = found || position.measure == measure;
     });
     return found;
+}
+
+auto rebar_standard_measures(chart_document_t& chart, measure_edit_limits_t limits) -> diagnostic_list_t {
+    const auto before = measure_index_t::from(chart);
+    if (!before) return before.error();
+    if (!before->total_rows || !chart.divisions_per_standard_measure ||
+        chart.divisions_per_standard_measure > limits.maximum_rows_per_measure)
+        return {error(diagnostic_code_t::invalid_measure, "Standard export bars exceed the exact row capacity.")};
+    const auto count = (before->total_rows - 1) / chart.divisions_per_standard_measure + 1;
+    if (count > limits.maximum_measures)
+        return {error(diagnostic_code_t::invalid_measure, "Standard export bars exceed the measure capacity.")};
+    auto working = chart;
+    std::vector<measure_assignment_t> assignments;
+    for (std::size_t index = 0; index < working.measures.size(); ++index)
+        assignments.push_back({index, {{1, 1}, meter_t{4, 4}}});
+    if (!resize_keeping_rows(working, assignments, limits) || !append_default_measures(working, count, limits))
+        return {error(diagnostic_code_t::invalid_measure, "Standard export bars cannot preserve all exact object rows.")};
+    working.measures.resize(count);
+    working.bms_measure_length_projections.clear();
+    working.indices_slot = {};
+    chart = std::move(working);
+    return {};
 }
 
 auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,

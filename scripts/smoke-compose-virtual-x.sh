@@ -156,14 +156,14 @@ if [[ $mode == audio ]]; then
 fi
 if [[ $mode == timing ]]; then
     # These cells precede all width-dependent toolbar content. Their centers in
-    # the default Linux layout are Snap (222, 122.5), Timing (276, 122.5).
+    # the default Linux layout are Snap (246, 122.5), Timing (276, 122.5).
     # Sample the fill inside the left edge, away from either glyph. The fresh
     # config has Snap on, providing the selected color without hard-coding a theme.
     xdotool key --window "$window_id" F4
     xdotool mousemove --window "$window_id" 0 0
     sleep 0.3
     import -window "$window_id" "$temp_dir/compose-focus.png"
-    selected_fill=$(identify -format '%[pixel:p{212,117}]' "$temp_dir/compose-focus.png")
+    selected_fill=$(identify -format '%[pixel:p{240,117}]' "$temp_dir/compose-focus.png")
     timing_off_fill=$(identify -format '%[pixel:p{266,117}]' "$temp_dir/compose-focus.png")
     if [[ $selected_fill == "$timing_off_fill" ]]; then
         cp "$temp_dir/compose-focus.png" "$output"

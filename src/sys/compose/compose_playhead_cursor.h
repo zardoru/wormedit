@@ -29,7 +29,7 @@ namespace wormedit::sys {
         return std::nullopt;
     const auto pixels_per_row = static_cast<long double>(state.pixels_per_standard_measure) /
                                 chart.divisions_per_standard_measure;
-    const auto playhead_y = absolute_row * pixels_per_row;
+    const auto playhead_y = (state.cut_axis ? state.cut_axis->collapsed_row(absolute_row) : absolute_row) * pixels_per_row;
     const auto visible_y = playhead_y - previous_scroll;
     const auto comfort_top = state.viewport_height_pixels * editor_cursor_edge_margin_fraction;
     const auto comfort_bottom = state.viewport_height_pixels - comfort_top;
@@ -83,6 +83,12 @@ namespace wormedit::sys {
         snapped = adjacent_snap_canvas_row(*chart, *index, bounded_row,
             active_snap_grid(state), index->total_rows, false);
     if (!snapped) return false;
+    while (state.cut_axis && state.cut_axis->contains_row(*snapped)) {
+        snapped = adjacent_snap_canvas_row(*chart, *index,
+            std::nextafter(state.cut_axis->previous_kept_row(*snapped), std::numeric_limits<long double>::infinity()),
+            active_snap_grid(state), index->total_rows, false);
+        if (!snapped) return false;
+    }
     const auto row = *snapped;
     const auto after = std::ranges::upper_bound(index->entries, row, {},
                                                 &measure_index_entry_t::absolute_begin_row);

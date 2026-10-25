@@ -5,6 +5,7 @@
 #include <wormedit/core/time_shift.h>
 #include <wormedit/core/bms_program_edit.h>
 namespace wormedit {
+using interaction_detail::snap_visible_position;
 using namespace interaction_detail;
 
 auto pending_note_duration_gesture_t::begin(editor_edit_context_t& context, object_id_t reference_id)
@@ -37,8 +38,8 @@ auto pending_note_duration_gesture_t::revise(editor_edit_context_t& context, loc
     if (!reference)
         return {error(diagnostic_code_t::invalid_id,
                    "duration gesture reference note no longer exists", reference_note)};
-    auto snapped_end = snap_position(context.scope.chart, context.scope.measures, requested_end,
-                                        edit_snap_grid(context.scope.chart, state));
+    auto snapped_end = snap_visible_position(context.scope.chart, context.scope.measures, requested_end,
+        edit_snap_grid(context.scope.chart, state), state.cut_axis.get());
     if (!snapped_end)
         return {error(diagnostic_code_t::row_out_of_range,
                       "duration gesture end cannot be snapped inside chart")};
@@ -320,9 +321,9 @@ auto pending_bar_line_move_gesture_t::begin(editor_edit_context_t& context,
 auto pending_bar_line_move_gesture_t::revise(editor_edit_context_t& context,
                                               local_position_t requested_position)
     -> diagnostic_list_t {
-    const auto snapped = snap_position(
+    const auto snapped = snap_visible_position(
         context.scope.chart, context.scope.measures, requested_position,
-        edit_snap_grid(context.scope.chart, context.state));
+        edit_snap_grid(context.scope.chart, context.state), context.state.cut_axis.get());
     const auto row = snapped ? context.scope.measures.row_of(*snapped) : std::nullopt;
     if (!row)
         return {error(diagnostic_code_t::row_out_of_range,
@@ -406,8 +407,8 @@ auto pending_note_paint_gesture_t::revise(editor_edit_context_t& context, lane_i
     -> diagnostic_list_t {
     auto& state = context.state;
     auto& pending = *this;
-    const auto target = snap_position(context.scope.chart, context.scope.measures, position,
-                                         edit_snap_grid(context.scope.chart, state));
+    const auto target = snap_visible_position(context.scope.chart, context.scope.measures, position,
+        edit_snap_grid(context.scope.chart, state), state.cut_axis.get());
     if (!target)
         return {error(diagnostic_code_t::row_out_of_range,
                                         "paint target cannot be snapped inside chart")};
@@ -744,8 +745,8 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
 }
 
 auto pending_hold_t::validate_start(const editor_edit_context_t& context) const -> diagnostic_list_t {
-    if (snap_position(context.scope.chart, context.scope.measures, position,
-        edit_snap_grid(context.scope.chart, context.state)) == position) return {};
+    if (snap_visible_position(context.scope.chart, context.scope.measures, position,
+        edit_snap_grid(context.scope.chart, context.state), context.state.cut_axis.get()) == position) return {};
     return {error(diagnostic_code_t::invalid_hold,
         "pending hold start is stale after a document or snap change")};
 }
@@ -889,8 +890,8 @@ auto hold_gesture_t::revise(editor_edit_context_t& context, const release_alt_po
     -> diagnostic_list_t {
     if (!primary_ || primary_->gesture_source != hold_gesture_source_t::alt_pointer)
         return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
-    const auto target = snap_position(context.scope.chart, context.scope.measures, action.position,
-        edit_snap_grid(context.scope.chart, context.state));
+    const auto target = snap_visible_position(context.scope.chart, context.scope.measures, action.position,
+        edit_snap_grid(context.scope.chart, context.state), context.state.cut_axis.get());
     release_ = release_t{.lane = primary_->lane, .position = target.value_or(action.position),
         .geometry = action.source_geometry};
     return {};

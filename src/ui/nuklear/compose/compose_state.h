@@ -14,6 +14,7 @@
 #include "ui/nuklear/chrome/dialog.h"
 #include "ui/nuklear/audio/preview_audio_dialog.h"
 
+#include <wormedit/core/export_cut.h>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -459,7 +460,8 @@ struct worm_ui_nuklear_compose_state_t {
 
     // The song preview's begin line, end line or label grabbed (open question 26); `active`
     // once the pointer moved past the threshold. Release commits one PREVIEW_SPAN_EDIT.
-    struct preview_drag_t {
+    struct audio_span_drag_t {
+        wormedit::object_id_t export_cut_id{};
         bool candidate_active{};
         bool active{};
         std::uint8_t edge{};
@@ -468,7 +470,19 @@ struct worm_ui_nuklear_compose_state_t {
         double anchor_y_pixels{};
         double current_y_pixels{};
         float anchor_screen_y{};
-    } preview_drag;
+    } audio_span_drag;
+
+    struct export_cut_editor_t {
+        std::uint64_t project_id{std::numeric_limits<std::uint64_t>::max()};
+        std::uint64_t revision{std::numeric_limits<std::uint64_t>::max()};
+        wormedit::object_id_t selected{};
+        std::array<char, wormedit::maximum_export_cut_label_bytes + 1> label{};
+        std::array<char, 32> begin{'0'};
+        std::array<char, 32> end{'1', '0', '0', '0'};
+        void synchronize(const wormedit::ui::compose_view_t& view);
+        void select(const wormedit::ui::compose_export_cut_view_t& cut);
+    } export_cut_editor;
+
 
     struct sound_picker_ui_t {
         sound_picker_state_t sound_picker;

@@ -342,7 +342,7 @@ auto build_quantize_endpoint_view(const quantize_projection_scope_t& scope,
     if (!lane)
         return std::nullopt;
     const auto row = promoted ? static_cast<long double>(absolute_row) / scale : absolute_row;
-    const auto y = compose_project_y(row, pixels_per_row, scroll, height, downscroll);
+    const auto y = compose_project_y(row, pixels_per_row, scroll, height, downscroll, scope.cut_axis);
     const auto direction = downscroll ? wormedit::editor_field_scroll_direction_t::down
                                       : wormedit::editor_field_scroll_direction_t::up;
     auto bounds = quantize_endpoint_bounds(*lane, y, request.note_head_height_pixels, direction);
@@ -413,7 +413,8 @@ auto add_quantize_tail_geometry(const quantize_projection_scope_t& scope,
 auto bgm_quantize_ghost(const wormedit::ui::compose_quantize_report_row_view_t& report,
                         const wormedit::chart_document_t& chart,
                         const wormedit::editor_field_scene_request_t& request, std::uint64_t scale,
-                        double pixels_per_row, double scroll, double height, bool downscroll)
+                        double pixels_per_row, double scroll, double height, bool downscroll,
+                        const wormedit::export_cut_axis_t* cut_axis)
     -> std::optional<wormedit::ui::compose_quantize_ghost_view_t> {
     const auto lane =
         std::ranges::find(chart.bgm_source_lanes, wormedit::object_id_t{report.lane_id.value},
@@ -436,7 +437,7 @@ auto bgm_quantize_ghost(const wormedit::ui::compose_quantize_report_row_view_t& 
                                       : wormedit::editor_field_scroll_direction_t::up;
     const auto endpoint = [&](std::uint64_t row, bool promoted) {
         const auto coordinate = promoted ? static_cast<long double>(row) / scale : row;
-        const auto y = compose_project_y(coordinate, pixels_per_row, scroll, height, downscroll);
+        const auto y = compose_project_y(coordinate, pixels_per_row, scroll, height, downscroll, cut_axis);
         return quantize_endpoint_bounds(bounds, y, request.note_head_height_pixels, direction);
     };
     wormedit::ui::compose_quantize_ghost_view_t ghost{};
@@ -478,7 +479,7 @@ void append_bgm_quantize_ghost(compose_scene_cache_t& cache, wormedit::ui::compo
     if (event == cache.scene.index.value()->bgm_events.end() || !quantize_row_visible(*event, request))
         return;
     const auto ghost = bgm_quantize_ghost(report, chart, request, scale, pixels_per_row, scroll,
-                                          height, downscroll);
+                                          height, downscroll, view.cut_axis.get());
     if (ghost)
         view.quantize_ghosts.push_back(*ghost);
 }
@@ -512,7 +513,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                             pixels_per_row,
                                             interaction.viewport_scroll_pixels,
                                             view.viewport_height_pixels,
-                                            downscroll};
+                                            downscroll, interaction.cut_axis.get()};
     view.quantize_ghosts.reserve(std::min<std::size_t>(
         quantize_report_row_capacity, view.quantize_preview_rows.size()));
     for (const auto& report : view.quantize_preview_rows) {

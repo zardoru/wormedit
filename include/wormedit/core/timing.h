@@ -573,6 +573,13 @@ struct preview_schedule_t {
     };
     std::optional<music_event_t> music;
     std::vector<preview_layer_tick_t> layer_ticks;
+    // Derived playback ranges when source-song cuts splice the music clock.
+    // Empty retains the ordinary single-range schedule byte for byte.
+    std::vector<music_event_t> music_segments;
+    [[nodiscard]] auto music_events() const -> std::span<const music_event_t> {
+        if (!music_segments.empty()) return music_segments;
+        return music ? std::span<const music_event_t>{&*music, 1} : std::span<const music_event_t>{};
+    }
 };
 
 [[nodiscard]] auto preview_music_source_frame_at(

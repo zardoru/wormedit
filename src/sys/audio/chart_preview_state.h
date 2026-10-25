@@ -5,6 +5,7 @@
 #include "sys/audio/project_audio_sources.h"
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>
@@ -35,10 +36,12 @@ struct chart_preview_t {
         std::optional<timing_index_t> timing;
         std::vector<audio::preview_object_source_binding_t> bindings;
         std::vector<audio::preview_metronome_source_binding_t> retained_metronome_bindings;
+        std::optional<export_cut_frame_timeline_t> cut_frames;
+        std::string cut_warning;
         std::uint64_t end_frame{};
         std::size_t skipped_unavailable_audio_objects{};
     };
-    using source_key_t = std::tuple<chart_id_t, std::uint64_t, std::optional<asset_id_t>, std::uint8_t>;
+    using source_key_t = std::tuple<chart_id_t, std::uint64_t, std::optional<asset_id_t>, std::uint8_t, bool>;
     keyed_cache_t<source_key_t, compiled_t> compiled;
     [[nodiscard]] auto chart() const -> std::optional<chart_id_t> {
         return compiled.has_value() ? std::optional{std::get<0>(*compiled.key())} : std::nullopt;
@@ -49,6 +52,11 @@ struct chart_preview_t {
     [[nodiscard]] auto music_asset() const -> std::optional<asset_id_t> {
         return compiled.has_value() ? std::get<2>(*compiled.key()) : std::nullopt;
     }
+    bool timing_focus{};
+    [[nodiscard]] auto source_frame(std::uint64_t frame) const -> std::uint64_t;
+    [[nodiscard]] auto collapsed_frame(std::uint64_t frame) const -> std::uint64_t;
+    [[nodiscard]] auto synchronize_timing_focus(bool focus, const chart_document_t*, const song_document_t&,
+        project_audio_sources_t&, sdl_audition_output_t&, audio::preview_session_t&, sdl_preview_output_t&) -> std::optional<std::string>;
     std::uint64_t resume_frame{};
     std::int32_t display_latency_ms{};
     [[nodiscard]] auto display_frame(const audio::preview_session_t&) const -> std::uint64_t;

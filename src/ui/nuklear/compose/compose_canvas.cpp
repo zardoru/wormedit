@@ -1029,20 +1029,21 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
 // because no length is stored.
 // While a preview edge or label is dragged, a ghost line follows the pointer; the preview moves to
 // the snapped row on release.
-static void draw_compose_preview_drag_ghost(const ComposePaintContext& paint) {
-    const auto& drag = state.preview_drag;
+static void draw_compose_audio_span_drag_ghost(const ComposePaintContext& paint) {
+    const auto& drag = state.audio_span_drag;
     if (!drag.active || drag.chart_id != paint.view->chart_id.value) return;
     const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
     const auto y = paint.viewport.y + static_cast<float>(drag.current_y_pixels) * scale;
-    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f,
-               nk_rgb(150, 240, 180), 4);
+    const auto color = drag.export_cut_id.value
+        ? wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::export_cut) : nk_rgb(150, 240, 180);
+    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f, color, drag.export_cut_id.value ? 10 : 4);
 }
 
 static void draw_compose_preview_span(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
     const auto& span = paint.view->preview_span;
     if (!span.available) return;
-    draw_compose_preview_drag_ghost(paint);
+    if (!state.audio_span_drag.export_cut_id.value) draw_compose_audio_span_drag_ghost(paint);
     const auto line = nk_rgb(110, 224, 150);
     const auto end_line = span.has_length ? line : nk_rgba(110, 224, 150, 110);
     if (span.span_projection_visible) {
@@ -2640,24 +2641,42 @@ static void draw_compose_dead_span_hatch(const ComposePaintContext& paint, struc
     }
 }
 
+static void draw_compose_hatched_span(const ComposePaintContext& paint, struct nk_rect rect,
+                                      nk_color color, std::string_view label) {
+    field_rect(paint, rect, 0.0f, nk_rgba(14, 16, 22, 150), 10);
+    color.a = 70;
+    draw_compose_dead_span_hatch(paint, rect, color);
+    color.a = 200;
+    field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f, color, 10);
+    field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f, color, 10);
+    if (rect.h >= 12.0f && rect.w >= 60.0f) {
+        const auto text = nk_rect(rect.x + rect.w - 120.0f, rect.y, 116.0f, std::min(rect.h, 16.0f));
+        color.a = 255;
+        field_text(paint, text, label.data(), static_cast<int>(label.size()), paint.context->style.font,
+                   compose(ComposeColor::timing_title_bg), color, 10);
+    }
+}
+
 static void draw_compose_dead_spans(const ComposePaintContext& paint) {
-    for (size_t index = 0; index < paint.view->dead_spans.size(); ++index) {
-        const auto& span = paint.view->dead_spans[index];
+    for (const auto& span : paint.view->dead_spans) {
         const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
-        field_rect(paint, rect, 0.0f, nk_rgba(14, 16, 22, 150), 10);
-        draw_compose_dead_span_hatch(paint, rect, compose_dead_span_color(span.kind, 70));
-        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
-                   compose_dead_span_color(span.kind, 200), 10);
-        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
-                   compose_dead_span_color(span.kind, 200), 10);
-        if (rect.h >= 12.0f && rect.w >= 60.0f) {
-            const auto text = nk_rect(rect.x + rect.w - 120.0f, rect.y, 116.0f, std::min(rect.h, 16.0f));
-            field_text(paint, text, span.label.data(), static_cast<int>(span.label.size()),
-                       paint.context->style.font, compose(ComposeColor::timing_title_bg),
-                       compose_dead_span_color(span.kind, 255), 10);
-        }
+        draw_compose_hatched_span(paint, rect, compose_dead_span_color(span.kind, 255), span.label);
     }
+}
+
+static void draw_compose_export_cuts(const ComposePaintContext& paint) {
+    if (!wormedit::ui::compose_export_cuts_visible(compose_mode_of(*paint.view))) return;
+    const auto color = compose(ComposeColor::export_cut);
+    for (const auto& cut : paint.view->export_cuts) {
+        if (!cut.span.span_projection_visible) continue;
+        const auto top = compose_projected_y(paint, cut.span.projected_span_top_y_pixels);
+        const auto bottom = compose_projected_y(paint, cut.span.projected_span_bottom_y_pixels);
+        const auto rect = nk_rect(paint.viewport.x, top, paint.viewport.w, std::max(1.0f, bottom - top));
+        draw_compose_hatched_span(paint, rect, color, cut.label.empty() ? std::string_view{"EXPORT CUT"}
+                                                                   : std::string_view{cut.label});
+    }
+    if (state.audio_span_drag.export_cut_id.value) draw_compose_audio_span_drag_ghost(paint);
 }
 
 static void draw_compose_foreground_markers(const ComposePaintContext& paint) {
@@ -3433,6 +3452,7 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
         draw_compose_lane_layout_segments(paint);
         draw_compose_measure_lane(paint);
         draw_compose_dead_spans(paint);
+        draw_compose_export_cuts(paint);
         draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);
         const bool active_notes=compose_notes_require_direct(*view);

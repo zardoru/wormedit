@@ -4,6 +4,12 @@ namespace wormedit::sys::compose_action_detail {
 
 namespace {
 constexpr auto marker_route_entries = std::array{
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_EXPORT_CUT_FROM_SELECTION,
+        .operation = run_routed_compose_action<edit_export_cut_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_EXPORT_CUT,
+        .operation = run_routed_compose_action<edit_export_cut_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_EXPORT_CUT,
+        .operation = run_routed_compose_action<edit_export_cut_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL,
                            .operation =
                                run_routed_compose_action<search_selected_note_labels_action_t>},

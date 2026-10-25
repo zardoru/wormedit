@@ -64,14 +64,14 @@ static void reset_bookmark_move_capture() {
     state.bookmark_ui.bookmark_move_id = 0;
 }
 
-static void reset_preview_drag_capture() {
-    state.preview_drag = {};
+static void reset_audio_span_drag_capture() {
+    state.audio_span_drag = {};
 }
 
 static void reset_bga_event_move_capture() {
     // Every pointer-capture cancel site resets the bookmark and preview drags with the BGA one.
     reset_bookmark_move_capture();
-    reset_preview_drag_capture();
+    reset_audio_span_drag_capture();
     state.bga_interaction.bga_event_move_candidate_active = false;
     state.bga_interaction.bga_event_move_active = false;
     state.bga_interaction.bga_event_move_object_id = 0;
@@ -150,8 +150,8 @@ static auto compose_gesture_registry() -> const auto& {
         {&state.bga_interaction.bga_event_move_candidate_active},
         {&state.bookmark_ui.bookmark_move_active, reset_bookmark_move_capture},
         {&state.bookmark_ui.bookmark_move_candidate_active},
-        {&state.preview_drag.active, reset_preview_drag_capture},
-        {&state.preview_drag.candidate_active},
+        {&state.audio_span_drag.active, reset_audio_span_drag_capture},
+        {&state.audio_span_drag.candidate_active},
         {&state.timing_drag.timing_stage_drag_active, reset_stage_capture},
         {&state.timing_drag.kiai_drag_active, reset_span_capture},
         {&state.timing_drag.recipe_drag_active, reset_recipe_capture},
@@ -994,7 +994,7 @@ static auto is_marker_line_press_blocked(const ComposePointerEventContext& input
         !input.left_down || !input.window_focused || view.y_lock ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         input.compose_note_double_click_in_view || state.bookmark_ui.bookmark_move_candidate_active ||
-        state.preview_drag.candidate_active ||
+        state.audio_span_drag.candidate_active ||
         state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
         state.note_move.note_move_active || state.note_move.note_move_candidate_active || state.area_selection.area_selection_active ||
         state.area_selection.area_selection_candidate_active || state.bga_interaction.bga_event_move_candidate_active ||
@@ -1019,71 +1019,105 @@ static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
 
 // The song preview handle under a press, with the bands bookmark lines use: its begin or end
 // line, or the label zone above the begin line, which drags the whole span.
-static auto compose_preview_handle_at(const wormedit::ui::compose_view_t& view, double x, double y)
+static auto compose_audio_span_handle_at(const wormedit::ui::compose_view_t& view,
+    const wormedit::ui::compose_audio_span_view_t& span, double x, double y)
     -> std::optional<std::uint8_t> {
-    const auto& span = view.preview_span;
     if (!span.available || x < 0.0 || x > view.viewport_width_pixels) return std::nullopt;
     const auto hits = [y](bool visible, double line_y, bool labelled) {
         const wormedit::ui::bookmark_rename_line_t line{.y = line_y, .labelled = labelled};
         const auto [top, bottom] = line.hit_extent(wormedit::ui::compose_bookmark_label_zone_height);
         return visible && y >= top && y <= bottom;
     };
+    if (span.has_length && span.begin_projection_visible && span.end_projection_visible &&
+        std::abs(span.projected_begin_y_pixels - span.projected_end_y_pixels) < 4 &&
+        hits(true, span.projected_begin_y_pixels, false))
+        return x < view.viewport_width_pixels / 2 ? WORM_UI_SPAN_HANDLE_BEGIN : WORM_UI_SPAN_HANDLE_END;
     if (hits(span.begin_projection_visible, span.projected_begin_y_pixels, false)) return WORM_UI_SPAN_HANDLE_BEGIN;
     if (hits(span.end_projection_visible, span.projected_end_y_pixels, false)) return WORM_UI_SPAN_HANDLE_END;
     if (hits(span.begin_projection_visible, span.projected_begin_y_pixels, true)) return WORM_UI_SPAN_HANDLE_BODY;
     return std::nullopt;
 }
 
-static auto preview_drag_capture_matches(const ComposePointerEventContext& input) -> bool {
+static auto compose_export_cut_handle_at(const wormedit::ui::compose_view_t& view, double x, double y)
+    -> std::optional<std::pair<wormedit::object_id_t, std::uint8_t>> {
+    if (!wormedit::ui::compose_export_cuts_visible(compose_mode_of(view))) return std::nullopt;
+    const auto selected = state.export_cut_editor.selected;
+    const auto current = std::ranges::find(view.export_cuts, selected, &wormedit::ui::compose_export_cut_view_t::id);
+    if (current != view.export_cuts.end()) {
+        const auto handle = compose_audio_span_handle_at(view, current->span, x, y);
+        if (handle && *handle != WORM_UI_SPAN_HANDLE_BODY) return std::pair{current->id, *handle};
+    }
+    for (const auto& cut : view.export_cuts) {
+        if (cut.id == selected) continue;
+        const auto handle = compose_audio_span_handle_at(view, cut.span, x, y);
+        if (handle && *handle != WORM_UI_SPAN_HANDLE_BODY) return std::pair{cut.id, *handle};
+    }
+    return std::nullopt;
+}
+
+static auto audio_span_drag_capture_matches(const ComposePointerEventContext& input) -> bool {
     return input.window_focused && input.view->scene_available && !input.view->input_occluded &&
-           input.view->chart_id.value == state.preview_drag.chart_id &&
-           input.view->document_revision == state.preview_drag.revision &&
+           input.view->chart_id.value == state.audio_span_drag.chart_id &&
+           input.view->document_revision == state.audio_span_drag.revision &&
+           (!state.audio_span_drag.export_cut_id.value ||
+            wormedit::ui::compose_export_cuts_visible(compose_mode_of(*input.view))) &&
            !state.input_queue.action_overflowed;
 }
 
-static void commit_preview_drag(const ComposePointerEventContext& input) {
-    const auto& drag = state.preview_drag;
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT,
+static void commit_audio_span_drag(const ComposePointerEventContext& input) {
+    const auto& drag = state.audio_span_drag;
+    const auto kind = drag.export_cut_id.value ? WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT
+                                               : WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT;
+    append_compose_input(input.action, kind,
         input.pointer_x, drag.current_y_pixels, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, 0, 0, false,
         wormedit::timing_lane_kind_t::bpm, drag.chart_id, drag.revision);
     if (input.action->compose_inputs.size() == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_inputs.size() - 1];
+    queued.object_id = drag.export_cut_id;
     queued.span_edge = drag.edge;
     queued.span_anchor_y_pixels = drag.anchor_y_pixels;
 }
 
 // Returns true while the drag owns the pointer. A press-release without movement is handed back
 // as an ordinary field click, as for bookmarks.
-static auto update_preview_drag_capture(const ComposePointerEventContext& input) -> bool {
-    auto& drag = state.preview_drag;
+static auto update_audio_span_drag_capture(const ComposePointerEventContext& input) -> bool {
+    auto& drag = state.audio_span_drag;
     if (!drag.candidate_active) return false;
     const auto& pointer = input.context->input.mouse.pos;
     const compose_drag_capture_t anchor{.anchor_y = drag.anchor_screen_y};
     const auto continuation = anchor.advance(
         {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
-        preview_drag_capture_matches(input), compose_drag_release_policy_t::held_vertical, drag.active);
+        audio_span_drag_capture_matches(input), compose_drag_release_policy_t::held_vertical, drag.active);
     if (continuation.phase == compose_drag_phase_t::cancel) {
-        reset_preview_drag_capture();
+        reset_audio_span_drag_capture();
         return true;
     }
     drag.current_y_pixels = input.pointer_y;
     drag.active = continuation.moved;
     if (continuation.phase == compose_drag_phase_t::update) return true;
     const auto moved = continuation.phase == compose_drag_phase_t::commit;
-    if (moved) commit_preview_drag(input);
-    reset_preview_drag_capture();
+    if (moved) commit_audio_span_drag(input);
+    reset_audio_span_drag_capture();
     if (!moved) replay_bookmark_press_as_paint(input);
     return moved || input.view->note_paint_mode_active;
 }
 
-static auto begin_preview_drag_capture(const ComposePointerEventContext& input,
+static auto begin_audio_span_drag_capture(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     if (is_marker_line_press_blocked(input, paint_pointer_consumed)) return false;
     const auto& view = *input.view;
-    const auto edge = compose_preview_handle_at(view, input.pointer_started_x, input.pointer_started_y);
+    const auto cut = compose_export_cut_handle_at(view, input.pointer_started_x, input.pointer_started_y);
+    const auto edge = cut ? std::optional{cut->second}
+        : compose_audio_span_handle_at(view, view.preview_span, input.pointer_started_x, input.pointer_started_y);
     if (!edge) return false;
-    state.preview_drag = {.candidate_active = true,
+    if (cut) {
+        state.export_cut_editor.synchronize(view);
+        state.export_cut_editor.select(*std::ranges::find(view.export_cuts, cut->first,
+            &wormedit::ui::compose_export_cut_view_t::id));
+    }
+    state.audio_span_drag = {.export_cut_id = cut ? cut->first : wormedit::object_id_t{},
+                          .candidate_active = true,
                           .edge = *edge,
                           .chart_id = view.chart_id.value,
                           .revision = view.document_revision,
@@ -1095,9 +1129,9 @@ static auto begin_preview_drag_capture(const ComposePointerEventContext& input,
 
 static auto process_compose_bookmark_pointer(const ComposePointerEventContext& input,
                                              bool paint_pointer_consumed) -> bool {
-    if (update_bookmark_move_capture(input) || update_preview_drag_capture(input)) return true;
+    if (update_bookmark_move_capture(input) || update_audio_span_drag_capture(input)) return true;
     return begin_bookmark_move_capture(input, paint_pointer_consumed) ||
-           begin_preview_drag_capture(input, paint_pointer_consumed);
+           begin_audio_span_drag_capture(input, paint_pointer_consumed);
 }
 
 auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,

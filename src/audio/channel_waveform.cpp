@@ -205,6 +205,11 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const soun
                               channel_waveform_source_geometry_t source)
     -> aligned_waveform_view_result_t {
     aligned_waveform_view_result_t result;
+    if (request.cut_axis) {
+        display_row_table_t table;
+        if (!table.prepare(timing, request)) return result;
+        return from(waveform, channel, table, request, slices, source);
+    }
     if (!is_valid_channel_waveform_request(request))
         return result;
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
@@ -319,30 +324,49 @@ auto visible_display_slices(const waveform_t& waveform, const display_row_table_
     return result;
 }
 auto display_source_frame(double seconds, const display_channel_slice_t& slice,
-    const waveform_t& waveform, bool end) -> std::uint64_t {
-    const auto relative = std::max(0.0, seconds - slice.origin_seconds) * waveform.sample_rate;
+    const waveform_t& waveform, bool end, bool physical) -> std::uint64_t {
+    auto relative = std::max(0.0, seconds - slice.origin_seconds) * waveform.sample_rate;
+    const auto nearest = std::round(relative);
+    if (physical && std::abs(relative - nearest) < 1e-7) relative = nearest;
     const auto frame = static_cast<double>(slice.begin_frame) + (end ? std::ceil(relative) : std::floor(relative));
     return static_cast<std::uint64_t>(std::clamp(frame, static_cast<double>(slice.begin_frame),
                                                 static_cast<double>(slice.end_frame)));
 }
-auto display_slice_column(const waveform_t& waveform,
-    const display_row_time_t& row, const display_channel_slice_t& slice, std::size_t& sampled_bins)
+auto display_slice_span(const waveform_t& waveform,
+    const display_row_time_t& row, const display_channel_slice_t& slice, std::size_t& sampled_bins, bool physical = false)
     -> std::optional<waveform_column_t> {
     const auto low = std::max(row.begin_seconds, slice.origin_seconds);
     const auto high = std::min(row.end_seconds, slice.end_seconds);
     if (low >= high) return std::nullopt;
-    return sample_display_waveform_span(waveform, display_source_frame(low, slice, waveform, false),
-        display_source_frame(high, slice, waveform, true), sampled_bins);
+    return sample_display_waveform_span(waveform, display_source_frame(low, slice, waveform, false, physical),
+        display_source_frame(high, slice, waveform, true, physical), sampled_bins);
+}
+auto display_slice_column(const waveform_t& waveform, const export_cut_frame_timeline_t* frames,
+    const display_row_time_t& row, const display_channel_slice_t& slice, std::size_t& sampled_bins)
+    -> std::optional<waveform_column_t> {
+    if (!frames) return display_slice_span(waveform, row, slice, sampled_bins);
+    std::optional<waveform_column_t> output;
+    std::uint64_t cursor{};
+    while (const auto span = next_display_audio_span(row, *frames, waveform.sample_rate, cursor)) {
+        const auto column = display_slice_span(waveform, *span, slice, sampled_bins, true);
+        if (!column) continue;
+        if (!output) { output = column; continue; }
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            output->absolute_peak[channel] = std::max(output->absolute_peak[channel], column->absolute_peak[channel]);
+            output->rms[channel] = std::max(output->rms[channel], column->rms[channel]);
+        }
+    }
+    return output;
 }
 auto build_display_channel_row_view(const waveform_t& waveform,
-    const display_row_time_t& row, std::span<const display_channel_slice_t> slices,
+    const display_row_time_t& row, const export_cut_frame_timeline_t* frames, std::span<const display_channel_slice_t> slices,
     std::size_t& cursor, aligned_waveform_view_result_t& result) -> std::optional<aligned_waveform_row_t> {
     while (cursor < slices.size() && slices[cursor].end_seconds <= row.begin_seconds) ++cursor;
     bool occupied = false;
     aligned_waveform_row_t output;
     for (auto index = cursor; index < slices.size() && slices[index].origin_seconds < row.end_seconds; ++index) {
         ++result.visited_slices;
-        const auto column = display_slice_column(waveform, row, slices[index], result.sampled_bins);
+        const auto column = display_slice_column(waveform, frames, row, slices[index], result.sampled_bins);
         if (!column) continue;
         occupied = true;
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
@@ -368,12 +392,16 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const soun
         result.status = failure_code_t::capacity_exceeded; return result;
     }
     const auto visible = visible_display_slices(waveform, table, slices, source);
+    std::optional<export_cut_frame_timeline_t> fallback_frames;
+    if (table.cut_axis && !table.cut_frames)
+        fallback_frames = export_cut_frame_timeline_t::from(table.cut_axis->timeline(), waveform.sample_rate).value;
+    const auto* frames = table.cut_frames ? table.cut_frames.get() : fallback_frames ? &*fallback_frames : nullptr;
     std::size_t cursor = 0;
     result.rows.reserve(static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)));
     for (const auto& row : table.viewport.value().rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
         if (!row.valid || y < 0 || y >= request.viewport_height_pixels) continue;
-        if (auto projected = build_display_channel_row_view(waveform, row, visible, cursor, result)) {
+        if (auto projected = build_display_channel_row_view(waveform, row, frames, visible, cursor, result)) {
             projected->y_pixels = y;
             result.rows.push_back(*projected);
         }

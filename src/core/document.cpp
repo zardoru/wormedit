@@ -141,6 +141,8 @@ void song_document_t::reset_chart_indices() noexcept {
 }
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
+auto song_document_t::find_export_cut(object_id_t id) -> export_cut_t* { return find_id(export_cuts, id); }
+auto song_document_t::find_export_cut(object_id_t id) const -> const export_cut_t* { return find_id(export_cuts, id); }
 auto song_document_t::effective_preview(const chart_document_t& chart) const
     -> const std::optional<song_preview_t>& {
     return chart.metadata.preview_override ? chart.metadata.preview_override : metadata.preview;
@@ -1974,6 +1976,8 @@ void validate_chart_order(const song_document_t& song, diagnostic_list_t& diagno
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     auto diagnostics = validate_prepared_bms_programs(song);
     validate_chart_order(song, diagnostics);
+    const auto cut_diagnostics = validate_export_cuts(song.export_cuts);
+    diagnostics.insert(diagnostics.end(), cut_diagnostics.begin(), cut_diagnostics.end());
     auto work = document_validation_work_t{.song = song, .diagnostics = diagnostics};
     validate_song_unique_ids(work);
     collect_song_assets(work);

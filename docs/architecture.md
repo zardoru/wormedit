@@ -494,6 +494,20 @@ artifacts and immediately before exchange. Automatic music, keysound and image c
 until copied into private staging, so rejection/cancellation cannot leave a new output
 folder or audio file. Completed exchange remains published even if cancellation races
 with completion. Individual writers and filesystem calls are not preemptible.
+Song-wide export cuts are source-song millisecond metadata, edited by the marker transaction.
+`export_cut_timeline_t` owns union normalization and exact source/collapsed time queries;
+`export_cut_axis_t` adapts this to source rows, while `export_cut_frame_timeline_t` quantizes
+absolute edges once for audio. Compose keeps authored source identities and borrows these maps
+for projection, pointer inversion, navigation, waveform sampling and prepared playback schedules.
+Timing focus uses the full source clock. The existing audio-span capture owns both preview and
+cut-edge drags; release routes the cut proposal through the same transaction as typed edits.
+
+`export_cut_transform_t` creates a detached export document and generated-audio plans. Common
+conversion applies it before target writers; the decoder/publication owner renders the plans
+inside existing staging, so rejection or cancellation cannot replace published files. Export
+uses one 48 kHz generated clock, preserving exact integer-millisecond seams across charts and
+music assets. The no-cut path retains its original conversion and audio behavior.
+
 Selected-area audio export belongs to `runtime::preview_audio_export_t`
 (`sys/audio/preview_audio_export.h`) over `async_job_t`. Its admitted request owns the
 document snapshot, source paths, row interval and trim/fade/encoder settings. The worker

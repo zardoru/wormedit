@@ -2,6 +2,7 @@
 #include "lane_occupancy.h"
 #include "interaction_context.h"
 #include "interaction_geometry.h"
+#include <wormedit/core/editor_axis.h>
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/note_to_bgm.h>
@@ -187,6 +188,19 @@ inline auto minimum_viewport_scroll(double viewport_height) -> double {
     return -viewport_height * editor_cursor_edge_margin_fraction;
 }
 
+inline auto snap_visible_position(const chart_document_t& chart, const measure_index_t& index,
+    local_position_t position, snap_grid_t denominator, const export_cut_axis_t* axis)
+    -> std::optional<local_position_t> {
+    const auto snapped = snap_position(chart, index, position, denominator);
+    auto row = snapped ? index.row_of(*snapped) : std::nullopt;
+    if (!row || !axis) return snapped;
+    while (row && axis->contains_row(*row)) {
+        const auto boundary = std::nextafter(axis->next_kept_row(*row), -std::numeric_limits<long double>::infinity());
+        row = adjacent_snap_canvas_row(chart, index, boundary, denominator, index.total_rows, true);
+    }
+    return row ? index.position_at(*row) : std::nullopt;
+}
+
 inline auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
                               const editor_interaction_view_model_t& view, double y_pixels,
                               bool include_virtual_bms_tail = false) -> std::optional<std::uint64_t> {
@@ -207,15 +221,19 @@ inline auto absolute_row_at_y_pixels(const chart_document_t& chart, const measur
         total_rows == 0) {
         return std::nullopt;
     }
-    const auto row = (static_cast<long double>(y_pixels) + view.viewport_scroll_pixels) *
-                     static_cast<long double>(chart.divisions_per_standard_measure) /
-                     static_cast<long double>(view.pixels_per_standard_measure);
+    const auto row = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).row_at_y(y_pixels);
     if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows)) {
         return std::nullopt;
     }
     // Pointer positions are continuous; map to the nearest stored row and make
     // exact half-row ties stable by resolving them toward the earlier row.
-    return nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
+    auto nearest = nearest_row(row, total_rows, row_clamp_policy_t::upper_only);
+    if (nearest && view.cut_axis && view.cut_axis->contains_row(*nearest)) {
+        const auto kept = std::ceil(view.cut_axis->next_kept_row(*nearest));
+        if (kept >= total_rows) return std::nullopt;
+        nearest = static_cast<std::uint64_t>(kept);
+    }
+    return nearest;
 }
 
 struct view_geometry_t {

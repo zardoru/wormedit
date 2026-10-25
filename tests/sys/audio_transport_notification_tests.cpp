@@ -127,7 +127,7 @@ TEST_CASE("Idle audio service and consumed selection interruption never repost",
                                   audition, preview, playhead, sink);
     verify_audio_notification(drained(center).empty());
     static_cast<void>(state.compiled.get_or_build(
-        runtime::chart_preview_t::source_key_t{chart_id_t{42}, 0, std::nullopt, 0}, [](auto&) {}));
+        runtime::chart_preview_t::source_key_t{chart_id_t{42}, 0, std::nullopt, 0, false}, [](auto&) {}));
     state.paused = true;
     state.resume_frame = 300;
     sink.post(notification_severity_t::success, notification_source_t::edit, "Applied edit.");

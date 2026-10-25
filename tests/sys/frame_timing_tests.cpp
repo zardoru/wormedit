@@ -8337,3 +8337,115 @@ TEST_CASE("Warmed generator ghost field scenes reuse their owned geometry and pr
     CHECK(fixture.compose.flattened.view.compose.generator_ghosts.data() == ghosts);
 }
 #endif
+
+namespace {
+auto export_cut_drag_song() -> song_document_t {
+    auto song = compose_test_song();
+    song.export_cuts = {{.id = object_id_t{9001}, .label = "Cut",
+        .begin_milliseconds = 501, .end_milliseconds = 1501}};
+    return song;
+}
+void project_cut_timing(compose_test_fixture_t& fixture, bool snapped = true) {
+    fixture.application.project.compose_view.compose_timing_focus = true;
+    fixture.application.project.compose_view.edit_snap_enabled = snapped;
+    project_with_eighth_snap(fixture);
+}
+auto export_cut_drag_action(compose_test_fixture_t& fixture, std::uint8_t edge,
+    std::uint64_t from_row, std::uint64_t to_row) -> wormedit::ui::workspace_action_t {
+    return kiai_input(fixture, WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT, 9001, edge,
+        kiai_screen_y(fixture, to_row), kiai_screen_y(fixture, from_row));
+}
+} // namespace
+
+TEST_CASE("Timing-focus cut begin drags respect snap and retain the untouched millisecond endpoint",
+          "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    const auto snapped = GENERATE(false, true);
+    project_cut_timing(fixture, snapped);
+    const auto original = fixture.history.document.export_cuts;
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_BEGIN, 240, 470);
+    expect_compose_test(dispatch_paste_action(fixture, action) == "Export cut edited.");
+    const auto& cut = fixture.history.document.export_cuts.front();
+    expect_compose_test(cut.begin_milliseconds == (snapped ? 1000 : 979));
+    expect_compose_test(cut.end_milliseconds == 1501);
+    expect_compose_test(cut.id == object_id_t{9001} && cut.label == "Cut");
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(undo_document_command(fixture.history));
+    expect_compose_test(fixture.history.document.export_cuts == original);
+}
+
+TEST_CASE("Timing-focus cut end drags preserve an off-grid source-song start", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    const auto snapped = GENERATE(false, true);
+    project_cut_timing(fixture, snapped);
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
+    expect_compose_test(dispatch_paste_action(fixture, action) == "Export cut edited.");
+    expect_compose_test(fixture.history.document.export_cuts.front().begin_milliseconds == 501);
+    expect_compose_test(fixture.history.document.export_cuts.front().end_milliseconds == (snapped ? 1750 : 1771));
+    expect_compose_test(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Cut body drags translate both exact endpoints by one source-time delta", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    project_cut_timing(fixture);
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_BODY, 240, 360);
+    expect_compose_test(dispatch_paste_action(fixture, action) == "Export cut edited.");
+    expect_compose_test(fixture.history.document.export_cuts.front().begin_milliseconds == 751);
+    expect_compose_test(fixture.history.document.export_cuts.front().end_milliseconds == 1751);
+    expect_compose_test(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Stale cut edge input rejects before mutating song cuts", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    project_cut_timing(fixture);
+    const auto original = fixture.history.document.export_cuts;
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
+    ++action.compose_inputs.front().timing_document_revision;
+    test::check_stale_action_message(dispatch_paste_action(fixture, action), "Export cut edit");
+    expect_compose_test(fixture.history.document.export_cuts == original);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Ordinary Compose refuses direct export-cut edge mutation", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    fixture.project();
+    const auto original = fixture.history.document.export_cuts;
+    auto action = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT, 9001);
+    expect_compose_test(dispatch_paste_action(fixture, action) == "Edit export cut edges in Timing focus.");
+    expect_compose_test(fixture.history.document.export_cuts == original);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Cut edge drags reject inverted intervals and unknown handles", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    project_cut_timing(fixture);
+    const auto original = fixture.history.document.export_cuts;
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_BEGIN, 240, 850);
+    SECTION("begin cannot cross the retained end") {
+        expect_compose_test(dispatch_paste_action(fixture, action) ==
+            "Keep the export cut start nonnegative and before its end.");
+    }
+    SECTION("unknown handle") {
+        action.compose_inputs.front().span_edge = WORM_UI_SPAN_HANDLE_CREATE;
+        expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut handle is stale.");
+    }
+    expect_compose_test(fixture.history.document.export_cuts == original);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Missing export cuts and invalid pointer clocks reject without publication", "[sys][export-cut][cut-drag]") {
+    compose_test_fixture_t fixture{export_cut_drag_song()};
+    project_cut_timing(fixture);
+    const auto original = fixture.history.document.export_cuts;
+    auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
+    SECTION("missing cut") {
+        action.compose_inputs.front().object_id = object_id_t{9999};
+        expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut or its chart timing is no longer available.");
+    }
+    SECTION("invalid pointer") {
+        action.compose_inputs.front().y_pixels = std::numeric_limits<double>::quiet_NaN();
+        expect_compose_test(dispatch_paste_action(fixture, action) == "The export cut destination is outside the source-song timeline.");
+    }
+    expect_compose_test(fixture.history.document.export_cuts == original);
+    expect_compose_test(fixture.history.undo.empty());
+}

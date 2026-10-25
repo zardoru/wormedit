@@ -2,6 +2,7 @@
 #include "interaction_geometry.h"
 #include "lane_occupancy.h"
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/editor_axis.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/core/interaction_cursor_pose.h>
@@ -1277,7 +1278,7 @@ auto append_proposal_endpoint(proposal_render_context_t& render,
     const auto layout_row =
         tail ? proposal.end_row.value_or(proposal.begin_row) : proposal.begin_row;
     const auto* band = band_for_row(layout_row);
-    if (band == nullptr) {
+    if (band == nullptr || (render.geometry.view.cut_axis && render.geometry.view.cut_axis->contains_row(row))) {
         return true;
     }
     const auto bounds = proposal_lane_bounds(render, *band, proposal);
@@ -1395,9 +1396,14 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
     return true;
 }
 
+auto is_hidden_source_span(const export_cut_axis_t* axis, std::uint64_t begin, std::uint64_t end) -> bool {
+    return axis && axis->contains_span(begin, end);
+}
+
 auto is_note_visible_in_scene(const editor_field_scene_note_source_t& note,
                            const scene_geometry_context_t& context) -> bool {
-    if (static_cast<long double>(note.end_row) < context.query_low ||
+    if (is_hidden_source_span(context.view.cut_axis.get(), note.begin_row, note.end_row) ||
+        static_cast<long double>(note.end_row) < context.query_low ||
         static_cast<long double>(note.begin_row) > context.query_high) {
         return false;
     }
@@ -1457,7 +1463,7 @@ auto append_note_hold_bodies(const editor_field_scene_note_source_t& note,
         const auto begin =
             std::max(static_cast<long double>(note.begin_row), band.clipped_begin_row);
         const auto end = std::min(static_cast<long double>(note.end_row), band.clipped_end_row);
-        if (begin >= end) {
+        if (begin >= end || y_for_row(begin) == y_for_row(end)) {
             continue;
         }
         const auto* bounds = lane_bounds(band, note.lane);
@@ -1500,7 +1506,7 @@ auto append_indexed_note_endpoint(scene_note_composition_t& composition,
                                   Consume&& consume, YForRow&& y_for_row, BandForRow&& band_for_row)
     -> bool {
     const auto* band = band_for_row(row);
-    if (band == nullptr) {
+    if (band == nullptr || (composition.geometry.view.cut_axis && composition.geometry.view.cut_axis->contains_row(row))) {
         return true;
     }
     const auto* bounds = lane_bounds(*band, note.lane);
@@ -1586,6 +1592,8 @@ auto compose_indexed_notes(scene_note_composition_t& composition, Operate&& oper
     const auto visit = [&](auto&& self, std::size_t node, std::size_t first,
                            std::size_t last) -> void {
         if (failed || first >= candidate_count ||
+            is_hidden_source_span(composition.geometry.view.cut_axis.get(), index.notes[first].begin_row,
+                index.note_tree_max_end[node]) ||
             static_cast<long double>(index.note_tree_max_end[node]) <
                 composition.geometry.query_low) {
             return;
@@ -1800,7 +1808,8 @@ auto compose_visible_layouts(scene_geometry_context_t& context, Operate&& operat
     for (const auto& source : context.index.layouts) {
         const auto source_end =
             &source == &context.index.layouts.back() ? context.canvas_rows : source.end_row;
-        if (static_cast<long double>(source_end) <= context.query_low ||
+        if (is_hidden_source_span(context.view.cut_axis.get(), source.begin_row, source_end) ||
+            static_cast<long double>(source_end) <= context.query_low ||
             static_cast<long double>(source.begin_row) >= context.query_high) {
             continue;
         }
@@ -1845,7 +1854,8 @@ auto compose_comparison_rows(scene_geometry_context_t& context, Operate&& operat
     }
     const auto half_height = context.request.comparison_difference_height_pixels / 2.0;
     for (const auto& [row, position] : rows) {
-        if (static_cast<long double>(row) < context.query_low ||
+        if (editor_axis_projection_t::from(context.view, context.chart.divisions_per_standard_measure).contains_row(row) ||
+            static_cast<long double>(row) < context.query_low ||
             static_cast<long double>(row) > context.query_high) {
             continue;
         }
@@ -1869,7 +1879,7 @@ auto compose_comparison_rows(scene_geometry_context_t& context, Operate&& operat
 }
 
 template <typename Consume, typename YForRow>
-auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible_begin,
+auto compose_scene_grid_interval(scene_geometry_context_t& context, std::uint64_t visible_begin,
                         std::uint64_t visible_end, Consume&& consume, YForRow&& y_for_row) -> bool {
     const auto grid = editor_grid_t::from(
         context.chart, {.visible_begin_row = visible_begin,
@@ -1890,14 +1900,29 @@ auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible
                                             "field-scene grid exceeds its primitive cap"));
         return false;
     }
-    context.scene.grid_lines.reserve(grid.value.lines.size());
+    context.scene.grid_lines.reserve(context.scene.grid_lines.size() + grid.value.lines.size());
     for (const auto& line : grid.value.lines) {
         const auto row = static_cast<long double>(line.chart_row.whole_rows) +
                          to_long_double(line.chart_row.fractional_rows);
+        if (context.view.cut_axis && context.view.cut_axis->contains_row(row)) continue;
         context.scene.grid_lines.push_back({.y_pixels = y_for_row(row),
                                             .kind = line.kind,
                                             .emphasis = line.emphasis,
                                             .chart_row = line.chart_row});
+    }
+    return true;
+}
+
+template <typename Consume, typename YForRow>
+auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t begin, std::uint64_t end,
+                        Consume&& consume, YForRow&& y_for_row) -> bool {
+    if (!context.view.cut_axis)
+        return compose_scene_grid_interval(context, begin, end, consume, y_for_row);
+    for (const auto& kept : context.view.cut_axis->kept_intervals(begin, end)) {
+        const auto first = static_cast<std::uint64_t>(std::floor(kept.begin));
+        const auto last = kept.begin == kept.end ? std::min(context.canvas_rows, first + 1)
+            : static_cast<std::uint64_t>(std::ceil(kept.end));
+        if (last > first && !compose_scene_grid_interval(context, first, last, consume, y_for_row)) return false;
     }
     return true;
 }
@@ -1909,9 +1934,8 @@ auto scene_cursor_row(const scene_geometry_context_t& context) -> std::optional<
         ? context.view.virtual_bms_cursor_row : context.index.measures.row_of(context.view.cursor);
     const auto source = context.request.scroll_direction == editor_field_scroll_direction_t::down
         ? context.view.viewport_height_pixels - *anchor : *anchor;
-    const auto row = (context.view.viewport_scroll_pixels + source) *
-        static_cast<long double>(context.chart.divisions_per_standard_measure) /
-        context.view.pixels_per_standard_measure;
+    const auto row = editor_axis_projection_t::from(context.view, context.chart.divisions_per_standard_measure)
+        .row_at_y(source);
     if (!context.canvas_rows) return std::nullopt;
     const auto high = std::min(context.query_high, static_cast<long double>(context.canvas_rows - 1));
     return static_cast<std::uint64_t>(std::clamp(row, std::min(std::max(0.0L, context.query_low), high), high));
@@ -2002,7 +2026,8 @@ auto append_bgm_geometry(scene_geometry_context_t& context,
                           const visible_bgm_lanes_t& lanes,
                           const std::unordered_set<std::uint64_t>& selected,
                           Consume&& consume, YForRow&& y_for_row) -> bool {
-    if (!is_bgm_event_visible_in_scene(event, context.request)) return true;
+    if (!is_bgm_event_visible_in_scene(event, context.request) ||
+        is_hidden_source_span(context.view.cut_axis.get(), event.row, event.end_row)) return true;
     const auto lane = lanes.find(event.source_lane.value);
     if (lane == lanes.end()) return true;
     const auto [top, bottom] = endpoint_vertical_bounds(
@@ -2041,6 +2066,8 @@ auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_
     bool failed{};
     const auto visit = [&](auto&& self, std::size_t node, std::size_t first, std::size_t last) -> void {
         if (failed || first >= count ||
+            is_hidden_source_span(context.view.cut_axis.get(), index.bgm_events[first].row,
+                index.bgm_tree_max_end[node]) ||
             static_cast<long double>(index.bgm_tree_max_end[node]) < context.query_low) return;
         if (!operate()) { failed = true; return; }
         if (last - first == 1) {
@@ -2174,7 +2201,8 @@ auto append_bga_lane_events(scene_geometry_context_t& context,
         const auto [top, bottom] = endpoint_vertical_bounds(
             y, request.note_head_height_pixels, lane_glyph_t::bar, request.scroll_direction);
         const editor_field_rect_t bounds{x, top, x + width, bottom};
-        if (!is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels)) continue;
+        if (!is_rect_intersecting_viewport(bounds, context.view.viewport_height_pixels) ||
+            (context.view.cut_axis && context.view.cut_axis->contains_row(event->row))) continue;
         if (!consume()) {
             context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                                 "field-scene BGA events exceed primitive cap"));
@@ -2295,10 +2323,11 @@ auto visible_scene_rows(const chart_document_t& chart, const editor_interaction_
     -> scene_visible_rows_t {
     const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
                                 chart.divisions_per_standard_measure;
-    const auto row_at_pixel = [&](long double pixel) {
-        return (pixel + static_cast<long double>(view.viewport_scroll_pixels)) / pixels_per_row;
+    const auto row_at_pixel = [&](long double pixel, bool before_seam = false) {
+        if (!view.cut_axis) return (pixel + static_cast<long double>(view.viewport_scroll_pixels)) / pixels_per_row;
+        return editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).row_at_y(pixel, before_seam);
     };
-    const auto low = std::clamp(row_at_pixel(0), 0.0L, static_cast<long double>(canvas_rows));
+    const auto low = std::clamp(row_at_pixel(0, true), 0.0L, static_cast<long double>(canvas_rows));
     const auto high = std::clamp(row_at_pixel(view.viewport_height_pixels), 0.0L,
                                  static_cast<long double>(canvas_rows));
     const auto overscan =
@@ -2334,8 +2363,8 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
     if (!canvas_rows) {
         return std::nullopt;
     }
-    const auto content_height = static_cast<double>(*canvas_rows) * view.pixels_per_standard_measure /
-                                static_cast<double>(chart.divisions_per_standard_measure);
+    const auto content_height = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+        .content_height(*canvas_rows);
     const auto maximum_scroll =
         editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
                                        view.viewport_end_margin_fraction);
@@ -2583,7 +2612,7 @@ auto is_window_key_current(const editor_field_scene_window_t& window,
                         const editor_field_scene_request_t& request) -> bool {
     const auto& previous = window.view;
     return window.scene && previous.chart == view.chart &&
-        previous.document_revision == view.document_revision &&
+        previous.document_revision == view.document_revision && previous.cut_axis == view.cut_axis &&
         previous.pixels_per_standard_measure == view.pixels_per_standard_measure &&
         previous.viewport_height_pixels == scene_window_height(view, request) &&
         previous.bga_lane_visible == view.bga_lane_visible &&
@@ -2614,9 +2643,10 @@ auto is_view_within_window(const editor_field_scene_window_t& window,
 }
 auto scene_y_for_row(const chart_document_t& chart, const editor_interaction_view_model_t& view,
                      editor_field_scroll_direction_t direction, long double row) -> double {
-    const auto offset = row * static_cast<long double>(view.pixels_per_standard_measure) /
-                            chart.divisions_per_standard_measure -
-                        static_cast<long double>(view.viewport_scroll_pixels);
+    const auto offset = view.cut_axis
+        ? static_cast<long double>(editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).y_for_row(row))
+        : row * static_cast<long double>(view.pixels_per_standard_measure) / chart.divisions_per_standard_measure -
+            static_cast<long double>(view.viewport_scroll_pixels);
     return static_cast<double>(direction == editor_field_scroll_direction_t::down
                                    ? static_cast<long double>(view.viewport_height_pixels) - offset
                                    : offset);
@@ -2680,9 +2710,8 @@ auto is_reusable_window_current(const editor_field_scene_window_t& window,
 }
 auto is_window_scroll_valid(const chart_document_t& chart, const editor_interaction_view_model_t& view,
                          const editor_field_scene_window_t& window) -> bool {
-    const auto content_height = static_cast<double>(window.canvas_rows) *
-                                view.pixels_per_standard_measure /
-                                static_cast<double>(chart.divisions_per_standard_measure);
+    const auto content_height = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+        .content_height(window.canvas_rows);
     return is_viewport_scroll_in_range(
         view.viewport_scroll_pixels, view.viewport_height_pixels,
         editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,

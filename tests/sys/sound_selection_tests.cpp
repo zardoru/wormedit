@@ -1,5 +1,6 @@
 #include "sys/commands/application_command_dispatch.h"
 #include <wormedit/core/command_registry.h>
+#include <wormedit/core/export_cut_axis.h>
 #include <wormedit/core/interaction_dispatch.h>
 #include "sys/compose/compose_sound_selection.h"
 #include <array>
@@ -221,4 +222,35 @@ TEST_CASE("same sound select command has a remappable primary Shift A binding", 
     expect_sound(invoked.empty());
     (void)dispatch_shortcut(registry, {.chord = {shortcut_key_t::f6, 0}}, focus, primary);
     expect_sound(invoked == "selection.select_same_sound_chart");
+}
+
+TEST_CASE("Visible same-sound selection includes a retained stop event at the collapsed viewport edge", "[sys][select-same-sound][export-cut]") {
+    auto song = sound_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes = {
+        {.id = object_id_t{10}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}, .sound = resource_id_t{1}},
+        {.id = object_id_t{12}, .position = {measure_id_t{1}, 300}, .lane = lane_id_t{1}, .sound = resource_id_t{1}}};
+    chart.measures[1].notes.clear();
+    chart.measures[0].bgm_events.clear();
+    chart.measures[1].bgm_events.clear();
+    chart.bpms = {{.id = object_id_t{70}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.pauses = {{.id = object_id_t{71}, .position = {measure_id_t{1}, 240},
+        .duration = {500, 1}, .source_unit = pause_unit_t::milliseconds}};
+    const std::array cuts{export_cut_t{.id = object_id_t{80}, .begin_milliseconds = 600, .end_milliseconds = 1250}};
+    const auto timeline = export_cut_timeline_t::from(cuts);
+    REQUIRE(timeline.ok());
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
+    REQUIRE(axis.ok());
+    editor_interaction_state_t state;
+    state.chart = chart.id;
+    state.pixels_per_standard_measure = 400;
+    state.viewport_scroll_pixels = 100;
+    state.viewport_height_pixels = 100;
+    state.cut_axis = std::make_shared<export_cut_axis_t>(axis.value);
+    const std::array keys{sound_selection_key_t{sound_selection_key_kind_t::resource, 1}};
+    const wormedit::sys::application_command_state_t application;
+    const auto selected = wormedit::sys::compose_same_sound_objects(song, chart, state, application, keys, true);
+    CHECK(ids(selected) == std::vector<std::uint64_t>{10});
 }

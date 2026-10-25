@@ -457,7 +457,13 @@ auto migrate_v20_to_v21(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 20> released_migrations{{
+// Schema22 adds song-wide source-audio export cuts; existing songs start uncut.
+auto migrate_v21_to_v22(nlohmann::json& document) -> std::string {
+    document["export_cuts"] = nlohmann::json::array();
+    return {};
+}
+
+constexpr std::array<migration_t, 21> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -478,6 +484,7 @@ constexpr std::array<migration_t, 20> released_migrations{{
     {18, &migrate_v18_to_v19},
     {19, &migrate_v19_to_v20},
     {20, &migrate_v20_to_v21},
+    {21, &migrate_v21_to_v22},
 }};
 
 } // namespace

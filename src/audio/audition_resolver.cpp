@@ -1,5 +1,7 @@
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/audio/audition_resolver.h>
+#include <wormedit/core/metadata_inheritance.h>
+#include "../core/id_ceiling.h"
 
 #include <algorithm>
 #include <iterator>
@@ -539,6 +541,30 @@ auto audition_resolution_t::from(const song_document_t& song, chart_id_t chart_i
     audition_resolver_index_t index{song, *chart, bindings, options};
     if (index.has_hitsample(object)) return resolve_hitsample_audition(song, chart_id, object, index, options);
     return from(index.resolve(object));
+}
+
+auto preview_music_selection_t::from(const song_document_t& song, const chart_document_t& chart)
+    -> diagnosed_t<std::optional<preview_music_selection_t>> {
+    diagnosed_t<std::optional<preview_music_selection_t>> result;
+    const auto metadata = resolved_metadata_t::from(song, chart);
+    const auto& path = metadata.value(inherited_metadata_field_t::music);
+    if (path.empty()) return result;
+    metadata_overrides_t selected;
+    selected.value(inherited_metadata_field_t::music) = path;
+    auto references = metadata_audio_references_t::from(song, selected);
+    result.diagnostics = std::move(references.diagnostics);
+    if (!result.ok() || references.value.assets.empty()) return result;
+    const auto global = std::ranges::find_if(song.resources,
+        [](const auto& resource) { return resource.has_role(resource_role_t::music); });
+    const auto identity = global != song.resources.end() && global->id ? std::optional{global->id}
+        : id_ceiling_t<resource_id_t>::from(song).next();
+    if (!identity) {
+        result.diagnostics.push_back(wormedit::error(diagnostic_code_t::invalid_id,
+            "No unused resource identity remains for preview music."));
+        return result;
+    }
+    result.value = preview_music_selection_t{*identity, references.value.assets.front()};
+    return result;
 }
 
 void preview_bindings_resolution_t::append_music(resource_id_t resource,

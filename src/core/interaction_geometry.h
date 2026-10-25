@@ -3,6 +3,7 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <cmath>
+#include <wormedit/core/export_cut_axis.h>
 namespace wormedit {
 
 inline auto position_at(const measure_index_t& index, std::uint64_t absolute) -> std::optional<local_position_t> {
@@ -36,7 +37,8 @@ inline auto effective_layout(const chart_document_t& chart, const measure_index_
 }
 inline auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
                              double scale, double viewport_height,
-                             double end_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
+                             double end_fraction = editor_cursor_edge_margin_fraction,
+                             const export_cut_axis_t* cut_axis = nullptr) -> std::optional<double> {
     auto total_rows = index.total_rows;
     if (has_chart_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
@@ -45,7 +47,8 @@ inline auto maximum_viewport_scroll(const chart_document_t& chart, const measure
         }
         total_rows = std::get<virtual_canvas_t>(canvas).total_rows;
     }
-    const auto content_height = static_cast<double>(total_rows) * scale /
+    const auto display_rows = cut_axis ? cut_axis->collapsed_row(total_rows) : total_rows;
+    const auto content_height = static_cast<double>(display_rows) * scale /
                                 static_cast<double>(chart.divisions_per_standard_measure);
     if (!std::isfinite(content_height) || content_height < 0.0 || !std::isfinite(viewport_height) ||
         viewport_height <= 0.0) {

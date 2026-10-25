@@ -1,4 +1,5 @@
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/native_project.h>
@@ -886,4 +887,97 @@ TEST_CASE("Inexact linked recipe export endpoints reject without rounding or mut
     CHECK_FALSE(converted.ok());
     CHECK(converted.value.outputs.empty());
     CHECK(write_native_project(fixture.history.document).value == before);
+}
+
+namespace {
+void check_native_cut_roundtrip(const wormedit::song_document_t& song) {
+    const auto native = wormedit::write_native_project(song);
+    REQUIRE((native.ok() && native.value));
+    const auto restored = wormedit::parse_native_project(*native.value);
+    REQUIRE((restored.ok() && restored.value));
+    CHECK(restored.value->export_cuts == song.export_cuts);
+}
+}
+TEST_CASE("Standalone format writers reject export cuts that require the shared audio plan", "[formats][conversion][export-cut]") {
+    auto song = stepmania_song();
+    song.export_cuts.push_back({.id = wormedit::object_id_t{900000},
+        .begin_milliseconds = 1, .end_milliseconds = 2});
+    const auto chart = song.read_charts().front()->id;
+    CHECK_FALSE(wormedit::write_bms(song, {.chart = chart}).ok());
+    CHECK_FALSE(wormedit::write_bmson(song, {.chart = chart}).ok());
+    CHECK_FALSE(wormedit::write_osu_mania(song, {.chart = chart}).ok());
+    CHECK_FALSE(wormedit::write_stepmania(song).ok());
+    check_native_cut_roundtrip(song);
+}
+
+TEST_CASE("Native conversion without cuts keeps the direct serialized bytes", "[formats][conversion][export-cut]") {
+    const auto song = stepmania_song();
+    const auto direct = wormedit::write_native_project(song);
+    REQUIRE(direct.ok());
+    REQUIRE(direct.value);
+    const auto converted = wormedit::convert_document(song, {});
+    REQUIRE(converted);
+    REQUIRE(converted.outputs.size() == 1);
+    CHECK(converted.outputs.front().bytes == *direct.value);
+    CHECK(converted.cut_audio_plans.empty());
+}
+
+namespace {
+auto cut_roundtrip_note_times(const wormedit::chart_document_t& chart, const wormedit::timing_index_t& timing,
+    const wormedit::measure_index_t& measures) -> std::optional<std::vector<wormedit::signed_rational_t>> {
+    std::vector<wormedit::signed_rational_t> times;
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes) {
+            const auto time = timing.query_seconds(measures, note.position);
+            if (!time) return {};
+            times.push_back(time->value);
+        }
+    return times;
+}
+void check_cut_roundtrip_clock(const wormedit::song_document_t& song) {
+    using namespace wormedit;
+    REQUIRE(song.read_charts().size() == 1);
+    const auto& chart = *song.read_charts().front();
+    const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    const auto measures = measure_index_t::from(chart);
+    REQUIRE(timing.value);
+    REQUIRE(measures);
+    const auto times = cut_roundtrip_note_times(chart, *timing.value, *measures);
+    REQUIRE(times);
+    CHECK(*times == std::vector<signed_rational_t>{{1, 1}});
+}
+}
+TEST_CASE("Export cuts reimport one shared clock in BMS osu and StepMania targets", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    const auto [target, profile] = GENERATE(Catch::Generators::table<format_family_t, stepmania_profile_t>({
+        {format_family_t::bms, stepmania_profile_t::ssc},
+        {format_family_t::osu_mania, stepmania_profile_t::ssc},
+        {format_family_t::stepmania, stepmania_profile_t::sm},
+        {format_family_t::stepmania, stepmania_profile_t::ssc}}));
+    auto fixture = linked_export_fixture(target);
+    auto& song = fixture.history.document;
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    const auto lane = chart.input_profile.bindings.front().lane;
+    chart.measures.front().notes = {{.id = object_id_t{900001},
+        .position = {chart.measures.front().id, chart.divisions_per_standard_measure * 3 / 4}, .lane = lane,
+        .sound = resource_id_t{900004}}};
+    song.audio_assets.push_back({.id = asset_id_t{900003}, .source_path = "cut-note.wav"});
+    song.resources.push_back({.id = resource_id_t{900004}, .name = "cut-note.wav",
+        .asset = asset_id_t{900003}, .roles = {resource_role_t::sample}});
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    const auto before = write_native_project(song).value;
+    conversion_request_t request{.target = target, .chart = fixture.source_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::stepmania)
+        request.stepmania = stepmania_export_policy_t{.file_profile = profile,
+            .timing_syntax = stepmania_timing_syntax_t::native_warps};
+    const auto converted = conversion_result_t::from(song, request);
+    CAPTURE(target, profile);
+    for (const auto& diagnostic : converted.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    const auto parsed = reimport_linked_output(converted.value.outputs.front().bytes, target, profile);
+    REQUIRE(parsed);
+    check_cut_roundtrip_clock(*parsed);
+    CHECK(write_native_project(song).value == before);
 }

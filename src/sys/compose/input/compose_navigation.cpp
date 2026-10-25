@@ -12,14 +12,19 @@ auto navigation_frame(const chart_document_t& chart,
                        const application_command_state_t& application,
                        const compose_navigation_target_t& target,
                        const measure_index_t* measures) -> std::optional<std::uint64_t> {
-    if (target.preview_frame) return target.preview_frame;
-    if (target.canvas_measure) return std::nullopt;
-    if (!measures) return std::nullopt;
-    const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
-    if (!timing.value) return std::nullopt;
+    auto frame = target.preview_frame;
+    if (!frame) {
+        if (target.canvas_measure || !measures) return std::nullopt;
+        const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
+        if (!timing.value) return std::nullopt;
+        frame = bookmark_preview_frame(*timing.value, *measures, target.position, std::nullopt);
+    }
+    if (!frame) return std::nullopt;
+    if (application.services.transport_preview_frame_from_source)
+        frame = application.services.transport_preview_frame_from_source(*frame);
     const auto end = application.services.transport_preview_end_frame
         ? application.services.transport_preview_end_frame() : std::nullopt;
-    return bookmark_preview_frame(*timing.value, *measures, target.position, end);
+    return end ? std::optional{std::min(*frame, *end)} : frame;
 }
 }
 

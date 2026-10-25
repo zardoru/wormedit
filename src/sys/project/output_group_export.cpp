@@ -3,6 +3,9 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/slice_spans.h>
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/formats/export_cut_audio.h>
+#endif
 #if defined(WORMEDIT_HAS_LUA)
 #include "scripting/lua_curve.h"
 #endif
@@ -176,6 +179,8 @@ auto generated_file_bytes(const output_group_export_request_t& input,
                           const conversion_result_t& converted,
                           const std::filesystem::path& relative) -> std::uintmax_t {
     const auto name = relative.filename();
+    for (const auto& plan : converted.cut_audio_plans)
+        if (plan.filename == name) return 56 + plan.output_frames * 2 * sizeof(float);
     for (const auto& plan : converted.slice_plans)
         for (const auto& span : plan.value.spans)
             if (span.filename == name)
@@ -247,7 +252,7 @@ auto publish_prepared_output(const output_group_export_request_t& input,
     publication.progress = input.progress.get();
     publication.pending_assets = prepared.pending_assets;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    if (is_conversion_needs_slice_spans(input.document, prepared.request)) {
+    if (is_conversion_needs_slice_spans(input.document, prepared.request) || !prepared.converted.cut_audio_plans.empty()) {
         publication.stage_generated_files = [&](const auto& staging) {
             return render_conversion_slice_plans(input.document, prepared.converted,
                                                  {input.asset_base, staging, stop});
@@ -285,7 +290,8 @@ auto prepare_output_targets(const output_group_export_request_t& input,
                                                   : notification_severity_t::error});
         if (!prepared->blocking_error.empty())
             return std::unexpected(
-                output_group_export_task_result_t{.message = prefix + prepared->blocking_error});
+                output_group_export_task_result_t{.message = prefix + prepared->blocking_error,
+                    .target = prepared->blocking_target});
         if (target.existing_files == existing_files_policy_t::ask)
             for (const auto& path : prepared->conflicts)
                 batch.conflicts += target.group.name + ": " + path.generic_string() + "\n";
@@ -350,6 +356,16 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
     scripting::lua_curve_backend_t scripts{{.cancellation = stop}};
     sv_recipe_evaluation_scope_t script_scope{scripts};
 #endif
+    if (!input.document.export_cuts.empty()) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        auto sources = prepare_export_cut_sources(input.document, input.asset_base, stop);
+        if (!sources.ok()) return std::unexpected(sources.diagnostics.front().message);
+        prepared.request.export_cut_sources = std::move(sources.value);
+#else
+        if (!input.document.audio_assets.empty())
+            return std::unexpected("Export cuts with audio assets require the audio decoder build.");
+#endif
+    }
     prepared.converted = convert_document(input.document, prepared.request, {},
                                           {.stop = stop, .progress = input.progress.get()});
     if (!prepared.converted) {
@@ -357,6 +373,8 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
             diagnostic_severity_t::error, &conversion_diagnostic_t::severity);
         prepared.blocking_error = error == prepared.converted.diagnostics.end()
                                       ? "Output conversion failed." : error->message;
+        if (error != prepared.converted.diagnostics.end() && error->object)
+            prepared.blocking_target = *error->object;
         return prepared;
     }
     if (stop.stop_requested()) return std::unexpected("Export cancelled before publication.");

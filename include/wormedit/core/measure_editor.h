@@ -175,6 +175,12 @@ struct measure_removal_proposal_t {
 // edit. Apply to a document draft so a failed extent rejects the whole command.
 [[nodiscard]] auto extend_native_charts_to_audio_end(song_document_t& document) -> bool;
 
+// Rebuilds only bar geometry as standard 4/4 measures while preserving every
+// absolute object/timing row. The final empty tail pads to a complete bar.
+// Failure leaves the input unchanged; use on a detached export draft.
+[[nodiscard]] auto rebar_standard_measures(chart_document_t& chart,
+    measure_edit_limits_t limits = {}) -> diagnostic_list_t;
+
 // Applies one structural or definition edit through shared document history.
 // Insertions preserve existing measure IDs and local positions. Deletion is
 // deliberately conservative: any remaining object that names the measure makes

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/export_cut_transform.h>
 #include <wormedit/core/job_progress.h>
 #include <stop_token>
 #include <wormedit/formats/slice_spans.h>
@@ -38,6 +39,7 @@ struct conversion_request_t {
     // Explicit decoder geometry: pure conversion never opens source files.
     std::vector<slice_span_source_t> slice_sources;
     slice_span_options_t slice_options;
+    std::vector<export_cut_source_t> export_cut_sources;
     // BMS filename choice, independent of the lane profile.
     std::string bms_output_extension;
     // Independent of target_profile's existing BMS lane-map selection.
@@ -73,6 +75,7 @@ struct conversion_diagnostic_t {
     bool loss{};
     std::string message;
     std::string path;
+    std::optional<object_id_t> object;
     auto operator==(const conversion_diagnostic_t&) const -> bool = default;
 };
 
@@ -107,6 +110,7 @@ struct conversion_payload_t {
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_outcome_t> slice_plans;
+    std::vector<export_cut_audio_plan_t> cut_audio_plans;
     std::vector<conversion_asset_copy_t> asset_copies;
     // Synthetic zero samples for soundless BMS gameplay, not source spans.
     std::vector<std::filesystem::path> silent_files;
@@ -119,6 +123,7 @@ struct conversion_result_t {
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_outcome_t> slice_plans;
+    std::vector<export_cut_audio_plan_t> cut_audio_plans;
     std::vector<conversion_asset_copy_t> asset_copies;
     // Synthetic zero samples for soundless BMS gameplay, not source spans.
     std::vector<std::filesystem::path> silent_files;
@@ -136,6 +141,12 @@ struct conversion_result_t {
 // complete output set is returned; any error or rejected loss clears all
 // outputs so preview, CLI, and later filesystem publication share one atomic
 // preparation boundary.
+// Runs the same detached preparation and media-boundary checks without serializing files.
+// A native-target query may select one difficulty; ordinary native conversion still preserves all.
+[[nodiscard]] auto diagnose_conversion_preparation(const song_document_t& song,
+    const conversion_request_t& request, conversion_execution_t execution = {})
+    -> std::vector<conversion_diagnostic_t>;
+
 [[nodiscard]] auto convert_document(const song_document_t& song,
                                     const conversion_request_t& request,
                                     conversion_limits_t limits = {}, conversion_execution_t execution = {})

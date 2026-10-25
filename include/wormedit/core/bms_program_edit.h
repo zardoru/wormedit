@@ -33,6 +33,12 @@ class bms_program_document_t {
     [[nodiscard]] auto evaluation() const -> const bms_program_evaluation_t& { return evaluation_; }
     [[nodiscard]] auto build_projection(std::optional<branch_id_t> authoring_chart = {}) const
         -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
+    [[nodiscard]] auto build_rebased_program(const chart_document_t& before,
+        const chart_document_t& after, object_id_t first_id) const
+        -> result_t<bms_prepared_program_t, diagnostic_list_t>;
+    // Complete bounded choice set, including authored fixed settings. Unreachable choices are normalized.
+    [[nodiscard]] auto bounded_evaluations(std::size_t maximum = 256) const
+        -> result_t<std::vector<bms_program_evaluation_t>, error_t<failure_code_t>>;
   private:
     friend class document_command_transaction_t;
     bms_program_document_t(chart_id_t difficulty, bms_prepared_program_t prepared,

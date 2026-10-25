@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/frontend.h"
+#include <wormedit/core/editor_axis.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -11,9 +12,10 @@ struct nk_rect;
 inline auto compose_area_y(const wormedit::ui::compose_view_t& view, std::uint64_t row) -> double {
     if (view.area_rows_per_measure == 0 || !std::isfinite(view.pixels_per_standard_measure))
         return 0;
-    const auto y = static_cast<double>(row) * view.pixels_per_standard_measure /
-                       static_cast<double>(view.area_rows_per_measure) -
-                   view.area_scroll_pixels;
+    const wormedit::editor_axis_projection_t axis{.cut_axis = view.cut_axis.get(),
+        .pixels_per_row = view.pixels_per_standard_measure / static_cast<double>(view.area_rows_per_measure),
+        .viewport_scroll_pixels = view.area_scroll_pixels};
+    const auto y = axis.y_for_row(row);
     return view.downscroll ? view.viewport_height_pixels - y : y;
 }
 

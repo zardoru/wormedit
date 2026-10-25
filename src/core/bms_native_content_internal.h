@@ -2,6 +2,11 @@
 #include <wormedit/core/bms_native_content.h>
 
 namespace wormedit {
+inline void clear_native_source_provenance(bms_native_event_t& event) {
+    std::visit([](auto& value) { if constexpr (requires { value.provenance; }) value.provenance = {}; }, event);
+}
+[[nodiscard]] auto normalized_native_event_values(const chart_document_t& chart)
+    -> std::optional<std::vector<bms_native_content_t>>;
 inline auto event_resource(const bms_native_event_t& event) -> std::optional<resource_id_t> {
     return std::visit([](const auto& value) -> std::optional<resource_id_t> {
         if constexpr (requires { value.sound; }) return value.sound;

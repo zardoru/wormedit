@@ -2683,6 +2683,10 @@ class stepmania_writer_t {
 
 auto write_stepmania(const song_document_t& song, stepmania_write_options_t options)
     -> stepmania_write_outcome_t {
+    if (!song.export_cuts.empty())
+        return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+            .code = stepmania_write_diagnostic_code_t::unsupported_feature,
+            .message = "Export cuts require convert_document so chart transformation and generated audio are planned together.", .location = "export_cuts"}}};
     return stepmania_writer_t{song, std::move(options)}.run();
 }
 

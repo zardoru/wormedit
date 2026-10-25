@@ -1332,6 +1332,10 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
 
 auto write_bmson(const song_document_t& song, bmson_write_options_t options)
     -> bmson_write_outcome_t {
+    if (!song.export_cuts.empty())
+        return {.diagnostics = {{.severity = diagnostic_severity_t::error,
+            .code = bmson_write_diagnostic_code_t::unsupported_feature,
+            .message = "Export cuts require convert_document so chart transformation and generated audio are planned together.", .location = "export_cuts"}}};
     bmson_write_outcome_t result{};
     try {
         result.value = write_impl(song, std::move(options), result.diagnostics);

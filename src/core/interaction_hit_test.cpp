@@ -472,9 +472,10 @@ auto editor_position_y_pixels(const chart_document_t& chart,
     if (!absolute.has_value()) {
         return std::nullopt;
     }
-    const auto y = static_cast<double>(*absolute) * view.pixels_per_standard_measure /
-                       static_cast<double>(chart.divisions_per_standard_measure) -
-                   view.viewport_scroll_pixels;
+    const auto y = view.cut_axis
+        ? editor_axis_projection_t::from(view, chart.divisions_per_standard_measure).y_for_row(*absolute)
+        : static_cast<double>(*absolute) * view.pixels_per_standard_measure /
+            static_cast<double>(chart.divisions_per_standard_measure) - view.viewport_scroll_pixels;
     if (!std::isfinite(y)) {
         return std::nullopt;
     }
@@ -598,6 +599,16 @@ auto note_pointer_distance(const lane_layout_t* layout, lane_id_t lane, double y
     return std::max({top - request.y_pixels, request.y_pixels - bottom, 0.0});
 }
 
+auto source_hit_row_bounds(const editor_interaction_view_model_t& view, long double row,
+    long double radius, std::uint64_t maximum) -> std::pair<std::uint64_t, std::uint64_t> {
+    const auto display = view.cut_axis ? view.cut_axis->collapsed_row(row) : row;
+    const auto source = [&](long double value) { return view.cut_axis ? view.cut_axis->source_row(value) : value; };
+    const auto left = view.cut_axis ? view.cut_axis->source_row_before_seam(display - radius) : display - radius;
+    const auto low = std::clamp(std::floor(left), 0.0L, static_cast<long double>(maximum));
+    const auto high = std::clamp(std::ceil(source(display + radius)), 0.0L, static_cast<long double>(maximum));
+    return {static_cast<std::uint64_t>(low), static_cast<std::uint64_t>(high)};
+}
+
 auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_index_t& index,
                        const editor_interaction_view_model_t& view,
                        const editor_hit_test_request_t& request, std::uint64_t pointer_row,
@@ -608,12 +619,8 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
     const auto radius_rows = static_cast<long double>(request.note_hit_radius_pixels + request.note_head_height_pixels) *
         static_cast<long double>(chart.divisions_per_standard_measure) /
         static_cast<long double>(view.pixels_per_standard_measure);
-    const auto row = static_cast<long double>(pointer_row);
-    const auto minimum_row = row - radius_rows <= 0.0L ? std::uint64_t{0} :
-        static_cast<std::uint64_t>(std::floor(row - radius_rows));
-    const auto max_chart_row = index.measures.total_rows - 1;
-    const auto maximum_row = row + radius_rows >= static_cast<long double>(max_chart_row)
-        ? max_chart_row : static_cast<std::uint64_t>(std::ceil(row + radius_rows));
+    const auto [minimum_row, maximum_row] = source_hit_row_bounds(view, pointer_row, radius_rows,
+        index.measures.total_rows - 1);
     const auto after_min = std::ranges::upper_bound(index.measures.entries, minimum_row, {},
         &measure_index_entry_t::absolute_begin_row);
     const auto first_bucket = after_min == index.measures.entries.begin()
@@ -626,11 +633,9 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
         const auto first = std::ranges::lower_bound(bucket, minimum_row, {},
             &editor_hit_test_entry_t::absolute_row);
         for (auto entry = first; entry != bucket.end() && entry->absolute_row <= maximum_row; ++entry) {
-            if (entry->lane != lane) continue;
-            const auto y = static_cast<double>(static_cast<long double>(entry->absolute_row) *
-                static_cast<long double>(view.pixels_per_standard_measure) /
-                static_cast<long double>(chart.divisions_per_standard_measure) -
-                static_cast<long double>(view.viewport_scroll_pixels));
+            if (entry->lane != lane || (view.cut_axis && view.cut_axis->contains_row(entry->absolute_row))) continue;
+            const auto y = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+                .y_for_row(entry->absolute_row);
             const auto distance = note_pointer_distance(
                 effective_layout(chart, index.measures, entry->position), lane, y, request);
             if (distance > request.note_hit_radius_pixels) continue;
@@ -693,8 +698,8 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
         return std::nullopt;
     const auto lane = lane_at_pointer(chart, index, view, request, *position);
     if (!lane) return std::nullopt;
-    const auto snapped = snap_position(chart, index.measures, *position,
-                                          active_snap_grid(view));
+    const auto snapped = interaction_detail::snap_visible_position(chart, index.measures, *position,
+                                          active_snap_grid(view), view.cut_axis.get());
     auto best = nearby_note_points(chart, index, view, request, *row, *lane,
                                    snapped.value_or(*position));
     if (best.priority == 0) {
@@ -740,11 +745,8 @@ auto nearest_note_hover(const chart_document_t& chart, const editor_hit_test_ind
     if (found == index.hover_objects_by_id.end() || found->object != object)
         return {nullptr, std::numeric_limits<double>::infinity()};
     const auto hit_row = index.measures.row_of(note_hit->position);
-    const auto y = static_cast<double>(
-        static_cast<long double>(hit_row.value_or(found->absolute_row)) *
-            static_cast<long double>(view.pixels_per_standard_measure) /
-            static_cast<long double>(chart.divisions_per_standard_measure) -
-        static_cast<long double>(view.viewport_scroll_pixels));
+    const auto y = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+        .y_for_row(hit_row.value_or(found->absolute_row));
     return {&*found, std::abs(y - request.y_pixels)};
 }
 
@@ -771,25 +773,14 @@ auto hover_editor_object(const chart_document_t& chart, const editor_hit_test_in
     const auto radius_rows = static_cast<long double>(request.hit_radius_pixels) *
                              static_cast<long double>(chart.divisions_per_standard_measure) /
                              static_cast<long double>(view.pixels_per_standard_measure);
-    const auto min_row = radius_rows >= static_cast<long double>(*pointer_row)
-                             ? std::uint64_t{0}
-                             : static_cast<std::uint64_t>(std::floor(
-                                   static_cast<long double>(*pointer_row) - radius_rows));
-    const auto max_row =
-        radius_rows >= static_cast<long double>(index.measures.total_rows - 1 - *pointer_row)
-            ? index.measures.total_rows - 1
-            : static_cast<std::uint64_t>(
-                  std::ceil(static_cast<long double>(*pointer_row) + radius_rows));
+    const auto [min_row, max_row] = source_hit_row_bounds(view, *pointer_row, radius_rows,
+        index.measures.total_rows - 1);
     const auto row_objects =
         editor_objects_in_row_range(chart, index, min_row, max_row, request.scope);
     if (std::holds_alternative<diagnostic_list_t>(row_objects))
         return std::nullopt;
-    const auto pointer_chart_row = (static_cast<long double>(request.y_pixels) +
-                                    static_cast<long double>(view.viewport_scroll_pixels)) *
-                                   static_cast<long double>(chart.divisions_per_standard_measure) /
-                                   static_cast<long double>(view.pixels_per_standard_measure);
-    const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
-                                static_cast<long double>(chart.divisions_per_standard_measure);
+    const auto pointer_chart_row = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+        .row_at_y(request.y_pixels);
     for (const auto& object : std::get<std::vector<editor_selection_object_t>>(row_objects)) {
         // Notes have lane geometry; their candidate was resolved through the
         // ordinary lane-aware hit test above.
@@ -797,13 +788,13 @@ auto hover_editor_object(const chart_document_t& chart, const editor_hit_test_in
             continue;
         const auto candidate = std::ranges::lower_bound(index.hover_objects_by_id, object, {},
                                                         &editor_hover_index_entry_t::object);
-        if (candidate == index.hover_objects_by_id.end() || candidate->object != object)
-            continue;
+        if (candidate == index.hover_objects_by_id.end() || candidate->object != object ||
+            (view.cut_axis && view.cut_axis->contains_span(candidate->absolute_row, candidate->end_absolute_row))) continue;
         const auto nearest_row =
             std::clamp(pointer_chart_row, static_cast<long double>(candidate->absolute_row),
                        static_cast<long double>(candidate->end_absolute_row));
-        const auto distance =
-            static_cast<double>(std::abs(nearest_row - pointer_chart_row) * pixels_per_row);
+        const auto distance = std::abs(editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+            .y_for_row(nearest_row) - request.y_pixels);
         // `pointer_chart_row` is recovered from pixel coordinates while a
         // marker's row is an exact integer.  Permit only the accumulated
         // floating-point round-trip noise so a zero-radius hover still finds

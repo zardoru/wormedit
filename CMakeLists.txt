@@ -97,6 +97,11 @@ add_library(wormedit_core
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
     src/core/song_preview.cpp
+    src/core/export_cut.cpp
+    src/core/export_cut_axis.cpp
+    src/core/export_cut_frames.cpp
+    src/core/export_cut_transform.cpp
+    src/core/export_cut_transform_scoped.cpp
     src/core/kiai_spans.cpp
     src/core/marker_navigation.cpp
     src/core/timing_links.cpp
@@ -245,6 +250,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/vorbis.cmake)
     target_sources(wormedit_audio_decoder PRIVATE
         src/formats/slice_span_render.cpp
+        src/formats/export_cut_audio.cpp
         src/audio/playback_rate.cpp
         src/audio/time_stretch.cpp
         src/audio/onset.cpp
@@ -451,6 +457,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_note_label_inline.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_bmson_tab.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_markers.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_export_cuts.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_area_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/preview_audio_dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_recipe_menu.cpp"
@@ -547,6 +554,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/views/compose_view.cpp
         src/sys/compose/views/compose_scene_view.cpp
         src/sys/compose/views/compose_marker_view.cpp
+        src/sys/compose/views/compose_export_cut_view.cpp
+        src/sys/compose/views/compose_cut_axis_view.cpp
         src/sys/compose/views/compose_selection_view.cpp
         src/sys/compose/views/compose_draw_source_view.cpp
         src/sys/compose/views/compose_hover_timing.cpp
@@ -554,6 +563,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/input/compose_input.cpp
         src/sys/compose/input/compose_waveform_fit_input.cpp
         src/sys/compose/input/compose_timing_input.cpp
+        src/sys/compose/input/compose_export_cut_input.cpp
         src/sys/compose/input/compose_resource_input.cpp
         src/sys/compose/input/compose_navigation_input.cpp
         src/sys/compose/actions/compose_note_to_bgm.cpp
@@ -564,6 +574,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/actions/compose_resource_actions.cpp
         src/sys/compose/actions/compose_marker_actions.cpp
         src/sys/compose/actions/compose_bookmark_actions.cpp
+        src/sys/compose/actions/compose_export_cut_actions.cpp
         src/sys/compose/actions/compose_measure_actions.cpp
         src/sys/compose/actions/compose_recipe_actions.cpp
         src/sys/compose/recipe_evaluation_runtime.cpp
@@ -730,6 +741,7 @@ if(WORMEDIT_BUILD_APP)
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_sources(wormedit PRIVATE
             src/sys/audio/chart_preview_state.cpp
+            src/sys/audio/export_cut_preview.cpp
             src/sys/audio/audio_transport_frame.cpp
             src/sys/audio/waveform_analysis_runtime.cpp
             src/sys/audio/sdl_audition_output.cpp

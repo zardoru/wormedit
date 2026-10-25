@@ -72,6 +72,10 @@ auto paste_geometry(const wormedit::chart_document_t& source,
 
 auto known_mania_key_profile(std::string_view id) -> bool;
 
+void build_compose_audio_span_view(wormedit::ui::compose_audio_span_view_t& span,
+    std::optional<double> begin, std::optional<double> end, const wormedit::ui::compose_view_t& view);
+void build_compose_export_cuts_view(const compose_projection_context_t<>& input);
+
 } // namespace wormedit::sys::compose_projection_detail
 
 namespace wormedit::sys {
@@ -254,7 +258,7 @@ void build_compose_draft_marker_view(const compose_scene_projection_context_t& p
         return;
     const auto y = compose_project_y(*row, projection.inputs.scope.pixels_per_row,
                                      interaction_view.viewport_scroll_pixels,
-                                     view.viewport_height_pixels, projection.inputs.scope.downscroll);
+                                     view.viewport_height_pixels, projection.inputs.scope.downscroll, interaction_view.cut_axis.get());
     if (y < -8.0 || y > view.viewport_height_pixels + 8.0)
         return;
     const wormedit::editor_field_rect_t* bounds = bgm_bounds;
@@ -481,7 +485,7 @@ build_compose_audio_marker_y_view(const compose_projection_context_t<>& input,
     const auto y =
         compose_project_y(row, static_cast<double>(pixels_per_row),
                           input.scope.interaction_view.viewport_scroll_pixels,
-                          input.frame.view().viewport_height_pixels, input.scope.downscroll);
+                          input.frame.view().viewport_height_pixels, input.scope.downscroll, input.scope.interaction_view.cut_axis.get());
     if (!std::isfinite(y) || y < static_cast<long double>(std::numeric_limits<double>::lowest()) ||
         y > static_cast<long double>(std::numeric_limits<double>::max()))
         return std::nullopt;
@@ -630,6 +634,7 @@ struct quantize_projection_scope_t {
     const double& scroll;
     const double& height;
     const bool& downscroll;
+    const wormedit::export_cut_axis_t* cut_axis{};
 };
 
 struct quantize_lane_geometry_t {
@@ -686,10 +691,11 @@ auto add_quantize_tail_geometry(const quantize_projection_scope_t& scope,
 auto bgm_quantize_ghost(const wormedit::ui::compose_quantize_report_row_view_t& report,
                         const wormedit::chart_document_t& chart,
                         const wormedit::editor_field_scene_request_t& request, std::uint64_t scale,
-                        double pixels_per_row, double scroll, double height, bool downscroll)
+                        double pixels_per_row, double scroll, double height, bool downscroll,
+                        const wormedit::export_cut_axis_t* cut_axis)
     -> std::optional<wormedit::ui::compose_quantize_ghost_view_t>;
 
-void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
+void append_bgm_quantize_ghost(compose_scene_cache_t& cache, wormedit::ui::compose_view_t& view,
                                const wormedit::ui::compose_quantize_report_row_view_t& report,
                                const wormedit::chart_document_t& chart,
                                const wormedit::editor_field_scene_request_t& request,
@@ -794,6 +800,8 @@ struct compose_interaction_population_context_t {
     const wormedit::chart_scope_t& scope;
     bool downscroll;
 };
+
+void prepare_compose_cut_axis(const compose_interaction_population_context_t& input);
 
 bool initialize_compose_interaction(const compose_interaction_population_context_t& input);
 

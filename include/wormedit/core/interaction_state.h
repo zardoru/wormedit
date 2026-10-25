@@ -18,6 +18,8 @@
 
 namespace wormedit {
 
+class export_cut_axis_t;
+
 struct editor_interaction_state_t {
     // Creates transient, frontend-independent editing state from a validated
     // history snapshot. Snap denominators are ordered by editor preference.
@@ -120,6 +122,7 @@ struct editor_interaction_state_t {
     // View-only BGA event lane visibility; hidden lanes have no hit geometry.
     bool bga_lane_visible{true};
     std::uint8_t bga_revealed_lane_mask{};
+    std::shared_ptr<const export_cut_axis_t> cut_axis;
 };
 
 // The grid the user picked, whether or not snapping is on (drawn lines, cursor steps).
@@ -171,6 +174,7 @@ struct editor_interaction_view_model_t {
     std::optional<virtual_hold_preview_t> pending_virtual_hold;
     std::vector<virtual_hold_preview_t> pending_canvas_keyboard_holds;
     std::optional<active_gesture_preview_t> active_gesture;
+    std::shared_ptr<const export_cut_axis_t> cut_axis;
 
     template<class Gesture> [[nodiscard]] auto gesture() -> Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);

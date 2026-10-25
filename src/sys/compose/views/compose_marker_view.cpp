@@ -336,7 +336,7 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
     const auto visible_beat_y = [&](std::uint64_t row) -> std::optional<double> {
         const auto y =
             compose_project_y(row, beat_pixels_per_row, interaction_view.viewport_scroll_pixels,
-                              view.viewport_height_pixels, downscroll);
+                              view.viewport_height_pixels, downscroll, view.cut_axis.get());
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels)
             return std::nullopt;
         return y;
@@ -351,10 +351,10 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
         auto& section = flattened.view.compose.beat_sections[index];
         const auto begin_y = compose_project_y(section.begin_chart_row, beat_pixels_per_row,
                                                interaction_view.viewport_scroll_pixels,
-                                               view.viewport_height_pixels, downscroll);
+                                               view.viewport_height_pixels, downscroll, view.cut_axis.get());
         const auto end_y = compose_project_y(section.end_chart_row, beat_pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,
-                                             view.viewport_height_pixels, downscroll);
+                                             view.viewport_height_pixels, downscroll, view.cut_axis.get());
         section.begin_projection_visible =
             std::isfinite(begin_y) && begin_y >= 0.0 && begin_y <= view.viewport_height_pixels;
         section.end_projection_visible =
@@ -379,8 +379,7 @@ bool compose_audio_marker_y_visible(double y, const wormedit::ui::compose_view_t
     return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
 }
 
-namespace {
-void project_compose_preview_span(wormedit::ui::compose_preview_span_view_t& span,
+void build_compose_audio_span_view(wormedit::ui::compose_audio_span_view_t& span,
                                   std::optional<double> begin, std::optional<double> end,
                                   const wormedit::ui::compose_view_t& view) {
     if (!begin || !end) return;
@@ -396,6 +395,7 @@ void project_compose_preview_span(wormedit::ui::compose_preview_span_view_t& spa
     span.projected_span_bottom_y_pixels = std::clamp(bottom, 0.0, view.viewport_height_pixels);
 }
 
+namespace {
 // The chart's effective song preview (open question 26). A point-only preview ends at
 // the audition default, which only this projection and the export dialog use.
 void build_compose_preview_span_view(const compose_projection_context_t<>& input,
@@ -417,7 +417,7 @@ void build_compose_preview_span_view(const compose_projection_context_t<>& input
             .end_milliseconds = end,
             .begin_row = rows->begin,
             .end_row = rows->end};
-    project_compose_preview_span(span, build_compose_audio_marker_y_view(input, timing, preview->start_milliseconds),
+    build_compose_audio_span_view(span, build_compose_audio_marker_y_view(input, timing, preview->start_milliseconds),
                                  build_compose_audio_marker_y_view(input, timing, end), input.frame.view());
 }
 } // namespace
@@ -438,6 +438,7 @@ void build_compose_markers_view(
     const auto input = compose_projection_context_t<>::from(source.frame, scope);
     build_compose_beat_markers_view(input);
     build_compose_audio_markers_view(input);
+    build_compose_export_cuts_view(input);
 }
 
 void build_compose_timing_payloads(const wormedit::chart_document_t& chart,
@@ -491,7 +492,7 @@ void populate_compose_timing_markers(
         }
         const auto y =
             compose_project_y(*row, pixels_per_row, interaction_view.viewport_scroll_pixels,
-                              view.viewport_height_pixels, downscroll);
+                              view.viewport_height_pixels, downscroll, view.cut_axis.get());
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels) {
             return;
         }
@@ -540,7 +541,7 @@ void populate_compose_timing_markers(
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,
-                                             view.viewport_height_pixels, downscroll);
+                                             view.viewport_height_pixels, downscroll, view.cut_axis.get());
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
                 view.timing_stage_valid = timing_stage->value.has_value();
@@ -575,7 +576,8 @@ void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
         return;
     auto& bands = flattened.compose.timing_geometry.dead_bands;
     wormedit::sys::build_dead_span_bands_view(
-        *cache.timing.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
+        *cache.timing.dead_spans, wormedit::editor_axis_projection_t{.cut_axis = view.cut_axis.get(),
+            .pixels_per_row = pixels_per_row, .viewport_scroll_pixels = interaction_view.viewport_scroll_pixels},
         view.viewport_height_pixels, downscroll, wormedit::sys::dead_span_pause_band_pixels, bands);
     const auto count = bands.size();
     view.dead_spans.reserve(count);
@@ -609,7 +611,7 @@ void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
     const auto height = view.viewport_height_pixels;
     const auto row_to_y = [&](std::uint64_t row) {
         return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
-                                 downscroll);
+                                 downscroll, view.cut_axis.get());
     };
     if (cache.timing.kiai_spans) {
         for (const auto& span : cache.timing.kiai_spans->spans) {
@@ -751,7 +753,7 @@ void populate_compose_recipe_areas(
     const auto height = view.viewport_height_pixels;
     const auto row_to_y = [&](std::uint64_t row) {
         return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
-                                 downscroll);
+                                 downscroll, view.cut_axis.get());
     };
     const auto first =
         static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
@@ -819,7 +821,7 @@ void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
         wormedit::sys::build_speed_graph(
             *cache.timing.speed_spans, std::max(0.0, scroll / pixels_per_row),
             (scroll + height) / pixels_per_row, [&](double row) {
-                return compose_project_y(row, pixels_per_row, scroll, height, downscroll);
+                return compose_project_y(row, pixels_per_row, scroll, height, downscroll, view.cut_axis.get());
             }, graph);
         for (const auto& point : graph.points) {
             view.speed_graph_points.push_back({point.x, point.y});
@@ -829,9 +831,9 @@ void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
     }
     for (const auto& span : cache.timing.speed_spans->spans) {
         const auto begin_y =
-            compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll);
+            compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll, view.cut_axis.get());
         const auto end_y =
-            compose_project_y(span.end_row, pixels_per_row, scroll, height, downscroll);
+            compose_project_y(span.end_row, pixels_per_row, scroll, height, downscroll, view.cut_axis.get());
         const auto top = std::min(begin_y, end_y);
         const auto bottom = std::max(begin_y, end_y);
         if (bottom < 0.0 || top > height)

@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/export_cut_frames.h>
 #include "sys/bms_program_runtime.h"
 #include "sys/compose/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
@@ -368,6 +369,9 @@ struct compose_scene_cache_t {
             std::tuple<wormedit::chart_id_t, std::uint64_t, wormedit::signed_rational_t,
                        wormedit::signed_rational_t>, std::optional<timing_index_t>> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
+        wormedit::keyed_cache_t<std::tuple<wormedit::song_id_t, wormedit::chart_id_t, std::uint64_t, bool>,
+            std::shared_ptr<const wormedit::export_cut_axis_t>> cut_axis;
+        std::string cut_axis_error;
         std::optional<dead_spans_view_t> dead_spans;
         std::optional<kiai_spans_view_t> kiai_spans;
         std::optional<sv_steps_view_t> sv_steps;
@@ -442,6 +446,7 @@ struct compose_scene_cache_t {
         wormedit::keyed_cache_t<direct_projection_key_t,
             std::vector<wormedit::ui::compose_waveform_row_view_t>> direct_projection;
         struct overview_data_t {
+            std::shared_ptr<const wormedit::export_cut_frame_timeline_t> cut_frames;
             std::uint64_t generation{};
             std::vector<wormedit::ui::compose_waveform_overview_row_view_t> rows;
         };
@@ -450,6 +455,7 @@ struct compose_scene_cache_t {
         // marks also follow the document revision (tempo and offset edits move them).
         bgm_bar_cache_t bgm_bar;
 #endif
+        std::shared_ptr<const wormedit::export_cut_frame_timeline_t> waveform_cut_frames;
         std::uint64_t waveform_overview_total_frames{};
         std::uint32_t waveform_overview_sample_rate{};
         hover_timing_snapshot_t hover_timing;
@@ -502,6 +508,7 @@ struct application_command_services_t {
     std::function<bool()> transport_preview_playing;
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
+    std::function<std::uint64_t(std::uint64_t)> transport_preview_frame_from_source;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
     std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
@@ -852,7 +859,7 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool;
 auto compose_field_downscroll(const wormedit::chart_document_t& chart,
     const wormedit::editor_preferences_t& preferences) -> bool;
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
-                       double viewport_height, bool downscroll) -> double;
+                       double viewport_height, bool downscroll, const wormedit::export_cut_axis_t* cut_axis = nullptr) -> double;
 // Bounds source geometry to the canvas left uncovered by frontend docks.
 auto compose_editor_layout_width(double viewport_width, double editor_right) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,

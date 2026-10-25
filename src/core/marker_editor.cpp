@@ -496,4 +496,74 @@ auto apply_marker_edit(document_command_transaction_t& transaction,
     return transaction.finish_execution(stage_marker_edit(transaction, action, limits));
 }
 
+namespace {
+
+struct export_cut_editor_t {
+    document_command_transaction_t& transaction;
+    song_document_t& song;
+
+    auto target(object_id_t id, diagnostic_list_t& diagnostics) const -> export_cut_t* {
+        const auto identity = target_identity_query_t::from(song.export_cuts, id);
+        if (!identity.validate(diagnostics, target_query_messages_t::from_object("export cut"))) return nullptr;
+        return song.find_export_cut(id);
+    }
+
+    auto operator()(const insert_edit_t<export_cut_edit_value_t>& edit) const
+        -> attempt_t<document_edit_effect_t> {
+        if (song.export_cuts.size() >= maximum_export_cuts)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                "The song exceeds the export-cut count limit.")}};
+        const auto id = transaction.next_bms_program_item_id();
+        if (!id) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "The song has exhausted its object identities.")}};
+        song.export_cuts.push_back(edit.value.with_id(*id));
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Create export cut",
+            .options = {.preserve_retained_source_flags = true}}};
+    }
+
+    auto operator()(const update_edit_t<export_cut_edit_value_t>& edit) const
+        -> attempt_t<document_edit_effect_t> {
+        diagnostic_list_t diagnostics;
+        auto* cut = target(edit.id, diagnostics);
+        if (!cut) return {.diagnostics = std::move(diagnostics)};
+        const auto changed = edit.value.with_id(edit.id);
+        if (*cut == changed) return {.value = document_edit_effect_t{}};
+        *cut = changed;
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Edit export cut",
+            .options = {.preserve_retained_source_flags = true}}};
+    }
+
+    auto operator()(const delete_edit_t<export_cut_edit_value_t>& edit) const
+        -> attempt_t<document_edit_effect_t> {
+        diagnostic_list_t diagnostics;
+        if (!target(edit.id, diagnostics)) return {.diagnostics = std::move(diagnostics)};
+        std::erase_if(song.export_cuts, [&](const auto& cut) { return cut.id == edit.id; });
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Delete export cut",
+            .options = {.preserve_retained_source_flags = true}}};
+    }
+};
+
+auto stage_export_cut_edit(document_command_transaction_t& transaction, const export_cut_edit_action_t& action)
+    -> attempt_t<document_edit_effect_t> {
+    return transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        auto result = std::visit(export_cut_editor_t{.transaction = transaction, .song = song}, action);
+        if (result.value && result.ok() && result.value->changed)
+            result.diagnostics = validate_export_cuts(song.export_cuts);
+        return result;
+    });
+}
+
+} // namespace
+
+auto apply_export_cut_edit(document_history_t& history, const export_cut_edit_action_t& action)
+    -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    return transaction.finish_execution(stage_export_cut_edit(transaction, action));
+}
+
+auto apply_export_cut_edit(document_command_transaction_t& transaction, const export_cut_edit_action_t& action)
+    -> document_command_result_t {
+    return transaction.finish_execution(stage_export_cut_edit(transaction, action));
+}
+
 } // namespace wormedit

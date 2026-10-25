@@ -143,6 +143,10 @@ add_executable(wormedit_core_tests
     core/lane_transform_tests.cpp
     core/time_shift_tests.cpp
     core/marker_editor_tests.cpp
+    core/export_cut_editor_tests.cpp
+    core/export_cut_axis_tests.cpp
+    core/export_cut_transform_tests.cpp
+    core/export_cut_scoped_tests.cpp
     core/marker_navigation_tests.cpp
     core/timing_links_tests.cpp
     core/metadata_inheritance_tests.cpp
@@ -224,6 +228,7 @@ add_executable(wormedit_core_tests
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
     formats/song_preview_tests.cpp
+    formats/native_project_export_cut_tests.cpp
     formats/fixture_validation_tests.cpp
 )
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
@@ -274,6 +279,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         sys/audio_project_import_tests.cpp
         sys/audio_source_registration_tests.cpp
         core/audio_preview_bridge_tests.cpp
+        core/audio_export_cut_bridge_tests.cpp
+        sys/export_cut_preview_tests.cpp
+        ../src/sys/audio/export_cut_preview.cpp
         core/audio_preview_pump_tests.cpp
         core/audio_playhead_snapshot_tests.cpp
         core/audio_preview_session_tests.cpp
@@ -293,7 +301,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         sys/audio_slicer_runtime_tests.cpp
         core/audio_slice_render_tests.cpp
         formats/slice_span_render_tests.cpp
+        audio/export_cut_audio_tests.cpp
         core/audio_aligned_waveform_tests.cpp
+        core/audio_export_cut_waveform_tests.cpp
         core/audio_waveform_job_tests.cpp
     )
     target_compile_definitions(wormedit_audio_tests
@@ -306,6 +316,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             wormedit::audio_decoder
             Catch2::Catch2WithMain
     )
+    if(TARGET wormedit::scripting)
+        target_link_libraries(wormedit_audio_tests PRIVATE wormedit::scripting)
+    endif()
     if(WORMEDIT_ENABLE_FFMPEG AND TARGET PkgConfig::WORMEDIT_FFMPEG)
         target_link_libraries(wormedit_audio_tests PRIVATE PkgConfig::WORMEDIT_FFMPEG)
         target_compile_definitions(wormedit_audio_tests PRIVATE WORMEDIT_HAS_FFMPEG=1)
@@ -345,6 +358,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/audio_options_runtime_tests.cpp
             ../src/sys/audio/audio_options_runtime.cpp
             ../src/sys/audio/chart_preview_state.cpp
+            ../src/sys/audio/export_cut_preview.cpp
             ../src/sys/app/frame_timing.cpp
             ../src/sys/audio/sdl_audition_output.cpp
             ../src/sys/audio/sdl_preview_output.cpp
@@ -679,6 +693,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/quantize_report_event_harness_tests.cpp
         ui/keep_pitch_event_harness_tests.cpp
         ui/markers_event_harness_tests.cpp
+        ui/export_cut_event_harness_tests.cpp
+        ui/export_cut_drag_event_harness_tests.cpp
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/dock_shortcut_event_harness_tests.cpp
         ui/dock_layout_event_harness_tests.cpp
@@ -723,6 +739,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_resource_actions.cpp
         ../src/sys/compose/actions/compose_marker_actions.cpp
         ../src/sys/compose/actions/compose_bookmark_actions.cpp
+        ../src/sys/compose/actions/compose_export_cut_actions.cpp
         ../src/sys/compose/actions/compose_measure_actions.cpp
         ../src/sys/compose/actions/compose_recipe_actions.cpp
         ../src/sys/compose/actions/compose_generator_actions.cpp
@@ -752,6 +769,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/input/compose_input.cpp
         ../src/sys/compose/input/compose_waveform_fit_input.cpp
         ../src/sys/compose/input/compose_timing_input.cpp
+        ../src/sys/compose/input/compose_export_cut_input.cpp
         ../src/sys/compose/input/compose_resource_input.cpp
         ../src/sys/compose/input/compose_navigation_input.cpp
         ../src/sys/compose/compose_kiai_spans.cpp
@@ -766,6 +784,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/views/compose_view.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
+        ../src/sys/compose/views/compose_export_cut_view.cpp
+        ../src/sys/compose/views/compose_cut_axis_view.cpp
         ../src/sys/compose/views/compose_selection_view.cpp
         ../src/sys/compose/views/compose_draw_source_view.cpp
         ../src/sys/compose/views/recipe_form.cpp
@@ -806,6 +826,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
             ../src/sys/audio/project_audio_sources.cpp
             ../src/sys/audio/metronome.cpp
             ../src/sys/audio/chart_preview_state.cpp
+            ../src/sys/audio/export_cut_preview.cpp
             ../src/sys/audio/sdl_audition_output.cpp
             ../src/sys/audio/sdl_preview_output.cpp)
         target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
@@ -869,6 +890,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/views/compose_view.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
+        ../src/sys/compose/views/compose_export_cut_view.cpp
+        ../src/sys/compose/views/compose_cut_axis_view.cpp
         ../src/sys/compose/views/compose_selection_view.cpp
         ../src/sys/compose/views/compose_draw_source_view.cpp
         ../src/sys/compose/compose_dead_spans.cpp
@@ -911,6 +934,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose/actions/compose_resource_actions.cpp
             ../src/sys/compose/actions/compose_marker_actions.cpp
             ../src/sys/compose/actions/compose_bookmark_actions.cpp
+            ../src/sys/compose/actions/compose_export_cut_actions.cpp
             ../src/sys/compose/actions/compose_measure_actions.cpp
             ../src/sys/compose/actions/compose_recipe_actions.cpp
             ../src/sys/compose/actions/compose_generator_actions.cpp
@@ -956,6 +980,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose/input/compose_input.cpp
             ../src/sys/compose/input/compose_waveform_fit_input.cpp
             ../src/sys/compose/input/compose_timing_input.cpp
+            ../src/sys/compose/input/compose_export_cut_input.cpp
             ../src/sys/compose/input/compose_resource_input.cpp
             ../src/sys/compose/input/compose_navigation_input.cpp
             ../src/sys/compose/actions/compose_note_to_bgm.cpp
@@ -966,6 +991,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose/compose_bgm_bar.cpp)
         target_sources(wormedit_frame_timing_tests PRIVATE
             ../src/sys/audio/chart_preview_state.cpp
+            ../src/sys/audio/export_cut_preview.cpp
             ../src/sys/audio/sdl_audition_output.cpp
             ../src/sys/audio/sdl_preview_output.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1

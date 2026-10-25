@@ -7,6 +7,12 @@
 #include <wormedit/audio/hitsound_resolver.h>
 #include <wormedit/audio/offline_mix.h>
 #include <wormedit/audio/ogg_encoder.h>
+#include <wormedit/formats/export_cut_audio.h>
+#include <wormedit/formats/conversion.h>
+#if defined(WORMEDIT_HAS_LUA)
+#include "scripting/lua_curve.h"
+#include <wormedit/core/sv_recipe.h>
+#endif
 #endif
 #include <algorithm>
 #include <cmath>
@@ -57,14 +63,15 @@ struct preview_audio_mix_t {
     audio::preview_bindings_resolution_t bindings;
     std::uint64_t begin{}, end{};
 
-    auto include_music(const song_document_t& document) -> result_t<void, error_t<failure_code_t>> {
-        for (const auto& resource : document.resources) {
-            if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end()) continue;
-            const auto source = sources.open_source_binding(resource.asset);
-            if (!source) return std::unexpected(source.error());
-            bindings.append_music(resource.id, *source, schedule);
-            break;
-        }
+    auto include_music(const song_document_t& document, const chart_document_t& chart)
+        -> result_t<void, error_t<failure_code_t>> {
+        const auto selected = audio::preview_music_selection_t::from(document, chart);
+        if (!selected.ok()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            selected.diagnostics.front().message});
+        if (!selected.value) return {};
+        const auto source = sources.open_source_binding(selected.value->asset);
+        if (!source) return std::unexpected(source.error());
+        bindings.append_music(selected.value->resource, *source, schedule);
         return {};
     }
 
@@ -99,9 +106,52 @@ struct preview_audio_mix_t {
         if (!resolved.diagnostics.empty())
             return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, resolved.diagnostics.front().message});
         bindings = std::move(resolved.value);
-        return include_music(request.document);
+        return include_music(request.document, *chart);
     }
 };
+
+
+auto validate_cut_preview(const preview_audio_export_request_t& request, std::stop_token stop)
+    -> result_t<void, error_t<failure_code_t>> {
+    if (request.document.export_cuts.empty()) return {};
+    const auto sources = prepare_export_cut_sources(request.document, request.asset_base, stop);
+    if (!sources.ok()) return std::unexpected(error_t<failure_code_t>{
+        stop.stop_requested() ? failure_code_t::cancelled : failure_code_t::invalid_request,
+        sources.diagnostics.front().message});
+    conversion_request_t conversion{.target = format_family_t::native_project,
+        .chart = chart_id_t{request.settings.chart}, .loss_policy = loss_policy_t::warn};
+    conversion.export_cut_sources = sources.value;
+    if (const auto failure = prepare_conversion_slice_sources(request.document, conversion, request.asset_base, stop))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request, *failure});
+#if defined(WORMEDIT_HAS_LUA)
+    scripting::lua_curve_backend_t scripts{{.cancellation = stop}};
+    sv_recipe_evaluation_scope_t script_scope{scripts};
+#endif
+    const auto diagnostics = diagnose_conversion_preparation(request.document, conversion, {.stop = stop});
+    if (diagnostic_queries::has_errors(diagnostics)) {
+        const auto failure = std::ranges::find(diagnostics, diagnostic_severity_t::error,
+            &conversion_diagnostic_t::severity);
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            failure == diagnostics.end() ? "The selected preview cannot preserve the export-cut clock." : failure->message});
+    }
+    return {};
+}
+
+auto finish_cut_preview(std::vector<float>& pcm, const preview_audio_export_request_t& request,
+    std::uint64_t source_begin) -> result_t<void, error_t<failure_code_t>> {
+    if (request.document.export_cuts.empty()) return {};
+    const auto timeline = export_cut_timeline_t::from(request.document.export_cuts);
+    if (!timeline.ok()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+        timeline.diagnostics.front().message});
+    auto cut = cut_preview_audio(pcm, source_begin, timeline.value, audio::output_sample_rate);
+    if (!cut.ok()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+        cut.diagnostics.front().message});
+    if (cut.value.empty()) return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+        "Export cuts remove the complete selected preview interval."});
+    pcm = std::move(cut.value);
+    audio::apply_offline_mix_fade(pcm, request.settings.fade_out_ms);
+    return {};
+}
 #endif
 }
 
@@ -115,11 +165,16 @@ auto prepare_preview_audio_export(const preview_audio_export_request_t& request,
     const auto destination = prepare_preview_audio_destination(request);
     if (!destination) return std::unexpected(destination.error());
     if (stop.stop_requested()) return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "Preview export cancelled."});
+    if (auto valid = validate_cut_preview(request, stop); !valid) return std::unexpected(std::move(valid.error()));
     preview_audio_mix_t prepared;
     if (auto setup = prepared.prepare(request); !setup) return std::unexpected(std::move(setup.error()));
     auto mixed = audio::render_offline_interval(prepared.sources, prepared.schedule, prepared.bindings.bindings,
-        prepared.begin, prepared.end, {.fade_out_ms = settings.fade_out_ms}, stop);
+        prepared.begin, prepared.end,
+        {.fade_out_ms = request.document.export_cuts.empty() ? settings.fade_out_ms : 0}, stop);
     if (!mixed) return std::unexpected(std::move(mixed.error()));
+    if (auto cut = finish_cut_preview(mixed->interleaved_stereo, request, prepared.begin); !cut)
+        return std::unexpected(std::move(cut.error()));
+    const auto output_frames = mixed->interleaved_stereo.size() / audio::output_channel_count;
     if (request.progress) request.progress->phase.store(job_phase_t::reading);
     auto encoded = audio::encode_ogg_vorbis(mixed->interleaved_stereo,
         {.quality = settings.quality, .progress = request.progress.get()}, stop);
@@ -127,7 +182,7 @@ auto prepare_preview_audio_export(const preview_audio_export_request_t& request,
     if (request.progress) { request.progress->phase.store(job_phase_t::publishing); request.progress->completed.store(0); request.progress->total.store(1); }
     auto file = prepared_atomic_file_t::from(*destination, *encoded, 16U * 1024U * 1024U,
         [&](const std::filesystem::path& temporary) -> atomic_file_save_outcome_t {
-            auto verified = audio::verify_ogg_vorbis(temporary, prepared.end - prepared.begin, stop);
+            auto verified = audio::verify_ogg_vorbis(temporary, output_frames, stop);
             if (!verified) return std::unexpected(verified.error().message);
             return {};
         }, stop);

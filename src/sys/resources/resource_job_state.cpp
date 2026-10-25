@@ -10,6 +10,12 @@
 namespace wormedit::sys {
 
 namespace {
+auto current_export_target(const output_group_export_task_result_t* result,
+    const document_history_t& history, song_id_t project, std::uint64_t revision) -> notification_target_t {
+    if (!result || history.document.id != project || history.document.revision != revision) return {};
+    return result->target;
+}
+
 auto copy_failure_severity(wormedit::failure_code_t status)
     -> wormedit::notification_severity_t {
     using namespace wormedit;
@@ -295,7 +301,8 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
         notifications_.post({.severity = severity,
                              .source = wormedit::notification_source_t::export_,
                              .message = status,
-                             .detail = exported ? exported->detail : std::string{}});
+                             .detail = exported ? exported->detail : std::string{},
+                             .target = current_export_target(exported, history, exported_song, exported_revision)});
     return status;
 }
 

@@ -1,9 +1,15 @@
 #include "sys/audio/preview_audio_export.h"
 #include <wormedit/audio/ogg_encoder.h>
+#include <wormedit/audio/slice_render.h>
+#include <wormedit/audio/decoder.h>
+#include <array>
+#include <cmath>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/bmson.h>
 #include "../support/temporary_directory.h"
 #include <catch2/catch_test_macros.hpp>
 #include <thread>
+#include <algorithm>
 
 namespace {
 using namespace wormedit;
@@ -23,6 +29,39 @@ auto preview_request(const std::filesystem::path& destination) -> sys::preview_a
         .asset_base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio",
         .bundle_directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR}.parent_path().parent_path() / "assets/hitsounds"};
 }
+auto continuation_preview_request(const std::filesystem::path& destination)
+    -> sys::preview_audio_export_request_t {
+    const std::string source = R"({"version":"1.0.0","info":{"title":"Cut continuations","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"sliced-seek-source.ogg","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true}]}]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    REQUIRE((parsed.ok() && parsed.value));
+    auto request = preview_request(destination);
+    request.document = *parsed.value;
+    const auto& chart = request.document.charts.front();
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index);
+    request.settings.project = request.document.id.value;
+    request.settings.chart = chart.id.value;
+    request.settings.revision = request.document.revision;
+    request.settings.end_row = index->total_rows;
+    request.settings.duration_seconds = 2;
+    return request;
+}
+
+void write_preview_test_source(const std::filesystem::path& path, std::size_t frames, float level) {
+    const std::vector<float> pcm(frames * 2, level);
+    const auto bytes = audio::encode_wav_float32(pcm, audio::output_sample_rate);
+    REQUIRE(create_file_atomic(path, bytes, bytes.size()));
+}
+void check_effective_preview_audio(const std::filesystem::path& path) {
+    CHECK(audio::verify_ogg_vorbis(path, 33'075));
+    audio::decoder_t decoder;
+    REQUIRE(decoder.open(path));
+    std::array<float, 64> pcm{};
+    const auto read = decoder.read_frames_at(4410, pcm, 32);
+    REQUIRE(read.frames_read == 32);
+    CHECK(std::abs(pcm.front()) > 0.2F);
+}
+
 void finish(sys::runtime::preview_audio_export_t& runtime, const document_history_t& history,
              const workspace_controller_t& workspace) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
@@ -92,4 +131,86 @@ TEST_CASE("Preview runtime discards stale and cancelled prepared exports at publ
     SECTION("cancel") { runtime.cancel(); }
     finish(runtime, history, workspace);
     check_original_output(directory->path(), path);
+}
+
+TEST_CASE("Preview export rejects an authored keysound crossing an export cut before publication", "[unit][audio][preview-export][export-cut]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "crossing.ogg";
+    auto request = preview_request(path);
+    request.settings.duration_seconds = 2;
+    request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 1250, .end_milliseconds = 1500}};
+    auto& notes = request.document.charts.front().measures.front().notes;
+    REQUIRE_FALSE(notes.empty());
+    const auto music = std::ranges::find_if(request.document.resources,
+        [](const auto& resource) { return resource.has_role(resource_role_t::music); });
+    REQUIRE(music != request.document.resources.end());
+    notes.front().sound = music->id;
+    const auto prepared = sys::prepare_preview_audio_export(request, {});
+    REQUIRE_FALSE(prepared);
+    CHECK(prepared.error().message.find("crosses an export-cut boundary") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(path));
+}
+
+TEST_CASE("Preview export verifies its actual frame count after removing source cuts", "[unit][audio][preview-export][export-cut]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "spliced.ogg";
+    auto request = preview_request(path);
+    request.settings.duration_seconds = 2;
+    request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 500, .end_milliseconds = 750}};
+    const auto prepared = sys::prepare_preview_audio_export(request, {});
+    INFO((prepared ? "prepared" : prepared.error().message));
+    REQUIRE(prepared);
+    CHECK_FALSE(std::filesystem::exists(path));
+    REQUIRE(prepared->file->publish(false));
+    CHECK(audio::verify_ogg_vorbis(path, 77'175));
+}
+
+TEST_CASE("Preview cut preflight materializes BMSON continuations through shared conversion preparation", "[unit][audio][preview-export][export-cut]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "continuation.ogg";
+    auto request = continuation_preview_request(path);
+    request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 0, .end_milliseconds = 500}};
+    const auto prepared = sys::prepare_preview_audio_export(request, {});
+    INFO((prepared ? "prepared" : prepared.error().message));
+    REQUIRE(prepared);
+    REQUIRE(prepared->file->publish(false));
+    CHECK(audio::verify_ogg_vorbis(path, 66'150));
+    CHECK_FALSE(request.document.charts.front().sound_channels.empty());
+}
+
+TEST_CASE("Preview cut preflight rejects a BMSON source slice crossing a cut", "[unit][audio][preview-export][export-cut]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "crossing-continuation.ogg";
+    auto request = continuation_preview_request(path);
+    request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 250, .end_milliseconds = 375}};
+    const auto prepared = sys::prepare_preview_audio_export(request, {});
+    REQUIRE_FALSE(prepared);
+    CHECK(prepared.error().message.find("crosses an export-cut boundary") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(path));
+}
+
+TEST_CASE("Cut preview audio renders effective chart Music instead of a different global source", "[unit][audio][preview-export][export-cut]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "effective-preview.ogg";
+    auto request = preview_request(path);
+    request.asset_base = directory->path();
+    request.settings.duration_seconds = 1;
+    request.document.audio_assets.front().source_path = "global.wav";
+    request.document.audio_assets.push_back({.id = asset_id_t{900010}, .source_path = "override.wav"});
+    auto& chart = request.document.charts.front();
+    chart.metadata.overrides.value(inherited_metadata_field_t::music) = "override.wav";
+    for (auto& measure : chart.measures) measure.notes.clear();
+    request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 250, .end_milliseconds = 500}};
+    write_preview_test_source(directory->path() / "global.wav", 4410, 0.0F);
+    write_preview_test_source(directory->path() / "override.wav", 88200, 0.6F);
+    const auto prepared = sys::prepare_preview_audio_export(request, {});
+    INFO((prepared ? "prepared" : prepared.error().message));
+    REQUIRE(prepared);
+    REQUIRE(prepared->file->publish(false));
+    check_effective_preview_audio(path);
 }

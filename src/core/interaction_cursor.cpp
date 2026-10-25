@@ -41,12 +41,33 @@ auto cursor_make_view(const document_history_t& history, const editor_interactio
 
 } // namespace
 
+static auto kept_cursor_row(const chart_document_t& chart, const measure_index_t& index,
+    const editor_interaction_state_t& state, std::uint64_t row, std::uint64_t limit, bool forward) -> std::uint64_t {
+    if (!state.cut_axis || !state.cut_axis->contains_row(row) || !limit) return row;
+    auto candidate = std::optional{row};
+    while (candidate && state.cut_axis->contains_row(*candidate)) {
+        const auto edge = forward ? state.cut_axis->next_kept_row(*candidate)
+            : state.cut_axis->previous_kept_row(*candidate);
+        const auto boundary = std::nextafter(edge, forward ? -std::numeric_limits<long double>::infinity()
+            : std::numeric_limits<long double>::infinity());
+        candidate = adjacent_snap_canvas_row(chart, index, boundary, active_snap_grid(state), limit, forward);
+    }
+    if (!candidate && forward)
+        candidate = adjacent_snap_canvas_row(chart, index,
+            std::nextafter(state.cut_axis->previous_kept_row(row), std::numeric_limits<long double>::infinity()),
+            active_snap_grid(state), limit, false);
+    return candidate.value_or(row);
+}
+
 static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
                                            std::optional<local_position_t> target,
                                            std::uint64_t canvas_row,
                                            std::string_view description)
     -> editor_interaction_result_t {
     auto& state = context.edit.state;
+    canvas_row = kept_cursor_row(context.edit.scope.chart, context.edit.scope.measures, state, canvas_row, context.edit.scope.measures.total_rows,
+        canvas_row >= context.absolute);
+    target = position_at(context.edit.scope.measures, canvas_row);
     if (state.hold() &&
         state.hold()->gesture_source == hold_gesture_source_t::keyboard_lane) {
         if (!target || state.hold()->anchor_canvas_row ||
@@ -164,14 +185,21 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
 
 auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& index,
                          editor_interaction_state_t& candidate) -> bool {
-    const auto row = candidate.virtual_bms_cursor_row
+    auto row = candidate.virtual_bms_cursor_row
         ? candidate.virtual_bms_cursor_row : index.row_of(candidate.cursor);
+    if (row && candidate.cut_axis && candidate.cut_axis->contains_row(*row)) {
+        row = kept_cursor_row(chart, index, candidate, *row, index.total_rows, true);
+        place_cursor_on_canvas_row(candidate, index.position_at(*row), *row);
+    }
     const auto maximum = maximum_viewport_scroll(chart, index,
-        candidate.pixels_per_standard_measure, candidate.viewport_height_pixels);
+        candidate.pixels_per_standard_measure, candidate.viewport_height_pixels,
+        candidate.viewport_end_margin_fraction, candidate.cut_axis.get());
     if (!row || !maximum) return false;
     const auto pixels_per_row = candidate.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
-    const auto cursor_top = static_cast<double>(*row) * pixels_per_row;
+    const auto cursor_top = candidate.cut_axis
+        ? editor_axis_projection_t::from(candidate, chart.divisions_per_standard_measure).y_for_row(*row) + candidate.viewport_scroll_pixels
+        : static_cast<double>(*row) * pixels_per_row;
     const auto cursor_bottom = cursor_top + pixels_per_row;
     if (candidate.fixed_cursor_screen_y_pixels) {
         const auto anchor = candidate.scroll_direction == editor_field_scroll_direction_t::down
@@ -311,16 +339,18 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const auto source = state.scroll_direction == editor_field_scroll_direction_t::down
         ? state.viewport_height_pixels - *state.fixed_cursor_screen_y_pixels
         : *state.fixed_cursor_screen_y_pixels;
-    const auto raw = (state.viewport_scroll_pixels + source) *
-        static_cast<long double>(chart.divisions_per_standard_measure) / state.pixels_per_standard_measure;
+    const auto raw = state.cut_axis
+        ? editor_axis_projection_t::from(state, chart.divisions_per_standard_measure).row_at_y(source)
+        : (state.viewport_scroll_pixels + source) * static_cast<long double>(chart.divisions_per_standard_measure) /
+            state.pixels_per_standard_measure;
     if (!std::isfinite(raw)) return false;
     const auto bounded = std::clamp(raw, 0.0L, static_cast<long double>(*rows - 1));
     const auto snapped = snap_canvas_row(chart, index, bounded, active_snap_grid(state), *rows);
     if (!snapped) return false;
-    const auto row = *snapped;
+    const auto row = interaction_detail::kept_cursor_row(chart, index, state, *snapped, *rows, true);
     const auto position = index.position_at(row);
     const auto from = state.cursor;
-    place_cursor_on_canvas_row(state, position, row, static_cast<double>(bounded - row));
+    place_cursor_on_canvas_row(state, position, row, state.cut_axis && state.cut_axis->contains_row(bounded) ? 0.0 : static_cast<double>(bounded - row));
     if (position) {
         const auto lane = interaction_detail::cursor_transition_lane(chart, index, from, *position, state.active_lane, state.scratch_on_right);
         if (lane) state.active_lane = *lane;

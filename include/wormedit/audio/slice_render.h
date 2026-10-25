@@ -24,6 +24,13 @@ namespace wormedit::audio {
 [[nodiscard]] auto encode_wav_float32(std::span<const float> interleaved_stereo,
     std::uint32_t sample_rate) -> std::string;
 
+// Streaming float WAV primitives. A valid header describes exactly frame_count stereo
+// frames; data chunks preserve finite samples and use the same encoder as the
+// bounded convenience function above. Invalid input returns empty bytes.
+[[nodiscard]] auto encode_wav_float32_header(std::uint64_t frame_count,
+    std::uint32_t sample_rate) -> std::string;
+[[nodiscard]] auto encode_wav_float32_data(std::span<const float> interleaved_stereo) -> std::string;
+
 enum class slice_wav_encoding_t { pcm16, float32 };
 
 struct slice_render_options_t {

@@ -2,6 +2,9 @@
 
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/export_cut_axis.h>
+#include <wormedit/core/export_cut_frames.h>
+#include <memory>
 #include <wormedit/core/operation_state.h>
 #include <wormedit/core/result.h>
 #include <wormedit/core/keyed_cache.h>
@@ -29,6 +32,7 @@ struct aligned_waveform_request_t {
     double viewport_height_pixels{};
     double pixels_per_standard_measure{};
     std::size_t maximum_rows{maximum_aligned_waveform_rows};
+    std::shared_ptr<const export_cut_axis_t> cut_axis;
 };
 
 // Display-only clock: exact timing/editing queries remain on timing_index_t.
@@ -71,6 +75,8 @@ struct display_clock_source_key_t {
     }
 };
 struct display_row_table_t {
+    std::shared_ptr<const export_cut_axis_t> cut_axis;
+    std::shared_ptr<const export_cut_frame_timeline_t> cut_frames;
     struct clock_data_t {
         const timing_index_t* timing_identity{};
         std::uint64_t divisions{}, total_rows{};
@@ -104,6 +110,12 @@ struct display_row_table_t {
     [[nodiscard]] auto seconds_at(double row,
         timing_boundary_side_t side = timing_boundary_side_t::event) const -> std::optional<double>;
 };
+// Samples a pixel as retained source-clock spans, including cuts inside pauses
+// whose boundaries occupy the same musical row. Cursor is a source sample frame.
+[[nodiscard]] auto next_display_audio_span(const display_row_time_t& row,
+    const export_cut_frame_timeline_t& frames, std::uint32_t sample_rate, std::uint64_t& cursor)
+    -> std::optional<display_row_time_t>;
+
 // Complete analyzed pyramids read a bounded handful of closest-level bins.
 // A valid base-only/partial pyramid falls back to aggregating available bins.
 // Peak and RMS retain max reduction, rather than an average across a pixel.
@@ -208,6 +220,9 @@ struct waveform_overview_row_t {
 };
 
 struct waveform_overview_view_result_t {
+    [[nodiscard]] static auto from(const waveform_t& waveform, const export_cut_frame_timeline_t& frames,
+        double begin_fraction, double end_fraction, std::size_t maximum_rows = maximum_waveform_overview_rows)
+        -> waveform_overview_view_result_t;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
                                    aligned_waveform_request_t viewport,
                                    std::size_t maximum_rows = maximum_waveform_overview_rows)

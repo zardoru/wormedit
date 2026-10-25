@@ -129,17 +129,14 @@ auto encode_wav_pcm16(std::span<const float> interleaved_stereo, std::uint32_t s
     return out;
 }
 
-auto encode_wav_float32(std::span<const float> interleaved_stereo, std::uint32_t sample_rate)
+auto encode_wav_float32_header(std::uint64_t frame_count, std::uint32_t sample_rate)
     -> std::string {
-    static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
-    constexpr auto maximum_samples = (std::numeric_limits<std::uint32_t>::max() - 48U) / 4U;
-    if (interleaved_stereo.empty() || interleaved_stereo.size() % 2 != 0 ||
-        interleaved_stereo.size() > maximum_samples || sample_rate == 0 ||
-        sample_rate > std::numeric_limits<std::uint32_t>::max() / 8U ||
-        std::ranges::any_of(interleaved_stereo, [](float sample) { return !std::isfinite(sample); })) return {};
-    const auto data_bytes = static_cast<std::uint32_t>(interleaved_stereo.size() * 4U);
+    constexpr auto maximum_frames = (std::numeric_limits<std::uint32_t>::max() - 48U) / 8U;
+    if (!frame_count || frame_count > maximum_frames || !sample_rate ||
+        sample_rate > std::numeric_limits<std::uint32_t>::max() / 8U) return {};
+    const auto data_bytes = static_cast<std::uint32_t>(frame_count * 8U);
     std::string out;
-    out.reserve(std::size_t{56} + data_bytes);
+    out.reserve(56);
     out += "RIFF";
     append_u32(out, 48U + data_bytes);
     out += "WAVEfmt ";
@@ -152,11 +149,29 @@ auto encode_wav_float32(std::span<const float> interleaved_stereo, std::uint32_t
     append_u16(out, 32);
     out += "fact";
     append_u32(out, 4);
-    append_u32(out, static_cast<std::uint32_t>(interleaved_stereo.size() / 2));
+    append_u32(out, static_cast<std::uint32_t>(frame_count));
     out += "data";
     append_u32(out, data_bytes);
-    for (const auto sample : interleaved_stereo) append_u32(out, std::bit_cast<std::uint32_t>(sample));
     return out;
+}
+
+auto encode_wav_float32_data(std::span<const float> samples) -> std::string {
+    static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+    if (samples.size() % 2 || samples.size() > std::numeric_limits<std::uint32_t>::max() / 4U ||
+        std::ranges::any_of(samples, [](float sample) { return !std::isfinite(sample); })) return {};
+    std::string out;
+    out.reserve(samples.size() * 4);
+    for (const auto sample : samples) append_u32(out, std::bit_cast<std::uint32_t>(sample));
+    return out;
+}
+
+auto encode_wav_float32(std::span<const float> samples, std::uint32_t sample_rate) -> std::string {
+    if (samples.empty() || samples.size() % 2) return {};
+    auto header = encode_wav_float32_header(samples.size() / 2, sample_rate);
+    if (header.empty()) return {};
+    auto data = encode_wav_float32_data(samples);
+    if (data.empty()) return {};
+    return header + data;
 }
 
 auto rendered_audio_slices_t::from(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,

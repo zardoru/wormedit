@@ -1535,6 +1535,10 @@ auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t&
         if (const auto error = edit_compose_preview_span(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT:
+        if (const auto error = edit_compose_export_cut_span(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
         if (context.environment.commands.project.timing_recipe.recipe_selected != input.object_id.value)
             context.environment.commands.project.timing_recipe.recipe_preview.reset();
@@ -1722,6 +1726,7 @@ auto compose_input_notification_source(WormUiComposeInputKind kind)
         kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT || kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE ||
         kind == WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT ||
+        kind == WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND)
@@ -1748,6 +1753,7 @@ auto input_result_severity(const wormedit::ui::compose_input_action_t& input,
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
     case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT:
+    case WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
     case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:

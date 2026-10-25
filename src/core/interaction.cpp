@@ -249,7 +249,7 @@ auto is_valid_view_snap(const chart_document_t& chart,
 auto is_valid_viewport(const chart_document_t& chart, const measure_index_t& index,
                     const editor_interaction_state_t& state) -> bool {
     const auto maximum = maximum_viewport_scroll(
-        chart, index, state.pixels_per_standard_measure, state.viewport_height_pixels, state.viewport_end_margin_fraction);
+        chart, index, state.pixels_per_standard_measure, state.viewport_height_pixels, state.viewport_end_margin_fraction, state.cut_axis.get());
     if (!std::isfinite(state.pixels_per_standard_measure) ||
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
@@ -448,6 +448,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                 std::move(keyboard_previews)),
         .active_gesture = build_editor_gesture_preview(state.active_gesture, state.viewport_scroll_pixels,
             editor_area_preview_anchor_policy_t::viewport_relative, std::move(space_preview)),
+        .cut_axis = state.cut_axis,
         .retained_selection_range = retained_selection_range,
         .retained_canvas_selection_range = state.retained_canvas_selection_range,
         .selected_canvas_measure = state.selected_canvas_measure,
@@ -556,7 +557,7 @@ auto prepare_follow_view_state(const document_history_t& history, const chart_do
         proposed.armed_note_kind = note_kind_t::tap;
     const auto maximum = maximum_viewport_scroll(chart, index, proposed.pixels_per_standard_measure,
                                                  proposed.viewport_height_pixels,
-                                                 proposed.viewport_end_margin_fraction);
+                                                 proposed.viewport_end_margin_fraction, proposed.cut_axis.get());
     if (!maximum || !std::isfinite(proposed.viewport_scroll_pixels))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_resolution, "playhead viewport geometry is invalid")};
@@ -599,7 +600,7 @@ static auto follow_editor_playhead_impl(document_history_t& history,
         return {.diagnostics = *diagnostics};
     auto proposed = std::get<editor_interaction_state_t>(std::move(candidate));
     const auto maximum = maximum_viewport_scroll(*chart, index,
-        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels, proposed.viewport_end_margin_fraction);
+        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels, proposed.viewport_end_margin_fraction, proposed.cut_axis.get());
     if (!maximum)
         return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
                                      "playhead viewport geometry is invalid")}};
@@ -733,9 +734,10 @@ auto recover_editor_interaction(const document_history_t& history,
         previous.pixels_per_standard_measure <= maximum_pixels_per_standard_measure) {
         set_cursor_scale(*result.state, previous.pixels_per_standard_measure);
     }
+    result.state->cut_axis = previous.cut_axis;
     const auto maximum_scroll = maximum_viewport_scroll(
         *chart, index, result.state->pixels_per_standard_measure,
-        result.state->viewport_height_pixels);
+        result.state->viewport_height_pixels, result.state->viewport_end_margin_fraction, result.state->cut_axis.get());
     if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
         set_viewport_scroll_pixels(*result.state, std::clamp(previous.viewport_scroll_pixels,
                        minimum_viewport_scroll(result.state->viewport_height_pixels), *maximum_scroll));
@@ -1366,7 +1368,7 @@ auto scroll_editor_view(editor_edit_context_t& context, const scroll_editor_view
     }
     const auto maximum_scroll = maximum_viewport_scroll(context.scope.chart, context.scope.measures,
                                                         context.state.pixels_per_standard_measure,
-                                                        context.state.viewport_height_pixels);
+                                                        context.state.viewport_height_pixels, context.state.viewport_end_margin_fraction, context.state.cut_axis.get());
     if (!maximum_scroll)
         return editor_interaction_result_t{
             .diagnostics = {error(diagnostic_code_t::invalid_resolution,

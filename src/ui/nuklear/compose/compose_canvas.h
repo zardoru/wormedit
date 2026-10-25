@@ -4,6 +4,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <cstddef>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <memory>
@@ -42,6 +43,25 @@ auto compose_bgm_mix_button_rect(const wormedit::ui::compose_bgm_lane_view_t& la
     const wormedit::ui::compose_view_t& view, struct nk_rect viewport, bool solo) -> struct nk_rect;
 
 namespace wormedit::ui::nuklear {
+enum class compose_static_draw_kind_t : std::uint8_t { direct, guard, missing, hole, composite, preparation, count };
+// Per-kind batches count newly queued batches; raster draws are separate.
+struct compose_static_draw_work_t {
+    std::size_t calls{}, vertices{}, indices{}, batches{}, scanned{}, extracted{};
+    std::size_t raster_vertices{}, raster_indices{}, raster_draws{};
+    std::uint64_t nanoseconds{};
+    auto operator==(const compose_static_draw_work_t&) const -> bool = default;
+};
+struct compose_static_work_t {
+    std::array<std::array<compose_static_draw_work_t, static_cast<std::size_t>(compose_static_draw_kind_t::count)>, 11> passes{};
+    std::size_t source_index_rebuilds{}, source_records{}, scanned{}, extracted{};
+    std::size_t vertices{}, indices{}, draw_calls{}, tile_hits{}, tile_misses{}, tiles_prepared{}, tile_bytes{};
+    std::uint64_t index_nanoseconds{};
+    auto operator==(const compose_static_work_t&) const -> bool = default;
+};
+// Opt-in attribution for isolated correctness/performance drivers; no logging or
+// per-object instrumentation is added to normal rendering.
+void measure_compose_static_work_for_testing(nk_context*, bool enabled);
+auto compose_static_work_for_testing(nk_context*) -> compose_static_work_t;
 // The backend owns one canvas cache per main or comparison field surface.
 // Its implementation retains interval indices and tile projection scratch.
 struct compose_canvas_cache_t {

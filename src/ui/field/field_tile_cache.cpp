@@ -6,6 +6,13 @@
 #include <limits>
 namespace wormedit::ui::field {
 namespace {
+// Pass ten is the BGA lane. Both admission paths share this rotation so every
+// static layer eventually receives the same bounded preparation opportunity.
+auto can_admit_pass(unsigned pass, std::uint64_t frame) -> bool {
+    constexpr unsigned pass_count = 10;
+    const auto admitted = static_cast<unsigned>((frame - 1) % pass_count + 1);
+    return pass == admitted || pass == admitted % pass_count + 1;
+}
 struct raster_geometry_t {
     std::vector<SDL_Vertex> transformed_vertices;
     std::vector<std::uint32_t> transformed_indices;
@@ -247,8 +254,7 @@ void field_tile_cache_t::capture(const renderer_t& field, const tile_request_t& 
                                 std::size_t first_index) {
     // Rotate admitted passes so an exposed background strip cannot starve
     // dense notes and timing during continuous following.
-    const auto admitted=static_cast<unsigned>((frame_-1)%9+1);
-    if (request.key.pass!=admitted && request.key.pass!=admitted%9+1) return;
+    if (!can_admit_pass(request.key.pass, frame_)) return;
     if (!device_ || request.viewport.w <= 0 || request.viewport.w > 4096 ||
         request.viewport.h<=0 || request.viewport.h>4096 ||
         !std::isfinite(request.origin) || std::abs(request.origin)>1e12) return;
@@ -283,8 +289,7 @@ void field_tile_cache_t::prepare(renderer_t& scratch, const tile_request_t& requ
         request.viewport.w<=0 || request.viewport.w>4096 || request.viewport.h<=0 ||
         request.viewport.h>4096 || !std::isfinite(covered_begin) ||
         !std::isfinite(covered_end) || source_bytes >= tile_budget_t::limit) return;
-    const auto admitted=static_cast<unsigned>((frame_-1)%9+1);
-    if (request.key.pass!=admitted && request.key.pass!=admitted%9+1) return;
+    if (!can_admit_pass(request.key.pass, frame_)) return;
     const auto [first,last]=visible_tiles(request);
     for (auto tile=first; tile<=last && budget_.prepared()<2; ++tile) {
         const auto origin=tile*512.0;

@@ -233,3 +233,69 @@ TEST_CASE("The BGA static pass participates in both bounded tile admission paths
     SDL_DestroyRenderer(device);
     SDL_DestroySurface(surface);
 }
+
+TEST_CASE("Static tile preparation honors the remaining shared frame allowance", "[ui][field][tile]") {
+    tile_budget_t budget;
+    budget.begin(0);
+    expect_tile(!budget.reserve(1) && !budget.can_prepare());
+    budget.begin(1);
+    expect_tile(budget.reserve(1));
+    expect_tile(!budget.reserve(1) && !budget.can_prepare());
+    budget.begin(100);
+    expect_tile(budget.reserve(1) && budget.reserve(1));
+    expect_tile(!budget.reserve(1));
+}
+
+TEST_CASE("Static tile readiness validates complete coverage without queuing partial quads", "[ui][field][tile]") {
+    auto* surface = SDL_CreateSurface(32,32,SDL_PIXELFORMAT_RGBA32);
+    auto* device = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    expect_tile(device != nullptr);
+    {
+        field_tile_cache_t cache;
+        renderer_t source;
+        tile_request_t request;
+        request.key.pass = 1;
+        request.viewport = {0,0,32,32};
+        cache.begin(device);
+        expect_tile(!cache.is_ready(request));
+        source.begin(request.viewport);
+        source.rect(1,request.viewport,{1,2,3,255});
+        cache.capture(source,request,0);
+        expect_tile(cache.is_ready(request));
+        request.viewport.h = 64;
+        expect_tile(!cache.is_ready(request));
+        expect_tile(cache.work().composites == 0);
+    }
+    SDL_DestroyRenderer(device); SDL_DestroySurface(surface);
+}
+
+TEST_CASE("Static tile capture rejects oversized translation scratch without changing direct geometry", "[ui][field][tile]") {
+    auto* surface = SDL_CreateSurface(32,32,SDL_PIXELFORMAT_RGBA32);
+    auto* device = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+    expect_tile(device != nullptr);
+    {
+        renderer_t source;
+        tile_request_t request;
+        request.key.pass = 1;
+        request.viewport = {1,1,16,16}; // Nonzero origin requires a translated copy.
+        source.begin(request.viewport);
+        for (unsigned index = 0; index < 50000; ++index)
+            source.rect(1,request.viewport,{10,20,30,255});
+        const auto vertex_count = source.vertices().size(), index_count = source.indices().size();
+        const auto* vertices = source.vertices().data();
+        const auto* indices = source.indices().data();
+        const auto used_bytes = source.vertices().size_bytes() + source.indices().size_bytes();
+        expect_tile(vertex_count == 200000 && index_count == 300000);
+        expect_tile(used_bytes > tile_geometry_scratch_budget && used_bytes < 2*tile_geometry_scratch_budget);
+        field_tile_cache_t cache;
+        cache.begin(device);
+        cache.capture(source,request,0);
+        expect_tile(cache.work().prepared == 0 && cache.work().raster_vertices == 0);
+        const auto missing = cache.missing(request);
+        expect_tile(missing.size() == 1 && missing[0].x == 1 && missing[0].y == 1 &&
+            missing[0].w == 16 && missing[0].h == 16);
+        expect_tile(source.vertices().data() == vertices && source.indices().data() == indices &&
+            source.vertices().size() == vertex_count && source.indices().size() == index_count);
+    }
+    SDL_DestroyRenderer(device); SDL_DestroySurface(surface);
+}

@@ -6,6 +6,13 @@
 #include <limits>
 namespace wormedit::ui::field {
 namespace {
+auto can_retain_logical_tiles(SDL_Renderer* renderer) -> bool {
+    if (!renderer) return false;
+    const auto* name=SDL_GetRendererName(renderer);
+    if (!name || SDL_strcmp(name,"software")!=0) return true;
+    float x{},y{};
+    return SDL_GetRenderScale(renderer,&x,&y) && x==std::trunc(x) && y==std::trunc(y);
+}
 // Pass ten is the BGA lane. Both admission paths share this rotation so every
 // static layer eventually receives the same bounded preparation opportunity.
 auto can_admit_pass(unsigned pass, std::uint64_t frame) -> bool {
@@ -30,7 +37,7 @@ struct raster_geometry_t {
         if (first_vertex || request.viewport.x || request.viewport.y || offset) {
             const auto bytes =
                 source.size() * sizeof(SDL_Vertex) + selected.size() * sizeof(std::uint32_t);
-            if (bytes > 8 * 1024 * 1024)
+            if (bytes > tile_geometry_scratch_budget)
                 return false;
             transformed_vertices.assign(source.begin(), source.end());
             transformed_indices.assign(selected.begin(), selected.end());
@@ -76,7 +83,7 @@ auto subtract_rectangles(SDL_FRect bounds, std::span<const SDL_FRect> holes)
     return output;
 }
 auto tile_budget_t::reserve(std::size_t bytes) noexcept -> bool {
-    if (prepared_ == 2 || bytes > allowance() || bytes_ > allowance() - bytes) return false;
+    if (!can_prepare() || bytes > allowance() || bytes_ > allowance() - bytes) return false;
     bytes_ += bytes;
     ++prepared_;
     return true;
@@ -94,14 +101,17 @@ struct field_tile_cache_t::entry_t {
 };
 field_tile_cache_t::field_tile_cache_t() = default;
 field_tile_cache_t::~field_tile_cache_t() = default;
-void field_tile_cache_t::begin(SDL_Renderer* device) {
+void field_tile_cache_t::begin(SDL_Renderer* device, std::size_t maximum_preparations) {
+    // Software's quad shortcut and intermediate glyph sampling do not retain
+    // fractional-scale coverage. Keep its original direct rendering path.
+    if (!can_retain_logical_tiles(device)) device=nullptr;
     if (device != device_) {
         entries_.clear();
         budget_ = {};
         device_ = device;
     }
     ++frame_;
-    budget_.begin();
+    budget_.begin(maximum_preparations);
     work_ = {};
 }
 void field_tile_cache_t::account_source(std::size_t bytes) {
@@ -179,6 +189,19 @@ auto field_tile_cache_t::missing(const tile_request_t& request) -> std::vector<S
     }
     return result;
 }
+auto field_tile_cache_t::is_ready(const tile_request_t& request) -> bool {
+    if (!device_ || !std::isfinite(request.origin) || std::abs(request.origin)>1e12 ||
+        request.viewport.w<=0 || request.viewport.w>4096 || request.viewport.h<=0 ||
+        request.viewport.h>4096) return false;
+    const auto [first,last] = visible_tiles(request);
+    for (auto tile = first; tile <= last; ++tile) {
+        auto key = request.key; key.tile = tile;
+        const auto* entry = find(key);
+        const auto [begin,end] = tile_clip(request,tile);
+        if (!entry || entry->begin > begin || entry->end < end) return false;
+    }
+    return true;
+}
 auto field_tile_cache_t::composite(renderer_t& field, const tile_request_t& request,
                                    std::span<const SDL_FRect> holes) -> bool {
     if (!device_ || !std::isfinite(request.origin) || std::abs(request.origin)>1e12 ||
@@ -193,15 +216,21 @@ auto field_tile_cache_t::composite(renderer_t& field, const tile_request_t& requ
         const auto top=std::max(request.viewport.y,y+entry->begin);
         const auto bottom=std::min(request.viewport.y+request.viewport.h,y+entry->end);
         if (bottom<=top) continue;
-        for (const auto region:subtract_rectangles(
-            {request.viewport.x,top,request.viewport.w,bottom-top},holes)) {
+        const SDL_FRect bounds{request.viewport.x,top,request.viewport.w,bottom-top};
+        if (holes.empty()) {
+            field.cached_quad(request.key.pass,bounds,entry->texture,
+                {0,(top-y)/512}, {request.viewport.w/entry->width,(bottom-y)/512});
+            ++work_.composites;
+            continue;
+        }
+        for (const auto region:subtract_rectangles(bounds,holes)) {
             field.cached_quad(request.key.pass,region,entry->texture,
                 {(region.x-request.viewport.x)/entry->width,(region.y-y)/512},
                 {(region.x+region.w-request.viewport.x)/entry->width,(region.y+region.h-y)/512});
             ++work_.composites;
         }
     }
-    const bool ready=missing(request).empty();
+    const bool ready=is_ready(request);
     if (ready) ++work_.hits; else ++work_.misses;
     return ready;
 }
@@ -237,6 +266,16 @@ auto field_tile_cache_t::raster(entry_t& entry, const renderer_t& field,
         const auto start = std::max(first_index, batch.index_offset);
         const auto finish = batch.index_offset + batch.index_count;
         if (start >= finish) continue;
+        const auto& source_clip = batch.clip;
+        const SDL_FRect translated_clip{source_clip.x-request.viewport.x,
+            source_clip.y-request.viewport.y-static_cast<float>(offset),source_clip.w,source_clip.h};
+        const SDL_Rect batch_clip{static_cast<int>(std::floor(translated_clip.x)),
+            static_cast<int>(std::floor(translated_clip.y)),
+            static_cast<int>(std::ceil(translated_clip.x+translated_clip.w)-std::floor(translated_clip.x)),
+            static_cast<int>(std::ceil(translated_clip.y+translated_clip.h)-std::floor(translated_clip.y))};
+        SDL_Rect intersection{};
+        if (!SDL_GetRectIntersection(&clip,&batch_clip,&intersection)) continue;
+        success = SDL_SetRenderClipRect(device_, &intersection) && success;
         const auto& front = vertices.front();
         success = SDL_RenderGeometryRaw(device_, batch.texture, &front.position.x, sizeof(SDL_Vertex),
             &front.color, sizeof(SDL_Vertex), &front.tex_coord.x, sizeof(SDL_Vertex),
@@ -259,7 +298,7 @@ void field_tile_cache_t::capture(const renderer_t& field, const tile_request_t& 
         request.viewport.h<=0 || request.viewport.h>4096 ||
         !std::isfinite(request.origin) || std::abs(request.origin)>1e12) return;
     const auto [first, last] = visible_tiles(request);
-    for (auto tile = first; tile <= last && budget_.prepared() < 2; ++tile) {
+    for (auto tile = first; tile <= last && budget_.can_prepare(); ++tile) {
         auto key = request.key;
         key.tile = tile;
         auto* existing = find(key);
@@ -291,7 +330,7 @@ void field_tile_cache_t::prepare(renderer_t& scratch, const tile_request_t& requ
         !std::isfinite(covered_end) || source_bytes >= tile_budget_t::limit) return;
     if (!can_admit_pass(request.key.pass, frame_)) return;
     const auto [first,last]=visible_tiles(request);
-    for (auto tile=first; tile<=last && budget_.prepared()<2; ++tile) {
+    for (auto tile=first; tile<=last && budget_.can_prepare(); ++tile) {
         const auto origin=tile*512.0;
         if (origin<covered_begin || origin+512>covered_end) continue;
         auto key=request.key; key.tile=tile;
@@ -300,9 +339,11 @@ void field_tile_cache_t::prepare(renderer_t& scratch, const tile_request_t& requ
         auto* entry=acquire(key, static_cast<int>(std::ceil(request.viewport.w)));
         if (!entry || (existing && !budget_.reserve(0))) continue;
         paint(scratch, origin);
+        const auto painted=scratch.viewport();
+        if (!scratch.translate_geometry({-painted.x,-painted.y})) continue;
         auto full=request;
         full.origin=origin;
-        full.viewport={0,0,request.viewport.w,512};
+        full.viewport=scratch.viewport();
         if (!raster(*entry,scratch,full,0,0,512)) {
             entry->begin=512; entry->end=0;
             continue;

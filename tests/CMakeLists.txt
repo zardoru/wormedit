@@ -559,7 +559,13 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_nuklear_sdl_backend_tests
         ui/nuklear_sdl_backend_tests.cpp
+        ui/sdl_region_frame_tests.cpp
+        ui/lucide_icons_tests.cpp
         ../src/ui/nuklear/app/sdl_backend.cpp
+        ../src/ui/nuklear/render/sdl_command_mesh.cpp
+        ../src/ui/nuklear/render/sdl_region_cache.cpp
+        ../src/ui/nuklear/render/sdl_region_frame.cpp
+        ../src/ui/nuklear/render/lucide_icons.cpp
         ../src/ui/field/field_renderer.cpp
         ../src/ui/field/field_tile_cache.cpp
         ../src/common/static_interval_index.cpp
@@ -585,6 +591,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
         ../src/ui/nuklear/app/sdl_backend.cpp
+        ../src/ui/nuklear/render/sdl_command_mesh.cpp
+        ../src/ui/nuklear/render/sdl_region_cache.cpp
+        ../src/ui/nuklear/render/sdl_region_frame.cpp
+        ../src/ui/nuklear/render/lucide_icons.cpp
         ../src/sys/app/frame_timing.cpp)
     target_include_directories(wormedit_field_renderer_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
@@ -594,6 +604,36 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         TEST_PREFIX "field-renderer."
         PROPERTIES LABELS unit LABELS frontend LABELS rendering
             ENVIRONMENT SDL_VIDEODRIVER=dummy ENVIRONMENT SDL_AUDIODRIVER=dummy
+        DISCOVERY_MODE PRE_TEST)
+
+    add_executable(wormedit_sdl_region_cache_tests
+        ui/sdl_region_cache_tests.cpp
+        ../src/ui/nuklear/render/sdl_region_cache.cpp
+        ../src/ui/nuklear/render/sdl_command_mesh.cpp
+        ../src/ui/field/field_renderer.cpp
+        ../src/ui/field/field_tile_cache.cpp
+        ../src/ui/field/field_glyphs.cpp
+        ../src/common/static_interval_index.cpp)
+    target_include_directories(wormedit_sdl_region_cache_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_link_libraries(wormedit_sdl_region_cache_tests PRIVATE
+        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_sdl_region_cache_tests
+        TEST_PREFIX "sdl-region-cache."
+        PROPERTIES LABELS unit LABELS frontend LABELS rendering
+            ENVIRONMENT SDL_VIDEODRIVER=dummy ENVIRONMENT SDL_AUDIODRIVER=dummy
+        DISCOVERY_MODE PRE_TEST)
+
+    add_executable(wormedit_sdl_command_mesh_tests
+        ui/sdl_command_mesh_tests.cpp
+        ../src/ui/nuklear/render/sdl_command_mesh.cpp)
+    target_include_directories(wormedit_sdl_command_mesh_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_link_libraries(wormedit_sdl_command_mesh_tests PRIVATE
+        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_sdl_command_mesh_tests
+        TEST_PREFIX "sdl-command-mesh."
+        PROPERTIES LABELS unit LABELS frontend LABELS rendering
         DISCOVERY_MODE PRE_TEST)
 
     add_executable(wormedit_player_preview_texture_tests

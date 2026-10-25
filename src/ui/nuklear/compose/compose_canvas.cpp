@@ -132,6 +132,7 @@ static_assert(sizeof(wormedit::ui::compose_note_view_t)<=144 && sizeof(wormedit:
     sizeof(wormedit::ui::compose_lane_view_t)<=96 && sizeof(wormedit::ui::compose_band_view_t)<=96 &&
     sizeof(wormedit::ui::compose_bgm_lane_view_t)<=104 && sizeof(wormedit::ui::compose_bga_event_view_t)<=112 &&
     sizeof(wormedit::ui::compose_grid_line_view_t)<=96);
+struct static_paint_window_t { double origin{},height{}; };
 struct static_paint_storage_t {
     static_paint_indices_t& indices;
     explicit static_paint_storage_t(static_paint_indices_t& source) : indices(source) {}
@@ -188,7 +189,7 @@ struct static_paint_storage_t {
         view.bga_lane_visible = current.bga_lane_visible;
         view.bga_lane_bounds = current.bga_lane_bounds;
         view.timing_lane_visibility_mask = current.timing_lane_visibility_mask;
-        view.has_waveform_geometry = !current.waveform_rows.empty();
+        view.has_waveform_geometry = current.has_waveform_geometry || !current.waveform_rows.empty();
         view.waveform_timing_locked = current.waveform_timing_locked;
         view.beat_fit_chart_row = current.beat_fit_chart_row;
         view.beat_fit_drag_active = current.beat_fit_drag_active;
@@ -202,16 +203,17 @@ struct static_paint_storage_t {
     // Tile callbacks need drawing metadata and the selected primitive pass only.
     // Keep their owned rows between callbacks instead of copying the complete frame view.
     void build(const wormedit::ui::compose_view_t& current, unsigned pass,
-               double origin, double height, double scale) {
+               static_paint_window_t query,static_paint_window_t projection) {
         copy_drawing_metadata(current);
         view.bands.clear(); view.lanes.clear(); view.grid_lines.clear();
         view.timing_markers.clear(); view.hold_bodies.clear(); view.note_endpoints.clear();
         view.bgm_lanes.clear(); view.bgm_events.clear(); view.bga_events.clear();
         const auto& source=*current.static_scene;
-        const auto offset=current.static_scene_world_origin_pixels-origin/scale;
+        const auto offset=current.static_scene_world_origin_pixels-projection.origin;
         const auto margin=std::max(32.0,indices.glyph_guard);
-        const auto begin=-offset-margin, end=-offset+height/scale+margin;
-        view.viewport_height_pixels=height/scale;
+        const auto query_begin=query.origin-current.static_scene_world_origin_pixels;
+        const auto begin=query_begin-margin, end=query_begin+query.height+margin;
+        view.viewport_height_pixels=projection.height;
         switch (pass) {
         case 2:
             select(2,source.bands,view.bands,begin,end,offset);
@@ -255,7 +257,9 @@ class static_draw_work_scope_t {
   public:
     static_draw_work_scope_t(nk_context* context, unsigned pass, static_draw_kind_t kind)
         : context_(context), field_(paint_field(context)) {
-        auto& cache = canvas_cache(context);
+        auto& owner = wormedit::ui::nuklear::compose_canvas_cache(context);
+        if (!owner) return;
+        auto& cache = static_cast<canvas_cache_state_t&>(*owner);
         if (!cache.measure_static_work || pass >= cache.static_work.passes.size()) return;
         work_ = &cache.static_work.passes[pass][static_cast<std::size_t>(kind)];
         vertices_ = field_.vertices().size();
@@ -307,7 +311,9 @@ void refresh_static_work(nk_context* context, const wormedit::ui::compose_view_t
     }
 }
 void finish_static_work(nk_context* context) {
-    auto& cache = canvas_cache(context);
+    auto& owner = wormedit::ui::nuklear::compose_canvas_cache(context);
+    if (!owner) return;
+    auto& cache = static_cast<canvas_cache_state_t&>(*owner);
     if (!cache.measure_static_work) return;
     const auto& field = paint_field(context);
     const auto total = field.workload();
@@ -325,11 +331,15 @@ void finish_static_work(nk_context* context) {
 }
 // The renderer's existing bounded tile geometry scratch still reserves 4 MiB.
 // Owned view scratch is charged by its actual retained capacity, including prior charts.
-constexpr std::size_t tile_geometry_scratch_budget_bytes = 4 * 1024 * 1024;
 auto canvas_cache_bytes(nk_context* context) -> std::size_t {
     const auto& cache = canvas_cache(context);
     return cache.indices.bytes + cache.scratch.accounted_bytes() +
-        tile_geometry_scratch_budget_bytes;
+        wormedit::ui::field::tile_geometry_scratch_budget;
+}
+auto canvas_accounted_source_bytes(nk_context* context, const wormedit::ui::compose_view_t& view)
+    -> std::size_t {
+    return view.static_scene_accounted_bytes + canvas_cache_bytes(context) +
+        wormedit::ui::field::chrome_cache_reservation;
 }
 }
 
@@ -534,10 +544,19 @@ auto compose_quantize_ghost_draw_state_for_testing() -> WormUiTestingComposeGhos
     return quantize_ghost_draw_state;
 }
 
+static auto compose_document_viewport_origin(const wormedit::ui::compose_view_t& view) -> double {
+    return view.downscroll ? -view.area_scroll_pixels-view.viewport_height_pixels : view.area_scroll_pixels;
+}
+
+static auto compose_projection_y_scale(const wormedit::ui::compose_view_t& view, struct nk_rect viewport)
+    -> float {
+    return viewport.h/static_cast<float>(view.viewport_height_pixels);
+}
+
 static struct nk_rect compose_unclipped_screen_rect(const wormedit::ui::compose_rect_t* source,
                                           const wormedit::ui::compose_view_t* view, struct nk_rect viewport) {
     const auto x_scale = viewport.w / static_cast<float>(view->viewport_width_pixels);
-    const auto y_scale = viewport.h / static_cast<float>(view->viewport_height_pixels);
+    const auto y_scale = compose_projection_y_scale(*view,viewport);
     const auto left = viewport.x + static_cast<float>(source->left) * x_scale;
     const auto top = viewport.y + static_cast<float>(source->top) * y_scale;
     const auto right = viewport.x + static_cast<float>(source->right) * x_scale;
@@ -646,9 +665,8 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
     const auto& view=*paint.view;
     wormedit::ui::field::tile_request_t request;
     request.viewport={paint.viewport.x,paint.viewport.y,paint.viewport.w,paint.viewport.h};
-    const auto scale=paint.viewport.h/static_cast<float>(view.viewport_height_pixels);
-    request.origin=scrolling ? (view.downscroll ? -view.area_scroll_pixels*scale-paint.viewport.h
-                                               : view.area_scroll_pixels*scale) : 0;
+    const auto scale=compose_projection_y_scale(view,paint.viewport);
+    request.origin=scrolling ? compose_document_viewport_origin(view)*scale : 0;
     request.key.pass=pass;
     request.key.style={view.static_scene_style_generation ^
         (wormedit::ui::theme::field_generation() * 0x9E3779B97F4A7C15ULL),
@@ -677,34 +695,23 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         view.timing_lane_visibility_mask,view.downscroll,
         reinterpret_cast<std::uintptr_t>(paint.context->style.font) ^
             (compose_bgm_lane_width_digest(view) * 0x9E3779B97F4A7C15ULL)};
+    request.key.identity.back()=(request.key.identity.back() ^
+        wormedit::ui::nuklear::compose_field_font_generation(paint.context))*1099511628211ULL;
     return request;
-}
-template<class T>
-static void shift_static_records(std::vector<T>& values, double offset) {
-    for (auto& value:values) {
-        if constexpr (requires { value.bounds; }) {
-            value.bounds.top+=offset; value.bounds.bottom+=offset;
-        } else if constexpr (requires { value.y_pixels; }) value.y_pixels+=offset;
-        else value.marker_y_pixels+=offset;
-    }
 }
 template<class Draw>
 static void draw_indexed_region(const ComposePaintContext& paint,unsigned pass,
-                                SDL_FRect region,double viewport_origin,Draw draw) {
-    if (!paint.view->static_scene) { draw(paint); return; }
-    const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
+                                SDL_FRect region,Draw draw) {
+    if (!paint.view->static_scene || pass==5) { draw(paint); return; }
+    const double scale=compose_projection_y_scale(*paint.view,paint.viewport);
     const auto delta=region.y-paint.viewport.y;
     auto& storage = canvas_cache(paint.context).scratch;
-    storage.build(*paint.view,pass,viewport_origin+delta,region.h,scale);
+    const static_paint_window_t projection{compose_document_viewport_origin(*paint.view),
+                                            paint.view->viewport_height_pixels};
+    const static_paint_window_t query{projection.origin+delta/scale,region.h/scale};
+    storage.build(*paint.view,pass,query,projection);
     wormedit::ui::nuklear::compose_field(paint.context).account_tile_source(
-        paint.view->static_scene_accounted_bytes + canvas_cache_bytes(paint.context));
-    storage.view.viewport_height_pixels=paint.view->viewport_height_pixels;
-    const auto offset=delta/scale;
-    shift_static_records(storage.view.bands,offset); shift_static_records(storage.view.lanes,offset);
-    shift_static_records(storage.view.grid_lines,offset); shift_static_records(storage.view.timing_markers,offset);
-    shift_static_records(storage.view.hold_bodies,offset); shift_static_records(storage.view.bgm_lanes,offset);
-    shift_static_records(storage.view.bgm_events,offset); shift_static_records(storage.view.bga_events,offset);
-    shift_static_records(storage.view.note_endpoints,offset);
+        canvas_accounted_source_bytes(paint.context, *paint.view));
     if (pass == 6) {
         // The interval halo includes neighboring bodies, but direct projection
         // publishes timing markers only when their centers are in the viewport.
@@ -720,27 +727,32 @@ template<class Draw>
 static void prepare_compose_tiles(const ComposePaintContext& paint,unsigned pass,
                                   const wormedit::ui::field::tile_request_t& request,Draw draw) {
     if (!paint.view->static_scene) return;
-    const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
+    const double scale=compose_projection_y_scale(*paint.view,paint.viewport);
+    // Integer staging keeps legacy truncation in the positive screen-coordinate
+    // domain. The tile rasterizer translates geometry and clips back afterward.
+    constexpr SDL_FPoint raster_origin{0,4096};
     paint_field(paint.context).prepare_tiles(request,
         paint.view->static_scene_covered_begin_pixels*scale,
         paint.view->static_scene_covered_end_pixels*scale,
-        paint.view->static_scene_accounted_bytes+canvas_cache_bytes(paint.context),
+        canvas_accounted_source_bytes(paint.context, *paint.view),
         [&](auto& renderer,double origin) {
             tile_renderer_scope_t scoped(renderer);
             // A geometry halo prevents tile-edge clipping from changing authored
             // arrow centers or clamped timing marker bodies before raster cropping.
             const auto halo=std::max(96.0f,paint.viewport.w*.5f);
             auto& storage = canvas_cache(paint.context).scratch;
-            storage.build(*paint.view,pass,origin-halo,512+2*halo,scale);
+            const static_paint_window_t window{(origin-halo)/scale,(512+2*halo)/scale};
+            storage.build(*paint.view,pass,window,window);
             wormedit::ui::nuklear::compose_field(paint.context).account_tile_source(
-                paint.view->static_scene_accounted_bytes + canvas_cache_bytes(paint.context));
+                canvas_accounted_source_bytes(paint.context, *paint.view));
             auto prepared=paint;
             storage.view.hover_note_visible=false;
             prepared.view=&storage.view;
-            prepared.viewport=nk_rect(0,-halo,paint.viewport.w,512+2*halo);
-            prepared.rail=nk_rect(0,-halo,paint.rail.w,512+2*halo);
+            const auto staged=renderer.viewport();
+            prepared.viewport=nk_rect(staged.x,staged.y-halo,paint.viewport.w,512+2*halo);
+            prepared.rail=nk_rect(staged.x,staged.y-halo,paint.rail.w,512+2*halo);
             draw(prepared);
-        });
+        },raster_origin);
 }
 static void append_hover_hole(std::vector<SDL_FRect>& holes,SDL_FRect bounds,
                                const ComposePaintContext& paint) {
@@ -754,8 +766,7 @@ static void append_hover_hole(std::vector<SDL_FRect>& holes,SDL_FRect bounds,
 }
 static auto hover_source_rect(const ComposePaintContext& paint,wormedit::ui::compose_rect_t bounds)
     -> struct nk_rect {
-    const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
-    const auto origin=compose_tile_request(paint,9,true).origin/scale;
+    const auto origin=compose_document_viewport_origin(*paint.view);
     const auto offset=paint.view->static_scene_world_origin_pixels-origin;
     bounds.top+=offset; bounds.bottom+=offset;
     return compose_screen_rect(&bounds,paint.view,paint.viewport);
@@ -800,6 +811,7 @@ static void append_hover_hold_holes(const ComposePaintContext& paint,
 }
 static auto compose_hover_holes(const ComposePaintContext& paint,unsigned pass)
     -> std::optional<std::vector<SDL_FRect>> {
+    if (!paint_field(paint.context).can_retain_tiles()) return std::nullopt;
     if (!paint.view->hover_note_visible) return std::vector<SDL_FRect>{};
     if (!paint.view->static_scene) return std::nullopt;
     const auto found=paint_indices(paint.context).notes_by_id.find(paint.view->hover_note_id.value);
@@ -822,9 +834,8 @@ static void include_note_edge_artwork(std::pair<float,float>& span, struct nk_re
 static auto append_note_edge_holes(const ComposePaintContext& paint, double edge,
                                    std::vector<SDL_FRect>& holes) -> bool {
     auto& indices=paint_indices(paint.context);
-    const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
     const auto offset=paint.view->static_scene_world_origin_pixels-
-        compose_tile_request(paint,9,true).origin/scale;
+        compose_document_viewport_origin(*paint.view);
     const auto query=indices.passes[9].query_into(
         edge-offset-indices.glyph_guard,edge-offset+indices.glyph_guard,indices.query_scratch);
     indices.scanned+=query.scanned;
@@ -847,12 +858,95 @@ static auto append_note_edge_holes(const ComposePaintContext& paint, double edge
     append_hover_hole(holes,{paint.viewport.x,span.first,paint.viewport.w,span.second-span.first},paint);
     return holes.size()<=32;
 }
+// Full tiles are admitted only inside the retained source coverage. Artwork
+// crossing its boundary must be painted once, rather than split between two
+// raster phases from a retained tile and the original direct path.
+static auto append_note_coverage_edge_hole(const ComposePaintContext& paint,double edge,
+                                            std::vector<SDL_FRect>& holes) -> bool {
+    auto& indices=paint_indices(paint.context);
+    const auto offset=paint.view->static_scene_world_origin_pixels-
+        compose_document_viewport_origin(*paint.view);
+    const auto query=indices.passes[9].query_into(
+        edge-offset-indices.glyph_guard,edge-offset+indices.glyph_guard,indices.query_scratch);
+    indices.scanned+=query.scanned;
+    indices.extracted+=query.count;
+    if (query.overflow) return false;
+    const auto screen_edge=paint.viewport.y+edge*compose_projection_y_scale(*paint.view,paint.viewport);
+    std::pair<float,float> span{paint.viewport.y+paint.viewport.h,paint.viewport.y};
+    for (const auto index:std::span<const std::size_t>(indices.query_scratch).first(query.count)) {
+        const auto& note=paint.view->static_scene->note_endpoints[index];
+        auto bounds=note.bounds;
+        bounds.top+=offset; bounds.bottom+=offset;
+        const auto raw=compose_unclipped_screen_rect(&bounds,paint.view,paint.viewport);
+        const auto artwork=compose_note_artwork_rect(raw,note.glyph);
+        if (artwork.y>=screen_edge || artwork.y+artwork.h<=screen_edge) continue;
+        include_note_edge_artwork(span,raw,note.glyph);
+        include_note_edge_artwork(span,compose_screen_rect(&bounds,paint.view,paint.viewport),note.glyph);
+    }
+    append_hover_hole(holes,{paint.viewport.x,span.first,paint.viewport.w,span.second-span.first},paint);
+    return holes.size()<=32;
+}
+template<class AppendEdge>
+static auto append_retained_coverage_holes(const ComposePaintContext& paint,
+                                           std::vector<SDL_FRect>& holes,AppendEdge append) -> bool {
+    const double scale=compose_projection_y_scale(*paint.view,paint.viewport);
+    const auto begin=std::ceil(paint.view->static_scene_covered_begin_pixels*scale/512)*512;
+    const auto end=std::floor(paint.view->static_scene_covered_end_pixels*scale/512)*512;
+    if (begin>=end) return true;
+    const auto origin=compose_document_viewport_origin(*paint.view);
+    for (const auto boundary:std::array{begin,end}) {
+        const auto edge=boundary/scale-origin;
+        if (edge<=0 || edge>=paint.view->viewport_height_pixels) continue;
+        if (!append(paint,edge,holes)) return false;
+    }
+    return true;
+}
+static auto append_note_coverage_holes(const ComposePaintContext& paint,
+                                       std::vector<SDL_FRect>& holes) -> bool {
+    return append_retained_coverage_holes(paint,holes,append_note_coverage_edge_hole);
+}
+static auto append_timing_coverage_edge_hole(const ComposePaintContext& paint,double edge,
+                                             std::vector<SDL_FRect>& holes) -> bool {
+    auto& indices=paint_indices(paint.context);
+    const auto offset=paint.view->static_scene_world_origin_pixels-
+        compose_document_viewport_origin(*paint.view);
+    const auto radius=std::max(indices.glyph_guard,double(paint.context->style.font->height+12));
+    const auto query=indices.passes[6].query_into(edge-offset-radius,edge-offset+radius,indices.query_scratch);
+    indices.scanned+=query.scanned;
+    indices.extracted+=query.count;
+    if (query.overflow) return false;
+    const auto screen_edge=paint.viewport.y+edge*compose_projection_y_scale(*paint.view,paint.viewport);
+    std::pair<float,float> span{paint.viewport.y+paint.viewport.h,paint.viewport.y};
+    for (const auto index:std::span<const std::size_t>(indices.query_scratch).first(query.count)) {
+        auto marker=paint.view->static_scene->timing_markers[index];
+        marker.marker_y_pixels+=offset;
+        const auto bounds=wormedit::ui::compose_timing_marker_bounds(*paint.view,marker);
+        auto artwork=compose_unclipped_screen_rect(&bounds,paint.view,paint.viewport);
+        if (artwork.w<=0 || artwork.h<=0) continue;
+        const auto height=std::max(artwork.h,paint.context->style.font->height);
+        artwork.y-=(height-artwork.h)*.5f+6; artwork.h=height+12;
+        if (artwork.y>=screen_edge || artwork.y+artwork.h<=screen_edge) continue;
+        span.first=std::min(span.first,artwork.y);
+        span.second=std::max(span.second,artwork.y+artwork.h);
+    }
+    append_hover_hole(holes,{paint.viewport.x,span.first,paint.viewport.w,span.second-span.first},paint);
+    return holes.size()<=32;
+}
+static auto compose_timing_coverage_holes(const ComposePaintContext& paint)
+    -> std::optional<std::vector<SDL_FRect>> {
+    if (!paint_field(paint.context).can_retain_tiles()) return std::nullopt;
+    std::vector<SDL_FRect> holes;
+    if (paint.view->static_scene &&
+        !append_retained_coverage_holes(paint,holes,append_timing_coverage_edge_hole)) return std::nullopt;
+    return holes;
+}
 static auto compose_note_holes(const ComposePaintContext& paint)
     -> std::optional<std::vector<SDL_FRect>> {
     auto holes=compose_hover_holes(paint,9);
     if (!holes || !paint.view->static_scene) return holes;
     if (!append_note_edge_holes(paint,0,*holes) ||
-        !append_note_edge_holes(paint,paint.view->viewport_height_pixels,*holes)) return std::nullopt;
+        !append_note_edge_holes(paint,paint.view->viewport_height_pixels,*holes) ||
+        !append_note_coverage_holes(paint,*holes)) return std::nullopt;
     return holes;
 }
 template<class Draw>
@@ -863,7 +957,7 @@ static void draw_static_tile_region(const ComposePaintContext& paint,unsigned pa
     auto& field=paint_field(paint.context);
     const auto previous=field.push_clip(region);
     const auto first=field.indices().size();
-    if (indexed) draw_indexed_region(paint,pass,region,base.origin,draw);
+    if (indexed) draw_indexed_region(paint,pass,region,draw);
     else draw(paint);
     if (capture) {
         auto strip=base;
@@ -882,17 +976,16 @@ template<class Draw>
 static void draw_compose_cached_pass(const ComposePaintContext& paint, unsigned pass,
                                     bool scrolling, bool dynamic, Draw draw,
                                     std::span<const SDL_FRect> holes={}) {
-    if (dynamic) {
+    if (dynamic || !paint_field(paint.context).can_retain_tiles()) {
         const static_draw_work_scope_t measured{paint.context, pass, static_draw_kind_t::direct};
         draw(paint);
         return;
     }
     auto& field=paint_field(paint.context);
     auto request=compose_tile_request(paint,pass,scrolling);
-    const auto viewport_origin=request.origin;
     const auto base_request=request;
     const bool retained=scrolling && paint.view->static_scene;
-    const auto scale=paint.viewport.h/paint.view->viewport_height_pixels;
+    const double scale=compose_projection_y_scale(*paint.view,paint.viewport);
     const auto guard_size=pass==9 ? paint_indices(paint.context).glyph_guard*scale : 32.0;
     if (scrolling && pass!=2 && guard_size>=request.viewport.h*.5) {
         const static_draw_work_scope_t measured{paint.context, pass, static_draw_kind_t::direct};
@@ -935,7 +1028,7 @@ static void draw_compose_cached_pass(const ComposePaintContext& paint, unsigned 
     for (const auto hole:holes) {
         const static_draw_work_scope_t measured{paint.context, pass, static_draw_kind_t::hole};
         const auto previous=field.push_clip(hole);
-        draw_indexed_region(paint,pass,hole,viewport_origin,draw);
+        draw_indexed_region(paint,pass,hole,draw);
         field.pop_clip(previous);
     }
 }
@@ -2341,7 +2434,10 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
         compose_hovered_timing_marker(paint)!=nullptr ||
         std::ranges::any_of(std::span(paint.view->timing_markers),
                            [](const auto& marker) { return marker.selected; });
-    draw_compose_cached_pass(paint,6,true,active_marker,[&](const ComposePaintContext& cached) { draw_compose_timing_markers(cached,layout); });
+    const auto holes=compose_timing_coverage_holes(paint);
+    draw_compose_cached_pass(paint,6,true,active_marker || !holes,
+        [&](const ComposePaintContext& cached) { draw_compose_timing_markers(cached,layout); },
+        holes ? std::span<const SDL_FRect>(*holes) : std::span<const SDL_FRect>{});
     draw_compose_timing_preview_markers(paint, layout);
     draw_compose_timing_stage_marker(paint, layout);
     draw_compose_beat_sections(paint);
@@ -3574,6 +3670,16 @@ static void bind_compose_field_layout(const wormedit::ui::compose_view_t& view) 
     wormedit::ui::theme::bind_field_layout(field_lanes);
 }
 
+static void begin_compose_scene_field(nk_context* context, const wormedit::ui::compose_view_t& view,
+                                      struct nk_rect viewport) {
+    bind_compose_field_layout(view);
+    auto& field=wormedit::ui::nuklear::begin_compose_field(context,
+        {viewport.x,viewport.y,viewport.w,viewport.h});
+    if (!field.can_retain_tiles()) return;
+    refresh_static_work(context,view);
+    field.account_tile_source(canvas_accounted_source_bytes(context,view));
+}
+
 void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_view_t* view,
                                       nk_command_buffer* canvas, struct nk_rect viewport) {
     last_compose_viewport_for_testing = wormedit::ui::testing_rect_view_t{
@@ -3584,12 +3690,7 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
         if (owner) static_cast<canvas_cache_state_t&>(*owner).static_work = {};
         return;
     }
-    bind_compose_field_layout(*view);
-    wormedit::ui::nuklear::begin_compose_field(context,
-                                              {viewport.x, viewport.y, viewport.w, viewport.h});
-    refresh_static_work(context, *view);
-    paint_field(context).account_tile_source(view->static_scene_accounted_bytes+
-        canvas_cache_bytes(context));
+    begin_compose_scene_field(context,*view,viewport);
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
     const ComposePaintContext background{context, view, canvas, viewport, viewport};
@@ -3616,6 +3717,7 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
         draw_compose_scene_background(paint, timing_layout);
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
+            !wormedit::ui::nuklear::can_retain_compose_grid(context) ||
             view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
         draw_compose_lane_layout_segments(paint);
         draw_compose_measure_lane(paint);
@@ -3637,7 +3739,8 @@ void draw_compose_scene_canvas(nk_context* context, const wormedit::ui::compose_
             }
         },hold_holes ? std::span<const SDL_FRect>(*hold_holes) : std::span<const SDL_FRect>{});
         const auto hovered_bgm = draw_compose_audio_markers(paint,!grouped);
-        draw_compose_cached_pass(paint,9,true,active_notes || !note_holes,
+        draw_compose_cached_pass(paint,9,true,active_notes || !note_holes ||
+            !wormedit::ui::nuklear::can_retain_compose_glyphs(context),
             [&](const ComposePaintContext& cached) { draw_compose_notes(cached); },
             note_holes ? std::span<const SDL_FRect>(*note_holes) : std::span<const SDL_FRect>{});
         if (wormedit::ui::compose_notes_dimmed(compose_mode_of(*paint.view)))

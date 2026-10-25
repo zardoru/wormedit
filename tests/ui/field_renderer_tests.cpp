@@ -1272,3 +1272,151 @@ TEST_CASE("T459 stem and packed event waveform keys isolate equal numeric IDs",
           "[ui][field][stem][T459]") {
     expect_field(t459_equal_numeric_piece_ids_stay_isolated());
 }
+
+namespace {
+auto paint_test_strip(renderer_t& renderer,const envelope_raster_region_t& region,void*) -> bool {
+    for (std::size_t index=0; index<region.count; ++index) {
+        const auto world=region.first_world+static_cast<std::int64_t>(index);
+        const auto time=static_cast<float>(world+region.time_offset);
+        const auto amplitude=32.f+region.amplitude_offset;
+        const auto length=static_cast<float>((world%7+7)%7+1);
+        const auto bounds=region.axis==envelope_axis_t::horizontal ? SDL_FRect{time,amplitude,1,length}
+                                          : SDL_FRect{amplitude,time,length,1};
+        renderer.rect(0,bounds,{80,160,230,255});
+    }
+    return true;
+}
+auto test_strip(renderer_t& renderer,SDL_Renderer* device,std::int64_t first,
+                std::span<const std::uint64_t> fingerprints,std::uint64_t generation=1) -> bool {
+    renderer.begin({0,0,128,128},{1,1},{},device);
+    const envelope_strip_view_t strip{{16,30,32,16},static_cast<double>(first+1),first,
+        fingerprints,generation,envelope_axis_t::horizontal,paint_test_strip,nullptr};
+    return renderer.envelope_strip(0,0,strip);
+}
+}
+TEST_CASE("Horizontal envelope strip shares wrap regeneration and zero-allocation warm planning",
+          "[ui][field][envelope-strip]") {
+    field_submission_fixture_t fixture;
+    renderer_t renderer;
+    std::array<std::uint64_t,34> fingerprints{};
+    for (std::size_t index=0;index<fingerprints.size();++index) fingerprints[index]=index;
+    expect_field(test_strip(renderer,fixture.renderer,0,fingerprints));
+    expect_field(renderer.envelope_work().regenerated_rows==34);
+    expect_field(renderer.submit(fixture.renderer));
+    count_field_allocations=true;
+    field_allocations=0;
+    const auto warm=test_strip(renderer,fixture.renderer,0,fingerprints);
+    count_field_allocations=false;
+    expect_field(warm);
+    expect_field(field_allocations==0);
+    expect_field(renderer.envelope_work().regenerated_rows==0);
+    expect_field(renderer.submit(fixture.renderer));
+    std::rotate(fingerprints.begin(),fingerprints.begin()+1,fingerprints.end());
+    fingerprints.back()=34;
+    expect_field(test_strip(renderer,fixture.renderer,1,fingerprints));
+    expect_field(renderer.envelope_work().regenerated_rows==1);
+    expect_field(renderer.submit(fixture.renderer));
+    std::rotate(fingerprints.rbegin(),fingerprints.rbegin()+1,fingerprints.rend());
+    fingerprints.front()=0;
+    expect_field(test_strip(renderer,fixture.renderer,0,fingerprints));
+    expect_field(renderer.envelope_work().regenerated_rows==1);
+    expect_field(renderer.submit(fixture.renderer));
+}
+TEST_CASE("Imported triangles validate indices and preserve the active batch clip",
+          "[ui][field][triangles]") {
+    renderer_t renderer;
+    renderer.begin({0,0,128,128});
+    const auto previous=renderer.push_clip({10,20,30,40});
+    const std::array<SDL_Vertex,3> vertices{{{{0,0},{1,0,0,1},{}},
+        {{50,0},{1,0,0,1},{}},{{0,50},{1,0,0,1},{}}}};
+    const std::array<std::uint32_t,3> invalid{0,1,3},valid{0,1,2};
+    expect_field(!renderer.triangles(0,vertices,invalid));
+    expect_field(renderer.workload().vertices==0);
+    expect_field(renderer.triangles(0,vertices,valid));
+    renderer.pop_clip(previous);
+    expect_field(renderer.batches().size()==1);
+    expect_field(renderer.batches()[0].clip.x==10);
+    expect_field(renderer.batches()[0].clip.y==20);
+}
+
+TEST_CASE("Horizontal strips reject unsupported spans and invalidate changed source columns",
+          "[ui][field][envelope-strip]") {
+    field_submission_fixture_t fixture;
+    renderer_t renderer;
+    std::array<std::uint64_t,34> fingerprints{};
+    expect_field(test_strip(renderer,fixture.renderer,0,fingerprints));
+    expect_field(renderer.submit(fixture.renderer));
+    fingerprints[10]=73;
+    expect_field(test_strip(renderer,fixture.renderer,0,fingerprints));
+    expect_field(renderer.envelope_work().regenerated_rows==1);
+    expect_field(renderer.submit(fixture.renderer));
+    expect_field(test_strip(renderer,fixture.renderer,0,fingerprints,2));
+    expect_field(renderer.envelope_work().regenerated_rows==34);
+    expect_field(renderer.submit(fixture.renderer));
+    expect_field(!test_strip(renderer,fixture.renderer,0,std::span(fingerprints).first(33)));
+}
+
+namespace {
+struct staging_geometry_t {
+    float line_height{},rounded_top{},arrow_top{};
+};
+auto prepare_staging_geometry(SDL_Renderer* device,float stage) -> staging_geometry_t {
+    renderer_t renderer;
+    renderer.begin({0,0,128,128},{1,1},{},device);
+    tile_request_t request{.key={.pass=1},.viewport={0,0,128,128}};
+    staging_geometry_t result;
+    renderer.prepare_tiles(request,0,512,0,[&](renderer_t& target,double) {
+        const auto offset=target.viewport().y;
+        target.hline(1,10,30,offset,1,{255,0,0,255});
+        result.line_height=target.vertices()[2].position.y-target.vertices()[0].position.y;
+        const auto rectangle=rounded_rectangle_points({40,std::trunc(offset-6.4f),24,12},1);
+        target.stroke_polygon(1,rectangle,1.5f,{0,255,0,255});
+        result.rounded_top=rectangle[0].y-offset;
+        auto arrow=wormedit::ui::arrow_polygon(wormedit::lane_glyph_t::arrow_up,80,offset-12.4f,24);
+        result.arrow_top=std::trunc(arrow[0].y)-offset;
+    },{0,stage});
+    expect_field(renderer.tile_work().prepared==1);
+    return result;
+}
+}
+TEST_CASE("Positive tile staging preserves screen rounding for negative label arrow and grid inputs",
+          "[ui][field][tile][staging]") {
+    field_submission_fixture_t fixture;
+    const auto old=prepare_staging_geometry(fixture.renderer,0);
+    const auto staged=prepare_staging_geometry(fixture.renderer,4096);
+    const auto screen=prepare_staging_geometry(fixture.renderer,100);
+    renderer_t uncropped;
+    uncropped.begin({0,-16,128,544});
+    uncropped.hline(1,10,30,0,1,{255,0,0,255});
+    expect_field(uncropped.vertices()[2].position.y-uncropped.vertices()[0].position.y==2);
+    expect_field(staged.line_height==1);
+    expect_field(staged.line_height==screen.line_height);
+    expect_field(std::abs(staged.rounded_top-screen.rounded_top)<.001f);
+    expect_field(staged.arrow_top==screen.arrow_top);
+    expect_field(std::abs(old.rounded_top-staged.rounded_top-1)<.001f);
+    expect_field(old.arrow_top==staged.arrow_top+1);
+}
+TEST_CASE("Geometry normalization translates owned vertices and scissors without allocating or copying",
+          "[ui][field][tile][staging]") {
+    renderer_t renderer;
+    renderer.begin({10,4096,128,512});
+    renderer.rect(1,{20,4100,20,4},{255,255,255,255});
+    const auto* vertices=renderer.vertices().data();
+    const auto* indices=renderer.indices().data();
+    const auto* batches=renderer.batches().data();
+    const auto bytes=renderer.geometry_bytes();
+    count_field_allocations=true;
+    field_allocations=0;
+    const auto normalized=renderer.translate_geometry({-10,-4096});
+    count_field_allocations=false;
+    expect_field(normalized);
+    expect_field(field_allocations==0);
+    expect_field(renderer.geometry_bytes()==bytes);
+    expect_field(renderer.vertices().data()==vertices && renderer.indices().data()==indices &&
+                 renderer.batches().data()==batches);
+    expect_field(renderer.viewport().x==0 && renderer.viewport().y==0);
+    expect_field(renderer.batches()[0].clip.x==0 && renderer.batches()[0].clip.y==0);
+    expect_field(renderer.vertices()[0].position.x==10 && renderer.vertices()[0].position.y==4);
+    expect_field(!renderer.translate_geometry({std::numeric_limits<float>::infinity(),0}));
+    expect_field(renderer.vertices()[0].position.y==4);
+}

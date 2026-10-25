@@ -10,6 +10,8 @@
 #include <functional>
 namespace wormedit::ui::field {
 class renderer_t;
+inline constexpr std::size_t chrome_cache_reservation = 16U * 1024U * 1024U;
+inline constexpr std::size_t tile_geometry_scratch_budget = 4U * 1024U * 1024U;
 using common::static_interval_t;
 using common::interval_query_t;
 using common::static_interval_index_t;
@@ -36,14 +38,17 @@ struct tile_work_t {
 class tile_budget_t {
   public:
     static constexpr std::size_t limit = 64 * 1024 * 1024;
-    void begin() noexcept { prepared_ = 0; }
+    void begin(std::size_t maximum_preparations = 2) noexcept {
+        prepared_ = 0; maximum_preparations_ = std::min(maximum_preparations, std::size_t{2});
+    }
     auto reserve(std::size_t bytes) noexcept -> bool;
     void release(std::size_t bytes) noexcept;
     void external(std::size_t bytes) noexcept { external_ = std::min(bytes, limit); }
     auto bytes() const noexcept -> std::size_t { return bytes_; }
     auto prepared() const noexcept -> std::size_t { return prepared_; }
+    auto can_prepare() const noexcept -> bool { return prepared_ < maximum_preparations_; }
   private:
-    std::size_t bytes_{}, prepared_{}, external_{};
+    std::size_t bytes_{}, prepared_{}, external_{}, maximum_preparations_{2};
   public:
     auto allowance() const noexcept -> std::size_t { return limit - external_; }
 };
@@ -51,10 +56,12 @@ class field_tile_cache_t {
   public:
     field_tile_cache_t();
     ~field_tile_cache_t();
-    void begin(SDL_Renderer* device);
+    void begin(SDL_Renderer* device, std::size_t maximum_preparations = 2);
     void account_source(std::size_t bytes);
     auto composite(renderer_t& field, const tile_request_t& request,
                    std::span<const SDL_FRect> holes = {}) -> bool;
+    auto is_ready(const tile_request_t& request) -> bool;
+    auto can_retain() const noexcept -> bool { return device_ != nullptr; }
     auto missing(const tile_request_t& request) -> std::vector<SDL_FRect>;
     void capture(const renderer_t& field, const tile_request_t& request,
                  std::size_t first_index);

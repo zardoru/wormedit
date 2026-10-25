@@ -104,6 +104,9 @@ struct envelope_cache_t {
     double origin{};
     float y_scale{1};
     envelope_style_t style{};
+    envelope_axis_t axis{envelope_axis_t::vertical};
+    envelope_painter_t painter{};
+    void* painter_data{};
     ring_rows_t plan;
     std::vector<envelope_row_t> rows;
     std::vector<envelope_row_t> input_rows;
@@ -156,12 +159,12 @@ auto valid_envelope_row(const envelope_row_t& row) -> bool {
            std::isfinite(row.peak[0]) && std::isfinite(row.peak[1]);
 }
 auto ensure_envelope_texture(envelope_cache_t& cache, SDL_Renderer* device, int width,
-                              int height) -> bool {
+                              int height, envelope_axis_t axis = envelope_axis_t::vertical) -> bool {
     // A single texture remains bounded independently of the pool byte limit.
     constexpr std::uint64_t maximum_pixels = 4U * 1024U * 1024U;
     if (width <= 0 || height <= 0 || static_cast<std::uint64_t>(width) * height > maximum_pixels)
         return false;
-    if (cache.device == device && cache.width == width && cache.height == height)
+    if (cache.device == device && cache.width == width && cache.height == height && cache.axis == axis)
         return cache.texture && !cache.unavailable;
     if (cache.texture) SDL_DestroyTexture(cache.texture);
     cache.texture = nullptr;
@@ -171,8 +174,10 @@ auto ensure_envelope_texture(envelope_cache_t& cache, SDL_Renderer* device, int 
     cache.device = device;
     cache.width = width;
     cache.height = height;
+    cache.axis = axis;
     cache.texture = SDL_CreateTexture(device, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
-                                       width, height);
+                                       axis == envelope_axis_t::horizontal ? height : width,
+                                       axis == envelope_axis_t::horizontal ? width : height);
     if (cache.texture && SDL_SetTextureBlendMode(cache.texture, SDL_BLENDMODE_BLEND_PREMULTIPLIED) &&
         SDL_SetTextureScaleMode(cache.texture, SDL_SCALEMODE_NEAREST)) return true;
     if (cache.texture) SDL_DestroyTexture(cache.texture);
@@ -242,6 +247,36 @@ void prepare_envelope_raster(envelope_cache_t& cache, std::int64_t first) {
     }
     cache.pending = cache.plan.regenerated_rows() != 0;
 }
+auto paint_envelope_region(envelope_cache_t& cache, std::size_t slot, std::size_t count) -> bool {
+    const auto relative = (slot + cache.plan.capacity() - cache.plan.head()) % cache.plan.capacity();
+    const auto world = cache.first_row + static_cast<std::int64_t>(relative);
+    const auto clip=cache.axis == envelope_axis_t::horizontal
+        ? SDL_FRect{static_cast<float>(slot),0,static_cast<float>(count),static_cast<float>(cache.width)}
+        : SDL_FRect{0,static_cast<float>(slot),static_cast<float>(cache.width),static_cast<float>(count)};
+    const envelope_raster_region_t region{clip, world, count, static_cast<double>(slot) - world,
+        -std::round(cache.bounds.x), cache.axis, false};
+    const auto before = cache.raster->push_clip(clip);
+    const auto success = cache.painter(*cache.raster, region, cache.painter_data);
+    cache.raster->pop_clip(before);
+    return success;
+}
+auto prepare_strip_raster(envelope_cache_t& cache) -> bool {
+    if (!cache.raster) cache.raster = std::make_unique<renderer_t>();
+    const auto bounds=cache.axis == envelope_axis_t::horizontal
+        ? SDL_FRect{0,0,static_cast<float>(cache.height),static_cast<float>(cache.width)}
+        : SDL_FRect{0,0,static_cast<float>(cache.width),static_cast<float>(cache.height)};
+    cache.raster->begin(bounds);
+    for (const auto range : cache.plan.dirty_ranges()) {
+        const auto end = range.first + range.count;
+        const auto head = cache.plan.head();
+        if (range.first < head && head < end) {
+            if (!paint_envelope_region(cache, range.first, head-range.first) ||
+                !paint_envelope_region(cache, head, end-head)) return false;
+        } else if (!paint_envelope_region(cache, range.first, range.count)) return false;
+    }
+    cache.pending = cache.plan.regenerated_rows() != 0;
+    return true;
+}
 auto refill_envelope(envelope_cache_t& cache, submission_t hooks) -> bool {
     if (!cache.pending) return cache.ready;
     ++cache.refill_attempts;
@@ -262,8 +297,9 @@ auto refill_envelope(envelope_cache_t& cache, submission_t hooks) -> bool {
     success = SDL_SetRenderDrawColor(device, 0, 0, 0, 0) && success;
     success = SDL_SetRenderClipRect(device, nullptr) && success;
     for (const auto range : cache.plan.dirty_ranges()) {
-        const SDL_FRect clear{0, static_cast<float>(range.first), static_cast<float>(cache.width),
-                               static_cast<float>(range.count)};
+        const auto clear=cache.axis == envelope_axis_t::horizontal
+            ? SDL_FRect{static_cast<float>(range.first),0,static_cast<float>(range.count),static_cast<float>(cache.width)}
+            : SDL_FRect{0,static_cast<float>(range.first),static_cast<float>(cache.width),static_cast<float>(range.count)};
         success = SDL_RenderFillRect(device, &clear) && success;
     }
     success = cache.raster->submit(device, hooks) && success;
@@ -279,6 +315,11 @@ auto draw_envelope_direct(const envelope_cache_t& cache, SDL_Renderer* device,
                           SDL_FRect viewport, submission_t hooks) -> bool {
     renderer_t direct;
     direct.begin(viewport);
+    if (cache.painter) {
+        const envelope_raster_region_t region{viewport, cache.first_row, cache.plan.capacity(),
+            cache.bounds.y-cache.origin, 0, cache.axis, true};
+        return cache.painter(direct, region, cache.painter_data) && direct.submit(device, hooks);
+    }
     const auto center = cache.bounds.x + cache.bounds.w * .5f;
     const auto half = cache.bounds.w * .5f;
     for (const auto& row : cache.input_rows) {
@@ -318,6 +359,34 @@ auto renderer_t::envelope(std::size_t slot, layer_t layer, std::span<const envel
     // Slots zero and one are reserved; legacy stem indices use the channel pool.
     const envelope_key_t key = slot < 2 ? envelope_key_t{waveform_piece_kind_t::reserved, slot} : envelope_key_t{waveform_piece_kind_t::stem, slot - 2};
     return envelope_for_key(key, layer, rows, bounds, origin, generation, style, y_scale);
+}
+auto renderer_t::envelope_strip(std::size_t slot, layer_t layer,
+                                const envelope_strip_view_t& view) -> bool {
+    if (slot >= 2 || !view.painter || !std::isfinite(view.origin) || std::abs(view.origin)>1e12 ||
+        view.first_world < -1'000'000'000'001LL || view.first_world > 1'000'000'000'001LL)
+        return false;
+    auto bounds = view.bounds;
+    if (view.axis == envelope_axis_t::horizontal) bounds = {bounds.y,bounds.x,bounds.h,bounds.w};
+    const auto dimensions = envelope_dimensions(bounds,1);
+    if (!dimensions || view.fingerprints.size()!=static_cast<std::size_t>(dimensions->second)) return false;
+    auto* prepared = prepare_envelope_cache({waveform_piece_kind_t::reserved,slot},
+                                            dimensions->first, dimensions->second, view.axis);
+    if (!prepared) return false;
+    auto& cache = *prepared;
+    cache.active = true;
+    cache.last_drawn = ++envelope_draw_sequence_;
+    cache.bounds = bounds;
+    cache.origin = view.origin;
+    cache.first_row = view.first_world;
+    cache.y_scale = 1;
+    cache.axis = view.axis;
+    cache.painter = view.painter;
+    cache.painter_data = view.data;
+    cache.fallback_submitted = false;
+    cache.plan.update(view.generation,view.first_world,view.fingerprints);
+    if (!prepare_strip_raster(cache)) { cache.plan.invalidate(); cache.active=false; return false; }
+    composite_envelope(layer,cache);
+    return true;
 }
 auto renderer_t::envelope_dimensions(SDL_FRect bounds, float y_scale) const
     -> std::optional<std::pair<int, int>> {
@@ -476,7 +545,7 @@ auto renderer_t::evict_unsubmitted_stem() -> bool {
     ++envelope_evictions_;
     return true;
 }
-auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int height) -> envelope_cache_t* {
+auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int height, envelope_axis_t axis) -> envelope_cache_t* {
     if (width <= 0 || height <= 0 || static_cast<std::uint64_t>(width) * height > 4U * 1024U * 1024U)
         return nullptr;
     const auto found = envelopes_.find(key);
@@ -487,7 +556,7 @@ auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int heigh
         return nullptr;
     }
     if (previous && previous->active) return nullptr;
-    if (previous && previous->device == device_ && previous->width == width && previous->height == height)
+    if (previous && previous->device == device_ && previous->width == width && previous->height == height && previous->axis == axis)
         return previous;
     // Keep the old allocation charged while creating its replacement. Only
     // offscreen caches can make room; otherwise preserve the previous texture.
@@ -499,7 +568,7 @@ auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int heigh
     }
     envelope_peak_bytes_ = std::max(envelope_peak_bytes_, envelope_bytes() + bytes);
     auto cache = std::make_unique<envelope_cache_t>();
-    if (!ensure_envelope_texture(*cache, device_, width, height)) return nullptr;
+    if (!ensure_envelope_texture(*cache, device_, width, height, axis)) return nullptr;
     auto* result = cache.get();
     envelopes_[key] = std::move(cache);
     return result;
@@ -521,6 +590,8 @@ auto renderer_t::envelope_for_key(envelope_key_t key, layer_t layer, std::span<c
     cache.origin = origin;
     cache.y_scale = y_scale;
     cache.style = style;
+    cache.axis = envelope_axis_t::vertical;
+    cache.painter = nullptr;
     cache.fallback_submitted = false;
     cache.input_rows.assign(rows.begin(), rows.end());
     const auto first = static_cast<std::int64_t>(std::floor(origin)) - 1;
@@ -567,10 +638,12 @@ void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
     const auto y = edge(world);
     const SDL_FRect destination{std::round(bounds.x), y, static_cast<float>(width),
                                 edge(world + static_cast<std::int64_t>(span.count)) - y};
-    const auto left_x = std::max(destination.x, viewport_.x);
-    const auto top_y = std::max(destination.y, viewport_.y);
-    const auto right_x = std::min(destination.x + destination.w, viewport_.x + viewport_.w);
-    const auto bottom_y = std::min(destination.y + destination.h, viewport_.y + viewport_.h);
+    const auto viewport = cache.axis == envelope_axis_t::horizontal
+        ? SDL_FRect{viewport_.y,viewport_.x,viewport_.h,viewport_.w} : viewport_;
+    const auto left_x = std::max(destination.x, viewport.x);
+    const auto top_y = std::max(destination.y, viewport.y);
+    const auto right_x = std::min(destination.x + destination.w, viewport.x + viewport.w);
+    const auto bottom_y = std::min(destination.y + destination.h, viewport.y + viewport.h);
     if (right_x <= left_x || bottom_y <= top_y) return;
     // Derive clipped UVs from canonical rows, not a second floating bounds ratio.
     const auto top_row = top_y == destination.y ? static_cast<double>(span.first)
@@ -582,9 +655,14 @@ void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
                               std::clamp(static_cast<float>(top_row / height), 0.0f, 1.0f)};
     const SDL_FPoint last_uv{(right_x - destination.x) / destination.w,
                              std::clamp(static_cast<float>(bottom_row / height), 0.0f, 1.0f)};
-    const std::array<SDL_FPoint, 4> points{{{left_x,top_y}, {right_x,top_y},
+    std::array<SDL_FPoint, 4> points{{{left_x,top_y}, {right_x,top_y},
                                            {right_x,bottom_y}, {left_x,bottom_y}}};
-    quad(layer, points, {255,255,255,255}, cache.texture, first_uv, last_uv);
+    if (cache.axis == envelope_axis_t::horizontal) {
+        for (auto& point : points) std::swap(point.x,point.y);
+        std::swap(points[1],points[3]);
+        quad(layer,points,{255,255,255,255},cache.texture,
+             {first_uv.y,first_uv.x},{last_uv.y,last_uv.x});
+    } else quad(layer, points, {255,255,255,255}, cache.texture, first_uv, last_uv);
 }
 auto renderer_t::envelope_work() const noexcept -> envelope_work_t {
     envelope_work_t work;
@@ -631,6 +709,20 @@ void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t sol
     indices_.clear();
     batches_.clear();
 }
+auto renderer_t::translate_geometry(SDL_FPoint offset) -> bool {
+    const auto can_translate=[](SDL_FPoint point,SDL_FPoint delta) {
+        return std::isfinite(point.x+delta.x) && std::isfinite(point.y+delta.y);
+    };
+    if (!std::isfinite(offset.x) || !std::isfinite(offset.y) ||
+        !can_translate({viewport_.x,viewport_.y},offset)) return false;
+    if (offset.x==0 && offset.y==0) return true;
+    for (const auto& vertex:vertices_) if (!can_translate(vertex.position,offset)) return false;
+    for (const auto& batch:batches_) if (!can_translate({batch.clip.x,batch.clip.y},offset)) return false;
+    for (auto& vertex:vertices_) { vertex.position.x+=offset.x;vertex.position.y+=offset.y; }
+    for (auto& batch:batches_) { batch.clip.x+=offset.x;batch.clip.y+=offset.y; }
+    viewport_.x+=offset.x;viewport_.y+=offset.y;
+    return true;
+}
 auto renderer_t::push_clip(SDL_FRect clip) -> SDL_FRect {
     const auto previous = viewport_;
     viewport_ = rect_intersection(viewport_, clip);
@@ -649,12 +741,13 @@ void renderer_t::capture_tiles(const tile_request_t& request, std::size_t first_
 }
 void renderer_t::prepare_tiles(const tile_request_t& request, double covered_begin,
                                double covered_end, std::size_t source_bytes,
-                               const std::function<void(renderer_t&, double)>& paint) {
+                               const std::function<void(renderer_t&, double)>& paint,
+                               SDL_FPoint raster_origin) {
     if (!tiles_) return;
     renderer_t scratch;
-    scratch.limit_geometry(4*1024*1024);
+    scratch.limit_geometry(tile_geometry_scratch_budget);
     const auto initialize=[&](renderer_t& target, double origin) {
-        target.begin({0,0,request.viewport.w,512}, {1,1}, solid_);
+        target.begin({raster_origin.x,raster_origin.y,request.viewport.w,512}, {1,1}, solid_);
         paint(target,origin);
     };
     tiles_->prepare(scratch,request,covered_begin,covered_end,source_bytes,initialize);
@@ -731,6 +824,23 @@ auto renderer_t::reserve_geometry(std::size_t vertices, std::size_t indices) -> 
     vertices_.reserve(vertex_capacity);
     indices_.reserve(index_capacity);
     batches_.reserve(batch_capacity);
+    return true;
+}
+auto renderer_t::triangles(layer_t layer, std::span<const SDL_Vertex> vertices,
+                           std::span<const std::uint32_t> indices, SDL_Texture* texture) -> bool {
+    if (vertices.empty() || indices.empty() || indices.size()%3 != 0 ||
+        vertices.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())-vertices_.size()) return false;
+    for (const auto index : indices) if (index >= vertices.size()) return false;
+    for (const auto& vertex : vertices)
+        if (!std::isfinite(vertex.position.x) || !std::isfinite(vertex.position.y) ||
+            !std::isfinite(vertex.tex_coord.x) || !std::isfinite(vertex.tex_coord.y) ||
+            !std::isfinite(vertex.color.r) || !std::isfinite(vertex.color.g) ||
+            !std::isfinite(vertex.color.b) || !std::isfinite(vertex.color.a)) return false;
+    if (!reserve_geometry(vertices.size(),indices.size())) return false;
+    const auto offset = static_cast<std::uint32_t>(vertices_.size());
+    vertices_.insert(vertices_.end(),vertices.begin(),vertices.end());
+    for (const auto index : indices) indices_.push_back(offset+index);
+    append_batch(layer,texture,indices.size());
     return true;
 }
 void renderer_t::quad(layer_t layer, std::span<const SDL_FPoint, 4> points, color_t color,

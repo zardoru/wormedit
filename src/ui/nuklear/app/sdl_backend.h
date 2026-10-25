@@ -99,18 +99,34 @@ namespace wormedit::ui { struct compose_view_t; }
 namespace wormedit::ui::nuklear {
 // Keep geometry and pointer input in window points while drawing at backbuffer resolution.
 auto set_window_render_coordinates(SDL_Renderer*, int width, int height) -> bool;
+// Comparison uses original geometry for both fields. Retention is retired
+// without invalidating texture references already queued earlier this frame.
+class direct_compose_fields_scope_t {
+  public:
+    explicit direct_compose_fields_scope_t(nk_context*);
+    ~direct_compose_fields_scope_t();
+    direct_compose_fields_scope_t(const direct_compose_fields_scope_t&) = delete;
+    auto operator=(const direct_compose_fields_scope_t&) -> direct_compose_fields_scope_t& = delete;
+  private:
+    nk_context* context_{};
+    bool active_{};
+};
 struct compose_canvas_cache_t;
 auto compose_canvas_cache(nk_context*) -> std::unique_ptr<compose_canvas_cache_t>&;
 struct overview_work_t {
     std::uint64_t rebuilds{}, uploads{}, uploaded_bytes{}, reused_frames{}, readbacks{}, failures{};
+    std::uint64_t target_rasters{};
     std::uint64_t cold_readback_ns{};
-    std::size_t texture_bytes{}, geometry_bytes{}, transient_bytes{};
+    std::size_t texture_bytes{}, geometry_bytes{}, source_bytes{}, transient_bytes{};
     std::size_t cold_vertices{}, warm_vertices{}, warm_indices{}, warm_draw_calls{};
 };
 auto begin_compose_overview(nk_context*, nk_command_buffer*, const wormedit::ui::compose_view_t&,
     struct nk_rect, nk_color background, nk_color peak) -> bool;
 void end_compose_overview(nk_context*, nk_command_buffer*, struct nk_rect);
 auto compose_overview_work(nk_context*) -> overview_work_t;
+auto draw_compose_bgm_waveform(nk_context*, nk_command_buffer*, const wormedit::ui::compose_view_t&,
+    struct nk_rect, double begin, double end, nk_color background, nk_color peak) -> bool;
+auto compose_bgm_waveform_work(nk_context*) -> overview_work_t;
 void set_compose_overview_readback_for_testing(nk_context*,
     SDL_Surface* (*)(SDL_Renderer*, const SDL_Rect*));
 // Draw-list indices stay contiguous; batching never reorders geometry.
@@ -151,10 +167,13 @@ class diagnostic_window_scope_t {
     nk_handle previous_;
 };
 auto can_draw_compose_field(nk_context* context) -> bool;
+auto can_retain_compose_grid(const nk_context*) -> bool;
+auto can_retain_compose_glyphs(const nk_context*) -> bool;
 auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     -> wormedit::ui::field::renderer_t&;
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t&;
 auto compose_field_font(const nk_user_font* font) -> wormedit::ui::field::font_t;
+auto compose_field_font_generation(const nk_context*) -> std::uint64_t;
 void draw_compose_field_text(nk_context* context, wormedit::ui::field::layer_t layer,
                              struct nk_rect bounds, const char* text, int length,
                              const nk_user_font* font, nk_color foreground);

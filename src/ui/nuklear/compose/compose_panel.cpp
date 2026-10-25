@@ -7,6 +7,7 @@
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/render/theme.h"
+#include "ui/nuklear/render/sdl_region_scope.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
@@ -721,8 +722,11 @@ double bgm_bar_pixels_per_measure(const wormedit::ui::compose_view_t& view, cons
            geometry.bounds.w / measures;
 }
 
-void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const wormedit::ui::compose_view_t& view,
+void draw_bgm_bar_waveform(struct nk_context* context, struct nk_command_buffer* canvas, const wormedit::ui::compose_view_t& view,
                            const BgmBarGeometry& geometry) {
+    if (wormedit::ui::nuklear::draw_compose_bgm_waveform(context,canvas,view,geometry.bounds,
+            geometry.begin,geometry.end,
+            wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview),nk_rgba(114,222,239,190))) return;
     const auto center = geometry.bounds.y + geometry.bounds.h * 0.5f;
     const auto half_height = geometry.bounds.h * 0.43f;
     const auto width = std::max(1.0f, geometry.bounds.w / static_cast<float>(view.bgm_bar_rows.size()));
@@ -912,7 +916,7 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     if (available && canvas) {
         nk_fill_rect(canvas, bounds, 0.0f,
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
-        draw_bgm_bar_waveform(canvas, *view, geometry);
+        draw_bgm_bar_waveform(context, canvas, *view, geometry);
         draw_bgm_bar_grid(context, canvas, *view, geometry);
         draw_bgm_bar_bookmarks(context, canvas, *view, geometry);
         draw_bgm_bar_markers(canvas, *view, geometry);
@@ -1488,17 +1492,18 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
 }
 struct dock_panel_renderer_t {
     wormedit::dock_panel_t id;
+    wormedit::ui::nuklear::sdl_region_t region;
     const char* group;
     nk_flags flags;
     void (*render)(const ComposePanelRenderContext&);
 };
 constexpr std::array dock_panel_renderers{
-    dock_panel_renderer_t{wormedit::dock_panel_t::inspector, "Compose inspector", NK_WINDOW_BORDER, render_dock_inspector},
-    dock_panel_renderer_t{wormedit::dock_panel_t::sounds, "Compose sounds", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_sounds},
-    dock_panel_renderer_t{wormedit::dock_panel_t::images, "Compose BGA", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_images},
-    dock_panel_renderer_t{wormedit::dock_panel_t::measures, "Compose measures", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_measures},
-    dock_panel_renderer_t{wormedit::dock_panel_t::layers, "Compose layers", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_layers},
-    dock_panel_renderer_t{wormedit::dock_panel_t::markers, "Compose markers", NK_WINDOW_BORDER, render_dock_markers}};
+    dock_panel_renderer_t{wormedit::dock_panel_t::inspector, wormedit::ui::nuklear::sdl_region_t::inspector, "Compose inspector", NK_WINDOW_BORDER, render_dock_inspector},
+    dock_panel_renderer_t{wormedit::dock_panel_t::sounds, wormedit::ui::nuklear::sdl_region_t::sounds, "Compose sounds", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_sounds},
+    dock_panel_renderer_t{wormedit::dock_panel_t::images, wormedit::ui::nuklear::sdl_region_t::images, "Compose BGA", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_images},
+    dock_panel_renderer_t{wormedit::dock_panel_t::measures, wormedit::ui::nuklear::sdl_region_t::measures, "Compose measures", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_measures},
+    dock_panel_renderer_t{wormedit::dock_panel_t::layers, wormedit::ui::nuklear::sdl_region_t::layers, "Compose layers", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_layers},
+    dock_panel_renderer_t{wormedit::dock_panel_t::markers, wormedit::ui::nuklear::sdl_region_t::markers, "Compose markers", NK_WINDOW_BORDER, render_dock_markers}};
 }
 static void render_compose_side_docks(const ComposePanelRenderContext& panel,
                                        const ComposeDockLayout& layout) {
@@ -1506,6 +1511,9 @@ static void render_compose_side_docks(const ComposePanelRenderContext& panel,
         if (!pane) continue;
         const auto renderer = std::ranges::find(dock_panel_renderers, pane->panel, &dock_panel_renderer_t::id);
         const auto& r = pane->bounds;
+        // This catalog row owns both the panel identity and its drawing scope.
+        // The barrier includes group background/border and ends after group_end.
+        const wormedit::ui::nuklear::sdl_region_scope_t retained(panel.context, renderer->region);
         render_compose_dock(panel.context, nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
             static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top)),
             renderer->group, renderer->flags, [&] { renderer->render(panel); });
@@ -1529,7 +1537,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     reset_compose_quantize_section_visibility();
     begin_layer_menu_input_frame();
     begin_compose_note_menu_frame();
-    render_compose_toolbar({context, view, action});
+    {
+        const wormedit::ui::nuklear::sdl_region_scope_t toolbar(
+            context, wormedit::ui::nuklear::sdl_region_t::toolbar);
+        render_compose_toolbar({context, view, action});
+    }
     const ComposePanelRenderContext panel{context, view, timing_view, action, window_focused,
                                          ime_composition_active, double_clicks,
                                          double_click_count, shortcut_event_count};

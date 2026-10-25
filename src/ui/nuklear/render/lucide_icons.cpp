@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL_render.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +12,8 @@ namespace wormedit::ui::lucide {
 namespace {
 
 std::array<SDL_Texture*, static_cast<std::size_t>(Glyph::count)> textures{};
+SDL_Renderer* texture_renderer{};
+std::uint64_t texture_generation{};
 
 auto make_texture(SDL_Renderer* renderer, std::size_t index) -> SDL_Texture* {
     constexpr int size = pixels::size;
@@ -45,10 +48,20 @@ auto initialize(SDL_Renderer* renderer) -> bool {
             return false;
         }
     }
+    texture_renderer = renderer;
+    ++texture_generation;
     return true;
 }
 
+auto immutable_textures() -> immutable_texture_snapshot_t {
+    return {texture_renderer,texture_renderer ? std::span<SDL_Texture* const>{textures} : std::span<SDL_Texture* const>{},
+        texture_generation};
+}
+
 void shutdown() {
+    if (texture_renderer || std::ranges::any_of(textures,[](auto* image) { return image != nullptr; }))
+        ++texture_generation;
+    texture_renderer = nullptr;
     for (auto*& texture : textures) {
         if (texture) SDL_DestroyTexture(texture);
         texture = nullptr;

@@ -1,10 +1,14 @@
+#include "pixel_comparison.h"
 #include "ui/nuklear/app/sdl_backend.h"
+#include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/project/compare_panel.h"
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <source_location>
 #include <cstring>
+#include <cstdio>
 #include <vector>
 using wormedit::ui::field::renderer_t;
 namespace {
@@ -358,7 +362,7 @@ TEST_CASE("Static field workload attribution is opt-in and resets each frame", "
 }
 
 namespace {
-using field_pixels_t = std::vector<std::array<std::uint8_t,4>>;
+using namespace wormedit::ui::testing;
 auto render_static_pixels(field_submission_fixture_t& fixture, const wormedit::ui::compose_view_t& view)
     -> field_pixels_t {
     SDL_SetRenderDrawColor(fixture.renderer,0,0,0,255);
@@ -371,59 +375,6 @@ auto render_static_pixels(field_submission_fixture_t& fixture, const wormedit::u
         std::memcpy(pixels.data()+row*128,static_cast<const std::uint8_t*>(fixture.surface->pixels)+
             row*fixture.surface->pitch,128*4);
     return pixels;
-}
-auto has_field_pixel_edge(const field_pixels_t& pixels,int x,int y) -> bool {
-    const auto center=pixels[static_cast<std::size_t>(y*128+x)];
-    for (int row=std::max(0,y-1); row<=std::min(127,y+1); ++row)
-        for (int column=std::max(0,x-1); column<=std::min(127,x+1); ++column)
-            if (pixels[static_cast<std::size_t>(row*128+column)]!=center) return true;
-    return false;
-}
-auto is_field_color_different(const std::array<std::uint8_t,4>& left,
-                         const std::array<std::uint8_t,4>& right) -> bool {
-    return std::abs(int(left[0])-int(right[0]))>1 ||
-        std::abs(int(left[1])-int(right[1]))>1 || std::abs(int(left[2])-int(right[2]))>1;
-}
-using field_boundaries_t = std::array<bool,256*256>;
-auto field_boundaries(const field_pixels_t& pixels) -> field_boundaries_t {
-    field_boundaries_t boundaries{};
-    for (int y=0; y<128; ++y) for (int x=0; x<128; ++x) {
-        const auto& color=pixels[static_cast<std::size_t>(y*128+x)];
-        if (x<127 && is_field_color_different(color,pixels[static_cast<std::size_t>(y*128+x+1)]))
-            boundaries[static_cast<std::size_t>((2*y)*256+2*x+1)]=true;
-        if (y<127 && is_field_color_different(color,pixels[static_cast<std::size_t>((y+1)*128+x)]))
-            boundaries[static_cast<std::size_t>((2*y+1)*256+2*x)]=true;
-    }
-    return boundaries;
-}
-auto has_near_field_boundary(const field_boundaries_t& boundaries,int x,int y) -> bool {
-    for (int row=std::max(0,y-2); row<=std::min(255,y+2); ++row)
-        for (int column=std::max(0,x-2); column<=std::min(255,x+2); ++column)
-            if (boundaries[static_cast<std::size_t>(row*256+column)]) return true;
-    return false;
-}
-auto field_boundary_difference(const field_boundaries_t& left,const field_boundaries_t& right)
-    -> std::size_t {
-    std::size_t differences{};
-    for (int y=0; y<256; ++y) for (int x=0; x<256; ++x)
-        if (left[static_cast<std::size_t>(y*256+x)] && !has_near_field_boundary(right,x,y)) ++differences;
-    return differences;
-}
-struct static_pixel_difference_t { std::size_t interior{}, coverage{}; };
-auto static_pixel_difference(const field_pixels_t& direct,const field_pixels_t& cached)
-    -> static_pixel_difference_t {
-    static_pixel_difference_t difference;
-    for (int y=0; y<128; ++y) for (int x=0; x<128; ++x) {
-        const auto index=static_cast<std::size_t>(y*128+x);
-        if (is_field_color_different(direct[index],cached[index]) &&
-            !has_field_pixel_edge(direct,x,y) && !has_field_pixel_edge(cached,x,y)) ++difference.interior;
-    }
-    // Boundary positions lie halfway between pixel centers. The doubled grid
-    // measures one logical pixel without accidentally accepting a two-pixel shift.
-    const auto direct_edges=field_boundaries(direct), cached_edges=field_boundaries(cached);
-    difference.coverage=field_boundary_difference(direct_edges,cached_edges)+
-        field_boundary_difference(cached_edges,direct_edges);
-    return difference;
 }
 void expect_static_pixels(const field_pixels_t& direct,const field_pixels_t& cached) {
     const auto difference=static_pixel_difference(direct,cached);
@@ -611,4 +562,325 @@ TEST_CASE("Offscreen Compose surface renderers allow their separate hidden input
     const auto view = presentation_test_view(source);
     draw_static_work_frame(fixture, view);
     CHECK_FALSE(wormedit::ui::nuklear::compose_field(fixture.context).vertices().empty());
+}
+
+namespace {
+auto make_world_zero_source() -> wormedit::ui::compose_view_t {
+    wormedit::ui::compose_view_t source;
+    source.note_endpoints.push_back({.bounds={80,-4,108,4},.note_id={1},.lane_id={1},
+        .glyph=wormedit::lane_glyph_t::arrow_left});
+    source.timing_markers.push_back({.object_id={2},.marker_y_pixels=0,
+        .marker_right_fraction=1,.lane=wormedit::timing_lane_kind_t::bpm,.short_label="120"});
+    source.grid_lines.push_back({.y_pixels=0,.kind=wormedit::editor_grid_line_kind_t::measure});
+    return source;
+}
+auto build_world_zero_preroll_view(const wormedit::ui::compose_view_t& source) -> wormedit::ui::compose_view_t {
+    auto view=source;
+    view.scene_available=true;
+    view.viewport_width_pixels=128;
+    view.viewport_height_pixels=160;
+    view.pixels_per_standard_measure=192;
+    view.timing_lane_visibility_mask=1;
+    view.playable_field_left_pixels=72;
+    view.playable_field_right_pixels=128;
+    view.static_scene=&source;
+    view.static_scene_style_generation=view.static_scene_source_generation=1;
+    view.static_scene_covered_begin_pixels=0;
+    view.static_scene_covered_end_pixels=2048;
+    view.area_scroll_pixels=-37.75;
+    for (auto& note:view.note_endpoints) {note.bounds.top+=37.75;note.bounds.bottom+=37.75;}
+    view.timing_markers[0].marker_y_pixels+=37.75;
+    view.grid_lines[0].y_pixels+=37.75;
+    return view;
+}
+auto render_world_zero_reference(field_submission_fixture_t& fixture,
+                                  wormedit::ui::compose_view_t view) -> field_pixels_t {
+    view.selected_note_count=1;
+    view.static_scene=nullptr;
+    view.document_revision=2;
+    auto& marker_state=worm_ui_nuklear_compose_state().timing_marker;
+    const auto was_dragging=marker_state.timing_marker_drag_active;
+    marker_state.timing_marker_drag_active=true;
+    const auto pixels=render_static_pixels(fixture,view);
+    marker_state.timing_marker_drag_active=was_dragging;
+    return pixels;
+}
+void report_world_zero_boundaries(const field_pixels_t& direct,const field_pixels_t& cached,float scale=1) {
+        const auto expected_edges=field_boundaries(direct,128,128);
+        const auto actual_edges=field_boundaries(cached,128,128);
+        for (int y=0;y<256;++y) for (int x=0;x<256;++x) {
+            const auto index=static_cast<std::size_t>(y*256+x);
+            if (expected_edges[index] && !has_near_field_boundary(actual_edges,x,y,128,128,static_cast<int>(2*scale)))
+                UNSCOPED_INFO("missing direct boundary " << x*.5 << "," << y*.5);
+            if (actual_edges[index] && !has_near_field_boundary(expected_edges,x,y,128,128,static_cast<int>(2*scale)))
+                UNSCOPED_INFO("extra cached boundary " << x*.5 << "," << y*.5);
+        }
+
+}
+void expect_world_zero_direct_fallback(field_submission_fixture_t& fixture,
+                                        const field_pixels_t& direct,const field_pixels_t& cached) {
+    const auto difference=static_pixel_difference(direct,cached,128,128,1.25f);
+    CHECK(difference.interior==0);
+    if (difference.coverage) report_world_zero_boundaries(direct,cached);
+    CHECK(difference.coverage==0);
+    const bool is_identical=direct==cached;
+    CHECK(is_identical);
+    const auto work=wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    CHECK(work.tile_bytes==0);
+    CHECK(work.tiles_prepared==0);
+}
+}
+TEST_CASE("Retained WORLD zero glyphs preserve fractional-scale preroll label and arrow coverage",
+          "[ui][field][tile][pixel][staging][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    SDL_SetRenderScale(fixture.renderer,1.25f,1.25f);
+    wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context,true);
+    const auto source=make_world_zero_source();
+    const auto view=build_world_zero_preroll_view(source);
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto direct=render_world_zero_reference(fixture,view);
+    const auto cached=render_static_pixels(fixture,view);
+    expect_world_zero_direct_fallback(fixture,direct,cached);
+}
+namespace {
+void check_note_coverage_seam(bool has_seam) {
+    INFO("retained coverage seam " << has_seam);
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context,true);
+    auto source=make_world_zero_source();
+    source.grid_lines.clear();
+    source.timing_markers.clear();
+    auto view=build_world_zero_preroll_view(make_world_zero_source());
+    view.static_scene=&source;
+    view.grid_lines.clear();
+    view.timing_markers.clear();
+    if (!has_seam) view.static_scene_covered_begin_pixels=-1024;
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto cached=render_static_pixels(fixture,view);
+    const auto work=wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    using draw_kind_t=wormedit::ui::nuklear::compose_static_draw_kind_t;
+    const auto& holes=work.passes[9][static_cast<std::size_t>(draw_kind_t::hole)];
+    CHECK((holes.vertices>0)==has_seam);
+    CHECK(work.tile_bytes>0);
+    CHECK(work.passes[9][static_cast<std::size_t>(draw_kind_t::composite)].calls>0);
+    const auto direct=render_world_zero_reference(fixture,view);
+    expect_static_pixels(direct,cached);
+}
+}
+TEST_CASE("Retained coverage seams redraw complete glyphs without disabling neighboring tiles",
+          "[ui][field][tile][pixel][coverage-seam][isolated-software-render]") {
+    check_note_coverage_seam(true);
+    check_note_coverage_seam(false);
+}
+TEST_CASE("Indexed grid repairs preserve published exclusion of a retained source row",
+          "[ui][field][tile][pixel][grid-membership][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    wormedit::ui::compose_view_t source;
+    source.grid_lines.push_back({.y_pixels=0,.kind=wormedit::editor_grid_line_kind_t::measure,
+                                 .chart_row=112});
+    auto view=build_world_zero_preroll_view(make_world_zero_source());
+    view.static_scene=&source;
+    view.static_scene_world_origin_pixels=-2048;
+    view.area_scroll_pixels=-48;
+    view.viewport_height_pixels=160;
+    view.downscroll=true;
+    view.has_waveform_geometry=true;
+    view.note_endpoints.clear(); view.timing_markers.clear(); view.grid_lines.clear();
+    view.static_scene_covered_begin_pixels=-2048;
+    view.static_scene_covered_end_pixels=0;
+    // This source row projects onto the top edge, but the published visible
+    // row interval excludes its end, so the original direct pass has no tick.
+    source.grid_lines[0].y_pixels=1936;
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto cached=render_static_pixels(fixture,view);
+    view.static_scene=nullptr;
+    const auto direct=render_static_pixels(fixture,view);
+    expect_static_pixels(direct,cached);
+}
+namespace {
+void expect_scaled_grid_retention(const wormedit::ui::nuklear::compose_static_work_t& work) {
+    using draw_kind_t=wormedit::ui::nuklear::compose_static_draw_kind_t;
+    CHECK(work.passes[5][static_cast<std::size_t>(draw_kind_t::direct)].vertices>0);
+    CHECK(work.passes[5][static_cast<std::size_t>(draw_kind_t::composite)].calls==0);
+    CHECK(work.passes[9][static_cast<std::size_t>(draw_kind_t::composite)].calls>0);
+    CHECK(work.tile_bytes>0);
+    CHECK(work.passes[6][static_cast<std::size_t>(draw_kind_t::hole)].vertices>0);
+}
+}
+TEST_CASE("Nonunit output keeps original grid snapping while neighboring field tiles remain retained",
+          "[ui][field][tile][pixel][grid-scale][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    SDL_SetRenderScale(fixture.renderer,2,2);
+    CHECK_FALSE(wormedit::ui::nuklear::can_retain_compose_grid(fixture.context));
+    wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context,true);
+    const auto source=make_world_zero_source();
+    const auto view=build_world_zero_preroll_view(source);
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto cached=render_static_pixels(fixture,view);
+    const auto work=wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    expect_scaled_grid_retention(work);
+    const auto direct=render_world_zero_reference(fixture,view);
+    const auto difference=static_pixel_difference(direct,cached,128,128,2);
+    CHECK(difference.interior==0);
+    if (difference.coverage) report_world_zero_boundaries(direct,cached,2);
+    CHECK(difference.coverage==0);
+}
+namespace {
+void expect_glyph_retention_work(const wormedit::ui::nuklear::compose_static_work_t& work,bool retained) {
+    using draw_kind_t=wormedit::ui::nuklear::compose_static_draw_kind_t;
+    CHECK((work.passes[9][static_cast<std::size_t>(draw_kind_t::direct)].calls==0)==retained);
+    CHECK((work.passes[9][static_cast<std::size_t>(draw_kind_t::composite)].calls>0)==retained);
+    CHECK(work.passes[9][static_cast<std::size_t>(draw_kind_t::hole)].calls==0);
+}
+void check_glyph_output_scale(float scale,bool retained) {
+    INFO("output scale " << scale);
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    SDL_SetRenderScale(fixture.renderer,scale,scale);
+    CHECK(wormedit::ui::nuklear::can_retain_compose_glyphs(fixture.context)==retained);
+    wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context,true);
+    auto source=make_world_zero_source();
+    source.note_endpoints[0].bounds={12,44,40,52};
+    source.timing_markers.clear(); source.grid_lines.clear();
+    auto view=build_world_zero_preroll_view(make_world_zero_source());
+    view.static_scene=&source;
+    view.note_endpoints=source.note_endpoints;
+    view.timing_markers.clear(); view.grid_lines.clear();
+    view.area_scroll_pixels=0;
+    view.playable_field_left_pixels=0;
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto cached=render_static_pixels(fixture,view);
+    const auto work=wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    expect_glyph_retention_work(work,retained);
+    const auto direct=render_world_zero_reference(fixture,view);
+    if (!retained) CHECK(direct==cached);
+    const auto difference=static_pixel_difference(direct,cached,128,128,scale);
+    CHECK(difference.interior==0);
+    CHECK(difference.coverage==0);
+}
+}
+TEST_CASE("Glyph retention preserves original fractional output and retains integral output",
+          "[ui][field][tile][pixel][glyph-scale][isolated-software-render]") {
+    CHECK_FALSE(wormedit::ui::nuklear::can_retain_compose_glyphs(nullptr));
+    check_glyph_output_scale(1.25f,false);
+    check_glyph_output_scale(1.5f,false);
+    check_glyph_output_scale(2,true);
+}
+namespace {
+void check_indexed_top_grid_row(bool downscroll) {
+    INFO("downscroll " << downscroll);
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    wormedit::ui::compose_view_t source;
+    source.grid_lines.push_back({.y_pixels=downscroll ? 1936.0 : 192.0,.kind=wormedit::editor_grid_line_kind_t::measure,
+        .measure_number=2,.chart_row=downscroll ? std::uint64_t{112} : std::uint64_t{192}});
+    auto view=source;
+    view.scene_available=true;
+    view.viewport_width_pixels=128;
+    view.viewport_height_pixels=160;
+    view.pixels_per_standard_measure=192;
+    view.has_waveform_geometry=true;
+    view.downscroll=downscroll;
+    view.area_scroll_pixels=downscroll ? -48 : 192;
+    view.static_scene_world_origin_pixels=downscroll ? -2048 : 0;
+    view.grid_lines[0].y_pixels=0;
+    view.static_scene=&source;
+    view.static_scene_style_generation=view.static_scene_source_generation=1;
+    view.static_scene_covered_begin_pixels=downscroll ? -2048 : 0;
+    view.static_scene_covered_end_pixels=downscroll ? 0 : 2048;
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    view.static_scene=nullptr;
+    view.document_revision=2;
+    const auto direct=render_static_pixels(fixture,view);
+    view.static_scene=&source;
+    view.document_revision=0;
+    const auto cached=render_static_pixels(fixture,view);
+    expect_static_pixels(direct,cached);
+}
+}
+TEST_CASE("Indexed grid repairs preserve an exact top row and waveform presence without copied rows",
+          "[ui][field][tile][pixel][staging][isolated-software-render]") {
+    check_indexed_top_grid_row(false);
+    check_indexed_top_grid_row(true);
+}
+TEST_CASE("Retained field tiles invalidate an uploaded atlas behind a stable font handle",
+          "[ui][field][tile][font-epoch][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    auto font=*fixture.context->style.font;
+    nk_style_set_font(fixture.context,&font);
+    const auto* handle=fixture.context->style.font;
+    wormedit::ui::compose_view_t source;
+    source.timing_markers.push_back({.object_id={2},.marker_y_pixels=64,
+        .marker_right_fraction=1,.lane=wormedit::timing_lane_kind_t::bpm,.short_label="120"});
+    auto view=source;
+    view.scene_available=true;
+    view.viewport_width_pixels=view.viewport_height_pixels=128;
+    view.pixels_per_standard_measure=192;
+    view.timing_lane_visibility_mask=1;
+    view.playable_field_left_pixels=72;
+    view.static_scene=&source;
+    view.static_scene_style_generation=view.static_scene_source_generation=1;
+    view.static_scene_covered_begin_pixels=0;
+    view.static_scene_covered_end_pixels=2048;
+    wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context,true);
+    for (unsigned frame=0;frame<20;++frame) render_static_pixels(fixture,view);
+    const auto generation=wormedit::ui::nuklear::compose_field_font_generation(fixture.context);
+    auto* atlas=nk_sdl_font_stash_begin(fixture.context);
+    auto* replacement=nk_font_atlas_add_default(atlas,font.height,nullptr);
+    REQUIRE(replacement);
+    nk_sdl_font_stash_end(fixture.context);
+    font=replacement->handle;
+    nk_style_set_font(fixture.context,&font);
+    REQUIRE(fixture.context->style.font==handle);
+    REQUIRE(wormedit::ui::nuklear::compose_field_font_generation(fixture.context)>generation);
+    render_static_pixels(fixture,view);
+    const auto work=wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    using draw_kind_t=wormedit::ui::nuklear::compose_static_draw_kind_t;
+    CHECK(work.passes[6][static_cast<std::size_t>(draw_kind_t::composite)].vertices==0);
+    CHECK(work.passes[6][static_cast<std::size_t>(draw_kind_t::missing)].calls>0);
+}
+
+namespace {
+void draw_compare_work_frame(field_submission_fixture_t& fixture,const wormedit::ui::compose_view_t& pane) {
+    nk_sdl_begin_frame(fixture.context);
+    nk_clear(fixture.context);
+    nk_input_begin(fixture.context); nk_input_end(fixture.context);
+    expect_field(nk_begin(fixture.context,"Compare retention",nk_rect(0,0,128,128),NK_WINDOW_NO_SCROLLBAR));
+    wormedit::ui::compare_view_t compare;
+    compare.visible=compare.has_two_difficulties=true;
+    compare.first_difficulty=compare.second_difficulty="Test chart";
+    compare.first_pane=compare.second_pane=&pane;
+    wormedit::ui::workspace_action_t action;
+    worm_ui_nuklear_render_compare_panel(fixture.context,&compare,&action);
+    nk_end(fixture.context);
+}
+}
+TEST_CASE("Actual Compare panes release Compose retention and return to a fresh primary cache", "[ui][field][compare-retention][isolated-software-render]") {
+    using namespace wormedit::ui::nuklear;
+    field_submission_fixture_t fixture;
+    expect_field(fixture.context);
+    const auto source=edge_note_source(192);
+    auto view=presentation_test_view(source);
+    for (unsigned frame=0;frame<24;++frame) {
+        draw_static_work_frame(fixture,view);
+        nk_sdl_discard_frame(fixture.context);
+    }
+    auto& primary=compose_field(fixture.context);
+    expect_field(primary.tile_work().retained_bytes>0 && compose_canvas_cache(fixture.context));
+    for (unsigned frame=0;frame<12;++frame) {
+        draw_compare_work_frame(fixture,view);
+        auto& secondary=compose_field(fixture.context);
+        expect_field(!primary.can_retain_tiles() && !secondary.can_retain_tiles());
+        expect_field(primary.tile_work().prepared==0 && secondary.tile_work().prepared==0);
+        expect_field(primary.tile_work().retained_bytes==0 && secondary.tile_work().retained_bytes==0);
+        expect_field(!compose_canvas_cache(fixture.context));
+        nk_sdl_discard_frame(fixture.context);
+    }
+    draw_static_work_frame(fixture,view);
+    expect_field(compose_field(fixture.context).can_retain_tiles() && compose_canvas_cache(fixture.context));
 }

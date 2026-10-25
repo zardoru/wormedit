@@ -66,6 +66,7 @@
 
 #include <SDL3/SDL.h>
 #include "ui/frontend/transport_status.h"
+#include "ui/nuklear/render/sdl_region_scope.h"
 class RenderSubphaseScope {
   public:
     explicit RenderSubphaseScope(WormUiFrameRenderPhase phase)
@@ -3175,7 +3176,11 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
         worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
-        render_title_bar(&frame.view, &frame.action);
+        {
+            const wormedit::ui::nuklear::sdl_region_scope_t header(
+                g_context, wormedit::ui::nuklear::sdl_region_t::header);
+            render_title_bar(&frame.view, &frame.action);
+        }
         const float recovery_height = render_recovery_panel(frame.view, frame.action);
         const float available_height = std::max(100.0f,
                                                 static_cast<float>(frame.height) - 28.0f - worm_ui_frontend_title_bar_height() -
@@ -3312,8 +3317,12 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
-        render_title_bar(&view, &action);
-        render_workspace_tabs(&view, &action);
+        {
+            const wormedit::ui::nuklear::sdl_region_scope_t header(
+                g_context, wormedit::ui::nuklear::sdl_region_t::header);
+            render_title_bar(&view, &action);
+            render_workspace_tabs(&view, &action);
+        }
         render_transport_seek_control(view, action);
         const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
@@ -3325,7 +3334,11 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         if (content_height < 80.0f) content_height = 80.0f;
         nk_layout_row_dynamic(g_context, content_height, 1);
         render_workspace_content(view, action);
-        render_status_bar(&view, &action);
+        {
+            const wormedit::ui::nuklear::sdl_region_scope_t status(
+                g_context, wormedit::ui::nuklear::sdl_region_t::status);
+            render_status_bar(&view, &action);
+        }
 
     }
     nk_end(g_context);

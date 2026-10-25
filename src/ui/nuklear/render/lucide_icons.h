@@ -3,6 +3,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <cstdint>
+#include <span>
 
 struct SDL_Renderer;
 struct SDL_Texture;
@@ -20,6 +21,15 @@ enum class Glyph : std::uint8_t {
     waves_horizontal, gauge, hourglass, fast_forward, flame, anchor,
     count
 };
+
+struct immutable_texture_snapshot_t {
+    SDL_Renderer* renderer{};
+    std::span<SDL_Texture* const> textures;
+    std::uint64_t generation{};
+};
+// Borrowed immutable images; valid until initialize/shutdown. A publication or
+// clear advances generation, even if SDL later reuses a texture pointer.
+auto immutable_textures() -> immutable_texture_snapshot_t;
 
 auto initialize(SDL_Renderer* renderer) -> bool;
 void shutdown();

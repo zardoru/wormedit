@@ -1,6 +1,9 @@
+#include "pixel_comparison.h"
 #include "ui/nuklear/app/sdl_backend.h"
+#include "ui/nuklear/compose/compose_canvas.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
+#include <cstring>
 #include "ui/frontend.h"
 #include "sys/app/frame_timing.h"
 #include <array>
@@ -575,4 +578,235 @@ TEST_CASE("SDL text input decodes multi-codepoint UTF-8 commits", "[frontend-sta
     expect_backend(nk_sdl_handle_event(backend.context, &event) == 1);
     expect_backend(std::string_view(keyboard.text, keyboard.text_len) == "Aé🎵");
     nk_input_end(backend.context);
+}
+
+namespace {
+struct BgmFrameOptions {
+    std::uint64_t generation{1};
+    std::size_t rows{1024};
+    float gain{1};
+    double begin{},end{1};
+    nk_color background{nk_rgb(20,25,30)},peak{nk_rgba(114,222,239,190)};
+};
+auto bgm_waveform_frame(backend_fixture_t& backend, bool cached, float scale=1,
+                         float phase=0, float marker=55,const BgmFrameOptions& options={}) -> bool {
+    SDL_SetRenderScale(backend.renderer,scale,scale);
+    SDL_SetRenderDrawColor(backend.renderer,45,35,55,255);
+    SDL_RenderClear(backend.renderer);
+    nk_input_begin(backend.context); nk_input_end(backend.context);
+    wormedit::ui::compose_view_t view{};
+    view.waveform_overview_generation=options.generation;
+    for (std::size_t index=0; index<options.rows; ++index)
+        view.bgm_bar_rows.push_back({options.begin+(index+.5)/options.rows*(options.end-options.begin),
+            options.gain*(.1f+.8f*std::abs(std::sin(static_cast<float>(index*.173f+options.begin*1024*.173f))))});
+    bool retained=false;
+    if (nk_begin(backend.context,"bgm",nk_rect(0,0,128,128),NK_WINDOW_NO_SCROLLBAR)) {
+        auto* canvas=nk_window_get_canvas(backend.context);
+        const auto bounds=nk_rect(14+phase,30+phase,90,32);
+        const auto peak=options.peak;
+        nk_fill_rect(canvas,bounds,0,options.background);
+        if (cached) retained=draw_compose_bgm_waveform(backend.context,canvas,view,bounds,options.begin,options.end,options.background,peak);
+        if (!retained) for (const auto& row:view.bgm_bar_rows) {
+            const auto x=bounds.x+static_cast<float>((row.audio_fraction-options.begin)/(options.end-options.begin))*bounds.w;
+            nk_stroke_line(canvas,x,bounds.y+16-row.absolute_peak*32*.43f,
+                x,bounds.y+16+row.absolute_peak*32*.43f,
+                std::max(1.f,bounds.w/static_cast<float>(view.bgm_bar_rows.size())),peak);
+        }
+        nk_fill_rect(canvas,nk_rect(marker,31,2,30),0,nk_rgb(255,0,0));
+    }
+    nk_end(backend.context);
+    render_sdl_backend(backend.context,NK_ANTI_ALIASING_ON);
+    return retained;
+}
+void expect_bgm_pixels(const std::vector<unsigned char>& expected,
+                       const std::vector<unsigned char>& actual,float scale=1) {
+    expect_backend(expected.size()==actual.size());
+    using namespace wormedit::ui::testing;
+    field_pixels_t expected_pixels(expected.size()/4),actual_pixels(actual.size()/4);
+    std::memcpy(expected_pixels.data(),expected.data(),expected.size());
+    std::memcpy(actual_pixels.data(),actual.data(),actual.size());
+    const auto width=static_cast<int>(std::sqrt(expected_pixels.size()));
+    const auto difference=static_pixel_difference(expected_pixels,actual_pixels,width,width,scale);
+    INFO("interior=" << difference.interior << " coverage=" << difference.coverage);
+    expect_backend(difference.interior==0);
+    expect_backend(difference.coverage==0);
+}
+}
+TEST_CASE("SDL BGM waveform reuses shared envelope ring with live overlays and whole-window pixels",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend(256);
+    for (const float scale : {1.f,1.25f,2.f}) for (const float phase : {0.f,.25f,.75f}) {
+        INFO("scale=" << scale << " phase=" << phase);
+        bgm_waveform_frame(backend,false,scale,phase);
+        const auto direct=backend_pixels(backend);
+        expect_backend(bgm_waveform_frame(backend,true,scale,phase));
+        expect_bgm_pixels(direct,backend_pixels(backend),scale);
+        const auto before=compose_bgm_waveform_work(backend.context);
+        expect_backend(bgm_waveform_frame(backend,true,scale,phase));
+        expect_bgm_pixels(direct,backend_pixels(backend),scale);
+        const auto after=compose_bgm_waveform_work(backend.context);
+        expect_backend(after.reused_frames==before.reused_frames+1);
+        expect_backend(after.target_rasters==before.target_rasters);
+        expect_backend(after.warm_vertices<=8);
+    }
+}
+TEST_CASE("SDL BGM waveform keeps the playhead live outside its shared ring",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    expect_backend(bgm_waveform_frame(backend,true));
+    bgm_waveform_frame(backend,false,1,0,65);
+    const auto direct=backend_pixels(backend);
+    expect_backend(bgm_waveform_frame(backend,true,1,0,65));
+    expect_bgm_pixels(direct,backend_pixels(backend));
+    expect_backend(compose_bgm_waveform_work(backend.context).readbacks==0);
+}
+TEST_CASE("SDL BGM ring invalidates source background style and keeps selected overview independent",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    expect_backend(bgm_waveform_frame(backend,true));
+    auto previous=compose_bgm_waveform_work(backend.context).target_rasters;
+    for (const auto options : {BgmFrameOptions{.generation=2},
+            BgmFrameOptions{.gain=.7f},BgmFrameOptions{.background=nk_rgb(35,45,55)},
+            BgmFrameOptions{.peak=nk_rgba(230,120,70,190)}}) {
+        bgm_waveform_frame(backend,false,1,0,55,options);
+        const auto direct=backend_pixels(backend);
+        expect_backend(bgm_waveform_frame(backend,true,1,0,55,options));
+        expect_bgm_pixels(direct,backend_pixels(backend));
+        const auto work=compose_bgm_waveform_work(backend.context);
+        expect_backend(work.target_rasters==previous+1);
+        previous=work.target_rasters;
+    }
+    overview_frame(backend,1);
+    const auto selected=compose_overview_work(backend.context);
+    expect_backend(bgm_waveform_frame(backend,true));
+    expect_backend(compose_overview_work(backend.context).uploads==selected.uploads);
+}
+TEST_CASE("SDL BGM ring rejects transparent oversized and custom-target cases without readback",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    expect_backend(!bgm_waveform_frame(backend,true,1,0,55,{.rows=2049}));
+    expect_backend(!bgm_waveform_frame(backend,true,1,0,55,{.background=nk_rgba(20,25,30,200)}));
+    expect_backend(!bgm_waveform_frame(backend,true,1,0,55,{.gain=2}));
+    auto* target=SDL_CreateTexture(backend.renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_TARGET,128,128);
+    expect_backend(target);
+    expect_backend(SDL_SetRenderTarget(backend.renderer,target));
+    expect_backend(!bgm_waveform_frame(backend,true));
+    expect_backend(SDL_GetRenderTarget(backend.renderer)==target);
+    expect_backend(SDL_SetRenderTarget(backend.renderer,nullptr));
+    SDL_DestroyTexture(target);
+    expect_backend(compose_bgm_waveform_work(backend.context).readbacks==0);
+}
+TEST_CASE("SDL BGM ring stable frames allocate no new Nuklear buffers",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    for (unsigned frame=0;frame<8;++frame) expect_backend(bgm_waveform_frame(backend,true));
+    const auto allocations=backend.allocations.calls;
+    expect_backend(bgm_waveform_frame(backend,true));
+    expect_backend(backend.allocations.calls==allocations);
+    expect_backend(compose_bgm_waveform_work(backend.context).warm_vertices<=8);
+}
+TEST_CASE("SDL BGM ring admits the full published row limit and preserves thick peak artwork",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    for (const auto count : {std::size_t{16},std::size_t{2048}}) {
+        INFO("rows=" << count);
+        const BgmFrameOptions options{.rows=count};
+        bgm_waveform_frame(backend,false,1,0,55,options);
+        const auto direct=backend_pixels(backend);
+        expect_backend(bgm_waveform_frame(backend,true,1,0,55,options));
+        expect_bgm_pixels(direct,backend_pixels(backend));
+    }
+}
+
+TEST_CASE("SDL BGM ring canonicalizes ULP window noise while preserving real pan changes",
+          "[ui][sdl-backend][bgm-ring]") {
+    backend_fixture_t backend;
+    expect_backend(bgm_waveform_frame(backend,true));
+    const auto before=compose_bgm_waveform_work(backend.context);
+    const BgmFrameOptions noise{.begin=1.1102230246251565e-16};
+    bgm_waveform_frame(backend,false,1,0,55,noise);
+    const auto direct=backend_pixels(backend);
+    expect_backend(bgm_waveform_frame(backend,true,1,0,55,noise));
+    expect_bgm_pixels(direct,backend_pixels(backend));
+    const auto after=compose_bgm_waveform_work(backend.context);
+    expect_backend(after.target_rasters==before.target_rasters);
+    expect_backend(after.warm_vertices<=8);
+    expect_backend(!bgm_waveform_frame(backend,true,1,0,55,{.begin=.005}));
+    const BgmFrameOptions changed{.begin=.25,.end=.75};
+    bgm_waveform_frame(backend,false,1,0,55,changed);
+    const auto changed_direct=backend_pixels(backend);
+    expect_backend(bgm_waveform_frame(backend,true,1,0,55,changed));
+    expect_bgm_pixels(changed_direct,backend_pixels(backend));
+    expect_backend(compose_bgm_waveform_work(backend.context).target_rasters==after.target_rasters+1);
+}
+
+namespace {
+struct retirement_canvas_t final : compose_canvas_cache_t {
+    int& retired;
+    explicit retirement_canvas_t(int& count) : retired(count) {}
+    ~retirement_canvas_t() override { ++retired; }
+};
+auto warmed_primary_field(backend_fixture_t& fixture) -> wormedit::ui::field::renderer_t& {
+    nk_sdl_begin_frame(fixture.context);
+    auto& field = begin_compose_field(fixture.context,{0,0,32,32});
+    field.rect(1,{0,0,32,32},{210,30,40,255});
+    wormedit::ui::field::tile_request_t request;
+    request.key.pass=1; request.viewport={0,0,32,32};
+    field.capture_tiles(request,0);
+    expect_backend(field.tile_work().retained_bytes>0);
+    nk_sdl_discard_frame(fixture.context);
+    return field;
+}
+void expect_direct_field(wormedit::ui::field::renderer_t& field) {
+    expect_backend(!field.can_retain_tiles());
+    expect_backend(field.tile_work().retained_bytes==0 && field.tile_work().prepared==0);
+}
+}
+TEST_CASE("Comparison field scope retires warmed owners and secondary fields stay direct", "[ui][backend][compare-retention]") {
+    int retired{};
+    backend_fixture_t fixture;
+    auto& primary = warmed_primary_field(fixture);
+    compose_canvas_cache(fixture.context)=std::make_unique<retirement_canvas_t>(retired);
+    nk_sdl_begin_frame(fixture.context);
+    {
+        const direct_compose_fields_scope_t direct(fixture.context);
+        expect_backend(retired==1 && primary.tile_work().retained_bytes==0);
+        expect_direct_field(begin_compose_field(fixture.context,{0,0,32,32}));
+        expect_backend(!compose_canvas_cache(fixture.context));
+        expect_direct_field(begin_compose_field(fixture.context,{40,0,32,32}));
+    }
+    nk_sdl_discard_frame(fixture.context);
+    nk_sdl_begin_frame(fixture.context);
+    expect_backend(begin_compose_field(fixture.context,{0,0,32,32}).can_retain_tiles());
+    expect_direct_field(begin_compose_field(fixture.context,{40,0,32,32}));
+}
+
+TEST_CASE("Comparison field retirement preserves earlier queued texture references until the next frame", "[ui][backend][compare-retention]") {
+    int retired{};
+    backend_fixture_t fixture;
+    warmed_primary_field(fixture);
+    nk_sdl_begin_frame(fixture.context);
+    nk_input_begin(fixture.context); nk_input_end(fixture.context);
+    expect_backend(nk_begin(fixture.context,"queued field",nk_rect(0,0,128,128),NK_WINDOW_NO_SCROLLBAR));
+    auto* canvas=nk_window_get_canvas(fixture.context);
+    auto& primary=begin_compose_field(fixture.context,{0,0,32,32});
+    wormedit::ui::field::tile_request_t request;
+    request.key.pass=1; request.viewport={0,0,32,32};
+    expect_backend(primary.composite_tiles(request));
+    compose_canvas_cache(fixture.context)=std::make_unique<retirement_canvas_t>(retired);
+    insert_compose_field(fixture.context,canvas,nk_rect(0,0,32,32));
+    {
+        const direct_compose_fields_scope_t direct(fixture.context);
+        expect_backend(retired==0 && primary.tile_work().retained_bytes>0 && !primary.indices().empty());
+        auto& second=begin_compose_field(fixture.context,{40,0,32,32});
+        expect_direct_field(second);
+        second.rect(1,{40,0,32,32},{10,200,30,255});
+        insert_compose_field(fixture.context,canvas,nk_rect(40,0,32,32));
+    }
+    nk_end(fixture.context);
+    nk_sdl_render(fixture.context,NK_ANTI_ALIASING_OFF);
+    const auto pixels=backend_pixels(fixture);
+    expect_backend(pixels[(8*128+8)*4]==210 && retired==0);
+    nk_sdl_begin_frame(fixture.context);
+    expect_backend(retired==1 && primary.tile_work().retained_bytes==0);
 }

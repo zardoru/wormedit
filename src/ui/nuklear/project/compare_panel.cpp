@@ -1,6 +1,7 @@
 #include "ui/nuklear/project/compare_panel.h"
 #include "ui/nuklear/chrome/content_layout.h"
 #include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/render/theme.h"
 
@@ -71,6 +72,7 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     (void)nk_widget(&second, context);
     auto* canvas = nk_window_get_canvas(context);
     if (!canvas || first.w <= 1.0f || second.w <= 1.0f) return;
+    const wormedit::ui::nuklear::direct_compose_fields_scope_t direct_fields(context);
     draw_compose_scene_canvas(context, view->first_pane, canvas, first);
     draw_compose_scene_canvas(context, view->second_pane, canvas, second);
     const auto& scroll = context->input.mouse.scroll_delta;

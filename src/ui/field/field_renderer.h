@@ -75,6 +75,31 @@ struct envelope_style_t {
     color_t rms{}, peak{};
     bool joined_channels{};
 };
+enum class envelope_axis_t { vertical, horizontal };
+class renderer_t;
+struct envelope_raster_region_t {
+    SDL_FRect clip{};
+    std::int64_t first_world{};
+    std::size_t count{};
+    double time_offset{};
+    float amplitude_offset{};
+    envelope_axis_t axis{envelope_axis_t::vertical};
+    bool is_screen{};
+};
+using envelope_painter_t = bool (*)(renderer_t&, const envelope_raster_region_t&, void*);
+// Bounds are display pixels; the ring retains rows along the selected time axis.
+// Fingerprints cover first_world through first_world+count, including the
+// caller's antialias halo. Painter data remains alive through submission.
+struct envelope_strip_view_t {
+    SDL_FRect bounds{};
+    double origin{};
+    std::int64_t first_world{};
+    std::span<const std::uint64_t> fingerprints;
+    std::uint64_t generation{};
+    envelope_axis_t axis{envelope_axis_t::vertical};
+    envelope_painter_t painter{};
+    void* data{};
+};
 struct envelope_work_t {
     std::size_t retained_rows{}, regenerated_rows{}, raster_vertices{}, composites{};
     std::size_t resident_bytes{}, peak_reserved_bytes{}, cached_stems{}, evictions{}, budget_fallbacks{};
@@ -92,6 +117,7 @@ class renderer_t {
     auto envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
                   SDL_FRect bounds, double world_origin, std::uint64_t generation,
                   envelope_style_t style, float y_scale = 1) -> bool;
+    auto envelope_strip(std::size_t slot, layer_t layer, const envelope_strip_view_t&) -> bool;
     // Pin the complete next visible set before any stem admission or drawing.
     auto reserve_envelope(std::size_t slot, SDL_FRect bounds, float y_scale = 1) -> bool;
     void pin_stem_envelopes(std::span<const std::uint64_t> keys);
@@ -123,6 +149,9 @@ class renderer_t {
     void limit_geometry(std::size_t bytes) noexcept;
     auto geometry_overflow() const noexcept -> bool { return geometry_overflow_; }
     auto geometry_bytes() const noexcept -> std::size_t;
+    auto viewport() const noexcept -> SDL_FRect { return viewport_; }
+    auto translate_geometry(SDL_FPoint offset) -> bool;
+    auto can_retain_tiles() const noexcept -> bool { return tiles_ && tiles_->can_retain(); }
     auto push_clip(SDL_FRect clip) -> SDL_FRect;
     void pop_clip(SDL_FRect clip);
     auto composite_tiles(const tile_request_t& request,
@@ -133,7 +162,8 @@ class renderer_t {
     void account_tile_source(std::size_t bytes);
     void prepare_tiles(const tile_request_t& request, double covered_begin, double covered_end,
                        std::size_t source_bytes,
-                       const std::function<void(renderer_t&, double)>& paint);
+                       const std::function<void(renderer_t&, double)>& paint,
+                       SDL_FPoint raster_origin = {});
     // Cache compositing stays at the caller's original pass insertion point.
     void cached_quad(layer_t layer, SDL_FRect bounds, SDL_Texture* texture,
                      SDL_FPoint uv_min, SDL_FPoint uv_max);
@@ -146,6 +176,8 @@ class renderer_t {
                  float aa_fringe = 0);
     void stroke_polygon(layer_t layer, std::span<const SDL_FPoint> points, float width,
                         color_t color, float aa_fringe = 0);
+    auto triangles(layer_t layer, std::span<const SDL_Vertex> vertices,
+                   std::span<const std::uint32_t> indices, SDL_Texture* texture = nullptr) -> bool;
     void text(layer_t layer, SDL_FPoint pen, std::string_view utf8, color_t color,
               const font_t& font);
     auto submit(SDL_Renderer* renderer, submission_t hooks = {}) const -> bool;
@@ -188,7 +220,7 @@ class renderer_t {
     auto evict_unsubmitted_stem() -> bool;
     auto evict_offscreen_envelope(envelope_key_t except) -> bool;
     auto envelope_dimensions(SDL_FRect bounds, float y_scale) const -> std::optional<std::pair<int, int>>;
-    auto prepare_envelope_cache(envelope_key_t key, int width, int height) -> envelope_cache_t*;
+    auto prepare_envelope_cache(envelope_key_t key, int width, int height, envelope_axis_t axis = envelope_axis_t::vertical) -> envelope_cache_t*;
     auto envelope_for_key(envelope_key_t key, layer_t layer, std::span<const envelope_row_t> rows,
                           SDL_FRect bounds, double origin, std::uint64_t generation,
                           envelope_style_t style, float y_scale) -> bool;

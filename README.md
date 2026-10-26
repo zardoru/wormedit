@@ -5,7 +5,7 @@
 ![Compose with a keysounded BME chart: timing lanes, eight playable lanes, a BGM column and the Sounds dock](docs/manual/images/compose-overview.png)
 
 > **Status: pre-release (0.1.0).** Wormedit is used to make real charts, but it is not finished and
-> has no stable release yet. Storyboards, Lua scripting and Quaver support are planned but not
+> has no stable release yet. Storyboards and Quaver support are planned but not
 > shipped. Work is tracked as task cards in [`docs/chart-editor-plan/`](docs/chart-editor-plan.md).
 
 ## How charting works
@@ -37,6 +37,17 @@ teaches this loop first.
 
 ## What it does
 
+- **Nondestructive audio cuts.** Shorten a song once across every difficulty: select an interval
+  in Compose and create an export cut. Charting and playback skip the cuts; export splices the
+  audio and rebases every chart together. Keep editing the original song and notes, with
+  undoable cut boundaries and checks for objects crossing a seam.
+  [Audio cuts in the manual](docs/manual/chapters/navigating.adoc#export-cuts).
+- **Lua scripting** (optional build). Generate notes, layers and complete difficulties, compose
+  patterns across files with `project.lua`, and write custom SV curves. Preview changes before
+  applying them as one Undo step; save recipes and regenerate with stable identities and
+  protection for manual edits.
+  [Scripting guide](docs/manual/chapters/placing-notes.adoc#lua-note-generators) and
+  [Lua API and examples](docs/lua-api/README.md).
 - **Editing.** Lane keys and keyboard holds, mouse drawing and painting, area selection,
   cut/copy/paste with previews, moving notes between lanes and into BGM, select-by-sound, note
   kinds (mines, lifts, fakes, rolls, invisible notes) where the format has them, and default lane
@@ -46,7 +57,8 @@ teaches this loop first.
   and move like notes (`Ctrl+M` toggles one at the cursor); tap tempo, waveform beat fitting, a
   metronome, timing lock and SV recipes.
 - **Audio.** Streaming playback with waveforms, per-note audition, BGM lane mute and solo,
-  playback from 0.1× to 1×, with or without pitch change.
+  playback from 0.1× to 1×, with or without pitch change; BPM-grid slicing of long sounds into
+  keysounds, and preview-audio export with trimming and fade-out.
 - **BMS depth.** Legacy Shift-JIS and other encodings, `#RANDOM`/`#IF`/`#SWITCH` branches, BGM
   columns, numbered `#WAV` slot import, and paste from **iBMSC and BMSE** (and tools that write
   their clipboard format).
@@ -89,6 +101,9 @@ libraries are fetched by CMake. FFmpeg development libraries, if present, add vi
 audio metadata. [Asciidoctor](https://asciidoctor.org) builds the HTML manual that `cmake --install`
 ships; configure with `-DWORMEDIT_INSTALL_MANUAL=OFF` to skip it.
 
+Add `-DWORMEDIT_ENABLE_LUA=ON` when configuring to enable scripting with the pinned Lua 5.4
+runtime. Lua scripting is disabled by default; the manual and API reference are included either way.
+
 The headless core and its tests need no window or GPU:
 
 ```sh
@@ -102,8 +117,8 @@ Offline builds, cross-compiling, Windows packaging and crash backtraces are cove
 
 - **[User manual](docs/manual/)** (AsciiDoc; `cmake --build build --target manual` renders it to
   HTML in `build/manual/`): the charting loop, navigation, timing, sounds and
-  layers, bar lines, walkthroughs for a keysounded BMS chart and for an osu!mania/StepMania chart,
-  and generated keyboard and layout references.
+  layers, audio cuts, Lua generators and SV recipes, bar lines, walkthroughs for a keysounded
+  BMS chart and for an osu!mania/StepMania chart, and generated keyboard and layout references.
 - [Building](docs/building.md)
 - [Format references](docs/references/)
 

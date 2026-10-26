@@ -138,6 +138,7 @@ BGM column with the Draw tool to place a sound there directly.
 On BMSON charts, moving a linked playable note to BGM returns it to its original source stem,
 keeping its timing and slice point.
 
+[#lua-note-generators]
 == Lua note generators
 
 The link:lua-api/index.html[packaged Lua API reference] documents all context fields, return

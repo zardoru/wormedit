@@ -79,6 +79,7 @@ There can be up to 32 tags of 64 bytes each; rejected edits keep the existing ta
 diagnostic. *Filter by tag* matches part of an individual tag, without regard to case. The
 ordinary search also finds names and tag text.
 
+[#slicing-keysounds]
 == Slicing a long sound
 
 Save the project, select a difficulty, and select a sound on the *Sounds* tab.

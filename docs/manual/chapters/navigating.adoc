@@ -92,7 +92,12 @@ bookmark chooser. Marker editing controls live in this dock.
 
 Double-click a bookmark's line or label to rename it.
 
-== Export cuts
+[#export-cuts]
+== Audio cuts (export cuts)
+
+Use export cuts to make a shorter version of a song across all its difficulties without
+destructively editing the source audio or deleting the original chart content. This differs
+from <<slicing-keysounds,slicing a sound into keysounds>>, which creates separate WAV resources.
 
 Select an area in Compose and choose *Create export cut* from its context menu, beside
 *Create section*. The selection uses the current snap setting. Cuts belong to the whole song,

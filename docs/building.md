@@ -220,11 +220,12 @@ Wine's helper windows on the isolated display:
 wine_work=$(mktemp -d /tmp/wormedit-wine-release.XXXXXX)
 unzip -q build/dist/wormedit-1.0.0-rc1-windows-x64.zip -d "$wine_work"
 package="$wine_work/wormedit-1.0.0-rc1-windows-x64"
-cp -R "$package/manual/fixtures/tutorial" "$wine_work/曲"
+cp -R "$package/manual/fixtures/tutorial" "$wine_work/ascii"
+cp -R "$wine_work/ascii" "$wine_work/曲"
 xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' \
   env WINEPREFIX="$wine_work/prefix" WINEARCH=win64 WINEDEBUG=-all \
   bash -c 'wine "$1" "$(winepath -w "$2")"' _ \
-    "$package/wormedit.exe" "$wine_work/曲/tutorial.wormedit"
+    "$package/wormedit.exe" "$wine_work/ascii/tutorial.wormedit"
 # After the isolated session and screenshot inspection:
 WINEPREFIX="$wine_work/prefix" wineserver -k
 rm -rf "$wine_work"
@@ -232,11 +233,20 @@ rm -rf "$wine_work"
 
 Generate the Windows project path inside the same temporary prefix if using
 custom drive mappings. Check open, Save As/reopen and export in the `曲` folder
-as well as an ASCII path. Playback must produce real nonzero audio; an SDL disk
-audio capture can verify decoded PCM in an unattended run, but does not verify
-physical speakers. Test the tutorial's osu!mania output group explicitly and
+as well as an ASCII path. Playback must produce real nonzero audio; recording
+Wine's output from a null-sink monitor verifies PCM without playing it on the
+desktop. Test the tutorial's osu!mania output group explicitly and
 record any application rejection with its full message. Use Help → User manual
 to open the packaged local HTML, keeping its browser on the isolated display.
+RC1 Wine verification found that a non-ASCII startup argument becomes `?` and
+fails to load; use File → Open for those paths while that application defect is
+open. The tutorial's BMS-to-osu conversion also requires the explicit projection
+choice planned in T-767. A compatible comparison fixture can exercise osu export
+separately; keep both the successful export and the tutorial rejection in the
+release evidence.
+For the Help check, set `HKCU\Software\Wine\WineBrowser`'s `Browsers` value in
+the temporary prefix to a browser wrapper that uses its own temporary profile
+on the same Xvfb display. This avoids the desktop browser's profile/IPC routing.
 
 ## macOS owner-verification bundle (unsigned)
 

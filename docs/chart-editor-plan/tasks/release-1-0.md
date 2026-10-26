@@ -168,7 +168,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-765 Write the 1.0.0-rc1 release notes and known limitations
 
-- **Status:** blocked-on T-762, T-763
+- **Status:** blocked-on T-762, T-763, T-767
 - **Outcome:** `docs/release-notes/1.0.0-rc1.md` summarizes what Wormedit does, supported formats, downloads per platform with system requirements, the project-format promise (folder form; newer schemas are refused), the Lua API v1 status, known limitations taken from the deferred cards (storyboards/OSBX, Quaver, StepMania rolls and tick counts, MIDI, multivoice sounds, CJK UI, 48K stage focus), the unsigned macOS first-open steps, and how to report bugs.
 - **Read first:** `README.md`, `docs/manual/index.adoc`, this card file, the Status lines of deferred cards, `docs/building.md`.
 - **Files owned:** new `docs/release-notes/1.0.0-rc1.md`, `README.md` (link to the notes), `docs/manual/chapters/getting-started.adoc` (install section only).
@@ -180,7 +180,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-766 Run the release gate and prepare the rc1 tag
 
-- **Status:** blocked-on T-760, T-761, T-762, T-763, T-765
+- **Status:** blocked-on T-760, T-761, T-762, T-763, T-765, T-767
 - **Outcome:** on one release commit the full GATE passes, the Windows zip and AppImage are built from that commit and pass their smoke checks, the documentation and manual checks pass, and an annotated `v1.0.0-rc1` tag is prepared locally for the owner to push.
 - **Read first:** `scripts/gate.sh`, `docs/building.md`, this card file.
 - **Files owned:** `memory/chart-editor-status/resume.md`, `memory/chart-editor-status/current-milestone.md`, this card file.
@@ -189,3 +189,22 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Reject/failure behavior:** any failure blocks the tag; nothing is pushed by an agent.
 - **Verify:** gate summary, artifact checksums, `git describe` on the release commit.
 - **Out of scope:** the macOS artifact (owner builds it on the Mac after T-764).
+
+## T-767 Flatten BMS branches per output group
+
+- **Status:** ready
+- **Outcome:** a non-BMS output group (osu!mania, StepMania, BMSON) has a saved "Flatten BMS branches to the active outcome" option; with it on, Compose export of a chart with `#RANDOM`/`#IF`/`#SWITCH` branches publishes the active outcome with the existing flattening warning, and with it off the refusal names the option. The packaged tutorial project exports its BMS chart to osu!mania from the UI.
+- **Owner decision (2026-10-26):** the choice lives on the output group and is saved with the project, like the StepMania policy (option 1 of 3). Found by the T-763 smoke check: `wormedit-convert` could set `branches = active_projection`, but no UI path could.
+- **Read first:** `include/wormedit/core/document.h` (`output_group_t`, `branch_projection_t`), `src/sys/project/output_group_export.h` (`output_group_export_plan_t::from`), `src/formats/conversion.cpp` (`validate_selected_target`), `src/ui/nuklear/project/setup_panel.cpp` (StepMania group policy controls), `docs/manual/chapters/bms-branches.adoc` ("Export and compare").
+- **Files owned:** `include/wormedit/core/document.h` (the output-group field and schema constant), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `src/sys/project/output_group_export.h/.cpp`, `src/formats/conversion.cpp` (message text only), the output-group edit command/projection/action files that already carry the StepMania policy (trace them from `group_stepmania_file` before editing and record them here), `src/ui/nuklear/project/setup_panel.cpp`, `docs/manual/chapters/bms-branches.adoc`, `docs/manual/chapters/walkthrough-osu-stepmania.adoc` (export step only), focused tests beside the existing output-group, migration and conversion tests, and one event-harness workflow test.
+- **Steps:**
+  1. Add the per-group branch policy to `output_group_t` (default: preserve, so existing projects keep refusing until the owner opts in); bump the native schema to 25 with an additive 24→25 migration per `code-style.md`, and extend T-760's key-set guard.
+  2. Map it into `conversion_request_t::branches` in `output_group_export_plan_t::from` for non-BMS families; BMS and native groups ignore it.
+  3. Edit it through the same document command, projection and Setup controls as the StepMania policy; hide or disable it for BMS and native groups.
+  4. Make the refusal text name the option ("enable Flatten BMS branches on this output group").
+  5. Tests: migration 24→25, round trip, plan mapping, refusal without the option, successful osu!mania export of the tutorial fixture with it (event harness through Setup and Ctrl+E).
+  6. Update the two manual sections; refresh an affected screenshot only if its controls changed.
+- **Invariants:** BMS export still preserves the complete program; saved projects without the field load as "preserve"; Undo covers the option change.
+- **Reject/failure behavior:** a refused export writes nothing and leaves the project unchanged.
+- **Verify:** focused tests, `ctest --test-dir build -R '^documentation\.'`, GATE; isolated Xvfb capture of the Setup control and a successful tutorial export.
+- **Out of scope:** choosing a specific outcome per export (the active outcome comes from the branch panel), the CLI (already supports `branches`), BMS repair proposals (T-287).

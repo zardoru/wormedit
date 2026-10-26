@@ -10,8 +10,15 @@ in this order; Windows and Linux first, macOS staged for the owner's own Mac:
 - **T-762** Windows release zip checked under Wine (ready; consumes T-761 for its name).
 - **T-763** Linux AppImage and shared third-party notices (ready).
 - **T-764** unsigned macOS bundle and owner checklist (ready; owner verifies on the Mac).
-- **T-765** release notes and known limitations (blocked-on T-762, T-763).
-- **T-766** release gate and local `v1.0.0-rc1` tag; the owner pushes (blocked-on T-760–T-763, T-765).
+- **T-767** saved per-output-group "Flatten BMS branches" option, schema 25 (ready; owner decision).
+- **T-765** release notes and known limitations (blocked-on T-762, T-763, T-767).
+- **T-766** release gate and local `v1.0.0-rc1` tag; the owner pushes (blocked-on T-760–T-763, T-765, T-767).
+
+Lane results (2026-10-26): all four lanes merged into main (`43f5311`–`5b2a6d1`). Their shared
+GATE failure (cut-axis seam pick at row 9120), the Windows compile errors (narrow `fopen` of a
+wide path in export-cut audio; GCC false-positive `maybe-uninitialized`/`array-bounds`) and the
+macOS notices TODOs were fixed in `75dc758`. The Windows zip/Wine check and the rc1 AppImage
+rebuild rerun from that commit.
 
 Owner decisions: folder-form project format for 1.0 (open question 12), refuse newer schemas,
 every persisted change bumps the schema (`code-style.md`), unsigned ad-hoc-signed macOS app.

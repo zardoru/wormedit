@@ -240,12 +240,17 @@ Wine's output from a null-sink monitor verifies PCM without playing it on the
 desktop. Test the tutorial's osu!mania output group explicitly and
 record any application rejection with its full message. Use Help → User manual
 to open the packaged local HTML, keeping its browser on the isolated display.
-RC1 Wine verification found that a non-ASCII startup argument becomes `?` and
-fails to load; use File → Open for those paths while that application defect is
-open. The tutorial's BMS-to-osu conversion also requires the explicit projection
-choice planned in T-767. A compatible comparison fixture can exercise osu export
-separately; keep both the successful export and the tutorial rejection in the
-release evidence.
+For the tutorial, create an osu!mania export target in Project and enable
+**Flatten BMS branches to the active outcome** before saving the target. This
+choice is saved per output group in native schema 25. Export from Compose, then
+reimport the resulting `.osu` and check its 16 notes, eight columns and all four
+keysounds. Confirm that every referenced Ogg file is present beside the exported
+chart; round-3 Wine verification found that this tutorial export publishes the
+chart and manifest but omits its audio assets, so reimport currently reports
+missing audio. T-762 remains partial pending that application fix.
+Unicode startup arguments and all four Export footer buttons pass at `3229cfe`;
+include a direct command-line launch and an Explorer-style wide-character shell
+launch with a `曲` path when repeating the release smoke.
 For the Help check, set `HKCU\Software\Wine\WineBrowser`'s `Browsers` value in
 the temporary prefix to a browser wrapper that uses its own temporary profile
 on the same Xvfb display. This avoids the desktop browser's profile/IPC routing.

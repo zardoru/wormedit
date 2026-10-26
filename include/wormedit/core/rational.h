@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace wormedit {
@@ -17,16 +18,29 @@ namespace wormedit {
 enum class zero_denominator_policy_t { return_zero };
 inline constexpr auto rational_zero_denominator_policy = zero_denominator_policy_t::return_zero;
 
+namespace rational_detail {
+[[nodiscard]] auto to_double_magnitude(std::uint64_t numerator, std::uint64_t denominator) noexcept -> double;
+}
+
+// Round the exact ratio once to binary64, including when long double has only 53 value bits.
 template<class Rational>
-[[nodiscard]] constexpr auto to_long_double(Rational value,
-    zero_denominator_policy_t = rational_zero_denominator_policy) noexcept -> long double {
-    return value.denominator == 0 ? 0.0L
-        : static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
+[[nodiscard]] inline auto to_double(Rational value,
+    zero_denominator_policy_t policy = rational_zero_denominator_policy) noexcept -> double {
+    (void)policy;
+    if (value.denominator == 0) return 0.0;
+    const bool negative = std::is_signed_v<decltype(value.numerator)> && value.numerator < 0;
+    const auto magnitude = negative ? static_cast<std::uint64_t>(-(value.numerator + 1)) + 1
+                                    : static_cast<std::uint64_t>(value.numerator);
+    const auto result = rational_detail::to_double_magnitude(magnitude, value.denominator);
+    return negative ? -result : result;
 }
 template<class Rational>
-[[nodiscard]] constexpr auto to_double(Rational value,
-    zero_denominator_policy_t policy = rational_zero_denominator_policy) noexcept -> double {
-    return static_cast<double>(to_long_double(value, policy));
+[[nodiscard]] constexpr auto to_long_double(Rational value,
+    zero_denominator_policy_t policy = rational_zero_denominator_policy) noexcept -> long double {
+    if constexpr (std::numeric_limits<long double>::digits == std::numeric_limits<double>::digits)
+        return to_double(value, policy);
+    return value.denominator == 0 ? 0.0L
+        : static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
 }
 enum class row_clamp_policy_t { both_ends, upper_only, reject_outside };
 [[nodiscard]] inline auto nearest_row(long double row, std::uint64_t total_rows,

@@ -17,6 +17,11 @@ input ─► dispatch ──┤                                               �
 
 There are two paths in and one way to change the document.
 
+Compose timing staging is owned by `sys::runtime::timing_edit_t`: begin, draft updates,
+confirmation, moves, deletion and cancellation all enter its dispatcher. The application routes
+frontend actions to that owner; projections borrow its stage through `stage_view()`. This same
+boundary supports event-harness workflows without a second dispatcher or direct test commits.
+
 - **Direct commands:** menu items, shortcuts and Compose actions. Each command or Compose enum has
   one route to its handler *(T-636)*. The handler builds the edit and runs it.
 - **Gesture dispatch:** pointer drags, paint and keyboard holds. The gesture runner owns the

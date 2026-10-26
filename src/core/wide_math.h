@@ -19,6 +19,13 @@ struct u128_t {
 
 [[nodiscard]] constexpr auto can_fit_u64(const u128_t& value) -> bool { return value.high == 0; }
 
+[[nodiscard]] constexpr auto shift_left(const u128_t& value, unsigned bits) -> u128_t {
+    if (bits >= 128) return {};
+    if (bits >= 64) return {value.low << (bits - 64), 0};
+    if (bits == 0) return value;
+    return {(value.high << bits) | (value.low >> (64 - bits)), value.low << bits};
+}
+
 [[nodiscard]] constexpr auto multiply(std::uint64_t left, std::uint64_t right) -> u128_t {
     constexpr std::uint64_t mask = 0xFFFFFFFFULL;
     const auto left_low = left & mask;

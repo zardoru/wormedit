@@ -92,6 +92,29 @@ TEST_CASE("fractional measures restart snapping and their heads remain reachable
     check_measure_snap(snap_canvas_row(chart, index, index.total_rows - 1, {4}, index.total_rows) == 1128);
 }
 
+TEST_CASE("Integer snapping preserves large rows measure heads and midpoint ties",
+          "[unit][core][snap][shared-arithmetic]") {
+    auto chart = snap_chart();
+    chart.divisions_per_standard_measure = std::uint64_t{1} << 54;
+    const auto built = measure_index_t::from(chart);
+    REQUIRE(built);
+    const auto& index = *built;
+    const auto row = (std::uint64_t{1} << 53) + 1;
+    const snap_grid_t exact{.denominator = chart.divisions_per_standard_measure};
+    check_measure_snap(snap_absolute_row(chart, index, row, exact) == row);
+    check_measure_snap(snap_canvas_row_or_exact(chart, index, row, exact, index.total_rows) == row);
+    check_measure_snap(snap_position(chart, index, {measure_id_t{4}, row}, exact) ==
+                       local_position_t{measure_id_t{4}, row});
+    const snap_grid_t two_rows{.denominator = chart.divisions_per_standard_measure / 2};
+    check_measure_snap(snap_absolute_row(chart, index, row, two_rows) == row - 1);
+    check_measure_snap(snap_absolute_row(chart, index, row + 1, two_rows) == row + 1);
+    check_measure_snap(snap_canvas_row_or_exact(chart, index, index.total_rows - 1,
+                                               two_rows, index.total_rows) == index.total_rows - 2);
+    check_measure_snap(snap_absolute_row(chart, index, index.total_rows + row, exact) == index.total_rows + row);
+    check_measure_snap(grid_phase(chart, index, chart.divisions_per_standard_measure + row,
+                                  quantization_space_t::standard_measure).row == row);
+}
+
 TEST_CASE("strict grid neighbors include tiny measure heads and preserve fractional origins",
           "[unit][core][snap][measure-local-snap]") {
     const auto chart = fractional_snap_chart();

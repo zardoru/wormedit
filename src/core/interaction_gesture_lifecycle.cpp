@@ -170,7 +170,9 @@ auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_i
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                    "Move requires a tap, hold or BGM reference", reference_id)}};
     auto targets = editor_quantize_selection(state).notes;
-    if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
+    const bool standalone_note = !bgm_reference &&
+        std::ranges::find(targets, reference_id) == targets.end();
+    if (standalone_note)
         targets = {reference_id};
     auto planned = plan_move_gesture(context, targets, reference_id,
                                   reference ? reference->position : bgm_reference->position,
@@ -187,7 +189,8 @@ auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_i
         .occupants = plan.occupants,
         .conflicting_notes = move_conflict_count(plan),
         .displace_to_bgm = displace_to_bgm,
-        .bar_lines = editor_shift_selection(state, 0).bar_lines,
+        .bar_lines = standalone_note ? std::vector<measure_id_t>{}
+                                    : editor_shift_selection(state, 0).bar_lines,
         .bar_line_time = state.bar_line_time,
     }};
 }

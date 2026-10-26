@@ -471,6 +471,7 @@ void populate_compose_timing_markers(
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
     const wormedit::timing_lane_pseudonote_outcome_t* timing_stage) {
     view.timing_markers.clear();
+    view.timing_document_rows = cache.scene.index.value()->measures.total_rows;
     const auto marker_total = chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
                               chart.pauses.size() + chart.warps.size() + chart.kiai.size() +
                               chart.timing_anchors.size() + 1;

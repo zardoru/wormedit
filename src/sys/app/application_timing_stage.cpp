@@ -64,17 +64,13 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
     if (step == 0) {
         return std::nullopt;
     }
-    const auto raw_row_value =
-        std::min(std::floor(static_cast<long double>(fraction) * measures->total_rows),
-                 static_cast<long double>(measures->total_rows - 1));
-    const auto raw_row = static_cast<std::uint64_t>(raw_row_value);
     const auto usable_denominator =
         step == chart.divisions_per_standard_measure ? std::uint64_t{1} : active_denominator;
-    const auto snapped_row = wormedit::snap_canvas_row(chart, *measures, raw_row,
+    const auto snapped_row = wormedit::snap_canvas_row(chart, *measures,
+                                                       static_cast<long double>(fraction) * measures->total_rows,
                                                        {.denominator = usable_denominator},
-                                                       measures->total_rows)
-                                 .value_or(raw_row);
-    return measures->position_at(snapped_row);
+                                                       measures->total_rows);
+    return snapped_row ? measures->position_at(*snapped_row) : std::nullopt;
 }
 
 auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart,

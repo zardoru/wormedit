@@ -183,6 +183,33 @@ TEST_CASE("shared helpers guard invalid rationals and preserve row clamp policie
     check_row_end_policies();
 }
 
+TEST_CASE("Rational display conversion rounds exact 64-bit ratios once to binary64",
+          "[unit][core][rational][shared-arithmetic]") {
+    struct case_t {
+        rational_t value;
+        double expected;
+    };
+    const case_t cases[] = {
+        {{9'007'199'254'740'993ULL, 3}, 0x1.5555555555556p51},
+        {{9'007'199'254'740'995ULL, 9'007'199'254'740'993ULL}, 0x1.0000000000001p0},
+        {{UINT64_MAX, 3}, 0x1.5555555555555p62},
+        {{1, UINT64_MAX}, 0x1p-64},
+        {{UINT64_MAX, UINT64_MAX - 1}, 1.0},
+        {{UINT64_MAX, 1}, 0x1p64},
+        // Exact halfway values choose the even significand, including a carry into the exponent.
+        {{(std::uint64_t{1} << 53) + 1, std::uint64_t{1} << 53}, 1.0},
+        {{(std::uint64_t{1} << 53) + 3, std::uint64_t{1} << 53}, 0x1.0000000000002p0},
+        {{(std::uint64_t{1} << 54) - 1, std::uint64_t{1} << 53}, 2.0},
+    };
+    for (const auto& [value, expected] : cases) {
+        CAPTURE(value.numerator, value.denominator);
+        CHECK(to_double(value) == expected);
+    }
+    CHECK(to_double(signed_rational_t{INT64_MIN, 3}) == -0x1.5555555555555p61);
+    CHECK(to_double(signed_rational_t{-9'007'199'254'740'993LL, 3}) == -0x1.5555555555556p51);
+    CHECK(to_long_double(rational_t{9'007'199'254'740'993ULL, 3}) == 3'002'399'751'580'331.0L);
+}
+
 TEST_CASE("exact subtraction reduces wide intermediates before rejecting overflow", "[unit][core][helpers]") {
     const auto value = timing_arithmetic::subtract_exact({INT64_MAX, 2}, {INT64_MAX, 3});
     REQUIRE(value);

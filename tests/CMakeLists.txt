@@ -710,6 +710,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/walkthrough_bms_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
         ../src/sys/app/application_defaults.cpp
+        ../src/sys/app/application_timing_stage.cpp
+        ../src/sys/timing/timing_edit_runtime.cpp
         ui/widget_lookup_event_harness_tests.cpp
         ui/generator_event_harness_tests.cpp
         ../src/sys/resources/resource_drop_router.cpp

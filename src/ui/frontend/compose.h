@@ -1309,6 +1309,7 @@ struct compose_view_t {
     double playable_field_right_pixels{};
     double timing_document_begin_fraction{};
     double timing_document_end_fraction{};
+    std::uint64_t timing_document_rows{};
     double pixels_per_standard_measure{};
     bool playhead_visible{};
     double playhead_y_pixels{};

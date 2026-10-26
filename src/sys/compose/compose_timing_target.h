@@ -5,9 +5,11 @@
 
 namespace wormedit::sys {
 
-// The one conversion from a raw timing pointer press to a document fraction in source order:
-// downscroll mirroring first, then the visible slice of the document.
+// Prefer the source coordinate captured from the drawn axis. Surfaces without
+// chart-axis geometry map their raw pointer through the visible document slice.
 inline auto timing_target_fraction(const wormedit::ui::timing_target_t& target) -> double {
+    if (target.source_document_fraction)
+        return *target.source_document_fraction;
     const auto viewport_fraction = compose_source_fraction(
         target.screen_y, target.viewport_height_pixels, target.downscroll);
     return target.document_begin_fraction +

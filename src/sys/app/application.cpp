@@ -1,14 +1,12 @@
 #include "common/window_presentation.h"
 #include "sys/compose/generator_runtime.h"
 #include "sys/compose/compose_clipboard_selection.h"
-#include <wormedit/core/timing_lane_catalog.h>
 #include "core/text_util.h"
 #include "sys/resources/catalog_view.h"
 #include "sys/app/application.h"
 #include <wormedit/core/hitsound_editor.h>
 #include "sys/app/application_edit_inputs.h"
 #include "sys/preferences/external_player_runtime.h"
-#include "sys/app/application_timing_stage.h"
 #include "sys/audio/audio_offset_actions.h"
 #include "sys/audio/audio_slicer_runtime.h"
 #include "sys/compose/actions/compose_note_to_bgm.h"
@@ -36,7 +34,6 @@
 #include "sys/compose/views/compose_resource_presenter.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/project/compare_view.h"
-#include "sys/compose/compose_timing_target.h"
 #include "sys/compose/input/compose_input.h"
 #include "sys/compose/actions/compose_actions.h"
 #include "sys/compose/views/recipe_form.h"
@@ -194,10 +191,7 @@ bool open_bookmark_chooser_backend(void*, std::uint64_t project, std::uint64_t c
     return worm_ui_frontend_open_bookmark_chooser(project, chart, revision);
 }
 
-using wormedit::sys::begin_timing_stage;
 using wormedit::sys::compose_action_outcome_t;
-using wormedit::sys::timing_position_from_fraction;
-using wormedit::sys::timing_stage_value;
 
 
 
@@ -206,7 +200,6 @@ using wormedit::sys::create_session_project_id;
 using wormedit::sys::parse_application_command;
 using wormedit::sys::timing_grid_state_t;
 using wormedit::sys::timing_scene_cache_t;
-using wormedit::sys::runtime::timing_edit_t;
 using wormedit::sys::metadata_drop_state_t;
 using wormedit::sys::dispatch_compose_view_action;
 using wormedit::sys::runtime::resource_copy_t;
@@ -232,17 +225,6 @@ using wormedit::sys::dispatch_compose_navigation_actions;
 using wormedit::sys::selected_bmson_waveform_source;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
-
-void post_edit_rejection(wormedit::notification_sink_t& notifications,
-                         const wormedit::diagnostic_list_t& diagnostics,
-                         std::string_view fallback) {
-    if (diagnostics.empty())
-        notifications.post(wormedit::notification_severity_t::warning,
-                           wormedit::notification_source_t::edit, fallback);
-    else
-        notifications.post(to_notification_severity(diagnostics.front().severity),
-                           wormedit::notification_source_t::edit, diagnostics.front().message);
-}
 
 auto post_callback_feedback(wormedit::notification_sink_t& notifications,
                             wormedit::notification_severity_t severity,
@@ -985,51 +967,6 @@ auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::comma
 
 
 
-void delete_staged_timing_event(const wormedit::ui::workspace_action_t& action,
-                                wormedit::document_history_t& history, bool timing_locked,
-                                wormedit::timing_lane_pseudonote_outcome_t& stage,
-                                wormedit::notification_sink_t& notifications) {
-    const auto* kind = wormedit::find_catalog_entry(wormedit::timing_lanes, action.timing_lane);
-    if (!stage.report()->existing_event || !kind || kind->kind != stage.report()->kind) {
-        post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
-    } else {
-        const auto result = wormedit::delete_existing_timing_lane_event(
-            history, stage.captured_stamp().chart, kind->kind, *stage.report()->existing_event, timing_locked, stage.report()->anchoring);
-        if (result)
-            notifications.post(wormedit::notification_severity_t::success,
-                               wormedit::notification_source_t::edit, "Timing event deleted.");
-        else
-            post_edit_rejection(notifications, result.diagnostics, "Timing event deletion was rejected.");
-    }
-    wormedit::cancel_proposal(stage);
-}
-
-
-
-
-
-// Timing focus: begin a new event with its default value and confirm it at once.
-void quick_insert_timing_event(const wormedit::ui::workspace_action_t& action,
-                               wormedit::document_history_t& history,
-                               const wormedit::workspace_controller_t& workspace,
-                               bool timing_locked, std::uint64_t active_snap_denominator,
-                               wormedit::notification_sink_t& notifications) {
-    auto candidate = begin_timing_stage(action, history, workspace, timing_locked,
-                                        active_snap_denominator);
-    if (!candidate.value) {
-        post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be inserted at that row.");
-        return;
-    }
-    const auto result = wormedit::apply_proposal(history, candidate, timing_locked);
-    if (result)
-        notifications.post(wormedit::notification_severity_t::success,
-                           wormedit::notification_source_t::edit, "Timing event inserted.");
-    else
-        post_edit_rejection(notifications, result.diagnostics, "Timing event insertion was rejected.");
-}
-
-
-
 auto post_workspace_selection_feedback(wormedit::notification_sink_t& notifications,
     const wormedit::dispatch_outcome_t& result, std::string accepted, std::string rejected) -> std::string {
     if ((result.value && result.diagnostics.empty())) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
@@ -1753,7 +1690,8 @@ void post_tap_apply_feedback(const std::optional<wormedit::document_command_resu
                            wormedit::notification_source_t::edit,
                            "Applied initial BPM and audio offset.");
     else
-        post_edit_rejection(notifications, result->diagnostics, "Tap timing Apply rejected.");
+        notifications.post_rejection(wormedit::notification_source_t::edit,
+                                     result->diagnostics, "Tap timing Apply rejected.");
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -2298,27 +2236,6 @@ struct application_t::implementation_t {
             platform.notification_sink.post(error ? wormedit::notification_severity_t::error
                                                   : wormedit::notification_severity_t::success,
                                             wormedit::notification_source_t::document, message);
-        }
-    }
-
-    void move_staged_timing_event(const wormedit::ui::workspace_action_t& action, bool timing_locked,
-                                  std::uint64_t active_snap_denominator,
-                                  const wormedit::chart_document_t* chart,
-                                  wormedit::timing_lane_pseudonote_outcome_t& stage) {
-        const auto target =
-            chart == nullptr || !stage.report()->existing_event || !action.timing_has_target_y
-                ? std::optional<wormedit::local_position_t>{}
-                : timing_position_from_fraction(
-                      *chart, *session.history.indices(chart->id),
-                      wormedit::sys::timing_target_fraction(action.timing_target),
-                      active_snap_denominator);
-        if (!target || !(stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(stage), session.history, *target, timing_locked)).value.has_value()) {
-            post_edit_rejection(platform.notification_sink, stage.diagnostics,
-                                "The timing marker cannot move to that row.");
-        } else {
-            platform.notification_sink.post_transient_hint(
-                wormedit::notification_source_t::edit,
-                "Timing marker moved in the staged preview; apply to commit.");
         }
     }
 
@@ -3486,8 +3403,9 @@ struct application_t::implementation_t {
                     : wormedit::effective_edit_snap_grid(
                           *chart, {.denominator = views.timing_grid.active_denominator},
                           application_state.project.compose_view.edit_snap_enabled).denominator;
-            dispatch_timing_stage_action(
-                action, application_state.project.timing_recipe.timing_locked, denominator);
+            views.timing_edit.dispatch(
+                action, document_inputs(), application_state.project.timing_recipe.timing_locked,
+                denominator);
             return true;
         }
         return false;
@@ -3790,96 +3708,6 @@ struct application_t::implementation_t {
                                       wormedit::notification_source_t::edit, std::move(message));
     }
 
-    void dispatch_timing_stage_value_action(
-        const wormedit::ui::workspace_action_t& action, bool timing_locked,
-        std::uint64_t active_snap_denominator, const wormedit::chart_document_t* chart,
-        std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage) {
-        if (action.timing_anchoring) {
-            *timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage),
-                session.history, *action.timing_anchoring, timing_locked);
-            return;
-        }
-        const auto value = chart == nullptr ? std::optional<wormedit::timing_lane_value_t>{}
-                                            : timing_stage_value(*timing_stage->report(), *chart,
-                                                                 *session.history.indices(chart->id), action,
-                                                                 active_snap_denominator);
-        if (!value) {
-            timing_stage->diagnostics = {{
-                .severity = wormedit::diagnostic_severity_t::error,
-                .code = wormedit::diagnostic_code_t::invalid_rational,
-                .message = "Enter a bounded exact rational for this timing value.",
-            }};
-            timing_stage->complete(false);
-            platform.notification_sink.post(wormedit::notification_severity_t::warning,
-                                            wormedit::notification_source_t::edit,
-                                            "Timing value is outside its supported bounds.");
-            return;
-        }
-
-        const bool valid = (*timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage), session.history, *value, timing_locked)).value.has_value();
-        if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::confirm && valid) {
-            const auto result = wormedit::apply_proposal(
-                session.history, *timing_stage, timing_locked);
-            const auto edited_existing = timing_stage->report()->existing_event.has_value();
-            if (result)
-                platform.notification_sink.post(wormedit::notification_severity_t::success,
-                                                wormedit::notification_source_t::edit,
-                                                edited_existing ? "Timing event updated."
-                                                                : "Timing event inserted.");
-            else if (result.diagnostics.empty() && edited_existing)
-                platform.notification_sink.post(wormedit::notification_severity_t::info,
-                                                wormedit::notification_source_t::edit,
-                                                "Timing event was unchanged.");
-            else
-                post_edit_rejection(platform.notification_sink, result.diagnostics,
-                                    "Timing event insertion was rejected.");
-            timing_stage.reset();
-        } else if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::confirm) {
-            post_edit_rejection(platform.notification_sink, timing_stage->diagnostics,
-                                "Timing event values are invalid.");
-        }
-    }
-
-    void dispatch_timing_stage_action(const wormedit::ui::workspace_action_t& action, bool timing_locked,
-                                      std::uint64_t active_snap_denominator) {
-        auto& timing_stage = views.timing_edit.stage;
-        if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::begin) {
-            if (!timing_stage) {
-                auto candidate = begin_timing_stage(action, session.history, session.workspace,
-                                                    timing_locked, active_snap_denominator);
-                if (candidate.value) {
-                    timing_stage = std::move(candidate);
-                    platform.notification_sink.post_transient_hint(
-                        wormedit::notification_source_t::edit,
-                        timing_stage->report()->existing_event.has_value()
-                            ? "Timing event loaded; apply to update it."
-                            : "Timing event staged; confirm to insert it.");
-                } else {
-                    post_edit_rejection(platform.notification_sink, candidate.diagnostics,
-                                        "Timing event could not be staged at that row.");
-                }
-            }
-        } else if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::quick_insert) {
-            if (timing_stage) {
-                post_edit_rejection(
-                    platform.notification_sink, {},
-                    "Confirm or cancel the open timing edit before inserting another event.");
-            } else {
-                quick_insert_timing_event(action, session.history, session.workspace, timing_locked,
-                                          active_snap_denominator, platform.notification_sink);
-            }
-        } else if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::cancel) {
-            if (timing_stage) {
-                wormedit::cancel_proposal(*timing_stage);
-                timing_stage.reset();
-                platform.notification_sink.post_transient_hint(
-                    wormedit::notification_source_t::edit, "Timing event staging cancelled.");
-            }
-        } else if (timing_stage) {
-            dispatch_active_timing_stage_action(action, timing_locked, active_snap_denominator);
-        }
-    }
-
     void dispatch_options_page_action(const wormedit::ui::options_action_t& action) {
         if (handle_shortcut_editor_action(preferences.shortcut_editor, action,
                                           preferences.options_runtime, platform.notification_sink))
@@ -4002,35 +3830,6 @@ struct application_t::implementation_t {
         if (!accepted)
             return;
         if (previous) apply_changed_saved_options(*previous);
-    }
-
-    void dispatch_active_timing_stage_action(const wormedit::ui::workspace_action_t& action,
-                                             bool timing_locked,
-                                             std::uint64_t active_snap_denominator) {
-        auto& stage = views.timing_edit.stage;
-        if (!stage)
-            return;
-        if (auto failure = wormedit::sys::validate_timing_stage_binding(
-                action, session.history, session.workspace, *stage)) {
-            wormedit::cancel_proposal(*stage);
-            stage.reset();
-            post_edit_rejection(
-                platform.notification_sink, {},
-                *failure);
-            return;
-        }
-        auto* chart_ptr = session.history.read_chart(stage->captured_stamp().chart);
-        if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::remove) {
-            delete_staged_timing_event(action, session.history, timing_locked, *stage,
-                                       platform.notification_sink);
-            stage.reset();
-        } else if (action.timing_stage_action == wormedit::ui::timing_stage_action_t::move) {
-            move_staged_timing_event(action, timing_locked, active_snap_denominator, chart_ptr,
-                                     *stage);
-        } else {
-            dispatch_timing_stage_value_action(action, timing_locked, active_snap_denominator,
-                                               chart_ptr, stage);
-        }
     }
 
     void start_requested_chart_import() {

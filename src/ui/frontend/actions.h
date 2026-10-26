@@ -480,9 +480,8 @@ typedef enum WormUiClipboardAction {
     WORM_UI_CLIPBOARD_PASTE,
 } WormUiClipboardAction;
 
-/* A pointer press on the timing lanes, as raw as the panel knows it: y is a drawn-orientation
-   viewport pixel row. The viewport height, downscroll flag and visible document slice travel with
-   it so one sys function turns it into a document fraction (and then a row). */
+/* A timing pointer target captures its source-document fraction from the drawn axis when available.
+   Raw viewport coordinates and the visible slice also support surfaces without chart-axis geometry. */
 namespace wormedit::ui {
 struct timing_target_t {
     double screen_y;
@@ -490,6 +489,7 @@ struct timing_target_t {
     double document_begin_fraction;
     double document_end_fraction;
     bool downscroll;
+    std::optional<double> source_document_fraction;
     auto operator==(const timing_target_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <span>
 #include <vector>
@@ -28,6 +29,8 @@ struct speed_span_t {
     double transition_length{};
     bool transition_is_seconds{false};
     bool clipped{false};
+    // Effective endpoint from the core evaluator when the authored target was not reached.
+    std::optional<double> clipped_multiplier;
 
     auto operator==(const speed_span_t&) const -> bool = default;
 };
@@ -79,15 +82,13 @@ auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double
     // The curve as (row, value) vertices; vertical jumps repeat a row.
     auto& curve = graph.curve;
     curve.clear();
-    // A span cut short by a replacement ends at the value the replacement starts from, which is
-    // partway to the target; a span that ran its course ends at its target.
-    for (std::size_t index = 0; index < spans.spans.size(); ++index) {
-        const auto& span = spans.spans[index];
-        const bool cut_short = span.clipped && index + 1 < spans.spans.size();
-        curve.emplace_back(span.begin_row, span.initial_multiplier);
-        curve.emplace_back(span.end_row,
-                           cut_short ? spans.spans[index + 1].initial_multiplier : span.multiplier);
+    for (const auto& span : spans.spans) {
+        if (span.begin_row > 0 || span.end_row > span.begin_row)
+            curve.emplace_back(span.begin_row, span.initial_multiplier);
+        curve.emplace_back(span.end_row, span.clipped_multiplier.value_or(span.multiplier));
     }
+    graph.set_value_range(curve.empty() || curve.front().first > 0 ? 1.0 : curve.front().second,
+        curve, [](const auto& vertex) { return vertex.second; });
     auto& window = graph.window;
     window.clear();
     window.emplace_back(first_row, speed_graph_detail::value_at(curve, first_row));
@@ -96,15 +97,7 @@ auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double
     for (const auto& vertex : curve)
         if (vertex.first > first_row && vertex.first <= last_row) window.push_back(vertex);
     if (window.back().first < last_row) window.emplace_back(last_row, speed_graph_detail::value_at(curve, last_row));
-    graph.minimum = graph.maximum = window.front().second;
-    for (const auto& [row, value] : window) {
-        graph.minimum = std::min(graph.minimum, value);
-        graph.maximum = std::max(graph.maximum, value);
-    }
-    const auto range = graph.maximum - graph.minimum;
-    const auto normalize = [&](double value) { return range > 0.0 ? (value - graph.minimum) / range : 0.5; };
-    if (1.0 >= graph.minimum && 1.0 <= graph.maximum) graph.one_x = normalize(1.0);
-    for (const auto& [row, value] : window) graph.points.push_back({normalize(value), row_to_y(row)});
+    for (const auto& [row, value] : window) graph.points.push_back({graph.value_x(value), row_to_y(row)});
 }
 
 template <typename RowToY>

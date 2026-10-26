@@ -19,6 +19,19 @@ auto speed_spans_view_t::from(const chart_document_t& chart, const timing_index_
     for (std::size_t index = 0; index < spans.value.spans.size() && index < segments.size(); ++index) {
         const auto& span = spans.value.spans[index];
         const auto& segment = segments[index];
+        std::optional<double> clipped_multiplier;
+        if (span.clipped && index + 1 < segments.size()) {
+            clipped_multiplier = to_double(segments[index + 1].initial_multiplier);
+        } else if (span.clipped) {
+            const auto side = span.transition_is_seconds ? timing_boundary_side_t::after_stops
+                                                         : timing_boundary_side_t::before_delays;
+            const auto end = scroll_speed_at(*built.value, timing, span.end_row, side);
+            if (!end) {
+                result.truncated = true;
+                break;
+            }
+            clipped_multiplier = to_double(end.state->speed_multiplier);
+        }
         result.spans.push_back({.object = segment.source_event,
                                 .begin_row = to_double(span.begin_row),
                                 .end_row = to_double(span.end_row),
@@ -26,7 +39,8 @@ auto speed_spans_view_t::from(const chart_document_t& chart, const timing_index_
                                 .initial_multiplier = to_double(segment.initial_multiplier),
                                 .transition_length = to_double(segment.transition_duration),
                                 .transition_is_seconds = segment.transition_is_seconds,
-                                .clipped = span.clipped});
+                                .clipped = span.clipped,
+                                .clipped_multiplier = clipped_multiplier});
     }
     return result;
 }

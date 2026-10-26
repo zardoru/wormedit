@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose/compose_measure_resize_input.h"
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
+#include <wormedit/core/editor_axis.h>
 #include "ui/nuklear/render/theme.h"
 #include "sys/compose/compose_scroll_geometry.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
@@ -693,9 +694,19 @@ void worm_ui_nuklear_prepare_compose_panel(const wormedit::ui::compose_view_t* v
 
 auto compose_timing_target(const wormedit::ui::compose_view_t& view, double screen_y)
     -> wormedit::ui::timing_target_t {
-    return wormedit::ui::timing_target_t{screen_y, view.viewport_height_pixels,
-                              view.timing_document_begin_fraction,
-                              view.timing_document_end_fraction, view.downscroll};
+    wormedit::ui::timing_target_t target{
+        .screen_y = screen_y, .viewport_height_pixels = view.viewport_height_pixels,
+        .document_begin_fraction = view.timing_document_begin_fraction,
+        .document_end_fraction = view.timing_document_end_fraction, .downscroll = view.downscroll};
+    if (view.timing_document_rows != 0 && view.area_rows_per_measure != 0 &&
+        view.pixels_per_standard_measure > 0) {
+        const wormedit::editor_axis_projection_t axis{.cut_axis = view.cut_axis.get(),
+            .pixels_per_row = view.pixels_per_standard_measure / static_cast<double>(view.area_rows_per_measure),
+            .viewport_scroll_pixels = view.area_scroll_pixels};
+        const auto source_y = wormedit::sys::compose_source_y(screen_y, view.viewport_height_pixels, view.downscroll);
+        target.source_document_fraction = static_cast<double>(axis.row_at_y(source_y) / view.timing_document_rows);
+    }
+    return target;
 }
 
 using wormedit::ui::compose_timing_right;
@@ -722,7 +733,8 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
         action.timing_target = clicked_marker && clicked_marker->fixed_initial
-            ? wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false}
+            ? wormedit::ui::timing_target_t{.screen_y = 0.0, .viewport_height_pixels = 1.0,
+                .document_begin_fraction = 0.0, .document_end_fraction = 1.0, .downscroll = false}
             : compose_timing_target(view, click_y);
     }
     if (clicked_marker && existing_object_id != 0) {

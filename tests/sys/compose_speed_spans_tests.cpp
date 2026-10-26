@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -32,6 +33,20 @@ auto project(const chart_document_t& chart, std::size_t limit = 64) -> speed_spa
     const auto timing = timing_index_t::from(chart);
     REQUIRE(timing.value);
     return speed_spans_view_t::from(chart, *timing.value, limit);
+}
+
+void check_latched_speed_axis(const sv_graph_t& graph, const sv_graph_t& later) {
+    CHECK(later.minimum == graph.minimum);
+    CHECK(later.maximum == graph.maximum);
+    CHECK(later.one_x == graph.one_x);
+    REQUIRE_FALSE(later.points.empty());
+    CHECK(later.points.back().x == graph.points.back().x);
+}
+
+void check_clipped_speed_endpoint(const speed_span_t& span, double expected) {
+    CHECK(span.clipped);
+    REQUIRE(span.clipped_multiplier);
+    CHECK(*span.clipped_multiplier == Catch::Approx(expected));
 }
 
 } // namespace
@@ -99,8 +114,11 @@ TEST_CASE("speed graph interpolates across each span and then holds the target",
     // A window inside the ramp starts at the interpolated value.
     const auto inside = build_speed_graph(spans, 150.0, 250.0, y_of);
     REQUIRE(inside.points.size() >= 2);
-    CHECK(inside.minimum == 1.5);
+    CHECK(inside.minimum == 0.5);
     CHECK(inside.maximum == 2.0);
+
+    const auto later = build_speed_graph(spans, 401.0, 600.0, y_of);
+    check_latched_speed_axis(graph, later);
 
     CHECK(build_speed_graph(spans, 10.0, 10.0, y_of).points.empty());
 }
@@ -110,7 +128,8 @@ TEST_CASE("a speed ramp cut short by the next event ends at the value that event
     speed_spans_view_t spans;
     // 1.0 -> 3.0 over rows 100..300, but the next event at row 200 interrupts at 2.0.
     spans.spans = {{.object = object_id_t{1}, .begin_row = 100.0, .end_row = 200.0,
-                    .multiplier = 3.0, .initial_multiplier = 1.0, .clipped = true},
+                    .multiplier = 3.0, .initial_multiplier = 1.0, .clipped = true,
+                    .clipped_multiplier = 2.0},
                    {.object = object_id_t{2}, .begin_row = 200.0, .end_row = 200.0,
                     .multiplier = 1.0, .initial_multiplier = 2.0}};
     const auto y_of = [](double row) { return row; };
@@ -118,6 +137,50 @@ TEST_CASE("a speed ramp cut short by the next event ends at the value that event
     // The ramp never reaches its 3.0 target.
     CHECK(graph.maximum == 2.0);
     CHECK(graph.minimum == 1.0);
+}
+
+TEST_CASE("A SPEED ramp clipped at chart end agrees with the effective speed",
+          "[unit][sys][speed-spans]") {
+    const bool seconds = GENERATE(false, true);
+    auto chart = base_chart();
+    chart.measures.resize(1);
+    chart.speeds = {speed(20, 1, 0, 3, seconds ? rational_t{4, 1} : rational_t{8, 1}, seconds)};
+    const auto spans = project(chart);
+    REQUIRE(spans.spans.size() == 1);
+    check_clipped_speed_endpoint(spans.spans.front(), 2.0);
+    const auto graph = build_speed_graph(spans, 480, 960, [](double row) { return row; });
+    CHECK(graph.minimum == 1.0);
+    CHECK(graph.maximum == 2.0);
+    REQUIRE(graph.points.size() == 2);
+    CHECK(graph.points.front().x == Catch::Approx(0.5));
+    CHECK(graph.points.back().x == Catch::Approx(1.0));
+}
+
+TEST_CASE("A constant SPEED chart keeps its held value centered while scrolling",
+          "[unit][sys][speed-spans]") {
+    auto chart = base_chart();
+    chart.speeds = {speed(20, 1, 0, 3, {0, 1}, false)};
+    const auto spans = project(chart);
+    for (const auto first : {0.0, 400.0}) {
+        const auto graph = build_speed_graph(spans, first, 960, [](double row) { return row; });
+        CHECK(graph.minimum == 3.0);
+        CHECK(graph.maximum == 3.0);
+        REQUIRE_FALSE(graph.points.empty());
+        CHECK(graph.points.back().x == 0.5);
+    }
+}
+
+TEST_CASE("A replaced seconds SPEED ramp includes the delay before its replacement",
+          "[unit][sys][speed-spans]") {
+    auto chart = base_chart();
+    chart.speeds = {speed(20, 1, 0, 3, {4, 1}, true), speed(21, 1, 480, 1, {0, 1}, false)};
+    chart.pauses = {{.id = object_id_t{30}, .position = {measure_id_t{1}, 480},
+                    .kind = pause_kind_t::delay, .duration = {1, 1}, .source_unit = pause_unit_t::seconds}};
+    const auto spans = project(chart);
+    REQUIRE(spans.spans.size() == 2);
+    check_clipped_speed_endpoint(spans.spans.front(), 2.0);
+    const auto graph = build_speed_graph(spans, 0, 960, [](double row) { return row; });
+    CHECK(graph.maximum == 2.0);
 }
 
 TEST_CASE("two instantaneous speeds back to back never draw a slanted segment",

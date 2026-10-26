@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -28,7 +29,7 @@ struct sv_steps_view_t {
                                    std::size_t limit) -> sv_steps_view_t;
 };
 
-// A point of the drawn graph. `x` is the value normalized to the visible range in [0, 1] and `y`
+// A point of the drawn graph. `x` is the value normalized to the chart range in [0, 1] and `y`
 // is the viewport pixel row, so a step is a horizontal run followed by a vertical jump.
 struct sv_graph_point_t {
     double x{};
@@ -45,6 +46,22 @@ struct sv_graph_t {
     double minimum{1.0};
     double maximum{1.0};
     double one_x{-1.0};
+
+    [[nodiscard]] auto value_x(double value) const -> double {
+        const auto span = maximum - minimum;
+        return span > 0.0 ? (value - minimum) / span : 0.5;
+    }
+
+    template<class Values, class ValueOf>
+    void set_value_range(double initial, const Values& values, ValueOf value_of) {
+        minimum = maximum = initial;
+        for (const auto& entry : values) {
+            const auto value = value_of(entry);
+            minimum = std::min(minimum, value);
+            maximum = std::max(maximum, value);
+        }
+        one_x = 1.0 >= minimum && 1.0 <= maximum ? value_x(1.0) : -1.0;
+    }
 };
 
 // The graph of `steps` between the viewport's first and last source row. The range is normalized to

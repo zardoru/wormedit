@@ -1,4 +1,5 @@
 #include "sys/compose/actions/compose_audition_requests.h"
+#include "sys/app/application_timing_stage.h"
 #include "../sys/compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "../sys/compose_area_dispatch_fixture.h"
@@ -2624,11 +2625,11 @@ struct t422_fixture_t {
         (void)harness.frame();
     }
 
-    void project() {
+    void project(const timing_lane_pseudonote_outcome_t* stage = nullptr) {
         flattened = {};
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *binding.value, cache, 1800, 1400,
-                              interaction, application, nullptr);
+                              interaction, application, stage);
         CAPTURE(flattened.projection_feedback.size(), cache.frame.projection_error,
                 history.document.revision, interaction.has_value());
         for (const auto& feedback : flattened.projection_feedback)
@@ -4620,11 +4621,7 @@ TEST_CASE("Combined primary clicks toggle matching sounds twice without editing"
     fixture.project();
     const auto center = t422_note_screen_center(fixture, 101);
     REQUIRE(center);
-#if defined(__APPLE__)
-    const auto primary = SDL_KMOD_GUI;
-#else
-    const auto primary = SDL_KMOD_CTRL;
-#endif
+    const auto primary = wormedit::test::primary_modifier;
     const auto modifiers = static_cast<SDL_Keymod>(primary | (visible ? SDL_KMOD_SHIFT : SDL_KMOD_ALT));
     const auto kind = visible ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE : WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART;
     const auto before = t422_native_bytes(fixture.history.document);
@@ -4653,11 +4650,7 @@ TEST_CASE("Same sound hover travels with the remappable add shortcut", "[fronten
     const auto hovered = fixture.harness.frame(motion);
     expect_lane_key(hovered.get().compose_sound_hover_object_id.value == 101);
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
-#if defined(__APPLE__)
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
-#else
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
-#endif
+    const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().compose_sound_hover_object_id.value == 101);
     expect_lane_key(frame.get().shortcut_events.size() == 1);
@@ -4706,11 +4699,7 @@ TEST_CASE("Same sound combined clicks route BGM markers and stem cut sources", "
     REQUIRE(viewport);
     const auto screen_x = viewport->x + static_cast<float>(x * viewport->width / view.viewport_width_pixels);
     const auto screen_y = viewport->y + static_cast<float>(y * viewport->height / view.viewport_height_pixels);
-#if defined(__APPLE__)
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_ALT);
-#else
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT);
-#endif
+    const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_ALT);
     const std::array down{mouse_motion(screen_x, screen_y), mouse_button(true, screen_x, screen_y)};
     const auto pressed = fixture.harness.frame(down, modifiers);
     const std::array up{mouse_button(false, screen_x, screen_y)};
@@ -4752,11 +4741,7 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
         ui.sounds_dock.sound_list_y + ui.sounds_dock.sound_list_height / 2)};
     (void)fixture.harness.frame(motion);
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
-#if defined(__APPLE__)
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
-#else
-    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
-#endif
+    const auto modifiers = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
     expect_lane_key(frame.get().shortcut_events.size() == 1);
     expect_lane_key(frame.get().compose_sound_hover_object_id.value == 0);
@@ -7064,11 +7049,7 @@ TEST_CASE("Actual same-sound clicks reject a note without a sound without cleari
     const auto selected = f.interaction->selected_notes;
     const auto point = t422_note_screen_center(f, 101);
     REQUIRE(point);
-#if defined(__APPLE__)
-    const auto primary = SDL_KMOD_GUI;
-#else
-    const auto primary = SDL_KMOD_CTRL;
-#endif
+    const auto primary = wormedit::test::primary_modifier;
     const auto mods = static_cast<SDL_Keymod>(primary | SDL_KMOD_SHIFT);
     const std::array down{mouse_motion(point->first, point->second), mouse_button(true, point->first, point->second)};
     const auto pressed = f.harness.frame(down, mods);
@@ -7382,6 +7363,261 @@ auto timing_pointer(t422_fixture_t& f, wormedit::timing_lane_kind_t lane, std::u
 }
 }
 
+namespace {
+auto make_timing_placement_song(bool cuts) -> song_document_t {
+    auto song = t422_song();
+    for (std::uint64_t id = 3; id <= 12; ++id)
+        song.charts.front().measures.push_back({.id = measure_id_t{id}});
+    if (cuts)
+        song.export_cuts = {{.id = object_id_t{9001}, .label = "Intro",
+            .begin_milliseconds = 0, .end_milliseconds = 16000},
+            {.id = object_id_t{9002}, .label = "Inside viewport",
+                .begin_milliseconds = 18000, .end_milliseconds = 19000}};
+    return song;
+}
+
+auto timing_placement_point(t422_fixture_t& fixture, timing_lane_kind_t lane, std::uint64_t row)
+    -> std::pair<float, float> {
+    (void)fixture.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto& view = fixture.harness.view().compose;
+    const auto extent = compose_timing_lane_inner_extent(view, lane);
+    expect_t422(extent.has_value());
+    return {viewport->x + static_cast<float>((extent->first + extent->second) * .5 *
+                viewport->width / view.viewport_width_pixels),
+        viewport->y + static_cast<float>(compose_area_y(view, row) * viewport->height /
+                view.viewport_height_pixels)};
+}
+
+void place_and_pick_timing_event(t422_fixture_t& fixture, timing_lane_kind_t lane, std::uint64_t row) {
+    const auto position = fixture.history.indices(chart_id_t{1})->measures->position_at(row);
+    expect_t422(position.has_value());
+    auto& timing = fixture.harness.view().timing;
+    timing.chart_id = chart_id_t{1};
+    timing.document_revision = fixture.history.document.revision;
+    timing.initial_bpm_editable = true;
+    const auto [x, y] = timing_placement_point(fixture, lane, row);
+    auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
+    down.button.clicks = up.button.clicks = 2;
+    const auto captured = fixture.harness.frame(std::array{mouse_motion(x, y), down, up});
+    expect_t422(captured.get().timing_stage_action == ui::timing_stage_action_t::begin);
+    auto stage = begin_timing_stage(captured.get(), fixture.history, *fixture.binding.value, false, 4);
+    expect_t422(stage.value.has_value());
+    CAPTURE(row, stage.report()->position.measure.value, stage.report()->position.row);
+    expect_t422(stage.report()->position == *position);
+    expect_t422(apply_proposal(fixture.history, stage, false).applied);
+    ui::workspace_action_t canceled;
+    worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state(), canceled);
+    fixture.project();
+    (void)fixture.harness.frame();
+    const auto& view = fixture.harness.view().compose;
+    const auto marker = std::ranges::find_if(view.timing_markers, [lane, row](const auto& value) {
+        return value.lane == lane && value.chart_row == row;
+    });
+    expect_t422(marker != view.timing_markers.end());
+    const auto id = marker->object_id;
+    const auto extent = compose_timing_lane_inner_extent(view, lane);
+    expect_t422(compose_timing_marker_at(view, (extent->first + extent->second) * .5,
+        compose_area_y(view, row)) != nullptr);
+    const auto point = timing_placement_point(fixture, lane, row);
+    const std::array press{mouse_motion(point.first, point.second), mouse_button(true, point.first, point.second)};
+    const auto selected = fixture.harness.frame(press);
+    (void)fixture.dispatch(selected);
+    const auto release = mouse_button(false, point.first, point.second);
+    (void)fixture.dispatch(fixture.harness.frame(std::span{&release, 1}));
+    expect_t422(std::ranges::any_of(fixture.interaction->selected_objects, [id](const auto& object) {
+        return object.id == id;
+    }));
+    timing.document_revision = fixture.history.document.revision;
+    const auto reopened = fixture.harness.frame(std::array{mouse_motion(x, y), down, up});
+    expect_t422(reopened.get().timing_object_id == id);
+    auto editing = begin_timing_stage(reopened.get(), fixture.history, *fixture.binding.value, false, 4);
+    expect_t422(editing.value.has_value());
+    expect_t422(editing.report()->existing_event == id);
+    worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state(), canceled);
+}
+} // namespace
+
+TEST_CASE("Timing insertion stays at the clicked row and remains pickable across export cuts",
+          "[frontend-state][event-harness][timing-placement][export-cut]") {
+    const bool cuts = GENERATE(false, true);
+    const bool downscroll = GENERATE(false, true);
+    const auto lane = GENERATE(timing_lane_kind_t::bpm, timing_lane_kind_t::scroll,
+        timing_lane_kind_t::speed, timing_lane_kind_t::stop, timing_lane_kind_t::delay,
+        timing_lane_kind_t::warp, timing_lane_kind_t::anchor);
+    CAPTURE(cuts, downscroll, lane);
+    t422_fixture_t fixture{make_timing_placement_song(cuts)};
+    fixture.application.preferences.editor_preferences.scroll_directions[
+        static_cast<std::size_t>(editor_mode_family_t::keyboard)] = downscroll ? 2 : 1;
+    fixture.interaction->viewport_scroll_pixels = cuts ? 24 : 1560;
+    fixture.project();
+    expect_t422(fixture.harness.view().compose.downscroll == downscroll);
+    place_and_pick_timing_event(fixture, lane, 9840);
+    place_and_pick_timing_event(fixture, lane, 10080);
+    expect_t422(fixture.history.undo.size() == 2);
+}
+
+TEST_CASE("Timing stage preserves fine row targets from the drawn cut axis",
+          "[frontend-state][event-harness][timing-placement][export-cut]") {
+    const bool cuts = GENERATE(false, true);
+    const bool downscroll = GENERATE(false, true);
+    t422_fixture_t fixture{make_timing_placement_song(cuts)};
+    fixture.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    fixture.interaction->viewport_scroll_pixels = cuts ? 24 : 1560;
+    fixture.project();
+    const auto& view = fixture.harness.view().compose;
+    const auto& indices = *fixture.history.indices(chart_id_t{1});
+    // The second cut removes rows [8640, 9120); the exact seam picks its surviving end.
+    for (const auto row : {std::uint64_t{8639}, std::uint64_t{9120}, std::uint64_t{9121},
+             std::uint64_t{9841}, std::uint64_t{9853}, indices.measures->total_rows - 1,
+             indices.measures->total_rows, indices.measures->total_rows + 1}) {
+        ui::workspace_action_t action;
+        action.timing_chart_id = chart_id_t{1};
+        action.timing_document_revision = fixture.history.document.revision;
+        action.timing_lane = timing_lane_kind_t::scroll;
+        action.timing_has_target_y = true;
+        action.timing_target = compose_timing_target(view, compose_area_y(view, row));
+        const auto stage = begin_timing_stage(action, fixture.history, *fixture.binding.value, false, 960);
+        CAPTURE(cuts, downscroll, row);
+        if (row >= indices.measures->total_rows) {
+            expect_t422(!(stage.value));
+            continue;
+        }
+        expect_t422(static_cast<bool>(stage.value));
+        expect_t422(stage.report()->position == *indices.measures->position_at(row));
+        if (row == indices.measures->total_rows - 1) {
+            action.timing_lane = timing_lane_kind_t::warp;
+            expect_t422(!(begin_timing_stage(action, fixture.history, *fixture.binding.value, false, 960).value));
+        }
+    }
+    expect_t422(fixture.history.undo.empty());
+}
+
+namespace {
+struct timing_stage_workflow_t {
+    t422_fixture_t editor;
+    runtime::timing_edit_t timing;
+    timing_scene_cache_t cache;
+
+    timing_stage_workflow_t(bool cuts, bool downscroll) : editor(make_timing_placement_song(cuts)) {
+        editor.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+        editor.interaction->viewport_scroll_pixels = cuts ? 24 : 1560;
+        project();
+    }
+
+    void project() {
+        editor.project(timing.stage_view());
+        populate_timing_view_for_compose(editor.flattened, editor.history, *editor.binding.value,
+            cache, 1800, 1400, {.chart = chart_id_t{1}, .supported_denominators = {4},
+                               .active_denominator = 4}, timing.stage_view());
+        editor.harness.view().timing = editor.flattened.view.timing;
+        editor.harness.view().timing.initial_bpm_editable = editor.flattened.view.timing.scene_available;
+    }
+
+    void dispatch(const workspace_action_snapshot_t& snapshot) {
+        timing.dispatch(snapshot.get(), {.history = editor.history, .workspace = *editor.binding.value,
+            .notifications = editor.sink}, false, 4);
+        project();
+    }
+
+    void open(timing_lane_kind_t lane, std::uint64_t row, object_id_t existing = {}) {
+        const auto [x, y] = timing_placement_point(editor, lane, row);
+        auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
+        down.button.clicks = up.button.clicks = 2;
+        const auto captured = editor.harness.frame(std::array{mouse_motion(x, y), down, up});
+        expect_t422(captured.get().timing_stage_action == ui::timing_stage_action_t::begin);
+        expect_t422(captured.get().timing_object_id == existing);
+        dispatch(captured);
+        expect_t422(timing.stage_view());
+        expect_t422(static_cast<bool>(timing.stage_view()->value));
+        expect_t422(timing.stage_view()->report()->existing_event.value_or(object_id_t{}) == existing);
+        expect_t422(editor.history.indices(chart_id_t{1})->measures->row_of(
+            timing.stage_view()->report()->position) == row);
+        (void)editor.harness.frame();
+        expect_t422(worm_ui_nuklear_compose_state().inline_timing.inline_timing_open);
+    }
+
+    void confirm(const char* value) {
+        SDL_Event text{};
+        text.type = text.text.type = SDL_EVENT_TEXT_INPUT;
+        text.text.text = value;
+        dispatch(editor.harness.frame(std::span{&text, 1}));
+        const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        const auto committed = editor.harness.frame(std::span{&enter, 1});
+        expect_t422(committed.get().timing_stage_action == ui::timing_stage_action_t::confirm);
+        dispatch(committed);
+        expect_t422(!(timing.has_pending_edit()));
+        const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        (void)editor.harness.frame(std::span{&release, 1});
+        expect_t422(!(worm_ui_nuklear_compose_state().inline_timing.inline_timing_open));
+    }
+
+    auto marker(timing_lane_kind_t lane, std::uint64_t row) -> object_id_t {
+        const auto& view = editor.harness.view().compose;
+        const auto found = std::ranges::find_if(view.timing_markers, [=](const auto& value) {
+            return value.lane == lane && value.chart_row == row;
+        });
+        expect_t422(found != view.timing_markers.end());
+        expect_t422(std::ranges::count_if(view.timing_markers, [=](const auto& value) {
+            return value.lane == lane && value.chart_row == row;
+        }) == 1);
+        return found->object_id;
+    }
+
+    auto value(timing_lane_kind_t lane, object_id_t id) -> timing_lane_value_t {
+        const auto preview = timing_lane_pseudonote_preview_t::propose(editor.history, chart_id_t{1},
+            timing_lane_event_ref_t{lane, id}, false);
+        expect_t422(static_cast<bool>(preview.value));
+        return preview.report()->value;
+    }
+};
+} // namespace
+
+TEST_CASE("Timing edits confirm changed values through the application stage and retain identity through history",
+          "[frontend-state][event-harness][timing-placement][export-cut]") {
+    const bool cuts = GENERATE(false, true);
+    const bool downscroll = GENERATE(false, true);
+    const auto lane = GENERATE(timing_lane_kind_t::bpm, timing_lane_kind_t::scroll);
+    CAPTURE(cuts, downscroll, lane);
+    timing_stage_workflow_t workflow{cuts, downscroll};
+    workflow.open(lane, 9840);
+    workflow.confirm(lane == timing_lane_kind_t::bpm ? "150" : "1.8");
+    const auto id = workflow.marker(lane, 9840);
+    const auto first_value = workflow.value(lane, id);
+    expect_t422(first_value == (lane == timing_lane_kind_t::bpm
+        ? timing_lane_value_t{timing_bpm_value_t{{150, 1}}}
+        : timing_lane_value_t{timing_scroll_value_t{{9, 5}}}));
+    const auto point = timing_placement_point(workflow.editor, lane, 9840);
+    for (const auto& frame : click_at(workflow.editor.harness, point.first, point.second))
+        (void)workflow.editor.dispatch(frame);
+    expect_t422(std::ranges::any_of(workflow.editor.interaction->selected_objects, [=](const auto& object) {
+        return object.id == id;
+    }));
+    workflow.open(lane, 9840, id);
+    workflow.confirm(lane == timing_lane_kind_t::bpm ? "180" : "0.25");
+    const auto changed_value = workflow.value(lane, id);
+    expect_t422(changed_value == (lane == timing_lane_kind_t::bpm
+        ? timing_lane_value_t{timing_bpm_value_t{{180, 1}}}
+        : timing_lane_value_t{timing_scroll_value_t{{1, 4}}}));
+    expect_t422(changed_value != first_value);
+    expect_t422(workflow.marker(lane, 9840) == id);
+    expect_t422(workflow.editor.history.undo.size() == 2);
+    expect_t422(static_cast<bool>(undo_document_command(workflow.editor.history)));
+    workflow.project();
+    expect_t422(workflow.value(lane, id) == first_value);
+    expect_t422(workflow.marker(lane, 9840) == id);
+    expect_t422(static_cast<bool>(redo_document_command(workflow.editor.history)));
+    workflow.project();
+    expect_t422(workflow.value(lane, id) == changed_value);
+    expect_t422(workflow.marker(lane, 9840) == id);
+    workflow.editor.notifications.drain_inbox(notification_time_t{0});
+    expect_t422(std::ranges::none_of(workflow.editor.notifications.snapshot(notification_capacity), [](const auto& message) {
+        return message.severity == notification_severity_t::error ||
+               message.severity == notification_severity_t::warning;
+    }));
+}
+
 TEST_CASE("Production timing span release edits once and rejected release retires capture",
           "[frontend-state][event-harness][drag-capture]") {
     const auto locked_at_release = GENERATE(false, true);
@@ -7678,11 +7914,7 @@ TEST_CASE("Production same-sound press retains scope when modifiers are released
     f.project(); (void)f.harness.frame();
     const auto p = t422_note_screen_center(f, 101);
     expect_t422(p.has_value());
-#ifdef __APPLE__
-    const auto mods = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
-#else
-    const auto mods = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
-#endif
+    const auto mods = static_cast<SDL_Keymod>(wormedit::test::primary_modifier | SDL_KMOD_SHIFT);
     const std::array press{mouse_motion(p->first, p->second), mouse_button(true, p->first, p->second)};
     (void)f.dispatch(f.harness.frame(press, mods));
     const auto up = mouse_button(false, p->first, p->second);
@@ -7942,10 +8174,11 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     wormedit::ui::compose_waveform_overview_row_view_t row{};
     prepare_navigation_overview(f, row);
     const auto previous = f.interaction->cursor;
+    const auto modifiers = primary ? wormedit::test::primary_modifier : SDL_KMOD_NONE;
     const std::array press{mouse_motion(351, 120), mouse_button(true, 351, 120)};
-    (void)f.dispatch(f.harness.frame(press, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE));
+    (void)f.dispatch(f.harness.frame(press, modifiers));
     const auto up = mouse_button(false, 351, 120);
-    const auto frame = f.harness.frame(std::span{&up, 1}, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE);
+    const auto frame = f.harness.frame(std::span{&up, 1}, modifiers);
     const std::vector frames{frame};
     const auto* click = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK);
     expect_t422(click != nullptr);
@@ -8256,9 +8489,16 @@ TEST_CASE("Production latched range cancels on canvas outside lanes but survives
 TEST_CASE("Production off grid note drag commits its preview position and lane",
           "[frontend-state][event-harness][selection-move-parity]") {
     const auto row = GENERATE(100, 160, 300);
+    const auto selection_kind = GENERATE(0, 1, 2, 3, 4);
     t422_fixture_t f{t422_song()};
-    f.interaction->selected_notes = {object_id_t{101}};
-    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    std::vector<editor_selection_object_t> selection;
+    if (selection_kind == 0) selection.push_back({editor_selection_object_kind_t::note, object_id_t{101}});
+    if (selection_kind == 2 || selection_kind == 4)
+        selection.push_back({editor_selection_object_kind_t::note, object_id_t{102}});
+    if (selection_kind >= 3)
+        selection.push_back({editor_selection_object_kind_t::bar_line, object_id_t{2}});
+    expect_t422(dispatch_editor_action(f.history, *f.interaction,
+        select_editor_objects_action_t{selection}).accepted);
     f.project();
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());
@@ -8267,6 +8507,7 @@ TEST_CASE("Production off grid note drag commits its preview position and lane",
     (void)f.dispatch(f.harness.frame(press));
     const auto motion = mouse_motion(target.first, target.second);
     const auto moved = f.harness.frame(std::span{&motion, 1});
+    expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN) != nullptr);
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) != nullptr);
     (void)f.dispatch(moved);
     expect_t422(f.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
@@ -8279,6 +8520,10 @@ TEST_CASE("Production off grid note drag commits its preview position and lane",
     expect_t422(changed != nullptr);
     expect_t422(changed->position == preview.front().position);
     expect_t422(changed->lane == preview.front().lane);
+    expect_t422(t422_note(f.history, 102)->position == local_position_t{measure_id_t{1}, 360});
+    expect_t422(t422_note(f.history, 103)->position == local_position_t{measure_id_t{2}, 120});
+    expect_t422(f.history.indices(chart_id_t{1})->measures->row_of({measure_id_t{2}, 0}) == 960);
+    expect_t422(!worm_ui_nuklear_compose_state().note_move.note_move_active);
     expect_t422(f.history.undo.size() == 1);
 }
 

@@ -45,7 +45,8 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         action->timing_lane = wormedit::timing_lane_kind_t::bpm;
         action->timing_object_id.value = timing_view->initial_bpm_event_id.value;
         action->timing_has_target_y = !timing_view->initial_bpm_event_id;
-        action->timing_target = wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false};
+        action->timing_target = wormedit::ui::timing_target_t{.screen_y = 0.0, .viewport_height_pixels = 1.0,
+            .document_begin_fraction = 0.0, .document_end_fraction = 1.0, .downscroll = false};
     }
 }
 

@@ -80,6 +80,11 @@ class nuklear_event_harness_t {
 };
 
 namespace wormedit::test {
+#if defined(__APPLE__)
+inline constexpr SDL_Keymod primary_modifier = SDL_KMOD_GUI;
+#else
+inline constexpr SDL_Keymod primary_modifier = SDL_KMOD_CTRL;
+#endif
 [[nodiscard]] auto mouse_button(bool down, float x, float y) -> SDL_Event;
 [[nodiscard]] auto mouse_motion(float x, float y) -> SDL_Event;
 // Two separate frames, each with motion and a button edge; modifiers are NONE.

@@ -286,6 +286,26 @@ auto best_bounded_approximation(double input, std::uint64_t maximum_denominator,
 
 } // namespace
 
+auto rational_detail::to_double_magnitude(std::uint64_t numerator, std::uint64_t denominator) noexcept
+    -> double {
+    constexpr auto exact_integer_limit = std::uint64_t{1} << std::numeric_limits<double>::digits;
+    if (numerator == 0) return 0.0;
+    if (numerator <= exact_integer_limit && denominator <= exact_integer_limit)
+        return static_cast<double>(numerator) / static_cast<double>(denominator);
+    auto exponent = static_cast<int>(std::bit_width(numerator)) -
+                    static_cast<int>(std::bit_width(denominator));
+    const auto scaled_numerator = wide_math::shift_left({0, numerator}, std::max(0, -exponent));
+    const auto scaled_denominator = wide_math::shift_left({0, denominator}, std::max(0, exponent));
+    if (wide_math::u128_less(scaled_numerator, scaled_denominator)) --exponent;
+    // Scale to 53 significand bits, then round the exact quotient to nearest, ties to even.
+    // A 64-bit ratio needs at most 117 intermediate bits and a 54-bit rounded significand.
+    const auto shift = std::numeric_limits<double>::digits - 1 - exponent;
+    const auto significand = timing_arithmetic::rounded_quotient(
+        wide_math::shift_left({0, numerator}, std::max(0, shift)),
+        wide_math::shift_left({0, denominator}, std::max(0, -shift)));
+    return std::ldexp(static_cast<double>(*significand), -shift);
+}
+
 auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> maximum_exponent) -> std::optional<signed_rational_t> {
     bool negative{};
     if (!text.empty() && (text.front() == '+' || text.front() == '-')) {

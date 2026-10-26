@@ -206,6 +206,9 @@ class notification_sink_t {
     void post(const notification_post_t& request) const noexcept;
     void post_diagnostic(notification_source_t source,
                          const diagnostic_t& diagnostic) const noexcept;
+    // One rejection: prefer the first diagnostic, otherwise post the warning fallback.
+    void post_rejection(notification_source_t source, const diagnostic_list_t& diagnostics,
+                         std::string_view fallback) const noexcept;
     void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics,
                           const notification_target_resolver_t& resolve_target = {}) const noexcept;
 

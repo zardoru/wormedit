@@ -107,6 +107,9 @@ New cases belong in a file named for their feature, such as
 copying event constructors from the historical general test file. Existing cases
 move only in a separately scoped checkpoint.
 
+Use `wormedit::test::primary_modifier` for primary-modifier gestures: Command on macOS,
+Control elsewhere. The same modifier must accompany both pointer edges.
+
 ### Compose press, candidate, release and click
 
 The harness sends a click as separate down and up frames. In Compose, an eligible left press on

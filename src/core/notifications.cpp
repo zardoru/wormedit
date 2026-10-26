@@ -330,6 +330,15 @@ void notification_sink_t::post_diagnostic(notification_source_t source,
     }
 }
 
+void notification_sink_t::post_rejection(notification_source_t source,
+                                         const diagnostic_list_t& diagnostics,
+                                         std::string_view fallback) const noexcept {
+    if (diagnostics.empty())
+        post(notification_severity_t::warning, source, fallback);
+    else
+        post_diagnostic(source, diagnostics.front());
+}
+
 void notification_sink_t::post_diagnostics(notification_source_t source,
                                            const diagnostic_list_t& diagnostics,
                                            const notification_target_resolver_t& resolve_target) const noexcept {

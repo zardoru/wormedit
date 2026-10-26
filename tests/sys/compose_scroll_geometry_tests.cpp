@@ -16,8 +16,10 @@ TEST_CASE("downscroll mirrors screen y into source order", "[unit][sys][compose]
 }
 
 TEST_CASE("timing target maps raw pointer y to a document fraction", "[unit][sys][compose]") {
-    const wormedit::ui::timing_target_t up{200.0, 800.0, 0.5, 1.0, false};
+    const wormedit::ui::timing_target_t up{.screen_y = 200.0, .viewport_height_pixels = 800.0,
+        .document_begin_fraction = 0.5, .document_end_fraction = 1.0, .downscroll = false};
     CHECK(timing_target_fraction(up) == 0.625);
-    const wormedit::ui::timing_target_t down{200.0, 800.0, 0.5, 1.0, true};
+    const wormedit::ui::timing_target_t down{.screen_y = 200.0, .viewport_height_pixels = 800.0,
+        .document_begin_fraction = 0.5, .document_end_fraction = 1.0, .downscroll = true};
     CHECK(timing_target_fraction(down) == 0.875);
 }

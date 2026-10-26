@@ -3951,40 +3951,44 @@ auto absolute_row(const document_history_t& history, std::uint64_t note) -> std:
 }
 } // namespace
 
-TEST_CASE("Dragging notes carries selected bar lines under the session's time policy",
+TEST_CASE("Dragging notes carries bar lines only when the reference belongs to the selection",
           "[unit][core][interaction][gesture][move][bar-line]") {
     auto song = make_song();
     auto& chart = song.charts.front();
     chart.measures.push_back({.id = measure_id_t{3}});
     chart.measures[0].notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
     chart.measures[1].notes = {{.id = object_id_t{103}, .position = {measure_id_t{2}, 100}, .lane = lane_id_t{2}}};
-    REQUIRE(validate_document(song).empty());
+    expect_cursor_gesture(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const bool propagate = GENERATE(false, true);
+    const bool reference_selected = GENERATE(false, true);
     if (propagate) state.bar_line_time = bar_line_time_t::propagate;
-    REQUIRE(dispatch_editor_action(
+    std::vector<editor_selection_object_t> selection{
+        {editor_selection_object_kind_t::bar_line, object_id_t{2}}};
+    if (reference_selected)
+        selection.push_back({editor_selection_object_kind_t::note, object_id_t{101}});
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
         history, state,
-        select_editor_objects_action_t{{{editor_selection_object_kind_t::note, object_id_t{101}},
-                                        {editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
-    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+        select_editor_objects_action_t{selection})));
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}})));
     const auto committed = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .operation = wormedit::proposal_operation_t::apply});
     for (const auto& diagnostic : committed.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    REQUIRE(committed);
-    CHECK(committed.document_changed);
+    expect_cursor_gesture(static_cast<bool>(committed));
+    expect_cursor_gesture(committed.document_changed);
     const auto index = measure_index_t::from(history.document.charts.front()).value();
-    CHECK(index.entries[1].absolute_begin_row == 1200);
-    CHECK(absolute_row(history, 101) == 480);
-    CHECK(absolute_row(history, 103) == (propagate ? 1300 : 1060));
-    CHECK(index.total_rows == (propagate ? 3120 : 2880));
-    CHECK(std::ranges::find(state.selected_objects,
+    expect_cursor_gesture(index.entries[1].absolute_begin_row == (reference_selected ? 1200 : 960));
+    expect_cursor_gesture(absolute_row(history, 101) == 480);
+    expect_cursor_gesture(absolute_row(history, 103) == (reference_selected && propagate ? 1300 : 1060));
+    expect_cursor_gesture(index.total_rows == (reference_selected && propagate ? 3120 : 2880));
+    expect_cursor_gesture((std::ranges::find(state.selected_objects,
               editor_selection_object_t{editor_selection_object_kind_t::bar_line, object_id_t{2}}) !=
-          state.selected_objects.end());
-    CHECK(history.undo.size() == 1);
-    CHECK(validate_document(history.document).empty());
+          state.selected_objects.end()) == reference_selected);
+    expect_cursor_gesture(history.undo.size() == 1);
+    expect_cursor_gesture(validate_document(history.document).empty());
 }
 
 struct bar_line_move_fixture_t {

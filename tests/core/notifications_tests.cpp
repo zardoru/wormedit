@@ -1034,3 +1034,22 @@ TEST_CASE("Single diagnostic sink posts preserve severity source and object targ
     expect_transient(entries.front().target == notification_target_t{object_id_t{42}});
     notification_sink_t::muted().post_diagnostic(notification_source_t::document, diagnostic);
 }
+
+TEST_CASE("Rejection feedback posts one diagnostic or one fallback warning", "[notifications]") {
+    notification_center_t center;
+    const notification_sink_t sink{center};
+    sink.post_rejection(notification_source_t::edit, {}, "Rejected without detail.");
+    sink.post_rejection(notification_source_t::edit,
+        {{.severity = diagnostic_severity_t::error, .message = "Specific rejection.", .object = object_id_t{42}},
+         {.severity = diagnostic_severity_t::warning, .message = "Secondary detail."}}, "Unused fallback.");
+    center.drain_inbox(notification_time_t{});
+    const auto entries = center.snapshot(notification_capacity);
+    REQUIRE(entries.size() == 2);
+    CHECK(std::ranges::count_if(entries, [](const auto& entry) {
+        return entry.severity == notification_severity_t::warning && entry.message == "Rejected without detail.";
+    }) == 1);
+    CHECK(std::ranges::count_if(entries, [](const auto& entry) {
+        return entry.severity == notification_severity_t::error && entry.message == "Specific rejection." &&
+               entry.target == notification_target_t{object_id_t{42}};
+    }) == 1);
+}

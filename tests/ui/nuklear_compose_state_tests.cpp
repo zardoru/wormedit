@@ -1466,8 +1466,6 @@ TEST_CASE("Plain Page uses Tab cadence and changes distance without retaining re
 
 TEST_CASE("Inline timing converts exact fractions before narrowing to double",
           "[frontend-state][shared-text]") {
-    if constexpr (std::numeric_limits<long double>::digits <= std::numeric_limits<double>::digits)
-        SKIP("This platform has no extended precision long double.");
     const auto view = staged_timing(wormedit::timing_lane_kind_t::bpm);
     wormedit::ui::workspace_action_t action{};
     REQUIRE(worm_ui_nuklear_inline_timing_confirm(view, "9007199254740995/9007199254740993", action));

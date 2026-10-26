@@ -43,23 +43,26 @@ auto snap_step(std::uint64_t standard, snap_grid_t grid,
 namespace {
 
 struct grid_measure_t {
-    long double begin{};
-    long double end{};
+    std::uint64_t begin{};
+    std::uint64_t capacity{};
+
+    [[nodiscard]] auto end() const noexcept -> long double {
+        return static_cast<long double>(begin) + capacity;
+    }
 };
 
-auto grid_measure(const measure_index_t& index, long double row,
+template<class Row>
+auto grid_measure(const measure_index_t& index, Row row,
                   std::uint64_t standard_rows) noexcept -> std::optional<grid_measure_t> {
     if (row >= index.total_rows) {
-        const auto offset = std::floor((row - index.total_rows) / standard_rows) * standard_rows;
-        const auto begin = static_cast<long double>(index.total_rows) + offset;
-        return grid_measure_t{begin, begin + standard_rows};
+        const auto periods = static_cast<std::uint64_t>((row - index.total_rows) / standard_rows);
+        return grid_measure_t{index.total_rows + periods * standard_rows, standard_rows};
     }
     const auto after = std::ranges::upper_bound(index.entries, row, {},
                                                 &measure_index_entry_t::absolute_begin_row);
     if (after == index.entries.begin()) return std::nullopt;
     const auto& entry = *std::prev(after);
-    return grid_measure_t{static_cast<long double>(entry.absolute_begin_row),
-                          static_cast<long double>(entry.absolute_begin_row) + entry.row_capacity};
+    return grid_measure_t{entry.absolute_begin_row, entry.row_capacity};
 }
 
 auto is_valid_grid_input(long double row, long double step, std::uint64_t standard_rows,
@@ -70,7 +73,23 @@ auto is_valid_grid_input(long double row, long double step, std::uint64_t standa
 
 auto measure_snap_step(const chart_document_t& chart, snap_grid_t grid,
                        const grid_measure_t& measure) noexcept -> std::optional<std::uint64_t> {
-    return snap_step(chart, grid, static_cast<std::uint64_t>(measure.end - measure.begin));
+    return snap_step(chart, grid, measure.capacity);
+}
+
+auto snap_integer_row(const chart_document_t& chart, const measure_index_t& index,
+                      std::uint64_t row, snap_grid_t grid, std::uint64_t canvas_rows) noexcept
+    -> std::optional<std::uint64_t> {
+    if (!snap_step(chart, grid, 0) || row >= canvas_rows) return std::nullopt;
+    const auto measure = grid_measure(index, row, chart.divisions_per_standard_measure);
+    if (!measure) return std::nullopt;
+    const auto step = *measure_snap_step(chart, grid, *measure);
+    const auto local = row - measure->begin;
+    const auto lower = local / step * step;
+    const auto lower_row = measure->begin + lower;
+    const auto upper_span = std::min(step, measure->capacity - lower);
+    const auto distance = local - lower;
+    return upper_span < canvas_rows - lower_row && distance > upper_span - distance
+        ? lower_row + upper_span : lower_row;
 }
 
 } // namespace
@@ -92,7 +111,7 @@ auto adjacent_row_in_measure(const grid_measure_t& measure, long double row, lon
     -> std::optional<long double> {
     const auto local = (row - measure.begin) / step;
     const auto target = forward
-        ? std::min(measure.begin + (std::floor(local) + 1) * step, measure.end)
+        ? std::min(measure.begin + (std::floor(local) + 1) * step, measure.end())
         : measure.begin + (std::ceil(local) - 1) * step;
     if (target < 0 || target >= canvas_rows) return std::nullopt;
     return target;
@@ -121,7 +140,7 @@ auto snap_canvas_row(const chart_document_t& chart, const measure_index_t& index
     if (!measure) return std::nullopt;
     const auto step = *measure_snap_step(chart, grid, *measure);
     const auto lower = measure->begin + std::floor((row - measure->begin) / step) * step;
-    const auto upper = std::min(lower + step, measure->end);
+    const auto upper = std::min(lower + step, measure->end());
     const auto target = upper < canvas_rows && row - lower > upper - row ? upper : lower;
     return static_cast<std::uint64_t>(target);
 }
@@ -143,7 +162,7 @@ auto adjacent_snap_canvas_row(const chart_document_t& chart, const measure_index
 
 auto snap_absolute_row(const chart_document_t& chart, const measure_index_t& index,
     std::uint64_t row, snap_grid_t grid) noexcept -> std::optional<std::uint64_t> {
-    return snap_canvas_row(chart, index, row, grid,
+    return snap_integer_row(chart, index, row, grid,
                            std::numeric_limits<std::uint64_t>::max());
 }
 
@@ -168,8 +187,8 @@ auto adjacent_snap_step(const chart_document_t& chart, const measure_index_t& in
     -> std::optional<std::uint64_t> {
     const auto standard_step = snap_step(chart, grid, 0);
     if (!standard_step || (!forward && row == 0)) return standard_step;
-    const auto measure =
-        adjacent_grid_measure(index, row, chart.divisions_per_standard_measure, forward);
+    const auto measure = grid_measure(index, !forward && row > 0 ? row - 1 : row,
+                                     chart.divisions_per_standard_measure);
     return measure ? measure_snap_step(chart, grid, *measure) : standard_step;
 }
 
@@ -187,10 +206,10 @@ auto grid_phase(const chart_document_t& chart, const measure_index_t& index,
                 std::uint64_t row, quantization_space_t space) noexcept -> grid_phase_t {
     const auto standard = chart.divisions_per_standard_measure;
     if (!standard) return {};
-    const auto measure = grid_measure(index, static_cast<long double>(row), standard);
+    const auto measure = grid_measure(index, row, standard);
     if (!measure) return {.row = row % standard, .period = standard};
-    const auto begin = static_cast<std::uint64_t>(measure->begin);
-    const auto capacity = static_cast<std::uint64_t>(measure->end - measure->begin);
+    const auto begin = measure->begin;
+    const auto capacity = measure->capacity;
     const auto authored = space == quantization_space_t::authored_measure && capacity;
     return {.row = row - begin, .period = authored ? capacity : standard};
 }
@@ -200,7 +219,7 @@ auto snap_canvas_row_or_exact(const chart_document_t& chart, const measure_index
     -> std::optional<std::uint64_t> {
     if (row >= canvas_rows) return std::nullopt;
     if (!grid.denominator) return row;
-    return snap_canvas_row(chart, index, row, grid, canvas_rows);
+    return snap_integer_row(chart, index, row, grid, canvas_rows);
 }
 
 auto snap_position_or_exact(const chart_document_t& chart, const measure_index_t& index,

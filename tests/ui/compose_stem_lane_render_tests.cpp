@@ -1,7 +1,12 @@
 #include "pixel_comparison.h"
+#include "sys/compose/views/compose_view.h"
+#include "sys/project/workspace_view.h"
+#include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/project/compare_panel.h"
+#include <wormedit/core/export_cut_axis.h>
+#include <wormedit/core/marker_editor.h>
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include <array>
@@ -9,6 +14,7 @@
 #include <source_location>
 #include <cstring>
 #include <cstdio>
+#include <utility>
 #include <vector>
 using wormedit::ui::field::renderer_t;
 namespace {
@@ -21,12 +27,12 @@ struct field_submission_fixture_t {
     SDL_Surface* surface{};
     SDL_Renderer* renderer{};
     nk_context* context{};
-    explicit field_submission_fixture_t(bool window_backed = false) {
+    explicit field_submission_fixture_t(bool window_backed = false, int width = 128, int height = 128) {
         SDL_setenv_unsafe("SDL_VIDEODRIVER", "dummy", 1);
         SDL_setenv_unsafe("SDL_AUDIODRIVER", "dummy", 1);
         if (!SDL_Init(SDL_INIT_VIDEO)) return;
-        window = SDL_CreateWindow("clipped stem", 128, 128, SDL_WINDOW_HIDDEN);
-        surface = SDL_CreateSurface(128, 128, SDL_PIXELFORMAT_RGBA32);
+        window = SDL_CreateWindow("clipped stem", width, height, SDL_WINDOW_HIDDEN);
+        surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32);
         if (!window || !surface) return;
         renderer = window_backed ? SDL_CreateRenderer(window, "software")
                                  : SDL_CreateSoftwareRenderer(surface);
@@ -327,8 +333,9 @@ void draw_static_work_frame(field_submission_fixture_t& fixture, const wormedit:
     nk_clear(fixture.context);
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
-    REQUIRE(nk_begin(fixture.context, "static workload", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
-    draw_compose_scene_canvas(fixture.context, &view, nk_window_get_canvas(fixture.context), nk_rect(0, 0, 128, 128));
+    const auto viewport = nk_rect(0, 0, static_cast<float>(fixture.surface->w), static_cast<float>(fixture.surface->h));
+    REQUIRE(nk_begin(fixture.context, "static workload", viewport, NK_WINDOW_NO_SCROLLBAR));
+    draw_compose_scene_canvas(fixture.context, &view, nk_window_get_canvas(fixture.context), viewport);
     nk_end(fixture.context);
 }
 void check_measured_note_pass(const wormedit::ui::nuklear::compose_static_work_t& work) {
@@ -370,10 +377,11 @@ auto render_static_pixels(field_submission_fixture_t& fixture, const wormedit::u
     draw_static_work_frame(fixture,view);
     nk_sdl_render(fixture.context,NK_ANTI_ALIASING_OFF);
     SDL_RenderPresent(fixture.renderer);
-    field_pixels_t pixels(128*128);
-    for (int row=0; row<128; ++row)
-        std::memcpy(pixels.data()+row*128,static_cast<const std::uint8_t*>(fixture.surface->pixels)+
-            row*fixture.surface->pitch,128*4);
+    const auto width = fixture.surface->w;
+    field_pixels_t pixels(static_cast<std::size_t>(width * fixture.surface->h));
+    for (int row=0; row<fixture.surface->h; ++row)
+        std::memcpy(pixels.data()+row*width,static_cast<const std::uint8_t*>(fixture.surface->pixels)+
+            row*fixture.surface->pitch,static_cast<std::size_t>(width)*4);
     return pixels;
 }
 void expect_static_pixels(const field_pixels_t& direct,const field_pixels_t& cached) {
@@ -843,6 +851,225 @@ TEST_CASE("Retained field tiles invalidate an uploaded atlas behind a stable fon
     using draw_kind_t=wormedit::ui::nuklear::compose_static_draw_kind_t;
     CHECK(work.passes[6][static_cast<std::size_t>(draw_kind_t::composite)].vertices==0);
     CHECK(work.passes[6][static_cast<std::size_t>(draw_kind_t::missing)].calls>0);
+}
+
+namespace {
+constexpr int timing_raster_width = 768;
+constexpr int timing_raster_height = 384;
+
+auto make_cut_timing_raster_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    song_document_t song;
+    song.id = song_id_t{1};
+    song.revision = 1;
+    song.export_cuts = {{.id = object_id_t{9001}, .label = "Shorten intro",
+        .begin_milliseconds = 0, .end_milliseconds = 16000}};
+    chart_document_t chart;
+    chart.id = chart_id_t{1};
+    chart.divisions_per_standard_measure = 960;
+    for (std::uint64_t measure = 1; measure <= 12; ++measure)
+        chart.measures.push_back({.id = measure_id_t{measure}});
+    chart.lane_layouts = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
+        .layout = {.profile_id = "timing-raster", .display_name = "Timing raster",
+            .lanes = {{.id = lane_id_t{1}, .name = "Key", .role = lane_role_t::playable}}}}};
+    const local_position_t position{measure_id_t{10}, 240};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}},
+        {.id = object_id_t{7001}, .position = position, .beats_per_minute = {150, 1}}};
+    chart.scrolls = {{.id = object_id_t{7002}, .position = position, .multiplier = {2, 1}}};
+    chart.speeds = {{.id = object_id_t{7003}, .position = position, .multiplier = {3, 1}}};
+    chart.pauses = {{.id = object_id_t{7004}, .position = position, .duration = {1, 4}},
+        {.id = object_id_t{7005}, .position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}};
+    chart.warps = {{.id = object_id_t{7006}, .span = {position, {position.measure, 480}}}};
+    chart.timing_anchors = {{.id = object_id_t{7008}, .position = position}};
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+// Keep the production projection owners across frames; only SDL submission is synthetic.
+struct timing_raster_projection_t {
+    wormedit::sys::compose_scene_cache_t cache;
+    wormedit::sys::application_command_state_t application;
+    std::optional<wormedit::editor_interaction_state_t> interaction;
+    wormedit::sys::frontend_workspace_view_t flattened;
+
+    void refill(wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+                double scroll) {
+        if (interaction) interaction->viewport_scroll_pixels = scroll;
+        flattened.view.compose.visible = true;
+        wormedit::sys::populate_compose_view(flattened, history, workspace, cache,
+            timing_raster_width + 48, timing_raster_height + 188, interaction, application, nullptr);
+        const auto& view = flattened.view.compose;
+        expect_field(view.scene_available);
+        expect_field(static_cast<bool>(view.cut_axis));
+        expect_field(!(view.cut_axis->intervals().empty()));
+        expect_field(view.static_scene);
+        expect_field(view.viewport_width_pixels == timing_raster_width);
+        expect_field(view.viewport_height_pixels == timing_raster_height);
+        expect_field(view.selected_note_count == 0);
+        expect_field(std::ranges::none_of(view.timing_markers, &wormedit::ui::compose_timing_marker_view_t::selected));
+    }
+};
+
+void move_timing_raster_pointer(field_submission_fixture_t& fixture, int x = -100, int y = -100) {
+    nk_input_begin(fixture.context);
+    nk_input_motion(fixture.context, x, y);
+    nk_input_end(fixture.context);
+}
+
+auto render_direct_timing_pixels(field_submission_fixture_t& fixture,
+                                 const wormedit::ui::compose_view_t& view) -> field_pixels_t {
+    auto& state = worm_ui_nuklear_compose_state().timing_marker;
+    const auto was_dragging = state.timing_marker_drag_active;
+    // With no selection this changes only pass 6's dispatch, without drawing drag ghosts.
+    state.timing_marker_drag_active = true;
+    const auto pixels = render_static_pixels(fixture, view);
+    state.timing_marker_drag_active = was_dragging;
+    return pixels;
+}
+
+void expect_timing_raster_dispatch(field_submission_fixture_t& fixture, bool retained) {
+    using enum wormedit::ui::nuklear::compose_static_draw_kind_t;
+    const auto work = wormedit::ui::nuklear::compose_static_work_for_testing(fixture.context);
+    const auto& composite_work = work.passes[6][static_cast<std::size_t>(composite)];
+    const auto& direct_work = work.passes[6][static_cast<std::size_t>(direct)];
+    expect_field((composite_work.calls > 0) == retained);
+    expect_field((composite_work.vertices > 0) == retained);
+    expect_field((direct_work.vertices == 0) == retained);
+    if (retained) {
+        expect_field(work.tile_bytes > 0);
+        expect_field(work.passes[6][static_cast<std::size_t>(hole)].vertices == 0);
+        expect_field(work.passes[6][static_cast<std::size_t>(missing)].vertices == 0);
+    }
+}
+
+auto crop_timing_marker_pixels(const field_pixels_t& pixels, SDL_Rect rect) -> field_pixels_t {
+    field_pixels_t crop;
+    for (int y = rect.y; y < rect.y + rect.h; ++y) {
+        const auto begin = pixels.begin() + y * timing_raster_width + rect.x;
+        crop.insert(crop.end(), begin, begin + rect.w);
+    }
+    return crop;
+}
+
+auto timing_raster_changed_pixels(const field_pixels_t& left, const field_pixels_t& right) -> std::size_t {
+    std::size_t changed{};
+    for (std::size_t index = 0; index < left.size(); ++index)
+        changed += is_field_color_different(left[index], right[index]);
+    return changed;
+}
+
+void check_timing_marker_raster(const wormedit::ui::compose_view_t& view,
+                               const field_pixels_t& direct, const field_pixels_t& cached,
+                               const field_pixels_t& textless, const field_pixels_t& empty) {
+    std::size_t checked{};
+    for (const auto& marker : view.timing_markers) {
+        if (marker.object_id.value < 7001) continue;
+        CAPTURE(marker.lane, marker.marker_y_pixels, view.area_scroll_pixels, view.downscroll);
+        expect_field(!(marker.short_label.empty()));
+        const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, marker);
+        // Exclude the hover outline so these same body/text pixels apply during hover.
+        const SDL_Rect rect{static_cast<int>(std::ceil(bounds.left)) + 3,
+            static_cast<int>(std::ceil(bounds.top)) + 3,
+            static_cast<int>(std::floor(bounds.right) - std::ceil(bounds.left)) - 6,
+            static_cast<int>(std::floor(bounds.bottom) - std::ceil(bounds.top)) - 6};
+        expect_field(rect.x >= 0);
+        expect_field(rect.y >= 0);
+        expect_field(rect.w > 0);
+        expect_field(rect.h > 0);
+        expect_field(rect.x + rect.w <= timing_raster_width);
+        expect_field(rect.y + rect.h <= timing_raster_height);
+        const auto expected = crop_timing_marker_pixels(direct, rect);
+        const auto actual = crop_timing_marker_pixels(cached, rect);
+        const auto no_text = crop_timing_marker_pixels(textless, rect);
+        const auto no_marker = crop_timing_marker_pixels(empty, rect);
+        expect_field(timing_raster_changed_pixels(no_text, no_marker) > 20);
+        expect_field(timing_raster_changed_pixels(expected, no_text) > 5);
+        expect_field(timing_raster_changed_pixels(actual, no_text) > 5);
+        const auto difference = static_pixel_difference(expected, actual, rect.w, rect.h);
+        expect_field(difference.interior == 0);
+        expect_field(difference.coverage == 0);
+        ++checked;
+    }
+    // Kiai is represented by spans; every point-marker family is checked separately.
+    expect_field(checked == wormedit::timing_lane_kind_count - 1);
+}
+
+void check_warm_timing_raster(field_submission_fixture_t& fixture,
+                              const wormedit::ui::compose_view_t& view) {
+    move_timing_raster_pointer(fixture);
+    const auto cached = render_static_pixels(fixture, view);
+    expect_timing_raster_dispatch(fixture, true);
+    const auto direct = render_direct_timing_pixels(fixture, view);
+    expect_timing_raster_dispatch(fixture, false);
+    auto reference = view;
+    for (auto& marker : reference.timing_markers) marker.short_label = {};
+    const auto textless = render_direct_timing_pixels(fixture, reference);
+    reference.timing_markers.clear();
+    const auto empty = render_direct_timing_pixels(fixture, reference);
+    check_timing_marker_raster(view, direct, cached, textless, empty);
+    const auto marker = std::ranges::find(view.timing_markers, wormedit::object_id_t{7001},
+        &wormedit::ui::compose_timing_marker_view_t::object_id);
+    expect_field(marker != view.timing_markers.end());
+    const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, *marker);
+    move_timing_raster_pointer(fixture, static_cast<int>((bounds.left + bounds.right) * .5),
+        static_cast<int>((bounds.top + bounds.bottom) * .5));
+    const auto hovered = render_static_pixels(fixture, view);
+    expect_timing_raster_dispatch(fixture, false);
+    check_timing_marker_raster(view, direct, hovered, textless, empty);
+    move_timing_raster_pointer(fixture);
+    const auto unhovered = render_static_pixels(fixture, view);
+    expect_timing_raster_dispatch(fixture, true);
+    check_timing_marker_raster(view, direct, unhovered, textless, empty);
+}
+
+void check_cut_timing_raster_revision(field_submission_fixture_t& fixture,
+                                     timing_raster_projection_t& projection,
+                                     wormedit::document_history_t& history,
+                                     const wormedit::workspace_controller_t& workspace) {
+    // Reproject twice so cut-axis cursor anchoring has settled before warming tiles.
+    projection.refill(history, workspace, 0);
+    projection.refill(history, workspace, 0);
+    move_timing_raster_pointer(fixture);
+    for (unsigned frame = 0; frame < 24; ++frame)
+        render_static_pixels(fixture, projection.flattened.view.compose);
+    for (const double scroll : {0.0, 48.5, 96.0, 48.5}) {
+        projection.refill(history, workspace, scroll);
+        expect_field(projection.flattened.view.compose.area_scroll_pixels == scroll);
+        check_warm_timing_raster(fixture, projection.flattened.view.compose);
+    }
+}
+} // namespace
+
+TEST_CASE("Original timing marker bodies and labels survive warm tiles cuts scrolling and hover",
+          "[ui][field][tile][pixel][export-cut][timing-marker][isolated-software-render]") {
+    using namespace wormedit;
+    for (const bool downscroll : {false, true}) {
+        CAPTURE(downscroll);
+        field_submission_fixture_t fixture{false, timing_raster_width, timing_raster_height};
+        expect_field(fixture.context);
+        worm_ui_nuklear_reset_compose_state();
+        wormedit::ui::nuklear::measure_compose_static_work_for_testing(fixture.context, true);
+        auto history = document_history_t::from(make_cut_timing_raster_song());
+        auto binding = workspace_controller_t::from(history);
+        expect_field(static_cast<bool>(binding.value));
+        auto& workspace = *binding.value;
+        workspace.active_tab = workspace_tab_t::compose;
+        workspace.selected_chart = chart_id_t{1};
+        timing_raster_projection_t projection;
+        projection.application.preferences.editor_preferences.scroll_directions[
+            static_cast<std::size_t>(editor_mode_family_t::other)] = downscroll ? 2 : 1;
+        check_cut_timing_raster_revision(fixture, projection, history, workspace);
+        expect_field(projection.flattened.view.compose.downscroll == downscroll);
+        const auto inserted = apply_export_cut_edit(history, insert_edit_t<export_cut_edit_value_t>{
+            .chart = chart_id_t{1}, .value = {.label = "Shorten again",
+                .begin_milliseconds = 16000, .end_milliseconds = 16500}});
+        expect_field(inserted.applied);
+        check_cut_timing_raster_revision(fixture, projection, history, workspace);
+        expect_field(static_cast<bool>(undo_document_command(history)));
+        check_cut_timing_raster_revision(fixture, projection, history, workspace);
+        expect_field(static_cast<bool>(redo_document_command(history)));
+        check_cut_timing_raster_revision(fixture, projection, history, workspace);
+    }
 }
 
 namespace {

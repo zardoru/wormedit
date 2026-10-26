@@ -169,7 +169,8 @@ The scripts source `scripts/env-mingw.sh`, which finds `x86_64-w64-mingw32-*` on
 `libwinpthread-1.dll`; the SDK script copies that DLL and its notices into the SDK.
 
 For distribution, build the pinned Windows FFmpeg SDK and package the
-`windows-cross-release` preset, which requires video playback and audio metadata support.
+`windows-cross-release` preset, which enables Lua scripting and requires video playback
+and audio metadata support.
 For a clean release build, start with no existing `build/windows-cross-release` directory
 (move an earlier build aside if needed), then run these commands from the repository root:
 
@@ -183,6 +184,11 @@ and builds `build/windows-cross-release`, stages into `build/windows-cross-stage
 and writes `build/dist/wormedit-1.0.0-rc1-windows-x64.zip` and its SHA-256 sidecar.
 Pass an output directory as the package script's first argument to change `build/dist`.
 The explicit three-job limit is suitable when sharing the machine with other release lanes.
+The package command reconfigures an existing build too; confirm
+`WORMEDIT_ENABLE_LUA:BOOL=ON` in `build/windows-cross-release/CMakeCache.txt` before
+accepting a release. In a writable copy of the packaged tutorial, follow the manual's
+Lua Run/Apply/Undo examples and the `scripts/sv/wobble.lua` recipe with Grid `1/16`;
+repeat under a `曲` path so script and module loading are exercised there too.
 
 The SDK script needs curl, tar, make, pkg-config and MinGW-w64. It verifies the source
 archive's pinned SHA-256 and builds LGPL shared libraries without external codecs,

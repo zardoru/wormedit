@@ -76,18 +76,23 @@ if(wormedit_zlib_SOURCE_DIR)
     set(wormedit_zlib_notice "${wormedit_zlib_SOURCE_DIR}/LICENSE")
 elseif(WORMEDIT_ZLIB_NOTICE_FILE)
     set(wormedit_zlib_notice "${WORMEDIT_ZLIB_NOTICE_FILE}")
+elseif(APPLE)
+    # macOS links the operating system's /usr/lib/libz.dylib; it is not bundled.
+    set(wormedit_zlib_system_library ON)
 elseif(NOT CMAKE_CROSSCOMPILING)
     find_file(wormedit_zlib_notice NAMES LICENSE copyright
         PATHS /usr/share/licenses/zlib /usr/share/doc/zlib1g NO_DEFAULT_PATH)
 endif()
 if(wormedit_zlib_notice)
     wormedit_install_notices(zlib "${wormedit_zlib_notice}")
-else()
+elseif(NOT wormedit_zlib_system_library)
     install(CODE "message(FATAL_ERROR \"Set WORMEDIT_ZLIB_NOTICE_FILE for this zlib SDK.\")")
 endif()
 
 set(WORMEDIT_FFMPEG_NOTICES_DIR "" CACHE PATH
     "FFmpeg SDK license, corresponding source archive and build configuration directory")
+option(WORMEDIT_FFMPEG_LOCAL_ONLY
+    "Package a host FFmpeg (e.g. Homebrew) without redistribution notices; local test builds only" OFF)
 if(TARGET PkgConfig::WORMEDIT_FFMPEG)
     set(wormedit_ffmpeg_notice_dir "${WORMEDIT_FFMPEG_NOTICES_DIR}")
     if(NOT wormedit_ffmpeg_notice_dir)
@@ -110,6 +115,9 @@ if(TARGET PkgConfig::WORMEDIT_FFMPEG)
             message(FATAL_ERROR "FFmpeg notices must include the corresponding ffmpeg-*.tar.xz source archive")
         endif()
         install(DIRECTORY "${wormedit_ffmpeg_notice_dir}/"
+            DESTINATION "${wormedit_notice_root}/ffmpeg")
+    elseif(WORMEDIT_FFMPEG_LOCAL_ONLY)
+        install(FILES "${CMAKE_CURRENT_LIST_DIR}/notices/FFmpeg-LOCAL-ONLY.txt"
             DESTINATION "${wormedit_notice_root}/ffmpeg")
     else()
         install(CODE "message(FATAL_ERROR \"Set WORMEDIT_FFMPEG_NOTICES_DIR before distributing this FFmpeg build.\")")

@@ -1,0 +1,6 @@
+This build links a host FFmpeg (for example Homebrew's) that was not prepared for
+redistribution. It is a local test build only: do not publish it.
+
+A public package needs an FFmpeg build with its license, build configuration and
+corresponding source archive (see scripts/windows-ffmpeg.sh for the Windows SDK),
+supplied through WORMEDIT_FFMPEG_NOTICES_DIR.

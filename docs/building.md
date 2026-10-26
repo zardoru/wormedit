@@ -319,7 +319,7 @@ then delete `build/macos-release-<arch>/macos-icon` and rebuild to refresh it.
 
 Third-party notices come from the shared `cmake/third-party-notices.cmake`, installed into
 `Wormedit.app/Contents/Resources/third-party` under the `Wormedit` component; the package
-script refuses to archive without them. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
+script refuses to archive without them. zlib is the operating system's `/usr/lib/libz.dylib`, which is not bundled, so it needs no notice. The script sets `WORMEDIT_FFMPEG_LOCAL_ONLY=ON`: Homebrew FFmpeg has no redistribution notices, so the bundle carries `third-party/ffmpeg/FFmpeg-LOCAL-ONLY.txt` instead. Pass `-DWORMEDIT_FFMPEG_LOCAL_ONLY=OFF -DWORMEDIT_FFMPEG_NOTICES_DIR=<dir>` for a redistributable build. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
 GPL components. This command produces a local owner-verification build, not an
 LGPL-only release artifact. Public redistribution needs the matching notices,
 source/compliance materials for its actual recursive dependency set, or a

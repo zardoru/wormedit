@@ -427,6 +427,50 @@ void add_stepmania_music(const std::vector<field_t>& fields,
                        music->order);
 }
 
+void remove_retained_background(song_document_t& song) {
+    for (auto& group : song.metadata.format_groups) {
+        if (group.family != format_family_t::stepmania) continue;
+        for (std::size_t index = group.ordered_fields.size(); index-- > 0;) {
+            if (!text_util::ascii_iequal(group.ordered_fields[index].first, "BACKGROUND")) continue;
+            group.ordered_fields.erase(group.ordered_fields.begin() + static_cast<std::ptrdiff_t>(index));
+            if (index < group.ordered_field_source_orders.size())
+                group.ordered_field_source_orders.erase(
+                    group.ordered_field_source_orders.begin() + static_cast<std::ptrdiff_t>(index));
+        }
+    }
+}
+
+// A static song background uses the same editable image/event owners as osu! and BMS.
+void add_stepmania_background(const std::vector<field_t>& fields,
+                              const stepmania_parse_options_t& options,
+                              song_document_t& song, id_source_t& ids,
+                              std::size_t& total_events) {
+    const auto* field = last_field(fields, "BACKGROUND");
+    if (!field) return;
+    const auto name = std::string(trim(field->value));
+    const auto path = stepmania_relative_path(name);
+    if (!path) return;
+    remove_retained_background(song);
+    const auto asset = ids.take<asset_id_t>();
+    const auto resource = ids.take<resource_id_t>();
+    std::error_code error;
+    const bool missing = !options.asset_base_directory ||
+        !std::filesystem::exists(*options.asset_base_directory / *path, error) || error;
+    song.visual_assets.push_back({.id = asset, .source_path = *path});
+    song.resources.push_back({.id = resource, .name = name, .asset = asset,
+        .roles = {resource_role_t::bga}, .missing = missing});
+    for (auto& chart : song.charts) {
+        if (++total_events > options.max_events)
+            fail(stepmania_parse_diagnostic_code_t::event_limit,
+                 "StepMania background exceeds the configured event limit", field->order);
+        chart.bga_events.push_back({.id = ids.take<object_id_t>(),
+            .position = {chart.measures.front().id, 0}, .resource = resource,
+            .provenance = {.family = format_family_t::stepmania,
+                .source_field = "BACKGROUND", .source_spelling = name,
+                .source_order = field->order}});
+    }
+}
+
 // The song-level #KEYSOUNDS list. Entries keep their list position so a note's
 // `[n]` index addresses them directly; an unusable entry stays as a placeholder.
 struct keysound_list_t {
@@ -1295,6 +1339,7 @@ auto parse_stepmania_document(std::span<const std::byte> bytes, std::string_view
         options, ids, total_events, keysounds, diagnostics, options.profile, source_bytes};
     for (std::size_t index = 0; index < charts.size(); ++index)
         song.charts.push_back(parse_one_chart(context, charts[index], song_fields, index));
+    add_stepmania_background(song_fields, options, song, ids, total_events);
     append_duplicate_song_field_warnings(song_fields, diagnostics);
     return song;
 }
@@ -2428,6 +2473,48 @@ class stepmania_writer_t {
         }
         return true;
     }
+    auto chart_background(const chart_document_t& chart) -> std::optional<std::string> {
+        if (chart.bga_events.empty()) return std::nullopt;
+        const auto& event = chart.bga_events.front();
+        if (chart.bga_events.size() != 1 || chart.measures.empty() ||
+            event.position != local_position_t{chart.measures.front().id, 0} ||
+            event.kind != visual_event_kind_t::background) {
+            report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                "StepMania static backgrounds require one image at the first row; animated BGA export is unsupported.",
+                "BACKGROUND");
+            return std::nullopt;
+        }
+        const auto resource = std::ranges::find(song_.resources, event.resource, &resource_entry_t::id);
+        const auto asset = resource == song_.resources.end() ? song_.visual_assets.end()
+            : std::ranges::find(song_.visual_assets, resource->asset, &visual_asset_t::id);
+        if (asset == song_.visual_assets.end() || asset->kind != asset_kind_t::image) {
+            report(stepmania_write_diagnostic_code_t::invalid_metadata,
+                "Background event has no image asset.", "BACKGROUND");
+            return std::nullopt;
+        }
+        const auto name = asset->source_path.generic_string();
+        if (!stepmania_relative_path(name) || asset->source_path.lexically_normal() != asset->source_path ||
+            name.find_first_of(";\r\n") != std::string::npos) {
+            report(stepmania_write_diagnostic_code_t::invalid_metadata,
+                "Background image needs a safe relative asset path.", "BACKGROUND");
+            return std::nullopt;
+        }
+        return name;
+    }
+    void emit_background(std::set<std::string>& modeled_song) {
+        const auto background = chart_background(*charts_.front());
+        for (const auto* chart : charts_) {
+            if (chart_background(*chart) != background) {
+                report(stepmania_write_diagnostic_code_t::conflicting_song_metadata,
+                    "Selected charts have different backgrounds; export them separately.", "BACKGROUND");
+                return;
+            }
+        }
+        // Older native projects may still own BACKGROUND solely as a retained field.
+        if (background)
+            modeled_song.insert("BACKGROUND");
+        if (background) emit("BACKGROUND", *background);
+    }
     void emit_song_metadata() {
     if (options_.profile == stepmania_profile_t::ssc)
         emit("VERSION", "0.83");
@@ -2468,6 +2555,7 @@ class stepmania_writer_t {
     } else {
         modeled_song.insert("VERSION");
     }
+    emit_background(modeled_song);
     emit_preview(modeled_song);
     append_unknown_fields(output_, song_group_, modeled_song, options_.preserve_unknown_fields,
                           result_.diagnostics, options_.max_output_bytes);

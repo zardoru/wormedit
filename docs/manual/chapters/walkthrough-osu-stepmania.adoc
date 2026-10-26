@@ -86,6 +86,22 @@ or use the add button and removable chart chips on a target card. A target edito
 complete membership. Charts whose lane layout cannot be represented by that format stay visible but disabled
 with the reason; an existing incompatible membership remains visible until you remove it.
 
+== Add a background image
+
+In *Compose*, open the *Images* dock from the right-hand panel strip. Click its *+* button
+(or drop an image into the dock), then double-click the imported image to arm it. If the lane
+is hidden, choose *BGA* under *Show BGA lanes*. Place the image at the very first row of the
+chart. Importing alone adds it to the catalog; placing it gives the chart its background.
+
+Use one still image at the first row for a background shared by osu!mania, SM and SSC exports.
+If a StepMania target includes several charts, place the same image in each chart.
+StepMania export reports conflicting backgrounds or unsupported animated BGA instead of
+silently dropping them. Select the placed event to replace or delete it through the normal
+BGA controls. Imported StepMania `BACKGROUND` images appear in this same lane.
+
+Save the project, then export the target as described below. The export copies the image
+into its *assets/* directory and writes the matching relative reference in the chart.
+
 == 6. Save and export
 
 . kbd:[Ctrl+S] saves the `.wormedit` project; exporting needs a saved project.

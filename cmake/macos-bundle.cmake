@@ -3,6 +3,9 @@ if(NOT APPLE)
     return()
 endif()
 
+# Only application-owned installs belong in the package. Dependencies were configured
+# earlier with their own default component; never install their SDK headers/libraries.
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME Wormedit)
 set(WORMEDIT_INSTALL_BINDIR "Wormedit.app/Contents/Resources")
 # TODO(T-763/T-764 merge): use the shared notices module's destination variable here
 # if it differs, and ensure its include runs after this override. Never duplicate its list.

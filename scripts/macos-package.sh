@@ -54,7 +54,9 @@ cmake --build "$build" --target wormedit manual --parallel "$jobs"
 
 stage=$(mktemp -d "$build/stage.XXXXXX")
 trap 'rm -rf "$probe" "$stage"' EXIT
-cmake --install "$build" --prefix "$stage" --config Release
+# Exclude dependency SDK installs (Vorbis even uses an absolute header destination).
+cmake --install "$build" --prefix "$stage" --config Release --component Wormedit
+cmake --install "$build" --prefix "$stage" --config Release --component Manual
 app="$stage/Wormedit.app"
 resources="$app/Contents/Resources"
 for resource in assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/NotoSansCJKjp-Regular.otf \

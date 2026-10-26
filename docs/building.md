@@ -152,7 +152,9 @@ macOS SDK. FFmpeg is discovered using pkg-config with `brew --prefix ffmpeg` and
 
 The build lives in `build/macos-release-<arch>`, uses three jobs by default
 (`WORMEDIT_BUILD_JOBS` overrides), and enables Lua, audio, images, FFmpeg video
-and the offline manual. The minimum deployment target defaults to the build
+and the offline manual. Installation selects the `Wormedit` and `Manual`
+components, excluding dependency SDK headers/libraries and their absolute paths.
+The minimum deployment target defaults to the build
 Mac's macOS major/minor version. `WORMEDIT_MACOS_DEPLOYMENT_TARGET` can override
 it, but an older target requires compatible SDK and Homebrew libraries and needs
 separate verification on that OS. This is a single-architecture build, with no
@@ -190,7 +192,8 @@ then delete `build/macos-release-<arch>/macos-icon` and rebuild to refresh it.
 **Merge prerequisite (T-763/T-764):** `cmake/third-party-notices.cmake` is supplied
 by the Linux lane. Its shared destination must be
 `Wormedit.app/Contents/Resources/third-party` before the notices include runs;
-`cmake/macos-bundle.cmake` records the integration TODO. The package script
+`cmake/macos-bundle.cmake` records the integration TODO. Notices should use the
+application's default `Wormedit` install component. The package script
 refuses to archive without this directory; no second license list is maintained
 here. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
 GPL components. This command produces a local owner-verification build, not an

@@ -311,11 +311,28 @@ auto is_preview_owned_edit(const format_metadata_t& group, const Edit& edit) -> 
            is_song_preview_field(group.family, group.ordered_fields[edit.index].first);
 }
 
+// The BGA lane owns new backgrounds; raw fields would create a second editing owner.
+template <typename Edit>
+auto is_stepmania_background_edit(const format_metadata_t& group, const Edit& edit) -> bool {
+    if (group.family != format_family_t::stepmania) return false;
+    if constexpr (std::same_as<Edit, edit_format_metadata_field_action_t>) {
+        if (text_util::ascii_iequal(edit.name, "BACKGROUND")) return true;
+        if (edit.mode != format_metadata_field_mode_t::replace) return false;
+    }
+    return edit.index < group.ordered_fields.size() &&
+        text_util::ascii_iequal(group.ordered_fields[edit.index].first, "BACKGROUND");
+}
+
 template <typename Edit>
 auto apply_format_metadata_action(metadata_edit_context_t& context, const Edit& edit) -> void {
     auto* groups = resolve_format_group(context.proposed, edit.target, context.result.diagnostics);
     if (!groups) return;
     auto& group = *groups;
+    if (is_stepmania_background_edit(group, edit)) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "Set the background image in the Compose BGA lane instead."));
+        return;
+    }
     if (is_preview_owned_edit(group, edit)) {
         context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
             "This field follows the song preview; set the preview in Compose instead."));

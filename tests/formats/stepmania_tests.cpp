@@ -1411,3 +1411,91 @@ TEST_CASE("StepMania primary export policy retains required syntax rejection", "
     CHECK(resolved.error().code == failure_code_t::invalid_request);
     CHECK(resolved.error().message == "Select a StepMania timing syntax explicitly");
 }
+
+namespace {
+void expect_background(bool condition, std::source_location at = std::source_location::current()) {
+    INFO("Background assertion at line " << at.line());
+    REQUIRE(condition);
+}
+}
+
+TEST_CASE("StepMania static backgrounds are editable and removal cannot revive retained text",
+          "[unit][format][stepmania][background]") {
+    auto parsed = fixture("versioned-metadata.ssc", wormedit::stepmania_profile_t::ssc);
+    expect_background(parsed.value.has_value());
+    expect_background(parsed.value->visual_assets.size() == 1);
+    expect_background(parsed.value->charts.front().bga_events.size() == 1);
+    parsed.value->visual_assets.front().source_path = "images/replacement.png";
+    auto written = wormedit::write_stepmania(*parsed.value);
+    expect_background(written.value.has_value());
+    expect_background(written.value->find("#BACKGROUND:images/replacement.png;") != std::string::npos);
+    expect_background(written.value->find("#BACKGROUND:background.png;") == std::string::npos);
+    parsed.value->charts.front().bga_events.clear();
+    written = wormedit::write_stepmania(*parsed.value);
+    expect_background(written.value.has_value());
+    expect_background(written.value->find("#BACKGROUND:") == std::string::npos);
+}
+
+TEST_CASE("StepMania refuses unsupported or unsafe background events",
+          "[unit][format][stepmania][background]") {
+    using namespace wormedit;
+    for (int variant = 0; variant < 5; ++variant) {
+        INFO(variant);
+        auto parsed = fixture("versioned-metadata.ssc", stepmania_profile_t::ssc);
+        expect_background(parsed.value.has_value());
+        auto& chart = parsed.value->charts.front();
+        auto& event = chart.bga_events.front();
+        switch (variant) {
+        case 0: event.position.row = 1; break;
+        case 1: event.kind = visual_event_kind_t::layer; break;
+        case 2: chart.bga_events.push_back(event); break;
+        case 3: parsed.value->visual_assets.front().source_path = "../escape.png"; break;
+        case 4: parsed.value->visual_assets.clear(); break;
+        }
+        const auto written = write_stepmania(*parsed.value);
+        expect_background(!written.value.has_value());
+        expect_background(!written.diagnostics.empty());
+        expect_background(written.diagnostics.front().code == (variant < 3
+            ? stepmania_write_diagnostic_code_t::unsupported_feature
+            : stepmania_write_diagnostic_code_t::invalid_metadata));
+    }
+}
+
+TEST_CASE("StepMania song output refuses different chart backgrounds",
+          "[unit][format][stepmania][background]") {
+    using namespace wormedit;
+    auto parsed = fixture("versioned-metadata.ssc", stepmania_profile_t::ssc);
+    expect_background(parsed.value.has_value());
+    auto other = parsed.value->charts.front();
+    other.id = chart_id_t{9999};
+    other.bga_events.clear();
+    parsed.value->charts.push_back(std::move(other));
+    const auto written = write_stepmania(*parsed.value, {.profile = stepmania_profile_t::ssc});
+    expect_background(!written.value.has_value());
+    expect_background(!written.diagnostics.empty());
+    expect_background(written.diagnostics.front().code == stepmania_write_diagnostic_code_t::conflicting_song_metadata);
+}
+
+TEST_CASE("StepMania background import obeys the event budget",
+          "[unit][format][stepmania][background]") {
+    const std::string source = "#BACKGROUND:bg.png;#BPMS:0=120;#NOTES:dance-single::Edit:1:0,0,0,0,0:0000;";
+    auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), {.max_events = 1});
+    expect_background(!parsed.value.has_value());
+    expect_background(!parsed.diagnostics.empty());
+    expect_background(parsed.diagnostics.back().code == wormedit::stepmania_parse_diagnostic_code_t::event_limit);
+}
+
+TEST_CASE("StepMania retains backgrounds stored by older native projects",
+          "[unit][format][stepmania][background]") {
+    auto parsed = fixture("versioned-metadata.ssc", wormedit::stepmania_profile_t::ssc);
+    expect_background(parsed.value.has_value());
+    parsed.value->charts.front().bga_events.clear();
+    const auto asset = parsed.value->visual_assets.front().id;
+    std::erase_if(parsed.value->resources, [asset](const auto& resource) { return resource.asset == asset; });
+    parsed.value->visual_assets.clear();
+    parsed.value->metadata.format_groups.front().ordered_fields.emplace_back("BACKGROUND", "legacy.png");
+    const auto written = wormedit::write_stepmania(*parsed.value);
+    expect_background(written.value.has_value());
+    expect_background(written.value->find("#BACKGROUND:legacy.png;") != std::string::npos);
+}

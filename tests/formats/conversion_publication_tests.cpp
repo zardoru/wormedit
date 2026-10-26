@@ -1,4 +1,7 @@
 #include <wormedit/core/resource_file_copy.h>
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/formats/stepmania.h>
+#include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/bmson.h>
@@ -14,6 +17,8 @@
 #include <string>
 
 namespace {
+void check_publication(bool value) { CHECK(value); }
+void require_publication(bool value) { REQUIRE(value); }
 
 void check_changed_export_source_keeps_other_verified_mapping(
     wormedit::song_document_t& song, const wormedit::output_group_t& group,
@@ -41,6 +46,49 @@ struct temporary_directory_t {
         std::filesystem::remove_all(path, error);
     }
 };
+
+auto with_background(wormedit::song_document_t song, const std::filesystem::path& image)
+    -> wormedit::song_document_t {
+    using namespace wormedit;
+    auto history = document_history_t::from(std::move(song));
+    REQUIRE(apply_resource_asset_import(history, {.source_path = image,
+        .role = resource_role_t::bga, .name = "Release background",
+        .image_geometry = std::pair{2U, 2U}}));
+    const auto resource = history.document.resources.back().id;
+    std::vector<chart_id_t> charts;
+    for (const auto* chart : history.document.read_charts()) charts.push_back(chart->id);
+    for (const auto id : charts) {
+        const auto chart = history.document.read_chart(id);
+        REQUIRE(apply_resource_placement(history, {.chart = id, .resource = resource,
+            .position = {chart->measures.front().id, 0},
+            .kind = resource_placement_kind_t::bga_background}));
+    }
+    const auto saved = write_native_project(history.document);
+    REQUIRE(saved.value.has_value());
+    auto loaded = parse_native_project(*saved.value);
+    REQUIRE(loaded.value.has_value());
+    return std::move(*loaded.value);
+}
+
+void check_exported_background(const wormedit::output_group_t& group, const std::string& bytes) {
+    using namespace wormedit;
+    const auto data = std::as_bytes(std::span{bytes.data(), bytes.size()});
+    if (group.family == format_family_t::stepmania) {
+        check_publication(bytes.find("#BACKGROUND:assets/background.png;") != std::string::npos);
+        const auto parsed = parse_stepmania_bytes(data, {.profile = group.stepmania->file_profile});
+        require_publication(parsed.value.has_value());
+        require_publication(parsed.value->visual_assets.size() == 1);
+        check_publication(parsed.value->visual_assets.front().source_path == "assets/background.png");
+        check_publication(parsed.value->charts.front().bga_events.size() == 1);
+    } else {
+        check_publication(bytes.find("\"assets/background.png\"") != std::string::npos);
+        const auto parsed = parse_osu_mania_bytes(data);
+        require_publication(parsed.value.has_value());
+        require_publication(parsed.value->visual_assets.size() == 1);
+        check_publication(parsed.value->visual_assets.front().source_path == "assets/background.png");
+        check_publication(parsed.value->charts.front().bga_events.size() == 1);
+    }
+}
 
 auto converted(std::string filename = "song.bmson") -> wormedit::conversion_result_t {
     wormedit::conversion_result_t result;
@@ -153,26 +201,40 @@ TEST_CASE("StepMania output discovery maps a staged music file beside the chart"
     CHECK(discovered.mappings.front().relative_path == "assets/music.ogg");
 }
 
-TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music file",
+TEST_CASE("new audio project imports places saves and publishes a background for osu SM and SSC",
           "[unit][format][publication]") {
     temporary_directory_t temporary;
     const auto music = temporary.path / "music.ogg";
     std::ofstream(music) << "audio";
     const auto document = wormedit::sys::make_audio_project_document(
         wormedit::song_id_t{112}, music, "Title", "Artist", 7);
-    REQUIRE(document);
-    for (const auto& group : document->output_groups) {
+    require_publication(document.has_value());
+    const auto image = temporary.path / "background.png";
+    std::ofstream(image) << "image bytes";
+    auto source = *document;
+    source.output_groups.push_back({.name = "SM", .family = wormedit::format_family_t::stepmania,
+        .charts = {source.charts.front().id},
+        .destination_kind = wormedit::output_destination_kind_t::file,
+        .relative_output_path = "sm/song.sm",
+        .stepmania = wormedit::stepmania_export_policy_t{.file_profile = wormedit::stepmania_profile_t::sm}});
+    const auto song = with_background(std::move(source), image);
+    for (const auto& group : song.output_groups) {
         const auto copied = wormedit::create_export_asset_copy(
             {.project_directory = temporary.path,
              .source_path = music,
              .relative_output_path = group.relative_output_path,
              .destination_kind = group.destination_kind,
              .asset = document->audio_assets.front().id});
-        REQUIRE(copied);
+        require_publication(copied.has_value());
+        const auto copied_image = wormedit::create_export_asset_copy(
+            {.project_directory = temporary.path, .source_path = image,
+             .relative_output_path = group.relative_output_path,
+             .destination_kind = group.destination_kind, .asset = song.visual_assets.front().id});
+        require_publication(copied_image.has_value());
         const auto staged =
-            wormedit::discover_staged_export_assets(*document, group, temporary.path);
-        REQUIRE(staged);
-        REQUIRE(staged.mappings.size() == 1);
+            wormedit::discover_staged_export_assets(song, group, temporary.path);
+        require_publication(static_cast<bool>(staged));
+        require_publication(staged.mappings.size() == 2);
         wormedit::conversion_request_t request;
         request.target = group.family;
         request.charts = group.charts;
@@ -180,21 +242,23 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
         if (group.family == wormedit::format_family_t::stepmania) {
             request.stepmania = group.stepmania;
         }
-        const auto converted = wormedit::convert_document(*document, request);
+        const auto converted = wormedit::convert_document(song, request);
         std::string diagnostics;
         for (const auto& diagnostic : converted.diagnostics)
             diagnostics += diagnostic.message + "\n";
         INFO(group.name << ": " << diagnostics);
-        REQUIRE(converted);
+        require_publication(static_cast<bool>(converted));
         const auto published = wormedit::publish_conversion_group_atomic(
             temporary.path, group, request, converted);
-        REQUIRE(published.published);
+        require_publication(published.published);
         const auto chart_path = group.destination_kind == wormedit::output_destination_kind_t::file
                                     ? group.relative_output_path
                                     : group.relative_output_path /
                                           converted.outputs.front().suggested_filename;
-        CHECK(std::filesystem::exists(temporary.path / chart_path));
-        CHECK(std::filesystem::exists(temporary.path / copied->relative_path));
+        check_publication(std::filesystem::exists(temporary.path / chart_path));
+        check_publication(std::filesystem::exists(temporary.path / copied->relative_path));
+        check_publication(read(temporary.path / copied_image->relative_path) == "image bytes");
+        check_exported_background(group, read(temporary.path / chart_path));
     }
 }
 
@@ -467,8 +531,6 @@ TEST_CASE(
 }
 
 namespace {
-void check_publication(bool value) { CHECK(value); }
-void require_publication(bool value) { REQUIRE(value); }
 auto sliced_publication() -> wormedit::conversion_result_t {
     auto result = converted();
     wormedit::slice_span_plan_outcome_t plan;

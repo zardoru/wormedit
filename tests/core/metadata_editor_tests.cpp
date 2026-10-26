@@ -414,3 +414,21 @@ TEST_CASE("Chart metadata batch supports explicit rating clearing and preserves 
     expect_metadata_batch(static_cast<bool>(history.document.revision == 6));
     expect_metadata_batch(static_cast<bool>(history.undo.size() == 2));
 }
+
+TEST_CASE("StepMania background fields keep BGA as their single editing owner",
+          "[unit][core][metadata-editor]") {
+    auto song = metadata_song();
+    song.metadata.format_groups.push_back({.family = format_family_t::stepmania,
+        .ordered_fields = {{"BACKGROUND", "original.png"}}});
+    auto history = document_history_t::from(std::move(song));
+    const format_metadata_target_t target{.family = format_family_t::stepmania};
+    for (const auto mode : {format_metadata_field_mode_t::insert, format_metadata_field_mode_t::replace}) {
+        const auto result = apply_metadata_edit(history, edit_format_metadata_field_action_t{
+            .target = target, .index = 0, .name = "background", .value = "other.png", .mode = mode});
+        require_metadata_batch(!result);
+        require_metadata_batch(!result.diagnostics.empty());
+        expect_metadata_batch(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    }
+    expect_metadata_batch(!apply_metadata_edit(history, erase_format_metadata_field_action_t{target, 0}));
+    expect_metadata_batch(history.document.metadata.format_groups.back().ordered_fields.front().second == "original.png");
+}

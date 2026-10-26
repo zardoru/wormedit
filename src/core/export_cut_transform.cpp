@@ -973,7 +973,8 @@ auto export_cut_transform_t::from(const song_document_t& source, std::span<const
         outcome.diagnostics.push_back({.severity = diagnostic.severity, .code = diagnostic.code,
             .message = diagnostic.message, .location = {.object = diagnostic.object}});
     if (!built.ok()) return outcome;
-    export_cut_detail::transform_context_t context{source, built.value, sources, outcome.diagnostics, {}};
+    export_cut_detail::transform_context_t context{.source = source, .timeline = built.value,
+        .sources = sources, .diagnostics = outcome.diagnostics};
     export_cut_transform_t prepared{.document = source};
     if (source.export_cuts.empty()) { outcome.value = std::move(prepared); return outcome; }
     for (auto& chart : prepared.document.charts) {

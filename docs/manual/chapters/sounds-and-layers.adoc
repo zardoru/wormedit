@@ -56,6 +56,7 @@ chart; kbd:[Ctrl+Alt] + click does it for the whole chart.
 * *Play sound on click* (in the command menu, kbd:[Ctrl+Shift+P]) plays each note's sound when you
 click it.
 
+[#painting-sounds]
 == Painting sounds on existing notes
 
 Double-click a Sample in Compose's Sounds dock to arm it. Choose *Paint keysounds / osu!
@@ -94,6 +95,7 @@ nothing and removes the unaccepted output. Undo removes the imported catalog
 entries while retaining their files for Redo. The preview refuses grids with
 more than 1295 slices.
 
+[#osu-hitsounds]
 == osu! hitsounds
 
 osu!mania charts show hitsound controls below the note-kind palette. The whistle, cymbal and

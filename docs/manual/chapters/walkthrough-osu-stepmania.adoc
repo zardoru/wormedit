@@ -9,7 +9,8 @@ target when you also want an independent `.sm` export.
 
 With no project open, drop the song's MP3 or Ogg file onto the window. Wormedit asks *Import audio
 as a new project?* with the layout list: choose *7K* (or *4K*, …) and click *Create project*. The
-file becomes the song audio.
+file becomes the song audio. Keep it as song audio; you do not need to slice the MP3 or import
+separate samples to use osu!'s built-in hitsounds in step 4.
 
 You can also create the project with kbd:[Ctrl+N] and drop the song onto the audio field of the
 *Metadata* tab (kbd:[F2]) afterwards. Expand *Audio and export*, then click *Use as song audio*.
@@ -48,17 +49,44 @@ then right-drag to erase. kbd:[Alt]-drag on an empty lane draws a hold.
 StepMania mines, lifts, fakes and rolls are on kbd:[Alt+4] to kbd:[Alt+8] when the chart's formats
 support them.
 
-== 4. More difficulties
+== 4. Add osu! hitsounds
+
+The 7K project has both osu!mania and StepMania export targets, so it starts as a native chart.
+Its osu! hitsound controls are initially hidden. You can enable them here without importing an
+existing `.osu` file.
+
+. Return to Compose with kbd:[F4]. If the hitsound tiles are hidden, open the command menu
+  (kbd:[Ctrl+Shift+P]), search for *Show hitsound palette* and run it. The tiles appear below the
+  note-kind palette.
+. Press kbd:[Alt+1] for Select and click one of the taps you placed in step 3.
+. Click the clapping-hands tile (*Clap*, kbd:[R]). Its checkbox turns on for the selected note.
+  The whistle (*Whistle*, kbd:[W]) and cymbal (*Finish*, kbd:[E]) tiles work the same way; you can
+  combine additions on one note.
+. Right-click the music-note selector (*Normal sample set*) and choose *Soft*. Right-click the
+  layers selector (*Addition sample set*) and choose *Drum*. The normal hit now uses Soft and the
+  clap uses Drum. Hover the note to check its sample sets and additions.
+. Press kbd:[Space] to listen. If hitsounds are muted, enable *Playback → Play Hitsounds on
+  Playback*. Wormedit supplies bundled samples, so this check needs only your song file.
+
+To set defaults for new notes instead, clear the selection with kbd:[Escape] when no gesture is
+active, choose the hitsound tiles, then switch to Draw (kbd:[Alt+2]) and place another tap or
+hold. Editing selected notes does not change those defaults. To brush settings across existing
+notes, follow <<painting-sounds,Painting sounds on existing notes>>.
+
+The note settings are saved in the `.wormedit` project and written to its osu!mania export.
+See <<osu-hitsounds,osu! hitsounds>> for Auto sample sets, shortcuts and audition settings.
+
+== 5. More difficulties
 
 On the *Project* tab (kbd:[F1]), open the chart's *⋯* menu and choose *Duplicate* to start another
-difficulty; it keeps the chart's timing. The *+* button (*New chart*, kbd:[Ctrl+Shift+N]) adds a
+difficulty; it keeps the chart's timing. The *New chart* button (kbd:[Ctrl+Shift+N]) adds a
 chart with 120 BPM and one measure, carrying over the layout and audio offset. Add each chart to the
 export targets that should export it. Click the chart's *Exports* cell to check or uncheck targets,
-or use the *+* and removable chart chips on a target card. A target editor shows the same complete
-membership. Charts whose lane layout cannot be represented by that format stay visible but disabled
+or use the add button and removable chart chips on a target card. A target editor shows the same
+complete membership. Charts whose lane layout cannot be represented by that format stay visible but disabled
 with the reason; an existing incompatible membership remains visible until you remove it.
 
-== 5. Save and export
+== 6. Save and export
 
 . kbd:[Ctrl+S] saves the `.wormedit` project; exporting needs a saved project.
 . On the *Project* tab, under *Exports*, open each target's *⋯* menu and choose *Edit*. Set its
@@ -97,6 +125,9 @@ editing/export flow with no downloaded assets. Save the project to a disposable 
 
 . Leave the sound source unarmed, select Draw, and place four taps in different lanes one snap apart.
 . Hold one lane key while advancing four snaps; release it and check the hold's tail.
+. Follow step 4 to show the hitsound palette. Select one tap and give it a Clap with a Drum
+  addition sample set. Hover it to check the settings, then play it back using the bundled
+  hitsounds. The other taps should keep their original settings.
 . Duplicate the difficulty on Project. Remove two taps from the duplicate and give it a different
   name/rating. The original difficulty should retain all four taps.
 . Include both difficulties in the osu!mania and StepMania targets. Set separate destination

@@ -1823,18 +1823,87 @@ TEST_CASE("Invalid timing-link publication preserves the existing native file an
     CHECK(fixture.target().timing_links.value(wormedit::timing_category_t::bpm)->source == fixture.source_id);
 }
 
-TEST_CASE("native projects retain custom bookmark list order", "[native-project][bookmark-order]") {
+namespace {
+void check_bookmark_schema_compatibility(const nlohmann::json& encoded, const wormedit::song_document_t& song) {
+    const auto older_reader = internal::parse_native_project_with_migrations(
+        encoded.dump(), {}, 23, internal::default_migrations());
+    CHECK_FALSE(older_reader.value);
+    CHECK(has_code(older_reader.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::unsupported_version));
+
+    auto legacy = encoded;
+    legacy["document"]["schema_version"] = 23U;
+    const auto unbumped = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(unbumped.value);
+    CHECK(unbumped.value->bookmark_orders == song.bookmark_orders);
+}
+
+auto make_schema_guard_song() -> wormedit::song_document_t {
+    const auto source = read_binary(fixture_path("bms", "control-flow-fixed-values.bms"));
+    const auto imported = wormedit::parse_bms_bytes(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.value.song);
+    auto song = *imported.value.song;
+    REQUIRE_FALSE(song.prepared_bms_programs.empty());
+    // Exercise every optional top-level key as well as the always-written keys.
+    song.chart_order = {song.read_charts().front()->id};
+    song.sound_groups = {{.id = wormedit::sound_group_id_t{700}, .name = "Percussion"}};
+    const auto sound = std::ranges::find_if(song.resources, [](const auto& resource) {
+        return std::ranges::find(resource.roles, wormedit::resource_role_t::sample) != resource.roles.end();
+    });
+    REQUIRE(sound != song.resources.end());
+    sound->sound_group = song.sound_groups.front().id;
+    song.bookmark_orders = {{.chart = song.chart_order.front(), .bookmarks = {wormedit::object_id_t{999}}}};
+    return song;
+}
+} // namespace
+
+TEST_CASE("native schema 24 retains custom bookmark list order", "[native-project][bookmark-order]") {
     auto song = rich_bmson_song();
     song.bookmark_orders = {{.chart = song.charts.front().id,
         .bookmarks = {wormedit::object_id_t{999}, wormedit::object_id_t{998}}}};
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.value);
+    const auto encoded = nlohmann::json::parse(*written.value);
+    CHECK(encoded.at("document").at("schema_version") == 24);
     const auto parsed = wormedit::parse_native_project(*written.value);
     REQUIRE(parsed.value);
     CHECK(parsed.value->bookmark_orders == song.bookmark_orders);
+    check_bookmark_schema_compatibility(encoded, song);
+}
+
+TEST_CASE("native schema 23 migrates without adding bookmark order or changing other bytes",
+          "[native-project][bookmark-order][migration]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.value);
     auto legacy = nlohmann::json::parse(*written.value);
+    legacy["document"]["schema_version"] = 23U;
     legacy["document"].erase("bookmark_orders");
     const auto old = wormedit::parse_native_project(legacy.dump());
     REQUIRE(old.value);
+    CHECK(old.value->schema_version == 24);
     CHECK(old.value->bookmark_orders.empty());
+    const auto rewritten = wormedit::write_native_project(*old.value);
+    REQUIRE(rewritten.value);
+    legacy["document"]["schema_version"] = 24U;
+    CHECK(*rewritten.value == legacy.dump(2) + '\n');
+}
+
+TEST_CASE("native schema 24 pins the persisted song document key set",
+          "[unit][format][native-project][schema-guard]") {
+    INFO("Persisted document keys changed: bump current_document_schema_version, add a migration, "
+         "and update this schema/key-set guard together.");
+    CHECK(wormedit::current_document_schema_version == 24);
+    const auto song = make_schema_guard_song();
+    const auto written = wormedit::write_native_project(song);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    REQUIRE(written.value);
+    const auto document = nlohmann::json::parse(*written.value).at("document");
+    std::vector<std::string> keys;
+    for (const auto& [key, value] : document.items()) keys.push_back(key);
+    const std::vector<std::string> schema24_keys{
+        "audio_assets", "bookmark_orders", "chart_order", "charts", "export_cuts", "generator_recipes",
+        "id", "metadata", "midi_assets", "output_groups", "prepared_bms_programs", "project_settings",
+        "quantization_presets", "resources", "revision", "schema_version", "sound_groups", "storyboards",
+        "sv_recipe_definitions", "visual_assets"};
+    CHECK(keys == schema24_keys);
 }

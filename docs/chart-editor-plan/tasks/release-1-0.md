@@ -11,10 +11,11 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-760 Persist bookmark list order under native schema 24
 
-- **Status:** ready
+- **Status:** partial (2026-10-26; schema 24 and guard implemented; GATE blocked by the timing cut-axis seam test)
 - **Outcome:** projects with `bookmark_orders` (added in `a18480e` without a schema bump) are written as schema 24, schema 23 files migrate with no order, and a schema 23 build refuses a schema 24 file instead of silently dropping the order.
 - **Read first:** `include/wormedit/core/document.h` (`current_document_schema_version`, `bookmark_list_order_t`), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `docs/chart-editor-plan/decisions/code-style.md` (persisted schema rule).
-- **Files owned:** `include/wormedit/core/document.h` (version constant only), `include/wormedit/formats/native_project.h` if it repeats the version, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, the existing native migration test file, checked-in schema/fixture files that pin the current version.
+- **Files owned:** `include/wormedit/core/document.h` (version constant only), `include/wormedit/formats/native_project.h` if it repeats the version, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `tests/formats/native_project_lua_recipe_tests.cpp`, checked-in schema/fixture files that pin the current version, `docs/architecture.md`, `docs/lua-api/README.md`, this card's status and evidence.
+- **Supporting-file extensions (2026-10-26):** lane coordinator approves the architecture and Lua API text to identify schema 24 as current while retaining schema 23 introduction history; pin the existing Lua recipe compatibility regression explicitly to schema 23 so the version bump does not silently turn it into a schema 24 test. Card edits record ownership and verification only.
 - **Steps:**
   1. Bump the document and native-project schema constant to 24 and add an additive 23→24 migration step (no data change; `bookmark_orders` absent means default order).
   2. Add regressions: a schema 23 document migrates to 24 with empty orders; a schema 24 document round-trips its orders; a schema 25 document is refused with `unsupported_version` and leaves no output.
@@ -24,6 +25,26 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Reject/failure behavior:** a refused newer file leaves the open project and the file on disk untouched.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'native|migration|bookmark'`, then GATE.
 - **Out of scope:** recovery-journal format changes (it embeds the same document schema; only follow the constant), new bookmark features.
+- **Done so far:** schema 24 follows the existing native-codec alias; the additive 23→24 step changes no data and preserves orders from the unbumped schema23 build. The guard pins all 20 top-level keys with every optional field populated. The existing future-schema regression now exercises schema 25 and its `unsupported_version`/empty-result contract. Recovery journals delegate to the native codec; recovery envelopes already follow the shared constant. Checked-in native/manual fixtures are schema 6 migration inputs, with no current-version 23 pins; historical schema23 introduction references remain accurate.
+- **Remaining:** resolve or separately disposition the timing cut-axis failure below and rerun GATE before marking this card done. Timing geometry is outside this card's owned files; no timing application/test changes were made here.
+- **Verification (2026-10-26):** bookmark/schema cases pass **48 assertions / 6 cases** (`/tmp/wormedit-lanes/rc1/wyrm/bookmark-schema-tests.log`); focused CTest passes **254/254** (`focused-ctest.log`); clang-tidy plus baseline comparison passes **6/6 translation units**, including codec, recovery storage and journal header consumers, with no allowance increases (`complexity.log`, detail directory `wormedit-complexity.v5e4f_o7`). All logs are under `/tmp/wormedit-lanes/rc1/wyrm/`. Initial guard-fixture validation and test-complexity findings were corrected before these final focused checks. Real Verify tails:
+
+  ```text
+  100% tests passed out of 254
+  Total Test time (real) =  41.00 sec
+  complexity: checked 6/6
+  complexity: passed (6 translation units)
+  gate: 3 job(s), set explicitly; logs in /tmp/wormedit-lanes/rc1/wyrm/wormedit-gate.gGqLt6
+    pass  build
+    FAIL  ctest  (/tmp/wormedit-lanes/rc1/wyrm/wormedit-gate.gGqLt6/ctest.log)
+    pass  whitespace
+    pass  complexity
+    99% tests passed, 1 tests failed out of 5426
+  gate: FAILED (ctest)
+  ```
+
+- **Compatibility artifacts:** `schema-compatibility.log` records **13 passing converter checks**: BMSON (35,070 bytes), scoped BMS (27,632 bytes) and the manual tutorial (54,108 bytes) are byte-identical to captured schema23 output apart from the version; schemas 16–23 load/save as 24; the captured schema23 converter refuses 24, and the current converter refuses 25, leaving source SHA-256 unchanged and no native output. Inputs/results are in `schema23/`, `schema24/`, `schema23-refuses-24/` and `schema24-refuses-25/`; the reproducer is `verify-schema.py` in the lane log directory.
+- **Application finding / gate blocker:** `ctest --test-dir build -j 3 --output-on-failure -R '^frontend-state\.Timing stage preserves fine row targets from the drawn cut axis$'` reproduces **70/72 assertions passing, two failures** at `tests/ui/nuklear_event_harness_tests.cpp:7489`: with `cuts=true`, source row **9120** stages at measure **10**, row **0**, and differs from `indices.measures->position_at(9120)` in both upscroll and downscroll. Logs: `timing-stage-repro.log`, `timing-stage-debug.log` (windowless GDB inspection), `gate-initial.log`; the first gate passes the other **5,425/5,426** tests. This test and its timing implementation are unchanged in this lane; no claim that the failure predates the branch has been verified.
 
 ## T-761 Carry a pre-release suffix in the version
 

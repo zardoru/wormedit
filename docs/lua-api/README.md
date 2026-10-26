@@ -172,10 +172,10 @@ unchanged keys. Overlapping spans compose through the ordinary SV owner.
 The generated difficulty witness owns its recipe list only when it declares spans.
 Earlier scripts that declare no spans keep independently authored recipes outside
 ownership. After declaring spans, editing that list blocks regeneration until Detach.
-Native schema23 stores additive optional witnesses; earlier schema23 files remain
-readable. Saving/loading and Undo/Redo never evaluate scripts. Prepared scoped BMS
-uses existing native event adapters and rejects any unsupported or unprovable edit
-with diagnostics. There is no flat mutable BMS mirror.
+The current native schema24 retains the optional witnesses introduced in schema23;
+earlier schema23 files migrate on load. Saving/loading and Undo/Redo never evaluate
+scripts. Prepared scoped BMS uses existing native event adapters and rejects any
+unsupported or unprovable edit with diagnostics. There is no flat mutable BMS mirror.
 
 Only constant, linear and exponential persistent descriptors are exposed initially.
 For other generator formulas, emit explicit points; use the separate Lua curve host

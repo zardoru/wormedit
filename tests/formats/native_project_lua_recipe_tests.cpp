@@ -192,6 +192,7 @@ TEST_CASE("Schema22 recipes migrate without changing their independent definitio
 TEST_CASE("Additive schema23 files without SV definitions retain independent recipes", "[unit][format][native-project][sv-recipe]") {
     const auto song = make_lua_recipe_song();
     auto encoded = written_json(song);
+    encoded["document"]["schema_version"] = 23U;
     encoded["document"].erase("sv_recipe_definitions");
     const auto loaded = parse_native_project(encoded.dump());
     require_shared_recipe(loaded.value.has_value());

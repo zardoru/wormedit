@@ -473,7 +473,13 @@ auto migrate_v22_to_v23(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 22> released_migrations{{
+// Schema24 persists custom bookmark list order. An absent optional order keeps
+// timeline order; retain orders written by the earlier unbumped schema23 build.
+auto migrate_v23_to_v24(nlohmann::json&) -> std::string {
+    return {};
+}
+
+constexpr std::array<migration_t, 23> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -496,6 +502,7 @@ constexpr std::array<migration_t, 22> released_migrations{{
     {20, &migrate_v20_to_v21},
     {21, &migrate_v21_to_v22},
     {22, &migrate_v22_to_v23},
+    {23, &migrate_v23_to_v24},
 }};
 
 } // namespace

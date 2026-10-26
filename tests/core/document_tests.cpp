@@ -6,11 +6,13 @@
 
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <variant>
 #include <type_traits>
 
@@ -1033,4 +1035,24 @@ TEST_CASE("Borrowed chart reads follow document copies storage changes and expli
     song.chart_order.clear();
     std::swap(song.charts.front(), song.charts.back());
     check_chart_reader(song.read_charts().front()->id == first);
+}
+
+TEST_CASE("Concurrent first chart reads share one borrowed index", "[core][document][chart-reader]") {
+    const auto song = make_valid_song();
+    std::array<std::span<const chart_document_t* const>, 4> views;
+    std::barrier start{4};
+    {
+        std::array<std::jthread, 4> readers;
+        for (std::size_t i = 0; i < readers.size(); ++i) {
+            readers[i] = std::jthread([&, i] {
+                start.arrive_and_wait();
+                views[i] = song.read_charts();
+            });
+        }
+    }
+    for (const auto view : views) {
+        REQUIRE(view.size() == 1);
+        CHECK(view.front() == &song.charts.front());
+        CHECK(view.data() == views.front().data());
+    }
 }

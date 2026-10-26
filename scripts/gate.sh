@@ -39,7 +39,7 @@ is_count() { [[ $1 =~ ^[1-9][0-9]*$ ]]; }
 if ! is_count "$agents"; then echo "gate: --agents must be a positive integer" >&2; exit 2; fi
 if [[ -n $jobs ]] && ! is_count "$jobs"; then echo "gate: --jobs must be a positive integer" >&2; exit 2; fi
 
-cores=$(nproc)
+cores=$(getconf _NPROCESSORS_ONLN)
 if [[ -n $jobs ]]; then
     reason="set explicitly"
 elif $whole_machine; then

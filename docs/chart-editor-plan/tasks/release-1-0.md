@@ -11,7 +11,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-760 Persist bookmark list order under native schema 24
 
-- **Status:** partial (2026-10-26; schema 24 and guard implemented; GATE blocked by the timing cut-axis seam test)
+- **Status:** done (2026-10-26; the seam-test blocker was fixed on main in `75dc758`; main GATE at `03dfce8` passes 5,426/5,426 tests, build and whitespace, and the changed-TU complexity check passes after the script fix in the next commit)
 - **Outcome:** projects with `bookmark_orders` (added in `a18480e` without a schema bump) are written as schema 24, schema 23 files migrate with no order, and a schema 23 build refuses a schema 24 file instead of silently dropping the order.
 - **Read first:** `include/wormedit/core/document.h` (`current_document_schema_version`, `bookmark_list_order_t`), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `docs/chart-editor-plan/decisions/code-style.md` (persisted schema rule).
 - **Files owned:** `include/wormedit/core/document.h` (version constant only), `include/wormedit/formats/native_project.h` if it repeats the version, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `tests/formats/native_project_lua_recipe_tests.cpp`, checked-in schema/fixture files that pin the current version, `docs/architecture.md`, `docs/lua-api/README.md`, this card's status and evidence.
@@ -48,7 +48,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-761 Carry a pre-release suffix in the version
 
-- **Status:** partial (2026-10-26; version and About verified; GATE has one reproducible timing-stage failure)
+- **Status:** done (2026-10-26; same main GATE evidence as T-760: 5,426/5,426 tests after `75dc758`)
 - **Outcome:** the build reports `1.0.0-rc1` in About, in `wormedit-convert` output where it reports a version, and in package file names, from a numeric CMake `project(VERSION 1.0.0)` plus one `WORMEDIT_VERSION_SUFFIX` cache variable (default `-rc1`; empty for a final release).
 - **Read first:** `CMakeLists.txt` (`project(` and `configure_file`), `config.h.in`, `src/ui/nuklear/app/frontend.cpp` (About dialog), `scripts/windows-cross-package.sh`, `README.md` (status line).
 - **Files owned:** `CMakeLists.txt` (project version, suffix variable, configure step), `config.h.in`, `README.md` (status line only), `docs/building.md` (a short "Release versions" section), `scripts/windows-cross-package.sh` (archive name only), a focused test only if one already checks the version string.

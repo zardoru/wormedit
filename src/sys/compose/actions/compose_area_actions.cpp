@@ -94,6 +94,7 @@ auto add_sv_recipe_over_area_action_t::perform(compose_action_context_t& context
     -> compose_action_outcome_t {
     using namespace wormedit;
     const auto& chart = *source_chart;
+    const auto chart_id = chart.id;
     sv_recipe_t recipe{.name = "Recipe " + std::to_string(chart.sv_recipes.size() + 1),
                        .range = *context.state.retained_selection_range,
                        .output = sv_recipe_output_t::sv,
@@ -102,8 +103,14 @@ auto add_sv_recipe_over_area_action_t::perform(compose_action_context_t& context
     auto inserted = apply_sv_recipe_edit(context.environment.document.history,
                                          wormedit::insert_edit_t<wormedit::sv_recipe_t>{
                                              .chart = chart.id, .value = std::move(recipe)});
-    if (inserted.applied)
+    if (inserted.applied) {
+        auto& timing = context.environment.editor.commands.project.timing_recipe;
+        timing.recipe_selected = context.environment.document.history.read_chart(chart_id)->sv_recipes.back().id.value;
+        timing.recipe_preview.reset();
+        context.environment.editor.commands.project.compose_view.compose_timing_lane_visibility_mask |=
+            static_cast<std::uint8_t>(1U << static_cast<unsigned>(timing_lane_kind_t::scroll));
         return compose_action_outcome_t::from(std::move(inserted), compose_action_description_t{.success = "SV recipe added over the selected area.", .unchanged = {}, .rebind_failure = "Area action applied, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
+    }
     return inserted.diagnostics.empty()
                ? compose_action_outcome_t::blocked("SV recipe rejected.")
                : compose_action_outcome_t::from(std::move(inserted.diagnostics),

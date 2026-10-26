@@ -187,6 +187,10 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view,
                WORM_UI_COMPOSE_ACTION_AREA_DELETE, action);
     menu_entry(context, "Add SV recipe", reason_unless(!view.area_range_virtual, materialize),
                WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE, action);
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE) {
+        worm_ui_nuklear_compose_state().dock_layout.layout.activate(wormedit::dock_panel_t::inspector, false);
+        nk_group_set_scroll(context, "Compose inspector", 0, 0);
+    }
     menu_entry(context, "Add SPEEDS span", reason_unless(!view.area_range_virtual, materialize),
                WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN, action);
     menu_entry(context, "Find fitting snap",

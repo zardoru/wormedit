@@ -1221,6 +1221,33 @@ TEST_CASE("Empty area band keeps its right click menu when no note was hit",
     check_layer_menu(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
+TEST_CASE("Area menu Add SV recipe emits the edit and opens its inspector",
+          "[event-harness][recipe-areas]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    auto& layout = worm_ui_nuklear_compose_state().dock_layout.layout;
+    layout.activate(wormedit::dock_panel_t::sounds, false);
+    (void)fixture.harness.frame();
+    (void)right_click_at(fixture.harness, 900, 400);
+    (void)fixture.harness.frame();
+    const auto target = fixture.harness.drawn_text_center("Add SV recipe");
+    REQUIRE(target);
+    const auto clicked = click_at(fixture.harness, target->first, target->second);
+    const auto emitted = std::ranges::find_if(clicked, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    });
+    REQUIRE(emitted != clicked.end());
+    CHECK(emitted->get().compose_input_chart_id == view.chart_id);
+    CHECK(emitted->get().compose_input_document_revision == view.document_revision);
+    CHECK(layout.is_visible(wormedit::dock_panel_t::inspector));
+    CHECK_FALSE(layout.is_visible(wormedit::dock_panel_t::sounds));
+}
+
 TEST_CASE("Area band menu stays drawn and dismissal returns Compose input",
           "[unit][frontend-state][frontend][event-harness]") {
     note_menu_fixture_t fixture;
@@ -8955,6 +8982,17 @@ auto click_recipe(nuklear_event_harness_t& harness, const char* text,
     return std::nullopt;
 }
 }
+TEST_CASE("Selected SV recipe controls appear before general inspector tools",
+          "[event-harness][recipe-areas]") {
+    t422_fixture_t fixture{recipe_management_song()};
+    prepare_recipe_inspector(fixture);
+    const auto recipe = fixture.harness.drawn_text_center("first");
+    const auto quantize = fixture.harness.drawn_text_center("Quantize / Snap");
+    REQUIRE(recipe);
+    REQUIRE(quantize);
+    CHECK(recipe->second < quantize->second);
+}
+
 TEST_CASE("Recipe-only Copy and Paste shortcuts use shared availability and commit a linked placement",
           "[frontend-state][event-harness][recipe-areas][clipboard]") {
     t422_fixture_t fixture{recipe_management_song()};

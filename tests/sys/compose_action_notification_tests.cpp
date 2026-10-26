@@ -582,6 +582,7 @@ TEST_CASE("No-state first-profile workspace action rejects stale and existing la
 
 TEST_CASE("Compose area recipe mutation records one success and one undo", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
+    fixture.application.project.compose_view.compose_timing_lane_visibility_mask = 0;
     fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 0}, {measure_id_t{1}, 480}};
     check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)) ==
           "SV recipe added over the selected area.");
@@ -592,6 +593,10 @@ TEST_CASE("Compose area recipe mutation records one success and one undo", "[com
     check_action(entries.front().count == 1);
     check_action(fixture.history.undo.size() == 1);
     require_action(fixture.history.document.charts.front().sv_recipes.size() == 1);
+    check_action(fixture.application.project.timing_recipe.recipe_selected ==
+                 fixture.history.document.charts.front().sv_recipes.back().id.value);
+    check_action(fixture.application.project.compose_view.compose_timing_lane_visibility_mask ==
+                 (1U << static_cast<unsigned>(timing_lane_kind_t::scroll)));
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().sv_recipes.empty());
 }

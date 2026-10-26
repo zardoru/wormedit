@@ -1,4 +1,5 @@
 #include <wormedit/core/timing_lane_catalog.h>
+#include <wormedit/core/editor_axis.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/song_preview_timing.h>
@@ -634,10 +635,13 @@ void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
         }
     }
     if (cache.timing.sv_steps && !cache.timing.sv_steps->steps.empty()) {
+        const wormedit::editor_axis_projection_t axis{.cut_axis = view.cut_axis.get(),
+            .pixels_per_row = pixels_per_row, .viewport_scroll_pixels = scroll};
         const auto first =
-            static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
-        const auto last = std::min<std::uint64_t>(
-            total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+            static_cast<std::uint64_t>(std::clamp(std::floor(axis.row_at_y(0, true)),
+                0.0L, static_cast<long double>(total_rows)));
+        const auto last = static_cast<std::uint64_t>(std::clamp(std::ceil(axis.row_at_y(height)),
+            0.0L, static_cast<long double>(total_rows)));
         auto& graph = flattened.compose.timing_geometry.sv_graph;
         wormedit::sys::build_sv_graph(*cache.timing.sv_steps, first, last, row_to_y, graph);
         for (const auto& point : graph.points) {
@@ -755,10 +759,12 @@ void populate_compose_recipe_areas(
         return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
                                  downscroll, view.cut_axis.get());
     };
-    const auto first =
-        static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
-    const auto last = std::min<std::uint64_t>(
-        total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+    const auto axis = wormedit::editor_axis_projection_t::from(
+        interaction_view, chart.divisions_per_standard_measure);
+    const auto first = static_cast<std::uint64_t>(std::clamp(std::floor(axis.row_at_y(0, true)),
+        0.0L, static_cast<long double>(total_rows)));
+    const auto last = static_cast<std::uint64_t>(std::clamp(std::ceil(axis.row_at_y(height)),
+        0.0L, static_cast<long double>(total_rows)));
     flattened.compose.recipe_area_labels.resize(cache.timing.recipe_areas->areas.size());
     for (const auto& stored_area : cache.timing.recipe_areas->areas) {
         const bool previewing = report && report->candidate.id == stored_area.recipe;
@@ -817,10 +823,12 @@ void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
     if (!cache.timing.speed_spans->spans.empty()) {
+        const wormedit::editor_axis_projection_t axis{.cut_axis = view.cut_axis.get(),
+            .pixels_per_row = pixels_per_row, .viewport_scroll_pixels = scroll};
         auto& graph = flattened.compose.timing_geometry.speed_graph;
         wormedit::sys::build_speed_graph(
-            *cache.timing.speed_spans, std::max(0.0, scroll / pixels_per_row),
-            (scroll + height) / pixels_per_row, [&](double row) {
+            *cache.timing.speed_spans, static_cast<double>(std::max(0.0L, axis.row_at_y(0, true))),
+            static_cast<double>(axis.row_at_y(height)), [&](double row) {
                 return compose_project_y(row, pixels_per_row, scroll, height, downscroll, view.cut_axis.get());
             }, graph);
         for (const auto& point : graph.points) {

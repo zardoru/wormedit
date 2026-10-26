@@ -2737,6 +2737,30 @@ TEST_CASE("Recipe boundary and unknown inputs preserve the stored recipe list",
     CHECK(fixture.history.undo.empty());
 }
 
+TEST_CASE("Area recipe creation projects a visible span for native and scoped BMS charts",
+          "[sys][recipe-areas]") {
+    const auto layout = GENERATE("osu-mania-7k", "bme-7k-outside-scratch");
+    auto document = make_initial_document(song_id_t{991}, layout);
+    REQUIRE(document);
+    compose_test_fixture_t fixture{std::move(*document)};
+    fixture.project();
+    const auto chart_id = fixture.interaction->chart;
+    const auto measure = fixture.history.read_chart(chart_id)->measures.front().id;
+    fixture.interaction->retained_selection_range = position_span_t{{measure, 0}, {measure, 480}};
+    wormedit::ui::workspace_action_t action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    action.compose_input_chart_id = chart_id;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    const auto result = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
+    REQUIRE(result);
+    CHECK(*result == "SV recipe added over the selected area.");
+    REQUIRE(fixture.history.read_chart(chart_id)->sv_recipes.size() == 1);
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.recipe_areas.size() == 1);
+    CHECK(fixture.flattened.view.compose.recipe_areas.front().bounds.bottom >
+          fixture.flattened.view.compose.recipe_areas.front().bounds.top);
+}
+
 TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over the retained area",
           "[sys][recipe-areas]") {
     compose_test_fixture_t fixture{recipe_test_song()};
@@ -8418,6 +8442,42 @@ auto export_cut_drag_action(compose_test_fixture_t& fixture, std::uint8_t edge,
         kiai_screen_y(fixture, to_row), kiai_screen_y(fixture, from_row));
 }
 } // namespace
+
+namespace {
+void check_recipe_span_after_cut(const ui::compose_view_t& view) {
+    REQUIRE(view.recipe_areas.size() == 1);
+    const auto& area = view.recipe_areas.front();
+    CHECK(area.recipe_id == recipe_id_t{7001});
+    CHECK(area.bounds.top >= 0);
+    CHECK(area.bounds.bottom <= view.viewport_height_pixels);
+    CHECK(area.graph_count >= 2);
+}
+} // namespace
+
+TEST_CASE("Recipes and timing graphs remain visible after preceding export cuts",
+          "[sys][export-cut][recipe-areas]") {
+    const bool downscroll = GENERATE(false, true);
+    auto song = dense_song(12, 0);
+    song.export_cuts = {{.id = object_id_t{9001}, .label = "Shorten intro",
+        .begin_milliseconds = 0, .end_milliseconds = 16000}};
+    auto& chart = song.charts.front();
+    const local_position_t begin{chart.measures[9].id, 0};
+    chart.sv_recipes = {{.id = recipe_id_t{7001}, .name = "After cut",
+        .range = {begin, {begin.measure, 480}}, .curve = sv_recipe_curve_t::linear,
+        .parameters = {.value_from = {1, 1}, .value_to = {3, 1}}}};
+    chart.scrolls = {{.id = object_id_t{7002}, .position = begin, .multiplier = {2, 1}}};
+    chart.speeds = {{.id = object_id_t{7003}, .position = begin, .multiplier = {3, 1},
+        .transition_beats = {1, 1}}};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.preferences.editor_preferences.scroll_directions[
+        static_cast<std::size_t>(editor_mode_family_t::other)] = downscroll ? 2 : 1;
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    REQUIRE(view.cut_axis);
+    check_recipe_span_after_cut(view);
+    CHECK(view.sv_graph_maximum == 2);
+    CHECK(fixture.flattened.compose.timing_geometry.speed_graph.maximum == 3);
+}
 
 TEST_CASE("Timing-focus cut begin drags respect snap and retain the untouched millisecond endpoint",
           "[sys][export-cut][cut-drag]") {

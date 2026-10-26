@@ -144,6 +144,8 @@ were in.
 == SV recipes
 
 For osu!mania and StepMania scroll effects, select an area, right-click and choose *Add SV recipe*.
+The new recipe is selected immediately, its SV lane is revealed if hidden, and its controls
+open at the top of the inspector.
 A recipe is a scroll curve over that area, kept as a curve rather than a cloud of SV points:
 
 * *Output*: *SV* (osu!mania SV, StepMania `#SCROLLS`) or *Speeds* (StepMania `#SPEEDS`).

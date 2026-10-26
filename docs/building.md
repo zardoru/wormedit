@@ -102,23 +102,33 @@ As with Linux cross-builds, enable the full application only after its Windows-t
 
 The `windows-cross` preset builds the real SDL3 GPU application (`wormedit.exe`, Release, GUI subsystem) with
 MinGW-w64. The SDL3 source is reused from `build/_deps` when present, zlib is built from source for the
-Windows target (`cmake/dependencies/zlib.cmake`), and the FFmpeg video decoder is off because there is no
-Windows-target FFmpeg. Pass `-DWORMEDIT_WINDOWS_CONSOLE=ON` to keep a console attached for debugging.
+Windows target (`cmake/dependencies/zlib.cmake`). This development preset disables FFmpeg;
+the release preset below uses the pinned Windows SDK. Pass `-DWORMEDIT_WINDOWS_CONSOLE=ON`
+to keep a console attached for debugging.
 
 ```sh
 scripts/windows-install.sh <dir> [--run]             # install into a folder, optionally launch under Wine
 ```
 
 The scripts source `scripts/env-mingw.sh`, which finds `x86_64-w64-mingw32-*` on `PATH` (override with
-`MINGW_PREFIX`). The libstdc++/winpthread runtimes are linked statically.
+`MINGW_PREFIX`). The executable links its C++ runtime statically. FFmpeg can also require
+`libwinpthread-1.dll`; the SDK script copies that DLL and its notices into the SDK.
 
 For distribution, build the pinned Windows FFmpeg SDK and package the
-`windows-cross-release` preset, which requires video playback and audio metadata support:
+`windows-cross-release` preset, which requires video playback and audio metadata support.
+For a clean release build, start with no existing `build/windows-cross-release` directory
+(move an earlier build aside if needed), then run these commands from the repository root:
 
 ```sh
-scripts/windows-ffmpeg.sh                            # isolated SDK in build/windows-ffmpeg/prefix
-scripts/windows-cross-package.sh [output-dir]        # build, install, strip, zip (default build/dist)
+WORMEDIT_BUILD_JOBS=3 scripts/windows-ffmpeg.sh
+WORMEDIT_BUILD_JOBS=3 scripts/windows-cross-package.sh
 ```
+
+The SDK is installed into `build/windows-ffmpeg/prefix`. The package script configures
+and builds `build/windows-cross-release`, stages into `build/windows-cross-stage`,
+and writes `build/dist/wormedit-1.0.0-rc1-windows-x64.zip` and its SHA-256 sidecar.
+Pass an output directory as the package script's first argument to change `build/dist`.
+The explicit three-job limit is suitable when sharing the machine with other release lanes.
 
 The SDK script needs curl, tar, make, pkg-config and MinGW-w64. It verifies the source
 archive's pinned SHA-256 and builds LGPL shared libraries without external codecs,
@@ -126,14 +136,24 @@ network protocols, encoders or command-line programs. Set `WORMEDIT_BUILD_JOBS` 
 override the shared-machine default of at most eight jobs. To use another SDK built
 with the same source/license layout, set `WORMEDIT_FFMPEG_ROOT` to its prefix.
 Only that SDK's pkg-config directory is searched, preventing host FFmpeg discovery.
+Before configuring the application, packaging requires the SDK's corresponding source,
+license and build-configuration files, verifies `CONFIG_GPL=0` and `CONFIG_NONFREE=0`,
+and requires the winpthreads notice when its DLL is present. A failed preflight exits
+without building or writing a ZIP.
 
-The ZIP contains `wormedit.exe`, SDL3 and FFmpeg DLLs, `assets/`, licenses, a launch
-note, build revision and local tracked changes. An uncommitted build is marked
-`preview` in the filename. FFmpeg's corresponding source archive, license and build
-configuration are included under `third-party/ffmpeg`; keep these when redistributing.
+The package install includes `wormedit.exe`, required runtime DLLs, `assets/`, the offline
+manual, license notices and a launch note. Its filename uses `WORMEDIT_VERSION_FULL`;
+`BUILD-REVISION.txt` and `BUILD-CHANGES.patch` record the revision and tracked local changes.
+FFmpeg's corresponding source archive, license and build configuration are included under
+`third-party/ffmpeg`; keep these when redistributing.
 Installation resolves DLL imports recursively and fails for missing third-party
 dependencies. Extract the entire ZIP before launching; assets and DLLs belong next
-to the executable. A SHA-256 sidecar is written beside the ZIP.
+to the executable.
+
+Release verification is recorded on [T-762](chart-editor-plan/tasks/release-1-0.md#t-762-build-and-check-the-windows-release-zip-under-wine).
+Check the archive's DLLs and notices, then use a fresh temporary Wine prefix inside isolated
+Xvfb for the packaged tutorial project, audio, osu!mania export and offline-manual checks.
+Inspect the screenshots before recording a pass; Wine windows must stay off the desktop.
 
 ## Frontend event harness
 

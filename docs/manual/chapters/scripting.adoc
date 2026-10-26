@@ -1,0 +1,433 @@
+[#scripting]
+= Scripting with Lua
+
+Wormedit can run small Lua scripts that write parts of a chart for you: a stream across eight
+measures, a whole easy difficulty, or a scroll curve no built-in shape can draw. This chapter
+walks through each kind of script from an empty folder to a finished, undoable edit. The
+link:lua-api/index.html[Lua API reference] lists every field and limit; you do not need it to
+follow along.
+
+You do not need to know Lua well. The scripts here are short and commented, and every one is in
+the tutorial project so you can run it before changing it.
+
+[#scripting-kinds]
+== Which kind of script?
+
+[cols="1,2,2"]
+|===
+|You want to… |Write… |Run it from…
+
+|Add notes to the chart you are on
+|A *note generator*: any `.lua` file that returns notes
+|Inspector → *Lua note generator*
+
+|Keep several generators for one song together
+|A `project.lua` file that includes the others
+|Inspector → *Lua note generator*
+
+|Create a whole new difficulty from a description
+|A `.chart.lua` file
+|Inspector → *Lua note generator*
+
+|Shape osu!mania SV or StepMania scrolls with a formula
+|An *SV curve*: a file returning `function(p, ctx)`
+|An SV recipe's *Curve* → *Lua function*
+|===
+
+All of them follow the same rules:
+
+* *Nothing changes until you say so.* Running a script shows a preview. Only *Apply* (note
+  generators) or settling a field (SV recipes) edits the chart, and kbd:[Ctrl+Z] undoes it in one
+  step.
+* *Scripts see a copy of the chart.* They cannot change the document directly or open files
+  elsewhere on the computer.
+* *The project keeps a copy of the script.* Opening, saving and exporting never runs Lua or rereads
+  your files. A script runs only when you press *Run*, *Regenerate* or *Reload*.
+* *The same input gives the same output.* `math.random` is seeded from the *Seed* field, so
+  rerunning with the same seed always gives the same pattern.
+
+[#scripting-setup]
+== Before you start
+
+. *Check your build has Lua.* Lua is an optional part of Wormedit, off by default when
+  building from source: configure with `-DWORMEDIT_ENABLE_LUA=ON`. Without it, the panels still
+  appear, but *Run* reports _Lua generators are unavailable in this build_.
+. *Save the project.* Scripts are found relative to the folder that holds your `.wormedit`
+  file, so an unsaved project has nowhere to look. A project script refuses to run with
+  _Project scripts require an existing project directory_ until you save.
+. *Make a `scripts` folder next to the project file.* Any name works. Keep every script
+  inside the project folder: the project stores script paths relative to it, and `project.lua`
+  refuses files outside it.
++
+[listing]
+----
+My Song/
+├── my-song.wormedit
+├── song.ogg
+└── scripts/
+    ├── stream.lua
+    └── ...
+----
+. *Use any text editor.* Wormedit has no script editor. Keep the file open in your editor while
+  Wormedit is running: save the file there, then come back to Wormedit and run it again.
+. *Open the inspector.* Click *Inspector* on the narrow strip at the right of Compose (see
+  <<getting-started>>). The Lua sections are at the bottom of the inspector; scroll down if you
+  do not see them.
+
+[TIP]
+====
+To practise, copy the `fixtures/tutorial` folder beside this manual to somewhere you can write,
+such as your Documents folder. In a source checkout it is `docs/manual/fixtures/tutorial/`. Open
+`tutorial-empty.wormedit` from the copy. Its `scripts/` folder contains every script in this
+chapter. The copy matters: you will edit these files, and the installed manual may be read-only.
+====
+
+[#scripting-first-generator]
+== Your first note generator
+
+A note generator is a Lua file that *returns a table of notes*. Wormedit shows those notes as a
+preview, and *Apply* adds them to the chart.
+
+. Open `tutorial-empty.wormedit` from your copy of the tutorial folder.
+. Look at `scripts/first-note.lua` in your editor:
++
+[listing]
+----
+include::../fixtures/tutorial/scripts/first-note.lua[]
+----
++
+`wormedit` is a read-only snapshot of the chart the script was started from, and arrays in Lua
+count from 1. `wormedit.measures[1]` is the first measure. `wormedit.lane_profile[1].lanes[1]` is the first
+lane of the chart's layout, which here is the BMS scratch lane.
+. In the inspector, expand *Lua note generator*. Leave the drop-down at the top on
+  *New generator*.
+. Press *Choose script…* and pick `scripts/first-note.lua`. The *Script file* field now shows the
+  path. You can also type a path there yourself, relative to the project folder.
+. Press *Run*. After a moment the inspector shows `Notes +1 / ~0 / -0` and
+  `Layers +1 / ~0 / -0`: one note and one layer will be added, nothing changed or removed. The note
+  appears in the chart as a green ghost. If anything is wrong, the message under the counts says
+  what went wrong, with the script line when Lua stopped on one.
+. Press *Apply*. The ghost becomes a real note in a new layer called _Generated_ (see <<layers>>).
+  Press kbd:[Ctrl+Z] to take it back, or *Cancel* instead of *Apply* to throw the preview away.
+
+The note is now ordinary chart content: move it, delete it or change its sound like any other.
+Because *Keep recipe* was ticked, the project also remembers the generator: the drop-down now
+shows it as _Recipe_ and a number, and *Run* has become *Regenerate* (see <<scripting-regenerate>>).
+To start another generator, set the drop-down back to *New generator* first.
+
+=== What a script returns
+
+A note generator returns one table with two optional lists:
+
+* `notes`: each note needs a `key`, a `measure` ID, a `row` and a `lane` ID.
+** `key` is a name you choose, unique within this script. It is how Wormedit recognizes the same
+   note the next time the script runs (see <<scripting-regenerate>>). Build it from where the note
+   is, as in `"stream-" .. measure.id .. "-" .. row`, rather than counting with a loop index.
+** `measure` and `lane` are IDs copied from the snapshot: `measure.id`, `lane.id`. They are
+   strings; copy them unchanged and never pass them through `tonumber`.
+** `row` is a whole-number position inside the measure, starting at 0. In the usual 960-row grid,
+   a 4/4 measure has rows 0 to 959 and a quarter note is 240 rows. Use
+   `wormedit.divisions_per_standard_measure` and `measure.row_count` instead of assuming 960
+   (see <<chart-rows>>).
+** `kind = "hold"` with `end_measure` and `end_row` makes a long note. `sound` takes a sound ID.
+   `layers` lists layer keys from the same script.
+* `layers`: each needs a `key` and a `name`, and may have a `color` as `{r=, g=, b=, a=}` with
+  values from 0 to 255.
+
+A note that lands on another note, a hold that ends before it starts, or a row outside its measure
+rejects the whole result: nothing is half-applied.
+
+[#scripting-parameters]
+== A real pattern: parameters and seeds
+
+`scripts/stream.lua` fills measures with a random stream that never repeats a lane. Instead of
+editing the script to change which measures it fills, it reads *parameters* you set in the
+inspector:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/stream.lua[]
+----
+
+Two things to notice:
+
+* It picks lanes whose `role` is 0. Those are the playable keys; scratch, mines and other special
+  lanes have other roles. The table of roles is in the
+  link:lua-api/modules/snapshot.html[snapshot reference].
+* `assert(condition, "message")` stops the script with your message. Use it so a mistake reads
+  _the chart has no measure 40_ rather than an obscure error further down.
+
+To run it:
+
+. Set the drop-down to *New generator*, then choose `scripts/stream.lua` with *Choose script…*.
+. Press *Run* with no parameters. You get `Notes +8`: eighth notes across measure 1.
+. Press *Add parameter* three times and fill in the pairs:
++
+[cols="1,1"]
+|===
+|Parameter name |Value (JSON)
+
+|`first` |`2`
+|`count` |`2`
+|`snap`  |`16`
+|===
++
+Press *Run* again. Now it previews 32 sixteenth notes over measures 2 and 3.
+. Change *Seed* to any other whole number and press *Run*. The pattern changes. Set it back and the
+  first pattern returns exactly.
+. Press *Apply* when you like the result.
+
+Parameter values are JSON. Write numbers as `16`, text in double quotes such as `"left"`, lists as
+`[1, 3, 5]`, and true/false as `true`. For an exact fraction, use `{"num":1,"den":3}`. In the
+script, `generator.parameters.name` gives the value, or `nil` when the parameter is missing, which
+is why the script uses `or` to fall back to its defaults. *Remove parameter* removes the last one.
+
+[#scripting-regenerate]
+== Keep a recipe and regenerate it
+
+*Keep recipe* is ticked for a new generator. With it, *Apply* also saves the generator in the
+project, with its script, seed and parameters, so you can change the pattern later without losing
+the edits made around it. Untick it before *Apply* to keep only the notes.
+
+. Run `scripts/stream.lua` as above and *Apply* it with *Keep recipe* ticked.
+. The drop-down at the top of *Lua note generator* now shows the recipe as _Recipe_ and a number,
+  and *Run* has become *Regenerate*. Later, choose the recipe in the drop-down to load its settings
+  again.
+. Change a parameter, for example `snap` to `8`, and press *Regenerate*. The preview counts show
+  what changes: notes whose `key` is in both results are kept (`~` counts changes to them), new
+  keys are added (`+`) and keys the script no longer returns are removed (`-`). *Apply* commits it
+  as one undo step.
+
+=== When you edit the script file
+
+The recipe keeps a copy of the script as it was when you applied it. When you *Regenerate* after
+editing the file, Wormedit notices and stops with _Script or input content changed. Review
+settings, then Run changed script to continue._
+
+* *Run changed script* runs the edited file. Apply it to store the new version in the recipe.
+* Tick *Run saved source snapshot* and press *Regenerate* to run the copy stored in the project,
+  ignoring the file. This also works when the file has been deleted or the project was moved to a
+  computer without it.
+
+=== When you edit generated notes
+
+Generated notes can be edited like any others, and Wormedit protects those edits: if the recipe
+would replace or remove a note you moved, deleted or changed, *Regenerate* refuses with a
+conflict instead of overwriting your work. Either undo your edit, change the script so it no longer
+touches that note, or choose *Detach recipe*. Detaching keeps every note and layer as they are and
+forgets the recipe, so they become ordinary content.
+
+*Add MIDI input* lets a generator read a MIDI file already stored in the project, by its asset ID,
+through `wormedit.midi_assets`. The editor cannot import MIDI files yet, so leave it empty.
+
+For BMS charts with `#RANDOM` branches, select the chart the recipe was made for before
+regenerating it (see <<bms-branches>>).
+
+[#scripting-project-lua]
+== Several scripts for one song: project.lua
+
+As a song grows you may want one file per section and shared helpers. A file named exactly
+`project.lua` is an entry point that runs other files in order and applies all their notes together.
+
+`scripts/project.lua` in the tutorial:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/project.lua[]
+----
+
+Each pattern includes a helper. `include` runs a file once and returns whatever it returned, so a
+helper can return a function instead of notes:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/patterns/verse.lua[]
+----
+
+`lib/stream.lua` returns that `stream` function; open it to see how it builds the notes.
+Paths in `include` are relative to the file doing the including, so `patterns/verse.lua` reaches
+the helper with `../lib/stream.lua`.
+
+. Set the drop-down to *New generator* and choose `scripts/project.lua` with *Choose script…*.
+. Press *Run*. The preview shows 24 notes in two layers, _verse_ and _chorus_.
+. *Apply* adds them all in one undo step and keeps the recipe for regenerating later, as above.
+
+Things to know:
+
+* Keys must be unique across all included files. The helper puts the section name in each key.
+* Files run in the order they are included, each one once even if included twice, and share
+  global variables. Prefer `local` variables and returned values to globals.
+* Includes cannot leave the project folder, not even through a symbolic link, and absolute paths
+  are refused.
+* When any included file changes, *Regenerate* asks you to confirm with *Run changed script*,
+  exactly like a single script.
+* `audio {id="music", file="song.ogg"}`, `image {...}` and `midi {...}` declare files the scripts
+  depend on, so that changing them also asks for confirmation. Their details appear in
+  `project.assets`. Declaring a file does not import it; import sounds as usual (see
+  <<importing-assets>>). See the link:lua-api/modules/project.html[project reference].
+
+[#scripting-difficulty]
+== A whole difficulty: .chart.lua
+
+A file whose name ends in `.chart.lua` describes a complete difficulty, measure by measure. *Apply*
+creates it as a separate chart in the project. The chart you are on is left alone.
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/easy.chart.lua[]
+----
+
+. Set the drop-down to *New generator* and choose `scripts/easy.chart.lua` with *Choose
+  script…*. Any open chart will do.
+. Press *Run*. Instead of ghost notes, the inspector lists `Difficulties +1 / ~0 / -0` and the new
+  chart, _Easy_, with its counts: 6 measures and 41 notes.
+. Press *Apply*. *Easy* appears in the Project view. Open it like any other difficulty and give it
+  an export destination with output groups.
+
+How the description works:
+
+* `difficulty "Easy"` starts a chart. A file may describe several, each starting with its own
+  `difficulty` line.
+* `measure {id = ..., note {...}, hold {...}}` adds one measure. `lane` here is a column number
+  from 1 to `columns`, not a lane ID, and `row` is local to the measure as before.
+* `at_measure("intro", 120)` names a position by measure ID and row. Holds use it for their end,
+  and `bpm`, `stop`, `scroll` and the other timing lines use it for where they happen. A position at
+  the very end of a measure is row 0 of the next one: `row = 960` in a 960-row measure is refused.
+* Exact values: `meter(6,8)`, `measure_length "3/4"`, `ratio(1,3)` and `measure_time "-0.125"` are
+  never rounded. A plain number such as `0.1` is turned into the nearest fraction. Expand
+  *Exact values* in the preview to see the fractions that were chosen.
+
+Keep `stable_id`, the measure `id` values and event `key` values the same between versions of the
+file. They let *Regenerate* update the existing difficulty instead of replacing it. Do not mix
+`difficulty` lines and returned note tables in one run; use one or the other.
+
+The recipe owns what it describes: chart name, grid, offset, measures, their notes and BGM, lane
+layout, BPM, stops, delays, warps and scroll. Editing those in the generated chart and then
+regenerating is a conflict. Markers, SV recipes and metadata you add yourself are kept, unless the
+new version removes a measure they are attached to; then the whole regeneration is refused.
+A version of the file that leaves out a difficulty removes that chart only if you have added
+nothing of your own to it. Changing `resolution` is refused while your own markers or recipes are
+placed in the chart. *Detach recipe* keeps the charts and ends the recipe's ownership. `sound`
+fields in `note` and `bgm` take the ID of a sound already in the project. The
+link:lua-api/modules/chart.html[chart reference] covers every declaration.
+
+[#scripting-sv]
+== Scroll curves: Lua SV recipes
+
+An SV recipe (see <<timing>>) normally uses a built-in curve. Choose *Lua function* to describe the
+curve with a formula instead. This works in osu!mania and StepMania charts.
+
+`scripts/sv/wobble.lua` makes the scroll speed swing around normal:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/sv/wobble.lua[]
+----
+
+The function is asked for a value at many points across the recipe's range. `p` is how far along
+the range the point is, from 0 at the start to 1 at the end. The returned number *multiplies* the
+scroll the chart already has there: `1` means no change, `2` doubles the speed, `0.5` halves it.
+`ctx.baseline` tells you what that existing scroll is, if you need it.
+
+. Copy `scripts/sv/wobble.lua` into your osu!mania or StepMania project's folder.
+. In Compose, select a few measures, right-click and choose *Add SV recipe*. The new recipe is
+  selected and its controls open in the inspector.
+. Set *Curve* to *Lua function*.
+. Press *Choose module…* and pick `wobble.lua`. Leave *Entry point* empty.
+. Press *Add parameter* twice. Rename the first to `amount` with value `1/4` and the second to
+  `waves` with value `2`. Parameter values are numbers or fractions.
+. Set *Points* to *Grid*, *Every* `1/16`. The default *Count* of 2 only writes the two ends of the
+  range, and *Auto* misses this curve entirely (see <<sv-max-error>>).
+. Watch the plot above the values: two full waves between 0.75× and 1.25×. Changes preview as you
+  type and apply when you press kbd:[Enter] or leave the field; there is no separate Apply button.
+  If the script fails, the inspector keeps the last good curve, shows the error and its line, and
+  offers *Revert*.
+
+After editing `wobble.lua`, press *Reload* to read the file again. Otherwise the recipe keeps
+using its saved copy, even when exporting.
+
+=== Factories, seeds and ordered mode
+
+A module can return several curves as a table of *factories*. A factory is a function that receives
+`ctx` once and returns the curve function. Type the factory's name in *Entry point*:
+
+[listing]
+----
+return {
+  rise = function(ctx)
+    local height = ctx.parameters.height
+    return function(p, ctx)
+      return 1 + p * height
+    end
+  end
+}
+----
+
+With *Entry point* `rise` and a parameter `height`, this ramps the speed from 1× to `1 + height`.
+
+*Execution* chooses how the function may behave:
+
+* *Pure* (the default): the answer may depend only on `p` and `ctx`. Wormedit may ask for points
+  in any order and more than once. Pure curves work with every *Points* mode, including *Auto*.
+  They cannot use `math.random` or remember values between calls.
+* *Ordered*: points are asked for once each, from start to end, so the function may count, keep
+  running totals or use `math.random` (seeded by *Seed*). Ordered mode needs *Count* or *Grid*
+  points split into *cycles* whose *Cycle emissions* add up to the number of points, including the
+  endpoint. `ctx.emission_index` and `ctx.cycle_index` say where you are. See the
+  link:lua-api/modules/curve.html[curve reference].
+
+SV curves cannot read the generator's `wormedit` snapshot. They get `ctx.measures`, `ctx.timing`
+and absolute rows instead.
+
+[#scripting-troubleshooting]
+== When a script goes wrong
+
+[cols="2,3"]
+|===
+|Message |What to do
+
+|_Cannot open generator script_
+|The path is wrong, or relative to the wrong folder. Paths start from the folder holding the
+`.wormedit` file. Use *Choose script…* to fill it in.
+
+|_Project scripts require an existing project directory_
+|Save the project first.
+
+|_Project file escapes the project directory_
+|An `include` or asset points outside the project folder. Move the file inside it.
+
+|A Lua error naming a line
+|Lua stopped at that line of the script. Errors from `assert` show your own message.
+
+|_attempt to index a nil value_
+|A table you expected is missing, usually a measure past the end of the chart:
+`wormedit.measures[40]` on a 17-measure chart. Check with `assert` first.
+
+|_Generated notes need unique stable keys of 1 to 128 bytes._
+|Two notes share a `key`, or a key is empty. Build keys from the measure and row.
+
+|_Generated notes collide with one another or existing chart notes._
+|Two notes land on the same lane and row, or on a note already in the chart. Fix the script, or
+remove the existing notes first.
+
+|_Generated note has an invalid lane, position or hold endpoint._
+|A lane ID is wrong, a row is outside its measure, or a hold ends before it starts. The whole
+result is refused; fix the script and *Run* again.
+
+|_Script or input content changed…_
+|You edited the script since it was applied. See <<scripting-regenerate>>.
+
+|_Generated note was edited or deleted. Detach the recipe…_
+|You edited generated notes since the last Apply. Undo the edit, change the script so it no longer
+replaces that note, or *Detach recipe*.
+
+|_Lua generators are unavailable in this build_
+|Use a build with Lua enabled.
+|===
+
+Scripts run with limits so that a mistake cannot freeze the editor: about a million Lua
+instructions, 8 MiB of memory, 64 KiB of script source and 16,384 notes per run. A script that
+loops forever stops with an error instead of hanging. Wormedit removes `io`, `os`, `require`, `print`
+and similar functions, and has no debugger. To inspect a value, stop the script with it:
+`error(("measure %s has %d rows"):format(m.id, m.row_count))`. The
+link:lua-api/index.html[Lua API reference] lists every limit and available library.

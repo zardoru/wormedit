@@ -817,7 +817,8 @@ void to_json(json& value, const output_group_t& group) {
                  {"destination_kind", group.destination_kind},
                  {"relative_output_path", path_to_utf8(group.relative_output_path)},
                  {"existing_files", group.existing_files},
-                 {"stepmania", group.stepmania}};
+                 {"stepmania", group.stepmania},
+                 {"flatten_bms_branches", group.flatten_bms_branches}};
 }
 
 void from_json(const json& value, output_group_t& group) {
@@ -829,6 +830,7 @@ void from_json(const json& value, output_group_t& group) {
         path_from_utf8(value.at("relative_output_path").get<std::string>());
     value.at("existing_files").get_to(group.existing_files);
     value.at("stepmania").get_to(group.stepmania);
+    group.flatten_bms_branches = value.value("flatten_bms_branches", false);
 }
 
 template<class Id>
@@ -1523,6 +1525,9 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     if (input.size() + 1 != canonical.size()) {
         return false;
     }
+    // Output-group flattening is additive; an absent choice keeps preserve semantics.
+    if (!input.contains("flatten_bms_branches") && canonical.contains("flatten_bms_branches"))
+        return canonical.at("flatten_bms_branches") == false;
     if (input.contains("schema_version") && !input.contains("sv_recipe_definitions") &&
         canonical.contains("sv_recipe_definitions") && canonical.at("sv_recipe_definitions").empty()) return true;
     if (context == schema_shape_context_t::storyboard_entry) {

@@ -1060,6 +1060,7 @@ struct output_group_t {
     std::filesystem::path relative_output_path;
     existing_files_policy_t existing_files{existing_files_policy_t::ask};
     std::optional<stepmania_export_policy_t> stepmania;
+    bool flatten_bms_branches{};
 };
 
 struct song_metadata_t {
@@ -1118,7 +1119,7 @@ struct bookmark_list_order_t {
     auto operator==(const bookmark_list_order_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 24;
+inline constexpr std::uint32_t current_document_schema_version = 25;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

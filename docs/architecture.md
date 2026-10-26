@@ -704,9 +704,11 @@ The single schema22-to-23 migration initializes both this definition pool and em
 generated-chart bindings; both codecs also accept their absent optional additions
 on documents already tagged schema23.
 
-The current native document schema is 24. It adds optional per-difficulty bookmark
+The current native document schema is 25. Schema25 adds the saved per-output-group
+BMS flattening option; the additive 24-to-25 migration defaults missing choices to preserve.
+Schema24 adds optional per-difficulty bookmark
 list order independently of timeline positions and scoped BMS content. The 23-to-24
 migration leaves data unchanged: absent orders keep the default timeline order,
-and orders from the earlier unbumped schema23 build are retained. Writers use schema24;
+and orders from the earlier unbumped schema23 build are retained. Writers use schema25;
 readers refuse newer schemas before publishing a document. Recovery snapshots and
 command journals use the same native codec and schema limit.

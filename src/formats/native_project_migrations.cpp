@@ -479,7 +479,12 @@ auto migrate_v23_to_v24(nlohmann::json&) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 23> released_migrations{{
+// Schema25 adds an optional output-group flattening choice; absence preserves branches.
+auto migrate_v24_to_v25(nlohmann::json&) -> std::string {
+    return {};
+}
+
+constexpr std::array<migration_t, 24> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -503,6 +508,7 @@ constexpr std::array<migration_t, 23> released_migrations{{
     {21, &migrate_v21_to_v22},
     {22, &migrate_v22_to_v23},
     {23, &migrate_v23_to_v24},
+    {24, &migrate_v24_to_v25},
 }};
 
 } // namespace

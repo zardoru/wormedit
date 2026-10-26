@@ -484,11 +484,21 @@ void report_slice_timestamp_loss(conversion_context_t& context, const chart_docu
 }
 
 void prepare_osu_slice_layout(chart_document_t& chart) {
-    // BMSON scratch columns become sampled osu! columns in the same display order.
+    // Scratch columns become sampled osu! columns in the same display order.
     // Their typed lane IDs and note bindings remain intact in the detached document.
     for (auto& segment : chart.lane_layouts)
         for (auto& lane : segment.layout.lanes)
             if (lane.role == lane_role_t::scratch) lane.role = lane_role_t::playable;
+}
+
+void prepare_bms_osu_layouts(song_document_t& song, const conversion_request_t& request,
+                             const std::vector<chart_id_t>& charts) {
+    if (request.target != format_family_t::osu_mania) return;
+    for (const auto id : charts) {
+        auto* chart = song.find_chart(id);
+        if (chart && chart->source_family == format_family_t::bms)
+            prepare_osu_slice_layout(*chart);
+    }
 }
 
 auto add_bms_silent_binding(song_document_t& song, const std::vector<chart_id_t>& charts,
@@ -799,8 +809,8 @@ auto validate_selected_target(conversion_context_t& context, const song_document
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
                        context.request.target, context.request.chart,
-                       "The target cannot preserve a BMS branch tree; select active projection "
-                       "explicitly");
+                       "The target cannot preserve a BMS branch tree; enable Flatten BMS branches "
+                       "on this output group (active projection)");
         return false;
     }
     const auto severity = context.request.loss_policy == loss_policy_t::allow
@@ -1158,6 +1168,7 @@ auto prepare_conversion(conversion_context_t& context, const song_document_t& so
         context.result.value.outputs.clear();
         return {};
     }
+    prepare_bms_osu_layouts(*prepared, context.request, charts);
     if (!prepare_slice_exports(context, *prepared, charts) || !prepare_export_cuts(context, *prepared, charts)) {
         context.result.value = {};
         return {};

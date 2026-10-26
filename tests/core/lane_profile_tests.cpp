@@ -1070,3 +1070,15 @@ TEST_CASE("New Project double-play layouts bind the owner's lane keys left to ri
           std::vector{digit_1, digit_2, digit_3, digit_4, key_q, key_w, key_e, key_r, key_f,
                       digit_7, digit_8, digit_9, digit_0, key_y, key_u, key_i, key_o, key_h});
 }
+
+TEST_CASE("BMS output compatibility includes scratch columns supported by osu conversion",
+          "[core][lane-profile][output-compatibility][bms-flatten]") {
+    chart_document_t chart{.source_family = format_family_t::bms,
+        .lane_layouts = {{.id = object_id_t{1}, .layout = make_bms_7k_profile().layout}}};
+    CHECK(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+    chart.lane_layouts.front().layout.lanes.front().role = lane_role_t::foot_pedal;
+    CHECK_FALSE(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+    chart.lane_layouts.front().layout = make_bms_7k_profile().layout;
+    chart.source_family = format_family_t::native_project;
+    CHECK_FALSE(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+}

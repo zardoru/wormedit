@@ -93,9 +93,10 @@ newer**, an X11 or Wayland session, and a working Vulkan driver (the same GPU
 requirements as the native application). Graphics drivers and glibc stay on the
 host; linuxdeploy's excludelist plus explicit GL/Vulkan exclusions keep them out
 of the image. GCC 14 provides the application’s C++23 library features; its C++ runtime is bundled.
-The container uses the existing `WORMEDIT_WARNINGS_AS_ERRORS=OFF` option because
-older GCC diagnoses valid vector/optional operations at `-O3`; warnings remain
-visible and native GATE keeps its normal policy (see `packaging/linux/README.md`). Test older distributions separately;
+The container enables `WORMEDIT_WARNINGS_AS_ERRORS=ON` with the shared policy in
+`cmake/warnings.cmake`: GCC's optimizer-dependent `maybe-uninitialized` and
+`array-bounds` diagnostics remain visible and non-fatal; other enabled warnings
+are errors (see `packaging/linux/README.md`). Test older distributions separately;
 building against this floor does not prove every desktop/driver combination.
 
 CMake, linuxdeploy, appimagetool, the AppImage runtime and FFmpeg use fixed release

@@ -691,5 +691,11 @@ TEST_CASE("Tutorial BMS flattening is saved from Setup and publishes osu mania t
     for (const auto& measure : source_chart->measures) source_notes += measure.notes.size();
     expect(exported_notes == source_notes);
     expect(source_notes > 0);
+    // Keysounds travel with the chart, at the paths the .osu names.
+    for (const auto* sound : {"keysound-c4.ogg", "keysound-e4.ogg", "keysound-g4.ogg", "chord.ogg"}) {
+        CAPTURE(sound);
+        expect(bytes.find(std::string{"assets/"} + sound) != std::string::npos);
+        expect(std::filesystem::is_regular_file(output / "assets" / sound));
+    }
     expect(write_native_project(flow.history.document).value == saved_project.value);
 }

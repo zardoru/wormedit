@@ -24,23 +24,13 @@ auto single_target_plan(output_group_export_target_t target) -> output_group_exp
             .existing_files = target.existing_files};
 }
 
-auto plan_output_music(const output_group_export_request_t& input)
-    -> result_t<std::vector<project_asset_copy_request_t>, std::string> {
-    const auto& snapshot = input.document;
-    const auto& group = input.plan.group;
-    if (group.family != format_family_t::osu_mania && group.family != format_family_t::stepmania)
-        return std::vector<project_asset_copy_request_t>{};
-    const resource_entry_t* music{};
-    for (const auto& resource : snapshot.resources) {
-        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end()) continue;
-        if (music) return std::unexpected("The output has more than one music resource.");
-        music = &resource;
-    }
-    if (!music) return std::vector<project_asset_copy_request_t>{};
-    const auto* asset = snapshot.find_audio_asset(music->asset);
-    if (!asset) return std::unexpected("The music resource has no audio asset.");
-    return std::vector<project_asset_copy_request_t>{{.project_directory = input.asset_base,
-        .source_path = asset->source_path, .asset = asset->id}};
+// osu! and StepMania charts name one audio file.
+auto has_single_music(const output_group_export_request_t& input) -> bool {
+    const auto family = input.plan.group.family;
+    if (family != format_family_t::osu_mania && family != format_family_t::stepmania) return true;
+    return std::ranges::count_if(input.document.resources, [](const resource_entry_t& resource) {
+        return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end();
+    }) <= 1;
 }
 
 auto prepare_output_assets(const output_group_export_request_t& input,
@@ -49,12 +39,14 @@ auto prepare_output_assets(const output_group_export_request_t& input,
     const auto discovered = discover_staged_export_assets(input.document, input.plan.group,
                                                          input.asset_base, stop);
     if (!discovered) return std::unexpected(discovered.errors.front());
+    if (!has_single_music(input)) return std::unexpected("The output has more than one music resource.");
     request.staged_assets = discovered.mappings;
-    auto pending = input.plan.group.family == format_family_t::bms ||
-                           input.plan.group.family == format_family_t::bmson
-                       ? plan_pending_export_assets(input.document, input.plan.group,
-                                                    input.asset_base, request.staged_assets)
-                       : plan_output_music(input);
+    // Every chart format copies the sounds and images its charts reference (osu! hitsounds
+    // and StepMania keysounds included), not only the music.
+    auto pending = input.plan.group.family == format_family_t::native_project
+                       ? result_t<std::vector<project_asset_copy_request_t>, std::string>{}
+                       : plan_pending_export_assets(input.document, input.plan.group,
+                                                    input.asset_base, request.staged_assets);
     if (!pending) return std::unexpected(pending.error());
     std::erase_if(*pending, [&](const auto& copy) {
         return std::ranges::any_of(request.staged_assets, [&](const auto& staged) {

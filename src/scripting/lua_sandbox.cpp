@@ -30,12 +30,15 @@ struct lua_sandbox_t::implementation_t {
     std::optional<failure_code_t> abort_code;
     const char* abort_message{};
     std::string_view source;
+    std::string_view trusted_adapter;
     int load_status{LUA_OK};
     int function_reference{LUA_NOREF};
     std::string chunk_name;
     std::string_view entry_point;
     const lua_sandbox_context_t* call_context{};
     double argument{};
+    lua_project_reader_t project_reader;
+    std::optional<result_t<lua_project_file_t, error_t<failure_code_t>>> project_file;
     bool pure{};
     bool bounded_lookup{};
     std::string_view snapshot_name;
@@ -190,6 +193,47 @@ struct lua_sandbox_t::implementation_t {
         lua_replace(state, 1);
         return lua_gettop(state);
     }
+    static auto read_project_file(lua_State* state) -> int {
+        auto& self = context(state);
+        std::size_t kind_size{}, path_size{};
+        const auto* kind = luaL_checklstring(state, 1, &kind_size);
+        const auto* path = luaL_checklstring(state, 2, &path_size);
+        // Store the owning result on the VM owner: no C++ automatic object can be skipped
+        // by a Lua allocation failure/longjmp while pushing its strings.
+        try {
+            self.project_file = self.project_reader({kind, kind_size}, {path, path_size});
+        } catch (...) {
+            self.project_file = std::unexpected(error_t{failure_code_t::invalid_data,
+                "Project source reader failed."});
+        }
+        if (!*self.project_file) return luaL_error(state, "%s", self.project_file->error().message.c_str());
+        lua_pushlstring(state, (**self.project_file).path.data(), (**self.project_file).path.size());
+        lua_pushlstring(state, (**self.project_file).content.data(), (**self.project_file).content.size());
+        lua_pushlstring(state, (**self.project_file).asset_id.data(), (**self.project_file).asset_id.size());
+        return 3;
+    }
+    static auto make_project_environment(lua_State* state) -> int {
+        luaL_checktype(state, 1, LUA_TTABLE);
+        lua_newtable(state);
+        lua_pushglobaltable(state);
+        lua_setfield(state, -2, "__index");
+        lua_pushglobaltable(state);
+        lua_setfield(state, -2, "__newindex");
+        lua_pushliteral(state, "project environment");
+        lua_setfield(state, -2, "__metatable");
+        lua_setmetatable(state, 1);
+        lua_pushvalue(state, 1);
+        return 1;
+    }
+    static auto install_project_runtime(lua_State* state) -> int {
+        if (context(state).project_reader) {
+            lua_pushcfunction(state, read_project_file);
+            lua_setglobal(state, "_wormedit_read_project_file");
+        }
+        lua_pushcfunction(state, make_project_environment);
+        lua_setglobal(state, "_wormedit_make_project_environment");
+        return 0;
+    }
     static auto initialize(lua_State* state) -> int {
         const luaL_Reg libraries[]{{LUA_GNAME, luaopen_base}, {LUA_STRLIBNAME, luaopen_string},
             {LUA_TABLIBNAME, luaopen_table}, {LUA_MATHLIBNAME, luaopen_math}, {LUA_UTF8LIBNAME, luaopen_utf8}};
@@ -328,10 +372,17 @@ struct lua_sandbox_t::implementation_t {
     }
     static auto run(lua_State* state) -> int {
         auto& self = context(state);
+        if (!self.trusted_adapter.empty()) {
+            self.load_status=luaL_loadbufferx(state,self.trusted_adapter.data(),self.trusted_adapter.size(),"generator adapter","t");
+            if (self.load_status!=LUA_OK) return lua_error(state);
+            lua_call(state,0,1);
+            luaL_checktype(state,-1,LUA_TFUNCTION);
+        }
         self.load_status = luaL_loadbufferx(state, self.source.data(), self.source.size(), self.chunk_name.empty() ? "sandbox" : self.chunk_name.c_str(), "t");
         if (self.load_status != LUA_OK)
             return lua_error(state);
         lua_call(state, 0, 1);
+        if (!self.trusted_adapter.empty()) lua_call(state,1,1);
         return 1;
     }
     auto error(int status) const -> error_t<failure_code_t> {
@@ -579,6 +630,16 @@ auto lua_sandbox_t::from(lua_sandbox_limits_t limits) -> result_t<lua_sandbox_t,
     if (status != LUA_OK || !self.can_continue()) return std::unexpected(self.error(status));
     return lua_sandbox_t(std::move(implementation));
 }
+auto lua_sandbox_t::install_project_runtime(lua_project_reader_t reader)
+    -> result_t<void, error_t<failure_code_t>> {
+    if (!is_open()) return std::unexpected(error_t{
+        failure_code_t::not_ready, "Project source reader requires an open session."});
+    auto& self = *implementation_;
+    self.project_reader = std::move(reader);
+    auto result = self.invoke(implementation_t::install_project_runtime, 0);
+    if (!result) self.close();
+    return result;
+}
 auto lua_sandbox_t::evaluate(std::string_view source) -> result_t<lua_sandbox_value_t, error_t<failure_code_t>> {
     if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready, "Lua session is closed."});
     auto& self = *implementation_;
@@ -618,15 +679,16 @@ auto lua_sandbox_t::install_snapshot(std::string_view name,const lua_sandbox_con
     if (!result) self.close();
     return result;
 }
-auto lua_sandbox_t::evaluate_context(std::string_view source,std::string_view chunk_name)
+auto lua_sandbox_t::evaluate_context(std::string_view source,std::string_view chunk_name,
+    std::string_view trusted_adapter)
     -> result_t<lua_sandbox_context_t,error_t<failure_code_t>> {
     if (!is_open()) return std::unexpected(error_t{failure_code_t::not_ready,"Lua session is closed."});
     auto& self=*implementation_;
     if (source.size()>self.limits.maximum_source_bytes) self.record_failure(
         failure_code_t::capacity_exceeded,"Lua source exceeds the source byte limit.");
-    self.source=source; self.chunk_name=chunk_name;
+    self.source=source; self.chunk_name=chunk_name; self.trusted_adapter=trusted_adapter;
     const auto invoked=self.invoke(implementation_t::run,1);
-    self.source={}; self.chunk_name.clear();
+    self.source={}; self.chunk_name.clear(); self.trusted_adapter={};
     if (!invoked) { self.close(); return std::unexpected(invoked.error()); }
     if (!lua_checkstack(self.state,512)) {
         self.close(); return std::unexpected(error_t{failure_code_t::capacity_exceeded,"Cannot reserve Lua result inspection stack."});

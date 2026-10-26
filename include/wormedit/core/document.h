@@ -141,6 +141,7 @@ struct lane_layout_segment_t {
     object_id_t id;
     local_position_t position;
     lane_layout_t layout;
+    auto operator==(const lane_layout_segment_t&) const -> bool = default;
 };
 
 enum class physical_key_t {
@@ -267,6 +268,7 @@ struct measure_chunk_t {
     measure_definition_t definition{{1, 1}, meter_t{4, 4}};
     std::vector<note_t> notes;
     std::vector<bgm_event_t> bgm_events;
+    auto operator==(const measure_chunk_t&) const -> bool = default;
 };
 
 // BMS measure lengths are control-flow-sensitive. This records which source
@@ -972,6 +974,37 @@ struct generator_layer_binding_t {
     auto operator==(const generator_layer_binding_t&) const -> bool = default;
 };
 
+// Typed historical witnesses for fields authored by a generated difficulty. Non-generated
+// chart metadata/annotations are not mirrored here and remain independently editable.
+struct generator_chart_content_t {
+    std::string name;
+    std::uint64_t resolution{default_divisions_per_standard_measure};
+    signed_rational_t offset;
+    std::vector<measure_chunk_t> measures;
+    std::vector<lane_layout_segment_t> layouts;
+    input_profile_t input;
+    std::vector<bgm_source_lane_t> bgm_lanes;
+    std::vector<bpm_event_t> bpms;
+    std::vector<pause_event_t> pauses;
+    std::vector<warp_event_t> warps;
+    std::vector<scroll_event_t> scrolls;
+    [[nodiscard]] static auto from(const chart_document_t&) -> generator_chart_content_t;
+    void apply_to(chart_document_t&) const;
+    auto operator==(const generator_chart_content_t&) const -> bool = default;
+};
+struct generator_chart_identity_t {
+    std::string key;
+    std::uint64_t value{};
+    auto operator==(const generator_chart_identity_t&) const -> bool = default;
+};
+struct generator_chart_binding_t {
+    std::string key;
+    chart_id_t chart;
+    generator_chart_content_t content;
+    std::vector<generator_chart_identity_t> identities;
+    auto operator==(const generator_chart_binding_t&) const -> bool = default;
+};
+
 struct generator_recipe_t {
     recipe_id_t id;
     std::string api_version;
@@ -986,6 +1019,7 @@ struct generator_recipe_t {
     std::optional<branch_id_t> bms_chart;
     std::vector<generator_note_binding_t> generated_notes;
     std::vector<generator_layer_binding_t> generated_layers;
+    std::vector<generator_chart_binding_t> generated_charts;
     auto operator==(const generator_recipe_t&) const -> bool = default;
 };
 
@@ -1054,7 +1088,7 @@ class chart_read_slot_t {
     mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 22;
+inline constexpr std::uint32_t current_document_schema_version = 23;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

@@ -7,6 +7,36 @@ OSBX is wormedit's extended osu!-style storyboard source format. It uses a Prema
 
 Lua evaluates into a typed intermediate document. Preview, visual editing, standard `.osb` export, and video rendering consume that document rather than interpreting source text independently.
 
+## Implemented project entry point (T-186)
+
+Project-level loading is independent of the deferred OSBX declaration language.
+The initial adapter accepts `project.lua` through Compose's existing Lua note-generator
+file picker. Loose note/layer output targets the selected chart. `worm_project "Name"` names the script group;
+it does not rename or create a native project. `include "path.lua"` evaluates modules in
+explicit order, relative to the including file, once per canonical file. A module may
+return an existing API-v1 `{notes, layers}` proposal or ordinary helper values; proposals
+are merged once into one preview/Apply transaction. Stable output keys must be unique
+across all modules. T-187 also accepts measure-based difficulty declarations, described below.
+
+`audio`, `image`, and `midi` accept `{id = "name", file = "relative/path"}`. Named assets
+are available as `project.assets.name` with `kind`, project-relative `file`, `content_hash`
+and optional decimal-string `asset_id` if already imported. Declarations hash files;
+they do not import/decode them or grant filesystem access. Use the existing UI to import
+assets and select generator MIDI inputs. Includes and assets must resolve inside the native
+project directory, including through symlinks. Missing files, cycles and duplicate named
+assets reject the batch.
+
+An explicit live Run performs bounded graph discovery/replay, then evaluates/replays a
+frozen bundle under the other half of the normal instruction budget. Discovery can execute
+bounded Lua before changed-source confirmation, but cannot publish edits. A changed module
+or declared asset changes the saved source hash and requires the existing confirmation;
+confirmation evaluates the captured bundle rather than rereading files. Saved-source runs,
+project opening/saving and exports never reread modules. Source text, per-file hashes and
+asset metadata are carried in the existing recipe source/hash fields; no schema migration
+or persisted VM is needed. Limits are 64 distinct kind/file entries, 256 normalized aliases,
+64 KiB aggregate source, 64 KiB final bundle (including the runtime/escaping), and 64 MiB
+aggregate asset bytes. Host IO checks cancellation between bounded reads.
+
 ## File roles
 
 Provisional conventions:
@@ -73,6 +103,20 @@ Difficulty names and stable IDs are distinct. SM/SSC export may collect compatib
 Storyboard modules do not need to contain note data. Chart modules do not need to contain storyboard data. A combined Lua generator may emit both in one atomic preview when coordinated generation is desired.
 
 ## Measure-based chart declarations
+
+**Implemented T-187 subset:** difficulty declarations create owned native charts, matched
+by `stable_id` during explicit regeneration. They can run directly as `.chart.lua` or
+inside `project.lua`; unrelated charts remain unchanged. The packaged [chart API
+schema](lua-api/chart.lua) is authoritative for currently accepted fields. Chart name,
+grid, offset, measures/notes/BGM, layout/input, BPM, pauses, warps and scroll are witnessed
+ownership. Manual changes there reject regeneration. Independent authored content remains;
+removing its referenced measures rejects, as does changing resolution while authored
+positions remain. Omitted charts with extra authored content cannot be deleted implicitly.
+The existing Project output groups select export destinations; `song`/`target` declarations,
+combined storyboard output and the typed samples shown in the draft examples below remain
+future work. Existing numeric sound-resource IDs are accepted. Exact source spelling is
+retained in the frozen source snapshot, not duplicated as mutable per-event metadata.
+
 
 Chart note data is authored as an ordered series of `measure { ... }` descriptor tables. A measure table mixes named parameters with ordered lane-object descriptors returned by `note`, `hold`, and `bgm` constructors:
 
@@ -444,7 +488,7 @@ Required regression coverage:
 
 ## Open specification questions
 
-- Final extensions and entry-point naming for project, storyboard, and chart modules.
+- Final extensions and entry-point naming for storyboard and chart modules. `project.lua` is adopted by T-186; its initial generator workflow is specified above.
 - Canonical generated-Lua formatting and the boundary between editable declarations and procedural code.
 - Exact typed forms for reusable clips, loops, and triggers.
 - Whether matrix tracks should add an explicit decomposed interpolation mode.

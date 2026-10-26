@@ -1,6 +1,19 @@
 #include "sys/compose/views/generator_view.h"
 #include "sys/compose/generator_runtime.h"
 #include <cstdio>
+namespace wormedit::ui {
+void generator_chart_preview_t::refill(const generator_chart_content_t& content) {
+    name=content.name; measures=content.measures.size(); notes=0; bgm=0;
+    for (const auto& measure:content.measures) { notes+=measure.notes.size(); bgm+=measure.bgm_events.size(); }
+    timing=content.bpms.size()+content.pauses.size()+content.warps.size()+content.scrolls.size();
+}
+void compose_generator_view_t::refill_preview(const generator_preview_t& preview) {
+    notes=preview.notes; layers=preview.layers; charts=preview.charts;
+    rationalizations.assign(preview.rationalizations.begin(),preview.rationalizations.end());
+    chart_previews.resize(preview.recipe.generated_charts.size());
+    for (std::size_t i=0;i<chart_previews.size();++i) chart_previews[i].refill(preview.recipe.generated_charts[i].content);
+}
+}
 namespace wormedit::sys {
 void populate_compose_generator(frontend_workspace_view_t& flattened, const document_history_t& history,
     const chart_document_t& chart, const editor_interaction_view_model_t& interaction,
@@ -11,7 +24,8 @@ void populate_compose_generator(frontend_workspace_view_t& flattened, const docu
     std::size_t recipe_count{};
     shown.has_selection = false;
     shown.busy = false; shown.can_apply = false; shown.requires_confirmation = false;
-    shown.status = {}; shown.notes = {}; shown.layers = {};
+    shown.status = {}; shown.notes = {}; shown.layers = {}; shown.charts = {};
+
     view.generator_ghosts.clear();
     for (const auto& recipe : history.document.generator_recipes) {
         if (recipe.chart && recipe.chart != chart.id) continue;
@@ -33,15 +47,18 @@ void populate_compose_generator(frontend_workspace_view_t& flattened, const docu
     shown.recipes.resize(recipe_count);
     if (!shown.has_selection) flattened.compose.generator_form_source.reset();
     const auto& runtime = commands.project.generator.runtime;
-    if (!runtime || runtime->stamp() != chart_stamp_t::from(history, chart.id)) return;
+    if (!runtime || runtime->stamp() != chart_stamp_t::from(history, chart.id)) {
+        shown.chart_previews.resize(0); shown.rationalizations.resize(0); return;
+    }
     shown.busy = runtime->is_busy();
     if (const auto* result = runtime->result()) {
         shown.status = result->status;
         shown.requires_confirmation = result->requires_confirmation;
         shown.can_apply = result->proposal.value.has_value() && !shown.busy;
     }
+    if (!runtime->preview()) { shown.chart_previews.resize(0); shown.rationalizations.resize(0); }
     if (const auto* preview = runtime->preview()) {
-        shown.notes = preview->notes; shown.layers = preview->layers;
+        shown.refill_preview(*preview);
         if (const auto* scene = runtime->preview_scene(interaction, request)) {
             for (const auto& hold : scene->hold_bodies)
                 view.generator_ghosts.push_back({.bounds = ui::compose_rect_t::from(hold.bounds),

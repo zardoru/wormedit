@@ -4,6 +4,7 @@
 #include "ui/nuklear/chrome/file_dialog_slot.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
+#include <algorithm>
 namespace {
 struct generator_editor_t {
     wormedit::ui::generator_form_t form;
@@ -99,6 +100,43 @@ void parameter_fields(nk_context* context) {
         editor.form.inputs.emplace_back();
     if (nk_button_label(context, "Remove input") && !editor.form.inputs.empty()) editor.form.inputs.pop_back();
 }
+void preview_summary(nk_context* context,const wormedit::ui::compose_generator_view_t& view) {
+    if (view.chart_previews.empty()) {
+        nk_layout_row_dynamic(context,24,1);
+        nk_labelf(context,NK_TEXT_LEFT,"Notes +%zu / ~%zu / -%zu",view.notes.added,view.notes.changed,view.notes.removed);
+        nk_layout_row_dynamic(context,24,1);
+        nk_labelf(context,NK_TEXT_LEFT,"Layers +%zu / ~%zu / -%zu",view.layers.added,view.layers.changed,view.layers.removed);
+    }
+    if (!view.chart_previews.empty() || view.charts.removed) {
+        nk_layout_row_dynamic(context,24,1);
+        nk_labelf(context,NK_TEXT_LEFT,"Difficulties +%zu / ~%zu / -%zu",view.charts.added,view.charts.changed,view.charts.removed);
+        for (const auto& chart:view.chart_previews) {
+            nk_layout_row_dynamic(context,22,1); nk_label(context,chart.name.c_str(),NK_TEXT_LEFT);
+            nk_layout_row_dynamic(context,36,1);
+            char summary[160];
+            std::snprintf(summary,sizeof(summary),"%zu measures, %zu notes, %zu BGM, %zu timing events",
+                chart.measures,chart.notes,chart.bgm,chart.timing);
+            nk_text_wrap(context,summary,static_cast<int>(std::char_traits<char>::length(summary)));
+        }
+    }
+    if (view.rationalizations.empty()) return;
+    if (!nk_tree_push(context,NK_TREE_NODE,"Exact values",NK_MINIMIZED)) return;
+    nk_layout_row_dynamic(context,24,1);
+    if (nk_button_label(context,"Copy exact-value report")) {
+        std::string report;
+        for (const auto& value:view.rationalizations) report+=value+'\n';
+        (void)SDL_SetClipboardText(report.c_str());
+    }
+    const auto count=std::min<std::size_t>(view.rationalizations.size(),32);
+    for (std::size_t i=0;i<count;++i) {
+        nk_layout_row_dynamic(context,36,1);
+        const auto& line=view.rationalizations[i]; nk_text_wrap(context,line.c_str(),static_cast<int>(line.size()));
+    }
+    if (count<view.rationalizations.size()) {
+        nk_layout_row_dynamic(context,22,1); nk_label(context,"Copy the report to read all exact values.",NK_TEXT_LEFT);
+    }
+    nk_tree_pop(context);
+}
 void actions(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     const auto& view = inspector.view->generator;
@@ -142,12 +180,7 @@ void render_compose_generator_form(const ComposeInspectorContext& inspector) {
         editor.form.use_saved_source = saved;
     }
     const auto& view = inspector.view->generator;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Notes +%zu / ~%zu / -%zu",
-        view.notes.added, view.notes.changed, view.notes.removed);
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Layers +%zu / ~%zu / -%zu",
-        view.layers.added, view.layers.changed, view.layers.removed);
+    preview_summary(context,view);
     const auto status = !editor.error.empty() ? std::string_view{editor.error} : view.status;
     if (!status.empty()) { nk_layout_row_dynamic(context, 44, 1); nk_text_wrap(context, status.data(), static_cast<int>(status.size())); }
     if (view.busy) { nk_layout_row_dynamic(context, 20, 1); nk_label(context, "Running…", NK_TEXT_LEFT); }

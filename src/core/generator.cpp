@@ -4,11 +4,13 @@
 #include "interaction_internal.h"
 #include "lane_occupancy.h"
 #include "text_util.h"
+#include "generator_chart.h"
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <nlohmann/json.hpp>
 #include <map>
 #include <set>
+#include <numeric>
 
 namespace wormedit {
 namespace {
@@ -250,15 +252,17 @@ auto validate_generator_parameters(const generator_recipe_t& recipe) -> diagnost
 }
 auto validate_generator_recipe(const generator_recipe_t& recipe) -> diagnostic_list_t {
     const bool legacy = recipe.source.empty() && !recipe.chart && recipe.generated_notes.empty() &&
-        recipe.generated_layers.empty() && !recipe.bms_scope && !recipe.bms_chart;
+        recipe.generated_layers.empty() && recipe.generated_charts.empty() && !recipe.bms_scope && !recipe.bms_chart;
     if (auto errors = validate_generator_inputs(recipe, legacy); !errors.empty()) return errors;
     if (auto errors = validate_generator_parameters(recipe); !errors.empty()) return errors;
     if (legacy) return {};
+    if (auto errors = validate_generator_charts(recipe); !errors.empty()) return errors;
     if (recipe.api_version != "1" || !recipe.chart || recipe.source.empty() ||
         !text_util::is_valid_bounded_text(recipe.source, maximum_generator_source_bytes) ||
         !text_util::is_sha256_digest(recipe.source_hash) ||
         recipe.bms_scope.has_value() != recipe.bms_chart.has_value() ||
-        recipe.generated_notes.size() > maximum_generator_notes || recipe.generated_layers.size() > maximum_generator_layers)
+        recipe.generated_notes.size() > maximum_generator_notes || recipe.generated_layers.size() > maximum_generator_layers ||
+        recipe.generated_charts.size() > maximum_generator_charts)
         return {error(diagnostic_code_t::invalid_id, "Generator recipe metadata exceeds API-v1 bounds.")};
     if (auto errors = validate_generator_bindings(recipe.generated_notes); !errors.empty()) return errors;
     if (auto errors = validate_generator_bindings(recipe.generated_layers); !errors.empty()) return errors;
@@ -328,16 +332,18 @@ auto generator_preview_t::propose(const document_history_t& history, generator_r
     if (auto errors = check_baseline(*chart, previous); !errors.empty()) return {.diagnostics = std::move(errors)};
     const auto old = previous ? *previous : generator_recipe_t{};
     generator_preview_t report{.recipe = std::move(recipe), .keep_recipe = keep || previous};
+    report.rationalizations = std::move(output.rationalizations);
     report.recipe.generated_notes.clear(); report.recipe.generated_layers.clear();
     auto identities = id_ceiling_t<object_id_t>::from(history);
     identities.maximum = std::max(identities.maximum, identity_floor);
     const auto needed = count_new_keys(output.notes, old.generated_notes) + count_new_keys(output.layers, old.generated_layers) +
-        static_cast<std::size_t>(!report.recipe.id);
+        static_cast<std::size_t>(!report.recipe.id) + count_new_chart_declarations(output.charts,old);
     const auto first = needed ? identities.next(needed) : std::optional{object_id_t{0}};
     if (!first) return {.diagnostics = diagnostic_list_t{error(diagnostic_code_t::invalid_binding, "Generator identities are exhausted.")}};
     auto next = first->value;
     if (auto errors = bind_layers(report, output, old, next); !errors.empty()) return {.diagnostics = std::move(errors)};
     if (auto errors = bind_notes(report, output, old, next); !errors.empty()) return {.diagnostics = std::move(errors)};
+    if (auto errors = report.bind_charts(history, std::move(output.charts), old, next); !errors.empty()) return {.diagnostics = std::move(errors)};
     if (!report.recipe.id) report.recipe.id = recipe_id_t{next++};
     if (auto errors = check_placement(*chart, report.recipe, old); !errors.empty()) return {.diagnostics = std::move(errors)};
     generator_proposal_t proposal{.stamp = chart_stamp_t::from(history, chart->id), .payload = std::move(report)};
@@ -370,8 +376,14 @@ auto generator_preview_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) con
     if (!chart) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Generator chart disappeared.")}};
     if (auto errors = check_baseline(*chart, previous); !errors.empty()) return {.diagnostics = std::move(errors)};
     if (auto errors = check_placement(*chart, materialization, old); !errors.empty()) return {.diagnostics = std::move(errors)};
-    if (!stage_layers(transaction, materialization, old)) return {.diagnostics = transaction.outcome().diagnostics};
-    if (!stage_notes(transaction, materialization, old)) return {.diagnostics = transaction.outcome().diagnostics};
+    if (!materialization.generated_charts.empty() || !old.generated_charts.empty()) {
+        const auto staged = stage_charts(transaction, old);
+        if (!staged.value || !staged.ok()) return {.diagnostics = staged.diagnostics};
+    }
+    if ((!materialization.generated_layers.empty() || !old.generated_layers.empty()) &&
+        !stage_layers(transaction, materialization, old)) return {.diagnostics = transaction.outcome().diagnostics};
+    if ((!materialization.generated_notes.empty() || !old.generated_notes.empty()) &&
+        !stage_notes(transaction, materialization, old)) return {.diagnostics = transaction.outcome().diagnostics};
     if (keep_recipe) {
         const auto staged = stage_generator_record(transaction, std::move(materialization));
         if (!staged.value || !staged.ok()) return {.diagnostics = staged.diagnostics};

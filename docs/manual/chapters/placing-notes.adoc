@@ -140,6 +140,9 @@ keeping its timing and slice point.
 
 == Lua note generators
 
+The link:lua-api/index.html[packaged Lua API reference] documents all context fields, return
+values, sandbox limits and complete examples. It works offline alongside this manual.
+
 In a Lua-enabled build, expand *Lua note generator* in the Compose inspector. Choose a `.lua`
 file inside the project and set its seed, JSON parameter values and optional imported MIDI
 asset IDs. *Run* prepares a preview; it does not edit the chart. Generated notes appear as green
@@ -181,3 +184,74 @@ For scoped BMS charts, select the recipe's saved Chart owner before regenerating
 Manual edits to generated notes or layers are preserved: regeneration rejects replacing an
 edited or deleted output. *Detach recipe* removes its ownership record while keeping the current
 notes and layers. You can then continue editing those objects normally.
+
+=== A project.lua entry point
+
+For a pattern spread across several files, choose a file named `project.lua` in the same
+Lua generator file picker. Start with:
+
+[listing]
+----
+worm_project "My patterns"
+include "patterns/intro.lua"
+include "patterns/main.lua"
+----
+
+Each included file can return the same keyed notes/layers shown above, or return helper
+functions/tables for another module to use. Includes run once in order and resolve relative
+to the including file. Output keys must be unique across the combined modules. Run produces
+one preview for the selected chart; Apply is one Undo step. Using loose note/layer proposals targets the selected chart. Difficulty declarations
+below instead create owned charts. The entry point does not rename the native project.
+
+Optional `audio {id="music", file="song.ogg"}`, `image` and `midi` declarations track named
+files and hashes in `project.assets`. They do not import files: use the existing asset import
+and MIDI-input controls. Files and includes must stay inside the project directory, including
+through symlinks. See the link:lua-api/modules/project.html[project declaration reference]
+and link:lua-api/topics/README.md.html[downloadable example sources and limits].
+
+Live Run freezes the included files and declared asset hashes. If any dependency changed,
+review and confirm the captured script before applying. Discovery runs bounded Lua to find
+the graph, but never edits the project. *Run saved source snapshot* uses the stored bundle,
+even when its original files are unavailable. Opening or saving a project never runs Lua;
+a failed run leaves the materialized chart intact.
+
+
+=== Generated difficulties from measures
+
+Choose a `.chart.lua` file, or include one from `project.lua`. For example:
+
+[listing]
+----
+difficulty "Easy"
+stable_id "easy"
+resolution(960)
+columns(4)
+measure {id="intro", note {key="first", row=0, lane=1}}
+measure {id="outro", note {key="last", row=240, lane=4}}
+bpm {at=at_measure("intro",0), value=150}
+----
+
+Each `difficulty` starts a new owned chart. The selected chart supplies the script's
+context. Run shows difficulty names and measure/note/BGM/timing counts; Apply commits
+all difficulties as one Undo step. Select them in Project and use the existing output
+groups for export destinations. Do not mix difficulty declarations with loose note/layer
+return values. The link:lua-api/modules/chart.html[chart API reference] and
+link:lua-api/sources/easy.chart.lua[complete downloadable example] cover holds,
+BGM, meters, offsets, stops, delays, warps, scroll and reusable measure sequences.
+
+Rows are local integers (see <<chart-rows>>). At resolution 960, a standard measure
+has 960 rows; `meter(6,8)` gives 720. `row = capacity` is invalid, including a hold
+endpoint: use row 0 of the next measure. Timing declarations belong outside measures.
+Use `ratio(3,4)`, `measure_length "0.75"` and `measure_time "-0.125"` for exact values.
+Bare Lua numbers use bounded rational conversion; expand *Exact values* in the preview
+to inspect the chosen fractions and error bounds, or copy the full report.
+
+Keep difficulty `stable_id`, measure `id` and event `key` values stable across edits.
+Regeneration retains native IDs. It owns chart names, grids, offsets, measures and their
+notes/BGM, lane layouts/input, BPM, pauses, warps and scroll. Manual edits there cause
+a conflict. Independent markers, SV recipes and metadata remain authored content:
+removing their referenced measures rejects the whole batch, and resolution changes
+are blocked while authored positions remain. Omitted difficulties are removed only
+when no extra authored content remains. *Detach recipe* keeps the charts and releases
+ownership. Saving or opening never executes scripts. Typed sample declarations remain
+future work; optional numeric `sound` fields refer to existing sound resources.

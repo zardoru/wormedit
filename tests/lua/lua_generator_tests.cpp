@@ -1,4 +1,5 @@
 #include "../../src/scripting/lua_generator.h"
+#include "../support/lua_documentation.h"
 #include <wormedit/core/lane_profiles.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -109,4 +110,13 @@ TEST_CASE("Lua generator decoder retains full unsigned row positions", "[lua-gen
 TEST_CASE("Lua generator decoder rejects identities with embedded NUL suffixes", "[lua-generator]") {
     const auto result=evaluate_generator(R"(return {notes={{key='x',measure='3\0ignored',row=0,lane='1'}}})");
     CHECK_FALSE(result.ok());
+}
+
+TEST_CASE("Documented generator example produces an owned note and layer", "[lua-generator][documentation]") {
+    const auto result = evaluate_generator(lua_documentation_example("generator.lua"));
+    REQUIRE(result.ok());
+    REQUIRE(result.value.notes.size() == 1);
+    REQUIRE(result.value.layers.size() == 1);
+    CHECK(result.value.notes.front().layers == std::vector<std::string>{"generated"});
+    CHECK(result.value.layers.front().key == "generated");
 }

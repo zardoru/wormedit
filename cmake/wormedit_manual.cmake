@@ -37,3 +37,37 @@ add_custom_target(manual ALL DEPENDS "${wormedit_manual_dir}/index.html")
 install(FILES "${wormedit_manual_dir}/index.html" DESTINATION "${WORMEDIT_INSTALL_BINDIR}/manual" COMPONENT Manual)
 install(DIRECTORY "${wormedit_manual_dir}/images" DESTINATION "${WORMEDIT_INSTALL_BINDIR}/manual" COMPONENT Manual)
 install(DIRECTORY "${wormedit_manual_dir}/fixtures" DESTINATION "${WORMEDIT_INSTALL_BINDIR}/manual" COMPONENT Manual)
+
+# Generate the same offline API book for Lua-enabled and Lua-disabled application builds.
+include(${CMAKE_CURRENT_LIST_DIR}/dependencies/ldoc.cmake)
+set(wormedit_lua_api_dir "${wormedit_manual_dir}/lua-api")
+file(GLOB_RECURSE wormedit_lua_api_sources CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/docs/lua-api/*"
+    "${wormedit_ldoc_SOURCE_DIR}/*.lua" "${wormedit_penlight_SOURCE_DIR}/lua/*.lua")
+add_custom_command(OUTPUT "${wormedit_lua_api_dir}/index.html"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${wormedit_lua_api_dir}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${wormedit_lua_api_dir}/licenses"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${wormedit_ldoc_SOURCE_DIR}/COPYRIGHT" "${wormedit_lua_api_dir}/licenses/LDoc.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${wormedit_penlight_SOURCE_DIR}/LICENSE.md" "${wormedit_lua_api_dir}/licenses/Penlight.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${wormedit_lfs_SOURCE_DIR}/LICENSE" "${wormedit_lua_api_dir}/licenses/LuaFileSystem.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${lua_SOURCE_DIR}/lua.h" "${wormedit_lua_api_dir}/licenses/Lua-header-with-license.txt"
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "LUA_PATH=${wormedit_penlight_SOURCE_DIR}/lua/?.lua;${wormedit_ldoc_SOURCE_DIR}/?.lua;${wormedit_ldoc_SOURCE_DIR}/?/init.lua"
+        "${wormedit_ldoc_host}" "${wormedit_ldoc_SOURCE_DIR}/ldoc.lua"
+        --fatalwarnings --config "${CMAKE_SOURCE_DIR}/docs/lua-api/config.ld"
+        --dir "${wormedit_lua_api_dir}" "${CMAKE_SOURCE_DIR}/docs/lua-api"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/docs/lua-api/examples"
+        "${wormedit_lua_api_dir}/sources"
+    DEPENDS "${wormedit_ldoc_host}" ${wormedit_lua_api_sources}
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/docs/lua-api"
+    COMMENT "Building the offline Lua API reference with LDoc"
+    VERBATIM)
+add_custom_target(lua-api DEPENDS "${wormedit_lua_api_dir}/index.html")
+add_dependencies(manual lua-api)
+install(DIRECTORY "${wormedit_lua_api_dir}" DESTINATION "${WORMEDIT_INSTALL_BINDIR}/manual" COMPONENT Manual)
+
+if(BUILD_TESTING)
+    find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME documentation.lua_api_links
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check-lua-api-docs.py" "${wormedit_manual_dir}")
+    set_tests_properties(documentation.lua_api_links PROPERTIES LABELS "unit;documentation")
+endif()

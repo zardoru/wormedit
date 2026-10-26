@@ -4,7 +4,7 @@
 
 TEST_CASE("Compose status shows the canonical selection count without double counting notes",
           "[frontend-state][event-harness][selection-status]") {
-    const auto width = GENERATE(800, 1280);
+    const auto width = GENERATE(800, 1000, 1200, 1240, 1280);
     nuklear_event_harness_t harness{width, 900};
     auto& view = harness.view().compose;
     view.selected_note_count = 2;

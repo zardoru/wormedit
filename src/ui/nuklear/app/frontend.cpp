@@ -2232,53 +2232,73 @@ static void render_transport_readout(const std::string& text, const char* hint,
                                      void (*draw)(nk_command_buffer*, struct nk_rect, struct nk_color)) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
+    const float icon_size = bounds.w < 110.0f ? 18.0f : 24.0f;
+    const float text_offset = icon_size + 2.0f;
     const auto tint = g_context->style.text.color;
-    draw(nk_window_get_canvas(g_context), nk_rect(bounds.x, bounds.y, 24, bounds.h), tint);
+    draw(nk_window_get_canvas(g_context), nk_rect(bounds.x, bounds.y, icon_size, bounds.h), tint);
     const auto* font = g_context->style.font;
     nk_draw_text(nk_window_get_canvas(g_context),
-        nk_rect(bounds.x + 26, bounds.y + (bounds.h - font->height) * 0.5f,
-                bounds.w - 26, font->height), text.c_str(), static_cast<int>(text.size()),
+        nk_rect(bounds.x + text_offset, bounds.y + (bounds.h - font->height) * 0.5f,
+                bounds.w - text_offset, font->height), text.c_str(), static_cast<int>(text.size()),
         font, nk_rgba(0, 0, 0, 0), tint);
-    if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
-        wormedit::ui::nuklear::tooltip::text(g_context, hint);
+    if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds)) {
+        const auto tooltip = std::string{hint} + "\n" + text;
+        wormedit::ui::nuklear::tooltip::text(g_context, tooltip.c_str());
+    }
 }
+
+struct status_bar_layout_t {
+    bool show_snap{}, show_zoom{};
+    float control{}, gutter{}, snap{}, notification{}, time{}, row{}, musical{}, details{};
+
+    static auto from(const wormedit::ui::workspace_view_t& view, std::size_t selected, float width)
+        -> status_bar_layout_t {
+        const bool compact = width < 1240.0f;
+        const bool snap = view.compose.visible && view.compose.area_snap_denominator != 0;
+        return {.show_snap = snap,
+            .show_zoom = !compact && snap && std::isfinite(view.compose.pixels_per_standard_measure),
+            .control = compact ? 32.0f : wormedit::ui::chrome::IconButton::width,
+            .gutter = compact ? 0.0f : 10.0f, .snap = compact ? 50.0f : 64.0f,
+            .notification = compact ? 40.0f : std::clamp((width - 700.0f) * 0.5f, 40.0f, 180.0f),
+            .time = compact ? 96.0f : 112.0f, .row = compact ? 68.0f : 92.0f,
+            .musical = compact ? 60.0f : 88.0f,
+            .details = compact ? 0.0f : selected != 0 ? 80.0f : std::clamp((width - 960.0f) * 0.5f, 120.0f, 240.0f)};
+    }
+    void begin(nk_context* context) const {
+        nk_layout_row_template_begin(context, 30);
+        wormedit::ui::chrome::IconButton::layout_columns(context, 4, control);
+        // Rate stepper: chevrons hug the value, with a gutter on both sides.
+        nk_layout_row_template_push_static(context, gutter);
+        wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+        nk_layout_row_template_push_static(context, 40);
+        wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+        nk_layout_row_template_push_static(context, gutter);
+        wormedit::ui::chrome::IconButton::layout_columns(context, 1, control);
+        if (show_snap) nk_layout_row_template_push_static(context, snap);
+        if (show_zoom) nk_layout_row_template_push_static(context, 116);
+        nk_layout_row_template_push_dynamic(context);
+        nk_layout_row_template_push_static(context, notification);
+        nk_layout_row_template_push_static(context, time);
+        nk_layout_row_template_push_static(context, row);
+        nk_layout_row_template_push_static(context, musical);
+        nk_layout_row_template_push_static(context, details);
+        nk_layout_row_template_end(context);
+    }
+    auto operator==(const status_bar_layout_t&) const -> bool = default;
+};
 
 static void render_status_bar(const wormedit::ui::workspace_view_t* view,
                               wormedit::ui::workspace_action_t* action) {
     const auto selected = view->compose.visible ? std::max(view->compose.selected_object_count,
         view->compose.selected_note_count + view->compose.selected_bgm_event_count) : 0;
-    const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     const bool notification_visible = notification_badge_visible(view->notifications);
-    // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
-    const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
-        std::isfinite(view->compose.pixels_per_standard_measure) &&
-        nk_window_get_bounds(g_context).w >= 900.0f;
-    nk_layout_row_template_begin(g_context, 30);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
-    // Rate stepper: chevrons hug the value, with a gutter on both sides.
-    nk_layout_row_template_push_static(g_context, 10);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
-    nk_layout_row_template_push_static(g_context, 40);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
-    nk_layout_row_template_push_static(g_context, 10);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);  // Keep pitch.
-    if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
-    if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
-    nk_layout_row_template_push_dynamic(g_context);
-    nk_layout_row_template_push_static(g_context,
-        notification_visible
-            ? std::clamp((nk_window_get_bounds(g_context).w - 700.0f) * 0.5f, 40.0f, 180.0f) : 0.0f);
-    nk_layout_row_template_push_static(g_context, 112);
-    nk_layout_row_template_push_static(g_context, 92);
-    nk_layout_row_template_push_static(g_context, 88);
-    nk_layout_row_template_push_static(g_context,
-        selected != 0 ? 80.0f : std::clamp(nk_window_get_bounds(g_context).w * 0.2f, 80.0f, 240.0f));
-    nk_layout_row_template_end(g_context);
+    const auto layout = status_bar_layout_t::from(*view, selected, nk_window_get_bounds(g_context).w);
+    layout.begin(g_context);
     render_status_transport_buttons(view, action);
     render_transport_rate(*view, action);
-    if (snap_label_visible)
+    if (layout.show_snap)
         render_compose_snap_badge(g_context, view->compose, *action, snap_badge_available(*view));
-    if (zoom_label_visible)
+    if (layout.show_zoom)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
     const auto& status = workspace_status_text(*view, selected);

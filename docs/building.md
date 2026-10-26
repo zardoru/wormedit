@@ -126,3 +126,21 @@ to the executable. A SHA-256 sidecar is written beside the ZIP.
 See [the frontend event harness guide](frontend-event-harness.md) for windowless
 input-to-action tests, owning snapshots, explicit modifier steps, and the
 `headless-events` preset used by the existing Linux/GCC CI lane.
+
+## Offline Lua API reference
+
+The application manual includes an LDoc API reference under `manual/lua-api/`.
+Build it with `cmake --build build --target lua-api --parallel 2`, or build `manual`
+for both books. The `Manual` install component packages the reference, styles,
+examples and license notices; `WORMEDIT_INSTALL_MANUAL=OFF` disables both books.
+Generation uses pinned LDoc v1.5.0, Penlight 1.14.0, LuaFileSystem 1.8.0 and Lua
+5.4.8. The native build-time runner is independent of the target toolchain, so
+Windows cross-packages do not need Wine to generate documentation. Lua remains
+an optional application feature; no system Lua or LuaRocks is needed for docs.
+
+For disconnected builds, provide checkouts at the revisions in
+`cmake/dependencies/ldoc.cmake` using
+`FETCHCONTENT_SOURCE_DIR_WORMEDIT_LDOC`,
+`FETCHCONTENT_SOURCE_DIR_WORMEDIT_PENLIGHT`, and
+`FETCHCONTENT_SOURCE_DIR_WORMEDIT_LFS`, plus `WORMEDIT_LUA_SOURCE_DIR` as above.
+Cross-builds may select a native C compiler with `WORMEDIT_HOST_C_COMPILER`.

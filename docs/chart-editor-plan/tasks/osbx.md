@@ -2,10 +2,10 @@
 
 [Back to the task-card index](../tasks.md).
 
-> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Cards still marked `deferred` require explicit owner selection. Completed Lua/SV cards and the owner-promoted T-186 follow their individual statuses.
 
 Turns the [OSBX draft](../../osbx-draft-spec.md) into buildable slices. Order:
-first the typed document and evaluator in plain C++ (no Lua), then Lua as a
+the OSBX path starts with the typed document and evaluator in plain C++ (no Lua), then Lua as a
 thin declaration layer over it, then chart DSL and SV curve functions, then
 export/editing. Lua cards depend on the sandbox (T-156 in
 [scripting-storyboard](scripting-storyboard.md)). Every Lua card must keep the
@@ -15,6 +15,7 @@ document, and a failed run keeps the last materialized result.
 ## T-180 Answer the OSBX open questions with recommended defaults
 
 - **Status:** deferred (stage 7–8 ambition; was: blocked-on-user)
+- **Settled subset (owner, 2026-10-25):** T-186 adopts `project.lua` as the generator entry-point filename independently of OSBX. Do not ask that naming question again; the remaining storyboard/chart conventions stay deferred.
 - **Outcome:** each question in the draft's "Open specification questions" has an answer written back into `docs/osbx-draft-spec.md`, so later cards need no design choices.
 - **Read first:** `docs/osbx-draft-spec.md` (last section), `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/osbx-draft-spec.md`, `docs/chart-editor-plan/decisions/open-questions.md`.
@@ -91,22 +92,34 @@ document, and a failed run keeps the last materialized result.
 
 ## T-186 Resolve `project.lua` includes and asset declarations
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-185)
-- **Outcome:** `worm_project`, `include`, `audio`, `image`, and `midi` declarations load modules in stated order relative to the including file, hash every source and asset, and refuse paths outside the project.
-- **Read first:** `docs/osbx-draft-spec.md` (File roles, Language execution), `src/scripting/osbx_lua.cpp`.
-- **Files owned:** new `src/scripting/lua_project.cpp/.h`, new `tests/lua/lua_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
-- **Steps:** 1. Include resolution with cycle detection. 2. SHA-256 per file. 3. Tests: relative include, cycle, escaping path.
-- **Invariants:** no filesystem access from Lua itself; the host reads files.
-- **Reject/failure behavior:** any failure keeps the previous materialized result.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^lua\.'`.
-- **Out of scope:** glob includes.
+- **Status:** done (2026-10-25; owner promoted and implemented independently of OSBX)
+- **Decision (owner, 2026-10-25):** decouple project-level scripting from OSBX. Depend on completed T-156/T-158/T-160 and the existing generator worker/preview path, not T-185. T-187 remains the separate chart-declaration DSL; T-185 later adds storyboard declarations to the same host-controlled loading model.
+- **Outcome:** select `project.lua` in the existing Lua generator inspector. `worm_project`, ordered relative `include`, and `audio`/`image`/`midi` declarations freeze a bounded project-local source graph and asset hashes into an API-v1 generator recipe. Included API-v1 note/layer output is merged into one current-chart preview and Apply transaction; helper modules may return ordinary Lua values.
+- **Read first:** `docs/osbx-draft-spec.md` (File roles, Language execution), `docs/architecture.md`, `src/scripting/lua_generator.cpp`, `src/sys/compose/generator_runtime.cpp`.
+- **Files owned:** new `src/scripting/lua_project.cpp/.h`, new `tests/lua/lua_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`; coordinator-approved support: `include/wormedit/scripting/lua_sandbox.h`, `src/scripting/lua_sandbox.cpp`, `src/scripting/lua_generator.cpp/.h` (bounded host reader capability), `src/sys/compose/generator_runtime.cpp`, `tests/sys/generator_runtime_tests.cpp`, `docs/lua-api/`, `scripts/check-lua-api-docs.py`, `docs/manual/chapters/placing-notes.adoc`, `docs/architecture.md`, `docs/osbx-draft-spec.md`, this card and `memory/chart-editor-status/resume.md`.
+- **Owner-approved gate follow-up (2026-10-25):** after HEAD advanced to `c715daf`, include status-bar fixes in this batch: `src/ui/nuklear/app/frontend.cpp`, `tests/ui/playback_status_event_harness_tests.cpp`, `tests/ui/compose_status_event_harness_tests.cpp`. Preserve millisecond/row/musical readouts, update the old clock expectation, reserve notification width consistently and keep selection text visible from 800 through 1280 px with a compact layout. Focused status coverage passes 75 assertions / eight cases; no status feature is reverted.
+- **Steps:**
+  1. Resolve includes relative to their including file; reject cycles, missing files and canonical/symlink paths outside the project. Cache each canonical source per build and evaluate includes once in stated order, preserving helper return values.
+  2. Hash every source and declared asset. Asset declarations expose project-relative paths, kinds, hashes and an existing imported asset ID when matched; importing assets and MIDI input selection remain explicit existing actions.
+  3. Freeze the graph into bounded Lua source with per-file SHA256 hashes. Saved-source runs and load/save/export never read source files. Explicit live regeneration rebuilds the graph; changed dependencies require the existing captured-source confirmation before an applicable preview.
+  4. Preserve generator atomicity, BMS target pinning, cancellation and last good output. Split the normal total instruction budget between discovery/replay and frozen evaluation/replay; cap 64 files, 256 path aliases, aggregate source 64 KiB, final bundle 64 KiB and aggregate asset reads 64 MiB.
+  5. Verify relative/nested includes, ordered modules, cycles/escapes including symlinks, declared assets/hashes, saved frozen execution without files, changed-dependency confirmation, limits, cancellation, save/load and one Undo step.
+- **Invariants:** ordinary Lua sessions have no host reader. Only explicit project preparation grants project-local host reads; the frozen recipe has none. A failed run keeps the previous materialized result.
+- **Reject/failure behavior:** malformed declarations, missing files, escapes, cycles, incompatible output, budget/cancellation or replay failure publish nothing and identify the failing file where available.
+- **Verify:** GATE; focused Lua/project generator worker tests; documentation and packaged manual checks.
+- **Verification (2026-10-25):** final GATE passes 5,294/5,294, whitespace and 11 changed-TU complexity checks without increased allowances; four additional sandbox-header consumers pass complexity. Focused project-loader coverage passes 85 assertions / eight cases, generator-worker coverage 90 / seven, and status UI coverage 75 / eight. This includes later-called helper closures retaining their defining file, malformed declarations remaining rejected when scripts replace standard globals, save/load, captured changed-source confirmation and frozen runs without source files. Native and Windows Manual-component installs pass all local links, anchors, raw sources, styles and license checks across ten HTML pages. Lua-disabled worker syntax passes. Isolated native 800×700 and 1280×720 windows were inspected; the 800 px capture shows the full selected-object summary alongside millisecond, row and musical readouts. Logs: `/tmp/wormedit-project-final-review.log`, `/tmp/wormedit-gate.H5NTgv`; captures: `/home/zardoru/.cache/wormedit-verification/project-lua-visual/final-status.png` and `final-status-wide.png`.
+- **Out of scope:** glob includes, OSBX declarations, T-187's measure/chart DSL, multiple-chart creation, automatic asset import, implicit execution on opening a project, and source-to-visual override editing.
 
 ## T-187 Build chart difficulties from `measure { … }` descriptors
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-159, T-186)
+- **Status:** done (2026-10-25; owner-promoted implementation)
 - **Outcome:** `*.chart.lua` modules with `difficulty`, `resolution`, `offset`, `columns`, `measure { … }`, `measures(seq)`, `note`, `hold`, `bgm`, and chart-level `bpm`/`stop`/`warp`/`scroll` produce a generator transaction previewed and applied as one command.
 - **Read first:** `docs/osbx-draft-spec.md` (Measure-based chart declarations), `src/scripting/lua_generator.cpp`, `include/wormedit/core/rational.h` (exact float→rational helper).
 - **Files owned:** new `src/scripting/chart_lua.cpp/.h`, new `tests/lua/chart_lua_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Owner decision (2026-10-25):** declarations create owned difficulties matched by stable_id; the selected chart is launch context, not an implicit replacement target. Preserve unrelated charts and reject edits to generated ownership.
+- **Coordinated support (2026-10-25):** coordinator ed9e39b4-85d7-459f-95f5-1ed4c5dacd3f approves generator-only extensions in `include/wormedit/core/document.h`, `generator.h`, `src/core/generator.cpp`, new `generator_chart.*`, native codec/migrations and necessary validation/identity consumers, CMake/tests. Shared ID traversal extraction from `src/core/chart_editor.cpp` into an internal header is approved where reused. Shared SV owns its definition/placement fields and ceiling reservations; preserve their union with generator witness reservations. Both unreleased branches use one additive schema23 (22→23), with absent generator additions defaulting safely even on already-version23 documents. No 23→24 branch-order migration and no SV codec edits. Supporting scope also includes the existing generator worker/UI preview, project loader, API/manual docs, this card and resume state.
+- **Supporting extraction:** existing chart ID traversal and membership cleanup are shared through `src/core/chart_id_visitor.h` and `chart_memberships.h`; the StepMania layout factory moves from the importer to `lane_profiles` so DSL modes reuse its lane/arrow catalog. Generator view/runtime and trusted sandbox adapter preserve source diagnostics and use the existing worker/proposal pipeline.
+- **Grid safety:** authored positional data is preserved on compatible same-grid regeneration; changing resolution while such data remains rejects atomically. Removing a referenced measure rejects through full document validation. No authored SV fields or global definitions are rewritten.
 - **Steps:**
   1. Exact helpers `measure_length "0.75"`, `ratio(3,4)`, `meter(6,8)`, `measure_time "0.125"`, `rows(n)`, `at_measure(id, row)`.
   2. Bare Lua numbers go through the existing bounded IEEE-754→rational conversion; report the chosen fraction.
@@ -114,7 +127,8 @@ document, and a failed run keeps the last materialized result.
 - **Invariants:** `row = capacity` is rejected (write row 0 of the next measure).
 - **Reject/failure behavior:** the whole transaction rejects on the first error.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^lua\.'`.
-- **Out of scope:** sample references (T-188).
+- **Verification (2026-10-25):** `scripts/gate.sh --jobs 4` passes all **5,308/5,308** tests, whitespace and **24 changed-TU complexity checks** with no allowance increases (logs `/tmp/wormedit-gate.Mh5CXZ`). Focused chart tests pass 137 assertions/13 cases; worker tests pass 101 assertions/8 cases; all 91 Lua CTests pass. Native isolated Run/Apply/Save confirms one owned Easy difficulty with two measures/three notes, unchanged launch chart and schema23 persistence. Native and Windows staged offline books pass links/anchors/assets across 12 API HTML pages. Additional `linux-clang` core/scripting compilation reaches the existing `export_cut_transform.cpp:976` missing-field initializer error; all remaining objects compile with keep-going. Coordinator will include its existing fix `1ecb78c` with SV integration. No combined SV gate is claimed here.
+- **Out of scope:** sample references (T-188), storyboard output and new `song`/`target` directives; existing Project output groups select exports.
 
 ## T-188 Accept typed sample references from Lua
 

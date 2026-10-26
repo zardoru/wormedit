@@ -623,10 +623,29 @@ checks. Generated chart objects remain ordinary editable data. The last material
 with a recipe is a historical witness, not a writable chart mirror. Stable keys retain IDs;
 changed or deleted authored outputs reject regeneration. Detach removes only recipe ownership.
 `generator_runtime_t` owns explicit Run, hash-change acknowledgement, cancellation, stale checks
-and immutable preview publication through `async_job_t`. Source/input preflight precedes Lua;
-acknowledgement runs the captured bytes. Independent sandbox replay verifies typed output under
+and immutable preview publication through `async_job_t`. Ordinary source/input preflight precedes Lua;
+acknowledgement runs the captured bytes. Project entry points use `lua_project_source_t`
+(T-186): explicit bounded discovery/replay resolves ordered includes and named asset hashes
+inside the native project directory, then freezes them into the existing recipe source.
+Discovery/replay and frozen evaluation/replay split the normal instruction budget. Canonical
+paths reject symlink escapes; cycles and malformed module output reject without publication.
+The host reader capability exists only during discovery and retains no raw Lua references;
+frozen execution uses a Lua-owned source table, with no filesystem access. Named asset
+declarations expose hashes and optional already-imported IDs; import/MIDI selection remain
+explicit. Bounded discovery may execute before changed-source confirmation; acknowledgement
+still uses only the captured bundle. No native schema change or implicit load/save execution
+is introduced. Independent sandbox replay verifies typed output under
 one cumulative budget. Frame-thread Apply consumes the prepared proposal and never runs Lua.
 Schema v19 persists frozen generator metadata and witnesses; loading/saving never regenerates.
+T-187 adds chart descriptors through a trusted sandbox result adapter, preserving user chunk
+names and line numbers. `generator_chart_content_t` witnesses generated measures, notes/BGM,
+layout/input and declared timing; `generator_chart_binding_t` maps stable declaration keys to
+native chart/object IDs. `generator_preview_t` allocates history-safe IDs and stages all owned
+difficulties through the same transaction. The shared chart ID visitor serves duplication and
+generator remapping; historical declarations reserve ceilings without counting as live objects.
+Schema23 stores these optional bindings. The inspector summarizes difficulty output instead of
+projecting it onto the launch chart. Independent authored positions block resolution changes;
+full document validation rejects regeneration that removes their referenced measures.
 
 SV recipe impulses are structural normalized-position areas, persisted by schema v18 alongside
 their exact millisecond box width. Preparation converts them to right-owned, half-open boxes on

@@ -26,7 +26,19 @@ directories, keeping project edits and recovery journals out of the source examp
 sound-import shot requires Zenity and forces its X11 backend inside the isolated display.
 Its file picker is disconnected from the desktop session bus so a portal cannot forward it to
 the user's desktop. `cmake --install build --component Manual --prefix <directory>` installs
-just the book, images and exercise fixtures for a packaging check.
+the book, images, exercise fixtures and Lua API reference for a packaging check.
+
+== Lua API reference
+
+`docs/lua-api/` contains LDoc schemas, a scripting overview and runnable examples.
+`cmake --build build --target lua-api --parallel 2` builds the offline reference; the
+`manual` target builds both books. Pinned LDoc, Penlight and LuaFileSystem are fetched
+as build dependencies. A separate native Lua runner also works when cross-compiling;
+no system Lua or LuaRocks installation is required. The reference ships in
+`manual/lua-api/`, including local styles, examples and license notices.
+`documentation.lua_api_links` checks local HTML links and assets;
+Lua tests execute the example files through the real generator and SV backend.
+See `docs/building.md` for offline dependency overrides.
 
 == Reader trial
 

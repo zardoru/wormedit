@@ -223,6 +223,17 @@ template<class Id> struct id_ceiling_t {
     std::size_t count{};
     std::uint64_t maximum{};
 
+    void reserve_generated_charts(const generator_recipe_t& recipe) {
+        // Witness declarations reserve IDs without contributing to live-object capacity.
+        if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, chart_id_t> ||
+            std::same_as<Id, measure_id_t> || std::same_as<Id, lane_id_t>) {
+            for (const auto& chart:recipe.generated_charts) {
+                reserve(Id{chart.chart.value});
+                for (const auto& identity:chart.identities) reserve(Id{identity.value});
+            }
+        }
+    }
+
     template<class Owner>
     static auto from(const Owner& owner,
                      std::size_t bound = std::numeric_limits<std::size_t>::max())
@@ -231,6 +242,7 @@ template<class Id> struct id_ceiling_t {
         (void)id_declarations_t<Id>::visit(owner, result);
         if constexpr (std::same_as<Owner, song_document_t>) {
             for (const auto& recipe : owner.generator_recipes) {
+                result.reserve_generated_charts(recipe);
                 if constexpr (std::same_as<Id, object_id_t>)
                     for (const auto& binding : recipe.generated_notes)
                         result.reserve(Id{binding.value.id.value});

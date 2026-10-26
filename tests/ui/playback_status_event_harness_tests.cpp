@@ -74,7 +74,7 @@ TEST_CASE("Playback status geometry stays fixed across overview and notification
     playback_status_fixture_t fixture;
     auto& workspace = fixture.harness.view();
     (void)fixture.harness.frame();
-    const auto clock = text_bounds(fixture.harness, "0:00");
+    const auto clock = text_bounds(fixture.harness, "0:00.000");
     const auto details = text_bounds(fixture.harness, "Test artist · Normal");
     for (const bool available : {false, true}) {
         workspace.compose.bgm_bar_rows.assign(fixture.rows.begin(), fixture.rows.begin() + (available ? 2 : 0));
@@ -82,7 +82,7 @@ TEST_CASE("Playback status geometry stays fixed across overview and notification
         workspace.notifications.unread_warnings = available ? 1 : 0;
         workspace.transport_playing = available;
         (void)fixture.harness.frame();
-        check_position(text_bounds(fixture.harness, "0:00"), clock);
+        check_position(text_bounds(fixture.harness, "0:00.000"), clock);
         check_position(text_bounds(fixture.harness, "Test artist · Normal"), details);
     }
 }

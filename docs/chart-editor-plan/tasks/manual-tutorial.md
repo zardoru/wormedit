@@ -28,6 +28,15 @@ an isolated Zenity picker. T-705's supporting scope includes `cmake/wormedit_man
 Help/About, escape local URL paths, and report an omitted manual). These extensions implement
 the requested documentation and discoverability outcome; they do not change chart editing.
 
+**Owner Lua-reference follow-up (2026-10-25):** T-433/T-705 also own `docs/lua-api/`,
+`docs/manual/chapters/navigating.adoc` (introduce rows, resolution, beats and snap),
+`docs/building.md`, `cmake/dependencies/{lua,lua_source,ldoc}.cmake`,
+`cmake/ldoc-host/`, `cmake/wormedit_manual.cmake`, `scripts/check-lua-api-docs.py`,
+`tests/support/lua_documentation.h`, `tests/lua/{lua_curve_tests,lua_generator_tests}.cpp`
+and `tests/CMakeLists.txt`. This supporting extension supplies pinned LDoc generation,
+a host-native runner for cross-builds, packaged offline API docs and executable examples;
+it does not extend the runtime API.
+
 ## T-430 Set up the manual skeleton and its link check
 
 - **Status:** done (2026-10-18; owner started the manual ahead of the docs milestone)
@@ -105,6 +114,7 @@ the requested documentation and discoverability outcome; they do not change char
 - **Done so far:** the BMS walkthrough (with BMSE/iBMSC paste, wired in T-700) and the osu!mania/StepMania walkthrough.
 - **Done so far (2026-10-18, owner's second pass):** timing chapter (lanes, inline editing, Timing focus, tap tempo, beat fitting, offset, lock, the area menu's stop/delay conversion and SV recipes); command palette chapter; importing into specific BMS slots; Ctrl+M toggling (T-701); wide-layout lane keys (T-702) in the generated layout table. Twelve shots captured at `f1dad8d`.
 - **Completion (2026-10-25):** Troubleshooting maps actual diagnostics to recovery actions, including BMS read-only/stale drafts, clipboard refusals, missing files, external playback, export, recovery and Linux graphics startup. Both walkthroughs end with exercises using the packaged examples. New BMS branch and settings/external-player chapters explain content ownership versus playback choice, RANDOM alternatives, node edits/confirmations, per-page Apply and immediate shortcut saves. Project output groups/Export and the branch panel have scripted captures; all 18 shots are current. GATE for the associated Help/package implementation passes 5,280/5,280 and four changed-TU complexity checks; the manual builds without Asciidoctor warnings. Documentation checks pass 5/5, manual component and complete DESTDIR-staged installs include all nine fixture files, and rendered chapter checks show no missing images or desktop overflow. An independent reader trial remains exclusively on T-432.
+- **Lua-reference follow-up (2026-10-25):** pinned LDoc 1.5.0, Penlight 1.14.0 and LuaFileSystem 1.8.0 generate an offline API reference from `docs/lua-api/`, using the existing pinned Lua source through a separate native build-time runner. Generator snapshots/output, SV contexts/factories, exact positions, MIDI, limits and reproducibility are documented and linked from the manual. Three source examples execute through the real Lua backends (18 assertions / two cases). The manual target and Manual install component include the reference, local styles, example pages and license notices. Native and Windows cross-builds (application Lua disabled in the latter) generate and stage the book; all eight HTML pages pass local-link/anchor/asset checks. A headless rendered module page was inspected. GATE passes 5,283/5,283, whitespace and two changed-TU complexity checks without increased allowances.
 - **Outcome:** both walkthroughs end with a short "try it" exercise on a bundled fixture;
   Troubleshooting maps the actual notification text to a recovery step; and the Project output-group
   capture shows Preview and Export where the walkthrough tells the reader to use them.

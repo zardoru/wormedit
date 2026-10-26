@@ -158,8 +158,11 @@ struct stepmania_lane_spec_t {
 [[nodiscard]] auto stepmania_lane_specs(std::string_view step_type)
     -> std::span<const stepmania_lane_spec_t>;
 
+// Shared importer/declaration layout; IDs start at 1 and callers allocate native identities.
+[[nodiscard]] auto make_stepmania_layout(std::string_view step_type,std::uint32_t columns) -> lane_layout_t;
+
 // Full profile (layout with arrow glyphs and number-row bindings) of a StepMania step type that
-// has a named layout; nullopt for other step types.
+// is recognized by the step-type catalog; nullopt for unknown types.
 [[nodiscard]] auto make_stepmania_profile_for(std::string_view step_type)
     -> std::optional<lane_input_profile_t>;
 // osu!mania key layout: `osu-mania-Nk`, lanes "Key 1"..."Key N", 1 to 18 keys.

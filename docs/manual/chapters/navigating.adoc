@@ -11,6 +11,31 @@ act at the cursor.
 The arrow keys move in the direction you see on screen, so kbd:[Up] means "up the screen" whether
 the chart scrolls up or down (the scroll direction button in the toolbar switches between the two).
 
+[#chart-rows]
+== Rows, beats and snap
+
+A *row* is one exact musical position across the chart's lanes. Notes on the same row
+start together. Row numbers count the chart's smallest representable steps along the
+musical timeline; they do not count screen pixels or a fixed number of milliseconds.
+Tempo changes, stops and other timing events determine when those positions play.
+
+The chart's *resolution* sets how many row steps fit in one standard four-quarter-note
+measure. A common resolution is *960*: a quarter-note beat spans 240 rows, so the four
+beats of a standard measure begin at rows *0, 240, 480 and 720*. The next measure begins
+after 960 steps. Imported charts can use another resolution; 960 is not a universal constant.
+A shorter or longer measure contains proportionally fewer or more rows.
+
+*Snap* chooses which of those positions edits land on. At resolution 960, a standard-measure
+`1/16` snap steps by 60 rows. Turning snap off allows individual row steps; it does not make
+the timeline infinitely fine. Zoom changes the spacing on screen without changing the rows.
+
+Scripts distinguish *local rows*, counted from 0 at the start of a measure, from *absolute
+rows*, counted from 0 at the start of the chart. A position's absolute row is its measure's
+starting row plus its local row. For example, local row 240 in a measure starting at absolute
+row 960 is absolute row 1200. In a 960-row measure, local rows run from 0 through 959;
+its ending boundary is the next measure's row 0. See the
+link:lua-api/index.html[Lua API reference] for the fields that expose these positions.
+
 == Snaps and the cursor
 
 [cols="2,3",options="header"]

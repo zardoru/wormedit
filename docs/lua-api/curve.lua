@@ -1,0 +1,60 @@
+--- SV recipe function contract, distinct from the generator snapshot.
+-- Curves return finite numeric values in the recipe's output mode. Parameters and
+-- timing rationals are converted to Lua numbers here, not `{num, den}` tables.
+-- Unsigned rows/IDs/counters are integers up to INT64_MAX, otherwise decimal strings.
+-- @module curve
+
+--- Function returned by an expression or returning chunk.
+-- In pure mode, evaluation must not mutate retained state or consume RNG. Ordered
+-- mode follows the configured cycles and emission counts (including endpoints).
+-- Ordered query indexes are 1-based; pure-mode cycle/emission fields are zero.
+-- p spans the whole recipe range, not each cycle.
+-- @number p Normalized whole-range progress, 0 through 1.
+-- @param ctx Immutable @{Context} with current query fields.
+-- @return One finite number; NaN, infinity and nonnumeric results fail.
+-- @function evaluate
+
+--- Module entry-point factory.
+-- A chunk may return `{rise = function(ctx) return function(p, ctx) ... end end}`.
+-- Choose `rise` as the recipe entry point; the factory is called once per session.
+-- Without an entry point the chunk must return the evaluation function directly.
+-- @param ctx Immutable @{Context}; query fields are zero-initialized during installation.
+-- @return Evaluation function with the @{evaluate} contract.
+-- @function factory
+
+--- Frozen context passed to factories and evaluation functions.
+-- @field interval `{start_row, end_row}` absolute recipe bounds.
+-- @field parameters Map of parameter names to numeric values.
+-- @field inputs Array of `{asset_id, content_hash}`; asset_id is unsigned integer or string.
+-- These are declarations, not MIDI event snapshots or file handles.
+-- @field seed Decimal string preserving all 64 bits.
+-- @field seed_integer Present only when the seed fits a signed Lua integer.
+-- @field measures Array of @{Measure}.
+-- @field timing @{Timing}.
+-- @field baseline Current numeric recipe baseline.
+-- @field absolute_row Current absolute chart row.
+-- @field cycle_index Current ordered cycle (1-based); zero in pure mode.
+-- @field emission_index Whole ordered-schedule emission index (1-based); zero in pure mode.
+-- @field cycle_emission_index Ordered emission index within the current cycle (1-based); zero in pure mode.
+-- @field cycle_count Number of ordered cycles; zero in pure mode.
+-- @field emission_count Number of emissions in the ordered schedule; zero in pure mode.
+-- @table Context
+
+--- SV measure snapshot.
+-- @field id Unsigned measure ID (integer or decimal string).
+-- @field start_row Absolute starting row.
+-- @field row_count Local row capacity.
+-- @field length Numeric measure-length multiplier.
+-- @field meter Optional `{numerator, denominator}` integers; unlike the generator's meter.
+-- @table Measure
+
+--- SV timing snapshot. Events have unsigned `id` and absolute `row`, except warps.
+-- Values and durations are numeric rather than exact rational tables.
+-- @field bpms Events with numeric `value` (beats per minute).
+-- @field scrolls Events with numeric `value` (multiplier).
+-- @field speeds Events with `value`, `transition`, and boolean `transition_is_seconds`.
+-- @field pauses Events with `duration`, `kind` (`stop` or `delay`), and numeric `unit`.
+-- @field warps Events with `id`, `start_row`, `end_row` (no `row`).
+-- @field kiai Events with boolean `enabled`.
+-- @field anchors Events with unsigned `source_sample_frame` and boolean `locked`.
+-- @table Timing

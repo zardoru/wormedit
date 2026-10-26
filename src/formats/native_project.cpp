@@ -682,6 +682,11 @@ void from_json(const json& value, midi_asset_t& asset) {
     value.at("events").get_to(asset.events);
 }
 
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_content_t, name, resolution, offset, measures,
+    layouts, input, bgm_lanes, bpms, pauses, warps, scrolls)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_identity_t, key, value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_binding_t, key, chart, content, identities)
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_parameter_t, name, serialized_value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_input_t, asset, content_hash)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_note_binding_t, key, value)
@@ -700,7 +705,8 @@ void to_json(json& value, const generator_recipe_t& recipe) {
                  {"bms_scope", recipe.bms_scope},
                  {"bms_chart", recipe.bms_chart},
                  {"generated_notes", recipe.generated_notes},
-                 {"generated_layers", recipe.generated_layers}};
+                 {"generated_layers", recipe.generated_layers},
+                 {"generated_charts", recipe.generated_charts}};
 }
 
 void from_json(const json& value, generator_recipe_t& recipe) {
@@ -717,6 +723,8 @@ void from_json(const json& value, generator_recipe_t& recipe) {
     value.at("bms_chart").get_to(recipe.bms_chart);
     value.at("generated_notes").get_to(recipe.generated_notes);
     value.at("generated_layers").get_to(recipe.generated_layers);
+    recipe.generated_charts.clear();
+    if (value.contains("generated_charts")) value.at("generated_charts").get_to(recipe.generated_charts);
 }
 
 void to_json(json& value, const stepmania_export_policy_t& policy) {
@@ -1167,7 +1175,19 @@ auto is_valid_bms_owner_domains(const bms_program_document_t& owner, std::size_t
         });
 }
 
+auto is_valid_generated_chart_domains(const song_document_t& song,std::size_t maximum_depth) -> bool {
+    for (const auto& recipe:song.generator_recipes) {
+        for (const auto& binding:recipe.generated_charts) {
+            chart_document_t chart;
+            binding.content.apply_to(chart);
+            if (!is_valid_chart_enum_domains(chart,maximum_depth)) return false;
+        }
+    }
+    return true;
+}
+
 auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
+    if (!is_valid_generated_chart_domains(song,maximum_depth)) return false;
     if (!std::ranges::all_of(song.metadata.format_groups, is_valid_metadata) ||
         !is_valid_resource_enum_domains(song) ||
         !is_valid_quantization_presets(song.quantization_presets)) {
@@ -1418,6 +1438,9 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     if (context == schema_shape_context_t::bgm_event_entry) {
         return !input.contains("end") && canonical.contains("end");
     }
+    // Independent unreleased schema23 additions can be absent in the other feature branch.
+    if (!input.contains("generated_charts") && canonical.contains("generated_charts") &&
+        canonical.at("generated_charts").empty()) return true;
     // Lane definitions saved before key colors existed; derived on load.
     return !input.contains("key_color") && canonical.contains("key_color");
 }

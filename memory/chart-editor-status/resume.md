@@ -1,6 +1,49 @@
 # Status: resume checklist
 
+Completed the owner-requested **Lua API documentation follow-up** (2026-10-25):
+`docs/lua-api/` documents API v1 with pinned LDoc generation, linked generator/SV
+references and three examples tested through the actual Lua backends. The offline
+reference ships beside the manual, including styles, examples and license notices.
+A separate native runner generates docs for both native and Windows cross-packages,
+including builds without application Lua. Both staged installs pass all local links,
+anchors and asset checks across eight HTML pages. GATE passes **5,283/5,283**,
+whitespace and **two changed-TU complexity checks**, with no allowance increases.
+This extends completed T-433/T-705; no new runtime API or active card is introduced.
+
+
 ## Active queue (2026-10-25)
+
+Completed **T-186** (2026-10-25), independently of deferred OSBX: choose `project.lua`
+in the existing generator inspector, use ordered relative includes and named asset declarations,
+then Run/Apply one selected-chart proposal. Helper closures retain their defining-file paths;
+source/asset hashes and module contents freeze into the existing recipe source. Save/load and
+saved-source runs need no original files. Asset imports and MIDI input selection stay explicit;
+T-187 is completed below. The packaged API reference includes declarations,
+limits and downloadable sources. Both native and Windows staged books pass all offline checks.
+
+Completed **T-187** (2026-10-25): `.chart.lua` and included chart modules create owned
+difficulties through exact measure/note/BGM/timing descriptors, stable declaration IDs,
+historical ownership witnesses and one atomic preview/Apply. Manual generated-field edits
+conflict; independent authored positions survive compatible regeneration and block resolution
+changes. The manual and packaged API include the workflow and a tested downloadable example.
+Final GATE (`/tmp/wormedit-gate.Mh5CXZ`) passes **5,308/5,308**, whitespace and **24 changed-TU
+complexity checks**, without allowance increases. Native Run/Apply/Save and both native/Windows
+12-page offline books pass. Additional Clang compilation has only the existing export-cut
+initializer blocker, already fixed by pending SV parent `1ecb78c`. Coordinator owns the shared
+SV integration, the union of both additive schema23 migrations/ID reservations and combined
+regeneration regressions; no SV merge or combined gate has happened here.
+
+Owner-approved status follow-up preserves HEAD `c715daf`'s millisecond/row/musical readouts,
+fixes the old clock assertion and keeps selection summaries visible at 800–1280 px. Notification
+changes keep fixed readout positions. Native 800×700 and 1280×720 captures were inspected.
+Final GATE passes **5,294/5,294**, whitespace and **11 changed-TU complexity checks**, with
+four additional sandbox-header consumers passing and no allowance increases. Focused coverage:
+**85 assertions / 8 project cases**, **90 / 7 generator-worker cases**, **75 / 8 status UI cases**.
+Lua-disabled worker syntax passes. Logs: `/tmp/wormedit-project-final-review.log` and
+`/tmp/wormedit-gate.H5NTgv`; captures in
+`/home/zardoru/.cache/wormedit-verification/project-lua-visual/`.
+[Completed card](../../docs/chart-editor-plan/tasks/osbx.md#t-186-resolve-projectlua-includes-and-asset-declarations).
+No card is active.
 
 Completed the manual gap-filling follow-up **T-433 / T-431 / T-705** (2026-10-25): added BMS branch authoring, settings/external-player setup and diagnostic troubleshooting guides; walkthrough exercises and nine packaged fixture files; Help/About links to the installed manual; and all 18 refreshed, inspected captures at `01ad358`. Capture scripts use current wizard/dock controls, isolated fixture copies and a picker disconnected from the desktop portal. Help/package code is committed as **01ad358**. GATE passes **5,280/5,280**, whitespace and four changed-TU complexity checks; manual build, 5/5 documentation checks, screenshot freshness, manual component install and full DESTDIR-staged install pass. **T-432 remains partial only for an independent first-time-reader trial**, with a checklist in the maintaining appendix. No other manual content/capture gap from this batch remains.
 
@@ -50,7 +93,7 @@ The full linux-clang build passes; isolated **1280×720** and **800×700** windo
 Both selected cards are complete; no new card is active.
 
 Current inventory after the [backlog reconciliation](../../docs/audits/backlog-reconciliation-2026-10-24.md)
-and the T-231/T-232, wyrm branch, T-756–T-759, T-293/T-250/T-275/T-277 and T-433 completions: **635 done, 1 ready, 6 partial, 3 blocked, 38 deferred and 2 superseded**
+and the T-231/T-232, wyrm branch, T-756–T-759, T-293/T-250/T-275/T-277 and T-433 completions: **636 done, 1 ready, 6 partial, 3 blocked, 37 deferred and 2 superseded**
 (685 total). Ready: **T-58**. T-287 retains its implemented checkpoint and explicit remaining work;
 T-272 is superseded.
 

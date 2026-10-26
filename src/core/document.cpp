@@ -1815,7 +1815,17 @@ void validate_generator_target(document_validation_work_t& work, const generator
             "Detach the generator recipe before deleting its saved BMS Chart owner");
 }
 
+void validate_generated_chart_ownership(document_validation_work_t& work) {
+    std::set<chart_id_t> claimed;
+    for (const auto& recipe:work.song.generator_recipes)
+        for (const auto& binding:recipe.generated_charts)
+            if (!claimed.insert(binding.chart).second)
+                add_diagnostic(work.diagnostics,diagnostic_code_t::invalid_binding,
+                    "A generated difficulty cannot belong to multiple generator recipes");
+}
+
 auto validate_song_recipes(document_validation_work_t& work) -> void {
+    validate_generated_chart_ownership(work);
     if (work.song.generator_recipes.size() > maximum_generator_recipes)
         add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_id, "Too many generator recipes");
     std::unordered_set<std::uint64_t> recipe_ids;

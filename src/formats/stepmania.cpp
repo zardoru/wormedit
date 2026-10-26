@@ -365,36 +365,8 @@ auto parse_row_map(std::string_view source, std::uint32_t lanes, std::uint64_t d
 }
 
 auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -> lane_layout_t {
-    lane_layout_t layout;
-    layout.profile_id = "stepmania:" + step_type;
-    layout.display_name = step_type;
-    static constexpr std::array<std::string_view, 10> dance_names{
-        "Left", "Down", "Up", "Right", "Left 2", "Down 2", "Up 2", "Right 2", "Center", "Diagonal"};
-    const auto folded_step_type = text_util::ascii_lowercase(step_type);
-    const bool cardinal_dance = folded_step_type == "dance-single" ||
-                                folded_step_type == "dance-double" ||
-                                folded_step_type == "dance-couple";
-    static constexpr std::array<lane_glyph_t, 4> dance_arrows{
-        lane_glyph_t::arrow_left, lane_glyph_t::arrow_down,
-        lane_glyph_t::arrow_up, lane_glyph_t::arrow_right};
-    const auto named_specs = stepmania_lane_specs(folded_step_type);
-    const bool named = named_specs.size() == count;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        layout.lanes.push_back(
-            {.id = ids.take<lane_id_t>(),
-             .name = named ? std::string(named_specs[i].name)
-                           : std::string(i < dance_names.size() ? dance_names[i] : "Column") +
-                                 (i < dance_names.size() ? "" : " " + std::to_string(i + 1)),
-             .role = lane_role_t::playable,
-             .stage = count > 4 && i >= count / 2 ? stage_group_t::right : stage_group_t::left,
-             .display_order = i,
-             .glyph = cardinal_dance ? dance_arrows[i % dance_arrows.size()]
-                       : named       ? named_specs[i].glyph
-                                     : lane_glyph_t::bar});
-    }
-    layout.split_stage = count == 8 || count == 10;
-    if (layout.split_stage)
-        layout.split_after_column = count / 2;
+    auto layout=make_stepmania_layout(step_type,count);
+    for (auto& lane:layout.lanes) lane.id=ids.take<lane_id_t>();
     return layout;
 }
 

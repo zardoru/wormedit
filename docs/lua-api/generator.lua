@@ -1,0 +1,41 @@
+--- Note-generator configuration and return values.
+-- A source chunk reads `wormedit` and `generator`, then returns an @{Output}.
+-- No import or library registration is needed. See the complete generator example.
+-- @module generator
+
+--- Immutable global `generator`.
+-- @field api_version String `"1"` (the document snapshot's api_version is integer 1).
+-- @field seed Decimal string, preserving all 64 bits.
+-- @field parameters Map from parameter name to decoded JSON value. JSON null becomes nil;
+-- arrays use 1-based indexes. Nesting is limited to 16, names to 128 UTF-8 bytes, and each
+-- serialized value to 16384 bytes; at most 256 parameters. Large unsigned integers become strings.
+-- @field inputs Array of `{asset = ID_string, content_hash = string}` for declared MIDI inputs.
+-- @table generator
+
+--- Chunk return value. Only these keys are accepted; at least one must be present.
+-- Dense 1-based arrays are required, with no holes or extra keys. Empty arrays are valid.
+-- At most 16384 notes and 256 layers may be proposed. Unknown fields, invalid identities,
+-- duplicate keys, nonfinite/fractional row values, and out-of-chart positions reject the result.
+-- @field notes Optional array of @{NoteProposal}.
+-- @field layers Optional array of @{LayerProposal}.
+-- @table Output
+
+--- Generated note proposal. Stable keys identify output across regeneration.
+-- @field key Required stable UTF-8 text key (1–128 bytes), unique among generated notes.
+-- @field measure Required measure ID (unsigned integer or decimal string).
+-- @field row Required zero-based local row (unsigned integer or decimal string).
+-- @field lane Required lane ID (unsigned integer or decimal string).
+-- @field kind Optional `tap` (default) or `hold`.
+-- @field end_measure Required for holds, forbidden for taps: end measure ID.
+-- @field end_row Required for holds, forbidden for taps: end local row.
+-- @field sound Optional sound resource ID (unsigned integer or decimal string).
+-- @field layers Optional dense array of generated **layer keys**, not existing layer IDs.
+-- @table NoteProposal
+
+--- Generated semantic-layer proposal.
+-- @field key Required stable UTF-8 text key (1–128 bytes), unique among generated layers.
+-- @field name Required display name.
+-- @field color Optional `{r, g, b, a}` table; all four channels must be exact integers 0–255
+-- (Lua integers or decimal strings).
+-- Default is `{r=128, g=160, b=255, a=255}`. Extra fields are rejected.
+-- @table LayerProposal

@@ -1,4 +1,5 @@
 #include "../../src/scripting/lua_curve.h"
+#include "../support/lua_documentation.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/formats/native_project_storage.h>
 #include <catch2/catch_test_macros.hpp>
@@ -197,4 +198,17 @@ TEST_CASE("pure Lua one plus p matches built-in linear recipe inspection", "[lua
     REQUIRE(actual);
     REQUIRE(expected);
     CHECK(actual.points == expected.points);
+}
+
+TEST_CASE("Documented SV examples run and replay through the curve backend", "[lua-curve][documentation]") {
+    const auto factory = GENERATE(false, true);
+    auto value = recipe(lua_documentation_example(factory ? "factory.lua" : "curve.lua"));
+    value.lua = sv_recipe_lua_t{.entry_point = factory ? "rise" : "",
+        .parameters = {{"height", {4, 1}}}};
+    lua_curve_backend_t backend;
+    auto session = start(backend, value);
+    const auto result = session->evaluate({.p = 0.5L, .baseline = 2});
+    REQUIRE(result.ok());
+    CHECK(result.value == (factory ? 4.0L : 2.5L));
+    CHECK(session->finish().empty());
 }

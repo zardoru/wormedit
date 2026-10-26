@@ -2,6 +2,7 @@
 
 #include <wormedit/core/result.h>
 #include <cstddef>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <stop_token>
@@ -39,6 +40,14 @@ struct lua_sandbox_node_t {
 };
 using lua_sandbox_context_t = std::vector<lua_sandbox_node_t>;
 
+// Explicit host capability used only while freezing project.lua. Ordinary sessions have none.
+struct lua_project_file_t {
+    std::string path, content, asset_id;
+    auto operator==(const lua_project_file_t&) const -> bool = default;
+};
+using lua_project_reader_t = std::function<result_t<lua_project_file_t, error_t<failure_code_t>>(
+    std::string_view kind, std::string_view path)>;
+
 // One isolated, move-only evaluation session. Globals and closures survive
 // successful calls; budgets never reset. Any failure closes the Lua state.
 // Instruction/cancellation checks cover VM execution and RNG draws, not a
@@ -51,6 +60,8 @@ class lua_sandbox_t {
     lua_sandbox_t(lua_sandbox_t&&) noexcept;
     auto operator=(lua_sandbox_t&&) noexcept -> lua_sandbox_t&;
     ~lua_sandbox_t();
+    [[nodiscard]] auto install_project_runtime(lua_project_reader_t = {})
+        -> result_t<void, error_t<failure_code_t>>;
     // Evaluate bounded text and return its first scalar result (nil if absent).
     // No raw Lua state, host handles or document APIs are exposed. Loading is text-only.
     [[nodiscard]] auto evaluate(std::string_view source)
@@ -60,8 +71,11 @@ class lua_sandbox_t {
     // fail when bounded_lookup is enabled; length+1 is the ipairs sentinel.
     [[nodiscard]] auto install_snapshot(std::string_view name, const lua_sandbox_context_t& context,
         bool bounded_lookup = true) -> result_t<void, error_t<failure_code_t>>;
-    // Return a bounded owned table tree, without exposing Lua references.
-    [[nodiscard]] auto evaluate_context(std::string_view source, std::string_view chunk_name = "sandbox")
+    // Return a bounded owned table tree, without exposing Lua references. An optional trusted
+    // adapter chunk runs first and returns a result-transform function. User chunk names/line
+    // numbers and source/load limits stay unchanged; adapter execution shares the VM budget.
+    [[nodiscard]] auto evaluate_context(std::string_view source, std::string_view chunk_name = "sandbox",
+        std::string_view trusted_adapter = {})
         -> result_t<lua_sandbox_context_t, error_t<failure_code_t>>;
     // Install once: source returns a closure, or a table whose named factory
     // returns one. Factories receive immutable initialization context. Pure calls

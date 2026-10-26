@@ -28,7 +28,7 @@ auto encoded_song() -> json {
 
 TEST_CASE("Native schema22 retains authored export cuts separately from their union", "[format][native-project][export-cut]") {
     const auto encoded = encoded_song();
-    CHECK(encoded["document"]["schema_version"] == 22);
+    CHECK(encoded["document"]["schema_version"] == current_document_schema_version);
     REQUIRE(encoded["document"]["export_cuts"].size() == 2);
     const auto parsed = parse_native_project(encoded.dump());
     REQUIRE(parsed.value);

@@ -193,6 +193,9 @@ point cloud is stored in the project.
 
 === Lua functions
 
+The link:lua-api/index.html[packaged Lua API reference] documents all context fields, return
+values, sandbox limits and complete examples. It works offline alongside this manual.
+
 In a Lua-enabled build, choose *Lua function* in the recipe inspector. Use *Choose module…*
 to select a `.lua` file within the project, then *Reload* after editing it externally.
 The project keeps a frozen source snapshot; reopening or exporting does not reread the file.

@@ -5,6 +5,7 @@
 #include <latch>
 #include <wormedit/core/lane_profiles.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <fstream>
 #include <cstdio>
 #include <source_location>
@@ -199,3 +200,73 @@ TEST_CASE("generator stale and cancelled jobs never publish an applicable result
     runtime.wait(history, chart_id_t{2}); check_runtime(runtime.result() == nullptr);
     check_runtime(history.undo.empty());
 }
+
+#if defined(WORMEDIT_HAS_LUA)
+TEST_CASE("project entry point worker previews applies and confirms changed included source", "[sys][generator-runtime]") {
+    const auto absolute_path = GENERATE(false, true);
+    auto directory = test::temporary_directory_t::from(); require_runtime(directory.has_value());
+    { std::ofstream output(directory->path() / "project.lua"); output << "worm_project 'Song'; include 'pattern.lua'"; }
+    write_script(directory->path(), good_script);
+    auto history = runtime_history();
+    task_scheduler_t scheduler{1, 4}; generator_runtime_t runtime{scheduler};
+    auto form = form_for_file();
+    const auto script_path = absolute_path ? directory->path() / "project.lua" : std::filesystem::path{"project.lua"};
+    std::snprintf(form.path, sizeof(form.path), "%s", script_path.string().c_str());
+    run_preview(runtime, history, form, directory->path());
+    INFO(runtime.result()->status);
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(history.undo.empty());
+    require_runtime(runtime.apply(history, form).applied);
+    check_runtime(history.undo.size() == 1);
+    form = ui::generator_form_t::from(history.document.generator_recipes.front());
+    write_script(directory->path(), "return {notes={{key='a',measure='3',row=240,lane='101'}}}");
+    run_preview(runtime, history, form, directory->path());
+    require_runtime(runtime.result()->requires_confirmation);
+    check_runtime(!runtime.result()->proposal.value);
+    check_runtime(history.document.charts.front().measures.front().notes.front().position.row == 120);
+    // Confirmation uses captured bytes, even if an editor changes the module again meanwhile.
+    write_script(directory->path(), "error('must not reread on confirmation')");
+    run_preview(runtime, history, form, directory->path(), true);
+    INFO(runtime.result()->status);
+    require_runtime(runtime.result()->proposal.value.has_value());
+    require_runtime(runtime.apply(history, form).applied);
+    check_runtime(history.document.charts.front().measures.front().notes.front().position.row == 240);
+    std::filesystem::remove(directory->path() / "project.lua");
+    std::filesystem::remove(directory->path() / "pattern.lua");
+    const auto encoded = write_native_project(history.document);
+    require_runtime(encoded.value.has_value());
+    const auto decoded = parse_native_project(*encoded.value);
+    require_runtime(decoded.value.has_value());
+    history = document_history_t::from(std::move(*decoded.value));
+    form = ui::generator_form_t::from(history.document.generator_recipes.front());
+    form.use_saved_source = true;
+    run_preview(runtime, history, form, directory->path());
+    require_runtime(runtime.result()->proposal.value.has_value());
+}
+#endif
+
+#if defined(WORMEDIT_HAS_LUA)
+TEST_CASE("project chart modules create owned difficulties through captured source Run Apply and saved regeneration", "[sys][generator-runtime][chart-lua]") {
+    auto directory=test::temporary_directory_t::from(); require_runtime(directory.has_value());
+    { std::ofstream file(directory->path()/"project.lua"); file<<"worm_project 'Difficulties'; include 'easy.chart.lua'"; }
+    { std::ofstream file(directory->path()/"easy.chart.lua"); file<<"difficulty 'Easy'; stable_id 'easy'; measure {id='a',length=0.75,note{key='hit',row=0,lane=1}}"; }
+    auto history=runtime_history();
+    task_scheduler_t scheduler{1,4}; generator_runtime_t runtime{scheduler};
+    auto form=form_for_file(); std::snprintf(form.path,sizeof(form.path),"project.lua");
+    run_preview(runtime,history,form,directory->path());
+    INFO(runtime.result()->status);
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(history.document.charts.size()==1 && history.undo.empty());
+    check_runtime(runtime.result()->proposal.value->payload.charts.added==1);
+    check_runtime(!runtime.result()->proposal.value->payload.rationalizations.empty());
+    require_runtime(runtime.apply(history,form).applied);
+    check_runtime(history.document.charts.size()==2 && history.undo.size()==1);
+    const auto generated=history.document.generator_recipes.front().generated_charts.front().chart;
+    std::filesystem::remove(directory->path()/"project.lua");
+    std::filesystem::remove(directory->path()/"easy.chart.lua");
+    form=ui::generator_form_t::from(history.document.generator_recipes.front()); form.use_saved_source=true;
+    run_preview(runtime,history,form,directory->path());
+    require_runtime(runtime.result()->proposal.value.has_value());
+    check_runtime(runtime.result()->proposal.value->payload.recipe.generated_charts.front().chart==generated);
+}
+#endif

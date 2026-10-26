@@ -463,7 +463,15 @@ auto migrate_v21_to_v22(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 21> released_migrations{{
+// Schema23 is shared with the independent SV-definition addition at integration.
+auto migrate_v22_to_v23(nlohmann::json& document) -> std::string {
+    if (!document.contains("generator_recipes")) return {};
+    for (auto& recipe : document.at("generator_recipes"))
+        if (!recipe.contains("generated_charts")) recipe["generated_charts"] = nlohmann::json::array();
+    return {};
+}
+
+constexpr std::array<migration_t, 22> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -485,6 +493,7 @@ constexpr std::array<migration_t, 21> released_migrations{{
     {19, &migrate_v19_to_v20},
     {20, &migrate_v20_to_v21},
     {21, &migrate_v21_to_v22},
+    {22, &migrate_v22_to_v23},
 }};
 
 } // namespace

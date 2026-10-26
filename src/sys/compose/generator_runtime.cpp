@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 #if defined(WORMEDIT_HAS_LUA)
 #include "scripting/lua_generator.h"
+#include "scripting/lua_project.h"
 #endif
 #include <algorithm>
 #include <cstdio>
@@ -85,6 +86,14 @@ auto input_hash(const song_document_t& song, asset_id_t id, std::stop_token stop
     }
     return native_project_content_checksum(nlohmann::json{{"division", asset->ticks_per_quarter}, {"events", events}}.dump());
 }
+auto uses_project_source(const generator_job_request_t& request) -> bool {
+    return !request.confirmed && !request.form.use_saved_source &&
+        text_util::path_from_utf8(request.form.path).filename() == "project.lua";
+}
+auto require_confirmation(generator_job_result_t& result) -> void {
+    result.requires_confirmation = true;
+    result.status = "Script or input content changed. Review settings, then Run changed script to continue.";
+}
 auto read_source(generator_recipe_t& recipe, const std::filesystem::path& base) -> std::string {
     auto path = recipe.source_path;
     if (path.is_relative()) path = base / path;
@@ -124,9 +133,45 @@ auto settings(generator_job_result_t& result, const generator_job_request_t& req
     }
     return {};
 }
+#if defined(WORMEDIT_HAS_LUA)
+auto prepare_project_source(generator_job_result_t& result, const generator_job_request_t& request,
+    const document_history_t& history, scripting::lua_sandbox_limits_t& limits) -> std::string {
+    const auto* chart = history.read_chart(request.chart);
+    if (!chart) return "Generator chart no longer exists.";
+    // Discovery/replay and frozen evaluation/replay share the default total budget.
+    limits.maximum_instructions /= 2;
+    const auto source = scripting::lua_project_source_t::from(history.document, *chart,
+        result.recipe, request.selection, request.base, limits);
+    if (!source.ok()) return source.diagnostics.front().message;
+    result.recipe.source = source.value.source;
+    result.recipe.source_hash = native_project_content_checksum(result.recipe.source);
+    if (result.recipe.source_path.is_absolute())
+        result.recipe.source_path = result.recipe.source_path.lexically_relative(request.base);
+    return {};
+}
+#endif
 auto hashes_changed(const generator_recipe_t& old, const generator_recipe_t& current) -> bool {
     return (!old.source_hash.empty() && old.source_hash != current.source_hash) ||
         old.input_assets != current.input_assets;
+}
+auto confirm_changed_source(generator_job_result_t& result, const generator_job_request_t& request) -> bool {
+    if (request.confirmed) return false;
+    const auto previous = std::ranges::find(request.document.generator_recipes, request.form.recipe, &generator_recipe_t::id);
+    if (previous == request.document.generator_recipes.end() || !hashes_changed(*previous, result.recipe)) return false;
+    require_confirmation(result);
+    return true;
+}
+auto preflight_source(generator_job_result_t& result, const generator_job_request_t& request) -> std::string {
+    if (uses_project_source(request)) return {};
+    if (request.confirmed) result.recipe = *request.confirmed;
+    else if (!request.form.use_saved_source) {
+        if (auto error = read_source(result.recipe, request.base); !error.empty()) return error;
+    }
+    if (request.form.use_saved_source && result.recipe.source_hash != native_project_content_checksum(result.recipe.source))
+        return "Saved generator source does not match its content hash.";
+    if (auto errors = validate_generator_recipe(result.recipe); !errors.empty()) return errors.front().message;
+    (void)confirm_changed_source(result, request);
+    return {};
 }
 } // namespace
 
@@ -185,24 +230,34 @@ auto generator_runtime_t::submit() -> std::string {
     pending_.reset();
     return "Running generator…";
 }
+namespace {
+#if defined(WORMEDIT_HAS_LUA)
+auto make_generator_limits(const generator_job_request_t& request,const generator_recipe_t& recipe,
+    std::stop_token stop) -> scripting::lua_sandbox_limits_t {
+    scripting::lua_sandbox_limits_t limits;
+    limits.cancellation=stop;
+    const auto script_name=recipe.source_path.filename().string();
+    if (uses_project_source(request) || scripting::lua_project_source_t::is_frozen(recipe.source) ||
+        script_name.ends_with(".chart.lua")) limits.maximum_result_bytes=limits.maximum_memory_bytes;
+    return limits;
+}
+auto prepare_generator_evaluation(generator_job_result_t& result,const generator_job_request_t& request,
+    const document_history_t& history,scripting::lua_sandbox_limits_t& limits) -> bool {
+    if (!uses_project_source(request)) return true;
+    if (auto error=prepare_project_source(result,request,history,limits);!error.empty()) {
+        result=reject_result(std::move(result),error);
+        return false;
+    }
+    return !confirm_changed_source(result,request);
+}
+#endif
+}
 auto generator_runtime_t::evaluate(const generator_job_request_t& request, std::stop_token stop)
     -> job_t::work_outcome_t {
     generator_job_result_t result{.form = request.form};
     if (auto error = settings(result, request, stop); !error.empty()) return reject_result(std::move(result), error);
-    const auto previous = std::ranges::find(request.document.generator_recipes, request.form.recipe, &generator_recipe_t::id);
-    if (request.confirmed) result.recipe = *request.confirmed;
-    else if (!request.form.use_saved_source) {
-        if (auto error = read_source(result.recipe, request.base); !error.empty()) return reject_result(std::move(result), error);
-    }
-    if (request.form.use_saved_source && result.recipe.source_hash != native_project_content_checksum(result.recipe.source))
-        return reject_result(std::move(result), "Saved generator source does not match its content hash.");
-    if (auto errors = validate_generator_recipe(result.recipe); !errors.empty())
-        return reject_result(std::move(result), errors.front().message);
-    if (!request.confirmed && previous != request.document.generator_recipes.end() && hashes_changed(*previous, result.recipe)) {
-        result.requires_confirmation = true;
-        result.status = "Script or input content changed. Review settings, then Run changed script to continue.";
-        return result;
-    }
+    if (auto error = preflight_source(result, request); !error.empty()) return reject_result(std::move(result), error);
+    if (result.requires_confirmation) return result;
 #if defined(WORMEDIT_HAS_LUA)
     auto isolated = isolated_generator_document(request.document, stop);
     if (!isolated.value || !isolated.ok()) return reject_result(std::move(result), isolated.diagnostics.front().message);
@@ -210,8 +265,8 @@ auto generator_runtime_t::evaluate(const generator_job_request_t& request, std::
         [&](const document_history_t& history) -> generator_job_result_t {
             const auto* chart = history.read_chart(request.chart);
             if (!chart) return reject_result(std::move(result), "Generator chart no longer exists.");
-            scripting::lua_sandbox_limits_t limits;
-            limits.cancellation = stop;
+            auto limits=make_generator_limits(request,result.recipe,stop);
+            if (!prepare_generator_evaluation(result,request,history,limits)) return result;
             auto evaluated = scripting::run_lua_generator(history.document, *chart, result.recipe, request.selection, limits);
             if (!evaluated.diagnostics.empty()) return reject_result(std::move(result), evaluated.diagnostics.front().message);
             result.proposal = generator_preview_t::propose(history, result.recipe, std::move(evaluated.value), request.form.keep_recipe, request.identity_floor);
@@ -223,7 +278,9 @@ auto generator_runtime_t::evaluate(const generator_job_request_t& request, std::
             auto geometry = generator_preview_geometry_t::from(*prepared_chart, result.proposal.value->payload.recipe, history.document.revision);
             if (!geometry.diagnostics.empty()) return reject_result(std::move(result), geometry.diagnostics.front().message);
             result.geometry = std::move(geometry.value);
-            result.status = "Generator preview ready. Apply commits one command; Cancel discards it.";
+            result.status = result.proposal.value->payload.recipe.generated_charts.empty()
+                ? "Generator preview ready. Apply commits one command; Cancel discards it."
+                : "Difficulty preview ready. Apply commits one command.";
             return result;
         });
 #else
@@ -260,6 +317,8 @@ auto generator_runtime_t::preview() const -> const generator_preview_t* {
 }
 auto generator_runtime_t::preview_scene(const editor_interaction_view_model_t& interaction,
     const editor_field_scene_request_t& request) const -> const editor_field_scene_view_t* {
+    if (last_good_ && last_good_->proposal.value &&
+        !last_good_->proposal.value->payload.recipe.generated_charts.empty()) return nullptr;
     const auto source = last_good_ ? last_good_->geometry : nullptr;
     if (!source || !source->index) return nullptr;
     auto& cache = projection_;

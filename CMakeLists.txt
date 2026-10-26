@@ -148,6 +148,7 @@ add_library(wormedit_core
     src/core/storyboard_preview.cpp
     src/core/sv_recipe.cpp
     src/core/generator.cpp
+    src/core/generator_chart.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/time_shift.cpp
@@ -234,6 +235,8 @@ if(WORMEDIT_ENABLE_LUA)
         src/scripting/lua_sandbox.cpp
         src/scripting/lua_curve.cpp
         src/scripting/lua_document_api.cpp
+        src/scripting/lua_project.cpp
+        src/scripting/chart_lua.cpp
         src/scripting/lua_generator.cpp
     )
     add_library(wormedit::scripting ALIAS wormedit_scripting)

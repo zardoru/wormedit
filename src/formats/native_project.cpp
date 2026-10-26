@@ -946,6 +946,8 @@ void from_json(const json& value, project_settings_t& settings) {
 
 #include "native_project_bms_codec.inc"
 
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bookmark_list_order_t, chart, bookmarks)
+
 void to_json(json& value, const song_document_t& song) {
     value = json{{"schema_version", song.schema_version},
                  {"id", song.id},
@@ -964,6 +966,7 @@ void to_json(json& value, const song_document_t& song) {
                  {"quantization_presets", song.quantization_presets},
                  {"export_cuts", song.export_cuts}};
     if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
+    if (!song.bookmark_orders.empty()) value["bookmark_orders"] = song.bookmark_orders;
     if (!song.chart_order.empty()) value["chart_order"] = song.chart_order;
     if (!song.prepared_bms_programs.empty()) {
         value["prepared_bms_programs"] = json::array();
@@ -1006,6 +1009,7 @@ void from_json(const json& value, song_document_t& song) {
     value.at("quantization_presets").get_to(song.quantization_presets);
     value.at("export_cuts").get_to(song.export_cuts);
     song.sound_groups = value.value("sound_groups", std::vector<sound_group_t>{});
+    song.bookmark_orders = value.value("bookmark_orders", std::vector<bookmark_list_order_t>{});
     song.chart_order = value.value("chart_order", std::vector<chart_id_t>{});
     song.prepared_bms_programs.clear();
     if (value.contains("prepared_bms_programs")) {

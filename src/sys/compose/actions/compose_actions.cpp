@@ -94,6 +94,10 @@ auto compose_bookmark_action_t::validate(compose_action_context_t& context)
 auto compose_bookmark_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
     const auto& action = context.action;
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK)
+        return context.environment.editor.commands.bookmarks.reorder_bookmark(
+            context.environment.document.history, action.compose_input_document_revision,
+            context.state.chart, action.compose_bookmark_reorder);
     if (!rename)
         return context.environment.editor.commands.bookmarks.navigate_to_bookmark(
             context.environment.document.history, context.state,
@@ -2769,6 +2773,8 @@ auto cancel_compose_bmson_marker_batch(compose_action_context_t& context)
 
 namespace {
 constexpr auto local_route_entries = std::array{
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK,
+                           .operation = run_routed_compose_action<compose_bookmark_action_t, false>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK,
                            .operation = run_routed_compose_action<compose_bookmark_action_t, true>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK,

@@ -1483,11 +1483,6 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
         nk_label(panel.context, "Bookmark chooser is open.", NK_TEXT_LEFT);
         return;
     }
-    if (nk_tree_push(panel.context, NK_TREE_TAB, "Find marker", NK_MINIMIZED)) {
-        worm_ui_nuklear_render_bookmark_list(panel.context, panel.view->bookmark_chooser,
-                                            panel.action, state.dock_layout.markers);
-        nk_tree_pop(panel.context);
-    }
     worm_ui_nuklear_render_compose_markers(panel.context, panel.view, panel.action);
 }
 struct dock_panel_renderer_t {

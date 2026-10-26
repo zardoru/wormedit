@@ -11,6 +11,16 @@
 #include <optional>
 
 namespace wormedit {
+enum class bookmark_sort_t { custom, position, name };
+struct bookmark_reorder_t {
+    object_id_t bookmark;
+    object_id_t target;
+    bool place_after{};
+    bookmark_sort_t sort{bookmark_sort_t::custom};
+    bool descending{};
+    auto operator==(const bookmark_reorder_t&) const -> bool = default;
+};
+
 enum class project_setting_field_t { default_snap, audio_directory, visual_directory };
 inline constexpr std::uint32_t maximum_default_lane_count = 10;
 

@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <source_location>
+#include <array>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -105,4 +106,41 @@ TEST_CASE("bookmark rename uses existing empty and UTF-8 label validation",
     check_rename(!invalid.accepted);
     check_rename(history.document.revision == revision);
     check_rename(history.document.charts.front().bookmarks.front().label.empty());
+}
+
+TEST_CASE("bookmark rearranging stores list order without changing anchors and supports Undo",
+          "[unit][sys][bookmark-order]") {
+    document_history_t history{document_history_t::from(rename_song())};
+    const auto original = history.document.charts.front().bookmarks;
+    const auto result = bookmark_navigation_t{}.reorder_bookmark(history, 7, chart_id_t{2},
+        {.bookmark = object_id_t{4}, .target = object_id_t{5}, .sort = bookmark_sort_t::position});
+    require_rename(result.accepted);
+    require_rename(history.document.bookmark_orders.size() == 1);
+    check_rename(history.document.bookmark_orders[0].bookmarks ==
+        std::vector<object_id_t>{object_id_t{4}, object_id_t{5}});
+    check_rename(history.document.charts.front().bookmarks == original);
+    check_rename(history.undo.size() == 1);
+    require_rename(undo_document_command(history));
+    check_rename(history.document.bookmark_orders.empty());
+    require_rename(redo_document_command(history));
+    check_rename(history.document.bookmark_orders[0].bookmarks.front() == object_id_t{4});
+    require_rename(bookmark_navigation_t{}.rename_bookmark(history, history.document.revision,
+        chart_id_t{2}, object_id_t{4}, "New name").accepted);
+    check_rename(history.document.bookmark_orders[0].bookmarks.front() == object_id_t{4});
+}
+
+TEST_CASE("bookmark order retains absent scope identities and rejects incomplete permutations",
+          "[unit][sys][bookmark-order]") {
+    auto song = rename_song();
+    song.bookmark_orders = {{.chart = chart_id_t{2},
+        .bookmarks = {object_id_t{4}, object_id_t{90}, object_id_t{5}}}};
+    document_history_t history{document_history_t::from(std::move(song))};
+    const std::array order{object_id_t{5}, object_id_t{4}};
+    require_rename(apply_bookmark_order_edit(history, chart_id_t{2}, order).applied);
+    check_rename(history.document.bookmark_orders[0].bookmarks ==
+        std::vector<object_id_t>{object_id_t{5}, object_id_t{4}, object_id_t{90}});
+    const auto revision = history.document.revision;
+    const std::array invalid{object_id_t{4}, object_id_t{4}};
+    check_rename(!apply_bookmark_order_edit(history, chart_id_t{2}, invalid).applied);
+    check_rename(history.document.revision == revision);
 }

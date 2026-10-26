@@ -1983,9 +1983,22 @@ void validate_chart_order(const song_document_t& song, diagnostic_list_t& diagno
 }
 }
 
+static void validate_bookmark_orders(const song_document_t& song, diagnostic_list_t& diagnostics) {
+    std::set<chart_id_t> charts;
+    for (const auto& order : song.bookmark_orders) {
+        if (!order.chart || !charts.insert(order.chart).second)
+            diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Bookmark order needs a unique chart identity."));
+        std::set<object_id_t> bookmarks;
+        for (const auto id : order.bookmarks)
+            if (!id || !bookmarks.insert(id).second)
+                diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Bookmark order needs unique nonzero bookmark identities."));
+    }
+}
+
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     auto diagnostics = validate_prepared_bms_programs(song);
     validate_chart_order(song, diagnostics);
+    validate_bookmark_orders(song, diagnostics);
     const auto cut_diagnostics = validate_export_cuts(song.export_cuts);
     diagnostics.insert(diagnostics.end(), cut_diagnostics.begin(), cut_diagnostics.end());
     auto work = document_validation_work_t{.song = song, .diagnostics = diagnostics};

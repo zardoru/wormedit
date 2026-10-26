@@ -11,6 +11,7 @@
 #include <ranges>
 #include <string_view>
 #include <utility>
+#include <unordered_set>
 #include <variant>
 
 namespace wormedit {
@@ -564,6 +565,37 @@ auto apply_export_cut_edit(document_history_t& history, const export_cut_edit_ac
 auto apply_export_cut_edit(document_command_transaction_t& transaction, const export_cut_edit_action_t& action)
     -> document_command_result_t {
     return transaction.finish_execution(stage_export_cut_edit(transaction, action));
+}
+
+auto apply_bookmark_order_edit(document_history_t& history, chart_id_t chart_id,
+    std::span<const object_id_t> order) -> document_command_result_t {
+    document_command_transaction_t transaction(history);
+    auto staged = transaction.stage([&](song_document_t& song) -> attempt_t<document_edit_effect_t> {
+        const auto* chart = song.read_chart(chart_id);
+        if (!chart || order.size() != chart->bookmarks.size())
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Bookmark list changed.")}};
+        std::unordered_set<std::uint64_t> remaining;
+        for (const auto& bookmark : chart->bookmarks) remaining.insert(bookmark.id.value);
+        std::unordered_set<std::uint64_t> visible;
+        for (const auto id : order) {
+            if (remaining.erase(id.value) != 1)
+                return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Bookmark order contains an unavailable or repeated identity.")}};
+            visible.insert(id.value);
+        }
+        auto found = std::ranges::find(song.bookmark_orders, chart_id, &bookmark_list_order_t::chart);
+        std::vector<object_id_t> combined(order.begin(), order.end());
+        if (found != song.bookmark_orders.end()) {
+            for (const auto id : found->bookmarks)
+                if (!visible.contains(id.value)) combined.push_back(id);
+            if (combined == found->bookmarks) return {.value = document_edit_effect_t{}};
+            found->bookmarks = std::move(combined);
+        } else {
+            song.bookmark_orders.push_back({.chart = chart_id, .bookmarks = std::move(combined)});
+        }
+        return {.value = document_edit_effect_t{.changed = true, .command_label = "Reorder bookmarks",
+            .options = {.preserve_retained_source_flags = true}}};
+    });
+    return transaction.finish_execution(std::move(staged));
 }
 
 } // namespace wormedit

@@ -1060,3 +1060,30 @@ TEST_CASE("Scoped virtual resources and visual or BGM moves share the extent tra
     REQUIRE(validate_document(history.document).empty());
     check_scoped_extent_history(history, 1, 4);
 }
+
+namespace {
+void check_bookmark_order_roundtrip(const document_history_t& history) {
+    const auto written = write_native_project(history.document);
+    REQUIRE(written.value);
+    const auto parsed = parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->bookmark_orders == history.document.bookmark_orders);
+}
+} // namespace
+
+TEST_CASE("Scoped bookmark order stays outside semantic content and survives native reload", "[bms-program-edit][bookmark-order]") {
+    auto history = history_from();
+    const auto position = local_position_t{owner(history).prepared().measures.front(), 1};
+    REQUIRE(apply_marker_edit(history, insert_edit_t<bookmark_edit_value_t>{
+        .chart = difficulty, .value = {.label = "First", .position = position}}).applied);
+    REQUIRE(apply_marker_edit(history, insert_edit_t<bookmark_edit_value_t>{
+        .chart = difficulty, .value = {.label = "Second", .position = position}}).applied);
+    const auto& bookmarks = history.document.read_chart(difficulty)->bookmarks;
+    REQUIRE(bookmarks.size() == 2);
+    const std::array order{bookmarks[1].id, bookmarks[0].id};
+    const auto before = history.document.prepared_bms_programs.front();
+    REQUIRE(apply_bookmark_order_edit(history, difficulty, order).applied);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+    CHECK(history.document.charts.empty());
+    check_bookmark_order_roundtrip(history);
+}

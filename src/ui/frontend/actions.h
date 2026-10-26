@@ -179,6 +179,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION,
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL,
     WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN,
@@ -646,6 +647,7 @@ struct workspace_action_t {
     bool compose_note_label_focus_consumed;
     std::string compose_note_label;
     wormedit::object_id_t compose_bookmark_id;
+    wormedit::bookmark_reorder_t compose_bookmark_reorder;
     wormedit::object_id_t compose_section_id;
     wormedit::object_id_t compose_export_cut_id;
     std::string compose_marker_label;

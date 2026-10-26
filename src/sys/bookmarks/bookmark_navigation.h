@@ -63,6 +63,8 @@ struct bookmark_navigation_t {
     [[nodiscard]] auto add_beat_bookmark_here(document_history_t&, editor_interaction_state_t&,
                                               application_command_state_t&)
         -> compose_action_outcome_t;
+    [[nodiscard]] auto reorder_bookmark(document_history_t&, std::uint64_t, chart_id_t,
+        const bookmark_reorder_t&) -> compose_action_outcome_t;
     [[nodiscard]] auto rename_bookmark(document_history_t&, std::uint64_t, chart_id_t, object_id_t,
                                        std::string_view) -> compose_action_outcome_t;
 

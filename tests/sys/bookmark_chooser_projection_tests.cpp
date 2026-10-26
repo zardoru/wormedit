@@ -37,7 +37,7 @@ void check_projection_header(const bookmark_chooser_view_t& projection) {
 }
 void check_first_beat_row(const bookmark_chooser_view_t& projection) {
     CHECK(projection.rows[0].bookmark_id == object_id_t{101});
-    CHECK(projection.rows[0].position_label == "Measure 001 · row 240");
+    CHECK(projection.rows[0].position_label == "m1:240");
     CHECK(projection.rows[0].name == "same");
 }
 void check_second_audio_row(const bookmark_chooser_view_t& projection) {
@@ -127,4 +127,48 @@ TEST_CASE("Bookmark chooser retains a supplied snapshot geometry failure", "[sys
     REQUIRE_FALSE(result.is_success());
     CHECK(result.status == "Bookmark positions could not be resolved.");
     CHECK(result.rows.empty());
+}
+
+namespace {
+void check_custom_bookmark_page(const song_document_t& document) {
+    const auto custom = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12);
+    REQUIRE(custom.rows.size() == 3);
+    CHECK(custom.rows[0].bookmark_id == object_id_t{103});
+    CHECK(custom.rows[1].bookmark_id == object_id_t{101});
+    CHECK(custom.rows[2].bookmark_id == object_id_t{102});
+}
+void check_name_bookmark_page(const song_document_t& document) {
+    const auto names = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12,
+        {}, {}, bookmark_sort_t::name);
+    REQUIRE(names.rows.size() == 3);
+    CHECK(names.rows[0].bookmark_id == object_id_t{103});
+    CHECK(names.rows[1].bookmark_id == object_id_t{102});
+    CHECK(names.rows[2].bookmark_id == object_id_t{101});
+}
+void check_filtered_bookmark_page(const song_document_t& document) {
+    const auto filtered = bookmark_chooser_view_t::from(document, chart_id_t{2}, 1, 1, "verse");
+    REQUIRE(filtered.rows.size() == 1);
+    CHECK(filtered.rows[0].bookmark_id == object_id_t{102});
+    CHECK(filtered.rows[0].previous_bookmark == object_id_t{101});
+    CHECK_FALSE(filtered.rows[0].next_bookmark);
+}
+} // namespace
+
+TEST_CASE("bookmark list sorts naturally and retains custom order through filtering and paging",
+          "[unit][sys][bookmark-chooser]") {
+    auto document = chooser_document();
+    auto& bookmarks = document.charts.front().bookmarks;
+    bookmarks[0].label = "Verse 10";
+    bookmarks[1].label = "verse 2";
+    bookmarks[2].label = "Bridge";
+    document.bookmark_orders = {{.chart = chart_id_t{2},
+        .bookmarks = {object_id_t{103}, object_id_t{101}}}};
+    check_custom_bookmark_page(document);
+    check_name_bookmark_page(document);
+    check_filtered_bookmark_page(document);
+    const auto reverse = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 1,
+        {}, {}, bookmark_sort_t::position, true);
+    REQUIRE(reverse.rows.size() == 1);
+    CHECK(reverse.rows[0].bookmark_id == object_id_t{103});
+    CHECK(reverse.rows[0].next_bookmark == object_id_t{102});
 }

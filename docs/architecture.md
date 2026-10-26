@@ -224,6 +224,9 @@ falls back to stacking when two minimum-width columns do not fit, without changi
 The right strip owns panel activation and the arrangement toggle. Drag captures defer
 publication until release; hiding Compose or losing input cancels capture without a late click.
 Markers embeds the same bounded bookmark-list controls and projection as the popup chooser.
+Position/name sorting is view state. Manual bookmark ordering is document-owned presentation
+metadata, persisted natively and edited through the document transaction; it never changes
+marker positions or scoped BMS content.
 
 Display service ownership lives in `sys/app/application_frame_services`: the
 event batch retains a second edge for the same key/button until the next frame,

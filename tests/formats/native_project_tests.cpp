@@ -1822,3 +1822,19 @@ TEST_CASE("Invalid timing-link publication preserves the existing native file an
     CHECK(read_binary(path) == before);
     CHECK(fixture.target().timing_links.value(wormedit::timing_category_t::bpm)->source == fixture.source_id);
 }
+
+TEST_CASE("native projects retain custom bookmark list order", "[native-project][bookmark-order]") {
+    auto song = rich_bmson_song();
+    song.bookmark_orders = {{.chart = song.charts.front().id,
+        .bookmarks = {wormedit::object_id_t{999}, wormedit::object_id_t{998}}}};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.value);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->bookmark_orders == song.bookmark_orders);
+    auto legacy = nlohmann::json::parse(*written.value);
+    legacy["document"].erase("bookmark_orders");
+    const auto old = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(old.value);
+    CHECK(old.value->bookmark_orders.empty());
+}

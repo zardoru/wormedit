@@ -54,6 +54,12 @@ struct markers_fixture_t {
         view.document_revision = 12;
         view.beat_bookmarks.assign(bookmarks.begin(), bookmarks.end());
         view.beat_bookmarks.resize(bookmarks.size());
+        view.bookmark_chooser = {.project_id = view.project_id, .chart_id = view.chart_id,
+            .document_revision = view.document_revision, .total_count = bookmarks.size()};
+        for (const auto& bookmark : bookmarks)
+            view.bookmark_chooser.rows.push_back({.bookmark_id = bookmark.bookmark_id,
+                .position_label = "m" + std::to_string(bookmark.measure_number) + ":" + std::to_string(bookmark.row),
+                .name = bookmark.label, .display_label = bookmark.label, .navigation_available = true});
         view.beat_sections.assign(sections.begin(), sections.end());
         view.beat_sections.resize(sections.size());
         view.beat_marker_navigation_available = true;
@@ -201,6 +207,7 @@ namespace {
 // Setting a preview changes the group's height; let the scrolled panel settle before clicking.
 auto clicked_action(nuklear_event_harness_t& harness, const char* label) -> WormUiComposeActionKind {
     for (int frame = 0; frame < 3; ++frame) (void)harness.frame();
+    wormedit::test::scroll_at(harness, 1500, 600, -20);
     const auto center = harness.drawn_text_center(label);
     if (!center) return WORM_UI_COMPOSE_ACTION_NONE;
     for (const auto& frame : click(harness, center->first, center->second))

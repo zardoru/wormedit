@@ -367,3 +367,114 @@ TEST_CASE("bookmark chooser context loss cancels without navigation or shortcut 
         check_chooser_lifecycle(canceled.get().shortcut_events.size() == 0);
     }
 }
+
+TEST_CASE("bookmark sorting requests a new projection and guards stale keyboard navigation",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
+    prepare_view(harness, rows);
+    open_chooser(harness);
+    const auto name = harness.drawn_text_center("Name");
+    require_chooser_lifecycle(name.has_value());
+    static_cast<void>(wormedit::test::click_at(harness, name->first, name->second));
+    wormedit::ui::bookmark_chooser_request_t request{};
+    worm_ui_frontend_bookmark_chooser_request(&request);
+    CHECK(request.sort == wormedit::bookmark_sort_t::name);
+    CHECK(request.first_row == 0);
+    const auto enter = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
+    CHECK(harness.frame(std::span{&enter, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const auto release = key_release_event(SDLK_RETURN, SDL_SCANCODE_RETURN);
+    static_cast<void>(harness.frame(std::span{&release, 1}));
+    harness.view().compose.bookmark_chooser.sort = request.sort;
+    static_cast<void>(harness.frame());
+    const auto ascending = harness.drawn_text_center("Ascending");
+    require_chooser_lifecycle(ascending.has_value());
+    static_cast<void>(wormedit::test::click_at(harness, ascending->first, ascending->second));
+    worm_ui_frontend_bookmark_chooser_request(&request);
+    CHECK(request.descending);
+}
+
+namespace {
+void check_reorder_action(const wormedit::ui::workspace_action_t& action) {
+    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK);
+    CHECK(action.compose_bookmark_reorder == wormedit::bookmark_reorder_t{
+        .bookmark = {80}, .target = {81}, .place_after = true});
+    CHECK(action.compose_input_project_id.value == 3);
+    CHECK(action.compose_input_chart_id.value == 7);
+    CHECK(action.compose_input_document_revision == 11);
+}
+}
+
+TEST_CASE("bookmark list move controls emit identity based edits and retain the chooser",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
+    prepare_view(harness, rows);
+    auto& view = harness.view().compose.bookmark_chooser;
+    view.rows[0].next_bookmark = {81};
+    view.rows[1].previous_bookmark = {80};
+    open_chooser(harness);
+    const auto down = harness.widget_center("Move bookmark #80 down");
+    const auto clicks = wormedit::test::click_at(harness, down.first, down.second);
+    const auto found = std::ranges::find_if(clicks, [](const auto& snapshot) {
+        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
+    });
+    REQUIRE(found != clicks.end());
+    check_reorder_action(found->get());
+    CHECK(worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open);
+}
+
+TEST_CASE("bookmark handle drag emits one rearrangement and revision changes cancel capture",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    for (const bool stale : {false, true}) {
+        nuklear_event_harness_t harness{1280, 800};
+        require_chooser_lifecycle(harness.ready());
+        std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
+        prepare_view(harness, rows);
+        open_chooser(harness);
+        const auto handle = harness.widget_center("Drag bookmark #80 to rearrange");
+        const auto label = harness.drawn_text_center(rows[1].display_label);
+        require_chooser_lifecycle(label.has_value());
+        const std::array press{wormedit::test::mouse_motion(handle.first, handle.second),
+            wormedit::test::mouse_button(true, handle.first, handle.second)};
+        check_chooser_lifecycle(harness.frame(press).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        if (stale) {
+            ++harness.view().compose.document_revision;
+            ++harness.view().compose.bookmark_chooser.document_revision;
+        }
+        const std::array release{wormedit::test::mouse_motion(label->first, label->second + 4),
+            wormedit::test::mouse_button(false, label->first, label->second + 4)};
+        const auto dropped = harness.frame(release);
+        if (stale) CHECK(dropped.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        else check_reorder_action(dropped.get());
+        CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    }
+}
+
+TEST_CASE("Markers dock exposes bookmark sorting and grip controls at minimum width",
+          "[frontend-state][event-harness][bookmark-chooser][dock-layout]") {
+    nuklear_event_harness_t harness{1280, 800};
+    require_chooser_lifecycle(harness.ready());
+    std::array<wormedit::ui::bookmark_chooser_row_view_t, 2> rows{};
+    prepare_view(harness, rows);
+    harness.view().compose.bookmark_chooser.rows[0].next_bookmark = {81};
+    auto& layout = worm_ui_nuklear_compose_state().dock_layout.layout;
+    layout.activate(wormedit::dock_panel_t::markers, false);
+    layout.set_width(wormedit::dock_minimum_width);
+    static_cast<void>(harness.frame());
+    CHECK(harness.widget_center("Drag bookmark #80 to rearrange").first > 0);
+    const auto clicks = harness.click_widget("Move bookmark #80 down");
+    const auto found = std::ranges::find_if(clicks, [](const auto& snapshot) {
+        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK;
+    });
+    require_chooser_lifecycle(found != clicks.end());
+    check_reorder_action(found->get());
+    const auto name = harness.drawn_text_center("Name");
+    require_chooser_lifecycle(name.has_value());
+    static_cast<void>(wormedit::test::click_at(harness, name->first, name->second));
+    wormedit::ui::bookmark_chooser_request_t request{};
+    worm_ui_frontend_bookmark_chooser_request(&request);
+    CHECK(request.sort == wormedit::bookmark_sort_t::name);
+}

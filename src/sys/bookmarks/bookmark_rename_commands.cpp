@@ -1,4 +1,5 @@
 #include "sys/bookmarks/bookmark_navigation.h"
+#include <limits>
 #include "sys/commands/native_chart_edit_action.h"
 
 #include <wormedit/core/marker_editor.h>
@@ -47,6 +48,28 @@ auto bookmark_navigation_t::rename_bookmark(document_history_t& history,
                                      .rebind_failure =
                                          "Bookmark renamed, but workspace rebinding failed.",
                                      .is_unchanged_accepted = false});
+}
+
+auto bookmark_navigation_t::reorder_bookmark(document_history_t& history, std::uint64_t revision,
+    chart_id_t chart, const bookmark_reorder_t& request) -> compose_action_outcome_t {
+    if (revision != history.document.revision)
+        return compose_action_outcome_t::blocked(stale_action_message("Bookmark reorder"));
+    const auto page = bookmark_chooser_view_t::from(history.document, chart, 0,
+        std::numeric_limits<std::size_t>::max(), {}, {}, request.sort, request.descending);
+    if (!page.is_success()) return compose_action_outcome_t::blocked(page.status);
+    std::vector<object_id_t> order;
+    for (const auto& row : page.rows) order.push_back(row.bookmark_id);
+    if (request.bookmark == request.target || !std::ranges::contains(order, request.bookmark) ||
+        !std::ranges::contains(order, request.target))
+        return compose_action_outcome_t::blocked("Choose two different available bookmarks.");
+    std::erase(order, request.bookmark);
+    auto destination = std::ranges::find(order, request.target);
+    if (request.place_after) ++destination;
+    order.insert(destination, request.bookmark);
+    return compose_action_outcome_t::from(apply_bookmark_order_edit(history, chart, order),
+        compose_action_description_t{.success = "Bookmarks rearranged.",
+            .unchanged = "Bookmark order is unchanged.",
+            .rebind_failure = "Bookmark order changed, but workspace rebinding failed."});
 }
 
 } // namespace wormedit::sys

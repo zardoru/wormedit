@@ -878,7 +878,8 @@ void worm_ui_frontend_bookmark_chooser_request(wormedit::ui::bookmark_chooser_re
     const auto& popup = compose.bookmark_ui.bookmark_chooser;
     const auto& chooser = popup.open ? popup : compose.dock_layout.markers;
     const auto visible = popup.open || compose.dock_layout.layout.is_visible(wormedit::dock_panel_t::markers);
-    *request = {chooser.first_row, chooser.row_limit, visible, {}};
+    *request = {.first_row = chooser.first_row, .row_limit = chooser.row_limit, .open = visible,
+        .sort = chooser.sort, .descending = chooser.descending};
     std::copy(chooser.query.begin(), chooser.query.end(), request->query);
 }
 

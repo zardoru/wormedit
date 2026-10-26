@@ -45,6 +45,7 @@ add_executable(wormedit_core_tests
     ../src/sys/bookmarks/bookmark_commands.cpp
     ../src/sys/compose/input/compose_navigation.cpp
     ../src/sys/bookmarks/bookmark_rename_commands.cpp
+    ../src/sys/bookmarks/bookmark_chooser_view.cpp
     ../src/sys/compose/input/compose_playhead_skip.cpp
     ../src/sys/compose/compose_bgm_bar.cpp
     ../src/sys/resources/bms_catalog_bindings.cpp

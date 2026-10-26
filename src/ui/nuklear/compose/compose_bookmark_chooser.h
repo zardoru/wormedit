@@ -20,6 +20,10 @@ struct bookmark_chooser_state_t : wormedit::ui::chrome::retained_popup_t {
     std::array<char, 96> status{};
     std::array<char, 256> query{};
     bool focus_pending{};
+    wormedit::bookmark_sort_t sort{wormedit::bookmark_sort_t::custom};
+    bool descending{};
+    wormedit::object_id_t dragged_bookmark{};
+    std::uint64_t drag_revision{};
 };
 
 void worm_ui_nuklear_bookmark_chooser_open(bookmark_chooser_state_t& state,

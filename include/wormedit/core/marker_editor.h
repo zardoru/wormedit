@@ -12,6 +12,10 @@
 
 namespace wormedit {
 
+// Stores the supplied visible order, retaining identities from inactive scopes.
+[[nodiscard]] auto apply_bookmark_order_edit(document_history_t&, chart_id_t,
+    std::span<const object_id_t> order) -> document_command_result_t;
+
 struct marker_edit_limits_t {
     std::size_t maximum_bookmarks{100'000};
     std::size_t maximum_sections{100'000};

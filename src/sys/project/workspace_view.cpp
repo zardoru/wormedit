@@ -865,16 +865,18 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     if (!request.open) { view.rows.clear(); return; }
     const auto key = std::tuple{&projection.document, document_stamp_t::from(projection.document), chart,
         result.query_session_generation, request.first_row, request.row_limit,
-        std::to_array(request.query), projection.bookmark_indices.bounded_clock &&
+        std::to_array(request.query), request.sort, request.descending, projection.bookmark_indices.bounded_clock &&
         projection.bookmark_indices.bounded_clock->has_value()};
     const auto& page = result.bookmark_chooser_cache.get_or_build(key, [&] {
         return bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
             std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query,
-            projection.bookmark_indices);
+            projection.bookmark_indices, request.sort, request.descending);
     });
     view.total_count = page.total_count;
     view.first_row = page.first_row;
     view.query = request.query;
+    view.sort = request.sort;
+    view.descending = request.descending;
     view.rows.resize(page.rows.size());
     for (std::size_t index = 0; index < page.rows.size(); ++index) {
         const auto& row = page.rows[index];
@@ -884,6 +886,8 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
         item.position_label = row.position_label;
         item.name = row.name;
         item.display_label = row.display_label;
+        item.previous_bookmark = row.previous_bookmark;
+        item.next_bookmark = row.next_bookmark;
         item.navigation_available = row.navigation_available;
     }
 }

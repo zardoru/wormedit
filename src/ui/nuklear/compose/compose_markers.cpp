@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose/compose_menu_command.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_markers.h"
+#include "ui/nuklear/compose/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/compose/compose_note_label_inline.h"
 #include "ui/nuklear/compose/compose_state.h"
@@ -226,24 +227,6 @@ auto register_click(std::uint64_t key) -> bool {
     return paired;
 }
 
-void draw_row_text(struct nk_context* context, struct nk_rect bounds, const row_spec_t& spec) {
-    auto* canvas = nk_window_get_canvas(context);
-    const auto* font = context->style.font;
-    const auto detail_width = spec.detail && font
-        ? font->width(font->userdata, font->height, spec.detail, static_cast<int>(std::strlen(spec.detail)))
-        : 0.0f;
-    const auto text_color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
-    const auto muted = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted);
-    const auto label_width = std::max(0.0f, bounds.w - 3.0f * row_text_inset - detail_width);
-    const auto label = wormedit::ui::chrome::fit_text_with_ellipsis(font, spec.label, label_width,
-        wormedit::ui::chrome::ellipsis_overflow_t::marker_bytes);
-    nk_draw_text(canvas, nk_rect(bounds.x + row_text_inset, bounds.y + 3.0f, label_width, bounds.h - 3.0f),
-                 label.c_str(), static_cast<int>(label.size()), font, nk_rgba(0, 0, 0, 0), text_color);
-    if (!spec.detail) return;
-    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - row_text_inset - detail_width, bounds.y + 3.0f,
-                                 detail_width + 1.0f, bounds.h - 3.0f),
-                 spec.detail, static_cast<int>(std::strlen(spec.detail)), font, nk_rgba(0, 0, 0, 0), muted);
-}
 
 auto render_list_row(struct nk_context* context, const row_spec_t& spec, bool occluded)
     -> row_result_t {
@@ -258,7 +241,7 @@ auto render_list_row(struct nk_context* context, const row_spec_t& spec, bool oc
     if (spec.selected) nk_fill_rect(canvas, result.bounds, 4.0f, wormedit::ui::theme::ui(UiColor::selected));
     else if (hovered && spec.interactive)
         nk_fill_rect(canvas, result.bounds, 4.0f, wormedit::ui::theme::ui(UiColor::surface_hover));
-    draw_row_text(context, result.bounds, spec);
+    worm_ui_nuklear_draw_marker_row_text(context, result.bounds, spec.label, spec.detail);
     if (!clicked) return result;
     result.clicked = true;
     result.double_clicked = register_click(spec.key);
@@ -326,6 +309,27 @@ void apply_bookmark_header(const wormedit::ui::compose_view_t& view, wormedit::u
     }
 }
 
+void handle_bookmark_list_activation(nk_context* context, const wormedit::ui::compose_view_t& view,
+                                     wormedit::ui::workspace_action_t& action) {
+    const auto id = action.compose_bookmark_id;
+    const auto bookmark = std::ranges::find(view.beat_bookmarks, id,
+        &wormedit::ui::compose_bookmark_view_t::bookmark_id);
+    if (bookmark != view.beat_bookmarks.end()) {
+        const auto pointer = context->input.mouse.pos;
+        const row_result_t row{.clicked = true, .double_clicked = register_click(key_bookmark | id.value),
+            .bounds = nk_rect(pointer.x, pointer.y, 0, 0)};
+        if (row.double_clicked) action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+        handle_bookmark_row(view, action, *bookmark, row);
+        return;
+    }
+    const auto audio = std::ranges::find(view.audio_bookmarks, id,
+        &wormedit::ui::compose_audio_bookmark_view_t::bookmark_id);
+    if (audio == view.audio_bookmarks.end()) return;
+    state.audio_bookmark_id = id.value;
+    copy_label(state.audio_bookmark_label, audio->label.data());
+    copy_time(state.audio_bookmark_time, audio->audio_milliseconds);
+}
+
 void render_bookmarks(struct nk_context* context, const wormedit::ui::compose_view_t& view,
                       wormedit::ui::workspace_action_t& action) {
     const auto* selected = selected_bookmark(view);
@@ -338,18 +342,15 @@ void render_bookmarks(struct nk_context* context, const wormedit::ui::compose_vi
         view.scene_available && view.beat_marker_navigation_available, editable,
         editable && selected != nullptr};
     apply_bookmark_header(view, action, render_group_header(context, spec));
-    if (view.beat_bookmarks.size() == 0) render_empty_list(context, "No bookmarks");
-    for (std::size_t index = 0; index < view.beat_bookmarks.size(); ++index) {
-        const auto& bookmark = view.beat_bookmarks[index];
-        char position[48]{};
-        std::snprintf(position, sizeof(position), "m%llu:%llu",
-                      static_cast<unsigned long long>(bookmark.measure_number),
-                      static_cast<unsigned long long>(bookmark.row));
-        const auto row = render_list_row(context,
-            {key_bookmark | bookmark.bookmark_id.value, bookmark.label.data() && bookmark.label.data()[0] ? bookmark.label.data() : "(unnamed)",
-             position, bookmark.bookmark_id.value == state.bookmark_id, view.scene_available}, view.input_occluded);
-        handle_bookmark_row(view, action, bookmark, row);
-    }
+    const auto previous_action = action.compose_action;
+    if (view.input_occluded) nk_widget_disable_begin(context);
+    worm_ui_nuklear_render_bookmark_list(context, view.bookmark_chooser, &action,
+        worm_ui_nuklear_compose_state().dock_layout.markers);
+    if (view.input_occluded) nk_widget_disable_end(context);
+    if (previous_action == WORM_UI_COMPOSE_ACTION_NONE &&
+        action.compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK)
+        handle_bookmark_list_activation(context, view, action);
+    selected = selected_bookmark(view);
     if (!selected) return;
     nk_layout_row_dynamic(context, 24, 1);
     if (!editable) nk_widget_disable_begin(context);
@@ -615,6 +616,26 @@ void render_song_preview(struct nk_context* context, const wormedit::ui::compose
 }
 
 } // namespace
+
+void worm_ui_nuklear_draw_marker_row_text(nk_context* context, struct nk_rect bounds,
+                                         const char* text, const char* detail) {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto* font = context->style.font;
+    const auto detail_width = detail && font
+        ? font->width(font->userdata, font->height, detail, static_cast<int>(std::strlen(detail)))
+        : 0.0f;
+    const auto text_color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
+    const auto muted = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted);
+    const auto label_width = std::max(0.0f, bounds.w - 3.0f * row_text_inset - detail_width);
+    const auto label = wormedit::ui::chrome::fit_text_with_ellipsis(font, text, label_width,
+        wormedit::ui::chrome::ellipsis_overflow_t::marker_bytes);
+    nk_draw_text(canvas, nk_rect(bounds.x + row_text_inset, bounds.y + 3.0f, label_width, bounds.h - 3.0f),
+                 label.c_str(), static_cast<int>(label.size()), font, nk_rgba(0, 0, 0, 0), text_color);
+    if (!detail) return;
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - row_text_inset - detail_width, bounds.y + 3.0f,
+                                 detail_width + 1.0f, bounds.h - 3.0f),
+                 detail, static_cast<int>(std::strlen(detail)), font, nk_rgba(0, 0, 0, 0), muted);
+}
 
 void worm_ui_nuklear_reset_compose_markers(void) {
     state = {};

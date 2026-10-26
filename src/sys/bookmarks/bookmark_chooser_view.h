@@ -33,6 +33,8 @@ struct bookmark_chooser_row_t {
     std::string position_label;
     std::string name;
     std::string display_label;
+    object_id_t previous_bookmark{};
+    object_id_t next_bookmark{};
     bool navigation_available{};
 };
 
@@ -49,7 +51,8 @@ struct bookmark_chooser_view_t {
 
     [[nodiscard]] static auto from(const song_document_t&, chart_id_t,
                                    std::size_t first_row, std::size_t row_limit, std::string_view query = {},
-                                   const bookmark_chooser_indices_t& indices = {}) -> bookmark_chooser_view_t;
+                                   const bookmark_chooser_indices_t& indices = {},
+                                   bookmark_sort_t sort = bookmark_sort_t::custom, bool descending = false) -> bookmark_chooser_view_t;
 };
 
 } // namespace wormedit::sys

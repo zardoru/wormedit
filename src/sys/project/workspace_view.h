@@ -117,7 +117,7 @@ struct frontend_workspace_view_t {
         } timing_geometry;
     } compose;
     keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, chart_id_t,
-        std::uint64_t, std::size_t, std::size_t, std::array<char, 256>, bool>,
+        std::uint64_t, std::size_t, std::size_t, std::array<char, 256>, bookmark_sort_t, bool, bool>,
         bookmark_chooser_view_t> bookmark_chooser_cache;
     keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, chart_id_t,
         std::uint64_t, bool>, bool> output_group_binding;

@@ -865,6 +865,8 @@ struct bookmark_chooser_request_t {
     size_t first_row{}, row_limit{};
     bool open{};
     char query[256]{};
+    bookmark_sort_t sort{bookmark_sort_t::custom};
+    bool descending{};
     auto operator==(const bookmark_chooser_request_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
@@ -876,6 +878,8 @@ struct bookmark_chooser_row_view_t {
     std::string position_label;
     std::string name;
     std::string display_label;
+    object_id_t previous_bookmark{};
+    object_id_t next_bookmark{};
     bool navigation_available{};
     auto operator==(const bookmark_chooser_row_view_t&) const -> bool = default;
 };
@@ -889,6 +893,8 @@ struct bookmark_chooser_view_t {
     std::vector<wormedit::ui::bookmark_chooser_row_view_t> rows;
     size_t total_count{}, first_row{};
     std::string query;
+    bookmark_sort_t sort{bookmark_sort_t::custom};
+    bool descending{};
     auto operator==(const bookmark_chooser_view_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

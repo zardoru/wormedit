@@ -1110,6 +1110,14 @@ class chart_read_slot_t {
     mutable std::shared_ptr<const chart_read_index_t> value_;
 };
 
+// Editor list order is independent of timeline positions and scoped BMS content.
+// Missing identities are retained so inactive branches recover their custom order.
+struct bookmark_list_order_t {
+    chart_id_t chart;
+    std::vector<object_id_t> bookmarks;
+    auto operator==(const bookmark_list_order_t&) const -> bool = default;
+};
+
 inline constexpr std::uint32_t current_document_schema_version = 23;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
@@ -1130,6 +1138,7 @@ struct song_document_t {
     // scoped semantic snapshots participate in Undo.
     std::vector<std::shared_ptr<const bms_program_document_t>> prepared_bms_programs;
     std::vector<chart_id_t> chart_order;
+    std::vector<bookmark_list_order_t> bookmark_orders;
     std::vector<output_group_t> output_groups;
     std::vector<quantization_preset_t> quantization_presets;
     std::vector<export_cut_t> export_cuts;

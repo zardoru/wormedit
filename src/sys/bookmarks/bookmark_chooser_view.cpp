@@ -1,4 +1,6 @@
 #include "core/text_util.h"
+#include <wormedit/core/natural_order.h>
+#include <unordered_map>
 #include <wormedit/core/rational.h>
 #include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/compose/views/compose_view.h"
@@ -35,12 +37,15 @@ struct ordered_row_t {
     std::optional<long double> absolute_row;
 };
 
-auto position_label(const measure_index_t& measures, local_position_t position)
+auto position_label(const measure_index_t& measures, local_position_t position, std::string& compact)
     -> std::string {
     const auto* found = measures.entry_for(position.measure);
-    if (!found) return "Unavailable beat position";
+    if (!found) { compact = "Unavailable"; return "Unavailable beat position"; }
     const auto number = static_cast<std::size_t>(found - measures.entries.data()) + 1;
     char buffer[96]{};
+    std::snprintf(buffer, sizeof(buffer), "m%zu:%llu", number,
+        static_cast<unsigned long long>(position.row));
+    compact = buffer;
     std::snprintf(buffer, sizeof(buffer), "Measure %03zu · row %llu", number,
                   static_cast<unsigned long long>(position.row));
     return buffer;
@@ -73,13 +78,14 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
                                .navigation_available = true};
     std::optional<long double> absolute;
     if (bookmark.anchor == marker_anchor_t::beat && bookmark.position) {
-        row.position_label = position_label(measures, *bookmark.position);
+        row.display_label = position_label(measures, *bookmark.position, row.position_label);
         if (const auto exact = measures.row_of(*bookmark.position))
             absolute = static_cast<long double>(*exact);
         else
             row.navigation_available = false;
     } else if (bookmark.audio_milliseconds) {
         row.position_label = audio_position_label(*bookmark.audio_milliseconds);
+        row.display_label = row.position_label;
         if (timing) {
             const auto musical = timing->query_position(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
             if (musical) {
@@ -88,7 +94,7 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
         }
     }
     if (row.name.empty()) row.name = "(unnamed)";
-    row.display_label = row.position_label + " · " + row.name + " · #" +
+    row.display_label += " · " + row.name + " · #" +
                         std::to_string(bookmark.id.value);
     return {.row = std::move(row), .absolute_row = absolute};
 }
@@ -106,6 +112,29 @@ auto ordered_before(const ordered_row_t& left, const ordered_row_t& right) -> bo
     return left.row.bookmark_id < right.row.bookmark_id;
 }
 
+void sort_rows(std::vector<ordered_row_t>& rows, const song_document_t& document,
+               chart_id_t chart, bookmark_sort_t sort, bool descending) {
+    std::unordered_map<std::uint64_t, std::size_t> ranks;
+    if (sort == bookmark_sort_t::custom) {
+        const auto saved = std::ranges::find(document.bookmark_orders, chart, &bookmark_list_order_t::chart);
+        if (saved != document.bookmark_orders.end())
+            for (const auto id : saved->bookmarks) ranks.try_emplace(id.value, ranks.size());
+    }
+    const auto less = [&](const ordered_row_t& left, const ordered_row_t& right) {
+        if (sort == bookmark_sort_t::name && left.row.name != right.row.name)
+            return natural_name_less(left.row.name, right.row.name);
+        const auto rank = [&](object_id_t id) {
+            const auto found = ranks.find(id.value);
+            return found == ranks.end() ? std::numeric_limits<std::size_t>::max() : found->second;
+        };
+        if (rank(left.row.bookmark_id) != rank(right.row.bookmark_id))
+            return rank(left.row.bookmark_id) < rank(right.row.bookmark_id);
+        return ordered_before(left, right);
+    };
+    std::ranges::sort(rows, less);
+    if (descending) std::ranges::reverse(rows);
+}
+
 auto matches_query(std::string_view label, std::string_view query) -> bool {
     return std::search(label.begin(), label.end(), query.begin(), query.end(),
         [](unsigned char left, unsigned char right) {
@@ -117,7 +146,7 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 
 auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t chart_id,
                               std::size_t first_row, std::size_t row_limit, std::string_view query,
-                                    const bookmark_chooser_indices_t& indices)
+                                    const bookmark_chooser_indices_t& indices, bookmark_sort_t sort, bool descending)
     -> bookmark_chooser_view_t {
     bookmark_chooser_view_t result{.chart = chart_id,
                                          .document_revision = document.revision,
@@ -151,7 +180,11 @@ auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t c
         if (query.empty() || matches_query(row.row.display_label, query))
             ordered.push_back(std::move(row));
     }
-    std::ranges::sort(ordered, ordered_before);
+    sort_rows(ordered, document, chart_id, sort, descending);
+    for (std::size_t index = 0; index < ordered.size(); ++index) {
+        if (index > 0) ordered[index].row.previous_bookmark = ordered[index - 1].row.bookmark_id;
+        if (index + 1 < ordered.size()) ordered[index].row.next_bookmark = ordered[index + 1].row.bookmark_id;
+    }
     result.total_count = ordered.size();
     if (first_row >= ordered.size()) return result;
     const auto after = std::min(ordered.size(), first_row +

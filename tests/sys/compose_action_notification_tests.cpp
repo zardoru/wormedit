@@ -3114,3 +3114,16 @@ TEST_CASE("Export-cut mutations reject active chart gestures before editing the 
     check_action(fixture.history.document.export_cuts.size() == 1);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("Compose bookmark rearranging routes through the shared edit finisher", "[compose-action-notifications][bookmark-order]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().bookmarks = {
+        {.id = object_id_t{4}, .label = "Intro", .position = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{5}, .label = "End", .position = local_position_t{measure_id_t{1}, 480}}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_REORDER_BOOKMARK);
+    action.compose_bookmark_reorder = {.bookmark = object_id_t{5}, .target = object_id_t{4}};
+    CHECK(fixture.dispatch(action) == "Bookmarks rearranged.");
+    REQUIRE(fixture.history.document.bookmark_orders.size() == 1);
+    CHECK(fixture.history.document.bookmark_orders[0].bookmarks.front() == object_id_t{5});
+    CHECK(fixture.history.undo.size() == 1);
+}

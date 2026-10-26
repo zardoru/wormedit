@@ -47,9 +47,10 @@ version=$(sed -n 's/^#define WORMEDIT_VERSION "\([^"]*\)"$/\1/p' build/windows-c
 name="wormedit-${version}-windows-x64"
 cmake --build --preset windows-cross-release --parallel "$jobs"
 rm -rf "$stage"
-cmake --install build/windows-cross-release --prefix "$stage/$name" --strip
-mkdir -p "$stage/$name/third-party/ffmpeg"
-cp -r "$sdk/share/wormedit-ffmpeg/." "$stage/$name/third-party/ffmpeg/"
+for component in Wormedit Manual; do
+    cmake --install build/windows-cross-release --prefix "$stage/$name" --strip --component "$component"
+done
+# The shared notices installer supplies the SDK's FFmpeg sources and licenses.
 cp scripts/windows-ffmpeg.sh scripts/env-mingw.sh "$stage/$name/third-party/ffmpeg/"
 cat > "$stage/$name/START-HERE.txt" <<'EOF'
 Wormedit Windows preview (64-bit)
@@ -65,6 +66,20 @@ EOF
 git rev-parse HEAD > "$stage/$name/BUILD-REVISION.txt"
 git diff --binary HEAD > "$stage/$name/BUILD-CHANGES.patch"
 mkdir -p "$out"
+# Refuse accidental host libraries, dependency SDKs and debug runtime DLLs.
+unexpected=$(find "$stage/$name" -type f \( -name '*.so' -o -name '*.so.*' -o -name '*.a' \
+    -o -iname '*.lib' -o -iname '*d.dll' -o -iname '*.pdb' \) -print)
+if [[ -n $unexpected ]]; then
+    printf 'Unexpected release files:\n%s\n' "$unexpected" >&2
+    exit 1
+fi
+while IFS= read -r -d '' binary; do
+    if ! "$prefix-objdump" -f "$binary" | grep -q 'file format pei-x86-64'; then
+        echo "Not a Windows x64 binary: $binary" >&2
+        exit 1
+    fi
+done < <(find "$stage/$name" -type f \( -iname '*.exe' -o -iname '*.dll' \) -print0)
+(cd "$stage/$name" && find . -type f | LC_ALL=C sort) > "$out/$name.zip.files.txt"
 rm -f "$out/$name.zip"
 (cd "$stage" && zip -qr -9 "$out/$name.zip" "$name")
 (cd "$out" && sha256sum "$name.zip" > "$name.zip.sha256")

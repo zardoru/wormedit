@@ -1,5 +1,8 @@
 # Resolve the PE imports recursively at install time, including FFmpeg's own imports.
 # Only Windows-provided libraries are excluded; missing third-party DLLs fail installation.
+# Dependencies have already declared their SDK installs. Put application-owned
+# rules (including the shared notices included later) in a separate component.
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME Wormedit)
 set(wormedit_windows_system_dlls
     advapi32 avrt bcrypt cfgmgr32 crypt32 d3d11 d3d12 dcomp dsound dwmapi dxgi
     gdi32 hid imm32 iphlpapi kernel32 mf mfplat mfreadwrite msvcrt ncrypt
@@ -25,8 +28,8 @@ get_target_property(wormedit_sdl_runtime_target SDL3::SDL3 ALIASED_TARGET)
 install(TARGETS wormedit ${wormedit_sdl_runtime_target}
     RUNTIME_DEPENDENCY_SET wormedit_windows_runtime
     RUNTIME DESTINATION "."
-    ARCHIVE EXCLUDE_FROM_ALL
-    LIBRARY EXCLUDE_FROM_ALL)
+    ARCHIVE EXCLUDE_FROM_ALL COMPONENT Development
+    LIBRARY EXCLUDE_FROM_ALL COMPONENT Development)
 if(CMAKE_CROSSCOMPILING)
     # Install scripts otherwise infer ELF from the Linux host, despite the PE inputs.
     install(CODE [[

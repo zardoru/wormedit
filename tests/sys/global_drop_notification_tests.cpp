@@ -249,3 +249,15 @@ TEST_CASE("Startup chart paths use import while native paths retain recovery loa
     check_drop_notification(parsed.requested_primary_path == path);
     check_drop_notification(parsed.request.recovery_entries == std::vector<std::filesystem::path>{recovery});
 }
+
+TEST_CASE("Startup paths are read as UTF-8", "[startup][import]") {
+    application_startup_arguments_t parsed;
+    char program[] = "wormedit";
+    std::string project = "\xe6\x9b\xb2/song.wormedit";
+    std::string recovery = "\xe6\x9b\xb2/song.wormedit.bak";
+    char* arguments[]{program, project.data(), recovery.data()};
+    require_drop_notification(parse_application_startup_arguments(3, arguments, parsed));
+    check_drop_notification(parsed.request.primary_path == std::filesystem::path{u8"\u66f2/song.wormedit"});
+    check_drop_notification(parsed.request.recovery_entries ==
+        std::vector<std::filesystem::path>{std::filesystem::path{u8"\u66f2/song.wormedit.bak"}});
+}

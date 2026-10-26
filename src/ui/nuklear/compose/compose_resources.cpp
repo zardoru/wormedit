@@ -164,7 +164,7 @@ void render_export_dialog(const ResourcePanel& panel) {
         nk_layout_row_dynamic(panel.context, 24, 1);
         nk_labelf(panel.context, NK_TEXT_LEFT, "Saved policy: %s",
                   selected ? existing_files_label(selected->existing_files) : "Unavailable");
-        chrome::dialog_footer_begin(dialog, panel.context, 4, false, 150);
+        chrome::dialog_footer_begin(dialog, panel.context, 4);
         if (chrome::dialog_button(dialog, panel.context, "Cancel", chrome::DialogButtonRole::secondary))
             close_export(state);
         if (chrome::dialog_button(dialog, panel.context, "Export",

@@ -20,13 +20,14 @@ auto parse_application_startup_arguments(int argc, char** argv,
         return false;
     }
     if (argc > 1) {
-        const auto path = std::filesystem::path{argv[1]};
+        // argv is UTF-8 everywhere: SDL converts the Windows command line (see main.cpp).
+        const auto path = text_util::path_from_utf8(argv[1]);
         if (is_supported_project_file_extension(path) && text_util::lowercase_extension(path) != ".wormedit")
             result.chart_import_path = path;
         else result.request.primary_path = path;
     }
     for (int index = 2; index < argc; ++index) {
-        result.request.recovery_entries.emplace_back(argv[index]);
+        result.request.recovery_entries.push_back(text_util::path_from_utf8(argv[index]));
     }
     result.requested_primary_path = result.request.primary_path;
     return true;

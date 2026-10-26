@@ -1,10 +1,14 @@
 #include "sys/app/application.h"
 #include "sys/app/crash_backtrace.h"
 
+// On Windows, SDL supplies the entry point and passes the command line as UTF-8,
+// so startup paths outside the ANSI code page (for example 曲) survive.
+#include <SDL3/SDL_main.h>
+
 #include <memory>
 #include <utility>
 
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]) {
     wormedit::sys::install_crash_backtrace_handlers();
     wormedit::sys::application_startup_arguments_t arguments;
     if (!wormedit::sys::parse_application_startup_arguments(argc, argv, arguments)) return 2;

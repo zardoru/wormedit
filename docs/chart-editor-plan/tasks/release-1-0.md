@@ -146,7 +146,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-764 Stage an unsigned macOS app bundle for owner verification
 
-- **Status:** partial (2026-10-26; macOS staging implemented; Linux GATE has an unchanged timing-placement test failure)
+- **Status:** partial (2026-10-26; macOS staging implemented and the Linux GATE blocker is fixed on main; waits only on the owner's checklist run on a Mac)
 - **Outcome:** `scripts/macos-package.sh` on a Mac produces `Wormedit-1.0.0-rc1-macos-<arch>.zip` holding `Wormedit.app` with assets and manual in `Contents/Resources`, non-system dylibs in `Contents/Frameworks` with rewritten install names, an `Info.plist` built from the numeric version, and an ad-hoc signature; a checklist in `docs/building.md` lets the owner verify it.
 - **Read first:** `CMakeLists.txt` (`APPLE` blocks, install rules), `src/sys/app/macos_menu.mm`, the `SDL_GetBasePath` callers in `src/sys/app/application.cpp` and `src/ui/nuklear/app/frontend.cpp`, `docs/building.md`, `.github/workflows/ci.yml` (macOS job).
 - **Files owned:** new `cmake/macos-bundle.cmake`, new `packaging/macos/` (`Info.plist.in`, entitlements if needed, placeholder `.icns` or its generator), new `scripts/macos-package.sh`, `CMakeLists.txt` (include the bundle file inside `if(APPLE)` only), `docs/building.md` (macOS packaging and Gatekeeper section), this card's status/evidence only (supporting-file extension approved by lane coordinator, 2026-10-26).

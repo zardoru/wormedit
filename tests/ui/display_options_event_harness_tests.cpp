@@ -1,6 +1,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/render/interface_scale.h"
 #include <catch2/catch_test_macros.hpp>
+#include <array>
 #include <source_location>
 
 namespace {
@@ -41,4 +42,30 @@ TEST_CASE("Interface scale handles automatic density and invalid requests", "[di
     CHECK(interface_scale_t::from(0)->percent == 100);
     CHECK(interface_scale_t::from(150)->logical_extent(1200) == 800);
     CHECK_FALSE(interface_scale_t::from(201));
+}
+
+TEST_CASE("Interface scale is capped to keep the minimum logical layout", "[display-options]") {
+    using wormedit::ui::nuklear::interface_scale_t;
+    struct fit_case_t { std::uint32_t requested; int width, height; std::uint32_t expected; };
+    for (const auto& item : std::array<fit_case_t, 7>{{{200, 1600, 1120, 200}, {200, 1440, 900, 160},
+             {200, 1000, 700, 125}, {200, 800, 560, 100}, {200, 600, 400, 100}, {200, 0, 0, 200},
+             {150, 3000, 2000, 150}}}) {
+        CAPTURE(item.requested, item.width, item.height);
+        CHECK(interface_scale_t::from(item.requested)->fitted(item.width, item.height).percent == item.expected);
+    }
+}
+
+TEST_CASE("A small window uses the capped scale and Appearance reports it", "[event-harness][display-options]") {
+    nuklear_event_harness_t harness{1000, 700};
+    auto& view = harness.view().options;
+    view.visible = true;
+    view.category = WORM_UI_OPTIONS_DISPLAY;
+    view.ui_scale_percent = 200;
+    REQUIRE(worm_ui_frontend_set_interface_scale(200));
+    (void)harness.frame();
+    check_display(worm_ui_frontend_interface_scale_percent() == 125);
+    check_display(harness.drawn_text_center("Using 125% to fit this window").has_value());
+    REQUIRE(worm_ui_frontend_set_interface_scale(100));
+    (void)harness.frame();
+    check_display(worm_ui_frontend_interface_scale_percent() == 100);
 }

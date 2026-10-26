@@ -30,7 +30,7 @@ following anchor, lane legend and note-kind palette.
 |Playback & audio |Output device, buffer size, audio levels, keysound memory budget and osu!
 hitsound skin folder. Use *Refresh devices* after connecting an output. Device/buffer changes
 made during playback wait until Stop.
-|Appearance |Default and per-layout field skins, scratch placement, snap colors and grid opacity.
+|Appearance |Interface theme and UI scale, default and per-layout field skins, scratch placement, snap colors and grid opacity. A UI scale too large for the window is capped so the layout keeps at least 800 × 560 units; the page shows the scale in use.
 |Input & shortcuts |Per-layout Lane keys, default bindings for new/imported charts and command
 shortcut capture. Use *Find shortcut* to filter by command name or chord. Click *Change*, press a
 chord, or Escape to cancel capture. Conflicts remain

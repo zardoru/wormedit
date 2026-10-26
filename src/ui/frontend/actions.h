@@ -769,6 +769,8 @@ void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent);
 std::string worm_ui_frontend_apply_display_settings(std::string_view theme, uint32_t scale_percent,
                                                   bool timing_overlay);
 bool worm_ui_frontend_set_interface_scale(uint32_t percent);
+// The scale in use: the requested scale, capped so the window keeps the minimum layout.
+uint32_t worm_ui_frontend_interface_scale_percent(void);
 bool worm_ui_frontend_is_title_bar_drag_position(float x, float y, int window_width);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);

@@ -229,3 +229,16 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 - **Visual evidence:** `STEPS=/tmp/wormedit-lanes/rc1/wyrm-t767/visual-steps.sh scripts/smoke-compose-virtual-x.sh /tmp/wormedit-lanes/rc1/wyrm-t767/setup-control.png compose /tmp/wormedit-lanes/rc1/wyrm-t767/tutorial-ui/tutorial.wormedit`, exit 0. Inspected `setup-control.png` (complete checked label in Setup’s target editor) and `tutorial-export-success.png` (Compose Ctrl+E publication with the flattening warning). The temp copy saves schema 25 with `flatten_bms_branches: true`; `tutorial-ui/exports/osu/manual-tutorial-2.osu` is 1,258 bytes, 8 columns and 16 hit objects. `visual-evidence.json` records the paths; `scratch-probe-fixed.json` independently reports reimport validation. `sha256sum -c fixture-before.sha256` → packaged source fixture `OK`. Existing manual captures do not show the changed target editor, so no checked-in image required refresh.
 - **Remaining / unrelated finding:** T-767 has no remaining work. The existing Export dialog’s rightmost Keep button clips at 1280×720 (560 px dialog, four 150 px footer buttons); Ctrl+E reproduces it. Inspected `export-dialog.png`; exact reproduction and owner are in `findings.md`. No unrelated dialog change was made.
+
+## T-768 Cap the UI scale to the window
+
+- **Status:** done (2026-10-26; found on the owner's Mac at 200%: the docks covered the canvas)
+- **Outcome:** a requested UI scale is capped so the window keeps at least 800 × 560 logical units (the window's minimum size), never below 100%; Appearance shows "Using N% to fit this window" when capped, and the cap follows window resizes.
+- **Read first:** `src/ui/nuklear/render/interface_scale.h`, `src/ui/nuklear/app/frontend.cpp` (`worm_ui_frontend_set_interface_scale`, `worm_ui_frontend_begin_input`), `src/ui/nuklear/preferences/options_window.cpp`.
+- **Files owned:** those three files, `src/ui/frontend/actions.h`, `tests/ui/display_options_event_harness_tests.cpp`, `docs/manual/chapters/settings.adoc`.
+- **Steps:** 1. `interface_scale_t::fitted`. 2. Keep the request separately and refit at the start of each frame before input conversion. 3. Report the scale in use on Appearance. 4. Tests and manual.
+- **Invariants:** the saved preference keeps the user's choice; Automatic stays 100%.
+- **Reject/failure behavior:** an unknown window size keeps the request.
+- **Verify:** fit table and 1000 × 700 event-harness case pass (6/6 scale tests); full suite 5,433/5,433; complexity passes; isolated Xvfb at 200% chose 125% for 1000 × 700 and 178% for 1800 × 1000 with the full Project layout visible (inspected).
+- **Out of scope:** automatic scale from display density (macOS points already account for Retina).
+

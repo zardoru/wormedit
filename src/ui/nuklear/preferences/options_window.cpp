@@ -286,6 +286,11 @@ void interface_scale_picker(nk_context* context, const wormedit::ui::options_vie
     nk_label(context, "UI scale", NK_TEXT_LEFT);
     const auto value = wormedit::ui::chrome::safe_combo(context, names.data(), count,
         selected, 28, nk_vec2(180, 220));
+    if (const auto in_use = worm_ui_frontend_interface_scale_percent();
+        view.ui_scale_percent > in_use) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_labelf(context, NK_TEXT_LEFT, "Using %u%% to fit this window", static_cast<unsigned>(in_use));
+    }
     if (value == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_SCALE, .integer = values[static_cast<std::size_t>(value)]};

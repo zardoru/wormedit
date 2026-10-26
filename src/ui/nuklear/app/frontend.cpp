@@ -110,6 +110,9 @@ static wormedit::ui::nuklear::editor_font_t g_editor_font;
 
 static bool g_frame_timing_visible;
 static wormedit::ui::nuklear::interface_scale_t g_interface_scale;
+// The user's choice; g_interface_scale is this request fitted to the current window.
+static wormedit::ui::nuklear::interface_scale_t g_requested_interface_scale;
+static void fit_interface_scale();
 static bool g_compose_area_shortcuts_active;
 static bool g_context_invocation_allowed;
 static std::uint64_t g_context_project{}, g_context_chart{}, g_context_revision{};
@@ -652,6 +655,7 @@ static float headless_font_width(nk_handle, float height, const char*, int lengt
 
 static void reset_frontend_session() {
     g_interface_scale = {};
+    g_requested_interface_scale = {};
     g_frame_timing_visible = false;
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
@@ -813,6 +817,8 @@ void worm_ui_frontend_shutdown(void) {
 void worm_ui_frontend_begin_input(void) {
     worm_ui_nuklear_compose_state().stem_lanes.stem_lane_resize_cursor_requested = false;
     if (g_context) {
+        // Before this frame's input is converted, so a resize refits the scale consistently.
+        fit_interface_scale();
         nk_sdl_begin_frame(g_context);
         nk_input_begin(g_context);
         g_notification_history_state.pointer_owned_this_frame = false;
@@ -3926,11 +3932,9 @@ void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent) {
     wormedit::ui::theme::set_field_waveform_opacity(percent);
 }
 
-bool worm_ui_frontend_set_interface_scale(uint32_t percent) {
-    const auto scale = wormedit::ui::nuklear::interface_scale_t::from(percent);
-    if (!g_context || !scale) return false;
-    if (scale->percent == g_interface_scale.percent) return true;
-    const auto ratio = g_interface_scale.factor() / scale->factor();
+static void apply_interface_scale(wormedit::ui::nuklear::interface_scale_t scale) {
+    if (scale.percent == g_interface_scale.percent) return;
+    const auto ratio = g_interface_scale.factor() / scale.factor();
     auto& mouse = g_context->input.mouse;
     mouse.pos.x *= ratio;
     mouse.pos.y *= ratio;
@@ -3940,9 +3944,33 @@ bool worm_ui_frontend_set_interface_scale(uint32_t percent) {
         button.clicked_pos.x *= ratio;
         button.clicked_pos.y *= ratio;
     }
-    g_interface_scale = *scale;
-    if (!g_headless) static_cast<void>(g_editor_font.set_raster_scale(scale->factor()));
+    g_interface_scale = scale;
+    if (!g_headless) static_cast<void>(g_editor_font.set_raster_scale(scale.factor()));
+}
+
+// Window size in points, before the interface scale divides it.
+static auto window_points() -> std::pair<int, int> {
+    if (g_headless) return {g_headless_width, g_headless_height};
+    int width = 0, height = 0;
+    if (!g_window || !SDL_GetWindowSize(g_window, &width, &height)) return {};
+    return {width, height};
+}
+
+static void fit_interface_scale() {
+    const auto [width, height] = window_points();
+    apply_interface_scale(g_requested_interface_scale.fitted(width, height));
+}
+
+bool worm_ui_frontend_set_interface_scale(uint32_t percent) {
+    const auto scale = wormedit::ui::nuklear::interface_scale_t::from(percent);
+    if (!g_context || !scale) return false;
+    g_requested_interface_scale = *scale;
+    fit_interface_scale();
     return true;
+}
+
+uint32_t worm_ui_frontend_interface_scale_percent(void) {
+    return g_interface_scale.percent;
 }
 
 bool worm_ui_frontend_is_title_bar_drag_position(float x, float y, int window_width) {

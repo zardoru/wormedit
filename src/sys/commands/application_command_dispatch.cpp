@@ -446,23 +446,21 @@ auto clipboard_commands(command_context_t& context) -> command_result_t {
             wormedit::recipe_id_t{
                 context.environment.editor.commands.project.timing_recipe.recipe_selected},
         .timing_locked = context.environment.editor.commands.project.timing_recipe.timing_locked};
-    if (options.recipe)
-        return compose_action_outcome_t::from(
-            "SV recipes cannot be copied to the chart clipboard.", notification_severity_t::warning,
-            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     auto copied =
         kind == command_kind_t::edit_cut
             ? wormedit::create_cut_chart_clipboard(context.environment.document.history, *state,
                                                    options)
             : wormedit::chart_clipboard_t::from(
                   context.environment.document.history.document, *state,
-                  context.environment.document.history.document.revision, options.kiai_head);
+                  context.environment.document.history.document.revision, options.kiai_head, options.recipe);
     if (!copied)
         return compose_action_outcome_t::from(
             std::move(copied.error()), notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
-    if (kind == command_kind_t::edit_cut)
+    if (kind == command_kind_t::edit_cut) {
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
+        context.environment.editor.commands.project.timing_recipe.recipe_selected = 0;
+    }
     auto& commands = context.environment.editor.commands;
     commands.project.clipboard.chart_clipboard = std::move(*copied);
     commands.project.clipboard.system_text_at_copy =

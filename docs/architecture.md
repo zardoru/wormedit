@@ -657,3 +657,15 @@ at each impulse position without forming impulse cross-products. Coincident sour
 weighting by nonparticipating continuous recipes.
 Preview and export consume the same prepared boxes and expose realized area/error without
 persisting sampled clouds.
+
+SV recipe Copy/Paste retains a project-owned definition with a stable recipe key.
+Each placement keeps its own ID, range and enabled flag; the definition owns all
+other built-in and Lua configuration, including frozen source and its descriptor.
+Existing chart consumers read effective placement snapshots. The shared publication
+boundary reconciles configuration edits through the definition and refreshes all
+uses before validation and one Undo publication; conflicting edits reject together.
+Deleting a placement retains the definition, and Duplicate explicitly creates an
+independent recipe. Native schema23 stores definitions once and placements as
+references, rebuilding effective snapshots on load. The optional definition list
+defaults empty for other additive schema23 files. Scoped BMS recipe clipboard
+operations currently refuse explicitly until reference edits have a semantic adapter.

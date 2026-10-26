@@ -1844,6 +1844,8 @@ auto validate_song_recipes(document_validation_work_t& work) -> void {
             }
         }
     }
+    for (const auto& definition : work.song.sv_recipe_definitions)
+        validate_lua_input_assets(work, definition.value);
     for (const auto& recipe : work.song.generator_recipes) {
         const auto diagnostics = validate_generator_recipe(recipe);
         work.diagnostics.insert(work.diagnostics.end(), diagnostics.begin(), diagnostics.end());
@@ -2003,6 +2005,8 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
                        diagnostics);
         contextualize_chart_diagnostics(chart, diagnostics, first_diagnostic);
     }
+    const auto definitions = validate_sv_recipe_definitions(song);
+    diagnostics.insert(diagnostics.end(), definitions.begin(), definitions.end());
     const auto links = validate_timing_links(song);
     diagnostics.insert(diagnostics.end(), links.begin(), links.end());
     validate_song_recipes(work);

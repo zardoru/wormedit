@@ -396,10 +396,50 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_lua_t, api_version, entry_point, so
                                    source_hash, parameters, inputs, seed, mode, cycles)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_impulse_t, at, area)
 // expression_source is schema 2; schema 1 documents gain an empty one in migrate_v1_to_v2.
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_t, id, name, range, output, curve, parameters,
-                                   sampling, expression_source, lua, transition_duration,
-                                   transition_is_seconds, enabled, postprocess, impulses,
-                                   finite_box_width_milliseconds)
+void to_json(json& value, const sv_recipe_t& recipe) {
+    if (recipe.definition) {
+        value = json{{"id", recipe.id}, {"range", recipe.range},
+            {"enabled", recipe.enabled}, {"definition", recipe.definition}};
+        return;
+    }
+    value = json{{"id", recipe.id},
+        {"name", recipe.name},
+        {"range", recipe.range},
+        {"output", recipe.output},
+        {"curve", recipe.curve},
+        {"parameters", recipe.parameters},
+        {"sampling", recipe.sampling},
+        {"expression_source", recipe.expression_source},
+        {"lua", recipe.lua},
+        {"transition_duration", recipe.transition_duration},
+        {"transition_is_seconds", recipe.transition_is_seconds},
+        {"enabled", recipe.enabled},
+        {"postprocess", recipe.postprocess},
+        {"impulses", recipe.impulses},
+        {"finite_box_width_milliseconds", recipe.finite_box_width_milliseconds}};
+}
+
+void from_json(const json& value, sv_recipe_t& recipe) {
+    recipe = {};
+    recipe.definition = value.value("definition", recipe_id_t{});
+    value.at("id").get_to(recipe.id);
+    value.at("range").get_to(recipe.range);
+    value.at("enabled").get_to(recipe.enabled);
+    if (recipe.definition) return;
+    value.at("name").get_to(recipe.name);
+    value.at("output").get_to(recipe.output);
+    value.at("curve").get_to(recipe.curve);
+    value.at("parameters").get_to(recipe.parameters);
+    value.at("sampling").get_to(recipe.sampling);
+    value.at("expression_source").get_to(recipe.expression_source);
+    value.at("lua").get_to(recipe.lua);
+    value.at("transition_duration").get_to(recipe.transition_duration);
+    value.at("transition_is_seconds").get_to(recipe.transition_is_seconds);
+    value.at("postprocess").get_to(recipe.postprocess);
+    value.at("impulses").get_to(recipe.impulses);
+    value.at("finite_box_width_milliseconds").get_to(recipe.finite_box_width_milliseconds);
+}
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_definition_t, id, value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
                                    provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_frame, locked)
@@ -886,6 +926,7 @@ void to_json(json& value, const song_document_t& song) {
                  {"resources", song.resources},
                  {"midi_assets", song.midi_assets},
                  {"generator_recipes", song.generator_recipes},
+                 {"sv_recipe_definitions", song.sv_recipe_definitions},
                  {"storyboards", song.storyboards},
                  {"charts", song.charts},
                  {"output_groups", song.output_groups},
@@ -920,8 +961,16 @@ void from_json(const json& value, song_document_t& song) {
     value.at("resources").get_to(song.resources);
     value.at("midi_assets").get_to(song.midi_assets);
     value.at("generator_recipes").get_to(song.generator_recipes);
+    song.sv_recipe_definitions = value.value("sv_recipe_definitions", std::vector<sv_recipe_definition_t>{});
     value.at("storyboards").get_to(song.storyboards);
     value.at("charts").get_to(song.charts);
+    for (auto& chart : song.charts) {
+        for (auto& recipe : chart.sv_recipes) {
+            if (!recipe.definition) continue;
+            if (const auto* definition = song.find_sv_recipe_definition(recipe.definition))
+                recipe = definition->make_placement(recipe.id, recipe.range, recipe.enabled);
+        }
+    }
     value.at("output_groups").get_to(song.output_groups);
     value.at("quantization_presets").get_to(song.quantization_presets);
     value.at("export_cuts").get_to(song.export_cuts);
@@ -1427,6 +1476,8 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     if (input.size() + 1 != canonical.size()) {
         return false;
     }
+    if (input.contains("schema_version") && !input.contains("sv_recipe_definitions") &&
+        canonical.contains("sv_recipe_definitions") && canonical.at("sv_recipe_definitions").empty()) return true;
     if (context == schema_shape_context_t::storyboard_entry) {
         return !input.contains("model") && canonical.contains("model") &&
                canonical.at("model").is_null();

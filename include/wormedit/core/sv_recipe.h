@@ -13,6 +13,12 @@
 
 namespace wormedit {
 
+// Reconcile effective placement snapshots against the single project definition.
+// Conflicting edits in one publication reject atomically.
+[[nodiscard]] auto reconcile_sv_recipe_definitions(const song_document_t& before,
+    song_document_t& proposed) -> diagnostic_list_t;
+[[nodiscard]] auto validate_sv_recipe_definitions(const song_document_t&) -> diagnostic_list_t;
+
 inline constexpr std::size_t maximum_sv_recipes_per_chart = 256;
 inline constexpr std::uint32_t maximum_sv_recipe_sample_points = 4096;
 

@@ -309,6 +309,7 @@ struct compose_recipe_form_view_t {
     bool visible{};
     bool enabled{};
     wormedit::recipe_id_t recipe_id{};
+    wormedit::recipe_id_t definition_id{};
     std::string_view name{};
     std::string_view expression_source{};
     std::string_view status_text{};

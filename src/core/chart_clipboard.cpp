@@ -2,6 +2,7 @@
 #include <unordered_map>
 #include "interaction_edit_commit.h"
 #include "chart_object_ids.h"
+#include "chart_clipboard_recipes.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
@@ -186,7 +187,7 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
 
 auto chart_clipboard_t::from(const song_document_t& document,
                              const editor_interaction_state_t& state,
-                             std::uint64_t expected_revision, object_id_t kiai_head)
+                             std::uint64_t expected_revision, object_id_t kiai_head, recipe_id_t recipe)
     -> chart_clipboard_outcome_t {
     const document_stamp_t stamp{.project = document.id, .revision = expected_revision};
     if (!stamp.is_current(document))
@@ -194,12 +195,14 @@ auto chart_clipboard_t::from(const song_document_t& document,
     const auto chart = document.read_chart(state.chart);
     if (chart == nullptr)
         return std::unexpected(std::string{"The selected chart no longer exists."});
+    if (recipe && document.find_bms_program(state.chart))
+        return std::unexpected(std::string{"Shared recipe clipboard is unavailable for scoped BMS charts."});
     auto selected = selected_objects(state);
     const auto boundaries = selected_kiai_boundaries(document, state, kiai_head);
     if (!boundaries)
         return std::unexpected(std::string{"The selected Kiai area no longer exists."});
     selected.insert(boundaries->begin(), boundaries->end());
-    if (selected.empty())
+    if (selected.empty() && !recipe)
         return std::unexpected(std::string{"Select notes, BGM events, timing objects or bar lines to copy."});
     if (selected.size() > maximum_objects)
         return std::unexpected(std::string{"The clipboard object limit was exceeded."});
@@ -207,7 +210,8 @@ auto chart_clipboard_t::from(const song_document_t& document,
     if (!indexed || !chart->divisions_per_standard_measure)
         return std::unexpected(std::string{"The chart positions are invalid."});
     chart_clipboard_t clipboard{.source_song = document.id, .source_chart = chart->id};
-    if (!collect(clipboard, *chart, *indexed, selected))
+    if (!append_clipboard_recipe(clipboard, *chart, *indexed, recipe) ||
+        !collect(clipboard, *chart, *indexed, selected))
         return std::unexpected(
             std::string{"The selection contains unavailable or unsupported objects."});
     // Every absolute offset originated as an integer row in this resolution.
@@ -218,10 +222,15 @@ auto chart_clipboard_t::from(const song_document_t& document,
     std::ranges::stable_sort(clipboard.objects, {}, [&row_of](const auto& object) { return row_of(object.offset); });
     std::ranges::sort(clipboard.bar_lines, {}, row_of);
     std::optional<std::uint64_t> anchor;
-    if (!clipboard.objects.empty()) anchor = row_of(clipboard.objects.front().offset);
+    if (!clipboard.recipes.empty()) anchor = row_of(clipboard.recipes.front().offset);
+    if (!clipboard.objects.empty())
+        anchor = std::min(anchor.value_or(std::numeric_limits<std::uint64_t>::max()),
+                          row_of(clipboard.objects.front().offset));
     if (!clipboard.bar_lines.empty())
         anchor = std::min(anchor.value_or(std::numeric_limits<std::uint64_t>::max()),
                           row_of(clipboard.bar_lines.front()));
+    for (auto& copied : clipboard.recipes)
+        copied.offset = rows_to_fraction(row_of(copied.offset) - *anchor, resolution);
     for (auto& object : clipboard.objects)
         object.offset = rows_to_fraction(row_of(object.offset) - *anchor, resolution);
     for (auto& offset : clipboard.bar_lines) offset = rows_to_fraction(row_of(offset) - *anchor, resolution);
@@ -330,10 +339,8 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
 auto create_cut_chart_clipboard(document_history_t& history, editor_interaction_state_t& state,
                                 selection_delete_options_t options)
     -> chart_clipboard_outcome_t {
-    if (options.recipe)
-        return std::unexpected(std::string{"SV recipes cannot be copied to the chart clipboard."});
     auto result =
-        chart_clipboard_t::from(history.document, state, history.document.revision, options.kiai_head);
+        chart_clipboard_t::from(history.document, state, history.document.revision, options.kiai_head, options.recipe);
     if (!result)
         return result;
     options.label = "Cut selection";
@@ -345,8 +352,7 @@ auto create_cut_chart_clipboard(document_history_t& history, editor_interaction_
     return result;
 }
 
-namespace {
-auto exact_rows(rational_t value, std::uint64_t resolution) -> std::optional<std::uint64_t> {
+auto exact_clipboard_rows(rational_t value, std::uint64_t resolution) -> std::optional<std::uint64_t> {
     if (!value.denominator)
         return std::nullopt;
     const auto reduced = rows_to_fraction(value.numerator, value.denominator);
@@ -357,6 +363,8 @@ auto exact_rows(rational_t value, std::uint64_t resolution) -> std::optional<std
         return std::nullopt;
     return reduced.numerator * scale;
 }
+
+namespace {
 
 auto paste_position(const measure_index_t& index, std::uint64_t row)
     -> std::optional<local_position_t> {
@@ -372,7 +380,7 @@ auto place_note(note_t note, const chart_clipboard_object_t& object,
                 const chart_document_t& chart, const measure_index_t& index,
                 local_position_t position, std::uint64_t row) -> std::optional<note_t> {
     const auto* layout = layout_at(chart, index, position);
-    const auto duration = exact_rows(object.duration, chart.divisions_per_standard_measure);
+    const auto duration = exact_clipboard_rows(object.duration, chart.divisions_per_standard_measure);
     if (!layout || object.lane_index >= layout->lanes.size() || !duration)
         return std::nullopt;
     note.position = position;
@@ -390,7 +398,7 @@ auto place_note(note_t note, const chart_clipboard_object_t& object,
 auto place_bgm(bgm_event_t event, const chart_clipboard_object_t& object,
                const chart_document_t& chart, const measure_index_t& index,
                local_position_t position, std::uint64_t row) -> std::optional<bgm_event_t> {
-    const auto duration = exact_rows(object.duration, chart.divisions_per_standard_measure);
+    const auto duration = exact_clipboard_rows(object.duration, chart.divisions_per_standard_measure);
     if (object.lane_index >= chart.bgm_source_lanes.size() || !duration) return std::nullopt;
     event.position = position;
     event.source_lane = chart.bgm_source_lanes[object.lane_index].id;
@@ -407,7 +415,7 @@ auto place_bgm(bgm_event_t event, const chart_clipboard_object_t& object,
 auto place_timing_object(const chart_clipboard_object_t& object, const chart_document_t& chart,
                          const measure_index_t& index, local_position_t position,
                          std::uint64_t row) -> std::optional<chart_clipboard_payload_t> {
-    const auto duration = exact_rows(object.duration, chart.divisions_per_standard_measure);
+    const auto duration = exact_clipboard_rows(object.duration, chart.divisions_per_standard_measure);
     if (!duration) return std::nullopt;
     auto payload = object.payload;
     if (auto* warp = std::get_if<warp_event_t>(&payload)) {
@@ -428,7 +436,7 @@ auto place_timing_object(const chart_clipboard_object_t& object, const chart_doc
 auto place_object(const chart_clipboard_object_t& object, const chart_document_t& chart,
                   const measure_index_t& index, std::uint64_t anchor)
     -> std::optional<chart_clipboard_payload_t> {
-    const auto offset = exact_rows(object.offset, chart.divisions_per_standard_measure);
+    const auto offset = exact_clipboard_rows(object.offset, chart.divisions_per_standard_measure);
     if (!offset || *offset > std::numeric_limits<std::uint64_t>::max() - anchor)
         return std::nullopt;
     const auto row = anchor + *offset;
@@ -648,7 +656,7 @@ auto missing_paste_lanes(const chart_clipboard_t& clipboard, const chart_documen
             continue;
         }
         if (!std::holds_alternative<note_t>(object.payload)) continue;
-        const auto offset = exact_rows(object.offset, chart.divisions_per_standard_measure);
+        const auto offset = exact_clipboard_rows(object.offset, chart.divisions_per_standard_measure);
         if (!offset || *offset > std::numeric_limits<std::uint64_t>::max() - anchor) continue;
         const auto position = paste_position(index, anchor + *offset);
         if (!position) continue;
@@ -670,7 +678,7 @@ auto add_paste_bar_lines(chart_document_t& chart, const chart_clipboard_t& clipb
     report.new_bgm_lanes.assign(chart.bgm_source_lanes.begin() + original_columns,
                                 chart.bgm_source_lanes.end());
     for (const auto& offset : clipboard.bar_lines) {
-        const auto rows = exact_rows(offset, chart.divisions_per_standard_measure);
+        const auto rows = exact_clipboard_rows(offset, chart.divisions_per_standard_measure);
         if (!rows || *rows > std::numeric_limits<std::uint64_t>::max() - anchor)
             return std::unexpected(std::string{"A clipboard bar line cannot be represented exactly."});
         report.bar_line_rows.push_back(anchor + *rows);
@@ -735,8 +743,8 @@ auto scoped_paste_additions(document_command_transaction_t& transaction, chart_i
 auto stage_scoped_paste(document_command_transaction_t& transaction, chart_id_t difficulty,
     const chart_paste_report_t& report, const std::vector<chart_paste_stem_event_t>& stems)
     -> diagnosed_t<std::optional<std::string>> {
-    if (!report.bar_line_rows.empty() || !stems.empty()) return {.diagnostics = {error(
-        diagnostic_code_t::unsupported_feature, "Scoped paste cannot change measure geometry or retained stem channels.")}};
+    if (!report.recipes.empty() || !report.bar_line_rows.empty() || !stems.empty()) return {.diagnostics = {error(
+        diagnostic_code_t::unsupported_feature, "Scoped paste cannot change measure geometry, retained stem channels or shared recipe references.")}};
     auto additions = scoped_paste_additions(transaction, difficulty, report);
     if (!additions.value || !additions.ok()) return {.diagnostics = std::move(additions.diagnostics)};
     auto staged = transaction.stage_bms_native_events(difficulty, {}, *additions.value, "Paste chart objects");
@@ -754,7 +762,7 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     const auto stamp = scope.captured_stamp();
     chart_paste_proposal_t result;
     if (document.id != clipboard.source_song) return std::unexpected(chart_paste_diagnostic_t::from("Clipboard resources belong to another project.", stamp, std::move(result.report)));
-    const auto count = clipboard.objects.size() + clipboard.bar_lines.size();
+    const auto count = clipboard.objects.size() + clipboard.bar_lines.size() + clipboard.recipes.size();
     if (count == 0 || count > maximum_objects)
         return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", stamp, std::move(result.report)));
     auto proposed = document;
@@ -762,10 +770,10 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     auto scoped_chart = source_chart ? *source_chart : chart_document_t{};
     const bool scoped = !document.find_chart(chart_id) && source_chart;
     auto* chart = scoped ? &scoped_chart : proposed.find_chart(chart_id);
-    if (scoped && (!clipboard.bar_lines.empty() ||
+    if (scoped && (!clipboard.recipes.empty() || !clipboard.bar_lines.empty() ||
         std::ranges::any_of(clipboard.objects, [](const auto& object) { return object.stem.has_value(); })))
         return std::unexpected(chart_paste_diagnostic_t::from(
-            "Scoped paste cannot change measure geometry or retained stem channels.", stamp, std::move(result.report)));
+            "Scoped paste cannot change measure geometry, retained stem channels or shared recipe references.", stamp, std::move(result.report)));
     if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", stamp, std::move(result.report)));
     const auto original = measure_index_t::from(*chart);
     const auto row = original ? original->row_of(anchor) : std::nullopt;
@@ -780,6 +788,9 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     if (!placed)
         return std::unexpected(chart_paste_diagnostic_t::from(std::move(placed.error()), stamp,
             std::move(result.report)));
+    auto recipes = place_clipboard_recipes(document, *chart, *indexed, clipboard, *row, result);
+    if (!recipes) return std::unexpected(chart_paste_diagnostic_t::from(
+        std::move(recipes.error()), stamp, std::move(result.report)));
     if (has_paste_collision(*chart, result, *indexed)) {
         return std::unexpected(chart_paste_diagnostic_t::from("Paste collides with existing chart objects.", stamp, std::move(result.report)));
     }
@@ -793,6 +804,7 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     if (scoped) return result;
     for (const auto& object : result.report.objects) append_paste_object(*chart, object);
     append_stem_events(*chart, result.stem_events);
+    stage_clipboard_recipes(proposed, chart_id, result);
     const auto diagnostics = validate_document(proposed);
     const auto error = std::ranges::find(diagnostics, diagnostic_severity_t::error, &diagnostic_t::severity);
     if (error != diagnostics.end()) return std::unexpected(chart_paste_diagnostic_t::from(error->message, stamp, std::move(result.report)));
@@ -829,9 +841,15 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
     if (stamp.document.project != transaction.current_document().id)
         return {.diagnostics = {error(diagnostic_code_t::collision,
             "Clipboard resources belong to another project.")}};
-    if (report.objects.empty() && report.bar_line_rows.empty()) return {};
+    if (report.objects.empty() && report.bar_line_rows.empty() && report.recipes.empty()) return {};
     if (!transaction.source_chart(stamp.chart))
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
+    if (!report.recipes.empty()) {
+        const auto first = transaction.next_recipe_id(report.recipes.size());
+        if (!first) return {.diagnostics = {error(diagnostic_code_t::invalid_id, "SV recipe IDs are exhausted.")}};
+        auto id = first->value;
+        for (auto& recipe : report.recipes) recipe.id = recipe_id_t{id++};
+    }
     if (transaction.has_bms_program(stamp.chart))
         return stage_scoped_paste(transaction, stamp.chart, report, stem_events);
     auto& proposed = transaction.document();
@@ -843,6 +861,7 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
         return {.diagnostics = std::move(diagnostics)};
     for (auto& object : report.objects) append_paste_object(*chart, std::move(object));
     append_stem_events(*chart, stem_events);
+    stage_clipboard_recipes(proposed, stamp.chart, *this);
     return {.value = "Paste chart objects"};
 }
 

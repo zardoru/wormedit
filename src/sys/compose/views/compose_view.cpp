@@ -1,6 +1,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose/views/compose_view.h"
+#include "sys/compose/compose_clipboard_selection.h"
 #include "sys/compose/actions/compose_area_actions.h"
 #include "sys/compose/views/compose_draw_source_view.h"
 #include "sys/compose/actions/compose_note_to_bgm.h"
@@ -2413,10 +2414,7 @@ void populate_compose_bgm_mix(const compose_projection_context_t<wormedit::edito
 void populate_compose_final_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input) {
     input.frame.view().clipboard_copy_available =
         input.frame.retained_state &&
-        !input.frame.retained_state->is_pending() &&
-        (!input.frame.retained_state->selected_objects.empty() ||
-         !input.frame.retained_state->selected_notes.empty() ||
-         input.frame.application_state.project.timing_recipe.kiai_selected_head != 0);
+        can_copy_compose_selection(*input.frame.retained_state, input.frame.application_state);
     input.frame.view().clipboard_paste_available =
         input.frame.application_state.project.clipboard.chart_clipboard.has_value() && input.frame.retained_state &&
         !input.frame.retained_state->is_pending();

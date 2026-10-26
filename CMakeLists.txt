@@ -74,6 +74,7 @@ add_library(wormedit_core
     src/core/chart_compare.cpp
     src/core/command.cpp
     src/core/command_registry.cpp
+    src/core/chart_clipboard_recipes.cpp
     src/core/chart_clipboard.cpp
     src/core/document.cpp
     src/core/sound_groups.cpp
@@ -146,6 +147,7 @@ add_library(wormedit_core
     src/core/notifications.cpp
     src/core/storyboard.cpp
     src/core/storyboard_preview.cpp
+    src/core/sv_recipe_definitions.cpp
     src/core/sv_recipe.cpp
     src/core/generator.cpp
     src/core/generator_chart.cpp

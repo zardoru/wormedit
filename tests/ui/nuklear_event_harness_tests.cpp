@@ -9,6 +9,7 @@
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/compose/compose_sound_selection.h"
+#include "sys/compose/compose_clipboard_selection.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"
@@ -8961,17 +8962,74 @@ auto click_recipe(nuklear_event_harness_t& harness, const char* text,
     return std::nullopt;
 }
 }
+TEST_CASE("Recipe-only Copy and Paste shortcuts use shared availability and commit a linked placement",
+          "[frontend-state][event-harness][recipe-areas][clipboard]") {
+    t422_fixture_t fixture{recipe_management_song()};
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    prepare_recipe_inspector(fixture);
+    expect_t422(fixture.harness.view().compose.clipboard_copy_available);
+    std::optional<timing_lane_pseudonote_outcome_t> timing_stage;
+    const command_dispatch_inputs_t environment{
+        .document = {.history = fixture.history, .workspace = *fixture.binding.value,
+                     .notifications = fixture.sink},
+        .editor = {.commands = fixture.application, .retained = fixture.interaction,
+                   .timing_stage = timing_stage}};
+    auto registry = command_registry_t::from([environment](const command_invocation_context_t& context) {
+        const auto command = parse_application_command(context.command.value);
+        expect_t422(command.has_value());
+        return invoke_application_command(*command, environment);
+    });
+    (void)update_command_state(registry, {"edit.copy"},
+        can_copy_compose_selection(*fixture.interaction, fixture.application), std::nullopt);
+    const auto copy = key_event(SDL_EVENT_KEY_DOWN, SDLK_C, SDL_SCANCODE_C);
+    const auto copied = fixture.harness.frame(std::span{&copy, 1}, SDL_KMOD_CTRL);
+    expect_t422(route_harness_shortcut(copied.get(), registry).value.is_invoked());
+    expect_t422(fixture.application.project.clipboard.chart_clipboard.has_value());
+    expect_t422(fixture.application.project.clipboard.chart_clipboard->recipes.size() == 1);
+    const auto copy_up = key_event(SDL_EVENT_KEY_UP, SDLK_C, SDL_SCANCODE_C);
+    (void)fixture.harness.frame(std::span{&copy_up, 1});
+    fixture.interaction->cursor = {measure_id_t{1}, 480};
+    fixture.project();
+    (void)update_command_state(registry, {"edit.paste"}, fixture.harness.view().compose.clipboard_paste_available, std::nullopt);
+    const auto paste = key_event(SDL_EVENT_KEY_DOWN, SDLK_V, SDL_SCANCODE_V);
+    const auto pasted = fixture.harness.frame(std::span{&paste, 1}, SDL_KMOD_CTRL);
+    expect_t422(route_harness_shortcut(pasted.get(), registry).value.is_invoked());
+    expect_t422(fixture.application.project.clipboard.paste_session.has_value());
+    const auto paste_up = key_event(SDL_EVENT_KEY_UP, SDLK_V, SDL_SCANCODE_V);
+    (void)fixture.harness.frame(std::span{&paste_up, 1});
+    fixture.project();
+    const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+    (void)fixture.dispatch(fixture.harness.frame(std::span{&enter, 1}));
+    const auto& recipes = fixture.history.document.charts.front().sv_recipes;
+    expect_t422(recipes.size() == 3);
+    expect_t422(recipes.front().definition == recipes.back().definition);
+    expect_t422(static_cast<bool>(recipes.front().definition));
+}
+
 TEST_CASE("Compose recipe inspector duplicates and disables the first order boundary",
           "[ui][event-harness][recipe-areas]") {
     t422_fixture_t fixture{recipe_management_song()};
+    const auto chart = fixture.history.document.charts.front().id;
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    const editor_interaction_state_t selection{.chart = chart};
+    const auto clipboard = chart_clipboard_t::from(fixture.history.document, selection,
+        fixture.history.document.revision, {}, recipe_id_t{7001});
+    expect_t422(clipboard.has_value());
+    expect_t422(paste_chart_clipboard(fixture.history, chart, *clipboard, {measure, 480}).applied);
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
     prepare_recipe_inspector(fixture);
+    expect_t422(fixture.harness.view().compose.clipboard_copy_available);
+    expect_t422(fixture.harness.view().compose.recipe_form.definition_id == recipe_id_t{7001});
     CHECK_FALSE(click_recipe(fixture.harness, "Earlier"));
     (void)click_button(fixture.harness, "More");
     (void)fixture.harness.frame();
-    const auto duplicated = click_recipe(fixture.harness, "Duplicate");
+    const auto duplicated = click_recipe(fixture.harness, "Duplicate as independent");
     REQUIRE(duplicated);
     CHECK(fixture.dispatch(*duplicated) == "SV recipe duplicated.");
-    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 3);
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 4);
+    expect_t422(!fixture.history.document.charts.front().sv_recipes[1].definition);
 }
 TEST_CASE("Compose recipe selector exposes overlapping recipes and their evaluation order",
           "[ui][event-harness][recipe-areas]") {

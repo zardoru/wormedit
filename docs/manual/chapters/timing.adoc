@@ -160,7 +160,15 @@ accept decimals or fractions (`0.5`, `1/2`); drag a value up or down to change i
 for finer steps. Edits preview in the lane as you make them and apply as one undo step when you
 press Enter, leave the field, release a drag or pick an option; Undo reverts them. When values
 are rejected the inspector says why and offers *Revert*. The header turns the recipe on or off,
-and *More* duplicates, materializes or deletes it. When recipes overlap, an *Order* row lists
+and *More* duplicates, materializes or deletes it. Copy a selected recipe with *Copy*
+and place another use with *Paste*. All uses share the same definition: changing its
+curve, Lua source, parameters or post-processing updates every use. Each use keeps
+its own range and on/off state. Deleting the original use preserves the definition.
+Choose *More → Duplicate as independent* to make a separate definition before editing.
+Shared recipe Copy/Paste is currently unavailable in scoped BMS charts. Recipes using
+a fixed row step require matching chart resolutions; use an independent duplicate
+when the grids differ.
+When recipes overlap, an *Order* row lists
 them; overlapping recipes multiply, and for Speeds the last one sets the transition.
 
 Under *Adjust*, a recipe can carry an ordered post-process pipeline.

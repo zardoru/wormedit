@@ -1,5 +1,6 @@
 #include "common/window_presentation.h"
 #include "sys/compose/generator_runtime.h"
+#include "sys/compose/compose_clipboard_selection.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include "core/text_util.h"
 #include "sys/resources/catalog_view.h"
@@ -685,14 +686,6 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
             compose_ready && paint_active && compose_state->armed_note_kind == kind);
 }
 
-auto has_clipboard_selection(bool compose_ready, bool pending,
-    const std::optional<wormedit::editor_interaction_state_t>& state,
-    std::uint64_t kiai_selected_head) -> bool {
-    return compose_ready && !pending &&
-        (!state->selected_objects.empty() || !state->selected_notes.empty() ||
-         kiai_selected_head != 0);
-}
-
 auto play_stop_available(const wormedit::chart_document_t* chart,
     const application_command_state_t& state) -> bool {
     return chart && state.services.transport_preview_playing && state.services.transport_play_pause &&
@@ -823,8 +816,8 @@ void refresh_application_command_states(
     const bool can_move_bgm = bgm_move_enabled(chart, compose_state, compose_ready, pending, application_state);
     set("edit.move_to_bgm", can_move_bgm);
     set("edit.move_next_to_bgm", can_move_bgm);
-    const bool clipboard_selection = has_clipboard_selection(compose_ready, pending, compose_state,
-                                                          application_state.project.timing_recipe.kiai_selected_head);
+    const bool clipboard_selection = compose_ready &&
+        can_copy_compose_selection(*compose_state, application_state);
     set("edit.copy", clipboard_selection);
     set("edit.cut", clipboard_selection);
     set("edit.paste", paste_target_available(compose_ready, pending, application_state));

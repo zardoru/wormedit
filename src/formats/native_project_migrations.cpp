@@ -463,8 +463,10 @@ auto migrate_v21_to_v22(nlohmann::json& document) -> std::string {
     return {};
 }
 
-// Schema23 is shared with the independent SV-definition addition at integration.
+// Schema23 adds shared SV definitions and historical generated difficulties.
+// Existing SV placements remain independent; generators own no extra charts.
 auto migrate_v22_to_v23(nlohmann::json& document) -> std::string {
+    document["sv_recipe_definitions"] = nlohmann::json::array();
     if (!document.contains("generator_recipes")) return {};
     for (auto& recipe : document.at("generator_recipes"))
         if (!recipe.contains("generated_charts")) recipe["generated_charts"] = nlohmann::json::array();

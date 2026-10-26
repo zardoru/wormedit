@@ -2045,16 +2045,17 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     }
     auto recipe = edit.value;
     if (!recipe.id) {
-        const auto id = id_ceiling_t<recipe_id_t>::from(context.transaction.current_document()).next();
+        const auto id = context.transaction.next_recipe_id();
         if (!id) {
             reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe ID sequence is exhausted");
             return;
         }
         recipe.id = *id;
-    } else if (id_counter_t<recipe_id_t>::from(context.transaction.current_document(), recipe.id, 1).count != 0) {
+    } else if (context.transaction.current_document().find_sv_recipe_definition(recipe.id) ||
+               id_counter_t<recipe_id_t>::from(context.transaction.current_document(), recipe.id, 1).count != 0) {
         reject(context.transaction.outcome().diagnostics, diagnostic_code_t::duplicate_id,
-               "SV recipe ID is already used by a generator recipe");
+               "SV recipe ID is already used or reserved by a shared definition");
         return;
     }
     if (!append_recipe_validation(context.transaction.outcome(), *chart, recipe)) return;
@@ -2070,6 +2071,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context, chart_document_t&
     const auto index = static_cast<std::size_t>(source - chart.sv_recipes.data());
     auto copy = *source;
     copy.id = {};
+    copy.definition = {};
     apply_recipe_operation(context, insert_edit_t<sv_recipe_t>{.chart = edit.chart, .value = copy});
     if (!context.changed) return;
     auto& recipes = chart.sv_recipes;

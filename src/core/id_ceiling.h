@@ -241,6 +241,9 @@ template<class Id> struct id_ceiling_t {
         id_ceiling_t result{.limit = bound};
         (void)id_declarations_t<Id>::visit(owner, result);
         if constexpr (std::same_as<Owner, song_document_t>) {
+            if constexpr (std::same_as<Id, recipe_id_t> || std::same_as<Id, object_id_t>)
+                for (const auto& definition : owner.sv_recipe_definitions)
+                    result.reserve(Id{definition.id.value});
             for (const auto& recipe : owner.generator_recipes) {
                 result.reserve_generated_charts(recipe);
                 if constexpr (std::same_as<Id, object_id_t>)

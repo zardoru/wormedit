@@ -911,6 +911,7 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
     view.recipe_form.visible = false;
     view.recipe_form.enabled = false;
     view.recipe_form.recipe_id = {};
+    view.recipe_form.definition_id = {};
     view.recipe_form.name = {};
     view.recipe_form.expression_source = {};
     view.recipe_form.status_text = {};
@@ -936,6 +937,7 @@ void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
     }
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id.value = recipe->id.value;
+    view.recipe_form.definition_id = recipe->definition;
     view.recipe_form.enabled = recipe->enabled;
     view.recipe_form.name = recipe->name;
     view.recipe_form.expression_source = recipe->expression_source;

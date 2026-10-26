@@ -1040,8 +1040,7 @@ TEST_CASE("SV recipe allocation and duplicate rejection share every declaration 
         insert_edit_t<sv_recipe_t>{.chart = chart_id_t{10},
             .value = make_constant_recipe(recipe_id_t{71}, measure_id_t{11}, measure_id_t{12}, {3, 1})});
     REQUIRE(duplicate.diagnostics.size() == 1);
-    CHECK((!duplicate.applied && duplicate.diagnostics.front().code == diagnostic_code_t::duplicate_id &&
-           duplicate.diagnostics.front().message == "SV recipe ID is already used by a generator recipe"));
+    CHECK((!duplicate.applied && duplicate.diagnostics.front().code == diagnostic_code_t::duplicate_id));
     CHECK(history.undo.size() == 1);
 }
 

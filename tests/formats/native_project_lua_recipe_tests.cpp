@@ -152,3 +152,49 @@ TEST_CASE("native Lua inputs resolve against every asset family and reject dangl
     }));
     CHECK_FALSE(write_native_project(song).value);
 }
+
+namespace {
+void check_shared_recipe(bool value) { CHECK(value); }
+void require_shared_recipe(bool value) { REQUIRE(value); }
+} // namespace
+
+TEST_CASE("Native shared recipe definitions persist once and restore each placement", "[unit][format][native-project][sv-recipe]") {
+    auto song = make_lua_recipe_song();
+    const auto definition = sv_recipe_definition_t::from(recipe_id_t{20}, song.charts.front().sv_recipes.front());
+    song.sv_recipe_definitions.push_back(definition);
+    song.charts.front().sv_recipes.front() = definition.make_placement(recipe_id_t{20},
+        {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}}, true);
+    song.charts.front().sv_recipes.push_back(definition.make_placement(recipe_id_t{21},
+        {{measure_id_t{12}, 0}, {measure_id_t{12}, 120}}, false));
+    const auto encoded = written_json(song);
+    check_shared_recipe(encoded["document"]["sv_recipe_definitions"].size() == 1);
+    check_shared_recipe(!encoded["document"]["charts"][0]["sv_recipes"][0].contains("expression_source"));
+    const auto loaded = parse_native_project(encoded.dump());
+    require_shared_recipe(loaded.value.has_value());
+    check_shared_recipe(loaded.value->sv_recipe_definitions == song.sv_recipe_definitions);
+    check_shared_recipe(loaded.value->charts.front().sv_recipes == song.charts.front().sv_recipes);
+    auto broken = encoded;
+    broken["document"]["sv_recipe_definitions"] = json::array();
+    check_shared_recipe(!parse_native_project(broken.dump()).value);
+}
+
+TEST_CASE("Schema22 recipes migrate without changing their independent definitions", "[unit][format][native-project][migration][sv-recipe]") {
+    const auto song = make_lua_recipe_song();
+    auto encoded = written_json(song);
+    encoded["document"]["schema_version"] = 22;
+    encoded["document"].erase("sv_recipe_definitions");
+    const auto loaded = parse_native_project(encoded.dump());
+    require_shared_recipe(loaded.value.has_value());
+    check_shared_recipe(loaded.value->sv_recipe_definitions.empty());
+    check_shared_recipe(loaded.value->charts.front().sv_recipes == song.charts.front().sv_recipes);
+}
+
+TEST_CASE("Additive schema23 files without SV definitions retain independent recipes", "[unit][format][native-project][sv-recipe]") {
+    const auto song = make_lua_recipe_song();
+    auto encoded = written_json(song);
+    encoded["document"].erase("sv_recipe_definitions");
+    const auto loaded = parse_native_project(encoded.dump());
+    require_shared_recipe(loaded.value.has_value());
+    check_shared_recipe(loaded.value->sv_recipe_definitions.empty());
+    check_shared_recipe(loaded.value->charts.front().sv_recipes == song.charts.front().sv_recipes);
+}

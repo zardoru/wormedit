@@ -1,5 +1,7 @@
 #include "../support/stale_action_assertions.h"
 #include <wormedit/core/chart_clipboard.h>
+#include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/timing_links.h>
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
 #include <array>
@@ -681,7 +683,8 @@ TEST_CASE("Chart clipboard copies bar lines and pastes them as measure splits", 
 
 TEST_CASE("Pasting a bar line onto an existing one adds no measure", "[core][bar-line]") {
     auto history = document_history_t::from(bar_line_song());
-    chart_clipboard_t clipboard{song_id_t{1}, chart_id_t{1}, {}, {rational_t{0, 1}, rational_t{1, 1}}};
+    chart_clipboard_t clipboard{.source_song = song_id_t{1}, .source_chart = chart_id_t{1},
+        .bar_lines = {rational_t{0, 1}, rational_t{1, 1}}};
     const auto result = paste_chart_clipboard(history, chart_id_t{1}, clipboard, {measure_id_t{2}, 0});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
@@ -689,7 +692,8 @@ TEST_CASE("Pasting a bar line onto an existing one adds no measure", "[core][bar
 
 TEST_CASE("A bar-line paste that cannot split rejects without partial splits", "[core][bar-line]") {
     auto song = bar_line_song();
-    chart_clipboard_t clipboard{song_id_t{1}, chart_id_t{1}, {}, {rational_t{0, 1}, rational_t{1, 1}}};
+    chart_clipboard_t clipboard{.source_song = song_id_t{1}, .source_chart = chart_id_t{1},
+        .bar_lines = {rational_t{0, 1}, rational_t{1, 1}}};
     // The second bar line would land past the chart's end.
     auto history = document_history_t::from(song);
     expect(!paste_chart_clipboard(history, chart_id_t{1}, clipboard, {measure_id_t{3}, 480}));
@@ -748,4 +752,214 @@ TEST_CASE("Mixed deletion failure shows real history after discarded timing stag
     expect(static_cast<bool>(state.selected_objects == selection));
     expect(static_cast<bool>(history.document.charts.front().bpms.size() == 1));
     expect(static_cast<bool>(history.undo.empty()));
+}
+
+namespace {
+void check_recipe(bool value) { CHECK(value); }
+void check_recipe_false(bool value) { CHECK_FALSE(value); }
+auto shared_recipe_song() -> song_document_t {
+    song_document_t song{.id = song_id_t{1}};
+    chart_document_t chart{.id = chart_id_t{10}, .divisions_per_standard_measure = 960,
+        .measures = {{.id = measure_id_t{11}}, {.id = measure_id_t{12}}, {.id = measure_id_t{13}}}};
+    chart.sv_recipes.push_back({.id = recipe_id_t{20}, .name = "Shared rise",
+        .range = {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}},
+        .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}});
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+auto copy_shared_recipe(const song_document_t& song, recipe_id_t recipe = recipe_id_t{20}) -> chart_clipboard_t {
+    const editor_interaction_state_t state{.chart = chart_id_t{10}};
+    auto result = chart_clipboard_t::from(song, state, song.revision, {}, recipe);
+    expect(result.has_value());
+    return *result;
+}
+} // namespace
+
+TEST_CASE("Recipe paste shares configuration while ranges and enabled flags remain local", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    expect(history.document.sv_recipe_definitions.size() == 1);
+    const auto& recipes = history.document.charts.front().sv_recipes;
+    expect(recipes.size() == 2);
+    const auto pasted = recipes.back().id;
+    check_recipe(recipes.front().definition == recipes.back().definition);
+    check_recipe(recipes.front().range != recipes.back().range);
+    auto edited = recipes.back();
+    edited.parameters.value_to = {7, 1};
+    edited.enabled = false;
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = pasted, .value = edited}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().parameters.value_to == signed_rational_t{7, 1});
+    check_recipe(history.document.charts.front().sv_recipes.front().enabled);
+    check_recipe_false(history.document.charts.front().sv_recipes.back().enabled);
+    expect(undo_document_command(history));
+    check_recipe(history.document.charts.front().sv_recipes.front().parameters.value_to == signed_rational_t{2, 1});
+    expect(redo_document_command(history));
+    check_recipe(history.document.charts.front().sv_recipes.back().parameters.value_to == signed_rational_t{7, 1});
+}
+
+TEST_CASE("Deleting the original placement preserves the shared definition and clipboard", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    expect(apply_sv_recipe_edit(history, delete_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = recipe_id_t{20}}).applied);
+    auto edited = history.document.charts.front().sv_recipes.front();
+    edited.name = "Edited through surviving use";
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{13}, 0}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.back().name == edited.name);
+    check_recipe(history.document.sv_recipe_definitions.size() == 1);
+}
+
+TEST_CASE("Explicit recipe duplication creates an independent definition", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    expect(apply_sv_recipe_edit(history, duplicate_sv_recipe_action_t{.chart = chart_id_t{10}, .id = recipe_id_t{20}}).applied);
+    const auto duplicate = history.document.charts.front().sv_recipes[1];
+    check_recipe(!duplicate.definition);
+    auto edited = duplicate;
+    edited.name = "Separate";
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().name == "Shared rise");
+    check_recipe(history.document.charts.front().sv_recipes.back().name == "Shared rise");
+}
+
+TEST_CASE("Cut retains a recipe definition after removing its only placement", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    editor_interaction_state_t state{.chart = chart_id_t{10}};
+    auto clipboard = create_cut_chart_clipboard(history, state, {.recipe = recipe_id_t{20}});
+    expect(clipboard.has_value());
+    check_recipe(history.document.charts.front().sv_recipes.empty());
+    expect(paste_chart_clipboard(history, chart_id_t{10}, *clipboard, {measure_id_t{12}, 0}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().name == "Shared rise");
+    check_recipe(history.document.sv_recipe_definitions.size() == 1);
+}
+
+TEST_CASE("A recipe copied before editing and deleting its original resolves the latest definition", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    auto edited = history.document.charts.front().sv_recipes.front();
+    edited.name = "Latest definition";
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
+    expect(apply_sv_recipe_edit(history, delete_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id}).applied);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().name == "Latest definition");
+}
+
+TEST_CASE("Recipe paste maps ranges exactly between chart resolutions", "[unit][clipboard][sv-recipe]") {
+    auto song = shared_recipe_song();
+    auto target = song.charts.front();
+    target.id = chart_id_t{30};
+    target.divisions_per_standard_measure = 1920;
+    target.sv_recipes.clear();
+    song.charts.push_back(target);
+    auto history = document_history_t::from(song);
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(paste_chart_clipboard(history, chart_id_t{30}, clipboard, {measure_id_t{12}, 480}).applied);
+    const auto pasted = history.document.charts.back().sv_recipes.front();
+    check_recipe(pasted.range == position_span_t{{measure_id_t{12}, 480}, {measure_id_t{13}, 480}});
+    auto edited = pasted;
+    edited.parameters.value_from = {-2, 1};
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{30}, .id = edited.id, .value = edited}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().parameters.value_from == signed_rational_t{-2, 1});
+}
+
+TEST_CASE("A shared definition edit rejects atomically when a shorter use becomes invalid", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    const auto pasted = history.document.charts.front().sv_recipes.back().id;
+    expect(apply_sv_recipe_edit(history, move_sv_recipe_range_action_t{.chart = chart_id_t{10}, .id = pasted,
+        .range = {{measure_id_t{12}, 0}, {measure_id_t{12}, 1}}}).applied);
+    auto edited = history.document.charts.front().sv_recipes.front();
+    edited.sampling.fixed_point_count = 3;
+    const auto revision = history.document.revision;
+    const auto result = apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited});
+    check_recipe_false(result.applied);
+    check_recipe(history.document.revision == revision);
+    check_recipe(history.document.charts.front().sv_recipes.front().sampling.fixed_point_count == 2);
+}
+
+TEST_CASE("One transaction cannot publish conflicting edits to a shared recipe", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    expect(paste_chart_clipboard(history, chart_id_t{10}, copy_shared_recipe(history.document), {measure_id_t{12}, 0}).applied);
+    const auto revision = history.document.revision;
+    auto transaction = document_command_transaction_t(history);
+    auto& recipes = transaction.document().charts.front().sv_recipes;
+    recipes.front().name = "First change";
+    recipes.back().name = "Other change";
+    const auto result = transaction.commit("Conflicting definition edits");
+    check_recipe_false(result.applied);
+    expect(!result.diagnostics.empty());
+    check_recipe(result.diagnostics.front().code == diagnostic_code_t::collision);
+    check_recipe(history.document.revision == revision);
+}
+
+TEST_CASE("Recipe placement identities do not reuse an undone duplicate", "[unit][clipboard][sv-recipe]") {
+    auto history = document_history_t::from(shared_recipe_song());
+    const auto clipboard = copy_shared_recipe(history.document);
+    expect(apply_sv_recipe_edit(history, duplicate_sv_recipe_action_t{.chart = chart_id_t{10}, .id = recipe_id_t{20}}).applied);
+    const auto duplicate = history.document.charts.front().sv_recipes.back().id;
+    expect(undo_document_command(history));
+    expect(paste_chart_clipboard(history, chart_id_t{10}, clipboard, {measure_id_t{12}, 0}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.back().id.value > duplicate.value);
+}
+
+TEST_CASE("Shared recipe propagation preserves an active chart timing link", "[unit][clipboard][sv-recipe][timing-link]") {
+    auto song = shared_recipe_song();
+    auto target = song.charts.front();
+    target.id = chart_id_t{30};
+    target.sv_recipes.clear();
+    song.charts.push_back(target);
+    auto history = document_history_t::from(song);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, copy_shared_recipe(history.document), {measure_id_t{12}, 0}).applied);
+    expect(apply_timing_link_edit(history, chart_stamp_t::from(history, chart_id_t{30}),
+        {.category = timing_category_t::scroll, .source = chart_id_t{10}}).applied);
+    auto edited = history.document.charts.front().sv_recipes.front();
+    edited.name = "Linked shared edit";
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
+    const auto& link = history.document.charts.back().timing_links.value(timing_category_t::scroll);
+    expect(link.has_value());
+    check_recipe_false(link->is_local_override);
+    check_recipe(history.document.charts.back().sv_recipes.front().name == edited.name);
+}
+
+TEST_CASE("Shared Lua recipes retain source and descriptor metadata through edits and Undo", "[unit][clipboard][sv-recipe][lua]") {
+    auto song = shared_recipe_song();
+    auto& source = song.charts.front().sv_recipes.front();
+    source.curve = sv_recipe_curve_t::lua_expression;
+    source.expression_source = "return function(p, ctx) return 1 + p end";
+    source.lua = sv_recipe_lua_t{.entry_point = "curve", .source_reference = "recipes/rise.lua",
+        .parameters = {{.name = "height", .value = {2, 1}}}, .seed = 17};
+    auto history = document_history_t::from(song);
+    expect(paste_chart_clipboard(history, chart_id_t{10}, copy_shared_recipe(history.document), {measure_id_t{12}, 0}).applied);
+    auto edited = history.document.charts.front().sv_recipes.back();
+    edited.expression_source = "return function(p, ctx) return 2 + p end";
+    edited.lua->seed = 99;
+    expect(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited}).applied);
+    check_recipe(history.document.charts.front().sv_recipes.front().lua == edited.lua);
+    check_recipe(history.document.charts.front().sv_recipes.front().expression_source == edited.expression_source);
+    expect(undo_document_command(history));
+    check_recipe(history.document.charts.front().sv_recipes.front().lua == source.lua);
+}
+
+TEST_CASE("Shared row-step recipes reject differing chart resolutions without changing other uses", "[unit][clipboard][sv-recipe]") {
+    auto song = shared_recipe_song();
+    auto target = song.charts.front();
+    target.id = chart_id_t{30};
+    target.divisions_per_standard_measure = 1920;
+    target.sv_recipes.clear();
+    song.charts.push_back(target);
+    auto history = document_history_t::from(song);
+    expect(paste_chart_clipboard(history, chart_id_t{30}, copy_shared_recipe(history.document), {measure_id_t{12}, 0}).applied);
+    auto edited = history.document.charts.front().sv_recipes.front();
+    edited.sampling.fixed_point_count.reset();
+    edited.sampling.fixed_step_rows = 240;
+    const auto result = apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id_t{10}, .id = edited.id, .value = edited});
+    check_recipe_false(result.applied);
+    expect(!result.diagnostics.empty());
+    check_recipe(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    check_recipe(history.document.charts.back().sv_recipes.front().sampling.fixed_point_count == 2);
 }

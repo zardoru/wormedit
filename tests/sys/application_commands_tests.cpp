@@ -3157,7 +3157,7 @@ TEST_CASE("Registered Cut rejects a late stem deletion without publishing timing
     f.compose_state->selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{33}},
         {editor_selection_object_kind_t::bgm_event, object_id_t{35}},
         {editor_selection_object_kind_t::bpm_event, object_id_t{102}}};
-    f.application_state.project.clipboard.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    f.application_state.project.clipboard.chart_clipboard = chart_clipboard_t{.source_song = song_id_t{999}, .source_chart = chart_id_t{999}};
     selection_require(validate_document(history.document).empty());
     auto metadata_edit = history.document;
     metadata_edit.metadata.title = "Redo must survive rejection";
@@ -3233,7 +3233,7 @@ TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
     TimingInsertFixture f;
     add_selection_spans(f);
     f.application_state.project.timing_recipe.timing_locked = true;
-    f.application_state.project.clipboard.chart_clipboard = chart_clipboard_t{song_id_t{999}, chart_id_t{999}, {}};
+    f.application_state.project.clipboard.chart_clipboard = chart_clipboard_t{.source_song = song_id_t{999}, .source_chart = chart_id_t{999}};
     f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bpm_event, object_id_t{102}});
     const auto original = write_native_project(f.fixture.history.document).value;
     const auto selection = f.compose_state->selected_objects;
@@ -3245,19 +3245,24 @@ TEST_CASE("Registered Delete and Cut reject locked mixed selection atomically",
     selection_check(f.application_state.project.clipboard.chart_clipboard->source_song == song_id_t{999});
 }
 
-TEST_CASE("Registered Cut rejects unsupported recipe clipboard without dropping selected notes",
-          "[sys][application_commands][gesture-delete]") {
+TEST_CASE("Registered recipe Copy and Cut retain recipes alongside selected objects",
+          "[sys][application_commands][gesture-delete][clipboard]") {
     using namespace wormedit;
+    const auto command = GENERATE("edit.copy", "edit.cut");
     TimingInsertFixture f;
     add_selection_spans(f);
     f.application_state.project.timing_recipe.recipe_selected = 300;
-    const auto original = write_native_project(f.fixture.history.document).value;
-    selection_check(!invoke_selection_command(f, "edit.cut").value.is_invoked());
-    selection_check(f.latest_message().find("SV recipes cannot be copied") != std::string::npos);
-    selection_check(write_native_project(f.fixture.history.document).value == original);
-    selection_check(f.fixture.history.undo.empty());
-    selection_check(f.application_state.project.timing_recipe.recipe_selected == 300);
+    selection_require(invoke_selection_command(f, command).value.is_invoked());
+    const auto& clipboard = f.application_state.project.clipboard.chart_clipboard;
+    selection_require(clipboard.has_value());
+    selection_check(clipboard->recipes.size() == 1);
+    selection_check(clipboard->objects.size() == 3);
+    const bool cut = std::string_view{command} == "edit.cut";
+    selection_check(f.fixture.history.document.charts.front().sv_recipes.empty() == cut);
+    selection_check(f.fixture.history.undo.size() == (cut ? 1U : 0U));
+    selection_check(f.application_state.project.timing_recipe.recipe_selected == (cut ? 0U : 300U));
 }
+
 #endif
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY

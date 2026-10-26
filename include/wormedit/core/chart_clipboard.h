@@ -37,10 +37,18 @@ struct chart_clipboard_object_t {
     std::optional<chart_clipboard_stem_t> stem;
 };
 
+struct chart_clipboard_recipe_t {
+    rational_t offset;
+    rational_t duration;
+    sv_recipe_t value;
+    auto operator==(const chart_clipboard_recipe_t&) const -> bool = default;
+};
+
 struct chart_clipboard_t {
     [[nodiscard]] static auto from(const song_document_t& document,
                                    const editor_interaction_state_t& state,
-                                   std::uint64_t expected_revision, object_id_t kiai_head = {})
+                                   std::uint64_t expected_revision, object_id_t kiai_head = {},
+                                   recipe_id_t recipe = {})
         -> result_t<chart_clipboard_t, std::string>;
 
     song_id_t source_song;
@@ -52,6 +60,7 @@ struct chart_clipboard_t {
     // External BMS editor data may request columns absent from the target. Native copies
     // leave this zero and retain their existing unavailable-lane behavior.
     std::size_t required_bgm_column_count{};
+    std::vector<chart_clipboard_recipe_t> recipes;
 };
 
 using chart_clipboard_outcome_t = result_t<chart_clipboard_t, std::string>;
@@ -80,6 +89,7 @@ struct chart_paste_stem_event_t {
 // Rejected candidates retain only read-only geometry/counts for the ghost preview.
 struct chart_paste_report_t {
     std::vector<chart_clipboard_payload_t> objects;
+    std::vector<sv_recipe_t> recipes;
     // Rows from the start of the song where the paste adds a bar line; object positions above
     // already name the measures those splits create.
     std::vector<std::uint64_t> bar_line_rows;
@@ -125,6 +135,7 @@ struct chart_paste_proposal_t {
     chart_paste_report_t report;
     // New retained BMSON events the stem points above are linked to.
     std::vector<chart_paste_stem_event_t> stem_events;
+    std::vector<sv_recipe_definition_t> definitions;
     auto operator==(const chart_paste_proposal_t&) const -> bool = default;
 };
 

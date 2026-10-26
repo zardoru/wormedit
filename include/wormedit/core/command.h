@@ -486,6 +486,7 @@ class document_command_transaction_t {
     [[nodiscard]] auto stage_bms_native_edit(chart_id_t difficulty, std::optional<object_id_t> existing,
         const std::function<attempt_t<bms_native_edit_effect_t>(chart_document_t&)>& edit)
         -> attempt_t<document_edit_effect_t>;
+    [[nodiscard]] auto next_recipe_id(std::size_t count = 1) const -> std::optional<recipe_id_t>;
     [[nodiscard]] auto next_bms_program_item_id(std::size_t count = 1) const
         -> std::optional<object_id_t>;
     // Returns the current outcome and discards the working snapshot without publication.

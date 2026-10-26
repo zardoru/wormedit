@@ -57,7 +57,7 @@ void render_menu(nk_context* context, const wormedit::ui::compose_view_t& view, 
     menu_entry(context, "Materialize into events",
                area->evaluable ? nullptr : "This recipe cannot be evaluated yet", view, action,
                recipe_command_t::materialize);
-    menu_entry(context, "Duplicate recipe", nullptr, view, action, recipe_command_t::duplicate);
+    menu_entry(context, "Duplicate as independent", nullptr, view, action, recipe_command_t::duplicate);
     menu_entry(context, "Delete recipe", nullptr, view, action, recipe_command_t::remove);
     chrome::context_menu_end(menu, context);
 }

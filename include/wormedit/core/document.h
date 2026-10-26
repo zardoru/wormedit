@@ -472,7 +472,21 @@ struct sv_recipe_t {
     std::vector<sv_recipe_impulse_t> impulses;
     rational_t finite_box_width_milliseconds{1, 1};
 
+    // Nonzero for a placement of a project-owned shared definition. The fields
+    // above are its effective snapshot, reconciled at publication.
+    recipe_id_t definition;
+
     auto operator==(const sv_recipe_t&) const -> bool = default;
+};
+
+// The normalized recipe carries configuration only: no placement identity,
+// range, enabled flag or reference. One schema owns built-in and Lua settings.
+struct sv_recipe_definition_t {
+    recipe_id_t id;
+    sv_recipe_t value;
+    [[nodiscard]] static auto from(recipe_id_t id, sv_recipe_t value) -> sv_recipe_definition_t;
+    [[nodiscard]] auto make_placement(recipe_id_t id, position_span_t range, bool enabled) const -> sv_recipe_t;
+    auto operator==(const sv_recipe_definition_t&) const -> bool = default;
 };
 
 struct kiai_event_t {
@@ -1101,6 +1115,7 @@ struct song_document_t {
     std::vector<sound_group_t> sound_groups;
     std::vector<midi_asset_t> midi_assets;
     std::vector<generator_recipe_t> generator_recipes;
+    std::vector<sv_recipe_definition_t> sv_recipe_definitions;
     std::vector<storyboard_document_t> storyboards;
     std::vector<chart_document_t> charts;
     // BMS difficulties have no writable chart-vector counterpart. Their immutable
@@ -1115,6 +1130,8 @@ struct song_document_t {
     // Read-only prepared projections are available to domain planning; mutable
     // find_chart deliberately continues to resolve authored legacy charts only.
     [[nodiscard]] auto read_chart(chart_id_t id) const -> const chart_document_t*;
+    [[nodiscard]] auto find_sv_recipe_definition(recipe_id_t id) const -> const sv_recipe_definition_t*;
+    [[nodiscard]] auto find_sv_recipe_definition(recipe_id_t id) -> sv_recipe_definition_t*;
     void ensure_chart_order();
     [[nodiscard]] auto read_charts() const -> std::span<const chart_document_t* const>;
     [[nodiscard]] auto find_chart(chart_id_t id) const -> const chart_document_t*;

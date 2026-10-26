@@ -1,6 +1,8 @@
 #include <wormedit/core/command.h>
+#include "id_ceiling.h"
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/timing_links.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/timing.h>
 
 #include <wormedit/core/virtual_canvas.h>
@@ -13,6 +15,13 @@
 #include <utility>
 
 namespace wormedit {
+auto document_command_transaction_t::next_recipe_id(std::size_t count) const -> std::optional<recipe_id_t> {
+    auto ceiling = id_ceiling_t<recipe_id_t>::from(history_);
+    ceiling.maximum = std::max(ceiling.maximum, id_ceiling_t<recipe_id_t>::from(current_document()).maximum);
+    if (!count || count > std::numeric_limits<std::uint64_t>::max() - ceiling.maximum) return std::nullopt;
+    return ceiling.next();
+}
+
 auto document_stamp_t::from(const document_history_t& history) noexcept -> document_stamp_t {
     return {.project = history.document.id, .revision = history.document.revision,
         .bms_target = history.bms_edit_target};
@@ -261,6 +270,8 @@ static auto commit_validated_document(document_history_t& history, song_document
     result.diagnostics = reconcile_bms_program_catalogs(history.document, proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) return result;
     result.diagnostics = reconcile_timing_links(history.document, proposed);
+    if (diagnostic_queries::has_errors(result.diagnostics)) return result;
+    result.diagnostics = reconcile_sv_recipe_definitions(history.document, proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) return result;
     result.diagnostics = validate_bms_program_publication(history.document, proposed);
     if (diagnostic_queries::has_errors(result.diagnostics)) return result;

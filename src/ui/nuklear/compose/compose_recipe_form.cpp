@@ -160,10 +160,10 @@ void queue_command(const ComposeInspectorContext& inspector, recipe_command_t co
 
 void render_more_menu(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
-    if (!chrome::safe_combo_begin_label(context, "More", nk_vec2(200.0f, 3.0f * (row_height + 4.0f) + 16.0f)))
+    if (!chrome::safe_combo_begin_label(context, "More", nk_vec2(280.0f, 3.0f * (row_height + 4.0f) + 16.0f)))
         return;
     nk_layout_row_dynamic(context, metrics::menu_item_height, 1);
-    if (chrome::menu_item(context, "Duplicate", nullptr, false, true))
+    if (chrome::menu_item(context, "Duplicate as independent", nullptr, false, true))
         queue_command(inspector, recipe_command_t::duplicate);
     if (chrome::menu_item(context, "Materialize into events", nullptr, false, true))
         queue_command(inspector, recipe_command_t::materialize);
@@ -176,14 +176,19 @@ void render_more_menu(const ComposeInspectorContext& inspector) {
 void render_header(const ComposeInspectorContext& inspector) {
     const auto& view = *inspector.view;
     auto* context = inspector.context;
-    static constexpr float shares[] = {0.5f, 0.22f, 0.28f};
+    // Keep the popup anchored inside the dock even when the dock reaches the window edge.
+    static constexpr float shares[] = {0.28f, 0.5f, 0.22f};
     nk_layout_row(context, NK_DYNAMIC, row_height, 3, shares);
+    render_more_menu(inspector);
     nk_text(context, view.recipe_form.name.data(), static_cast<int>(view.recipe_form.name.size()), NK_TEXT_LEFT);
     const chrome::Checkbox enabled{.label = "On",
         .state = view.recipe_form.enabled ? chrome::CheckState::on : chrome::CheckState::off,
         .tooltip = "A recipe that is off keeps its settings but writes nothing"};
     if (enabled.render(context)) queue_command(inspector, recipe_command_t::toggle_enabled);
-    render_more_menu(inspector);
+    if (view.recipe_form.definition_id) {
+        nk_layout_row_dynamic(context, 2 * row_height, 1);
+        nk_label_wrap(context, "Shared definition: edits affect every use");
+    }
 }
 
 auto overlapping_count(const wormedit::ui::compose_view_t& view) -> std::size_t {

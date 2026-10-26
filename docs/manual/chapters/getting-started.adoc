@@ -1,6 +1,18 @@
 [#getting-started]
 = Getting started
 
+== Installing
+
+* *Windows:* unzip `wormedit-<version>-windows-x64.zip` anywhere and run `wormedit.exe`.
+  Wormedit needs a GPU with Direct3D 12 or Vulkan.
+* *Linux:* make `wormedit-<version>-x86_64.AppImage` executable (`chmod +x`) and run it. It
+  needs glibc 2.35 or newer, an X11 or Wayland session and a working Vulkan driver.
+* *macOS:* build `Wormedit.app` with `scripts/macos-package.sh` from the source checkout. The app
+  is not signed: open it the first time with right-click *Open*.
+
+Each package includes this manual (*Help → User manual*), the Lua API reference and the
+exercise files used in these chapters.
+
 == The start screen
 
 With no project open, Wormedit offers two buttons: *New project* and *Open chart or project…*.

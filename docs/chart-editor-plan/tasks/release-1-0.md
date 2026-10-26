@@ -177,7 +177,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-765 Write the 1.0.0-rc1 release notes and known limitations
 
-- **Status:** blocked-on T-762, T-763, T-767
+- **Status:** done (2026-10-26; `docs/release-notes/1.0.0-rc1.md`, README links and the manual's Installing section; macOS labelled staged until T-764 passes; owner added the Audio Slices and Compare / Validate tabs to known limitations)
 - **Outcome:** `docs/release-notes/1.0.0-rc1.md` summarizes what Wormedit does, supported formats, downloads per platform with system requirements, the project-format promise (folder form; newer schemas are refused), the Lua API v1 status, known limitations taken from the deferred cards (storyboards/OSBX, Quaver, StepMania rolls and tick counts, MIDI, multivoice sounds, CJK UI, 48K stage focus), the unsigned macOS first-open steps, and how to report bugs.
 - **Read first:** `README.md`, `docs/manual/index.adoc`, this card file, the Status lines of deferred cards, `docs/building.md`.
 - **Files owned:** new `docs/release-notes/1.0.0-rc1.md`, `README.md` (link to the notes), `docs/manual/chapters/getting-started.adoc` (install section only).

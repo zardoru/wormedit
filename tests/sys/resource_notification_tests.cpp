@@ -712,3 +712,19 @@ TEST_CASE("A crossing export object remains the background error Go to target", 
     check_resource_notification(entries.front().target == notification_target_t{object});
     check_resource_notification(!std::filesystem::exists(fixture.project / "exports"));
 }
+
+TEST_CASE("output groups opt into active BMS projection only for flattened target families",
+          "[unit][sys][resource-notification][bms-flatten]") {
+    const song_document_t document;
+    for (const auto family : {format_family_t::native_project, format_family_t::bms,
+                             format_family_t::osu_mania, format_family_t::stepmania,
+                             format_family_t::bmson}) {
+        output_group_t group{.family = family};
+        CHECK(output_group_export_plan_t::from(document, group).request.branches ==
+              branch_projection_t::preserve_tree);
+        group.flatten_bms_branches = true;
+        const auto expected = family == format_family_t::bms || family == format_family_t::native_project
+                                  ? branch_projection_t::preserve_tree : branch_projection_t::active_projection;
+        CHECK(output_group_export_plan_t::from(document, group).request.branches == expected);
+    }
+}

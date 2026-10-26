@@ -75,6 +75,7 @@ struct project_panel_state_t {
     char group_path[1024]{};
     int group_family{4};
     int group_existing_files{};
+    nk_bool group_flatten_bms_branches{};
     int group_stepmania_file{WORM_UI_STEPMANIA_FILE_SSC};
     int group_stepmania_timing{WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS};
     int group_stepmania_implementation{WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
@@ -698,6 +699,7 @@ void load_output_group_draft(const wormedit::ui::setup_view_t& view, const worme
     state.group_stepmania_implementation = group && group->stepmania.has_value()
                                                ? static_cast<int>(group->stepmania->implementation_profile)
                                                : WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    state.group_flatten_bms_branches = group && group->flatten_bms_branches;
     state.group_editor_dialog = {};
     std::snprintf(state.group_name, sizeof(state.group_name), "%s",
                   group ? group->name.data() : "New export target");
@@ -761,6 +763,7 @@ void publish_output_group_action(const wormedit::ui::setup_view_t& view, wormedi
     output.destination_kind = project_state.group_family == 0 || project_state.group_family == 2
         ? wormedit::output_destination_kind_t::file : wormedit::output_destination_kind_t::directory;
     output.existing_files = static_cast<wormedit::existing_files_policy_t>(project_state.group_existing_files);
+    output.flatten_bms_branches = project_state.group_flatten_bms_branches;
     output.stepmania.reset();
     if (project_state.group_family == 2)
         output.stepmania = wormedit::stepmania_export_policy_t{
@@ -994,6 +997,11 @@ void render_output_group_form(nk_context* context, const wormedit::ui::setup_vie
     nk_label(context, "Existing files", NK_TEXT_LEFT);
     state.group_existing_files = render_existing_files_picker(context, state.group_existing_files);
     if (state.group_family == 2) render_stepmania_policy(context);
+    if (state.group_family >= 2) {
+        nk_layout_row_dynamic(context, 28, 1);
+        nk_checkbox_label(context, "Flatten BMS branches to the active outcome",
+                          &state.group_flatten_bms_branches);
+    }
     dialog_text(
         state.group_editor_dialog, context,
         state.group_family == 0 || state.group_family == 2

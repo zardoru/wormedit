@@ -1864,7 +1864,7 @@ TEST_CASE("native schema 24 retains custom bookmark list order", "[native-projec
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.value);
     const auto encoded = nlohmann::json::parse(*written.value);
-    CHECK(encoded.at("document").at("schema_version") == 24);
+    CHECK(encoded.at("document").at("schema_version") == wormedit::current_document_schema_version);
     const auto parsed = wormedit::parse_native_project(*written.value);
     REQUIRE(parsed.value);
     CHECK(parsed.value->bookmark_orders == song.bookmark_orders);
@@ -1880,30 +1880,70 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     legacy["document"].erase("bookmark_orders");
     const auto old = wormedit::parse_native_project(legacy.dump());
     REQUIRE(old.value);
-    CHECK(old.value->schema_version == 24);
+    CHECK(old.value->schema_version == wormedit::current_document_schema_version);
     CHECK(old.value->bookmark_orders.empty());
     const auto rewritten = wormedit::write_native_project(*old.value);
     REQUIRE(rewritten.value);
-    legacy["document"]["schema_version"] = 24U;
+    legacy["document"]["schema_version"] = wormedit::current_document_schema_version;
     CHECK(*rewritten.value == legacy.dump(2) + '\n');
 }
 
-TEST_CASE("native schema 24 pins the persisted song document key set",
+TEST_CASE("native schema 25 pins the persisted song document key set",
           "[unit][format][native-project][schema-guard]") {
     INFO("Persisted document keys changed: bump current_document_schema_version, add a migration, "
          "and update this schema/key-set guard together.");
-    CHECK(wormedit::current_document_schema_version == 24);
+    check_bmson_condition(wormedit::current_document_schema_version == 25);
     const auto song = make_schema_guard_song();
     const auto written = wormedit::write_native_project(song);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
-    REQUIRE(written.value);
+    require_bmson_condition(written.value);
     const auto document = nlohmann::json::parse(*written.value).at("document");
     std::vector<std::string> keys;
     for (const auto& [key, value] : document.items()) keys.push_back(key);
-    const std::vector<std::string> schema24_keys{
+    const std::vector<std::string> schema25_keys{
         "audio_assets", "bookmark_orders", "chart_order", "charts", "export_cuts", "generator_recipes",
         "id", "metadata", "midi_assets", "output_groups", "prepared_bms_programs", "project_settings",
         "quantization_presets", "resources", "revision", "schema_version", "sound_groups", "storyboards",
         "sv_recipe_definitions", "visual_assets"};
-    CHECK(keys == schema24_keys);
+    check_bmson_condition(keys == schema25_keys);
+    keys.clear();
+    const auto group_project = wormedit::write_native_project(rich_bmson_song());
+    require_bmson_condition(group_project.value);
+    const auto groups = nlohmann::json::parse(*group_project.value).at("document").at("output_groups");
+    require_bmson_condition(!groups.empty());
+    for (const auto& [key, value] : groups.front().items()) keys.push_back(key);
+    check_bmson_condition(keys == std::vector<std::string>{"charts", "destination_kind", "existing_files", "family",
+        "flatten_bms_branches", "name", "relative_output_path", "stepmania"});
+}
+
+TEST_CASE("native schema 25 saves output-group flattening and migrates schema 24 to preserve",
+          "[native-project][migration][output-group][bms-flatten]") {
+    auto song = rich_bmson_song();
+    require_bmson_condition(!song.output_groups.empty());
+    song.output_groups.front().flatten_bms_branches = true;
+    const auto written = wormedit::write_native_project(song);
+    require_bmson_condition(written.value);
+    auto encoded = nlohmann::json::parse(*written.value);
+    const auto parsed = wormedit::parse_native_project(*written.value);
+    require_bmson_condition(parsed.value);
+    check_bmson_condition(parsed.value->output_groups.front().flatten_bms_branches);
+    const auto older = internal::parse_native_project_with_migrations(
+        *written.value, {}, 24, internal::default_migrations());
+    check_bmson_condition(!older.value);
+    check_bmson_condition(has_code(older.diagnostics, wormedit::native_project_diagnostic_code_t::unsupported_version));
+    encoded["document"]["schema_version"] = 24U;
+    for (auto& group : encoded["document"]["output_groups"]) group.erase("flatten_bms_branches");
+    const auto migrated = wormedit::parse_native_project(encoded.dump());
+    INFO((migrated.diagnostics.empty() ? "no diagnostic" : migrated.diagnostics.front().message));
+    require_bmson_condition(migrated.value);
+    check_bmson_condition(migrated.value->schema_version == 25);
+    check_bmson_condition(!migrated.value->output_groups.front().flatten_bms_branches);
+    const auto rewritten = wormedit::write_native_project(*migrated.value);
+    require_bmson_condition(rewritten.value);
+    encoded["document"]["schema_version"] = 25U;
+    const auto absent_current = wormedit::parse_native_project(encoded.dump());
+    require_bmson_condition(absent_current.value);
+    check_bmson_condition(!absent_current.value->output_groups.front().flatten_bms_branches);
+    for (auto& group : encoded["document"]["output_groups"]) group["flatten_bms_branches"] = false;
+    check_bmson_condition(nlohmann::json::parse(*rewritten.value) == encoded);
 }

@@ -370,6 +370,7 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
         projected.preview_status = runtime.output_group_status[index];
         projected.existing_files = group.existing_files;
         projected.stepmania = group.stepmania;
+        projected.flatten_bms_branches = group.flatten_bms_branches;
         build_output_preview_view(runtime, index, projected);
     }
 }
@@ -437,7 +438,8 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
                              .relative_output_path = action.path,
                              .existing_files =
                                  action.existing_files,
-                             .stepmania = action.stepmania};
+                             .stepmania = action.stepmania,
+                             .flatten_bms_branches = action.flatten_bms_branches};
         group.charts = action.chart_ids;
         result = apply_set_output_group_command(
             history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));

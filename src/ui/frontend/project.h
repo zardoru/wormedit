@@ -266,6 +266,7 @@ struct project_output_group_view_t {
     std::string_view preview_status;
     wormedit::existing_files_policy_t existing_files{};
     std::optional<wormedit::stepmania_export_policy_t> stepmania;
+    bool flatten_bms_branches{};
     std::vector<output_plan_row_view_t> plan_rows;
     bool plan_rows_truncated{};
     std::vector<output_diagnostic_row_view_t> diagnostics;
@@ -305,6 +306,7 @@ struct project_output_group_action_t {
     wormedit::output_destination_kind_t destination_kind{};
     wormedit::existing_files_policy_t existing_files{};
     std::optional<wormedit::stepmania_export_policy_t> stepmania;
+    bool flatten_bms_branches{};
     std::vector<wormedit::chart_id_t> chart_ids;
     auto operator==(const project_output_group_action_t&) const -> bool = default;
 };

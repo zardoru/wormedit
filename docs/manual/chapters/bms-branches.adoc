@@ -95,9 +95,20 @@ prepare a fresh preview instead of confirming the old one.
 
 == Export and compare
 
-Normal BMS export preserves the complete program, including inactive branches. Flattening to
-the playback outcome is an explicit conversion choice. External-player preview uses that active
-outcome; it is not a way to publish the complete branching file.
+Normal BMS export preserves the complete program, including inactive branches.
+
+To export BMS content to osu!mania, StepMania or BMSON, open the target's *⋯ → Edit* menu
+under *Project → Exports*. Enable *Flatten BMS branches to the active outcome* and click *Save*.
+The option is saved separately for each output group and defaults off, including in older projects.
+Preview and Export use the playback outcome selected in the branch panel and report the flattening
+warning. BMS scratch lanes become osu!mania key columns in the exported file; the project keeps
+its BMS lane layout. Selecting an inactive Chart for editing does not change that outcome. Undo can restore
+the target's previous option. BMS and native targets preserve the full program and do not show
+this checkbox.
+
+With the option off, a target that cannot preserve BMS branches refuses publication without
+writing files. External-player preview uses the active outcome; it is not a way to publish the
+complete branching file.
 
 The <<comparing,comparison flow>> compares the selected difficulties' playback projections.
 Choosing an inactive authoring Chart does not turn it into a branch-to-branch comparison.

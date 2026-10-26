@@ -7,6 +7,10 @@
 #include "sys/project/output_group_export.h"
 #include "sys/project/project_view.h"
 #include "sys/resources/resource_job_state.h"
+#include "sys/metadata/metadata_asset_runtime.h"
+#include "sys/metadata/metadata_drop_state.h"
+#include "sys/compose/actions/compose_actions.h"
+#include <wormedit/formats/osu_mania.h>
 #include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/command_registry.h>
@@ -553,4 +557,139 @@ TEST_CASE("Export preview lists a scoped BME chart without spurious geometry war
            std::string::npos);
     expect(harness.drawn_text().find("Warning: BMS measure ratios") == std::string::npos);
     std::filesystem::remove_all(root);
+}
+
+namespace {
+void export_tutorial_from_compose(charting_t& flow, const std::filesystem::path& root) {
+    // Let the closed Setup dialog release its captured input before changing tabs.
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    flow.harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
+    flow.harness.view().setup.visible = false;
+    expect(rebind_workspace(flow.workspace, flow.history.document).value);
+    flow.project();
+    const auto model = workspace_view_t::from(flow.workspace, flow.history.document);
+    expect(model.value);
+    auto shell = frontend_workspace_view_t::from(*model.value, flow.history.document, "Ready", {}, false);
+    flow.harness.view().compose.output_groups = std::move(shell.view.compose.output_groups);
+    flow.commands.services.open_project_export = worm_ui_frontend_open_project_export;
+    const auto export_key = key(SDLK_E, SDL_SCANCODE_E);
+    expect(flow.shortcut(flow.harness.frame({&export_key, 1}, SDL_KMOD_CTRL)).value.is_invoked());
+    const auto released = key(SDLK_E, SDL_SCANCODE_E, false);
+    (void)flow.harness.frame({&released, 1});
+    (void)flow.harness.frame();
+    const auto confirm = key(SDLK_RETURN, SDL_SCANCODE_RETURN);
+    const auto chosen = flow.harness.frame({&confirm, 1});
+    INFO(flow.harness.drawn_text());
+    expect(chosen.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+    runtime::output_group_export_t exporter;
+    task_scheduler_t scheduler{1, 1};
+    runtime::resource_copy_t copy{scheduler};
+    metadata_drop_state_t drop;
+    runtime::metadata_asset_t assets;
+    expect(dispatch_compose_workspace_action(chosen.get(),
+        {.document = {.history = flow.history, .workspace = flow.workspace,
+                      .notifications = flow.notifications},
+         .editor = {.commands = flow.commands, .retained = flow.interaction},
+         .resources = compose_resource_inputs_t{.asset_base = root,
+             .jobs = {scheduler, copy, exporter}, .metadata = {drop, assets}}}, 0, false));
+    expect(exporter.is_busy());
+    std::optional<std::string> completed;
+    for (int attempt = 0; attempt < 2000 && !completed; ++attempt) {
+        completed = exporter.poll(flow.history);
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    expect(completed);
+    INFO(*completed);
+    expect(!exporter.is_busy());
+    expect(!exporter.confirmation_view().required);
+}
+}
+
+TEST_CASE("Tutorial BMS flattening is saved from Setup and publishes osu mania through Ctrl E",
+          "[frontend-state][event-harness][output-groups][bms-flatten]") {
+    walkthrough_save_directory_t directory;
+    const auto source = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / "docs/manual/fixtures/tutorial";
+    std::filesystem::copy(source, directory.path, std::filesystem::copy_options::recursive);
+    const auto parsed = parse_native_project(read_text(directory.path / "tutorial.wormedit"));
+    expect(parsed.value);
+    charting_t flow;
+    flow.history = document_history_t::from(*parsed.value);
+    flow.workspace = *workspace_controller_t::from(flow.history).value;
+    flow.workspace.active_tab = workspace_tab_t::compose;
+    expect(apply_set_output_group_command(flow.history, std::nullopt,
+        {.name = "Tutorial osu", .family = format_family_t::osu_mania,
+         .charts = {chart_id_t{2}}, .relative_output_path = "exports/osu"}).applied);
+    const auto before = write_native_project(flow.history.document);
+    const auto refused = run_output_group_export({.document = flow.history.document,
+        .plan = output_group_export_plan_t::from(flow.history.document,
+                                                 flow.history.document.output_groups.front()),
+        .asset_base = directory.path}, {});
+    expect(!refused.published);
+    expect(refused.message.find("enable Flatten BMS branches on this output group") != std::string::npos);
+    expect(!std::filesystem::exists(directory.path / "exports"));
+    expect(write_native_project(flow.history.document).value == before.value);
+
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    auto& view = flow.harness.view();
+    view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    view.project_id = flow.history.document.id;
+    view.document_revision = flow.history.document.revision;
+    view.selected_chart_id = chart_id_t{2};
+    view.compose.visible = false;
+    view.setup.visible = true;
+    view.setup.project_has_native_path = true;
+    view.setup.refill(runtime, flow.history.document);
+    (void)click_label(flow.harness, "⋯");
+    (void)click_label(flow.harness, "Edit");
+    (void)click_label(flow.harness, "Flatten BMS branches to the active outcome");
+    const auto saved = click_label(flow.harness, "Save");
+    const auto chosen = std::ranges::find_if(saved, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    });
+    expect(chosen != saved.end());
+    expect(chosen->get().project_output_group.flatten_bms_branches);
+    expect(apply_project_output_group_ui_action(runtime, flow.history,
+        chosen->get().project_output_group, scheduler, directory.path).applied);
+    expect(flow.history.document.output_groups.front().flatten_bms_branches);
+    expect(undo_document_command(flow.history));
+    expect(!flow.history.document.output_groups.front().flatten_bms_branches);
+    expect(redo_document_command(flow.history));
+    view.setup.refill(runtime, flow.history.document);
+    expect(view.setup.output_groups.front().flatten_bms_branches);
+    const auto saved_project = write_native_project(flow.history.document);
+    expect(saved_project.value);
+    const auto reopened = parse_native_project(*saved_project.value);
+    expect(reopened.value);
+    expect(reopened.value->output_groups.front().flatten_bms_branches);
+    const auto prepared = output_group_export_preparation_t::from({.document = flow.history.document,
+        .plan = output_group_export_plan_t::from(flow.history.document,
+                                                 flow.history.document.output_groups.front()),
+        .asset_base = directory.path});
+    expect(prepared);
+    expect(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.path == "branches" && diagnostic.severity == diagnostic_severity_t::warning;
+    }));
+    export_tutorial_from_compose(flow, directory.path);
+    const auto output = directory.path / "exports/osu";
+    expect(std::filesystem::is_directory(output));
+    const auto file = std::ranges::find_if(std::filesystem::directory_iterator{output}, [](const auto& entry) {
+        return entry.path().extension() == ".osu";
+    });
+    expect(file != std::filesystem::directory_iterator{});
+    const auto bytes = read_text(file->path());
+    const auto osu = parse_osu_mania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    expect(osu.value);
+    const auto* source_chart = flow.history.document.read_chart(chart_id_t{2});
+    expect(source_chart);
+    expect(osu.value->charts.front().lane_layouts.front().layout.lanes.size() ==
+           source_chart->lane_layouts.front().layout.lanes.size());
+    std::size_t exported_notes = 0;
+    for (const auto& measure : osu.value->charts.front().measures) exported_notes += measure.notes.size();
+    std::size_t source_notes = 0;
+    for (const auto& measure : source_chart->measures) source_notes += measure.notes.size();
+    expect(exported_notes == source_notes);
+    expect(source_notes > 0);
+    expect(write_native_project(flow.history.document).value == saved_project.value);
 }

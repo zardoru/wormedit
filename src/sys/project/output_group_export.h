@@ -45,6 +45,9 @@ inline auto output_group_export_plan_t::from(const song_document_t&, output_grou
         request.charts = group.charts;
     request.overwrite = existing_files == existing_files_policy_t::replace;
     request.loss_policy = loss_policy_t::warn;
+    if (group.family != format_family_t::bms &&
+        group.family != format_family_t::native_project && group.flatten_bms_branches)
+        request.branches = branch_projection_t::active_projection;
     if (group.family == format_family_t::stepmania) {
         request.stepmania = group.stepmania;
     }

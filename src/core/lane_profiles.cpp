@@ -1416,8 +1416,9 @@ auto output_family_compatibility(const chart_document_t& chart, format_family_t 
     if (!has_stable_layout(chart))
         return {false, "This format requires one stable lane layout for the whole chart."};
     if (family == format_family_t::osu_mania) {
-        const auto playable = std::ranges::all_of(layout.lanes, [](const auto& lane) {
-            return lane.role == lane_role_t::playable;
+        const auto playable = std::ranges::all_of(layout.lanes, [&chart](const auto& lane) {
+            return lane.role == lane_role_t::playable ||
+                   (chart.source_family == format_family_t::bms && lane.role == lane_role_t::scratch);
         });
         return playable && !layout.lanes.empty() && layout.lanes.size() <= 18
                    ? output_family_compatibility_t{true, {}}

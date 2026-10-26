@@ -364,3 +364,22 @@ TEST_CASE("Empty timing lanes preserve their distinct creation and selection ver
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT));
     verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT));
 }
+
+TEST_CASE("Timing span endpoint presses select the span while capturing the chosen edge",
+          "[frontend-state][event-harness][span-affordance]") {
+    const auto lane = GENERATE(wormedit::timing_lane_kind_t::kiai, wormedit::timing_lane_kind_t::speed);
+    const auto downscroll = GENERATE(false, true);
+    const auto edge = GENERATE(WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END);
+    timing_drag_fixture_t f;
+    f.h.view().compose.downscroll = downscroll;
+    const bool top = (edge == WORM_UI_SPAN_HANDLE_BEGIN) != downscroll;
+    const auto [x, y] = f.point(lane, top ? 200 : 400);
+    const auto action = f.h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
+    const auto* selected = find_fit_input(action.get(), lane == wormedit::timing_lane_kind_t::kiai
+        ? WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT : WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT);
+    REQUIRE(selected);
+    CHECK(selected->object_id.value == (lane == wormedit::timing_lane_kind_t::kiai ? 10 : 20));
+    const auto& drag = worm_ui_nuklear_compose_state().timing_drag;
+    CHECK(drag.kiai_drag_active);
+    CHECK(drag.kiai_drag_edge == edge);
+}

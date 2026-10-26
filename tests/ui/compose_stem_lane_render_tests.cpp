@@ -1151,3 +1151,73 @@ TEST_CASE("Actual Compare panes release Compose retention and return to a fresh 
     draw_static_work_frame(fixture,view);
     expect_field(compose_field(fixture.context).can_retain_tiles() && compose_canvas_cache(fixture.context));
 }
+
+namespace {
+auto span_grip_pixels(const wormedit::ui::testing::field_pixels_t& pixels, int y)
+    -> wormedit::ui::testing::field_pixels_t {
+    const auto first = pixels.begin() + y * 128 + 66;
+    return {first, first + 20};
+}
+void check_span_endpoint_feedback(wormedit::timing_lane_kind_t lane, bool downscroll) {
+    field_submission_fixture_t fixture;
+    expect_field(fixture.context != nullptr);
+    worm_ui_nuklear_reset_compose_state();
+    wormedit::ui::compose_view_t view{};
+    view.visible = view.scene_available = true;
+    view.downscroll = downscroll;
+    view.viewport_width_pixels = view.viewport_height_pixels = 128;
+    view.playable_field_left_pixels = 110;
+    view.timing_lane_visibility_mask = 1U << static_cast<unsigned>(lane);
+    const wormedit::ui::compose_rect_t bounds{0, 32, 0, 96};
+    view.kiai_spans = {{.bounds = bounds, .head_object_id = wormedit::object_id_t{10},
+        .tail_object_id = wormedit::object_id_t{11}, .head_visible = true, .tail_visible = true}};
+    view.recipe_areas = {{.bounds = bounds, .recipe_id = wormedit::recipe_id_t{20},
+        .lane = wormedit::timing_lane_kind_t::scroll, .enabled = true, .evaluable = true,
+        .begin_visible = true, .end_visible = true}};
+    view.speed_spans = {{.bounds = bounds, .object_id = wormedit::object_id_t{30}}};
+    const auto head_y = downscroll ? 96 : 32;
+    const auto tail_y = downscroll ? 32 : 96;
+    // Sample the outer half of each grip, beyond the fill and border of the span.
+    const auto head_sample = downscroll ? 98 : 29;
+    const auto tail_sample = downscroll ? 29 : 98;
+    nk_input_motion(fixture.context, 0, 0);
+    const auto idle = render_static_pixels(fixture, view);
+    nk_input_motion(fixture.context, 76, head_y);
+    const auto hovered = render_static_pixels(fixture, view);
+    expect_field(span_grip_pixels(hovered, head_sample) != span_grip_pixels(idle, head_sample));
+    expect_field(span_grip_pixels(hovered, tail_sample) == span_grip_pixels(idle, tail_sample));
+    nk_input_motion(fixture.context, 76, tail_y);
+    const auto tail_hovered = render_static_pixels(fixture, view);
+    expect_field(span_grip_pixels(tail_hovered, tail_sample) != span_grip_pixels(idle, tail_sample));
+    nk_input_motion(fixture.context, 0, 0);
+    auto& drag = worm_ui_nuklear_compose_state().timing_drag;
+    drag.kiai_drag_active = lane != wormedit::timing_lane_kind_t::scroll;
+    drag.kiai_drag_speed = lane == wormedit::timing_lane_kind_t::speed;
+    drag.kiai_drag_head_id = drag.kiai_drag_speed ? 30 : 10;
+    drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
+    drag.recipe_drag_active = lane == wormedit::timing_lane_kind_t::scroll;
+    drag.recipe_drag_id = 20;
+    drag.recipe_drag_edge = WORM_UI_SPAN_HANDLE_END;
+    const auto pressed = render_static_pixels(fixture, view);
+    expect_field(span_grip_pixels(pressed, tail_sample) != span_grip_pixels(idle, tail_sample));
+    expect_field(span_grip_pixels(pressed, head_sample) == span_grip_pixels(idle, head_sample));
+    drag = {};
+    view.kiai_spans.front().selected = true;
+    view.recipe_areas.front().selected = true;
+    view.speed_spans.front().selected = true;
+    const auto selected = render_static_pixels(fixture, view);
+    expect_field(span_grip_pixels(selected, head_sample) != span_grip_pixels(idle, head_sample));
+    expect_field(span_grip_pixels(selected, tail_sample) != span_grip_pixels(idle, tail_sample));
+    worm_ui_nuklear_reset_compose_state();
+}
+}
+TEST_CASE("Timing span grips distinguish hovered selected and captured endpoints in both directions",
+          "[ui][field][span-affordance][isolated-software-render]") {
+    for (const auto lane : {wormedit::timing_lane_kind_t::kiai, wormedit::timing_lane_kind_t::scroll,
+                            wormedit::timing_lane_kind_t::speed}) {
+        for (const bool downscroll : {false, true}) {
+            INFO("lane " << static_cast<unsigned>(lane) << " downscroll " << downscroll);
+            check_span_endpoint_feedback(lane, downscroll);
+        }
+    }
+}

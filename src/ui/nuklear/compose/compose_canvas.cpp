@@ -9,6 +9,8 @@
 #include "ui/nuklear/compose/compose_canvas.h"
 #include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/compose_timing_geometry.h"
+#include "ui/nuklear/compose/compose_timing_input.h"
+#include "ui/nuklear/compose/compose_input_queries.h"
 #include "ui/nuklear/compose/compose_inspector.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/compose/compose_waveform_gaps.h"
@@ -2227,7 +2229,62 @@ static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
     field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(255, 236, 170), 10);
 }
 
-static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
+// The captured endpoint stays lit even after the pointer leaves its original hit band.
+static auto compose_span_feedback_target(const ComposePaintContext& paint)
+    -> std::optional<compose_span_target_t> {
+    if (state.timing_drag.recipe_drag_active)
+        return compose_span_target_t{.family = compose_span_family_t::recipe,
+            .id = state.timing_drag.recipe_drag_id, .edge = state.timing_drag.recipe_drag_edge};
+    if (state.timing_drag.kiai_drag_active)
+        return compose_span_target_t{.family = state.timing_drag.kiai_drag_speed
+                ? compose_span_family_t::speed : compose_span_family_t::kiai,
+            .id = state.timing_drag.kiai_drag_head_id, .edge = state.timing_drag.kiai_drag_edge};
+    const auto& view = *paint.view;
+    if (view.input_occluded || view.y_lock || view.waveform_timing_locked ||
+        state.inline_timing.inline_timing_open || view.timing_stage_active ||
+        compose_input_queries_t{state}.is_canvas_hover_blocked() ||
+        !nk_input_is_mouse_hovering_rect(&paint.context->input, paint.viewport)) return std::nullopt;
+    const auto& mouse = paint.context->input.mouse.pos;
+    const auto x = (mouse.x - paint.viewport.x) * view.viewport_width_pixels / paint.viewport.w;
+    const auto y = (mouse.y - paint.viewport.y) * view.viewport_height_pixels / paint.viewport.h;
+    return compose_span_target_t::from(view, x, y,
+        compose_drag_capture_t::edge_tolerance_pixels * view.viewport_height_pixels / paint.viewport.h);
+}
+
+struct compose_span_feedback_t {
+    bool selected{};
+    std::optional<std::uint8_t> hot_edge;
+
+    static auto from(compose_span_family_t family, std::uint64_t id, bool selected,
+                     const std::optional<compose_span_target_t>& target) -> compose_span_feedback_t {
+        compose_span_feedback_t feedback{.selected = selected};
+        if (target && target->family == family && target->id == id) feedback.hot_edge = target->edge;
+        return feedback;
+    }
+    auto is_lit() const -> bool { return selected || hot_edge.has_value(); }
+    auto operator==(const compose_span_feedback_t&) const -> bool = default;
+};
+
+// A broad edge with a small contrasting grip reads as a resize target before it is grabbed.
+static void draw_compose_span_handle(const ComposePaintContext& paint, struct nk_rect rect, float y,
+                                     nk_color base, const compose_span_feedback_t& feedback, bool begin) {
+    const auto edge = begin ? WORM_UI_SPAN_HANDLE_BEGIN : WORM_UI_SPAN_HANDLE_END;
+    const bool hot = feedback.hot_edge == edge;
+    const bool selected = feedback.selected;
+    const auto color = hot ? compose(ComposeColor::timing_hover)
+                          : selected ? compose(ComposeColor::selection_outline) : base;
+    field_line(paint, rect.x, y, rect.x + rect.w, y, hot ? 5.0f : 3.0f, color, 10);
+    const auto width = std::min(18.0f, rect.w - 2.0f);
+    if (width < 4.0f) return;
+    const auto height = hot ? 9.0f : 7.0f;
+    const auto grip = nk_rect(rect.x + (rect.w - width) * .5f, y - height * .5f, width, height);
+    field_rect(paint, grip, 2.0f, color, 10);
+    field_line(paint, grip.x + 2, y - 1, grip.x + grip.w - 2, y - 1, 1, nk_rgb(24, 29, 39), 10);
+    field_line(paint, grip.x + 2, y + 1, grip.x + grip.w - 2, y + 1, 1, nk_rgb(24, 29, 39), 10);
+}
+
+static void draw_compose_kiai_spans(const ComposePaintContext& paint,
+                                    const std::optional<compose_span_target_t>& target) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::kiai);
     if (!extent) return;
     draw_compose_kiai_drag_preview(paint, *extent);
@@ -2236,16 +2293,18 @@ static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
         const wormedit::ui::compose_rect_t bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
         const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
-        field_rect(paint, rect, 0.0f, nk_rgba(250, 204, 92, span.selected ? 96 : 60), 10);
-        field_stroke_rect(paint, rect, 0.0f, span.selected ? 2.0f : 1.0f,
-                          span.selected ? nk_rgb(255, 236, 170) : nk_rgba(250, 204, 92, 170), 10);
+        const auto feedback = compose_span_feedback_t::from(compose_span_family_t::kiai,
+            span.head_object_id.value, span.selected, target);
+        field_rect(paint, rect, 0.0f, nk_rgba(250, 204, 92, feedback.is_lit() ? 96 : 60), 10);
+        field_stroke_rect(paint, rect, 0.0f, feedback.is_lit() ? 2.0f : 1.0f,
+                          feedback.is_lit() ? nk_rgb(255, 236, 170) : nk_rgba(250, 204, 92, 170), 10);
         // Head (opening edge) and tail (closing edge) handles, solid so they read as grabbable.
         const auto head_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
         const auto tail_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
         if (span.head_visible)
-            field_line(paint, rect.x, head_y, rect.x + rect.w, head_y, 4.0f, nk_rgb(250, 204, 92), 10);
+            draw_compose_span_handle(paint, rect, head_y, nk_rgb(250, 204, 92), feedback, true);
         if (span.tail_visible)
-            field_line(paint, rect.x, tail_y, rect.x + rect.w, tail_y, 4.0f, nk_rgb(214, 160, 46), 10);
+            draw_compose_span_handle(paint, rect, tail_y, nk_rgb(214, 160, 46), feedback, false);
     }
 }
 
@@ -2298,15 +2357,18 @@ static void draw_compose_recipe_graph(const ComposePaintContext& paint,
 
 // Area fill, outline and the grabbable begin and end edges of one recipe.
 static void draw_compose_recipe_frame(const ComposePaintContext& paint,
-                                      const wormedit::ui::compose_recipe_area_view_t& area, struct nk_rect rect) {
+                                      const wormedit::ui::compose_recipe_area_view_t& area, struct nk_rect rect,
+                                      const std::optional<compose_span_target_t>& target) {
+    const auto feedback = compose_span_feedback_t::from(compose_span_family_t::recipe,
+        area.recipe_id.value, area.selected, target);
     const auto base = area.enabled ? nk_rgb(150, 170, 255) : nk_rgb(120, 126, 142);
-    field_rect(paint, rect, 0.0f, nk_rgba(base.r, base.g, base.b, area.selected ? 70 : 38), 10);
-    field_stroke_rect(paint, rect, 0.0f, area.selected ? 2.0f : 1.0f,
+    field_rect(paint, rect, 0.0f, nk_rgba(base.r, base.g, base.b, feedback.is_lit() ? 70 : 38), 10);
+    field_stroke_rect(paint, rect, 0.0f, feedback.is_lit() ? 2.0f : 1.0f,
                       nk_rgba(base.r, base.g, base.b, area.enabled ? 210 : 140), 10);
     const auto begin_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
     const auto end_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
-    if (area.begin_visible) field_line(paint, rect.x, begin_y, rect.x + rect.w, begin_y, 3.0f, base, 10);
-    if (area.end_visible) field_line(paint, rect.x, end_y, rect.x + rect.w, end_y, 3.0f, base, 10);
+    if (area.begin_visible) draw_compose_span_handle(paint, rect, begin_y, base, feedback, true);
+    if (area.end_visible) draw_compose_span_handle(paint, rect, end_y, base, feedback, false);
     if (!area.evaluable) {
         // No graph to draw (a Lua expression, for now): a diagonal says "not evaluated".
         field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y + rect.h, 1.0f,
@@ -2314,7 +2376,8 @@ static void draw_compose_recipe_frame(const ComposePaintContext& paint,
     }
 }
 
-static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
+static void draw_compose_recipe_areas(const ComposePaintContext& paint,
+                                      const std::optional<compose_span_target_t>& target) {
     draw_compose_recipe_drag_preview(paint);
     for (size_t index = 0; index < paint.view->recipe_areas.size(); ++index) {
         const auto& area = paint.view->recipe_areas[index];
@@ -2324,7 +2387,7 @@ static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
         const wormedit::ui::compose_rect_t bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
         const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
-        draw_compose_recipe_frame(paint, area, rect);
+        draw_compose_recipe_frame(paint, area, rect, target);
         if (area.evaluable) draw_compose_recipe_graph(paint, area, rect);
     }
 }
@@ -2362,7 +2425,24 @@ static void draw_compose_speed_drag_preview(const ComposePaintContext& paint,
     field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(137, 207, 239), 10);
 }
 
-static void draw_compose_speed_spans(const ComposePaintContext& paint) {
+static void draw_compose_speed_span_frame(const ComposePaintContext& paint,
+                                           const wormedit::ui::compose_speed_span_view_t& span,
+                                           struct nk_rect rect, const compose_span_feedback_t& feedback) {
+    field_rect(paint, rect, 0.0f, nk_rgba(136, 203, 238, feedback.is_lit() ? 84 : 34), 10);
+    field_stroke_rect(paint, rect, 0.0f, feedback.is_lit() ? 2.0f : 1.0f,
+                      nk_rgba(137, 207, 239, feedback.is_lit() ? 230 : 120), 10);
+    const auto begin_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
+    const auto end_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
+    const auto head_y = paint.view->downscroll ? span.bounds.bottom : span.bounds.top;
+    const auto tail_y = paint.view->downscroll ? span.bounds.top : span.bounds.bottom;
+    if (head_y >= 0 && head_y <= paint.view->viewport_height_pixels)
+        draw_compose_span_handle(paint, rect, begin_y, nk_rgb(137, 207, 239), feedback, true);
+    if (tail_y >= 0 && tail_y <= paint.view->viewport_height_pixels)
+        draw_compose_span_handle(paint, rect, end_y, nk_rgb(91, 145, 177), feedback, false);
+}
+
+static void draw_compose_speed_spans(const ComposePaintContext& paint,
+                                     const std::optional<compose_span_target_t>& target) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::speed);
     if (!extent) return;
     draw_compose_speed_drag_preview(paint, *extent);
@@ -2372,12 +2452,9 @@ static void draw_compose_speed_spans(const ComposePaintContext& paint) {
         auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f) continue;
         if (rect.h < 3.0f) rect.h = 3.0f;
-        const bool hovered = nk_input_is_mouse_hovering_rect(&paint.context->input, rect);
-        field_rect(paint, rect, 0.0f, nk_rgba(136, 203, 238, hovered ? 84 : 34), 10);
-        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
-                   hovered ? nk_rgb(137, 207, 239) : nk_rgba(137, 207, 239, 120), 10);
-        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
-                   hovered ? nk_rgb(91, 145, 177) : nk_rgba(91, 145, 177, 120), 10);
+        const auto feedback = compose_span_feedback_t::from(compose_span_family_t::speed,
+            span.object_id.value, span.selected, target);
+        draw_compose_speed_span_frame(paint, span, rect, feedback);
     }
 }
 
@@ -2419,9 +2496,10 @@ static void draw_compose_speed_graph(const ComposePaintContext& paint) {
 
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
-    draw_compose_kiai_spans(paint);
-    draw_compose_speed_spans(paint);
-    draw_compose_recipe_areas(paint);
+    const auto span_target = compose_span_feedback_target(paint);
+    draw_compose_kiai_spans(paint, span_target);
+    draw_compose_speed_spans(paint, span_target);
+    draw_compose_recipe_areas(paint, span_target);
     draw_compose_sv_graph(paint);
     draw_compose_speed_graph(paint);
     draw_compose_proposed_grid(paint);

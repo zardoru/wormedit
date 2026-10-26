@@ -196,6 +196,7 @@ struct compose_speed_span_view_t {
     double transition_length{};
     bool transition_is_seconds{};
     bool clipped{};
+    bool selected{};
     auto operator==(const compose_speed_span_view_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

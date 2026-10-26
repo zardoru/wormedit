@@ -852,7 +852,9 @@ void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
                                     .multiplier = span.multiplier,
                                     .transition_length = span.transition_length,
                                     .transition_is_seconds = span.transition_is_seconds,
-                                    .clipped = span.clipped});
+                                    .clipped = span.clipped,
+                                    .selected = compose_timing_marker_selected(
+                                        interaction_view, wormedit::timing_lane_kind_t::speed, span.object.value)});
     }
 }
 

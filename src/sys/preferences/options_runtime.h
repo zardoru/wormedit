@@ -3,6 +3,7 @@
 #include "ui/frontend.h"
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/keyed_cache.h>
+#include <array>
 #include <tuple>
 
 namespace wormedit::sys {
@@ -13,12 +14,14 @@ struct options_diagnostic_t {
 // Program settings only: no document, workspace, or history references.
 struct options_runtime_t {
     bool visible{};
+    bool confirm_discard{};
     std::uint32_t default_lane_count{4};
     std::uint64_t revision{};
     WormUiOptionsCategory category{WORM_UI_OPTIONS_GENERAL};
     program_preferences_t draft;
     program_preferences_t baseline;
     std::vector<options_diagnostic_t> diagnostics;
+    std::array<bool, WORM_UI_OPTIONS_CATEGORY_COUNT> changed_categories{};
     keyed_cache_t<std::tuple<program_preferences_t, program_preferences_t, WormUiOptionsCategory>,
                   bool> validation;
     std::string status;
@@ -39,7 +42,11 @@ void open_options_category(options_runtime_t&, const program_preferences_t&, Wor
 // Later registered pages submit typed candidates; only the active category is copied.
 [[nodiscard]] auto edit_options_draft(options_runtime_t&, std::uint64_t revision,
     const program_preferences_t& candidate) -> bool;
-// Returns true only when an active category has been accepted into program preferences.
+// Validates and merges every changed page without publishing preferences or UI effects.
+// Refusals update the Options feedback just like Apply.
+[[nodiscard]] auto prepare_options_apply(options_runtime_t&, const program_preferences_t&)
+    -> std::optional<program_preferences_t>;
+// Returns true only when all changed categories have been accepted into program preferences.
 [[nodiscard]] auto apply_options_action(options_runtime_t&, program_preferences_runtime_t&,
     const wormedit::ui::options_action_t&) -> bool;
 // Flips the click-audition preference through the same save path as the Options page and

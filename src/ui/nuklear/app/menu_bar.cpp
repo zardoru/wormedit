@@ -10,14 +10,14 @@ using Action = workspace_menu_action_t;
 
 void append_file(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& view, bool blocked) {
     menu.push_back({"File", "New project", Action::new_project, "document.new_project", !blocked});
-    menu.push_back({"File", "Open chart or project...", Action::open, nullptr, !blocked});
+    menu.push_back({"File", "Open chart or project…", Action::open, "document.open", !blocked});
     menu.push_back({"File", "Save project", Action::save, "document.save_project", !blocked && view.project_loaded});
-    menu.push_back({"File", "Save project as...", Action::save_as, nullptr, !blocked && view.project_loaded});
-    menu.push_back({"File", "Close project", Action::close, nullptr, !blocked && view.project_loaded});
+    menu.push_back({"File", "Save project as…", Action::save_as, "document.save_as", !blocked && view.project_loaded});
+    menu.push_back({"File", "Close project", Action::close, "document.close", !blocked && view.project_loaded});
     menu.push_back({"File", "Export…", Action::export_output_group, "document.export_output_group",
                     !blocked && view.project_loaded && view.selected_chart_id.value != 0});
-    menu.push_back({"File", "Options...", Action::options, "workspace.options", !blocked});
-    menu.push_back({"File", "Quit", Action::quit, nullptr, !blocked});
+    menu.push_back({"File", "Options…", Action::options, "workspace.options", !blocked});
+    menu.push_back({"File", "Quit", Action::quit, "app.quit", !blocked});
     if (view.recent_files.size()) menu.push_back({"File", "", Action::none, nullptr, false});
     for (std::size_t index = 0; index < view.recent_files.size(); ++index) {
         const auto& entry = view.recent_files[index];
@@ -41,9 +41,9 @@ void append_edit(workspace_menu_t& menu, bool enabled) {
                     "selection.select_all_objects_after_cursor", enabled});
     menu.push_back({"Edit", "Invert selection", Action::invert_selection, "selection.invert", enabled});
     menu.push_back({"Edit", "Clear selection", Action::clear_selection, "selection.clear", enabled});
-    menu.push_back({"Edit", "Select Same Sound (Whole Chart)", Action::select_same_sound,
+    menu.push_back({"Edit", "Select same sound (whole chart)", Action::select_same_sound,
                     "selection.select_same_sound_chart", enabled});
-    menu.push_back({"Edit", "Move Selection to BGM", Action::move_to_bgm, "edit.move_to_bgm", enabled});
+    menu.push_back({"Edit", "Move selection to BGM", Action::move_to_bgm, "edit.move_to_bgm", enabled});
 }
 
 void append_view(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& view, bool enabled, bool timing) {
@@ -53,7 +53,7 @@ void append_view(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& v
     menu.push_back({"View", "Layers panel", Action::layers, "view.open_layers", enabled});
     menu.push_back({"View", "Frame timing", Action::frame_timing, nullptr, enabled, timing});
     menu.push_back({"View", "Tap timing", Action::tap_timing, "timing.tap_assistant", enabled, view.tap_timing.visible});
-    menu.push_back({"View", "Timing Settings...", Action::timing_settings, nullptr, enabled, view.timing_settings_visible});
+    menu.push_back({"View", "Timing settings…", Action::timing_settings, nullptr, enabled, view.timing_settings_visible});
     menu.push_back({"View", "Notifications", Action::notifications, "view.notifications", enabled && view.notifications.history_available});
 }
 
@@ -65,15 +65,15 @@ void append_chart(workspace_menu_t& menu, bool enabled) {
 }
 
 void append_playback(workspace_menu_t& menu, bool enabled) {
-    menu.push_back({"Playback", "Play / Stop", Action::play_stop, "transport.play_stop", enabled});
-    menu.push_back({"Playback", "Play from cursor / Pause", Action::play_pause, "transport.play_pause", enabled});
+    menu.push_back({"Playback", "Play / stop", Action::play_stop, "transport.play_stop", enabled});
+    menu.push_back({"Playback", "Play from cursor / pause", Action::play_pause, "transport.play_pause", enabled});
     menu.push_back({"Playback", "Play from start", Action::play_start, "transport.play_from_start", enabled});
     menu.push_back({"Playback", "Stop", Action::stop, "transport.stop", enabled});
     menu.push_back({"Playback", "Metronome", Action::metronome, "transport.toggle_metronome", enabled});
-    menu.push_back({"Playback", "Play Hitsounds on Playback", Action::playback_audition,
+    menu.push_back({"Playback", "Play hitsounds on playback", Action::playback_audition,
                     "audio.toggle_playback_audition", enabled});
     menu.push_back({"Playback", "", Action::none, nullptr, false});
-    menu.push_back({"Playback", "External player preferences...", Action::external_preferences, nullptr, enabled});
+    menu.push_back({"Playback", "External player preferences…", Action::external_preferences, nullptr, enabled});
     menu.push_back({"Playback", "External play from start", Action::external_start, "transport.external_play_start", enabled});
     menu.push_back({"Playback", "External play from here", Action::external_here, "transport.external_play_here", enabled});
     menu.push_back({"Playback", "External stop", Action::external_stop, "transport.external_stop", enabled});
@@ -122,9 +122,11 @@ auto menu_size(nk_context* context, const workspace_menu_t& model, const char* t
         };
         width = std::max(width, text_width(item.title) + text_width(item.shortcut) + 64.0f);
     }
-    const auto parent = nk_window_get_content_region(context);
-    return nk_vec2(std::min(width, parent.w),
-                   std::min(height - context->style.window.spacing.y, std::max(80.0f, parent.h - 40.0f)));
+    const auto viewport = nuklear::tooltip::viewport();
+    const auto available = viewport.w > 0 ? viewport : nk_window_get_bounds(context);
+    return nk_vec2(std::min(width, available.w),
+                   std::min(height + chrome::menu_padding,
+                            std::max(80.0f, available.h - 64.0f)));
 }
 auto render_menu_entries(nk_context* context, const workspace_menu_t& model,
                          const char* title, bool scrollable, bool& release_pending,

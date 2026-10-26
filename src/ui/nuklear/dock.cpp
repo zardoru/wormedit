@@ -9,6 +9,7 @@
 
 namespace wormedit::ui {
 namespace {
+constexpr float dock_button_height = 30.0f;
 auto rect(const compose_rect_t& r) -> struct nk_rect {
     return nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
                    static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top));
@@ -92,6 +93,17 @@ void draw_side_by_side(nk_command_buffer* canvas, struct nk_rect bounds, nk_colo
                    2 * frame.scale, frame.stroke(), tint);
     nk_stroke_line(canvas, frame.px(12), frame.py(3), frame.px(12), frame.py(21), frame.stroke(), tint);
 }
+void render_panel_button(nk_context* context, dock_panel_t panel, const char* tip, bool selected) {
+    if (panel == dock_panel_t::images)
+        (void)chrome::DrawnIconButton{vector_icons::image, tip, selected}.render(context);
+    else
+        (void)chrome::IconButton{glyph(panel), tip, selected}.render(context);
+}
+auto dock_strip_flags(nk_context* context, const dock_geometry_t& geometry) -> nk_flags {
+    const auto rows = static_cast<float>(dock_panel_catalog.size() + 1);
+    const auto required = rows * (dock_button_height + context->style.window.spacing.y) + 2.0f;
+    return geometry.strip.bottom - geometry.strip.top < required ? 0 : NK_WINDOW_NO_SCROLLBAR;
+}
 void render_strip(nk_context* context, const dock_geometry_t& geometry,
                     ui_layout_preferences_t& layout, dock_pointer_t& pointer,
                     const std::array<bool, 6>& available, bool input_available) {
@@ -103,17 +115,17 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
     }();
     nk_layout_space_push(context, rect(geometry.strip));
     nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(1, 1));
-    const auto visible = nk_group_begin(context, "Compose dock strip", NK_WINDOW_NO_SCROLLBAR);
+    const auto visible = nk_group_begin(context, "Compose dock strip", dock_strip_flags(context, geometry));
     nk_style_pop_vec2(context);
     if (!visible) return;
     std::optional<dock_panel_t> hovered;
     for (const auto panel : layout.order()) {
         const auto index = static_cast<std::size_t>(panel);
         const auto& tip = tips[index];
-        nk_layout_row_dynamic(context, 30, 1);
+        nk_layout_row_dynamic(context, dock_button_height, 1);
         const auto bounds = nk_widget_bounds(context);
         if (!available[index]) nk_widget_disable_begin(context);
-        (void)chrome::IconButton{glyph(panel), tip.c_str(), layout.is_visible(panel)}.render(context);
+        render_panel_button(context, panel, tip.c_str(), geometry.is_visible(panel));
         if (!available[index]) nk_widget_disable_end(context);
         if (available[index] && nk_input_is_mouse_hovering_rect(&context->input, bounds)) hovered = panel;
     }
@@ -122,7 +134,7 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
         pointer.panel = hovered;
     }
     finish_panel_drag(context, hovered, layout, pointer);
-    nk_layout_row_dynamic(context, 30, 1);
+    nk_layout_row_dynamic(context, dock_button_height, 1);
     if (chrome::DrawnIconButton{.draw = draw_side_by_side, .tooltip = "Side-by-side panels",
             .selected = layout.is_side_by_side(), .enabled = input_available}.render(context))
         layout.set_side_by_side(!layout.is_side_by_side());
@@ -136,11 +148,13 @@ auto dock_geometry_t::from(float width, float height, const ui_layout_preference
     std::size_t count{};
     for (const auto panel : layout.order())
         if (layout.is_visible(panel) && available[static_cast<std::size_t>(panel)]) visible[count++] = panel;
-    const auto column_space = width - 250 - reserved_left_width;
+    // Preserve a useful field at larger UI scales without changing the saved layout.
+    const auto canvas_width = width < 700.0f && count != 1 ? std::max(250.0f, width * 0.55f) : 250.0f;
+    const auto column_space = width - canvas_width - reserved_left_width - 50.0f;
     const auto columns = count == 2 && layout.is_side_by_side() && column_space >= 2 * dock_minimum_width + 6;
     const auto desired_width = columns ? 2 * layout.width() + 6 : layout.width();
-    const auto panel_width = std::min(desired_width, columns ? column_space : width - 250);
-    if (!count || panel_width < dock_minimum_width || height < 140) return result;
+    const auto panel_width = std::min(desired_width, column_space);
+    if (!count || panel_width < dock_minimum_width || height < (count == 1 ? 96.0f : 140.0f)) return result;
     const auto right = width - 44;
     const auto left = right - panel_width;
     result.reserved_width = width - left + 6;

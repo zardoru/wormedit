@@ -226,12 +226,14 @@ struct begin_note_paint_gesture_action_t {
     std::optional<resource_id_t> sound;
     note_paint_intent_t intent{note_paint_intent_t::toggle};
     std::optional<bmson_source_geometry_t> source_geometry;
+    std::optional<std::uint64_t> canvas_row;
 };
 
 struct update_note_paint_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
     bool pointer_captured{true};
+    std::optional<std::uint64_t> canvas_row;
 };
 
 struct end_note_paint_gesture_action_t {
@@ -239,6 +241,7 @@ struct end_note_paint_gesture_action_t {
     local_position_t position;
     bool pointer_captured{true};
     std::optional<bmson_source_geometry_t> source_geometry;
+    std::optional<std::uint64_t> canvas_row;
 };
 
 // Semantic-layer painting visits existing notes under a captured pointer and

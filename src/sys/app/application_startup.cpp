@@ -1,5 +1,7 @@
 #include "sys/app/application_startup.h"
 #include "sys/app/display_health.h"
+#include "sys/project/project_file_types.h"
+#include "core/text_util.h"
 
 #include "ui/frontend.h"
 
@@ -14,11 +16,14 @@ auto parse_application_startup_arguments(int argc, char** argv,
                                          application_startup_arguments_t& result) -> bool {
     constexpr int maximum_startup_paths = 30;
     if (argc > maximum_startup_paths + 1) {
-        std::fprintf(stderr, "usage: wormedit [project.wormedit [recovery-artifact ...]]\n");
+        std::fprintf(stderr, "usage: wormedit [chart-or-project [recovery-artifact ...]]\n");
         return false;
     }
     if (argc > 1) {
-        result.request.primary_path = std::filesystem::path{argv[1]};
+        const auto path = std::filesystem::path{argv[1]};
+        if (is_supported_project_file_extension(path) && text_util::lowercase_extension(path) != ".wormedit")
+            result.chart_import_path = path;
+        else result.request.primary_path = path;
     }
     for (int index = 2; index < argc; ++index) {
         result.request.recovery_entries.emplace_back(argv[index]);
@@ -35,10 +40,8 @@ auto select_initial_application_status(
         status = "Opened native project: " + requested_primary_path.generic_string();
     } else if (!requested_primary_path.empty()) {
         status = "Primary project was not loaded; review the completed recovery scan.";
-    } else if (platform_recovery && !platform_recovery->empty()) {
-        status = "No project loaded; recovery scan complete.";
     } else {
-        status = "No project loaded; recovery discovery unavailable.";
+        status = "Create a project or open a chart to begin.";
     }
     if (!platform_recovery && !platform_recovery.error().empty()) {
         status += " " + platform_recovery.error();

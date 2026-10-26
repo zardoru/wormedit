@@ -4806,7 +4806,60 @@ auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -
     action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
     return action;
 }
+
+void dispatch_virtual_paint(compose_test_fixture_t& fixture, WormUiComposeInputKind kind,
+    std::uint64_t row) {
+    const auto& view = fixture.flattened.view.compose;
+    auto action = cursor_placement_action(fixture);
+    const auto& state = *fixture.interaction;
+    const auto source_y = static_cast<double>(row) * state.pixels_per_standard_measure /
+        fixture.history.read_chart(state.chart)->divisions_per_standard_measure - state.viewport_scroll_pixels;
+    action.compose_inputs = {{.kind = kind,
+        .x_pixels = view.playable_field_left_pixels + 20,
+        .y_pixels = compose_source_y(source_y, state.viewport_height_pixels, view.downscroll)}};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+}
+
+void check_virtual_paint_commit(compose_test_fixture_t& fixture) {
+    const auto* chart = fixture.history.read_chart(*fixture.binding.value->selected_chart);
+    const auto id = chart->id;
+    expect_compose_test(chart->measures.size() == 2);
+    expect_compose_test(chart->measures.back().notes.size() == 3);
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(undo_document_command(fixture.history));
+    expect_compose_test(fixture.history.read_chart(id)->measures.size() == 1);
+}
 } // namespace
+
+TEST_CASE("New project mouse paint previews virtual measures and materializes only on release",
+          "[sys][compose][paint][virtual-canvas][new-project]") {
+    const auto layout = GENERATE("osu-mania-7k", "bme-7k-outside-scratch");
+    auto document = make_initial_document(song_id_t{991}, layout);
+    REQUIRE(document);
+    compose_test_fixture_t fixture{std::move(*document)};
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    fixture.project();
+    const auto divisions = fixture.history.read_chart(fixture.interaction->chart)->divisions_per_standard_measure;
+    dispatch_virtual_paint(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, divisions + divisions / 4);
+    expect_compose_test(fixture.interaction->gesture<pending_note_paint_gesture_t>() != nullptr);
+    dispatch_virtual_paint(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE, divisions + 3 * divisions / 4);
+    fixture.project();
+    expect_compose_test(std::ranges::any_of(fixture.flattened.view.compose.note_endpoints,
+        [](const auto& endpoint) { return endpoint.paint_preview; }));
+    expect_compose_test(fixture.history.undo.empty());
+    const auto cancelled = GENERATE(false, true);
+    if (cancelled) {
+        expect_compose_test(static_cast<bool>(dispatch_editor_action(fixture.history, *fixture.interaction,
+            cancel_editor_gesture_action_t{})));
+        expect_compose_test(fixture.history.read_chart(fixture.interaction->chart)->measures.size() == 1);
+    } else {
+        dispatch_virtual_paint(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, divisions + 3 * divisions / 4);
+        check_virtual_paint_commit(fixture);
+    }
+}
 
 TEST_CASE("Note paint begin input carries the armed sound into the document and advances once",
           "[sys][compose][paint][sound]") {
@@ -5219,6 +5272,7 @@ TEST_CASE("Lane-key dispatcher does not advance for rejection silent notes delet
         const auto note = f.notes().front();
         f.compose.interaction->selected_notes = {note.id};
         f.compose.interaction->selected_objects = {{editor_selection_object_kind_t::note, note.id}};
+        f.compose.application.project.compose_gesture.note_paint_mode_active = false;
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 2, 8, true);
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 2, 8);
         const auto notes = f.notes();

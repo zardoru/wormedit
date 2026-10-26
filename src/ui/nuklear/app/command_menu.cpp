@@ -31,23 +31,19 @@ struct menu_state_t {
     std::size_t selected{};
     std::array<char, 129> query{};
     std::vector<SDL_Scancode> captured;
+    std::vector<std::size_t> matches;
     wormedit::ui::chrome::Dialog dialog;
 } state;
 
-auto contains(std::string_view label, std::string_view query) -> bool {
-    return std::search(label.begin(), label.end(), query.begin(), query.end(),
-        [](unsigned char left, unsigned char right) {
-            return wormedit::text_util::ascii_iequal(static_cast<char>(left), static_cast<char>(right));
-        }) != label.end();
-}
-auto matching_rows(const wormedit::ui::workspace_view_t& view) -> std::vector<std::size_t> {
-    std::vector<std::size_t> rows;
+void build_matching_rows(const wormedit::ui::workspace_view_t& view) {
+    auto& rows = state.matches;
+    rows.clear();
     const auto count = view.command_menu_rows.size();
-    for (std::size_t i = 0; i < count && rows.size() < maximum_visible_matches; ++i) {
+    for (std::size_t i = 0; i < count; ++i) {
         const auto& row = view.command_menu_rows[i];
-        if (!row.id.empty() && !row.label.empty() && contains(row.label, state.query.data())) rows.push_back(i);
+        if (!row.id.empty() && !row.label.empty() &&
+            wormedit::text_util::ascii_icontains(row.label, state.query.data())) rows.push_back(i);
     }
-    return rows;
 }
 void move_selection(const wormedit::ui::workspace_view_t& view, const std::vector<std::size_t>& rows, int delta) {
     if (rows.empty()) { state.selected = 0; return; }
@@ -88,9 +84,25 @@ void render_query(nk_context* context) {
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);
     if (previous != state.query) state.selected = 0;
 }
+void render_match_navigation(nk_context* context, std::size_t first,
+                             std::size_t page, std::size_t total) {
+    nk_layout_row_dynamic(context, 26, 3);
+    if (!first) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Previous")) state.selected = first - page;
+    if (!first) nk_widget_disable_end(context);
+    std::array<char, 80> count{};
+    std::snprintf(count.data(), count.size(), "%zu–%zu of %zu", first + 1,
+                  std::min(total, first + page), total);
+    nk_label(context, count.data(), NK_TEXT_CENTERED);
+    const bool has_next = first + page < total;
+    if (!has_next) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Next")) state.selected = first + page;
+    if (!has_next) nk_widget_disable_end(context);
+}
 void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view,
                  wormedit::ui::workspace_action_t& action, int height) {
-    const auto rows = matching_rows(view);
+    build_matching_rows(view);
+    const auto& rows = state.matches;
     select_enabled(view, rows);
     if (state.activate && !rows.empty()) activate_command(view, rows[state.selected], action);
     state.activate = false;
@@ -99,7 +111,8 @@ void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view
         nk_label(context, "No matching commands", NK_TEXT_LEFT);
         return;
     }
-    const auto page = static_cast<std::size_t>(std::clamp((height - 180) / 34, 1, 20));
+    const auto page = static_cast<std::size_t>(std::clamp((height - 220) / 34, 1,
+        static_cast<int>(maximum_visible_matches)));
     const auto first = state.selected / page * page;
     for (auto i = first; i < std::min(rows.size(), first + page); ++i) {
         const auto& row = view.command_menu_rows[rows[i]];
@@ -115,6 +128,7 @@ void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view
         if (!row.enabled) nk_widget_disable_end(context);
         if (clicked && row.enabled) activate_command(view, rows[i], action);
     }
+    render_match_navigation(context, first, page, rows.size());
 }
 auto quiet(const nk_context& context) -> bool {
     for (const auto& button : context.input.mouse.buttons) if (button.down || button.clicked) return false;

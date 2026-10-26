@@ -40,6 +40,9 @@ bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y);
 void worm_ui_frontend_end_input(void);
 bool worm_ui_frontend_request_new_project(void);
 bool worm_ui_frontend_request_save_project(uint64_t project_id);
+// Queues an ordinary file action for the next frame, retaining the project identity.
+bool worm_ui_frontend_request_file_action(WormUiWorkspaceActionKind kind, uint64_t project_id,
+                                           bool save_as = false);
 bool worm_ui_frontend_stage_sound_import(uint64_t project, uint64_t chart, uint64_t revision,
     const wormedit::ui::sound_import_item_t* items, size_t item_count,
     const wormedit::ui::sound_import_group_t* existing_groups, size_t group_count,

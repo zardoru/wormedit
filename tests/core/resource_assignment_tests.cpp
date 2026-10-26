@@ -10,6 +10,7 @@
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -916,10 +917,11 @@ TEST_CASE("BMS WAV slot batches cross a base-36 digit boundary with one-step und
 
 namespace { void check_import_extent(bool value) { CHECK(value); } }
 
-TEST_CASE("BGM import extends native chart measures in the same undo command",
+TEST_CASE("BGM import extends unanchored chart measures in the same undo command",
           "[core][resources][audio-extent]") {
     auto song = assignment_song();
-    song.charts.front().source_family = format_family_t::native_project;
+    song.charts.front().source_family = GENERATE(format_family_t::native_project,
+        format_family_t::osu_mania, format_family_t::stepmania);
     auto history = document_history_t::from(song);
     REQUIRE(apply_resource_asset_import(history,
         {.source_path = TEST_ROOT "/track.mp3", .role = resource_role_t::bgm,
@@ -933,6 +935,18 @@ TEST_CASE("BGM import extends native chart measures in the same undo command",
     check_import_extent(history.document.charts.front().measures.size() == 1);
     REQUIRE(redo_document_command(history));
     check_import_extent(history.document.charts.front().measures.size() == 7);
+}
+
+TEST_CASE("BGM import preserves already anchored imported chart geometry",
+          "[core][resources][audio-extent]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::osu_mania;
+    song.audio_assets.front().stream = {44'100, 2, 44'100, true};
+    auto history = document_history_t::from(std::move(song));
+    REQUIRE(apply_resource_asset_import(history,
+        {.source_path = TEST_ROOT "/track.mp3", .role = resource_role_t::bgm,
+         .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
+    CHECK(history.document.charts.front().measures.size() == 1);
 }
 
 namespace {

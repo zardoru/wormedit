@@ -55,6 +55,13 @@ template <typename T>
 struct note_paint_target_t {
     lane_id_t lane;
     local_position_t position;
+    // Virtual cells retain an absolute row until the stroke materializes their measures.
+    std::optional<std::uint64_t> canvas_row;
+
+    [[nodiscard]] auto absolute_row(const measure_index_t& index) const
+        -> std::optional<std::uint64_t> {
+        return canvas_row ? canvas_row : index.row_of(position);
+    }
 
     auto operator==(const note_paint_target_t&) const -> bool = default;
 };

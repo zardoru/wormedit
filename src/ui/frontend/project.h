@@ -330,6 +330,7 @@ struct setup_view_t {
     std::vector<timing_link_category_view_t> timing_categories;
     kind_catalog_view_t<wormedit::format_family_t> output_families;
     bool visible{};
+    bool project_has_native_path{};
     wormedit::song_id_t song_id;
     std::uint64_t document_revision{}, session_generation{};
     std::vector<project_chart_row_view_t> charts;

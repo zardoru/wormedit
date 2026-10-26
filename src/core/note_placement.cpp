@@ -4,6 +4,7 @@
 #include "interaction_internal.h"
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/measure_editor.h>
 namespace wormedit::interaction_detail {
 auto is_plain_editable_note(const note_t& note) -> bool {
     const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
@@ -147,7 +148,7 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
     std::vector<paint_row_t> rows;
     rows.reserve(targets.size());
     for (const auto& target : targets) {
-        const auto row = index.row_of(target.position);
+        const auto row = target.absolute_row(index);
         if (!row)
             return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                            "paint target lies outside chart geometry")};
@@ -236,10 +237,53 @@ auto chart_note_ids(const chart_document_t& chart) -> std::unordered_set<std::ui
 
 namespace wormedit {
 using namespace interaction_detail;
+auto resolve_note_paint_targets(const chart_document_t& chart, std::span<const note_paint_target_t> targets)
+    -> attempt_t<std::vector<note_paint_target_t>> {
+    const auto index = measure_index_t::from(chart);
+    if (!index) return {.diagnostics = index.error()};
+    std::vector<note_paint_target_t> resolved;
+    resolved.reserve(targets.size());
+    for (const auto& target : targets) {
+        const auto position = target.canvas_row ? position_at(*index, *target.canvas_row)
+            : std::optional{target.position};
+        if (!position || !index->row_of(*position)) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+            "paint target is outside materialized chart geometry")}};
+        resolved.push_back({.lane = target.lane, .position = *position});
+    }
+    return {.value = std::move(resolved)};
+}
+
+auto materialize_note_paint_targets(chart_document_t& chart, std::span<const note_paint_target_t> targets)
+    -> attempt_t<std::vector<note_paint_target_t>> {
+    std::optional<std::uint64_t> last_row;
+    for (const auto& target : targets)
+        if (target.canvas_row) last_row = std::max(last_row.value_or(0), *target.canvas_row);
+    if (last_row && !extend_chart_to_row(chart, *last_row))
+        return {.diagnostics = {error(diagnostic_code_t::invalid_measure, "paint extent exceeds chart limits")}};
+    return resolve_note_paint_targets(chart, targets);
+}
+
 auto stage_scoped_note_paint(document_command_transaction_t& transaction, chart_id_t chart,
     const note_paint_plan_t& plan, const note_t& defaults) -> attempt_t<std::vector<object_id_t>> {
+    const auto* source = transaction.read_chart(chart);
+    const auto built = source ? build_virtual_canvas(*source) : std::variant<virtual_canvas_t, diagnostic_list_t>{diagnostic_list_t{}};
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    if (!canvas) return {.diagnostics = {error(diagnostic_code_t::unknown_measure, "paint canvas is unavailable")}};
+    auto count = source->measures.size();
+    for (const auto& target : plan.additions) {
+        if (!target.canvas_row) continue;
+        const auto measure = canvas->measure_containing(*target.canvas_row);
+        if (!measure) return {.diagnostics = {error(diagnostic_code_t::row_out_of_range, "paint target leaves the virtual canvas")}};
+        count = std::max(count, measure->number + 1);
+    }
+    if (count > source->measures.size()) {
+        auto extended = transaction.stage_bms_measure_extent(chart, count);
+        if (!extended.value || !extended.ok()) return {.diagnostics = std::move(extended.diagnostics)};
+    }
+    auto resolved = resolve_note_paint_targets(*transaction.read_chart(chart), plan.additions);
+    if (!resolved.value) return {.diagnostics = std::move(resolved.diagnostics)};
     std::vector<bms_native_event_t> additions;
-    for (const auto& addition : plan.additions) {
+    for (const auto& addition : *resolved.value) {
         auto note = defaults;
         note.position = addition.position;
         note.lane = addition.lane;
@@ -607,7 +651,7 @@ auto stage_editor_tap(editor_edit_context_t& context, document_command_transacti
     if (!target)
         return attempt_t<editor_edit_effect_t>{.diagnostics =
                                                    std::get<diagnostic_list_t>(resolved)};
-    const std::array targets{note_paint_target_t{state.active_lane, *target}};
+    const std::array targets{note_paint_target_t{.lane = state.active_lane, .position = *target}};
     const auto planned = plan_note_paint(context.scope.chart, context.scope.measures, targets,
                                          state.armed_note_kind, note_paint_intent_t::toggle);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&planned))

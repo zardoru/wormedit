@@ -265,6 +265,7 @@ struct pending_note_paint_gesture_t {
     std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
     lane_id_t last_lane;
     local_position_t last_position;
+    std::optional<std::uint64_t> last_canvas_row;
     std::optional<resource_id_t> sound;
     note_paint_intent_t intent{note_paint_intent_t::toggle};
     note_kind_t note_kind{note_kind_t::tap};
@@ -275,7 +276,8 @@ struct pending_note_paint_gesture_t {
     [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_note_paint_gesture_action_t&)
         -> diagnosed_t<std::optional<pending_note_paint_gesture_t>>;
     [[nodiscard]] auto revise(editor_edit_context_t&, lane_id_t, local_position_t,
-                              std::optional<bmson_source_geometry_t>) -> diagnostic_list_t;
+                              std::optional<bmson_source_geometry_t>,
+                              std::optional<std::uint64_t> canvas_row = std::nullopt) -> diagnostic_list_t;
     [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_paint_gesture_t&) const -> bool = default;
 };

@@ -263,7 +263,8 @@ TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages
     view.metadata.document_revision = view.document_revision;
     view.metadata.dropped_music_path = "/music/song.ogg";
     (void)harness.frame();
-    (void)click_label(harness, "Audio and export");
+    if (!harness.drawn_text_center("Use as song audio"))
+        (void)click_label(harness, "Audio and export");
     const auto linked = click_label(harness, "Use as song audio");
     const auto found = std::ranges::find_if(linked, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;

@@ -152,7 +152,7 @@ void populate_metadata_channel_map_preview(frontend_workspace_view_t& flattened,
 }
 
 constexpr const char* custom_lane_profile_reason =
-    "Custom layouts need the per-lane mapping editor, which is not available here yet.";
+    "Choose a built-in layout here. Custom per-lane mappings cannot be edited in this panel.";
 
 // The chart's key-count family, then a disabled Custom entry.
 void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,

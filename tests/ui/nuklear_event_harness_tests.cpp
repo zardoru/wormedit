@@ -3037,7 +3037,11 @@ void t422_suppress_actual_text_editor() {
     (void)fixture.harness.frame();
     const auto header = fixture.harness.drawn_text_center("Find note label");
     REQUIRE(header.has_value());
-    (void)click_at(fixture.harness, header->first, header->second + 27);
+    (void)click_at(fixture.harness, header->first, header->second);
+    (void)fixture.harness.frame();
+    const auto label = fixture.harness.drawn_text_center("Find note label");
+    REQUIRE(label.has_value());
+    (void)click_at(fixture.harness, label->first, label->second + 27);
     CHECK(fixture.harness.frame().get().shortcut_text_entry_active);
     CHECK_FALSE(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
     const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
@@ -3682,27 +3686,6 @@ void check_quantize_preset_action(const wormedit::ui::workspace_action_t& action
         CHECK(std::string_view(action.compose_quantize_preset_name) == name);
 }
 
-void wheel_compose_inspector(nuklear_event_harness_t& harness, float x, float y,
-                             float direction) {
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.mouse_x = static_cast<int>(x);
-    wheel.wheel.mouse_y = static_cast<int>(y);
-    wheel.wheel.y = direction;
-    const std::array events{mouse_motion(x, y), wheel};
-    (void)harness.frame(events);
-}
-
-auto scroll_compose_inspector_to(nuklear_event_harness_t& harness, std::string_view label,
-                                 float x, float y, float direction, int limit) -> bool {
-    for (int tick = 0; tick < limit; ++tick) {
-        if (harness.drawn_text_center(label)) return true;
-        wheel_compose_inspector(harness, x, y, direction);
-    }
-    return harness.drawn_text_center(label).has_value();
-}
-
 void check_quantize_ghost_initial_state(nuklear_event_harness_t& harness) {
     const auto grid = click_quantize_label(harness, "1/16");
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
@@ -3734,20 +3717,20 @@ void check_quantize_ghost_visibility(nuklear_event_harness_t& harness,
 void check_quantize_ghost_scroll_clipping(nuklear_event_harness_t& harness) {
     const auto quantize_label = harness.drawn_text_center("1/16");
     expect_draw(quantize_label.has_value());
-    REQUIRE(scroll_compose_inspector_to(harness, "Transform", quantize_label->first,
+    REQUIRE(wormedit::test::scroll_to_text(harness, "Transform", quantize_label->first,
                                         quantize_label->second, -1.0f, 80));
     auto transform = harness.drawn_text_center("Transform");
     REQUIRE(transform.has_value());
     (void)click_at(harness, transform->first, transform->second);
-    REQUIRE(scroll_compose_inspector_to(harness, "Measure at cursor", quantize_label->first,
+    REQUIRE(wormedit::test::scroll_to_text(harness, "Measure at cursor", quantize_label->first,
                                         quantize_label->second, -1.0f, 80));
     const auto measure = harness.drawn_text_center("Measure at cursor");
     REQUIRE(measure.has_value());
     (void)click_at(harness, measure->first, measure->second);
-    REQUIRE(scroll_compose_inspector_to(harness, "1/16", quantize_label->first,
+    REQUIRE(wormedit::test::scroll_to_text(harness, "1/16", quantize_label->first,
                                         quantize_label->second, 1.0f, 120));
     for (int tick = 0; tick < 8; ++tick)
-        wheel_compose_inspector(harness, quantize_label->first, quantize_label->second, -1.0f);
+        wormedit::test::scroll_at(harness, quantize_label->first, quantize_label->second, -1.0f);
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     harness.view().compose.quantize_preview_enabled = false;
     (void)harness.frame();
@@ -4953,9 +4936,9 @@ TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][
     nuklear_event_harness_t harness{1280, 720};
     configure_project_row(harness, &row);
     (void)harness.frame();
-    const auto open = project_row_action(harness, "Open in Compose");
+    const auto open = project_row_action(harness, "Open in Compose: Chart");
     hover_overview_label(harness, open);
-    CHECK(harness.drawn_text_center("Open in Compose").has_value());
+    CHECK(harness.drawn_text_center("Open in Compose: Chart").has_value());
 }
 
 TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness][components]") {
@@ -4972,7 +4955,7 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     harness.view().tap_timing.visible = true;
     (void)harness.frame();
     (void)harness.frame();
-    const auto open = project_row_action(harness, "Open in Compose");
+    const auto open = project_row_action(harness, "Open in Compose: Chart");
     wormedit::ui::testing_rect_view_t tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     // Move the compact shared dialog by its header over the current action.
@@ -4983,7 +4966,7 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     REQUIRE(inside_x);
     REQUIRE(inside_y);
     hover_overview_label(harness, open);
-    CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
+    CHECK_FALSE(harness.drawn_text_center("Open in Compose: Chart").has_value());
 }
 
 #include "ui/nuklear/compose/compose_waveform_gaps.h"
@@ -5256,7 +5239,7 @@ TEST_CASE("External player preferences dialog keeps every action",
         const auto& text = f.harness.drawn_text();
         CHECK(text.find("Player or wrapper path") != std::string::npos);
         CHECK(text.find("Templates:") == std::string::npos);
-        const auto saved = external_player_fixture_t::action_of(f.click_label("Apply"));
+        const auto saved = external_player_fixture_t::action_of(f.click_label("Apply all"));
         REQUIRE(saved);
         CHECK(saved->kind == WORM_UI_OPTIONS_APPLY);
         CHECK(saved->category == WORM_UI_OPTIONS_PLAYERS);
@@ -6397,6 +6380,7 @@ struct output_group_fixture_t {
         view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
         view.compose.visible = false;
         view.setup.visible = true;
+        view.setup.project_has_native_path = true;
         view.setup.song_id = view.project_id;
         view.setup.document_revision = view.document_revision;
         view.setup.session_generation = 8;
@@ -8951,12 +8935,21 @@ void prepare_recipe_inspector(t422_fixture_t& fixture) {
 auto click_recipe(nuklear_event_harness_t& harness, const char* text,
                    WormUiComposeInputKind kind = WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND)
     -> std::optional<workspace_action_snapshot_t> {
-    // The Quantize section also has Earlier/Later buttons; recipe controls are first.
-    const auto label = std::ranges::find(harness.drawn_text_bounds(), std::string_view{text},
-                                         &wormedit::ui::testing_drawn_text_view_t::text);
-    REQUIRE(label != harness.drawn_text_bounds().end());
-    for (const auto& frame : wormedit::test::click_at(harness,
-            label->x + label->width * 0.5f, label->y + label->height * 0.5f))
+    std::optional<std::pair<float, float>> center;
+    if (std::string_view{text} == "Earlier" || std::string_view{text} == "Later") {
+        const auto order = harness.drawn_text_center("Order");
+        REQUIRE(order);
+        const auto label = std::ranges::find_if(harness.drawn_text_bounds(), [&](const auto& item) {
+            return item.text == text && item.y > order->second;
+        });
+        REQUIRE(label != harness.drawn_text_bounds().end());
+        center = std::pair{label->x + label->width * 0.5f, label->y + label->height * 0.5f};
+    } else {
+        center = harness.drawn_text_center(text);
+    }
+    REQUIRE(center);
+    const auto frames = wormedit::test::click_at(harness, center->first, center->second);
+    for (const auto& frame : frames)
         if (std::ranges::any_of(frame.get().compose_inputs, [kind](const auto& input) { return input.kind == kind; }))
             return frame;
     return std::nullopt;
@@ -9076,4 +9069,108 @@ TEST_CASE("BMS import profile choice submits its stable identity after explicit 
             frame.get().bms_lane_profile_id == expected.id &&
             frame.get().project_path == "/charts/choose-profile.bms";
     }));
+}
+
+TEST_CASE("Options dismissal consumes Escape without clearing the canvas selection",
+          "[options][event-harness][escape]") {
+    nuklear_event_harness_t harness;
+    harness.view().compose.selected_note_count = 1;
+    harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
+        .theme = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    const auto down = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto closed = harness.frame(std::span{&down, 1});
+    CHECK(closed.get().options.kind == WORM_UI_OPTIONS_CLOSE);
+    CHECK(closed.get().shortcut_events.empty());
+    CHECK(closed.get().compose_inputs.empty());
+    harness.view().options.visible = false;
+    const auto up = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto released = harness.frame(std::span{&up, 1});
+    CHECK(released.get().shortcut_events.empty());
+    CHECK(released.get().compose_inputs.empty());
+}
+
+TEST_CASE("Options hides notification toasts until the dialog closes",
+          "[options][notification][event-harness]") {
+    nuklear_event_harness_t harness;
+    auto& view = harness.view();
+    view.notifications.toasts = {{.id = 42, .severity = wormedit::notification_severity_t::error,
+        .message = "Unique toast behind Options", .repeat_count = 1}};
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Unique toast behind Options") != std::string::npos);
+    view.options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
+        .theme = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Unique toast behind Options") == std::string::npos);
+    view.options.visible = false;
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Unique toast behind Options") != std::string::npos);
+}
+
+TEST_CASE("Queued file close and quit reuse the normal workspace lifecycle actions",
+          "[event-harness][file-shortcuts]") {
+    for (const auto kind : {WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT, WORM_UI_WORKSPACE_ACTION_QUIT}) {
+        nuklear_event_harness_t harness;
+        auto& view = harness.view();
+        (void)harness.frame();
+        CHECK(worm_ui_frontend_request_file_action(kind, view.project_id.value));
+        CHECK(harness.frame().get().kind == kind);
+        CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    }
+}
+
+TEST_CASE("Unsaved export targets offer Save without publishing an export",
+          "[event-harness][output-groups][export-onboarding]") {
+    output_group_fixture_t fixture{true};
+    fixture.harness.view().setup.project_has_native_path = false;
+    (void)fixture.harness.frame();
+    require_project_access(fixture.harness.drawn_text_center("Save project…").has_value());
+    const auto frames = fixture.click("Save project…");
+    require_project_access(std::ranges::any_of(frames, [](const auto& frame) {
+        return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+    }));
+    for (const auto& frame : frames) {
+        require_project_access(frame.get().compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+        require_project_access(frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_NONE);
+    }
+}
+
+TEST_CASE("Saved export targets expose a stamped Preview beside Export",
+          "[event-harness][output-groups][export-onboarding]") {
+    output_group_fixture_t fixture{true};
+    const auto frames = fixture.click("Preview");
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW;
+    });
+    require_project_access(found != frames.end());
+    const auto& action = found->get().project_output_group;
+    require_project_access(action.project_id == fixture.harness.view().project_id);
+    require_project_access(action.document_revision == fixture.harness.view().document_revision);
+    require_project_access(action.session_generation == 8);
+    require_project_access(action.group_index == 3);
+    (void)fixture.harness.frame();
+    require_project_access(fixture.harness.drawn_text_center("123 bytes").has_value());
+    require_project_access(fixture.harness.drawn_text_center("A complete conversion warning").has_value());
+}
+
+TEST_CASE("Escape cancels shortcut capture before dismissing Options",
+          "[options][shortcuts][event-harness][escape]") {
+    nuklear_event_harness_t harness{1280, 900};
+    harness.view().options = {.visible = true, .revision = 34, .category = WORM_UI_OPTIONS_INPUT,
+        .theme = "", .shortcut_profile_path = "", .status = "",
+        .shortcut_capturing = true, .shortcut_capture_command_id = "play"};
+    (void)harness.frame();
+    const auto down = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto captured = harness.frame(std::span{&down, 1});
+    require_project_access(captured.get().shortcut_events.size() == 1);
+    require_project_access(captured.get().shortcut_events[0].hid_usage == wormedit::shortcut_key_t::escape);
+    require_project_access(captured.get().options.kind == WORM_UI_OPTIONS_NONE);
+    harness.view().options.shortcut_capturing = false;
+    const auto repeated = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE, true);
+    const auto held = harness.frame(std::span{&repeated, 1});
+    require_project_access(held.get().options.kind == WORM_UI_OPTIONS_NONE);
+    const auto up = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto released = harness.frame(std::span{&up, 1});
+    require_project_access(released.get().shortcut_events.empty());
+    require_project_access(released.get().options.kind == WORM_UI_OPTIONS_NONE);
 }

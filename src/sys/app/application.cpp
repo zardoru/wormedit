@@ -313,10 +313,6 @@ auto refresh_timing_grid(const wormedit::chart_document_t& chart,
 
 
 
-auto inline_preview_active(const application_command_state_t& state) -> bool {
-    return state.services.transport_inline_active && state.services.transport_inline_active();
-}
-
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto loop_region_for_selection(const wormedit::document_history_t& history,
                                const wormedit::chart_document_t& chart,
@@ -382,16 +378,6 @@ void initialize_program_preferences(wormedit::sys::program_preferences_runtime_t
     for (const auto& warning : preferences.warnings)
         notifications.post(wormedit::notification_severity_t::warning,
                            wormedit::notification_source_t::system, warning);
-}
-
-void initialize_preferred_transport(const wormedit::program_preferences_t& preferences,
-    application_command_state_t& state) {
-    const auto& rates = wormedit::audio::playback_rates;
-    const auto found = std::find(rates.begin(), rates.end(), preferences.audio.playback_rate);
-    if (found != rates.end())
-        (void)wormedit::sys::set_transport_rate(state, static_cast<std::size_t>(found - rates.begin()));
-    if (state.services.transport_set_keep_pitch && state.services.transport_set_keep_pitch(preferences.audio.keep_pitch))
-        state.preferences.transport_keep_pitch = preferences.audio.keep_pitch;
 }
 
 constexpr auto application_primary_modifier() -> wormedit::shortcut_primary_modifier_t {
@@ -808,6 +794,10 @@ void refresh_application_command_states(
         (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
     };
     set("document.new_project", true);
+    set("document.open", true);
+    set("document.save_as", !history.document.read_charts().empty());
+    set("document.close", !history.document.read_charts().empty());
+    set("app.quit", true);
     set("workspace.lane_keys", wormedit::sys::lane_keys_runtime_t::can_open(chart));
     set("document.new_chart", chart != nullptr);
     set("history.undo", history.can_undo());
@@ -824,11 +814,7 @@ void refresh_application_command_states(
     refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending,
                                 application_state);
 
-    set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
-                                            application_state.project.clipboard.paste_session.has_value() ||
-                                            pending || !compose_state->selected_objects.empty() ||
-                                             application_state.project.compose_gesture.note_paint_mode_active ||
-                                             application_state.project.compose_gesture.semantic_layer_paint_mode_active));
+    set("selection.clear", compose_ready);
     refresh_same_sound_command(registry, history, chart, compose_state, compose_ready, application_state);
     set("selection.select_all", compose_ready);
     set("selection.select_all_objects", compose_ready);
@@ -2483,6 +2469,7 @@ struct application_t::implementation_t {
         for (const auto* chart : session.history.document.read_charts())
             remember_snap_denominator(commands, chart->id,
                 session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
+        session.workspace.active_tab = workspace_tab_t::compose;
         const auto selected = wormedit::apply_workspace_action(
             session.workspace, session.history.document,
             wormedit::workspace_select_asset_action_t{
@@ -3680,6 +3667,7 @@ struct application_t::implementation_t {
                 remember_snap_denominator(commands, chart->id,
                     session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
             session.project_identity.fresh_blank_project = true;
+            session.workspace.active_tab = workspace_tab_t::compose;
             post_project_feedback(wormedit::notification_severity_t::success,
                                   wormedit::notification_source_t::document,
                                   "New " + std::string(layout->label) +
@@ -3718,6 +3706,28 @@ struct application_t::implementation_t {
             post_shortcut_rejection(platform.notification_sink, command_registry, result);
     }
 
+    auto dispatch_file_command(application_command_kind_t command)
+        -> std::optional<dispatch_outcome_t> {
+        WormUiWorkspaceActionKind action;
+        bool save_as = false;
+        switch (command) {
+        case application_command_kind_t::document_open: action = WORM_UI_WORKSPACE_ACTION_OPEN_FILE; break;
+        case application_command_kind_t::document_save_project: action = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT; break;
+        case application_command_kind_t::document_save_as:
+            action = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+            save_as = true;
+            break;
+        case application_command_kind_t::document_close: action = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;
+        case application_command_kind_t::app_quit: action = WORM_UI_WORKSPACE_ACTION_QUIT; break;
+        default: return std::nullopt;
+        }
+        if (!worm_ui_frontend_request_file_action(action, session.history.document.id.value, save_as))
+            return wormedit::sys::reject_application_command(platform.notification_sink,
+                "Finish the open dialog first.", notification_severity_t::warning,
+                notification_source_t::document);
+        return dispatch_outcome_t{.value = true};
+    }
+
     auto dispatch_registered_application_command(
         const wormedit::command_invocation_context_t& invocation,
         const std::optional<std::uint64_t>& tap_event_ns) -> dispatch_outcome_t {
@@ -3748,13 +3758,7 @@ struct application_t::implementation_t {
                                               "Choose the layout for the new project.");
             return wormedit::dispatch_outcome_t{.value = true};
         }
-        if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
-            if (!worm_ui_frontend_request_save_project(history.document.id.value))
-                return wormedit::sys::reject_application_command(
-                    notifications, "Finish the open dialog first.", severity_t::warning,
-                    source_t::document);
-            return wormedit::dispatch_outcome_t{.value = true};
-        }
+        if (auto file = dispatch_file_command(command->kind)) return *file;
         if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart)
             return create_chart_from_registered_command(history, workspace,
                                                         compose_interaction_state,
@@ -3928,9 +3932,15 @@ struct application_t::implementation_t {
 
     auto prepare_display_options(const wormedit::ui::options_action_t& action) -> bool {
         auto& options = preferences.options_runtime;
-        if (action.kind != WORM_UI_OPTIONS_APPLY || options.category != WORM_UI_OPTIONS_DISPLAY ||
-            !options.visible || action.revision != options.revision || !options.diagnostics.empty()) return true;
-        const auto& display = options.draft.display;
+        if (action.kind != WORM_UI_OPTIONS_APPLY || !options.visible ||
+            action.revision != options.revision || !options.diagnostics.empty() ||
+            options.draft.display == options.baseline.display) return true;
+        const auto candidate = prepare_options_apply(options, preferences.program_preferences.preferences);
+        if (!candidate) {
+            if (options.notification) platform.notification_sink.post(*options.notification);
+            return false;
+        }
+        const auto& display = candidate->display;
         auto message = worm_ui_frontend_apply_display_settings(display.theme, display.ui_scale_percent,
                                                               display.frame_timing_overlay);
         if (message.empty()) return true;
@@ -3947,11 +3957,32 @@ struct application_t::implementation_t {
             platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system, message);
     }
 
+    void apply_changed_saved_options(const program_preferences_t& previous) {
+        const auto& saved = preferences.program_preferences.preferences;
+        if (saved.layout.dock != previous.layout.dock)
+            worm_ui_frontend_set_dock_layout(saved.layout.dock);
+        if (saved.default_lane_keys != previous.default_lane_keys)
+            commands.preferences.default_lane_keys = saved.default_lane_keys;
+        if (saved.lane_keys != previous.lane_keys)
+            commands.preferences.lane_keys = saved.lane_keys;
+        if (saved.general.autosave_minutes != previous.general.autosave_minutes)
+            (void)session.autosave_loop.set_interval(std::chrono::minutes{saved.general.autosave_minutes});
+        if (saved.editor != previous.editor)
+            commands.preferences.editor_preferences = saved.editor;
+        if (saved.minimap != previous.minimap)
+            commands.preferences.minimap_click_moves_paused_playhead = saved.minimap.click_moves_paused_playhead;
+        initialize_preferred_transport(saved, commands, &previous.audio);
+        if (saved.display.snap_colored_grid != previous.display.snap_colored_grid)
+            worm_ui_frontend_set_snap_colored_grid(saved.display.snap_colored_grid);
+    }
+
     void dispatch_options_frame_action(const wormedit::ui::options_action_t& action) {
         if (!prepare_display_options(action)) return;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         refresh_audio_options_request(action);
 #endif
+        const auto previous = action.kind == WORM_UI_OPTIONS_APPLY
+            ? std::optional{preferences.program_preferences.preferences} : std::nullopt;
         const bool accepted = wormedit::sys::apply_options_action(
             preferences.options_runtime, preferences.program_preferences, action);
         worm_ui_frontend_set_snap_grid_opacity(
@@ -3971,25 +4002,7 @@ struct application_t::implementation_t {
             platform.notification_sink.post(*preferences.options_runtime.notification);
         if (!accepted)
             return;
-        if (action.kind == WORM_UI_OPTIONS_APPLY && preferences.options_runtime.category == WORM_UI_OPTIONS_DISPLAY)
-            worm_ui_frontend_set_dock_layout(preferences.program_preferences.preferences.layout.dock);
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_INPUT)
-            commands.preferences.default_lane_keys = preferences.program_preferences.preferences.default_lane_keys;
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_GENERAL)
-            (void)session.autosave_loop.set_interval(std::chrono::minutes{
-                preferences.program_preferences.preferences.general.autosave_minutes});
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_EDITOR) {
-            commands.preferences.editor_preferences =
-                preferences.program_preferences.preferences.editor;
-            commands.preferences.minimap_click_moves_paused_playhead =
-                preferences.program_preferences.preferences.minimap.click_moves_paused_playhead;
-        }
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_AUDIO)
-            initialize_preferred_transport(preferences.program_preferences.preferences, commands);
-        if (preferences.options_runtime.category == WORM_UI_OPTIONS_DISPLAY) {
-            worm_ui_frontend_set_snap_colored_grid(
-                preferences.program_preferences.preferences.display.snap_colored_grid);
-        }
+        if (previous) apply_changed_saved_options(*previous);
     }
 
     void dispatch_active_timing_stage_action(const wormedit::ui::workspace_action_t& action,
@@ -4019,6 +4032,14 @@ struct application_t::implementation_t {
             dispatch_timing_stage_value_action(action, timing_locked, active_snap_denominator,
                                                chart_ptr, stage);
         }
+    }
+
+    void start_requested_chart_import() {
+        if (platform.arguments.chart_import_path.empty()) return;
+        wormedit::ui::workspace_action_t action{};
+        action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        action.project_path = platform.arguments.chart_import_path.string();
+        open_project_session(action);
     }
 
     auto start() -> bool {
@@ -4150,6 +4171,7 @@ struct application_t::implementation_t {
         post_shortcut_startup_diagnostic(platform.notification_sink, shortcut_startup);
         views.compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
         started_ = true;
+        start_requested_chart_import();
         start_display_watchdog();
         return true;
     }
@@ -4847,6 +4869,8 @@ struct application_t::implementation_t {
                                      !session.project_identity.active_project_path.empty());
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
         flattened.view.setup.refill(views.project_chart_runtime, session.history.document);
+        flattened.view.setup.project_has_native_path = session.project_identity.native_project_loaded &&
+            !session.project_identity.active_project_path.empty();
         if (flattened.view.setup.visible)
             flattened.view.setup.settings.refill(session.history.document, preferences.program_preferences.preferences);
         build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,

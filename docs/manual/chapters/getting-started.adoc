@@ -13,7 +13,14 @@ image::start-screen.png[Start screen with New project and Open chart or project 
 == Creating a project
 
 Click *New project*, choose *File › New project*, or press kbd:[Ctrl+N]. The wizard asks one
-question: the *chart layout*. Pick it and click *Create project*; kbd:[Escape] cancels.
+question: the *chart layout*. Choose a game format, key count and layout variant, then click
+*Create project*; kbd:[Escape] cancels. The lane preview shows the selected layout.
+The new chart opens in Compose. Select *Draw* (kbd:[Alt+2]) to place notes with the mouse or
+lane keys; kbd:[Space] plays the chart. Double-click a sound in the Sounds dock to arm it.
+Without song audio, the canvas includes empty measures beyond the authored chart. Drawing there
+creates the needed measures with the notes; cancelling a stroke leaves the chart unchanged.
+
+To start with song audio, drop an MP3 or Ogg onto the start screen before choosing the layout.
 
 .Creating a project (captured at {shot-new-project-wizard-revision})
 image::new-project-wizard.png[The Create a new project dialog with its Chart layout list]
@@ -62,8 +69,7 @@ An opened chart becomes a new, unsaved project that keeps reading its sounds fro
 folder. Save it with kbd:[Ctrl+S] to get a `.wormedit` project; exporting needs a saved project
 (see <<walkthrough-bms>>).
 
-NOTE: Starting Wormedit from a command line only opens a `.wormedit` project. Open other chart
-formats from inside the editor.
+Starting Wormedit with a chart path uses the same importer as *Open chart or project…*.
 
 === Autosave and recovery
 

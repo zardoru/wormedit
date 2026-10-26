@@ -42,7 +42,10 @@ void editor_selection_history_t::record(document_history_t& history,
     if (undo.size() > history.maximum_undo_entries)
         undo.erase(undo.begin(), undo.begin() + static_cast<std::ptrdiff_t>(undo.size() - history.maximum_undo_entries));
     redo.clear();
-    history.redo.clear();
+    // Selection changes branch only transient selection history. Pending document
+    // edits remain redoable after this new event in the combined chronology.
+    for (auto record = history.redo.rbegin(); record != history.redo.rend(); ++record)
+        record->sequence = history.next_history_sequence++;
 }
 
 namespace {

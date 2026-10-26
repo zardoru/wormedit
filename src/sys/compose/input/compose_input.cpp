@@ -551,10 +551,11 @@ auto dispatch_compose_lane_key_press(const wormedit::ui::compose_input_action_t&
     if (input.lane_id.value == 0) {
         return compose_input_family_result_t::from("Lane-key input did not identify a chart lane.");
     }
-    if (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects, [](const auto& object) {
+    if (!application.project.compose_gesture.note_paint_mode_active &&
+        (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects, [](const auto& object) {
             return object.kind == editor_selection_object_kind_t::note ||
                    object.kind == editor_selection_object_kind_t::bgm_event;
-        })) {
+        }))) {
         result = dispatch_editor_action(
             history, state,
             assign_selected_objects_to_lane_action_t{input.lane_id, input.successive});
@@ -1789,7 +1790,7 @@ auto dispatch_note_to_bgm_input(const wormedit::ui::compose_input_action_t& inpu
 }
 
 // A lane key at a cursor inside a Warp would place a playable head in skipped rows. Holds that
-// started earlier may still end there, and a key on a selection only reassigns lanes.
+// started earlier may still end there. In Select, a key on a selection only reassigns lanes.
 auto lane_key_places_inside_warp(const wormedit::ui::compose_input_action_t& input,
                                  const compose_input_context_t& context) -> bool {
     const auto& state = context.state;
@@ -1798,7 +1799,8 @@ auto lane_key_places_inside_warp(const wormedit::ui::compose_input_action_t& inp
         !context.environment.controls.cache.timing.dead_spans || !context.input_chart ||
         state.virtual_bms_cursor_row)
         return false;
-    const auto selected = !state.selected_notes.empty() || !state.selected_objects.empty();
+    const auto selected = !context.environment.commands.project.compose_gesture.note_paint_mode_active &&
+        (!state.selected_notes.empty() || !state.selected_objects.empty());
     const auto pending = state.hold() || !state.additional_keyboard_holds().empty();
     if (press ? selected : pending) return false;
     const auto& measures = context.environment.document.history.indices(context.input_chart->id)->measures;
@@ -1846,6 +1848,13 @@ auto dispatch_compose_input_families(const wormedit::ui::compose_input_action_t&
         result, accepted, context.notifications, context.environment.controls.cache);
     if (keyboard.is_handled())
         return keyboard;
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
+        return dispatch_note_paint_gesture(input, context, result, accepted);
+    default: break;
+    }
     const auto position = [&context](const auto& chart, const auto& view, double y) {
         return context.position_at_compose_y(chart, view, y);
     };

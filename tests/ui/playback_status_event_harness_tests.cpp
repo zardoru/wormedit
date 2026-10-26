@@ -28,9 +28,9 @@ void check_position(const wormedit::ui::testing_drawn_text_view_t& actual, const
 }
 
 struct playback_status_fixture_t {
-    nuklear_event_harness_t harness{1280, 900};
+    nuklear_event_harness_t harness;
     std::array<wormedit::ui::compose_waveform_overview_row_view_t, 2> rows{{{0, 0.5f}, {1, 0.5f}}};
-    playback_status_fixture_t() {
+    explicit playback_status_fixture_t(int width = 1280) : harness{width, 900} {
         REQUIRE(harness.ready());
         auto& view = harness.view().compose;
         view.bgm_bar_reserved = true;
@@ -71,7 +71,7 @@ TEST_CASE("Malformed overview publication leaves the editable workspace and stat
 
 TEST_CASE("Playback status geometry stays fixed across overview and notification changes",
           "[event-harness][playback-status]") {
-    playback_status_fixture_t fixture;
+    playback_status_fixture_t fixture{1800};
     auto& workspace = fixture.harness.view();
     (void)fixture.harness.frame();
     const auto clock = text_bounds(fixture.harness, "0:00.000");
@@ -89,7 +89,7 @@ TEST_CASE("Playback status geometry stays fixed across overview and notification
 
 TEST_CASE("Long UTF-8 status and metadata elide inside their reserved columns",
           "[event-harness][playback-status]") {
-    playback_status_fixture_t fixture;
+    playback_status_fixture_t fixture{1800};
     std::string long_text;
     for (int index = 0; index < 100; ++index) long_text += "Timing 日本語 · ";
     fixture.harness.view().status_text = long_text.c_str();
@@ -102,7 +102,7 @@ TEST_CASE("Long UTF-8 status and metadata elide inside their reserved columns",
         ++elided;
         CHECK(text.size() < long_text.size());
         CHECK(std::isfinite(row.x));
-        CHECK(row.x + row.width <= 1280);
+        CHECK(row.x + row.width <= 1800);
     }
     CHECK(elided == 2);
 }
@@ -122,4 +122,17 @@ TEST_CASE("Malformed BGM overview arrays are bounded independently of chart geom
         CHECK(fixture.harness.drawn_text().find("Ready") != std::string::npos);
         CHECK(fixture.harness.drawn_text().find("could not display") == std::string::npos);
     }
+}
+
+TEST_CASE("Compact playback status prioritizes readable feedback over optional metadata",
+          "[event-harness][playback-status]") {
+    playback_status_fixture_t fixture;
+    fixture.harness.view().status_text = "Edit refused: choose an editable lane and retry the operation.";
+    (void)fixture.harness.frame();
+    const auto feedback = text_bounds(fixture.harness, "Edit refused: choose an editable lane and retry the operation.");
+    CHECK(feedback.width >= 350);
+    CHECK(feedback.x + feedback.width <= 1280);
+    CHECK(fixture.harness.drawn_text().find("Test artist · Normal") == std::string::npos);
+    const auto clock = text_bounds(fixture.harness, "0:00.000");
+    CHECK(clock.x + clock.width <= 1280);
 }

@@ -114,7 +114,7 @@ static void render_navigation_group(const ComposeToolbarContext& toolbar) {
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
     update_compose_pointer_navigation(action, std::nullopt);
-    if (wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, "Reset view"}.render(context) &&
+    if (wormedit::ui::chrome::IconButton{Glyph::maximize, "Reset view"}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
     render_scroll_direction_toggle(toolbar);
@@ -716,12 +716,62 @@ static void render_click_audition_toggle(const ComposeToolbarContext& toolbar) {
         toolbar.action->menu_command_id = "audio.toggle_click_audition";
 }
 
+static void render_compact_toolbar(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    nk_layout_row_template_begin(context, 27);
+    layout_toolbar_icons(context, 4);
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0) +
+                                    resource_brush_tool_count(*toolbar.view));
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_end(context);
+    render_navigation_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_tool_group(toolbar);
+
+    if (toolbar.view->timing_focus) {
+        nk_layout_row_template_begin(context, 27);
+        layout_toolbar_icons(context, 5);
+        wormedit::ui::chrome::layout_separator(context);
+        layout_toolbar_icons(context, 1);
+        nk_layout_row_template_push_static(context, 60);
+        nk_layout_row_template_push_dynamic(context);
+        nk_layout_row_template_end(context);
+        render_compose_offset_toolbar(toolbar);
+        wormedit::ui::chrome::toolbar_separator(context);
+        render_compose_snap_controls(context);
+    }
+    nk_layout_row_template_begin(context, 27);
+    layout_toolbar_icons(context, 3);
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 1 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0));
+    layout_toolbar_icons(context, 1);
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 1);
+    nk_layout_row_template_push_dynamic(context);
+    layout_toolbar_icons(context, 2);
+    nk_layout_row_template_push_static(context, 42);
+    layout_toolbar_icons(context, 1);
+    nk_layout_row_template_end(context);
+    render_color_view_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_auxiliary_view_group(toolbar);
+    render_click_audition_toggle(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_compose_bgm_scroll_controls(toolbar);
+}
+
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     update_compose_note_label_cache(toolbar.view);
     auto* context = toolbar.context;
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
+    if (nk_window_get_bounds(context).w < 900.0f) {
+        render_compact_toolbar(toolbar);
+        if (spacing_pushed) (void)nk_style_pop_vec2(context);
+        return;
+    }
     layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0) +
                                resource_brush_tool_count(*toolbar.view),
                            1 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),

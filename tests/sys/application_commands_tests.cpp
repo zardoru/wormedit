@@ -1046,6 +1046,22 @@ TEST_CASE("application command selection clear invokes producer-owned cursor res
     CHECK(wormedit::write_native_project(fixture.fixture.history.document).value == original);
 }
 
+TEST_CASE("Clearing an empty Compose selection is a silent no-op",
+          "[sys][commands][selection-escape]") {
+    TimingInsertFixture fixture;
+    fixture.compose_state->selected_notes.clear();
+    fixture.compose_state->selected_objects.clear();
+    fixture.compose_state->retained_selection_range.reset();
+    fixture.compose_state->retained_canvas_selection_range.reset();
+    fixture.compose_state->selected_canvas_measure.reset();
+    const auto revision = fixture.fixture.history.document.revision;
+    REQUIRE(fixture.invoke(application_command_kind_t::selection_clear).value);
+    fixture.center.drain_inbox(wormedit::notification_time_t{});
+    CHECK(fixture.center.size() == 0);
+    CHECK(fixture.fixture.history.document.revision == revision);
+    CHECK(fixture.fixture.history.selections.undo.empty());
+}
+
 TEST_CASE("Clearing Compose selection preserves the active tool and layer solo",
           "[unit][sys][commands][selection-escape]") {
     TimingInsertFixture fixture;
@@ -3677,3 +3693,31 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
     check_export_policy(!std::filesystem::exists(root / "rejected"));
     std::filesystem::remove_all(root);
 }
+
+#ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Applying saved transport fields preserves unrelated session playback settings",
+          "[sys][commands][options][transport-preferences]") {
+    using namespace wormedit;
+    application_command_state_t state;
+    auto preferences = program_preferences_t::with_defaults();
+    auto previous = preferences.audio;
+    int rate_calls{}, pitch_calls{};
+    state.services.transport_set_playback_rate = [&](rational_t) { ++rate_calls; return true; };
+    state.services.transport_set_keep_pitch = [&](bool) { ++pitch_calls; return true; };
+    initialize_preferred_transport(preferences, state, &previous);
+    expect_keep_pitch(rate_calls == 0 && pitch_calls == 0);
+    preferences.audio.metronome_volume = 20;
+    initialize_preferred_transport(preferences, state, &previous);
+    expect_keep_pitch(rate_calls == 0 && pitch_calls == 0);
+    preferences.audio.keep_pitch = true;
+    initialize_preferred_transport(preferences, state, &previous);
+    expect_keep_pitch(rate_calls == 0 && pitch_calls == 1);
+    expect_keep_pitch(state.preferences.transport_keep_pitch);
+    previous = preferences.audio;
+    state.preferences.transport_keep_pitch = false;
+    preferences.audio.playback_rate = {1, 2};
+    initialize_preferred_transport(preferences, state, &previous);
+    expect_keep_pitch(rate_calls == 1 && pitch_calls == 1);
+    expect_keep_pitch(!state.preferences.transport_keep_pitch);
+}
+#endif

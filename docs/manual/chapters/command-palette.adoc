@@ -12,8 +12,9 @@ working: the keyboard stays on the keyboard, and nothing is more than a word awa
 . Type any part of a command's name. Matching ignores case and can start anywhere in the name:
 `loop` finds *Play Selection Looped* and *Toggle Selection Loop*, `bgm` finds *Move Selection to
 BGM*.
-. kbd:[Up] and kbd:[Down] move through the matches (up to twenty are listed), skipping commands
+. kbd:[Up] and kbd:[Down] move through all matches, skipping commands
 that cannot run right now, which are shown dimmed.
+. *Previous* and *Next* show another page of matches; narrowing the query also reduces the list.
 . kbd:[Enter] runs the highlighted command; clicking a match does the same. kbd:[Escape] closes the
 palette without running anything.
 

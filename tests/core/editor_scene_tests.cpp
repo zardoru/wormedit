@@ -128,7 +128,7 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
     case 4:
         result.active_gesture = note_paint_gesture_preview_t{
             .stamp = wormedit::document_stamp_t::from(8), .targets = std::make_shared<const std::vector<note_paint_target_t>>(
-                std::vector<note_paint_target_t>{{lane_id_t{1}, {measure_id_t{1}, 720}}})};
+                std::vector<note_paint_target_t>{{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 720}}})};
         break;
     }
     return result;
@@ -946,8 +946,8 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{2}, 240}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{1}, 720}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{2}, 240}},
             }),
     };
 
@@ -1184,7 +1184,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 240}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{1}, 240}},
             }),
     };
     const auto occupied = wormedit::editor_field_scene_view_t::from(
@@ -1208,7 +1208,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
-                {wormedit::lane_id_t{2}, {wormedit::measure_id_t{1}, 840}},
+                {.lane = wormedit::lane_id_t{2}, .position = {wormedit::measure_id_t{1}, 840}},
             }),
     };
     const auto collision = wormedit::editor_field_scene_view_t::from(
@@ -1237,7 +1237,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{1}, 720}},
             }),
     };
     const auto primitive_capped =
@@ -1254,8 +1254,8 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
-                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{2}, 240}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{1}, 720}},
+                {.lane = wormedit::lane_id_t{1}, .position = {wormedit::measure_id_t{2}, 240}},
             }),
     };
     const auto operation_capped =

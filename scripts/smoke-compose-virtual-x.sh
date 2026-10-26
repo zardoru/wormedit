@@ -44,16 +44,12 @@ if [[ ! -x $app ]]; then
     echo "Build Wormedit first: $app" >&2
     exit 1
 fi
-for utility in Xvfb xauth mcookie xdpyinfo xdotool import; do
+for utility in Xvfb xauth mcookie xdpyinfo xdotool import identify; do
     if ! command -v "$utility" >/dev/null; then
         echo "Missing test utility: $utility" >&2
         exit 1
     fi
 done
-if [[ $mode == timing ]] && ! command -v identify >/dev/null; then
-    echo "Missing test utility: identify" >&2
-    exit 1
-fi
 
 export XAUTHORITY="$temp_dir/Xauthority"
 touch "$XAUTHORITY"
@@ -87,6 +83,12 @@ fi
 
 export SDL_VIDEODRIVER=x11
 export SDL_AUDIODRIVER=dummy
+# Native pickers must stay on this isolated display too, away from desktop portals.
+unset WAYLAND_DISPLAY
+export DBUS_SESSION_BUS_ADDRESS=unix:path="$temp_dir/no-session-bus"
+export GDK_BACKEND=x11
+export GTK_USE_PORTAL=0
+export QT_QPA_PLATFORM=xcb
 export XDG_CONFIG_HOME="$temp_dir/config"
 export XDG_DATA_HOME="$temp_dir/data"
 if [[ $mode == gallery ]]; then export WORMEDIT_UI_GALLERY=1; fi
@@ -140,8 +142,8 @@ if [[ -z $project && $mode != landing && $mode != gallery ]]; then
     click_at "$((window_width / 2))" 200
 fi
 if [[ -z $project && $mode != landing && $mode != wizard && $mode != gallery ]]; then
-    # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
-    click_at "$((window_width / 2 + 160))" "$((window_height / 2 + 46))"
+    # The layout wizard's primary footer button follows the game/layout preview.
+    click_at "$((window_width / 2 + 303))" "$((window_height / 2 + 152))"
     # Compose is the third of six equal-width tabs (the Timing screen is retired).
     click_at "$((window_width * 5 / 12))" 55
 fi
@@ -153,6 +155,20 @@ if [[ -n $project ]]; then
 fi
 if [[ $mode == audio ]]; then
     click_at "$((window_width * 9 / 12))" 55
+fi
+if [[ $mode == compose || $mode == timing || $mode == audio ]]; then
+    # Verify the requested tab is active; stale wizard clicks must fail visibly.
+    tab_x=$((window_width * 5 / 12))
+    if [[ $mode == audio ]]; then tab_x=$((window_width * 9 / 12)); fi
+    xdotool mousemove --window "$window_id" 0 0
+    import -window "$window_id" "$temp_dir/tab.png"
+    active_fill=$(identify -format "%[pixel:p{$tab_x,42}]" "$temp_dir/tab.png")
+    inactive_fill=$(identify -format "%[pixel:p{$((window_width / 12)),42}]" "$temp_dir/tab.png")
+    if [[ $active_fill == "$inactive_fill" ]]; then
+        cp "$temp_dir/tab.png" "$output"
+        echo "Requested tab is not active; check wizard navigation (capture: $output)." >&2
+        exit 1
+    fi
 fi
 if [[ $mode == timing ]]; then
     # These cells precede all width-dependent toolbar content. Their centers in

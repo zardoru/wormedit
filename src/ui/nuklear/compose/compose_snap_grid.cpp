@@ -67,8 +67,11 @@ void render_compose_snap_badge(nk_context* context, const wormedit::ui::compose_
     auto& menu = state.snap_grid.snap_grid_menu;
     (void)context_menu_update(menu, context);
     char label[24];
-    std::snprintf(label, sizeof(label), "1/%llu",
-                  static_cast<unsigned long long>(view.area_snap_denominator));
+    if (view.edit_snap_enabled)
+        std::snprintf(label, sizeof(label), "1/%llu",
+                      static_cast<unsigned long long>(view.area_snap_denominator));
+    else
+        std::snprintf(label, sizeof(label), "Snap off");
     const auto bounds = nk_widget_bounds(context);
     if (Chip{label, menu.open, available, context_menu_owns_input(menu) ? nullptr : "Choose editing grid"}.render(context)) {
         state.snap_grid.snap_grid_choice = 0;

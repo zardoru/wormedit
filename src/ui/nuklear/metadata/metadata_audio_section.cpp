@@ -770,7 +770,7 @@ static void render_project_and_export_copies(const MetadataPanel& panel,
 void render_metadata_paths(const MetadataPanel& panel) {
     auto* context = panel.context;
     worm_ui_nuklear_clear_metadata_drop_targets();
-    if (!metadata_tree_push(context, NK_TREE_TAB, "Audio and export", NK_MINIMIZED, 1728)) return;
+    if (!metadata_tree_push(context, NK_TREE_TAB, "Audio and export", NK_MAXIMIZED, 1728)) return;
     render_metadata_audio_picker(panel);
     muted_label(context, "Drop audio here to link it, or on a folder to copy it.");
     render_dropped_music(panel);

@@ -287,7 +287,7 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
     const auto& doc = context.environment.document.history.document;
     if (context.environment.resources->asset_base.empty())
         return compose_action_outcome_t::blocked(
-            "Open a saved native project before exporting an output group.",
+            "Save the project before exporting an output group (Ctrl+S).",
             notification_source_t::export_);
     if (context.environment.resources->jobs.copy.is_busy() ||
         context.environment.resources->jobs.exporter.is_busy() || context.metadata_import_busy)

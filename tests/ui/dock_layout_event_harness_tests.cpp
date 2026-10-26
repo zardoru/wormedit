@@ -210,3 +210,45 @@ TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harn
     CHECK(wide.panes[0]->bounds.left >= 328 + 200);
     CHECK(layout.is_side_by_side());
 }
+
+TEST_CASE("Compact docks preserve the field without overwriting preferred panels", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    const auto saved = layout;
+    const std::array available{true, true, true, true, true, true};
+    const auto compact = ui::dock_geometry_t::from(640, 240, layout, available);
+    CHECK_FALSE(compact.panes[0]);
+    CHECK_FALSE(compact.panes[1]);
+    CHECK(compact.reserved_width < 50);
+    CHECK(layout == saved);
+    const auto restored = ui::dock_geometry_t::from(1280, 700, layout, available);
+    REQUIRE(restored.panes[0]);
+    REQUIRE(restored.panes[1]);
+}
+
+TEST_CASE("Compact dock can show an explicitly selected sole panel", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    layout.activate(dock_panel_t::sounds, false);
+    const auto geometry = ui::dock_geometry_t::from(640, 120, layout, {true, true, true, true, true, true});
+    CHECK(geometry.is_visible(dock_panel_t::sounds));
+    CHECK_FALSE(geometry.panes[1]);
+}
+
+TEST_CASE("Compact Compose keeps the complete toolbar inside the viewport", "[event-harness][dock-layout]") {
+    nuklear_event_harness_t harness{640, 360};
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    for (const auto* tip : {"Zoom out", "Reset view", "Scroll BGM columns right", "Play sound on click"}) {
+        const auto [x, y] = harness.widget_center(tip);
+        CHECK((x > 0 && x < 640));
+        CHECK((y > 0 && y < 360));
+    }
+}
+
+TEST_CASE("Compact toolbar leaves useful chart height at the maximum UI scale", "[event-harness][dock-layout]") {
+    nuklear_event_harness_t harness{640, 360};
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    wormedit::ui::testing_rect_view_t viewport{};
+    REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+    CHECK(viewport.height >= 100);
+}

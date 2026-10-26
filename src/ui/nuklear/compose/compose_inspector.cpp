@@ -156,7 +156,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         render_initial_bpm_control(inspector);
         render_compose_inspector_timing_controls({inspector.context, inspector.view, inspector.action});
         nk_layout_row_dynamic(inspector.context, 28, 1);
-        if (nk_button_label(inspector.context, "Timing Settings..."))
+        if (nk_button_label(inspector.context, "Timing settings…"))
             inspector.action->timing_settings.toggle = true;
         nk_tree_pop(inspector.context);
     } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
@@ -182,6 +182,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED)) return;
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "Find note label", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
@@ -203,6 +204,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     submit("Previous", WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL);
     submit("Next", WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL);
     if (disabled) nk_widget_disable_end(context);
+    nk_tree_pop(context);
 }
 
 // Time signature of the cursor measure: typed numerator and denominator, an Apply button and the
@@ -512,7 +514,7 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
             selected = x;
     nk_layout_row_dynamic(c, 18, 1);
     auto grid_bounds = nk_widget_bounds(c);
-    nk_label(c, "Grid", NK_TEXT_LEFT);
+    nk_label(c, v.edit_snap_enabled ? "Grid" : "Grid · editing snap off", NK_TEXT_LEFT);
     // The chip rows start one row spacing below the label.
     grid_bounds.y += grid_bounds.h + c->style.window.spacing.y;
     const auto grid = wormedit::ui::chrome::ChipGrid{grids, 15, selected, 5}.render(c);

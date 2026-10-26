@@ -632,6 +632,15 @@ struct compose_input_context_t {
                        double y_pixels) -> std::optional<wormedit::editor_hit_target_t> {
         return hit_target_unrestricted(chart, view, x_pixels, y_pixels);
     }
+    auto paint_target_at(const wormedit::chart_document_t& chart,
+        const wormedit::editor_interaction_view_model_t& view, double x, double y)
+        -> std::optional<wormedit::note_paint_target_t> {
+        if (const auto target = hit_target_at(chart, view, x, y))
+            return wormedit::note_paint_target_t{.lane = target->lane, .position = target->position};
+        if (const auto target = virtual_bms_hit_at(chart, view, x, y))
+            return wormedit::note_paint_target_t{.lane = target->second, .canvas_row = target->first};
+        return std::nullopt;
+    }
     auto note_move_hit_target_at(WormUiComposeInputKind kind,
                                  const wormedit::chart_document_t& chart,
                                  const wormedit::editor_interaction_view_model_t& view,
@@ -865,13 +874,13 @@ auto dispatch_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& in
     return update_alt_pointer_gesture(input, context, position_at_compose_y, cache);
 }
 
-template <typename HitTargetAt>
-auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& input,
-                                 compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
-                                 const compose_scene_cache_t& cache)
-    -> compose_input_family_result_t {
+inline auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& input,
+    compose_input_context_t& input_context, wormedit::editor_interaction_result_t& result,
+    std::string_view& accepted) -> compose_input_family_result_t {
+    const auto& environment = input_context.environment;
+    auto& state = input_context.state;
+    const auto& cache = environment.controls.cache;
     using namespace wormedit;
-    auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
     if (!application_state.project.compose_gesture.note_paint_mode_active) {
@@ -891,7 +900,7 @@ auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& inp
         return compose_input_family_result_t::from(
             "The selected chart field is no longer available.");
     }
-    const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
+    const auto target = input_context.paint_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!target) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN)
             return compose_input_family_result_t::from(
@@ -909,7 +918,8 @@ auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& inp
             end_note_paint_gesture_action_t{
                 .lane = pending.last_lane,
                 .position = pending.last_position,
-                .source_geometry = compose_stem_geometry(history, state, cache, pending.sound)});
+                .source_geometry = compose_stem_geometry(history, state, cache, pending.sound),
+                .canvas_row = pending.last_canvas_row});
         advance_sound_after_paint_commit(result, sound, !state.selected_notes.empty());
         accepted = "Note-paint stroke released at its last editable cell.";
         return compose_input_family_result_t::continue_with_result();
@@ -925,13 +935,15 @@ auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& inp
                 .sound = note_paint_sound(input),
                 .intent = static_cast<note_paint_intent_t>(input.paint_intent),
                 .source_geometry =
-                    compose_stem_geometry(history, state, cache, note_paint_sound(input))});
+                    compose_stem_geometry(history, state, cache, note_paint_sound(input)),
+                .canvas_row = target->canvas_row});
         accepted = "Note-paint stroke started.";
     } else if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) {
         result = dispatch_editor_action(
             history, state,
             update_note_paint_gesture_action_t{
-                .lane = target->lane, .position = target->position, .pointer_captured = captured});
+                .lane = target->lane, .position = target->position, .pointer_captured = captured,
+                .canvas_row = target->canvas_row});
         accepted = "Note-paint preview updated.";
     } else {
         const auto stroke_sound = state.gesture<wormedit::pending_note_paint_gesture_t>()
@@ -943,7 +955,8 @@ auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& inp
                 .lane = target->lane,
                 .position = target->position,
                 .pointer_captured = captured,
-                .source_geometry = compose_stem_geometry(history, state, cache, stroke_sound)});
+                .source_geometry = compose_stem_geometry(history, state, cache, stroke_sound),
+                .canvas_row = target->canvas_row});
         advance_sound_after_paint_commit(result, stroke_sound, !state.selected_notes.empty());
         accepted = result.document_changed ? "Note-paint stroke committed."
                                            : "Note-paint stroke released.";
@@ -1173,10 +1186,6 @@ auto dispatch_compose_gesture_input(const wormedit::ui::compose_input_action_t& 
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
         return dispatch_semantic_layer_paint_gesture(input, context, hit_target_at, bgm_event_at);
-    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
-    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
-    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
-        return dispatch_note_paint_gesture(input, context, hit_target_at, cache);
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:

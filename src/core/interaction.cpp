@@ -2207,7 +2207,7 @@ template <> struct editor_action_handler_t<update_bar_line_move_gesture_action_t
 };
 
 template <> struct editor_action_handler_t<begin_note_paint_gesture_action_t> {
-    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
 
     static auto perform(editor_action_context_t& dispatch, const begin_note_paint_gesture_action_t& action)
         -> editor_interaction_result_t {
@@ -2217,25 +2217,25 @@ template <> struct editor_action_handler_t<begin_note_paint_gesture_action_t> {
 };
 
 template <> struct editor_action_handler_t<update_note_paint_gesture_action_t> {
-    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
 
     static auto perform(editor_action_context_t& dispatch, const update_note_paint_gesture_action_t& action)
         -> editor_interaction_result_t {
         auto& context = dispatch.edit;
         if (!action.pointer_captured) return cancel_pointer_gesture(context);
-        return revise_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
+        return revise_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt, action.canvas_row);
     }
 };
 
 template <> struct editor_action_handler_t<end_note_paint_gesture_action_t> {
-    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
 
     static auto perform(editor_action_context_t& dispatch, const end_note_paint_gesture_action_t& action)
         -> editor_interaction_result_t {
         auto& context = dispatch.edit;
         if (!action.pointer_captured) return cancel_pointer_gesture(context);
         return apply_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
-                                                           action.source_geometry);
+                                                           action.source_geometry, action.canvas_row);
     }
 };
 

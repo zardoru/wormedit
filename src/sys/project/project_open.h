@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/project/project_file_types.h"
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/async_job.h>
@@ -40,10 +42,6 @@ struct project_identity_t {
 // The dropped-chart request retains its existing consume-on-dispatch lifetime.
 void begin_project_session(project_identity_t& current, project_chart_runtime_t& charts,
                            project_identity_t replacement);
-
-// Match the extensions accepted by open_project_file, case-insensitively.
-[[nodiscard]] auto is_supported_project_file_extension(
-    const std::filesystem::path& path) -> bool;
 
 struct project_open_result_t {
     [[nodiscard]] auto is_success() const noexcept -> bool { return document.has_value(); }

@@ -127,7 +127,7 @@ and filename. Imported custom-set references are retained for playback; they are
 custom-set authoring interface.
 
 *Play sound on click* also auditions these hitsounds when you select or place a note. Independently,
-*Playback → Play Hitsounds on Playback* turns hitsound monitoring on or off (on by default).
+*Playback → Play hitsounds on playback* turns hitsound monitoring on or off (on by default).
 It does not mute music or ordinary BMS keysounds. Preview-audio export still includes the authored
 mix, regardless of this live-monitoring setting.
 

@@ -2,6 +2,7 @@
 #include "sys/metadata/metadata_drop_state.h"
 #include "sys/project/project_import_feedback.h"
 #include "sys/app/application_startup_feedback.h"
+#include "sys/app/application_startup.h"
 #include "sys/project/workspace_edit_feedback.h"
 #include "sys/app/frontend_notification_sink.h"
 #include <catch2/catch_test_macros.hpp>
@@ -102,8 +103,8 @@ TEST_CASE("startup context does not repeat a platform recovery failure", "[notif
         std::unexpected{std::string{"Platform recovery failure."}}};
     const auto empty = make_initial_application_feedback(false, {}, unavailable);
     check_drop_notification(empty.severity == notification_severity_t::info);
-    check_drop_notification(empty.source == notification_source_t::recovery);
-    check_drop_notification(empty.message == "No project loaded; recovery discovery unavailable.");
+    check_drop_notification(empty.source == notification_source_t::document);
+    check_drop_notification(empty.message == "Create a project or open a chart to begin.");
     const auto loaded = make_initial_application_feedback(true, "/project.wormedit", unavailable);
     check_drop_notification(loaded.severity == notification_severity_t::success);
     check_drop_notification(loaded.source == notification_source_t::document);
@@ -224,4 +225,27 @@ TEST_CASE("real picker cancellation stale callback and shutdown stay quiet", "[e
     worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "Detached after shutdown.");
     center.drain_inbox(notification_time_t{0});
     check_drop_notification(center.snapshot(notification_capacity).empty());
+}
+
+TEST_CASE("Startup chart paths use import while native paths retain recovery loading", "[startup][import]") {
+    for (const auto* filename : {"chart.bms", "chart.BME", "chart.osu", "chart.sm", "chart.ssc", "chart.bmson"}) {
+        application_startup_arguments_t parsed;
+        char program[] = "wormedit";
+        auto path = std::string{filename};
+        char* arguments[]{program, path.data()};
+        require_drop_notification(parse_application_startup_arguments(2, arguments, parsed));
+        check_drop_notification(parsed.chart_import_path == path);
+        check_drop_notification(parsed.request.primary_path.empty());
+        check_drop_notification(parsed.requested_primary_path.empty());
+    }
+    application_startup_arguments_t parsed;
+    char program[] = "wormedit";
+    char path[] = "project.WORMEDIT";
+    char recovery[] = "project.wormedit.bak";
+    char* arguments[]{program, path, recovery};
+    require_drop_notification(parse_application_startup_arguments(3, arguments, parsed));
+    check_drop_notification(parsed.chart_import_path.empty());
+    check_drop_notification(parsed.request.primary_path == path);
+    check_drop_notification(parsed.requested_primary_path == path);
+    check_drop_notification(parsed.request.recovery_entries == std::vector<std::filesystem::path>{recovery});
 }

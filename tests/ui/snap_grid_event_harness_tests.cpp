@@ -35,6 +35,7 @@ void prepare(nuklear_event_harness_t& harness) {
     require_grid(harness.ready());
     auto& view = harness.view().compose;
     view.area_snap_denominator = 4;
+    view.edit_snap_enabled = true;
     const std::array<std::uint64_t, 5> snaps{4, 8, 16, 7, 12};
     view.supported_snap_denominators.assign(snaps.begin(), snaps.end());
     static_cast<void>(harness.frame());
@@ -126,4 +127,13 @@ TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action"
     check_grid(picked.get().compose_inputs.size()==0);
     (void)mouse(h,target->first,target->second,false);
     check_grid(!worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
+}
+
+TEST_CASE("Disabled editing snap remains explicit while retaining its grid", "[event-harness][snap-grid]") {
+    nuklear_event_harness_t harness{1280, 800};
+    harness.view().compose.area_snap_denominator = 4;
+    harness.view().compose.edit_snap_enabled = false;
+    (void)harness.frame();
+    check_grid(harness.drawn_text_center("Snap off").has_value());
+    check_grid(harness.view().compose.area_snap_denominator == 4);
 }

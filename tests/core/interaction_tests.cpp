@@ -30,6 +30,7 @@
 #include <span>
 #include <source_location>
 #include <string>
+#include <utility>
 
 using namespace wormedit;
 
@@ -362,9 +363,12 @@ void check_native_tail_commit(document_history_t& history, std::size_t authored)
 }
 } // namespace
 
-TEST_CASE("native chart without BGM places taps in its virtual tail as one undo step",
+TEST_CASE("non-BMS chart without BGM places taps in its virtual tail as one undo step",
           "[unit][core][interaction][virtual-canvas]") {
-    auto history = document_history_t::from(make_song());
+    auto song = make_song();
+    song.charts.front().source_family = GENERATE(format_family_t::native_project,
+        format_family_t::osu_mania, format_family_t::stepmania, format_family_t::quaver);
+    auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto built = build_virtual_canvas(history.document.charts.front());
     REQUIRE(std::holds_alternative<virtual_canvas_t>(built));
@@ -2213,6 +2217,11 @@ struct selection_history_fixture_t {
     void select(object_id_t id) {
         REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{{id}}));
     }
+    void set_title(std::string title) {
+        auto changed = history.document;
+        changed.metadata.title = std::move(title);
+        REQUIRE(commit_document_command(history, std::move(changed), "Title"));
+    }
     void step(bool undo, bool document_changed = false) {
         const auto result = apply_editor_history(history, state, undo);
         CHECK(result.changed);
@@ -2262,24 +2271,44 @@ TEST_CASE("Selection history shares document chronology without changing saved r
     f.check_navigation(true, false);
 }
 
-TEST_CASE("Selection history branches discard both kinds of redo and ignore no-ops",
+TEST_CASE("Selection history branches preserve document redo and ignore no-ops",
           "[core][interaction][selection-history]") {
     selection_history_fixture_t f;
     f.select(object_id_t{101});
     f.select(object_id_t{101});
     CHECK(f.history.selections.undo.size() == 1);
-    auto changed = f.history.document;
-    changed.metadata.title = "Discarded title";
-    REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    f.set_title("Discarded title");
     f.step(true, true);
     f.select(object_id_t{102});
-    CHECK_FALSE(f.history.can_redo());
+    CHECK(f.history.can_redo());
+    f.step(false, true);
+    CHECK(f.history.document.metadata.title == "Discarded title");
+    f.step(true, true);
     f.step(true);
     CHECK(f.history.can_redo());
-    changed = f.history.document;
-    changed.metadata.title = "New branch";
-    REQUIRE(commit_document_command(f.history, std::move(changed), "Title"));
+    f.set_title("New branch");
     CHECK_FALSE(f.history.can_redo());
+}
+
+TEST_CASE("Selection branches retain the order of multiple pending document edits",
+          "[core][interaction][selection-history]") {
+    selection_history_fixture_t f;
+    for (const auto* title : {"First", "Second"}) f.set_title(title);
+    f.step(true, true);
+    f.step(true, true);
+    f.select(object_id_t{101});
+    f.select(object_id_t{102});
+    f.step(true); f.check({object_id_t{101}});
+    f.step(false); f.check({object_id_t{102}});
+    f.step(false, true);
+    CHECK(f.history.document.metadata.title == "First");
+    f.step(false, true);
+    CHECK(f.history.document.metadata.title == "Second");
+    f.step(true, true);
+    f.step(true, true);
+    f.step(true); f.check({object_id_t{101}});
+    f.step(true); f.check({});
+    f.check_navigation(false, true);
 }
 
 TEST_CASE("Selection history cannot cross an evicted document boundary",
@@ -2362,24 +2391,24 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     const auto preview = dispatch_editor_action(
         history, state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true});
     REQUIRE(preview);
     REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>() != nullptr);
     REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>()->targets != nullptr);
     CHECK(preview.view->gesture<note_paint_gesture_preview_t>()->targets->size() == 3);
     REQUIRE(dispatch_editor_action(
         history, state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true}));
     CHECK(state.gesture<wormedit::pending_note_paint_gesture_t>()->targets->size() == 3);
     CHECK(note_count(history) == 0);
     CHECK(history.document.revision == 1);
 
     const auto committed = dispatch_editor_action(
         history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true});
     REQUIRE(committed);
     CHECK(committed.document_changed);
     CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
@@ -2414,11 +2443,11 @@ auto paint_stroke(document_history_t& history, editor_interaction_state_t& state
                   std::optional<resource_id_t> sound) -> editor_interaction_result_t {
     const auto begun = dispatch_editor_action(
         history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true, sound});
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true, .sound = sound});
     if (!begun) return begun;
     return dispatch_editor_action(
         history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true});
 }
 
 }  // namespace
@@ -2493,7 +2522,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
 
         const auto rejected = dispatch_editor_action(
             history, state,
-            begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+            begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = true});
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
         CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
@@ -2651,10 +2680,10 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
     const auto click = [&] {
         REQUIRE(dispatch_editor_action(
             history, state,
-            begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true}));
+            begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = true}));
         return dispatch_editor_action(
             history, state,
-            end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+            end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = true});
     };
     const auto created = click();
     REQUIRE(created);
@@ -2680,13 +2709,13 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
     auto colliding_state = make_state(colliding_history);
     REQUIRE(dispatch_editor_action(
         colliding_history, colliding_state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     REQUIRE(dispatch_editor_action(
         colliding_history, colliding_state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true}));
     const auto collision = dispatch_editor_action(
         colliding_history, colliding_state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 480}, .pointer_captured = true});
     CHECK_FALSE(collision);
     CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
     CHECK(colliding_history.document.revision == 1);
@@ -2707,10 +2736,10 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
     auto state = std::move(*setup.state);
     REQUIRE(dispatch_editor_action(
         history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     const auto capped = dispatch_editor_action(
         history, state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 50'000}, true});
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 50'000}, .pointer_captured = true});
     CHECK_FALSE(capped);
     CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
     REQUIRE(state.gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
@@ -2720,12 +2749,12 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
 
     const auto capture_lost = dispatch_editor_action(
         history, state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = false});
     REQUIRE(capture_lost);
     CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     REQUIRE(dispatch_editor_action(
         history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
@@ -2733,13 +2762,13 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
 
     REQUIRE(dispatch_editor_action(
         history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     auto external_edit = history.document;
     external_edit.metadata.title = "external change";
     REQUIRE(commit_document_command(history, std::move(external_edit), "External edit"));
     const auto stale = dispatch_editor_action(
         history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = true});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
@@ -5162,11 +5191,11 @@ auto note_paint_intent_stroke(document_history_t& history,
     const auto end = index.position_at(end_row);
     require_note_paint_intent(begin && end);
     const auto begun = dispatch_editor_action(history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, *begin,
-                                          true, sound, intent});
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = *begin,
+                                          .pointer_captured = true, .sound = sound, .intent = intent});
     if (!begun) return begun;
     return dispatch_editor_action(history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, *end, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = *end, .pointer_captured = true});
 }
 } // namespace
 
@@ -5256,16 +5285,16 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
     auto history = document_history_t::from(make_paint_sound_song());
     auto state = make_state(history);
     require_note_paint_intent(dispatch_editor_action(history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
-                                          resource_id_t{7}, note_paint_intent_t::draw}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true,
+                                          .sound = resource_id_t{7}, .intent = note_paint_intent_t::draw}));
     require_note_paint_intent(dispatch_editor_action(history, state,
-        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, false}));
+        update_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = false}));
     check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 0 && history.undo.empty());
 
     require_note_paint_intent(dispatch_editor_action(history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
-                                          resource_id_t{7}, note_paint_intent_t::draw}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true,
+                                          .sound = resource_id_t{7}, .intent = note_paint_intent_t::draw}));
     auto externally_edited = history.document;
     std::erase_if(externally_edited.resources,
         [](const auto& resource) { return resource.id == resource_id_t{7}; });
@@ -5274,7 +5303,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
     require_note_paint_intent(commit_document_command(history, std::move(externally_edited),
                                                        "Remove sample"));
     const auto stale = dispatch_editor_action(history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}, .pointer_captured = true});
     check_note_paint_intent(!stale);
     check_note_paint_intent(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
@@ -5292,9 +5321,9 @@ TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[in
     check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::mine)));
     require_note_kind_condition(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
     require_note_kind_condition(arm_note_kind(history, state, note_kind_t::mine));
-    require_note_kind_condition(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}}));
+    require_note_kind_condition(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}}));
     check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::tap)));
-    require_note_kind_condition(dispatch_editor_action(history, state, end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}}));
+    require_note_kind_condition(dispatch_editor_action(history, state, end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}}));
     require_note_kind_condition(note_count(history) == 2);
     for (const auto& note : history.document.charts.front().measures.front().notes)
         check_note_kind_condition(note.kind == note_kind_t::mine);
@@ -5305,7 +5334,7 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
         auto history = document_history_t::from(make_song());
         auto state = make_state(history);
         require_note_kind_condition(arm_note_kind(history, state, kind));
-        check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}})));
+        check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}})));
         check_note_kind_condition(!(state.gesture<wormedit::pending_note_paint_gesture_t>()));
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         check_note_kind_condition(note_count(history) == 0);
@@ -7527,9 +7556,9 @@ TEST_CASE("Paint crosses tiny measure heads on the same local grid as navigation
     auto history = document_history_t::from(tiny_measure_paint_song());
     auto state = tiny_measure_paint_state(history);
     require_note_kind_condition(dispatch_editor_action(history, state,
-        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 0}, .pointer_captured = true}));
     require_note_kind_condition(dispatch_editor_action(history, state,
-        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{3}, 480}, true}));
+        end_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{3}, 480}, .pointer_captured = true}));
     const auto& measures = history.document.charts.front().measures;
     require_note_kind_condition(measures[0].notes.size() == 1 && measures[1].notes.size() == 1);
     require_note_kind_condition(measures[2].notes.size() == 3);

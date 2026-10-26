@@ -64,7 +64,7 @@ void sync_virtual_tails(song_document_t& document) {
     });
     for (auto& chart : document.charts) {
         chart.virtual_tail_measures =
-            chart.source_family == format_family_t::native_project && !has_timed_bgm
+            chart.source_family != format_family_t::bms && !has_timed_bgm
                 ? native_unanchored_virtual_measure_count
                 : 0;
     }

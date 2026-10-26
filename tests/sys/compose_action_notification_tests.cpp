@@ -2226,7 +2226,7 @@ TEST_CASE("Project export rejects stale stamps and reports missing paths without
     const auto undo_entries = fixture.history.undo.size();
     require_action(fixture.dispatch_workspace(action, state));
     const auto entries = fixture.entries();
-    const std::string_view expected = stale ? "project, chart or document revision changed" : "saved native project";
+    const std::string_view expected = stale ? "project, chart or document revision changed" : "Save the project before exporting";
     INFO("Expected export rejection: " << expected);
     check_action(std::ranges::any_of(entries, [&](const auto& entry) {
         return entry.message.find(expected) != std::string::npos;

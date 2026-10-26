@@ -116,6 +116,10 @@ inline constexpr auto ascii_iequal(std::string_view left, std::string_view right
         if (!ascii_iequal(left[index], right[index])) return false;
     return true;
 }
+inline constexpr auto ascii_icontains(std::string_view text, std::string_view query) noexcept -> bool {
+    return query.empty() || std::search(text.begin(), text.end(), query.begin(), query.end(),
+        [](char left, char right) { return ascii_iequal(left, right); }) != text.end();
+}
 inline constexpr auto ascii_iless(std::string_view left, std::string_view right) noexcept -> bool {
     const auto count = std::min(left.size(), right.size());
     for (std::size_t index = 0; index < count; ++index) {

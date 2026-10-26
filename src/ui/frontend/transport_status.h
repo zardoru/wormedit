@@ -50,7 +50,8 @@ class transport_status_text_t {
         initialized_ = true;
         status_ = source_status_;
         if (selected_ != 0)
-            status_ = std::to_string(selected_) + " objects selected · " + status_;
+            status_ = std::to_string(selected_) +
+                (selected_ == 1 ? " object selected · " : " objects selected · ") + status_;
         details_ = source_artist_ + " · " + source_difficulty_;
         char time[48]{};
         std::snprintf(time, sizeof(time), "%llu:%02llu.%03u",

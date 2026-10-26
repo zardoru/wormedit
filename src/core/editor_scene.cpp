@@ -1671,13 +1671,15 @@ auto append_visible_paint_target(scene_geometry_context_t& context, scene_paint_
                   "field-scene paint preview exceeds its configured operation cap"));
         return false;
     }
-    const auto row = context.index.measures.row_of(target.position);
-    if (!row || *row >= context.index.measures.total_rows) {
+    const auto row = target.absolute_row(context.index.measures);
+    if (!row || *row >= context.canvas_rows) {
         context.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                             "field-scene paint target is outside chart geometry"));
         return false;
     }
-    if (!has_lane(layout_at_row(context.index, *row), target.lane)) {
+    const auto* layout = *row >= context.index.measures.total_rows && !context.index.layouts.empty()
+        ? &context.index.layouts.back() : layout_at_row(context.index, *row);
+    if (!has_lane(layout, target.lane)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::unknown_lane, "field-scene paint target has no active lane"));
         return false;

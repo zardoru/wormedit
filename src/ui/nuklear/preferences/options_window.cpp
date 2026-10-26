@@ -362,11 +362,14 @@ void emit(wormedit::ui::options_action_t& action, const wormedit::ui::options_vi
     action = {.kind = kind, .revision = view.revision, .category = view.category};
 }
 void render_categories(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
-    if (!nk_group_begin(context, "Options categories", NK_WINDOW_NO_SCROLLBAR)) return;
+    if (!nk_group_begin(context, "Options categories", 0)) return;
     nk_layout_row_dynamic(context, 32, 1);
     for (int category = 0; category < WORM_UI_OPTIONS_CATEGORY_COUNT; ++category) {
         nk_bool selected = view.category == category;
-        const bool changed = nk_selectable_label(context, category_names[category], NK_TEXT_LEFT, &selected) != 0;
+        std::array<char, 64> label{};
+        std::snprintf(label.data(), label.size(), "%s%s", category_names[category],
+                      view.changed_categories[category] ? " *" : "");
+        const bool changed = nk_selectable_label(context, label.data(), NK_TEXT_LEFT, &selected) != 0;
         if (!changed || !selected) continue;
         emit(action, view, WORM_UI_OPTIONS_SELECT_CATEGORY);
         action.category = static_cast<WormUiOptionsCategory>(category);
@@ -397,15 +400,27 @@ void render_footer(wormedit::ui::chrome::Dialog& dialog, nk_context* context,
         nk_label_wrap(context, view.status.data());
     }
     chrome::dialog_footer_begin(dialog, context, 4, false, 128);
-    if (chrome::dialog_button(dialog, context, "Revert", chrome::DialogButtonRole::secondary))
+    if (chrome::dialog_button(dialog, context, "Revert all", chrome::DialogButtonRole::secondary))
         emit(action, view, WORM_UI_OPTIONS_REVERT);
     if (chrome::dialog_button(dialog, context, "Restore defaults", chrome::DialogButtonRole::secondary))
         emit(action, view, WORM_UI_OPTIONS_DEFAULTS);
     if (chrome::dialog_button(dialog, context, "Close", chrome::DialogButtonRole::secondary))
         emit(action, view, WORM_UI_OPTIONS_CLOSE);
-    if (chrome::dialog_button(dialog, context, "Apply", chrome::DialogButtonRole::primary,
+    if (chrome::dialog_button(dialog, context, "Apply all", chrome::DialogButtonRole::primary,
                               view.can_apply && view.changed))
         emit(action, view, WORM_UI_OPTIONS_APPLY);
+}
+void render_discard_confirmation(wormedit::ui::chrome::Dialog& dialog, nk_context* context,
+                                const wormedit::ui::options_view_t& view,
+                                wormedit::ui::options_action_t& action) {
+    namespace chrome = wormedit::ui::chrome;
+    chrome::dialog_text(dialog, context, "Discard unapplied changes from all Options pages?",
+                        chrome::color(chrome::UiColor::text));
+    chrome::dialog_footer_begin(dialog, context, 2, true, 140);
+    if (chrome::dialog_button(dialog, context, "Discard changes", chrome::DialogButtonRole::destructive))
+        emit(action, view, WORM_UI_OPTIONS_DISCARD_AND_CLOSE);
+    if (chrome::dialog_button(dialog, context, "Keep editing", chrome::DialogButtonRole::secondary))
+        emit(action, view, WORM_UI_OPTIONS_KEEP_EDITING);
 }
 } // namespace
 bool worm_ui_nuklear_register_options_page(WormUiOptionsCategory category, WormUiOptionsPageRenderer renderer) {
@@ -427,6 +442,7 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const wormedit::
     wormedit::ui::options_action_t* action, wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!context || !action || !worm_ui_nuklear_options_view_valid(view) || !view->visible) {
         worm_ui_nuklear_cancel_options_drag();
+        wormedit::ui::nuklear::reset_shortcuts_filter();
         return;
     }
     namespace chrome = wormedit::ui::chrome;
@@ -434,21 +450,25 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const wormedit::
     if (chrome::dialog_begin(dialog, context, "Options", "Options",
         {.modal = true, .closable = true, .width = 800, .escape_cancels = true,
          .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {640, 400}, .movable = true})) {
-        const auto content = nk_window_get_content_region(context);
-        const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +
-            (!view->status.empty() ? 34.0f + chrome::dialog_spacing : 0.0f);
-        const auto bottom = std::min(content.y + content.h,
-            dialog.bounds.y + dialog.bounds.h - chrome::dialog_padding);
-        const auto body_height = std::max(1.0f, bottom -
-            nk_widget_bounds(context).y - footer_height);
-        constexpr float ratios[]{0.28f, 0.72f};
-        nk_layout_row(context, NK_DYNAMIC, body_height, 2, ratios);
-        render_categories(context, *view, *action);
-        render_page(context, *view, *action, lane_keys);
-        render_footer(dialog, context, *view, *action);
+        if (view->confirm_discard) {
+            render_discard_confirmation(dialog, context, *view, *action);
+        } else {
+            const auto content = nk_window_get_content_region(context);
+            const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +
+                (!view->status.empty() ? 34.0f + chrome::dialog_spacing : 0.0f);
+            const auto bottom = std::min(content.y + content.h,
+                dialog.bounds.y + dialog.bounds.h - chrome::dialog_padding);
+            const auto body_height = std::max(1.0f, bottom -
+                nk_widget_bounds(context).y - footer_height);
+            constexpr float ratios[]{0.28f, 0.72f};
+            nk_layout_row(context, NK_DYNAMIC, body_height, 2, ratios);
+            render_categories(context, *view, *action);
+            render_page(context, *view, *action, lane_keys);
+            render_footer(dialog, context, *view, *action);
+        }
     }
     if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
-        emit(*action, *view, WORM_UI_OPTIONS_CLOSE);
+        emit(*action, *view, view->confirm_discard ? WORM_UI_OPTIONS_KEEP_EDITING : WORM_UI_OPTIONS_CLOSE);
     if (action->kind == WORM_UI_OPTIONS_CLOSE) worm_ui_nuklear_cancel_options_drag();
 }
 

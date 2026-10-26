@@ -41,6 +41,7 @@ struct generator_ui_fixture_t {
     frontend_workspace_view_t frontend;
     std::filesystem::path base;
     nuklear_event_harness_t harness{1600, 1200};
+    bool generator_open{};
     generator_ui_fixture_t() {
         require_generator_ui(harness.ready());
         workspace.active_tab = workspace_tab_t::compose; workspace.selected_chart = chart_id_t{1};
@@ -55,15 +56,23 @@ struct generator_ui_fixture_t {
         harness.view().compose = frontend.view.compose;
         (void)harness.frame();
     }
+    void reveal(std::string_view label) {
+        if (harness.drawn_text_center(label)) return;
+        require_generator_ui(test::scroll_to_text(harness, label, 1500, 600, -1, 120) ||
+                             test::scroll_to_text(harness, label, 1500, 600, 1, 120));
+    }
     void open() {
-        if (harness.drawn_text_center("Script file (inside project)")) return;
+        if (generator_open) return;
+        reveal("Lua note generator");
         const auto label = harness.drawn_text_center("Lua note generator");
         require_generator_ui(label.has_value());
         (void)test::click_at(harness, label->first, label->second);
         (void)harness.frame();
+        generator_open = true;
     }
     void type_path() {
         open();
+        reveal("Choose script…");
         const auto label = harness.drawn_text_center("Script file (inside project)");
         require_generator_ui(label.has_value());
         // The editor's 20px label row is followed by a 24px text field.
@@ -73,6 +82,7 @@ struct generator_ui_fixture_t {
         (void)harness.frame(std::span{&text, 1});
     }
     auto click(std::string_view label, WormUiComposeActionKind kind) -> workspace_action_snapshot_t {
+        reveal(label);
         const auto center = harness.drawn_text_center(label);
         require_generator_ui(center.has_value());
         const auto frames = test::click_at(harness, center->first, center->second);

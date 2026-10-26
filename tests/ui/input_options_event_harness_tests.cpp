@@ -81,3 +81,22 @@ TEST_CASE("Player fields retain cursor position through successive draft revisio
     fixture.type("/true", WORM_UI_OPTIONS_FIELD_PLAYER_PATH);
     expect_input_options(fixture.path == "/usr/bin/true");
 }
+
+TEST_CASE("Shortcut settings filter command names and chords without changing bindings",
+          "[event-harness][shortcuts]") {
+    nuklear_event_harness_t harness{1280, 1000};
+    harness.view().options = {.visible = true, .revision = 83, .category = WORM_UI_OPTIONS_INPUT,
+        .shortcut_rows = {{"open", "Open chart", "Ctrl+O", false},
+                          {"save", "Save project", "Ctrl+S", false}}};
+    (void)harness.frame();
+    const auto label = harness.drawn_text_center("Find shortcut by command or chord");
+    REQUIRE(label);
+    (void)wormedit::test::click_at(harness, label->first, label->second + 30);
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.text = "cTrL+o";
+    const auto result = harness.frame({&text, 1});
+    expect_input_options(result.get().options.kind == WORM_UI_OPTIONS_NONE);
+    expect_input_options(harness.drawn_text().find("Open chart") != std::string::npos);
+    expect_input_options(harness.drawn_text().find("Save project") == std::string::npos);
+}

@@ -103,11 +103,11 @@ TEST_CASE("Menu commands use one registry invocation across editing chart and pl
     SECTION("New chart") { check_dispatch("Chart", "New chart", "document.new_chart"); }
     SECTION("BPM") { check_dispatch("Chart", "Insert BPM change", "timing.insert_bpm"); }
     SECTION("SV") { check_dispatch("Chart", "Insert scroll velocity", "timing.insert_sv"); }
-    SECTION("Play") { check_dispatch("Playback", "Play from cursor / Pause", "transport.play_pause"); }
+    SECTION("Play") { check_dispatch("Playback", "Play from cursor / pause", "transport.play_pause"); }
     SECTION("Start") { check_dispatch("Playback", "Play from start", "transport.play_from_start"); }
     SECTION("Stop") { check_dispatch("Playback", "Stop", "transport.stop"); }
     SECTION("Hitsound monitoring") {
-        check_dispatch("Playback", "Play Hitsounds on Playback", "audio.toggle_playback_audition");
+        check_dispatch("Playback", "Play hitsounds on playback", "audio.toggle_playback_audition");
     }
     SECTION("External") { check_dispatch("Playback", "External play from here", "transport.external_play_here"); }
 }
@@ -214,8 +214,8 @@ TEST_CASE("All six menu titles switch without dispatching the covered menu",
     wormedit::sys::command_shortcut_text_t menu_shortcuts_4;
     wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view(), menu_shortcuts_4);
     (void)harness.frame();
-    constexpr std::array labels{"Open chart or project...", "Undo", "Player preview", "New chart",
-                                "Play from cursor / Pause", "About WormEdit"};
+    constexpr std::array labels{"Open chart or project…", "Undo", "Player preview", "New chart",
+                                "Play from cursor / pause", "About WormEdit"};
     for (std::size_t i = 0; i < labels.size(); ++i) {
         const auto frames = click_menu(harness, wormedit::ui::workspace_menu_titles[i]);
         for (const auto& frame : frames) check_menu(frame.get().menu_command_id[0] == '\0');
@@ -498,4 +498,15 @@ TEST_CASE("Menu shortcuts retain long text and reuse the shared cache after rema
         check_menu(after.count == before.count);
         check_menu(row->shortcut == expected);
     }
+}
+
+TEST_CASE("File lifecycle menu items dispatch their registered commands", "[event-harness][menu-bar][file-shortcuts]") {
+    struct command_t { const char* label; const char* id; };
+    constexpr command_t commands[]{
+        {"Open chart or project…", "document.open"},
+        {"Save project as…", "document.save_as"},
+        {"Close project", "document.close"},
+        {"Quit", "app.quit"},
+    };
+    for (const auto& command : commands) check_dispatch("File", command.label, command.id);
 }

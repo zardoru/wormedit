@@ -85,4 +85,7 @@ namespace wormedit::test {
 // Two separate frames, each with motion and a button edge; modifiers are NONE.
 [[nodiscard]] auto click_at(nuklear_event_harness_t& harness, float x, float y,
                             bool twice = false) -> std::vector<workspace_action_snapshot_t>;
+void scroll_at(nuklear_event_harness_t& harness, float x, float y, float direction);
+[[nodiscard]] auto scroll_to_text(nuklear_event_harness_t& harness, std::string_view label,
+                                   float x, float y, float direction, int limit) -> bool;
 } // namespace wormedit::test

@@ -6,9 +6,12 @@
 |===
 |Command |Default keys
 |New Project |`+Ctrl+N+`
+|Open chart or project… |`+Ctrl+O+`
+|Save project as… |`+Ctrl+Shift+S+`
+|Close project |`+Ctrl+W+`
 |Save Project |`+Ctrl+S+`
 |New Chart |`+Ctrl+Shift+N+`
-|Export Output Group… |unbound
+|Export Output Group… |`+Ctrl+E+`
 |===
 
 .Editing
@@ -148,6 +151,7 @@
 |Command menu |`+Ctrl+Shift+P+`
 |Options |`+Ctrl+,+`
 |Lane Keys… |unbound
+|Quit |`+Ctrl+Q+`
 |Open Layers |`+Ctrl+L+`
 |Toggle Sounds Dock |`+Ctrl+Shift+K+`
 |Open Project |`+F1+`

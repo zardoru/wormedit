@@ -30,18 +30,6 @@ namespace {
 using wormedit::text_util::ascii_lowercase;
 using text_util::lowercase_extension;
 
-constexpr std::size_t chart_source_limit = 16U * 1024U * 1024U;
-constexpr std::size_t native_source_limit = 64U * 1024U * 1024U;
-
-auto supported_source_limit(std::string_view extension) -> std::size_t {
-    if (extension == ".wormedit") return native_source_limit;
-    if (extension == ".bms" || extension == ".bme" || extension == ".bml" ||
-        extension == ".pms" || extension == ".bmson" || extension == ".sm" ||
-        extension == ".ssc" || extension == ".osu")
-        return chart_source_limit;
-    return 0;
-}
-
 auto read_bounded_file(const std::filesystem::path& path, std::size_t limit,
                        std::string& error_message, std::stop_token stop,
                        job_progress_t* progress) -> std::optional<std::string> {
@@ -558,10 +546,6 @@ void validate_opened_document(project_open_result_t& result) {
     result.error = validation_error(diagnostics);
     result.document.reset();
     result.native_project = false;
-}
-
-auto is_supported_project_file_extension(const std::filesystem::path& path) -> bool {
-    return supported_source_limit(lowercase_extension(path)) != 0;
 }
 
 auto open_project_file(const std::filesystem::path& selected_path,

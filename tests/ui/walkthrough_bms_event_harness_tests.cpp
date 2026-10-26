@@ -465,6 +465,7 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     view.setup.song_id = wormedit::song_id_t{1};
     view.setup.document_revision = 1;
     // Group export remains available without a selected chart row.
+    view.setup.project_has_native_path = true;
     view.setup.selected_chart_id = {};
     view.setup.charts = {chart};
     view.setup.chart_count = 1;

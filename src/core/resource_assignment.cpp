@@ -1650,7 +1650,7 @@ auto append_imported_asset(song_document_t& document, const import_resource_asse
 auto extend_native_charts_to_audio(song_document_t& document, const audio_stream_info_t& stream,
                                    document_command_result_t& result) -> bool {
     for (auto& chart : document.charts) {
-        if (chart.source_family == format_family_t::native_project &&
+        if ((chart.source_family == format_family_t::native_project || chart.virtual_tail_measures != 0) &&
             !extend_chart_to_audio_end(chart, stream)) {
             reject(result, diagnostic_code_t::invalid_measure,
                    "imported audio exceeds the chart's timing or measure limits");

@@ -1439,14 +1439,14 @@ static void render_compose_inspector_contents(nk_context* context,
                                                const wormedit::ui::timing_view_t* timing_view,
                                                wormedit::ui::workspace_action_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
-    render_compose_recipe_form(inspector);
-    render_compose_generator_form(inspector);
-    render_compose_label_search(inspector);
     render_compose_quantize_section(inspector);
     render_compose_transform_section(inspector);
     render_compose_measure_section(inspector);
 
     render_compose_timing_inspector(inspector);
+    render_compose_label_search(inspector);
+    render_compose_recipe_form(inspector);
+    render_compose_generator_form(inspector);
 }
 
 template <typename Render>

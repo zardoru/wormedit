@@ -359,22 +359,49 @@ auto pending_bar_line_move_gesture_t::apply(editor_edit_context_t& context) cons
         [&] { return apply_shift_selection(context.history, action).command; });
 }
 
+auto paint_target_at_row(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row)
+    -> std::optional<note_paint_target_t> {
+    const auto position = position_at(context.scope.measures, row);
+    const auto lane_position = position ? position : position_at(context.scope.measures,
+        context.scope.measures.total_rows - 1);
+    if (!lane_position || !find_active_lane(context.scope.chart, context.scope.measures, *lane_position, lane))
+        return std::nullopt;
+    return note_paint_target_t{.lane = lane, .position = position.value_or(local_position_t{}),
+        .canvas_row = position ? std::nullopt : std::optional{row}};
+}
+
+auto resolve_paint_target(const editor_edit_context_t& context, lane_id_t lane,
+    local_position_t position, std::optional<std::uint64_t> canvas_row)
+    -> std::variant<note_paint_target_t, diagnostic_list_t> {
+    if (!canvas_row) {
+        const auto visible = snap_visible_position(context.scope.chart, context.scope.measures, position,
+            edit_snap_grid(context.scope.chart, context.state), context.state.cut_axis.get());
+        if (!visible) return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range, "paint target cannot be snapped inside chart")};
+        const auto target = resolve_row_placement(context.scope.chart, context.scope.measures,
+            context.state, lane, *visible);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&target)) return *diagnostics;
+        return note_paint_target_t{.lane = lane, .position = std::get<local_position_t>(target)};
+    }
+    const auto built = build_virtual_canvas(context.scope.chart);
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    const auto row = canvas ? snap_virtual_row(context, *canvas, *canvas_row) : std::nullopt;
+    if (!has_chart_virtual_tail(context.scope.chart) || !row)
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range, "paint target is outside the virtual canvas")};
+    const auto target = paint_target_at_row(context, lane, *row);
+    if (!target) return diagnostic_list_t{error(diagnostic_code_t::unknown_lane, "paint lane is unavailable")};
+    return *target;
+}
+
 auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row,
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t> {
-    const auto position = position_at(context.scope.measures, row);
-    if (!position)
-        return error(diagnostic_code_t::row_out_of_range, "paint path leaves chart geometry");
-    if (find_active_lane(context.scope.chart, context.scope.measures, *position, lane) == nullptr)
-        return error(diagnostic_code_t::unknown_lane,
-                     "paint lane is unavailable along the drag path");
-    if (pending.visited.contains({lane, row}))
-        return std::nullopt;
+    const auto target = paint_target_at_row(context, lane, row);
+    if (!target) return error(diagnostic_code_t::unknown_lane, "paint lane is unavailable along the drag path");
+    if (pending.visited.contains({lane, row})) return std::nullopt;
     if (pending.targets->size() + additions.size() >= maximum_note_paint_targets)
-        return error(diagnostic_code_t::invalid_resolution,
-                     "paint drag exceeds the per-gesture note target cap");
-    additions.push_back({lane, *position});
+        return error(diagnostic_code_t::invalid_resolution, "paint drag exceeds the per-gesture note target cap");
+    additions.push_back(*target);
     return std::nullopt;
 }
 
@@ -386,61 +413,51 @@ auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
     auto row = first;
     const bool forward = last >= first;
     const auto denominator = edit_snap_grid(context.scope.chart, context.state);
+    const auto built = build_virtual_canvas(context.scope.chart);
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    if (!canvas) return error(diagnostic_code_t::row_out_of_range, "paint canvas is unavailable");
     while (true) {
-        if (const auto invalid = add_paint_path_cell(context, lane, row, pending, additions))
-            return invalid;
-        if (row == last)
-            return std::nullopt;
-        const auto next =
-            adjacent_snap_canvas_row(context.scope.chart, context.scope.measures, row, denominator,
-                                     context.scope.measures.total_rows, forward);
+        if (const auto invalid = add_paint_path_cell(context, lane, row, pending, additions)) return invalid;
+        if (row == last) return std::nullopt;
+        const auto next = adjacent_snap_canvas_row(context.scope.chart, context.scope.measures, row,
+            denominator, canvas->total_rows, forward);
         if (!next || (forward ? *next > last : *next < last))
-            return error(diagnostic_code_t::row_out_of_range,
-                         "paint path cannot reach the target grid position");
+            return error(diagnostic_code_t::row_out_of_range, "paint path cannot reach the target grid position");
         row = *next;
     }
 }
 
 auto pending_note_paint_gesture_t::revise(editor_edit_context_t& context, lane_id_t lane,
-                                         local_position_t position,
-                                         std::optional<bmson_source_geometry_t> geometry)
-    -> diagnostic_list_t {
-    auto& state = context.state;
-    auto& pending = *this;
-    const auto target = snap_visible_position(context.scope.chart, context.scope.measures, position,
-        edit_snap_grid(context.scope.chart, state), state.cut_axis.get());
-    if (!target)
-        return {error(diagnostic_code_t::row_out_of_range,
-                                        "paint target cannot be snapped inside chart")};
-    const auto target_row = context.scope.measures.row_of(*target);
-    const auto previous_row = context.scope.measures.row_of(pending.last_position);
+    local_position_t position, std::optional<bmson_source_geometry_t> geometry,
+    std::optional<std::uint64_t> canvas_row) -> diagnostic_list_t {
+    const auto resolved = resolve_paint_target(context, lane, position, canvas_row);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&resolved)) return *diagnostics;
+    const auto& target = std::get<note_paint_target_t>(resolved);
+    const auto target_row = target.absolute_row(context.scope.measures);
+    const auto previous_row = last_canvas_row ? last_canvas_row : context.scope.measures.row_of(last_position);
     if (!target_row || !previous_row)
-        return {error(diagnostic_code_t::row_out_of_range,
-                                        "paint gesture lies outside chart geometry")};
-    const auto same_lane = lane == pending.last_lane;
+        return {error(diagnostic_code_t::row_out_of_range, "paint gesture lies outside chart geometry")};
     std::vector<note_paint_target_t> additions;
-    if (same_lane) {
+    if (lane == last_lane) {
         if (const auto invalid = add_measure_grid_paint_path(context, lane, *previous_row,
-                                                             *target_row, pending, additions))
-            return {*invalid};
-    } else if (const auto invalid =
-                   add_paint_path_cell(context, lane, *target_row, pending, additions)) {
+                *target_row, *this, additions)) return {*invalid};
+    } else if (const auto invalid = add_paint_path_cell(context, lane, *target_row, *this, additions)) {
         return {*invalid};
     }
     if (!additions.empty()) {
-        auto expanded = std::make_shared<std::vector<note_paint_target_t>>(*pending.targets);
+        auto expanded = std::make_shared<std::vector<note_paint_target_t>>(*targets);
         expanded->reserve(expanded->size() + additions.size());
         for (const auto& addition : additions) {
-            const auto row = context.scope.measures.row_of(addition.position);
             expanded->push_back(addition);
-            pending.visited.insert({addition.lane, *row});
+            visited.insert({addition.lane, *addition.absolute_row(context.scope.measures)});
         }
-        pending.targets = std::move(expanded);
+        targets = std::move(expanded);
     }
-    pending.last_lane = lane;
-    pending.last_position = *target;
-    state.active_lane = lane;
-    place_cursor_at(state, *target);
+    last_lane = lane;
+    last_position = target.position;
+    last_canvas_row = target.canvas_row;
+    context.state.active_lane = lane;
+    place_cursor_on_canvas_row(context.state, target.canvas_row ? std::nullopt : std::optional{target.position}, *target_row);
     if (!source_geometry) source_geometry = geometry;
     return {};
 }
@@ -462,7 +479,7 @@ auto is_paint_sample_resource(const editor_edit_context_t& context, resource_id_
 auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
                                        const begin_note_paint_gesture_action_t& request)
     -> diagnosed_t<std::optional<pending_note_paint_gesture_t>> {
-    const auto& [lane, position, pointer_captured, sound, intent, geometry] = request;
+    const auto& [lane, position, pointer_captured, sound, intent, geometry, canvas_row] = request;
     auto& state = context.state;
     if (intent != note_paint_intent_t::toggle && intent != note_paint_intent_t::draw &&
         intent != note_paint_intent_t::erase)
@@ -479,21 +496,17 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
         !is_paint_sample_resource(context, *sound))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")}};
-    const auto resolved =
-        resolve_row_placement(context.scope.chart, context.scope.measures, state, lane, position);
-    const auto* target = std::get_if<local_position_t>(&resolved);
-    if (!target)
-        return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
-    const auto row = context.scope.measures.row_of(*target);
-    if (!row)
-        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
-                                        "paint start lies outside chart geometry")}};
+    const auto resolved = resolve_paint_target(context, lane, position, canvas_row);
+    const auto* target = std::get_if<note_paint_target_t>(&resolved);
+    if (!target) return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
+    const auto row = target->absolute_row(context.scope.measures);
     auto targets = std::make_shared<std::vector<note_paint_target_t>>();
-    targets->push_back({lane, *target});
+    targets->push_back(*target);
     pending_note_paint_gesture_t pending{
         .targets = std::move(targets),
         .last_lane = lane,
-        .last_position = *target,
+        .last_position = target->position,
+        .last_canvas_row = target->canvas_row,
         .sound = sound,
         .intent = intent,
         .note_kind = state.armed_note_kind,
@@ -504,7 +517,7 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
     pending.visited.reserve(64);
     pending.visited.insert({lane, *row});
     state.active_lane = lane;
-    place_cursor_at(state, *target);
+    place_cursor_on_canvas_row(state, target->canvas_row ? std::nullopt : std::optional{target->position}, *row);
     return {.value = std::move(pending)};
 }
 
@@ -601,6 +614,8 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
             error(diagnostic_code_t::invalid_id, "chart object ID sequence is exhausted")};
     auto proposed = history.document;
     auto* chart = proposed.find_chart(chart_id);
+    auto resolved = materialize_note_paint_targets(*chart, plan.additions);
+    if (!resolved.value) return std::move(resolved.diagnostics);
     std::unordered_set<std::uint64_t> removed_ids;
     removed_ids.reserve(plan.removals.size());
     for (const auto id : plan.removals)
@@ -620,7 +635,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
             error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")};
     const auto layers = resolve_placement_layers(*prepared_chart, armed_layers, sound);
     prepared.painted_notes.reserve(plan.additions.size());
-    for (const auto& target : plan.additions) {
+    for (const auto& target : *resolved.value) {
         const auto found = prepared_measures.find(target.position.measure.value);
         if (found == prepared_measures.end())
             return diagnostic_list_t{error(diagnostic_code_t::unknown_measure,
@@ -648,6 +663,13 @@ void prepared_note_paint_t::set_hitsample(chart_id_t chart_id, const std::option
             if (ids.contains(note.id.value)) note.osu_hitsample = sample;
 }
 
+auto note_paint_cursor(const pending_note_paint_gesture_t& pending, const chart_document_t& chart)
+    -> std::optional<local_position_t> {
+    if (!pending.last_canvas_row) return pending.last_position;
+    const auto index = measure_index_t::from(chart);
+    return index ? position_at(*index, *pending.last_canvas_row) : std::nullopt;
+}
+
 auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     auto& state = context.state;
@@ -673,7 +695,7 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
                     .osu_hitsample = pending.hitsample});
             if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
             return {.value = editor_edit_effect_t{.label = "Paint notes",
-                .selection = std::move(*staged.value), .cursor = pending.last_position,
+                .selection = std::move(*staged.value), .cursor = note_paint_cursor(pending, *transaction.read_chart(state.chart)),
                 .lane = pending.last_lane}};
         });
     }
@@ -684,12 +706,13 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
     result.set_hitsample(state.chart, pending.hitsample);
+    const auto cursor = note_paint_cursor(pending, *result.document.read_chart(state.chart));
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(result.document));
     return commit_editor_edit(context, transaction,
                               {.label = "Paint notes",
                                .selection = std::move(result.painted_notes),
-                               .cursor = pending.last_position,
+                               .cursor = cursor,
                                .lane = pending.last_lane});
 }
 
@@ -947,7 +970,7 @@ auto prepare_stem_hold_document(const editor_edit_context_t& context, const pend
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     note_paint_plan_t plan{.additions = {}, .removals = placement.removals};
     if (placement.adds_note)
-        plan.additions.push_back({pending.lane, placement.head});
+        plan.additions.push_back({.lane = pending.lane, .position = placement.head});
     auto prepared = prepare_stem_note_paint(context.history, context.state.chart, plan, channel,
                                             pending.layers, geometry);
     if (std::holds_alternative<diagnostic_list_t>(prepared))

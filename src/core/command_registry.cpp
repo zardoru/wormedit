@@ -782,6 +782,15 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 global, {});
     add_builtin(registry, invoker, "document.new_project", "New Project",
                 command_category_t::document, global, {chord(shortcut_key_t::n, primary())}, true);
+    add_builtin(registry, invoker, "document.open", "Open chart or project…",
+                command_category_t::document, global, {chord(shortcut_key_t::o, primary())}, true);
+    add_builtin(registry, invoker, "document.save_as", "Save project as…",
+                command_category_t::document, global,
+                {chord(shortcut_key_t::s, modified(shortcut_modifier_t::shift))}, true);
+    add_builtin(registry, invoker, "document.close", "Close project",
+                command_category_t::document, global, {chord(shortcut_key_t::w, primary())}, true);
+    add_builtin(registry, invoker, "app.quit", "Quit",
+                command_category_t::workspace, global, {chord(shortcut_key_t::q, primary())}, true);
     add_builtin(registry, invoker, "document.save_project", "Save Project",
                 command_category_t::document, global, {chord(shortcut_key_t::s, primary())}, true);
     add_builtin(registry, invoker, "document.new_chart", "New Chart", command_category_t::document,
@@ -862,7 +871,8 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 command_category_t::workspace, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::l, primary())}, true, compose);
     add_builtin(registry, invoker, "document.export_output_group", "Export Output Group…",
-                command_category_t::document, command_focus_scope_t::workspace, {}, true);
+                command_category_t::document, command_focus_scope_t::workspace,
+                {chord(shortcut_key_t::e, primary())}, true);
     add_builtin(registry, invoker, "semantic_layer.create", "Create Layer",
                 command_category_t::semantic_layer, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::l, modified(shortcut_modifier_t::shift))}, true, compose);

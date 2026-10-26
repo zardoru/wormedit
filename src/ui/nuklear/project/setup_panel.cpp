@@ -325,11 +325,6 @@ void render_chart_actions(nk_context* context, const wormedit::ui::setup_view_t&
     using namespace wormedit::ui::chrome;
     const bool focused = context_menu_focused_target() == KeyboardContextTarget::charts &&
                          context_menu_focused_object() == row.chart_id.value;
-    if (!hovered && !focused) {
-        struct nk_rect unused{};
-        (void)nk_widget(&unused, context);
-        return;
-    }
     char group[64]{};
     std::snprintf(group, sizeof(group), "chart-actions-%llu", static_cast<unsigned long long>(row.chart_id.value));
     nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(0, 0));
@@ -339,7 +334,8 @@ void render_chart_actions(nk_context* context, const wormedit::ui::setup_view_t&
         return;
     }
     nk_layout_row_dynamic(context, 26, 2);
-    if (IconButton{wormedit::ui::lucide::Glyph::chevron_right, "Open in Compose"}.render(context))
+    const auto open_tip = std::string{"Open in Compose: "} + std::string{row.name};
+    if (IconButton{wormedit::ui::lucide::Glyph::chevron_right, open_tip.c_str()}.render(context))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id.value);
     const DrawnIconButton more{[](nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
         const auto x = bounds.x + bounds.w * 0.5f;
@@ -347,10 +343,11 @@ void render_chart_actions(nk_context* context, const wormedit::ui::setup_view_t&
         for (int index = -1; index <= 1; ++index)
             nk_fill_circle(canvas, nk_rect(x + index * 5.0f - 1.5f, y - 1.5f, 3, 3), tint);
     }, "Chart actions"};
-    if (more.render(context)) {
+    if ((hovered || focused) && more.render(context)) {
         focus_project_chart(row.chart_id.value);
         context_menu_open(project_state.row_menu, context->input.mouse.pos, wormedit::ui::chrome::PopupContextStamp::from(view, row.chart_id.value));
     }
+    if (!hovered && !focused) nk_spacing(context, 1);
     nk_group_end(context);
     nk_style_pop_vec2(context);
 }
@@ -1121,45 +1118,67 @@ void render_output_group_chips(nk_context* context, const wormedit::ui::setup_vi
             begin_output_group_editor(view, &group);
     }
 }
-void render_output_group_card(nk_context* context, const wormedit::ui::setup_view_t& view,
-                              const wormedit::ui::project_output_group_view_t& group,
-                              wormedit::ui::workspace_action_t& action) {
+void render_output_group_card_actions(nk_context* context, const wormedit::ui::setup_view_t& view,
+    const wormedit::ui::project_output_group_view_t& group, wormedit::ui::workspace_action_t& action,
+    struct nk_vec2 position) {
     using namespace wormedit::ui::chrome;
-    nk_layout_space_begin(context, NK_STATIC, 88.0f, 10);
-    const auto space = nk_layout_space_bounds(context);
-    const auto origin = nk_layout_space_to_screen(context, nk_vec2(0.0f, 0.0f));
-    const auto card = nk_rect(origin.x, origin.y, space.w, 88.0f);
-    const auto viewport = wormedit::ui::nuklear::tooltip::viewport();
-    const auto width = std::max(1.0f, std::min(card.w, viewport.x + viewport.w - card.x - 8.0f));
-    nk_fill_rect(nk_window_get_canvas(context), card, 6.0f, color(UiColor::surface));
-    nk_stroke_rect(nk_window_get_canvas(context), card, 6.0f, 1.0f, color(UiColor::border));
-    const auto action_x = std::max(290.0f, width - 136.0f);
-    const auto name_width = std::max(80.0f, std::min(180.0f, (action_x - 92.0f) * 0.42f));
-    const auto path_x = 92.0f + name_width + 8.0f;
-    nk_layout_space_push(context, nk_rect(12.0f, 7.0f, 64.0f, 24.0f));
-    render_output_group_badge(context, view.output_families.label(static_cast<wormedit::format_family_t>(group.family), "Unsupported"));
-    nk_layout_space_push(context, nk_rect(84.0f, 8.0f, name_width, 22.0f));
-    text_cell(context, group.name.data(), name_width);
-    nk_layout_space_push(context, nk_rect(path_x, 8.0f, std::max(1.0f, action_x - path_x - 8.0f), 22.0f));
-    std::string destination{"→ "};
-    destination += group.destination_kind == wormedit::output_destination_kind_t::file ? "File · "
-                                                                             : "Folder · ";
-    destination += group.path.data();
-    text_cell(context, destination.c_str(), std::max(1.0f, action_x - path_x - 8.0f));
-    nk_layout_space_push(context, nk_rect(action_x, 5.0f, 96.0f, 28.0f));
+    nk_layout_space_push(context, nk_rect(position.x, position.y, 84.0f, 28.0f));
+    if (Button{"Preview", ButtonKind::secondary, "Check the export plan before publishing",
+               view.project_has_native_path && !group.chart_ids.empty()}.render(context)) {
+        publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group.document_index);
+        project_state.group_plan_index = group.document_index;
+        project_state.group_plan_expanded = true;
+    }
+    nk_layout_space_push(context, nk_rect(position.x + 88.0f, position.y, 112.0f, 28.0f));
     const auto export_tooltip = std::string{"Publish using saved "} +
                                 existing_files_label(static_cast<int>(group.existing_files)) + " policy";
-    if (Button{"Export", ButtonKind::primary, export_tooltip.c_str(), group.chart_ids.size() != 0}
-            .render(context))
-        export_project_group(view, action, group.document_index, WORM_UI_EXISTING_FILES_SAVED);
-    nk_layout_space_push(context, nk_rect(action_x + 104.0f, 5.0f, 28.0f, 28.0f));
+    if (Button{view.project_has_native_path ? "Export" : "Save project…", ButtonKind::primary,
+               view.project_has_native_path ? export_tooltip.c_str() : "Save the project before previewing or exporting",
+               !group.chart_ids.empty()}.render(context)) {
+        if (view.project_has_native_path)
+            export_project_group(view, action, group.document_index, WORM_UI_EXISTING_FILES_SAVED);
+        else if (action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+    }
+    nk_layout_space_push(context, nk_rect(position.x + 208.0f, position.y, 28.0f, 28.0f));
     if (Button{"⋯", ButtonKind::secondary, "Export target actions"}.render(context)) {
         project_state.group_menu_index = group.document_index;
         context_menu_open(project_state.group_menu, context->input.mouse.pos,
             PopupContextStamp::from(view, group.document_index + 1));
     }
-    render_output_group_chips(context, view, group, std::max(1.0f, action_x - 92.0f), action);
-    nk_layout_space_push(context, nk_rect(84.0f, 65.0f, std::max(1.0f, width - 100.0f), 18.0f));
+}
+void render_output_group_card(nk_context* context, const wormedit::ui::setup_view_t& view,
+                              const wormedit::ui::project_output_group_view_t& group,
+                              wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    const bool compact = nk_window_get_content_region(context).w < 650.0f;
+    const auto height = compact ? 124.0f : 88.0f;
+    nk_layout_space_begin(context, NK_STATIC, height, 10);
+    const auto space = nk_layout_space_bounds(context);
+    const auto origin = nk_layout_space_to_screen(context, nk_vec2(0.0f, 0.0f));
+    const auto card = nk_rect(origin.x, origin.y, space.w, height);
+    const auto viewport = wormedit::ui::nuklear::tooltip::viewport();
+    const auto width = std::max(1.0f, std::min(card.w, viewport.x + viewport.w - card.x - 8.0f));
+    nk_fill_rect(nk_window_get_canvas(context), card, 6.0f, color(UiColor::surface));
+    nk_stroke_rect(nk_window_get_canvas(context), card, 6.0f, 1.0f, color(UiColor::border));
+    const auto action_x = compact ? 12.0f : std::max(200.0f, width - 240.0f);
+    const auto action_y = compact ? 66.0f : 5.0f;
+    const auto metadata_end = compact ? width - 12.0f : action_x;
+    const auto name_width = std::max(80.0f, std::min(180.0f, (metadata_end - 92.0f) * 0.42f));
+    const auto path_x = 92.0f + name_width + 8.0f;
+    nk_layout_space_push(context, nk_rect(12.0f, 7.0f, 64.0f, 24.0f));
+    render_output_group_badge(context, view.output_families.label(static_cast<wormedit::format_family_t>(group.family), "Unsupported"));
+    nk_layout_space_push(context, nk_rect(84.0f, 8.0f, name_width, 22.0f));
+    text_cell(context, group.name.data(), name_width);
+    nk_layout_space_push(context, nk_rect(path_x, 8.0f, std::max(1.0f, metadata_end - path_x - 8.0f), 22.0f));
+    std::string destination{"→ "};
+    destination += group.destination_kind == wormedit::output_destination_kind_t::file ? "File · "
+                                                                             : "Folder · ";
+    destination += group.path.data();
+    text_cell(context, destination.c_str(), std::max(1.0f, metadata_end - path_x - 8.0f));
+    render_output_group_card_actions(context, view, group, action, nk_vec2(action_x, action_y));
+    render_output_group_chips(context, view, group, std::max(1.0f, metadata_end - 92.0f), action);
+    nk_layout_space_push(context, nk_rect(84.0f, height - 23.0f, std::max(1.0f, width - 100.0f), 18.0f));
     const auto status = std::string_view{group.preview_status.data() ? group.preview_status.data() : ""};
     const auto first_line = status.substr(0, status.find('\n'));
     std::string status_line{first_line.empty() ? "Preview not run" : first_line};
@@ -1210,12 +1229,13 @@ void render_output_group_menu(nk_context* context, const wormedit::ui::setup_vie
         return;
     const auto* edit_reason = output_group_editable(view, *group) ? nullptr
         : "This target exceeds the editable Project view limits.";
-    if (context_menu_item(menu, context, "Export · Replace existing"))
+    const auto* export_reason = view.project_has_native_path ? nullptr : "Save the project first (Ctrl+S).";
+    if (context_menu_item(menu, context, "Export · Replace existing", export_reason))
         export_project_group(view, action, group->document_index, WORM_UI_EXISTING_FILES_REPLACE);
-    if (context_menu_item(menu, context, "Export · Keep existing"))
+    if (context_menu_item(menu, context, "Export · Keep existing", export_reason))
         export_project_group(view, action, group->document_index, WORM_UI_EXISTING_FILES_KEEP);
     if (context_menu_item(menu, context, "Edit", edit_reason)) begin_output_group_editor(view, group);
-    if (context_menu_item(menu, context, "Preview")) {
+    if (context_menu_item(menu, context, "Preview", export_reason)) {
         publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group->document_index);
         project_state.group_plan_index = group->document_index;
         project_state.group_plan_expanded = true;
@@ -1280,7 +1300,7 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
     nk_layout_space_push(context, nk_rect(width - 240.0f, 0.0f, 110.0f, 32.0f));
     if (wormedit::ui::chrome::Button{"Export all", wormedit::ui::chrome::ButtonKind::secondary,
                                      "Prepare every export target, then publish them",
-                                     view.output_groups.size() != 0}
+                                     view.project_has_native_path && !view.output_groups.empty()}
             .render(context))
         export_all_project_groups(view, action);
     nk_layout_space_push(context, nk_rect(width - 122.0f, 0.0f, 122.0f, 32.0f));
@@ -1288,7 +1308,9 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
     nk_layout_space_end(context);
     if (view.output_groups.size() == 0) {
         nk_layout_row_dynamic(context, 24, 1);
-        nk_label(context, "No export targets yet. Start with a target suggested for this layout:", NK_TEXT_LEFT);
+        nk_label_wrap(context, view.output_suggestions.empty()
+            ? "No export targets yet. Choose + New to configure a target."
+            : "No export targets yet. Start with a target suggested for this layout:");
         constexpr int columns = 3;
         nk_layout_row_dynamic(context, 30, columns);
         for (const auto& suggestion : view.output_suggestions)
@@ -1296,12 +1318,6 @@ void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t&
                     wormedit::ui::chrome::ButtonKind::secondary,
                     "Open a normal target draft"}.render(context))
                 begin_output_group_suggestion(view, suggestion);
-        if (view.output_suggestions.empty()) {
-            nk_layout_row_dynamic(context, 22, 1);
-            nk_label_colored(context, "No layout-specific suggestions are available.", NK_TEXT_LEFT,
-                             wormedit::ui::chrome::color(
-                                 wormedit::ui::chrome::UiColor::text_muted));
-        }
     }
     for (size_t i = 0; i < view.output_groups.size(); ++i)
         render_output_group_card(context, view, view.output_groups[i], action);

@@ -7,13 +7,6 @@
 
 namespace {
 
-auto contains_folded(std::string_view text, std::string_view query) -> bool {
-    const auto found = std::ranges::search(text, query, [](char a, char b) {
-        return wormedit::text_util::ascii_iequal(a, b);
-    });
-    return !found.empty();
-}
-
 void insert_sorted(std::vector<std::uint64_t>& ids, std::uint64_t id) {
     const auto position = std::ranges::lower_bound(ids, id);
     if (position == ids.end() || *position != id) ids.insert(position, id);
@@ -40,8 +33,9 @@ void select_span(worm_ui_keysound_selection_t& selection, std::span<const std::u
 
 auto worm_ui_keysound_matches(std::string_view slot, std::string_view name,
                               std::string_view query, std::string_view source_path) -> bool {
-    return query.empty() || contains_folded(slot, query) || contains_folded(name, query) ||
-           contains_folded(source_path, query);
+    return wormedit::text_util::ascii_icontains(slot, query) ||
+           wormedit::text_util::ascii_icontains(name, query) ||
+           wormedit::text_util::ascii_icontains(source_path, query);
 }
 
 auto worm_ui_resource_use_matches(std::uint64_t uses, bool missing, std::uint8_t filter) -> bool {

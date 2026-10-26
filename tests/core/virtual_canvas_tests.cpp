@@ -2,6 +2,7 @@
 #include <wormedit/core/editor_scene.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -76,10 +77,13 @@ void check_unanchored_canvas(const wormedit::chart_document_t& chart, const worm
 }
 } // namespace
 
-TEST_CASE("native chart without timed BGM exposes a virtual tail that BGM removes",
+TEST_CASE("non-BMS chart without timed BGM exposes a virtual tail that BGM removes",
           "[unit][core][virtual-canvas]") {
     wormedit::song_document_t document;
-    document.charts.push_back(chart_with_two_measures(wormedit::format_family_t::native_project));
+    const auto family = GENERATE(wormedit::format_family_t::native_project,
+        wormedit::format_family_t::osu_mania, wormedit::format_family_t::stepmania,
+        wormedit::format_family_t::bmson, wormedit::format_family_t::quaver);
+    document.charts.push_back(chart_with_two_measures(family));
     wormedit::sync_virtual_tails(document);
     const auto& chart = document.charts.front();
     CHECK(wormedit::has_chart_virtual_tail(chart));

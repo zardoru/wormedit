@@ -137,7 +137,7 @@ TEST_CASE("Options validates individual draft fields and stale actions atomicall
     expect_options(view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_AUTOSAVE);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options_notification(r, notification_severity_t::warning,
-                                "Correct this page's invalid fields before applying.");
+                                "Correct invalid Options fields before applying.");
     expect_options(program.preferences.general.autosave_minutes == 5);
     expect_options(!edit_options_draft(r, old_revision, program.preferences));
     const auto current = r.revision;
@@ -147,7 +147,7 @@ TEST_CASE("Options validates individual draft fields and stale actions atomicall
         static_cast<WormUiOptionsCategory>(99))));
     expect_options(r.category == WORM_UI_OPTIONS_GENERAL && r.revision == current);
 }
-TEST_CASE("Options applies one page atomically preserving other applied sections and drafts", "[options]") {
+TEST_CASE("Options applies every changed page atomically preserving external untouched settings", "[options]") {
     temporary_preferences_t file;
     program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
     options_runtime_t r;
@@ -159,17 +159,21 @@ TEST_CASE("Options applies one page atomically preserving other applied sections
     candidate = r.draft;
     candidate.audio.keep_pitch = true;
     expect_options(edit_options_draft(r, r.revision, candidate));
+    const auto pending = wormedit::ui::options_view_t::from(r);
+    expect_options(pending.changed_categories[WORM_UI_OPTIONS_GENERAL]);
+    expect_options(pending.changed_categories[WORM_UI_OPTIONS_AUDIO]);
+    expect_options(!pending.changed_categories[WORM_UI_OPTIONS_DISPLAY]);
     program.preferences.display.theme = "external-theme";
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options_notification(r, notification_severity_t::success, "Options saved.");
     expect_options(program.preferences.audio.keep_pitch);
-    expect_options(program.preferences.general.autosave_minutes == 5);
+    expect_options(program.preferences.general.autosave_minutes == 12);
     expect_options(program.preferences.display.theme == "external-theme");
     expect_options(r.draft.general.autosave_minutes == 12);
     const auto loaded = load_program_preferences(program.path);
     expect_options(loaded.contents.succeeded && loaded.contents.preferences == program.preferences);
     select(r, program, WORM_UI_OPTIONS_GENERAL);
-    expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
+    expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.general.autosave_minutes == 12);
 }
 TEST_CASE("Options conflicts require Revert and defaults remain draft only", "[options]") {
@@ -192,6 +196,44 @@ TEST_CASE("Options conflicts require Revert and defaults remain draft only", "[o
     open_options(r, program.preferences);
     expect_options(r.draft.general.autosave_minutes == 19);
 }
+TEST_CASE("Options rejects hidden invalid drafts without applying another changed page", "[options]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    auto candidate = runtime.draft;
+    candidate.general.autosave_minutes = 0;
+    expect_options(edit_options_draft(runtime, runtime.revision, candidate));
+    select(runtime, program, WORM_UI_OPTIONS_AUDIO);
+    candidate = runtime.draft;
+    candidate.audio.keep_pitch = true;
+    expect_options(edit_options_draft(runtime, runtime.revision, candidate));
+    expect_options(!wormedit::ui::options_view_t::from(runtime).can_apply);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(!program.preferences.audio.keep_pitch);
+    expect_options(program.preferences.general.autosave_minutes == 5);
+    expect_options(!std::filesystem::exists(program.path));
+}
+
+TEST_CASE("Closing dirty Options requires explicit discard and Keep editing preserves every draft", "[options]") {
+    program_preferences_runtime_t program;
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    auto candidate = runtime.draft;
+    candidate.general.autosave_minutes = 12;
+    expect_options(edit_options_draft(runtime, runtime.revision, candidate));
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_CLOSE));
+    expect_options(runtime.visible);
+    expect_options(wormedit::ui::options_view_t::from(runtime).confirm_discard);
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_KEEP_EDITING));
+    expect_options(!runtime.confirm_discard);
+    expect_options(runtime.draft.general.autosave_minutes == 12);
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_CLOSE));
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DISCARD_AND_CLOSE));
+    expect_options(!runtime.visible);
+    open_options(runtime, program.preferences);
+    expect_options(runtime.draft.general.autosave_minutes == 5);
+}
 TEST_CASE("Options no-op skips publication and publication failure keeps accepted values", "[options]") {
     temporary_preferences_t file;
     const auto target = file.directory / "existing-directory";
@@ -200,7 +242,7 @@ TEST_CASE("Options no-op skips publication and publication failure keeps accepte
     options_runtime_t r;
     open_options(r, program.preferences);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
-    expect_options(r.status == "This page has no changes.");
+    expect_options(r.status == "Options have no changes.");
     expect_options_notification(r, notification_severity_t::info, r.status);
     auto candidate = r.draft;
     candidate.general.autosave_minutes = 12;
@@ -233,6 +275,7 @@ TEST_CASE("Options page validation catches unsupported rates paths scales and pl
         expect_options(edit_options_draft(r, r.revision, candidate));
         const auto view = wormedit::ui::options_view_t::from(r);
         expect_options(!view.can_apply && view.diagnostics.size() == 1 && view.diagnostics[0].field == field);
+        (void)apply_options_action(r, program, action(r, WORM_UI_OPTIONS_REVERT));
     }
 }
 
@@ -562,6 +605,8 @@ TEST_CASE("Appearance scratch edits preview independently and Apply persists the
     view = wormedit::ui::options_view_t::from(runtime);
     expect_options(view.p1_scratch_position == 0 && view.p2_scratch_position == 0);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_CLOSE)));
+    expect_options(runtime.visible && runtime.confirm_discard);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DISCARD_AND_CLOSE)));
     expect_options(!runtime.visible);
     expect_options(program.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{3, 1});
 }
@@ -732,9 +777,30 @@ TEST_CASE("Options layout skin validation and category isolation preserve accept
     general.general.recent_files_count = 20;
     expect_options(edit_options_draft(runtime, runtime.revision, general));
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
-    expect_options(program.preferences.display.field_scheme_overrides.empty());
+    expect_options(resolve_field_scheme(program.preferences.display, "beat-7k") == "bmse");
     select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
     expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
-    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(resolve_field_scheme(program.preferences.display, "beat-7k") == "bmse");
+}
+
+TEST_CASE("Options preflight rejects conflicts before exposing a display candidate",
+          "[options][display-options][preflight]") {
+    program_preferences_runtime_t program;
+    options_runtime_t runtime;
+    open_options_category(runtime, program.preferences, WORM_UI_OPTIONS_DISPLAY);
+    auto display = runtime.draft;
+    display.display.ui_scale_percent = 150;
+    expect_options(edit_options_draft(runtime, runtime.revision, display));
+    select(runtime, program, WORM_UI_OPTIONS_GENERAL);
+    auto general = runtime.draft;
+    general.general.autosave_minutes = 12;
+    expect_options(edit_options_draft(runtime, runtime.revision, general));
+    program.preferences.general.autosave_minutes = 8;
+    const auto previous = program.preferences;
+    expect_options(!prepare_options_apply(runtime, program.preferences));
+    expect_options(program.preferences == previous);
+    expect_options(runtime.draft.display.ui_scale_percent == 150);
+    expect_options(runtime.notification.has_value());
+    expect_options(runtime.status.find("changed outside Options") != std::string::npos);
 }

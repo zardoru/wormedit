@@ -24,6 +24,16 @@ struct Frame {
     [[nodiscard]] auto stroke() const -> float { return std::max(1.0f, 2.0f * scale); }
 };
 
+inline void image(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto f = Frame::fit(bounds);
+    nk_stroke_rect(canvas, nk_rect(f.px(3), f.py(3), 18 * f.scale, 18 * f.scale),
+                   2 * f.scale, f.stroke(), tint);
+    nk_stroke_circle(canvas, nk_rect(f.px(7), f.py(7), 3 * f.scale, 3 * f.scale), f.stroke(), tint);
+    const float mountain[]{f.px(4), f.py(18), f.px(10), f.py(12), f.px(14), f.py(16),
+                           f.px(17), f.py(13), f.px(21), f.py(17)};
+    nk_stroke_polyline(canvas, const_cast<float*>(mountain), 5, f.stroke(), tint);
+}
+
 // The view segment uses keys, a fraction and a layer stack as distinct marks.
 inline void view_keys(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
     const auto f = Frame::fit(bounds);

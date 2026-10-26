@@ -1248,7 +1248,7 @@ auto extend_native_charts_to_audio_end(song_document_t& document) -> bool {
     const auto* longest = document.longest_music_or_bgm_stream();
     if (!longest) return true;
     for (auto& chart : document.charts) {
-        if (chart.source_family == format_family_t::native_project &&
+        if ((chart.source_family == format_family_t::native_project || chart.virtual_tail_measures != 0) &&
             !extend_chart_to_audio_end(chart, *longest)) return false;
     }
     return true;

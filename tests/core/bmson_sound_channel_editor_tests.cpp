@@ -1802,7 +1802,7 @@ TEST_CASE("Pointer stem drawing shares same-row reassignment with lane keys",
         INFO((begin.diagnostics.empty() ? "No begin diagnostic" : begin.diagnostics.front().message));
         expect_bmson_core(static_cast<bool>(begin));
         const auto end = wormedit::dispatch_editor_action(history, state,
-            wormedit::end_note_paint_gesture_action_t{lane, position, true});
+            wormedit::end_note_paint_gesture_action_t{.lane = lane, .position = position, .pointer_captured = true});
         INFO((end.diagnostics.empty() ? "No draw diagnostic" : end.diagnostics.front().message));
         expect_bmson_core(static_cast<bool>(end));
     }
@@ -1879,13 +1879,13 @@ TEST_CASE("Mouse stem placement shares decoded span classification and clears fa
     const auto begun = alt ? wormedit::dispatch_editor_action(history, state,
         wormedit::begin_alt_pointer_hold_gesture_action_t{lane, position, true, sound})
         : wormedit::dispatch_editor_action(history, state,
-        wormedit::begin_note_paint_gesture_action_t{lane, position, true, sound, wormedit::note_paint_intent_t::draw});
+        wormedit::begin_note_paint_gesture_action_t{.lane = lane, .position = position, .pointer_captured = true, .sound = sound, .intent = wormedit::note_paint_intent_t::draw});
     expect_bmson_core(static_cast<bool>(begun));
     const auto end = first_measure_position(history.document, row + (alt && hold ? 60 : 0));
     const auto released = alt ? wormedit::dispatch_editor_action(history, state,
         wormedit::release_alt_pointer_hold_gesture_action_t{end, true, true, geometry})
         : wormedit::dispatch_editor_action(history, state,
-        wormedit::end_note_paint_gesture_action_t{lane, position, true, geometry});
+        wormedit::end_note_paint_gesture_action_t{.lane = lane, .position = position, .pointer_captured = true, .source_geometry = geometry});
     INFO((released.diagnostics.empty() ? "No placement diagnostic" : released.diagnostics.front().message));
     expect_bmson_core(static_cast<bool>(released) == decoded);
     expect_bmson_core(!state.gesture<wormedit::pending_note_paint_gesture_t>() && !state.hold());

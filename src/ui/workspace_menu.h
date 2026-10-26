@@ -42,7 +42,8 @@ inline constexpr std::array workspace_menu_titles{"File", "Edit", "View", "Chart
 
 // Commands exposed by the shared menu model and Help shortcut sheet.
 inline constexpr std::array workspace_menu_command_ids{
-    "document.new_project", "document.save_project", "document.export_output_group", "workspace.options",
+    "document.new_project", "document.open", "document.save_project", "document.save_as",
+    "document.close", "app.quit", "document.export_output_group", "workspace.options",
     "history.undo", "history.redo", "edit.copy", "edit.cut", "edit.paste", "edit.delete",
     "edit.move_to_bgm", "selection.select_all", "selection.select_all_objects",
     "selection.select_all_after_cursor", "selection.select_all_objects_after_cursor", "selection.invert", "selection.clear",

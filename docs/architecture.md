@@ -248,9 +248,15 @@ monotonic event sequence. Selection snapshots live only in its bounded transient
 history, not in song snapshots, codecs, saved revisions or document dirty state. The editor
 dispatcher records accepted selection changes once; marquee previews and cancellations record
 nothing. Both keyboard and command-menu history routes use `apply_editor_history`. A new accepted
-selection or document edit discards both redo branches. Pointer presses reserve capture without
+selection change discards selection Redo but preserves pending document Redo after the new
+selection event; a document edit discards both redo branches. Pointer presses reserve capture without
 replacing selection; release commits a click or marquee, and Escape consumes an active capture
 without also invoking Clear Selection.
+
+Note-paint proposals retain explicit canvas rows for virtual cells, without inventing authored
+measure IDs for their previews. Release materializes the required extent and paints the stroke
+in the same transaction and Undo step. Cancellation and erase-only strokes do not create empty
+measures.
 
 ## Glossary
 

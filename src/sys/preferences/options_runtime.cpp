@@ -79,9 +79,9 @@ void validate_display(options_runtime_t& r) {
     const auto scale = r.draft.display.ui_scale_percent;
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
 }
-void refill_options_validation(options_runtime_t& r, bool& changed) {
-    r.diagnostics.clear();
-    switch (r.category) {
+void validate_category(options_runtime_t& r, WormUiOptionsCategory category) {
+    const auto diagnostic_count = r.diagnostics.size();
+    switch (category) {
     case WORM_UI_OPTIONS_GENERAL: validate_general(r); break;
     case WORM_UI_OPTIONS_EDITOR: validate_editor(r); break;
     case WORM_UI_OPTIONS_AUDIO:
@@ -91,7 +91,7 @@ void refill_options_validation(options_runtime_t& r, bool& changed) {
         diagnose(r, WORM_UI_OPTIONS_FIELD_RATE,
             std::ranges::find(audio::playback_rates, r.draft.audio.playback_rate) != audio::playback_rates.end(),
             "Playback rate is unsupported.");
-        if (r.diagnostics.empty())
+        if (r.diagnostics.size() == diagnostic_count)
             diagnose(r, WORM_UI_OPTIONS_FIELD_PAGE, r.draft.audio.is_valid(),
                 "Audio settings are out of range: volumes 0–100%, count-in 0–4, buffer 0–8192 frames, latency −1000–1000 ms.");
         break;
@@ -108,29 +108,31 @@ void refill_options_validation(options_runtime_t& r, bool& changed) {
     default: break;
     }
     auto candidate = program_preferences_t::with_defaults();
-    copy_category(candidate, r.draft, r.category);
-    if (r.diagnostics.empty() && !serialize_program_preferences(candidate))
+    copy_category(candidate, r.draft, category);
+    if (r.diagnostics.size() == diagnostic_count && !serialize_program_preferences(candidate))
         r.diagnostics.push_back({WORM_UI_OPTIONS_FIELD_PAGE, "This page contains invalid text or oversized values."});
-    changed = !category_equal(r.draft, r.baseline, r.category);
+}
+void refill_options_validation(options_runtime_t& r, bool& changed) {
+    r.diagnostics.clear();
+    changed = false;
+    for (int index = 0; index < WORM_UI_OPTIONS_CATEGORY_COUNT; ++index) {
+        const auto category = static_cast<WormUiOptionsCategory>(index);
+        r.changed_categories[index] = !category_equal(r.draft, r.baseline, category);
+        changed = changed || r.changed_categories[index];
+        validate_category(r, category);
+    }
 }
 void validate_draft(options_runtime_t& r) {
     static_cast<void>(r.validation.get_or_build(std::tie(r.draft, r.baseline, r.category),
         std::bind_front(refill_options_validation, std::ref(r))));
 }
 
-auto apply_category(options_runtime_t& r, program_preferences_runtime_t& program) -> bool {
-    validate_draft(r);
-    if (!r.diagnostics.empty()) { set_options_status(r, notification_severity_t::warning, "Correct this page's invalid fields before applying."); return false; }
-    if (!category_equal(program.preferences, r.baseline, r.category)) {
-        set_options_status(r, notification_severity_t::warning, "These settings changed outside Options. Revert this page before applying.");
-        return false;
-    }
-    if (category_equal(program.preferences, r.draft, r.category)) { set_options_status(r, notification_severity_t::info, "This page has no changes."); return false; }
-    auto candidate = program.preferences;
-    copy_category(candidate, r.draft, r.category);
-    if (!serialize_program_preferences(candidate)) { set_options_status(r, notification_severity_t::warning, "Program preferences contain invalid or oversized values."); return false; }
-    const auto error = apply_program_preferences(program, std::move(candidate));
-    copy_category(r.baseline, program.preferences, r.category);
+auto apply_draft(options_runtime_t& r, program_preferences_runtime_t& program) -> bool {
+    auto candidate = prepare_options_apply(r, program.preferences);
+    if (!candidate) return false;
+    const auto error = apply_program_preferences(program, std::move(*candidate));
+    r.draft = r.baseline = program.preferences;
+    r.confirm_discard = false;
     set_options_status(r, error.empty() ? notification_severity_t::success : notification_severity_t::error,
                        error.empty() ? "Options saved." : error);
     return true;
@@ -282,6 +284,25 @@ auto edit_field(options_runtime_t& r, const wormedit::ui::options_action_t& acti
 }
 } // namespace
 
+auto prepare_options_apply(options_runtime_t& r, const program_preferences_t& preferences)
+    -> std::optional<program_preferences_t> {
+    validate_draft(r);
+    if (!r.diagnostics.empty()) { set_options_status(r, notification_severity_t::warning, "Correct invalid Options fields before applying."); return std::nullopt; }
+    if (!r.validation.value()) { set_options_status(r, notification_severity_t::info, "Options have no changes."); return std::nullopt; }
+    auto candidate = preferences;
+    for (int index = 0; index < WORM_UI_OPTIONS_CATEGORY_COUNT; ++index) {
+        if (!r.changed_categories[index]) continue;
+        const auto category = static_cast<WormUiOptionsCategory>(index);
+        if (!category_equal(preferences, r.baseline, category)) {
+            set_options_status(r, notification_severity_t::warning, "These settings changed outside Options. Revert all before applying.");
+            return std::nullopt;
+        }
+        copy_category(candidate, r.draft, category);
+    }
+    if (!serialize_program_preferences(candidate)) { set_options_status(r, notification_severity_t::warning, "Program preferences contain invalid or oversized values."); return std::nullopt; }
+    return candidate;
+}
+
 auto toggle_audition_on_click(program_preferences_runtime_t& program, bool& enabled) -> std::string {
     auto candidate = program.preferences;
     candidate.editor.audition_on_click = !enabled;
@@ -308,6 +329,7 @@ void open_options(options_runtime_t& r, const program_preferences_t& preferences
     r.visible = true;
     r.draft = preferences;
     r.baseline = preferences;
+    r.confirm_discard = false;
     r.status.clear();
     ++r.revision;
     validate_draft(r);
@@ -359,6 +381,7 @@ void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
     const auto& p = r.draft;
     *this = {.visible = r.visible, .revision = r.revision, .category = r.category,
         .changed = r.validation.value(), .can_apply = r.diagnostics.empty(),
+        .confirm_discard = r.confirm_discard, .changed_categories = r.changed_categories,
         .autosave_minutes = p.general.autosave_minutes, .recent_files_count = p.general.recent_files_count,
         .default_snap = p.editor.default_snap, .ui_scale_percent = p.display.ui_scale_percent,
         .scroll_directions = {p.editor.scroll_directions[0], p.editor.scroll_directions[1],
@@ -438,7 +461,12 @@ auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& p
     }
     bool accepted = false;
     switch (action.kind) {
-    case WORM_UI_OPTIONS_CLOSE: r.visible = false; break;
+    case WORM_UI_OPTIONS_CLOSE:
+        r.confirm_discard = r.validation.value();
+        r.visible = r.confirm_discard; break;
+    case WORM_UI_OPTIONS_KEEP_EDITING: r.confirm_discard = false; break;
+    case WORM_UI_OPTIONS_DISCARD_AND_CLOSE:
+        r.confirm_discard = r.visible = false; break;
     case WORM_UI_OPTIONS_SELECT_CATEGORY:
         if (!valid_category(action.category)) return false;
         r.category = action.category; r.status.clear(); break;
@@ -446,10 +474,10 @@ auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& p
         if (r.category != WORM_UI_OPTIONS_INPUT || action.category != WORM_UI_OPTIONS_INPUT ||
             !action.lane_count || action.lane_count > maximum_default_lane_count) return false;
         r.default_lane_count = action.lane_count; break;
-    case WORM_UI_OPTIONS_APPLY: accepted = apply_category(r, program); break;
+    case WORM_UI_OPTIONS_APPLY: accepted = apply_draft(r, program); break;
     case WORM_UI_OPTIONS_REVERT:
-        copy_category(r.draft, program.preferences, r.category);
-        copy_category(r.baseline, program.preferences, r.category); r.status.clear(); break;
+        r.draft = r.baseline = program.preferences;
+        r.confirm_discard = false; r.status.clear(); break;
     case WORM_UI_OPTIONS_DEFAULTS: copy_category(r.draft, program_preferences_t::with_defaults(), r.category); r.status.clear(); break;
     default: return false;
     }

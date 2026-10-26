@@ -128,6 +128,10 @@ TEST_CASE("the inspector no longer carries a note label editor and names the sea
     nuklear_event_harness_t harness{1280, 900};
     require_label(harness.ready());
     (void)harness.frame();
+    const auto inspector = harness.drawn_text_center("Inspector");
+    require_label(inspector.has_value());
+    require_label(wormedit::test::scroll_to_text(harness, "Find note label", inspector->first,
+                                               inspector->second + 80, -1, 120));
     const auto& text = harness.drawn_text();
     check_label(text.find("Label (") == std::string::npos);
     check_label(text.find("Find note label") != std::string::npos);

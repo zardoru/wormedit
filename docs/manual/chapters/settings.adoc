@@ -7,10 +7,12 @@ policies on individual target cards belong to the project instead.
 
 == Apply, revert and preview
 
-Most Options controls edit a draft. *Apply* validates and saves the current page. *Revert* restores
-that page's saved values; *Restore defaults* resets that page's draft, which still needs Apply.
-Switching pages keeps their drafts: Apply each changed page before closing. *Close* or kbd:[Escape]
-discards unapplied changes. Appearance controls preview skins and opacity immediately;
+Most Options controls edit a draft. *Apply all* validates and saves all changed pages together.
+*Revert all* restores their saved values; *Restore defaults* resets the current page's draft,
+which still needs Apply all. Changed pages have an asterisk beside their names.
+Switching pages keeps their drafts. *Close* or kbd:[Escape] asks before discarding unapplied
+changes; choose *Keep editing* or press kbd:[Escape] again to retain them.
+Appearance controls preview skins and opacity immediately;
 discarding the draft restores the saved appearance.
 
 Shortcut capture is an exception: *Change* saves a command's new chord immediately. Closing or
@@ -30,7 +32,8 @@ hitsound skin folder. Use *Refresh devices* after connecting an output. Device/b
 made during playback wait until Stop.
 |Appearance |Default and per-layout field skins, scratch placement, snap colors and grid opacity.
 |Input & shortcuts |Per-layout Lane keys, default bindings for new/imported charts and command
-shortcut capture. Click *Change*, press a chord, or Escape to cancel capture. Conflicts remain
+shortcut capture. Use *Find shortcut* to filter by command name or chord. Click *Change*, press a
+chord, or Escape to cancel capture. Conflicts remain
 visible so you can resolve them.
 |External players |Your player executable or wrapper and its launch arguments.
 |===

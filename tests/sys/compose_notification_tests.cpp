@@ -91,6 +91,16 @@ struct compose_notification_fixture_t {
         return center.snapshot(notification_capacity);
     }
 
+    auto place_selected_tap() -> object_id_t {
+        const auto placed = dispatch_editor_action(history, state,
+            place_tap_action_t{.position = state.cursor});
+        REQUIRE(placed);
+        REQUIRE(placed.created_note);
+        state.selected_notes = {*placed.created_note};
+        state.selected_objects = {{editor_selection_object_kind_t::note, *placed.created_note}};
+        return *placed.created_note;
+    }
+
     void prepare_lane_chord() {
         auto song = history.document;
         auto& chart = song.charts.front();
@@ -191,6 +201,23 @@ TEST_CASE("Held lane chords commit all releases and retain hitsound defaults", "
     CHECK_FALSE(fixture.state.is_pending());
     for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
         CHECK(note.end == end);
+}
+
+TEST_CASE("Lane keys follow Draw or Select after placing a selected note", "[unit][sys][lane-chord]") {
+    compose_notification_fixture_t fixture;
+    fixture.prepare_lane_chord();
+    const auto placed = fixture.place_selected_tap();
+    const auto draw = GENERATE(false, true);
+    fixture.application.project.compose_gesture.note_paint_mode_active = draw;
+    const std::array inputs{
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {2}},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {2}}};
+    (void)fixture.batch(inputs);
+    const auto& chart = fixture.history.document.charts.front();
+    REQUIRE(chart.measures.front().notes.size() == (draw ? 2 : 1));
+    const auto* original = chart.find_note(placed);
+    REQUIRE(original);
+    CHECK(original->lane == lane_id_t{draw ? 1u : 2u});
 }
 
 TEST_CASE("Lane chord continuation still rejects an external revision during feedback", "[unit][sys][lane-chord]") {
@@ -691,8 +718,10 @@ TEST_CASE("a lane key at a cursor inside a Warp places nothing",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
-    fixture.state.selected_notes.clear();
-    fixture.state.selected_objects.clear();
+    if (GENERATE(false, true)) {
+        fixture.state.selected_notes.clear();
+        fixture.state.selected_objects.clear();
+    }
     fixture.state.cursor = {measure_id_t{1}, 780};
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}},
                        {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = {1}}});

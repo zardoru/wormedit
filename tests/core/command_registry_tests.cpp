@@ -1068,3 +1068,28 @@ TEST_CASE("quiet shortcut dispatch is diagnostically successful without invoking
     CHECK_FALSE(quiet.value.is_invoked());
     CHECK(quiet.diagnostics.empty());
 }
+
+TEST_CASE("File workflow commands have conventional primary shortcuts", "[command-registry][file-shortcuts]") {
+    const auto registry = command_registry_t::from([](const auto&) {
+        return dispatch_outcome_t{.value = true};
+    });
+    const auto primary = GENERATE(shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta);
+    const auto modifier = primary == shortcut_primary_modifier_t::control
+        ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+    struct binding_t { const char* id; shortcut_key_t key; bool shift; };
+    constexpr binding_t bindings[]{
+        {"document.open", shortcut_key_t::o, false},
+        {"document.save_as", shortcut_key_t::s, true},
+        {"document.close", shortcut_key_t::w, false},
+        {"app.quit", shortcut_key_t::q, false},
+        {"document.export_output_group", shortcut_key_t::e, false},
+    };
+    for (const auto& binding : bindings) {
+        auto modifiers = static_cast<shortcut_modifiers_t>(modifier);
+        if (binding.shift) modifiers |= static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift);
+        const auto result = dispatch_shortcut(registry,
+            {.chord = {.key = binding.key, .modifiers = modifiers}}, focus_for_compose(), primary);
+        CHECK(result.value.command == command_id_t{binding.id});
+        CHECK(result.value.status == command_dispatch_status_t::invoked);
+    }
+}

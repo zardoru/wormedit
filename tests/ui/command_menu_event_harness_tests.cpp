@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/core/command_registry.h>
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <source_location>
@@ -79,6 +80,67 @@ TEST_CASE("Command menu skips disabled rows and Escape never invokes or leaks it
     expect_menu(fixture.harness.drawn_text().find("Command menu") == std::string::npos);
 }
 
+TEST_CASE("Command menu pointer activation invokes its row without leaking to the canvas",
+          "[frontend-state][event-harness][command-menu]") {
+    fixture_t fixture;
+    fixture.open();
+    const auto row = fixture.harness.drawn_text_center("Second beta");
+    REQUIRE(row);
+    const auto frames = wormedit::test::click_at(fixture.harness, row->first, row->second);
+    const auto activated = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().command_menu_invoked;
+    });
+    REQUIRE(activated != frames.end());
+    expect_menu(std::string_view{activated->get().command_menu_command_id} == "second");
+    for (const auto& frame : frames) expect_menu(frame.get().compose_inputs.empty());
+}
+
+TEST_CASE("Closing the command menu preserves the armed sound for the next paint stroke",
+          "[frontend-state][event-harness][command-menu]") {
+    fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.keysounds = {{.resource_id = wormedit::resource_id_t{40}, .slot = "0A", .name = "kick.wav"}};
+    view.keysound_total_count = 1;
+    view.keysounds_available = true;
+    view.note_paint_mode_active = true;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.resource_picker.armed_resource_id = 40;
+    state.pointer_capture.draw_source_kind = 1;
+    state.pointer_capture.draw_source_id = {40};
+    state.keysound_catalog.armed_from_sounds_dock = true;
+    (void)fixture.harness.frame();
+    fixture.open();
+    (void)fixture.press(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)fixture.harness.frame();
+    const auto frames = wormedit::test::click_at(fixture.harness, 300, 400);
+    expect_menu(std::ranges::any_of(frames, [](const auto& frame) {
+        return std::ranges::any_of(frame.get().compose_inputs, [](const auto& input) {
+            return input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN && input.resource_id.value == 40;
+        });
+    }));
+}
+
+TEST_CASE("Command menu occlusion stays transient and preserves producer occlusion",
+          "[frontend-state][event-harness][command-menu]") {
+    fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    fixture.open();
+    expect_menu(!view.input_occluded);
+    (void)fixture.harness.frame();
+    expect_menu(!view.input_occluded);
+    (void)fixture.press(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)fixture.harness.frame();
+    expect_menu(!view.input_occluded);
+    view.input_occluded = true;
+    (void)fixture.harness.frame();
+    expect_menu(view.input_occluded);
+    (void)fixture.harness.frame();
+    expect_menu(view.input_occluded);
+    view.input_occluded = false;
+    (void)fixture.harness.frame();
+    expect_menu(!view.input_occluded);
+}
+
 TEST_CASE("Command menu cancels stale contexts and modal ownership",
           "[frontend-state][event-harness][command-menu]") {
     for (int change = 0; change < 3; ++change) {
@@ -108,6 +170,32 @@ TEST_CASE("Command menu finds commands beyond the retired 512-row storage limit"
     fixture.open(); fixture.type("needle");
     const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);
     expect_menu(std::string_view{result.get().command_menu_command_id} == "needle");
+}
+
+TEST_CASE("Command menu navigates every broad match beyond the first twenty",
+          "[frontend-state][event-harness][command-menu]") {
+    fixture_t fixture;
+    auto& view = fixture.harness.view();
+    view.command_menu_rows.assign(25, {.id = "other", .label = "Common command", .enabled = true});
+    view.command_menu_rows.back() = {.id = "late", .label = "Common late command", .enabled = true};
+    (void)fixture.harness.frame();
+    fixture.open();
+    fixture.type("common");
+    expect_menu(fixture.harness.drawn_text().find("of 25") != std::string::npos);
+    const auto next = fixture.harness.drawn_text_center("Next");
+    REQUIRE(next);
+    (void)wormedit::test::click_at(fixture.harness, next->first, next->second);
+    (void)fixture.harness.frame();
+    expect_menu(fixture.harness.drawn_text().find("Common late command") != std::string::npos);
+    const auto previous = fixture.harness.drawn_text_center("Previous");
+    REQUIRE(previous);
+    (void)wormedit::test::click_at(fixture.harness, previous->first, previous->second);
+    (void)fixture.harness.frame();
+    for (int index = 0; index < 24; ++index) (void)fixture.press(SDLK_DOWN, SDL_SCANCODE_DOWN);
+    expect_menu(fixture.harness.drawn_text().find("Common late command") != std::string::npos);
+    const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);
+    expect_menu(result.get().command_menu_invoked);
+    expect_menu(std::string_view{result.get().command_menu_command_id} == "late");
 }
 
 TEST_CASE("Command menu rejects and cancels inline editors",

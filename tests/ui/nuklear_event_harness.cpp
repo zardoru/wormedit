@@ -190,6 +190,28 @@ auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice)
     return harness.run_script(script);
 }
 
+void scroll_at(nuklear_event_harness_t& harness, float x, float y, float direction) {
+    SDL_Event wheel{};
+    wheel.type = wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.mouse_x = x;
+    wheel.wheel.mouse_y = y;
+    wheel.wheel.y = direction;
+    const std::array events{mouse_motion(x, y), wheel};
+    (void)harness.frame(events);
+    // Nuklear applies group scrolling after drawing its contents. Read positions
+    // only after the following frame has painted the accepted scroll offset.
+    (void)harness.frame();
+}
+
+auto scroll_to_text(nuklear_event_harness_t& harness, std::string_view label,
+                    float x, float y, float direction, int limit) -> bool {
+    for (int tick = 0; tick < limit; ++tick) {
+        if (harness.drawn_text_center(label)) return true;
+        scroll_at(harness, x, y, direction);
+    }
+    return harness.drawn_text_center(label).has_value();
+}
+
 } // namespace wormedit::test
 
 auto nuklear_event_harness_t::widget_center(std::string_view tooltip) const

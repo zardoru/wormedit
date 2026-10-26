@@ -13,6 +13,7 @@ namespace wormedit::sys {
 struct application_startup_arguments_t {
     native_project_startup_request_t request;
     std::filesystem::path requested_primary_path;
+    std::filesystem::path chart_import_path;
 };
 
 // Returns false after printing the existing usage diagnostic when arguments

@@ -167,6 +167,10 @@ auto clear_selection_or_cancel_preview(command_context_t& context) -> compose_ac
             "Clear Selection requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     }
+    if (!state->is_pending() && state->selected_objects.empty() && state->selected_notes.empty() &&
+        !state->retained_selection_range && !state->retained_canvas_selection_range &&
+        !state->selected_canvas_measure)
+        return {.delivery = compose_feedback_delivery_t::none};
     if (state->is_pending())
         return compose_action_outcome_t::from(
             wormedit::dispatch_editor_action(history, *state, wormedit::cancel_editor_gesture_action_t{}),
@@ -1321,6 +1325,10 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
 
     case command_kind_t::document_new_project:
     case command_kind_t::document_save_project:
+    case command_kind_t::document_open:
+    case command_kind_t::document_save_as:
+    case command_kind_t::document_close:
+    case command_kind_t::app_quit:
     case command_kind_t::document_new_chart:
     case command_kind_t::view_notifications:
     case command_kind_t::workspace_options:

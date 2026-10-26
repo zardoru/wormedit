@@ -136,10 +136,10 @@ TEST_CASE("Project chart menu contains only open duplicate and delete actions",
     check_chart(!f.harness.drawn_text_center("Move down").has_value());
 }
 
-TEST_CASE("Project row icons appear on hover and remain on the focused row",
+TEST_CASE("Project row keeps Open visible and reveals more actions on hover or focus",
           "[frontend-state][event-harness][project-charts][chart-row-actions]") {
     chart_actions_fixture_t f;
-    check_hidden_chart_icon(f.harness, "Open in Compose");
+    check_chart(f.harness.widget_center("Open in Compose: 10").first > 0);
     const auto third_row = f.harness.drawn_text_center("30");
     f.hover("20");
     check_chart(f.harness.drawn_text_center("30") == third_row);
@@ -175,7 +175,7 @@ TEST_CASE("Project hover icons and row menu publish the hovered stable chart ID"
             check_chart(action.kind == WORM_UI_PROJECT_CHART_DUPLICATE && action.chart_id == wormedit::chart_id_t{20});
         }
     } else {
-        for (const auto& frame : f.harness.click_widget("Open in Compose")) {
+        for (const auto& frame : f.harness.click_widget("Open in Compose: 20")) {
             const auto& action = frame.get().project_chart;
             if (action.kind == WORM_UI_PROJECT_CHART_NONE) continue;
             emitted = true;

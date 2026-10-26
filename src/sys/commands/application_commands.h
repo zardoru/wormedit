@@ -13,6 +13,10 @@ namespace wormedit::sys {
 enum class application_command_kind_t {
     document_new_project,
     document_save_project,
+    document_open,
+    document_save_as,
+    document_close,
+    app_quit,
     document_new_chart,
     history_undo,
     history_redo,

@@ -1624,7 +1624,7 @@ TEST_CASE("Timing controls leave the normal toolbar and appear during timing foc
     state.dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     const auto snap = f.reveal("BPM snap");
     check_bga(snap.first > 1200);
-    check_bga(f.harness.drawn_text_center("Timing Settings...").has_value());
+    check_bga(f.harness.drawn_text_center("Timing settings…").has_value());
 }
 
 TEST_CASE("Offset editor commits one exact stamped action from either timing surface",

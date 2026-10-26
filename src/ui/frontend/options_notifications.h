@@ -76,7 +76,8 @@ struct options_view_t {
     bool visible{};
     std::uint64_t revision{};
     WormUiOptionsCategory category{};
-    bool changed{}, can_apply{};
+    bool changed{}, can_apply{}, confirm_discard{};
+    std::array<bool, WORM_UI_OPTIONS_CATEGORY_COUNT> changed_categories{};
     std::uint32_t autosave_minutes{}, recent_files_count{}, default_snap{}, ui_scale_percent{};
     std::array<std::uint32_t, 6> scroll_directions{};
     std::uint32_t playhead_anchor_percent{}, area_band_alpha{};
@@ -142,6 +143,7 @@ typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_NONE = 0, WORM_UI_OPTIONS_OPEN, WORM_UI_OPTIONS_CLOSE,
     WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
     WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD,
+    WORM_UI_OPTIONS_KEEP_EDITING, WORM_UI_OPTIONS_DISCARD_AND_CLOSE,
     WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL,
     WORM_UI_OPTIONS_REFRESH_AUDIO_DEVICES, WORM_UI_OPTIONS_SELECT_LANE_COUNT
 } WormUiOptionsActionKind;

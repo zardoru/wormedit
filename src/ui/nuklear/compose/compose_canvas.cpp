@@ -3637,11 +3637,11 @@ auto compose_editor_status_hint(const wormedit::ui::compose_view_t* view, const 
     if (view->semantic_layer_solo_active)
         return "Layer solo active · only selected-layer notes shown";
     if (view->note_paint_mode_active)
-        return "";
+        return "Draw: click or use lane keys · Alt-drag holds · double-click a sound to arm · Space plays";
     if (view->waveform_overview_rows.size() != 0 && !view->waveform_timing_locked)
         return "Drag beat squares in rail to fit BPM · Shift+drag to shift offset · drag beat zero in song overview";
     static std::string message;
-    message = "↑/↓ move · drag selects/moves · Alt-drag hold · ";
+    message = "Draw: Alt+2 · ↑/↓ move · drag selects/moves · Space plays · ";
     message += compose_idle_bgm_move_hint(*view);
     return message.c_str();
 }

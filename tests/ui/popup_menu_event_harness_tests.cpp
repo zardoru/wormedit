@@ -162,14 +162,14 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     const auto file_title = harness.drawn_text_center("File");
     require_popup(file_title.has_value());
     (void)click(harness, file_title->first, file_title->second);
-    require_popup(harness.drawn_text().find("Open chart or project...") != std::string::npos);
+    require_popup(harness.drawn_text().find("Open chart or project…") != std::string::npos);
 
     const auto edit_title = harness.drawn_text_center("Edit");
     require_popup(edit_title.has_value());
     (void)click(harness, edit_title->first, edit_title->second);
     INFO("title-switch frame text: " << harness.drawn_text());
     require_popup(harness.drawn_text().find("Copy") != std::string::npos);
-    require_popup(harness.drawn_text().find("Open chart or project...") == std::string::npos);
+    require_popup(harness.drawn_text().find("Open chart or project…") == std::string::npos);
 
     const auto copy = harness.drawn_text_center("Copy");
     require_popup(copy.has_value());

@@ -6,6 +6,8 @@
 
 #include <wormedit/audio/playback_rate.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/preferences.h>
+#include <algorithm>
 #include <optional>
 #include <string>
 
@@ -23,6 +25,20 @@ inline auto set_transport_rate(application_command_state_t& state, std::size_t i
 inline auto set_transport_rate(application_command_state_t& state, audio::playback_rate_id_t id) -> bool {
     // The core catalog asserts that dense enum ids are its storage keys.
     return set_transport_rate(state, static_cast<std::size_t>(id));
+}
+
+// Startup applies both defaults; Options applies only fields whose saved value changed.
+inline void initialize_preferred_transport(const program_preferences_t& preferences,
+    application_command_state_t& state, const audio_preferences_t* previous = nullptr) {
+    if (!previous || previous->playback_rate != preferences.audio.playback_rate) {
+        const auto& rates = audio::playback_rates;
+        const auto found = std::find(rates.begin(), rates.end(), preferences.audio.playback_rate);
+        if (found != rates.end())
+            (void)set_transport_rate(state, static_cast<std::size_t>(found - rates.begin()));
+    }
+    if ((!previous || previous->keep_pitch != preferences.audio.keep_pitch) &&
+        state.services.transport_set_keep_pitch && state.services.transport_set_keep_pitch(preferences.audio.keep_pitch))
+        state.preferences.transport_keep_pitch = preferences.audio.keep_pitch;
 }
 
 inline auto step_transport_rate(application_command_state_t& state, bool faster) -> bool {

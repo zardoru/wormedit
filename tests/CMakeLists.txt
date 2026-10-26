@@ -691,6 +691,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/app/application_lifetime.cpp
         ../src/sys/app/application_startup.cpp
         ../src/sys/app/platform_recovery.cpp
+        ../src/sys/audio/transport_player_actions.cpp
         ../src/sys/audio/audio.cpp
         ../src/sys/app/window.cpp
         ../src/sys/preferences/external_player.cpp

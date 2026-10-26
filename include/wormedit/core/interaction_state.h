@@ -86,6 +86,13 @@ struct editor_interaction_state_t {
         return virtual_bms_cursor_row ? virtual_bms_cursor_row : index.row_of(cursor);
     }
     [[nodiscard]] auto is_pending() const -> bool { return active_gesture.has_value(); }
+    [[nodiscard]] auto has_latched_range() const -> bool {
+        const auto* range = gesture<pending_space_range_selection_t>();
+        return range && range->latched;
+    }
+    [[nodiscard]] auto can_follow_playhead() const -> bool {
+        return !is_pending() || has_latched_range();
+    }
     void clear() { active_gesture.reset(); }
     [[nodiscard]] auto is_stale(std::uint64_t revision) const -> bool {
         return active_gesture && std::visit([revision](const auto& proposal) {

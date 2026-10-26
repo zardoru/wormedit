@@ -59,7 +59,7 @@ namespace wormedit::sys {
                                                    editor_measure_geometry_t geometry = {},
                                                    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> bool {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
-        state.is_pending())
+        !state.can_follow_playhead())
         return false;
     const auto chart = history.read_chart(state.chart);
     if (chart == nullptr || !snap_step(*chart, active_snap_grid(state), 0))

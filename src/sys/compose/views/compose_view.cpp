@@ -2554,6 +2554,8 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
         return;
     }
     auto& view = flattened.view.compose;
+    view.inline_playback_active = application_state.services.transport_inline_active &&
+        application_state.services.transport_inline_active();
     view.editor_gesture_active = retained_state && (*retained_state).is_pending();
     view.editor_gesture_current = view.editor_gesture_active &&
         !(*retained_state).is_stale(history.document.revision);

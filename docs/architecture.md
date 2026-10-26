@@ -553,6 +553,13 @@ the audible frame, preserving loop, rate and pitch mode. Click audition remains 
 independent existing preference, and offline export retains the authored mix rather than the
 live-monitoring policy.
 
+Latched keyboard range selection is a view-only gesture that permits playback cursor following.
+Its captured anchor and stamp stay fixed while the ordinary playhead cursor supplies its tail.
+Transport shortcuts preserve this gesture; Escape stops inline playback first and keeps the last
+endpoint instead of restoring the transport origin. A stopped Escape or a click on the chart
+canvas outside playable lanes cancels through the existing gesture runner. Shift-held ranges and
+authoring gestures retain their existing playback exclusion and input-loss safeguards.
+
 Chart playback publishes audible frame, observation time, effective rate, loop bounds
 and the rendered frontier through the existing coherent audio snapshot. The frame
 thread projects that evidence once to expected presentation time; following, transport

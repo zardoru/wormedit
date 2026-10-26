@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose/compose_gesture_registry.h"
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/nuklear/render/theme.h"
 #include "sys/compose/compose_scroll_geometry.h"
@@ -42,6 +43,17 @@
 #include "ui/nuklear/compose/compose_viewport_input.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
 
+static void cancel_latched_range_outside_lanes(
+    const ComposePointerFocusContext& focus, bool pressed_in_view, bool overview_pressed) {
+    if (!pressed_in_view || !state.range_selection.space_range_latched || overview_pressed) return;
+    const auto& view = *focus.view;
+    const auto& button = focus.context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const auto x = (button.clicked_pos.x - focus.viewport.x) *
+        view.viewport_width_pixels / focus.viewport.w;
+    if (x < view.playable_field_left_pixels || x >= view.playable_field_right_pixels)
+        cancel_compose_gestures(focus.action);
+}
+
 ComposePointerFocusState update_compose_pointer_focus(
     const ComposePointerFocusContext& focus) {
     const auto& context = *focus.context;
@@ -71,12 +83,13 @@ ComposePointerFocusState update_compose_pointer_focus(
         if (!state.keyboard_navigation.pointer_navigation_active) {
             append_compose_input(focus.action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
         }
-        if (state.range_selection.space_range_hold_active) {
+        if (state.range_selection.space_range_hold_active && !state.range_selection.space_range_latched) {
             append_compose_cancel_once(focus.action);
             state.range_selection.space_range_hold_active = false;
             state.range_selection.space_range_hold_moved = false;
         }
     }
+    cancel_latched_range_outside_lanes(focus, pointer_pressed_in_view, overview_pressed);
     return {pointer_inside, pointer_clicked, overview_pressed};
 }
 

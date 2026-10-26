@@ -9,6 +9,9 @@
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "sys/compose/compose_sound_selection.h"
+#include "sys/compose/compose_playhead_cursor.h"
+#include "sys/audio/inline_preview_cursor.h"
+#include "sys/audio/transport_player_actions.h"
 #include "sys/compose/compose_clipboard_selection.h"
 #include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
@@ -8009,6 +8012,228 @@ TEST_CASE("Production latched range uses the same selection for preview and comm
     (void)f.dispatch(committed);
     expect_t422(f.interaction->selected_objects == preview);
     expect_t422(f.history.undo.empty());
+}
+
+namespace {
+// Real SDL routing, command callbacks, cursor following and selection dispatch; audio
+// time is supplied explicitly so these workflow checks need no device or window.
+struct latched_playback_fixture_t {
+    t422_fixture_t editor;
+    inline_preview_cursor_t playback_cursor;
+    bool playing{};
+    int stops{};
+    std::optional<timing_lane_pseudonote_outcome_t> timing_stage;
+    command_registry_t registry;
+
+    explicit latched_playback_fixture_t(bool downscroll = false, bool cuts = false)
+        : editor(make_song(cuts)) {
+        editor.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+        editor.application.project.compose_view.requested_snap_denominators[1] = 8;
+        editor.application.services.transport_inline_active = [this] { return playing; };
+        editor.application.services.transport_preview_playing = [this] { return playing; };
+        editor.application.services.transport_active = [this] { return playing; };
+        editor.application.services.transport_play_pause = [this] {
+            playback_cursor.capture(&*editor.interaction);
+            playing = !playing;
+            return std::string{};
+        };
+        editor.application.services.transport_stop = [this] { playing = false; ++stops; };
+        editor.application.services.transport_cancel_restore = [this] {
+            playing = false;
+            ++stops;
+            expect_t422(!(playback_cursor.restore(editor.history, &*editor.interaction)));
+            return std::string{};
+        };
+        const command_dispatch_inputs_t environment{
+            .document = {.history = editor.history, .workspace = *editor.binding.value,
+                         .notifications = editor.sink},
+            .editor = {.commands = editor.application, .retained = editor.interaction,
+                       .timing_stage = timing_stage}};
+        registry = command_registry_t::from([environment](const command_invocation_context_t& context) {
+            const auto command = parse_application_command(context.command.value);
+            expect_t422(command.has_value());
+            return invoke_application_command(*command, environment);
+        });
+        refresh();
+    }
+
+    static auto make_song(bool cuts) -> song_document_t {
+        auto song = t422_song();
+        if (cuts) song.export_cuts = {{.id = object_id_t{9001},
+            .begin_milliseconds = 500, .end_milliseconds = 1000}};
+        return song;
+    }
+
+    void refresh() {
+        editor.project();
+        editor.harness.view().transport_available = true;
+        editor.harness.view().transport_playing = playing;
+        (void)editor.harness.frame();
+    }
+
+    void begin() {
+        (void)editor.dispatch(ctrl_space_frame(editor.harness));
+        (void)editor.dispatch(ctrl_space_frame(editor.harness, false));
+        expect_t422(editor.interaction->has_latched_range());
+        expect_t422(editor.interaction->active_snap_denominator == 8);
+        refresh();
+    }
+
+    auto key(SDL_Keycode keycode, SDL_Scancode scan, bool repeat = false,
+             bool repeat_in_frame = false) -> workspace_action_snapshot_t {
+        std::vector events{key_event(SDL_EVENT_KEY_DOWN, keycode, scan, repeat)};
+        if (repeat_in_frame) events.push_back(key_event(SDL_EVENT_KEY_DOWN, keycode, scan, true));
+        auto frame = editor.harness.frame(events);
+        const auto outcome = route_harness_shortcut(frame.get(), registry);
+        if (outcome.value.is_invoked()) {
+            // The application uses this same policy after shortcut invocation.
+            expect_t422(application_command_preserves_editor_gesture(outcome.value.command,
+                                                               &*editor.interaction));
+        } else {
+            (void)editor.dispatch(frame);
+        }
+        const auto up = key_event(SDL_EVENT_KEY_UP, keycode, scan);
+        (void)editor.dispatch(editor.harness.frame(std::span{&up, 1}));
+        refresh();
+        return frame;
+    }
+
+    void advance(double row) {
+        expect_t422(playing);
+        editor.application.project.transport.preview_playhead_absolute_row = row;
+        expect_t422(follow_compose_playhead(editor.history, *editor.interaction, row, true));
+        refresh();
+    }
+
+    auto tail() -> std::uint64_t {
+        const auto inspected = inspect_editor_interaction(editor.history, *editor.interaction);
+        const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
+        expect_t422(view);
+        const auto* range = view->gesture<space_range_selection_preview_t>();
+        expect_t422(range);
+        return range->cursor_canvas_row;
+    }
+};
+} // namespace
+
+TEST_CASE("Production latched range follows playback and Escape stops before cancelling",
+          "[frontend-state][event-harness][latched-playback]") {
+    const auto downscroll = GENERATE(false, true);
+    const auto cuts = GENERATE(false, true);
+    latched_playback_fixture_t f{downscroll, cuts};
+    const auto selected = f.editor.interaction->selected_objects;
+    const auto revision = f.editor.history.document.revision;
+    place_cursor_at(*f.editor.interaction, {measure_id_t{1}, 600});
+    f.refresh();
+    if (cuts) {
+        f.editor.interaction->retained_selection_range = position_span_t{
+            {measure_id_t{1}, 0}, {measure_id_t{1}, 120}};
+        f.editor.interaction->retained_canvas_selection_range = canvas_row_span_t{0, 120};
+        f.refresh();
+    }
+    f.begin();
+    expect_t422(f.editor.harness.drawn_text().find("Range latched") != std::string_view::npos);
+    const auto anchor = f.editor.interaction->gesture<pending_space_range_selection_t>()->anchor;
+    (void)f.key(SDLK_SPACE, SDL_SCANCODE_SPACE);
+    expect_t422(f.playing);
+    if (cuts) {
+        f.advance(480); // Right edge of the removed interval: keep source row identity.
+        expect_t422(f.tail() == 480);
+    }
+    f.advance(720.5);
+    expect_t422(f.tail() == 720);
+    expect_t422(f.editor.interaction->gesture<pending_space_range_selection_t>()->anchor == anchor);
+    expect_t422(f.editor.harness.drawn_text().find("Range follows playback") != std::string_view::npos);
+    // Reverse seeks change the endpoint, rather than accumulating a high-water mark.
+    f.advance(120.5);
+    expect_t422(f.tail() == 120);
+    f.advance(1080.5);
+    expect_t422(f.tail() == 1080);
+    const auto endpoint = capture_cursor_pose(*f.editor.interaction);
+    const auto stopped = f.key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE, false, true);
+    expect_t422(stopped.get().shortcut_events.size() == 1);
+    expect_t422(stopped.get().compose_inputs.empty());
+    expect_t422(!(f.playing));
+    expect_t422(f.stops == 1);
+    expect_t422(f.editor.interaction->has_latched_range());
+    expect_t422(capture_cursor_pose(*f.editor.interaction) == endpoint);
+    (void)f.key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE, true);
+    expect_t422(f.editor.interaction->has_latched_range());
+    (void)f.key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    expect_t422(!(f.editor.interaction->is_pending()));
+    expect_t422(!(worm_ui_nuklear_compose_state().range_selection.space_range_latched));
+    expect_t422(f.editor.interaction->selected_objects == selected);
+    expect_t422(f.editor.history.document.revision == revision);
+    expect_t422(f.editor.history.undo.empty());
+}
+
+TEST_CASE("Production Space stop and playback end retain a range for continuation and commit",
+          "[frontend-state][event-harness][latched-playback]") {
+    const auto natural_end = GENERATE(false, true);
+    latched_playback_fixture_t f;
+    f.begin();
+    (void)f.key(SDLK_SPACE, SDL_SCANCODE_SPACE);
+    f.advance(720.25);
+    if (natural_end) {
+        f.playing = false;
+        // An ended/reset transport must not pull the range back to its origin.
+        f.editor.application.project.transport.preview_playhead_absolute_row = 0;
+        f.refresh();
+    } else {
+        (void)f.key(SDLK_SPACE, SDL_SCANCODE_SPACE);
+    }
+    expect_t422(!(f.playing));
+    expect_t422(f.tail() == 720);
+    (void)f.key(SDLK_UP, SDL_SCANCODE_UP);
+    expect_t422(f.tail() > 720);
+    (void)f.key(SDLK_SPACE, SDL_SCANCODE_SPACE);
+    expect_t422(f.playing);
+    f.advance(1080.75);
+    (void)f.key(SDLK_SPACE, SDL_SCANCODE_SPACE, true);
+    expect_t422(f.playing);
+    expect_t422(f.tail() == 1080);
+    const auto inspected = inspect_editor_interaction(f.editor.history, *f.editor.interaction);
+    const auto& preview = *std::get<editor_interaction_view_model_t>(inspected)
+        .gesture<space_range_selection_preview_t>()->objects;
+    (void)f.editor.dispatch(ctrl_space_frame(f.editor.harness));
+    expect_t422(!(f.editor.interaction->is_pending()));
+    expect_t422(f.editor.interaction->selected_objects == preview);
+    expect_t422(f.editor.interaction->retained_selection_range.has_value());
+    expect_t422(f.editor.history.undo.empty());
+}
+
+TEST_CASE("Production latched range cancels on canvas outside lanes but survives transport toolbar",
+          "[frontend-state][event-harness][latched-playback]") {
+    const auto right_side = GENERATE(false, true);
+    latched_playback_fixture_t f;
+    f.begin();
+    const auto selected = f.editor.interaction->selected_objects;
+    const auto frames = f.editor.harness.click_widget("Play from cursor (Space)");
+    for (const auto& frame : frames) {
+        (void)dispatch_transport_player_action(frame.get(), f.editor.application, f.editor.sink);
+        (void)f.editor.dispatch(frame);
+    }
+    expect_t422(f.playing);
+    expect_t422(f.editor.interaction->has_latched_range());
+    expect_t422(worm_ui_nuklear_compose_state().range_selection.space_range_latched);
+    f.advance(720);
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto& view = f.editor.harness.view().compose;
+    const auto lane_edge = right_side ? view.playable_field_right_pixels + 12
+                                     : view.playable_field_left_pixels - 12;
+    const auto x = viewport->x + static_cast<float>(lane_edge * viewport->width / view.viewport_width_pixels);
+    const auto y = viewport->y + viewport->height * 0.5f;
+    const std::array down{mouse_motion(x, y), mouse_button(true, x, y)};
+    const auto cancelled = f.editor.harness.frame(down);
+    expect_t422(find_compose_input(std::vector{cancelled}, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE) != nullptr);
+    (void)f.editor.dispatch(cancelled);
+    const auto up = mouse_button(false, x, y);
+    (void)f.editor.dispatch(f.editor.harness.frame(std::span{&up, 1}));
+    expect_t422(!(f.editor.interaction->is_pending()));
+    expect_t422(!(worm_ui_nuklear_compose_state().range_selection.space_range_latched));
+    expect_t422(f.editor.interaction->selected_objects == selected);
+    expect_t422(f.editor.history.undo.empty());
 }
 
 TEST_CASE("Production off grid note drag commits its preview position and lane",

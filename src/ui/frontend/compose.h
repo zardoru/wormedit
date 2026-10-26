@@ -1503,6 +1503,7 @@ struct compose_view_t {
     bool area_selection_preview_visible{};
     wormedit::ui::compose_rect_t area_selection_preview_bounds{};
     WormUiComposeSelectionMode area_selection_preview_mode{};
+    bool inline_playback_active{};
     bool space_range_preview_visible{};
     wormedit::ui::compose_rect_t space_range_preview_bounds{};
     WormUiComposeSelectionMode space_range_preview_mode{};

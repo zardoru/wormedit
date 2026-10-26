@@ -1256,6 +1256,7 @@ auto dispatch_compose_selection_input(
             space_range_selection_action_t{
                 .mode = *selection_mode(input.selection_mode),
                 .minimum_snap_width = input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
+                .latched = input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
             });
         accepted = state.gesture<wormedit::pending_space_range_selection_t>() ? "Range selection started."
                                                        : "Range selection committed.";

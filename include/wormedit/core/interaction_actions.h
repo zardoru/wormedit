@@ -188,6 +188,7 @@ struct space_range_selection_action_t {
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     editor_selection_scope_t scope{};
     bool minimum_snap_width{};
+    bool latched{};
 };
 
 struct begin_editor_area_selection_action_t {

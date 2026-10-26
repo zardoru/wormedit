@@ -57,6 +57,8 @@ struct inline_preview_cursor_t {
                                editor_interaction_state_t* state) -> bool {
         const auto previous = std::exchange(anchor, std::nullopt);
         if (!previous || !state || state->chart != previous->chart) return false;
+        // A latched range keeps its last audible endpoint for manual continuation.
+        if (state->has_latched_range()) return false;
         (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
         const auto jumped = dispatch_editor_action(
             history, *state,

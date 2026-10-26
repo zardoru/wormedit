@@ -183,6 +183,7 @@ static bool g_notification_context_initialized{};
 static bool g_notification_modal{};
 static bool g_notification_project_modal{};
 static bool g_notification_escape_captured{};
+static bool g_compose_inline_playback_active{};
 // Esc deselects before it dismisses a toast: set each frame while Compose has something to clear.
 static bool g_compose_escape_has_selection{};
 
@@ -468,13 +469,17 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
 
     if (worm_ui_nuklear_setup_popup_owns_input()) return;
     if (!tap_capture && select_all_in_hovered_dock_list(*event)) return;
+    const auto transport_escape = worm_ui_nuklear_compose_state().range_selection.space_range_latched &&
+        g_compose_inline_playback_active;
     if (!tap_capture && event->key == SDLK_ESCAPE &&
-        g_context_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && has_compose_gesture_capture()) return;
+        g_context_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && has_compose_gesture_capture() &&
+        (!transport_escape || event->repeat)) return;
 
     if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
         project_dialog_active() || g_new_project_wizard.open,
         nuklear_text_entry_active(), compose_area_capture_active(),
-        compose_area_band_visible() && worm_ui_nuklear_compose_state().input_queue.keyboard_focus,
+        compose_area_band_visible() && worm_ui_nuklear_compose_state().input_queue.keyboard_focus &&
+            !transport_escape,
         event->key == SDLK_ESCAPE})) return;
 
     // SDL documents the usage-page-0x07 scancodes as the USB Keyboard/Keypad
@@ -732,6 +737,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_notification_view = {};
     g_notification_modal = false;
     g_notification_project_modal = false;
+    g_compose_inline_playback_active = false;
     g_compose_escape_has_selection = false;
     g_pending_file_action = {};
     g_options_keyboard = {};
@@ -3587,6 +3593,7 @@ static void remember_notification_frame(const wormedit::ui::workspace_view_t* vi
     g_notification_project_modal = view && project_modal_active(*view);
     g_notification_modal = g_notification_project_modal || (view && view->options.visible);
     g_options_keyboard.shortcut_capturing = view && view->options.visible && view->options.shortcut_capturing;
+    g_compose_inline_playback_active = view && view->compose.inline_playback_active;
     g_compose_escape_has_selection = view && view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
         (view->compose.selected_note_count != 0 || view->compose.selected_object_count != 0 ||
          view->compose.selected_bgm_event_count != 0 || view->compose.area_range_available);

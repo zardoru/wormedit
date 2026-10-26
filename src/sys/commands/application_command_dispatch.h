@@ -18,6 +18,9 @@
 namespace wormedit::sys {
 struct notification_history_runtime_t;
 
+[[nodiscard]] auto application_command_preserves_editor_gesture(
+    const std::optional<command_id_t>& command, const editor_interaction_state_t* state) -> bool;
+
 // Clear chart-specific state while retaining application services and user settings.
 void reset_application_project_edit_state(application_command_state_t& state);
 

@@ -3606,6 +3606,13 @@ static auto compose_idle_bgm_move_hint(const wormedit::ui::compose_view_t& view)
     return "drag BGM to move";
 }
 
+static auto compose_range_status_hint(const wormedit::ui::compose_view_t& view) -> const char* {
+    if (!state.range_selection.space_range_latched) return nullptr;
+    return view.inline_playback_active
+        ? "Range follows playback · Esc: stop, then cancel · Ctrl+Space: select"
+        : "Range latched · Esc/outside lanes: cancel · Ctrl+Space: select · Space: play";
+}
+
 auto compose_editor_status_hint(const wormedit::ui::compose_view_t* view, const wormedit::ui::timing_view_t* timing_view)
     -> const char* {
     if (const auto* conflict = compose_move_status_hint(view))
@@ -3613,6 +3620,8 @@ auto compose_editor_status_hint(const wormedit::ui::compose_view_t* view, const 
     if (view && view->paste_active)
         return view->paste_valid ? "Paste preview · click or Enter commits · Esc cancels"
                                 : (view->paste_diagnostic.data() ? view->paste_diagnostic.data() : "Paste collision");
+    if (const auto* range = compose_range_status_hint(*view))
+        return range;
     if (state.timing_drag.timing_stage_drag_active)
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.waveform_drag.beat_fit_drag_active)

@@ -1374,4 +1374,14 @@ auto invoke_application_command(application_command_t command,
     return finished;
 }
 
+auto application_command_preserves_editor_gesture(
+    const std::optional<command_id_t>& command, const editor_interaction_state_t* state) -> bool {
+    if (!command) return false;
+    const auto& id = command->value;
+    if (id == "timing.tap" || id == "workspace.options" || id == "view.notifications") return true;
+    if (!state || !state->has_latched_range()) return false;
+    return id == "transport.play_stop" || id == "transport.play_pause" ||
+        id == "transport.play_from_start" || id == "transport.stop" || id == "selection.clear";
+}
+
 } // namespace wormedit::sys

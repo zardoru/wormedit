@@ -374,6 +374,7 @@ struct pending_space_range_selection_t {
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     editor_selection_scope_t scope{};
     std::uint64_t minimum_span_rows{};
+    bool latched{};
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const space_range_selection_action_t&)
         -> diagnosed_t<std::optional<pending_space_range_selection_t>>;

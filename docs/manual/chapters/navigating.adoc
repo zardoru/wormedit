@@ -157,7 +157,13 @@ can skip around without stopping.
 * Hold kbd:[Shift] and move with kbd:[Up], kbd:[Down] or the page keys: the range grows from where
 you started. Releasing kbd:[Shift] selects everything in it.
 * kbd:[Ctrl+Space] starts a range that stays open without holding a key. Move the cursor (or
-scroll), then press kbd:[Ctrl+Space] again to select it, or kbd:[Escape] to cancel.
+scroll), then press kbd:[Ctrl+Space] again to select it. kbd:[Space] starts or stops playback
+without closing the range: its tail follows the playhead, including backward seeks, and stays
+at the last position when playback stops or ends. Continue with cursor movement/scrolling,
+or start playback again. During playback, kbd:[Escape] stops and keeps the range; press
+kbd:[Escape] again while stopped to cancel it. Left-clicking the chart canvas outside the playable
+lanes also cancels; transport buttons and clicks on the inspector background keep the range.
+The status hint shows whether the range is latched or following playback.
 
 == Workspace tabs
 

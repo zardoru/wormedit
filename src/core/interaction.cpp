@@ -581,7 +581,7 @@ static auto follow_editor_playhead_impl(document_history_t& history,
     const auto* chart = history.read_chart(state.chart);
     if (!chart || !geometry.index || !std::isfinite(target_scroll) ||
         !std::isfinite(following_anchor_fraction) || !std::isfinite(cursor_subrow) ||
-        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || state.is_pending())
+        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || !state.can_follow_playhead())
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
     if (geometry.chart != state.chart || geometry.document_revision != history.document.revision)

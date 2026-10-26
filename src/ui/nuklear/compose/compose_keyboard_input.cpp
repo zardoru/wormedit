@@ -259,6 +259,8 @@ static bool process_compose_escape(const auto& key_event,
                                    const wormedit::ui::compose_view_t* view,
                                    wormedit::ui::workspace_action_t* action) {
     if (key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return false;
+    // Escape belongs to the transport first; the next non-repeated press cancels.
+    if (state.range_selection.space_range_latched && view->inline_playback_active) return true;
     const auto pending = has_compose_gesture_capture();
     if (!pending && view->resource_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
@@ -425,7 +427,7 @@ static void release_discarded_compose_keys(wormedit::ui::workspace_action_t* act
 }
 
 static void cancel_compose_shift_range(wormedit::ui::workspace_action_t* action) {
-    if (!state.range_selection.space_range_hold_active) return;
+    if (!state.range_selection.space_range_hold_active || state.range_selection.space_range_latched) return;
     append_compose_cancel_once(action);
     state.range_selection.space_range_hold_active = false;
     state.range_selection.space_range_latched = false;

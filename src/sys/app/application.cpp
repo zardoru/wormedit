@@ -2739,9 +2739,8 @@ struct application_t::implementation_t {
                           application_command_focus(action, session.workspace),
                           application_primary_modifier());
             tap_event_ns.reset();
-            if (!dispatched.value.command || (dispatched.value.command->value != "timing.tap" &&
-                                        dispatched.value.command->value != "workspace.options" &&
-                                        dispatched.value.command->value != "view.notifications"))
+            if (!application_command_preserves_editor_gesture(dispatched.value.command,
+                    views.compose_interaction_state ? &*views.compose_interaction_state : nullptr))
                 preserves_editor_gesture = false;
             if (dispatched.value.status == command_dispatch_status_t::invoked) {
                 handled = true;

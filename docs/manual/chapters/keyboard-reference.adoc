@@ -60,7 +60,7 @@ command menu or *Options → Input & shortcuts* to customize the current layout.
 |Select the range the cursor passes over.
 
 |kbd:[Ctrl+Space]
-|Start or finish a range selection that stays open without holding a key.
+|Start or finish a latched range. Space toggles playback while its tail follows; Escape stops playback first, then cancels the range when stopped.
 
 |kbd:[Ctrl+G]
 |Go to measure.

@@ -659,6 +659,7 @@ auto pending_space_range_selection_t::begin(editor_edit_context_t& context,
                                  ? context.scope.chart.divisions_per_standard_measure /
                                        state.active_snap_denominator
                                  : 0,
+        .latched = action.latched,
     }};
 }
 

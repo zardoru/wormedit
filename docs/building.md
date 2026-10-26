@@ -77,6 +77,58 @@ cmake --build --preset linux-cross-headless
 
 The full application cross-build will receive a separate preset after SDL3 GPU, audio decoder, and packaging dependencies have target-side discovery rules. This avoids accidentally linking host libraries into a Linux artifact.
 
+## Linux AppImage release
+
+On an x86_64 Linux host with Docker (no host linuxdeploy/appimagetool required):
+
+```sh
+git submodule update --init
+scripts/linux-appimage.sh [output-dir]     # default: build/dist; at most 3 jobs
+```
+
+The script builds a Release application, Lua, both offline manuals and an LGPL
+FFmpeg inside the digest-pinned Ubuntu 22.04 container in
+`packaging/linux/Dockerfile`. Runtime requirements are **x86_64, glibc 2.35 or
+newer**, an X11 or Wayland session, and a working Vulkan driver (the same GPU
+requirements as the native application). Graphics drivers and glibc stay on the
+host; linuxdeploy's excludelist plus explicit GL/Vulkan exclusions keep them out
+of the image. GCC 14 provides the application’s C++23 library features; its C++ runtime is bundled.
+The container uses the existing `WORMEDIT_WARNINGS_AS_ERRORS=OFF` option because
+older GCC diagnoses valid vector/optional operations at `-O3`; warnings remain
+visible and native GATE keeps its normal policy (see `packaging/linux/README.md`). Test older distributions separately;
+building against this floor does not prove every desktop/driver combination.
+
+CMake, linuxdeploy, appimagetool, the AppImage runtime and FFmpeg use fixed release
+URLs with recorded SHA-256 checks. The runtime is supplied to appimagetool so it
+cannot silently fetch a moving release. Ubuntu/PPA security updates remain
+allowed; this is not a bit-reproducible package lock. All builds, including
+FFmpeg and SquashFS compression, use at most three jobs. Set
+`WORMEDIT_BUILD_JOBS=1|2|3` to reduce the application/compression count; the cached
+FFmpeg SDK build uses three. The reusable build directory is
+`build/linux-appimage`; delete it for a fresh application build.
+
+The filename uses `WORMEDIT_VERSION` from the container's configured `config.h`,
+including a pre-release suffix when configured. The output includes a SHA-256
+sidecar, installed file inventory and an `ldd` dependency report. Unresolved
+libraries or GPL/nonfree FFmpeg settings abort packaging. Assets, fonts,
+`manual/index.html`, Lua reference and `third-party/` notices stay beside the
+executable under `usr/bin/` inside the image. FFmpeg's source archive, license and
+build configuration are included; keep them when redistributing. For a custom
+native FFmpeg SDK install, set `WORMEDIT_FFMPEG_NOTICES_DIR` to that same notice
+layout; system zlib can use `WORMEDIT_ZLIB_NOTICE_FILE`.
+
+```sh
+chmod +x wormedit-*-x86_64.AppImage
+./wormedit-<version>-x86_64.AppImage
+./wormedit-<version>-x86_64.AppImage --appimage-extract-and-run
+```
+
+The second launch supports systems without usable FUSE. For inspection,
+`--appimage-extract` writes `squashfs-root/` in the current directory. Run release
+smokes only inside isolated Xvfb: open a copied manual fixture, play it, export a
+chart and open Help → User manual; inspect captures before claiming success.
+`packaging/linux/wormedit.png` is the single replaceable placeholder for owner art.
+
 ## Cross-compiling the headless core for Windows from Linux
 
 The Windows toolchain is likewise compiler-agnostic and works with a MinGW-w64 GCC toolchain or a suitably configured Clang toolchain:

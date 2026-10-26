@@ -109,10 +109,10 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-763 Package Linux as an AppImage
 
-- **Status:** ready
+- **Status:** partial (2026-10-26; package/runtime checks pass; required GATE has one unchanged application-test failure)
 - **Outcome:** `scripts/linux-appimage.sh [output-dir]` builds `wormedit-1.0.0-rc1-x86_64.AppImage` from a Release build inside a pinned old-glibc container; the image starts on this machine in isolated Xvfb (and with `--appimage-extract-and-run`), finds its assets and offline manual, plays audio, exports a chart, and carries all third-party license notices.
 - **Read first:** `CMakeLists.txt` (install rules near `install(TARGETS wormedit`), `cmake/windows-runtime.cmake` (license list), `cmake/wormedit_manual.cmake`, `docs/building.md`, `scripts/windows-cross-package.sh` (script shape to mirror).
-- **Files owned:** new `scripts/linux-appimage.sh`, new `packaging/linux/` (Dockerfile, `.desktop`, AppStream metadata if added, placeholder icon), new `cmake/third-party-notices.cmake` (shared license install used by Linux and Windows; replace the duplicated list in `cmake/windows-runtime.cmake`), `CMakeLists.txt` (include it and Linux desktop-file install only), `docs/building.md` (Linux packaging section).
+- **Files owned:** new `scripts/linux-appimage.sh`, new `packaging/linux/` (Dockerfile, `.desktop`, AppStream metadata if added, placeholder icon), new `cmake/third-party-notices.cmake` (shared license install used by Linux and Windows; replace the duplicated list in `cmake/windows-runtime.cmake`), new `cmake/notices/` (owner-authorized libotoworm MIT terms and upstream SHA-256, GCC and SDL/Khronos notices; supporting-file extension for complete redistribution notices), `CMakeLists.txt` (include it and Linux desktop-file install only), `docs/building.md` (Linux packaging section).
 - **Steps:**
   1. Container: pin a base image old enough for broad glibc support (e.g. Ubuntu 22.04) with the compiler, CMake, SDL3 build deps and an LGPL FFmpeg; document the glibc floor.
   2. Install into an AppDir, add the `.desktop` file and icon, bundle libraries with pinned `linuxdeploy`/`appimagetool` releases (checksums recorded); exclude GPU/Vulkan/GL driver libraries and libc per the AppImage excludelist.
@@ -121,6 +121,26 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Invariants:** assets keep resolving through `SDL_GetBasePath` next to the binary; the native and Windows install layouts stay unchanged apart from the shared license step.
 - **Reject/failure behavior:** a missing bundled library, unresolved dependency or GPL FFmpeg fails the script.
 - **Verify:** script exit status, AppImage launch screenshots (inspected), GATE (CMake changes), the Windows package still lists the same licenses.
+- **Done so far:** implementation committed as `5d6c29e`; the pinned Ubuntu 22.04/GCC 14 Release build, common notices and all Linux runtime/package checks pass. No application/test source changed from `538f511`.
+- **Remaining:** owner resolves the timing-stage failure below and reruns GATE; T-762 confirms the actual Windows zip after integrating the shared installer; T-766 rebuilds the merged T-761 version as `1.0.0-rc1` (this isolated pre-T-761 branch configures `0.1.0`). Application defects are reported, not fixed in this lane.
+- **Verification evidence (2026-10-26):** logs, captures, reproductions and artifact sidecars are under `/tmp/wormedit-lanes/rc1/hydra/`; `findings.md` records the GCC optimizer findings, unavailable BMS-to-osu UI projection choice and the deterministic timing-stage failure.
+  - `scripts/linux-appimage.sh /tmp/wormedit-lanes/rc1/hydra/dist` exited 0: `wormedit-0.1.0-x86_64.AppImage`, 57,252,344 bytes; SHA-256 `e4dab88f865c00365f2a83722e6b8269eaf46d28042d351a36ad7dc28662af82`. Real tail: `Highest required GLIBC: 2.35`, `Success`, `/out/wormedit-0.1.0-x86_64.AppImage: 57252344 bytes`.
+  - `dist/wormedit-0.1.0-x86_64.AppImage.libraries.txt` records resolved dependencies: `libavcodec.so.63`, `libavformat.so.63`, `libavutil.so.61`, `libswresample.so.7`, `libswscale.so.10`, `libstdc++.so.6`, `libgcc_s.so.1`; no libc/GPU-driver libraries or development SDKs. FFmpeg `CONFIG_GPL`, `CONFIG_NONFREE`, `CONFIG_VERSION3` are 0.
+  - Inspected `normal-compose.png`, `extract-compose.png`, `export-bms-complete.png`, `manual-browser.png`: normal and explicit `--appimage-extract-and-run` launches render assets and play the packaged tutorial; both captured finite F32LE stereo/44.1 kHz PCM with peak 0.334113. BMS export writes a chart plus 4 byte-identical Ogg assets. Help opens the mounted offline manual. Packaged Lua reference check: `Lua API: 13 HTML pages, local links/anchors and offline assets passed`.
+  - Windows-layout notice-only CMake install passes: 46 files, original five notice paths preserved, FFmpeg SDK auto-discovered, SDL embedded notices/source snapshot checked (`windows-notices.log`, `windows-notices.files.txt`); this is not a Windows zip runtime check. Shell syntax, desktop-file validation and whitespace pass.
+  - Documentation checks after the card update: `100% tests passed out of 6` (`documentation-final.log`).
+  - Full GATE output (copied to `gate-native/`); isolated test 3984 rerun also fails: row 9120 at the removed interval seam, cuts enabled, both scroll directions; 70 assertions pass and 2 fail. Reproduce: `ctest --test-dir build --output-on-failure -j 1 -R '^frontend-state\.Timing stage preserves fine row targets from the drawn cut axis$'`.
+
+    ```text
+    gate: 3 job(s), set explicitly; logs in /tmp/wormedit-gate.rdUjnT
+      pass  build
+      FAIL  ctest  (/tmp/wormedit-gate.rdUjnT/ctest.log)
+      pass  whitespace
+      pass  complexity
+      99% tests passed, 1 tests failed out of 5304
+    gate: FAILED (ctest)
+    ```
+
 - **Out of scope:** Flatpak, distro packages, AppImage update information, the final icon (owner art; the placeholder lives in one path so it can be swapped).
 
 ## T-764 Stage an unsigned macOS app bundle for owner verification

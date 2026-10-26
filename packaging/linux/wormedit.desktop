@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wormedit
+Comment=Rhythm chart editor
+Exec=wormedit %F
+Icon=wormedit
+Terminal=false
+Categories=AudioVideo;Audio;Music;

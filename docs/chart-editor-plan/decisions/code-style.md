@@ -151,6 +151,11 @@ it in new code even before the card lands.
 - **Use the dependency instead of hand-rolling:** FFmpeg, miniaudio, iconv, nlohmann::json,
   stb_image and SDL3 already cover their formats and utilities. A new hand-written binary or
   file-format parser needs a stated reason in this file.
+- **Every persisted change bumps the native schema (owner, 2026-10-26).** Adding, removing,
+  renaming or reinterpreting a field written by `native_project.cpp` raises
+  `current_document_schema_version` and adds a migration step, even when the field is optional.
+  Builds refuse newer schemas, so an unbumped optional field would be silently dropped by an
+  older build's next save instead of refused.
 
 ## Repetition and scaffolding (owner, 2026-10-15)
 

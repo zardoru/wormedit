@@ -48,6 +48,7 @@
 12. Should the native project ship first as a human-readable folder/manifest, a single-file archive, or both?
    - **Provisional default (unconfirmed):** Single-file archive is not started; keep the current whole-document JSON and folder work.
    - **Answered (2026-09-30):** Single JSON project file with assets in the song folder beside it; no archive or manifest (T-123).
+   - **Confirmed for 1.0 (owner, 2026-10-26):** folder form is the release format because charters work with the assets directly; an archive could only ever be an export bundle. A build refuses a project whose schema is newer than it supports.
    - **Blocks:** native-project packaging. Do not start it until the user answers.
 13. Which MIDI features beyond notes, tempo, meter, markers, and controller data must the first Lua API expose (for example pitch bend, aftertouch, lyrics, or SysEx)?
    - **Provisional default (unconfirmed):** Notes, tempo, meter, markers, and controller data only.

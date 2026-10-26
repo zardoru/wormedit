@@ -16,7 +16,6 @@
 - Specify UI naming and default scratch placement for BMS 10K/14K split-stage profiles.
 - Scope the first storyboard milestone between standalone `.osb` and difficulty-specific `.osu` events.
 - Validate the selected miniaudio decoder and Lua runtime integrations on Windows and Linux, then decide the later WAV/FLAC decoder path.
-- Choose folder/manifest, single-file archive, or dual packaging for the native project format.
 - Finalize the first structured MIDI/Lua API surface beyond core notes, timing, tracks, channels, velocities, controllers, and markers.
 - Complete the finer straight/tuplet note-snap color table beyond the initial red, blue, and yellow classes.
 - Choose BMS detector candidates/aliases, confidence threshold, and whether to package GNU libiconv on every platform or normalize system implementations behind one wrapper.

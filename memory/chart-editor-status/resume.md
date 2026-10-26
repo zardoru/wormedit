@@ -1,5 +1,34 @@
 # Status: resume checklist
 
+## Release 1.0.0-rc1 (owner, 2026-10-26)
+
+Main is frozen for features. Work the [release cards](../../docs/chart-editor-plan/tasks/release-1-0.md)
+in this order; Windows and Linux first, macOS staged for the owner's own Mac:
+
+- **T-760** schema 24 for bookmark list order, plus the key-set guard (ready).
+- **T-761** `1.0.0` + `-rc1` version suffix (ready).
+- **T-762** Windows release zip checked under Wine (ready; consumes T-761 for its name).
+- **T-763** Linux AppImage and shared third-party notices (ready).
+- **T-764** unsigned macOS bundle and owner checklist (ready; owner verifies on the Mac).
+- **T-765** release notes and known limitations (blocked-on T-762, T-763).
+- **T-766** release gate and local `v1.0.0-rc1` tag; the owner pushes (blocked-on T-760–T-763, T-765).
+
+Owner decisions: folder-form project format for 1.0 (open question 12), refuse newer schemas,
+every persisted change bumps the schema (`code-style.md`), unsigned ad-hoc-signed macOS app.
+T-58 and the remaining feature cards are deferred past 1.0.
+
+Landed on main since the 2026-10-25 entries below (2026-10-26, not separately carded):
+virtual-tail note painting and Redo across selection changes (`c7d45b8`); native macOS build
+fixes (`ba2ce77`); SV recipe spans kept visible after export cuts (`1298c4e`); static background
+images in StepMania exports (`28bbf3e`); latched range selection through playback (`ed52ef7`);
+Lua SV span and point generation (`eca2979`) with a step-by-step scripting chapter (`b8767f3`);
+the MP3 osu! hitsound manual workflow (`9a5f02c`); Compose timing rendering, placement, graph
+stability and exact row arithmetic (`ac69215`, `f73e41b`); export-cut boundary rounding and
+resize grips (`fc87754`); timing-span endpoint grips (`25c3957`); covered taps consumed when
+extending holds (`5040e33`); bookmark sorting and manual reordering (`a18480e`, persisted
+without a schema bump; T-760 fixes that). The `f73e41b` note about a clang-tidy 23.1.2/23.1.3
+mismatch is resolved: the installed clang-tidy is 23.1.3, matching the baseline.
+
 Completed the owner-requested **Lua API documentation follow-up** (2026-10-25):
 `docs/lua-api/` documents API v1 with pinned LDoc generation, linked generator/SV
 references and three examples tested through the actual Lua backends. The offline

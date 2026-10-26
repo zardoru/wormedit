@@ -151,7 +151,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 ## T-58 Add 48K stage focus
 
-- **Status:** ready (T-57 is done; dependency cleared 2026-10-19)
+- **Status:** deferred (after 1.0, owner 2026-10-26; was: ready, T-57 is done; dependency cleared 2026-10-19)
 - **Outcome:** on BMSON 48K charts, a stage selector limits lane-key input to one 24-key bank and highlights it.
 - **Read first:** `include/wormedit/core/lane_profiles.h` (`make_bmson_generic_48k_profile`), `src/sys/compose/input/compose_input.cpp`, `docs/chart-editor-plan/editing/interactions.md`.
 - **Files owned:** `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/views/compose_view.cpp`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `src/ui/nuklear/compose/compose_toolbar.cpp`, focused input/interaction regressions including `tests/core/interaction_tests.cpp`; extend the existing chart/session focus owner explicitly before adding state.

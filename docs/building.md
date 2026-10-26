@@ -265,7 +265,7 @@ the installer before continuing), install [Homebrew](https://brew.sh/), then:
 brew install cmake ninja pkgconf asciidoctor python ffmpeg
 git submodule update --init --recursive
 scripts/macos-package.sh
-# Optional output directory and CMake version override, after T-761 is merged:
+# Optional output directory and version override (empty suffix for a final release):
 # scripts/macos-package.sh build/dist -DWORMEDIT_VERSION_SUFFIX=-rc1
 ```
 
@@ -290,9 +290,8 @@ separate verification on that OS. This is a single-architecture build, with no
 claim of compatibility with older Macs or macOS versions.
 
 Output is `build/dist/Wormedit-<full-version>-macos-<arch>.zip` and a SHA-256
-sidecar. The full version uses `WORMEDIT_VERSION_FULL` from T-761, falling back to
-numeric `PROJECT_VERSION` before that merge; both plist version fields stay
-numeric. The archive contains `Wormedit.app`; it has an ad-hoc signature, with no
+sidecar. The full version is `WORMEDIT_VERSION_FULL` (`1.0.0-rc1`); both plist version fields stay
+numeric (`1.0.0`). The archive contains `Wormedit.app`; it has an ad-hoc signature, with no
 Developer ID, notarization, hardened runtime or entitlements. The script signs
 nested libraries after rewriting paths and verifies the complete signature.
 It writes revision, tracked local changes, macOS/compiler details and a complete
@@ -318,13 +317,9 @@ The placeholder W icon is generated with the macOS SDK by
 `packaging/macos/generate-icon.swift`; replace that one generator with owner art,
 then delete `build/macos-release-<arch>/macos-icon` and rebuild to refresh it.
 
-**Merge prerequisite (T-763/T-764):** `cmake/third-party-notices.cmake` is supplied
-by the Linux lane. Its shared destination must be
-`Wormedit.app/Contents/Resources/third-party` before the notices include runs;
-`cmake/macos-bundle.cmake` records the integration TODO. Notices should use the
-application's default `Wormedit` install component. The package script
-refuses to archive without this directory; no second license list is maintained
-here. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
+Third-party notices come from the shared `cmake/third-party-notices.cmake`, installed into
+`Wormedit.app/Contents/Resources/third-party` under the `Wormedit` component; the package
+script refuses to archive without them. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
 GPL components. This command produces a local owner-verification build, not an
 LGPL-only release artifact. Public redistribution needs the matching notices,
 source/compliance materials for its actual recursive dependency set, or a

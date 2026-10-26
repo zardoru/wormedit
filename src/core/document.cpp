@@ -124,12 +124,10 @@ struct chart_read_index_t {
 };
 
 auto song_document_t::read_charts() const -> std::span<const chart_document_t* const> {
-    auto index = chart_read_slot.value_.load();
-    while (!index || !index->matches(*this)) {
-        auto replacement = std::make_shared<const chart_read_index_t>(*this);
-        if (chart_read_slot.value_.compare_exchange_strong(index, replacement))
-            index = std::move(replacement);
-    }
+    std::lock_guard lock(chart_read_slot.mutex_);
+    auto& index = chart_read_slot.value_;
+    if (!index || !index->matches(*this))
+        index = std::make_shared<const chart_read_index_t>(*this);
     return index->charts;
 }
 

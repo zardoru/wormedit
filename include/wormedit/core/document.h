@@ -13,7 +13,6 @@
 #include <wormedit/core/export_cut.h>
 
 #include <algorithm>
-#include <atomic>
 #include <span>
 #include <array>
 #include <compare>
@@ -21,6 +20,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1092,14 +1092,20 @@ struct song_document_t;
 class chart_read_slot_t {
   public:
     chart_read_slot_t() = default;
-    chart_read_slot_t(const chart_read_slot_t& other) noexcept : value_(other.value_.load()) {}
+    chart_read_slot_t(const chart_read_slot_t& other) noexcept {
+        std::lock_guard lock(other.mutex_);
+        value_ = other.value_;
+    }
     auto operator=(const chart_read_slot_t& other) noexcept -> chart_read_slot_t& {
-        value_.store(other.value_.load());
+        if (this == &other) return *this;
+        std::scoped_lock lock(mutex_, other.mutex_);
+        value_ = other.value_;
         return *this;
     }
   private:
     friend struct song_document_t;
-    mutable std::atomic<std::shared_ptr<const chart_read_index_t>> value_;
+    mutable std::mutex mutex_;
+    mutable std::shared_ptr<const chart_read_index_t> value_;
 };
 
 inline constexpr std::uint32_t current_document_schema_version = 23;

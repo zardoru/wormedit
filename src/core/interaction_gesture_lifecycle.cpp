@@ -28,6 +28,7 @@ auto pending_note_duration_gesture_t::begin(editor_edit_context_t& context, obje
         .notes = std::move(plan.notes),
         .preview_end = plan.reference_end,
         .preview = duration_previews(plan),
+        .removals = std::move(plan.removals),
     }};
 }
 
@@ -56,6 +57,7 @@ auto pending_note_duration_gesture_t::revise(editor_edit_context_t& context, loc
     const auto& plan = std::get<duration_resize_plan_t>(planned);
     preview_end = plan.reference_end;
     preview = duration_previews(plan);
+    removals = plan.removals;
     return {};
 }
 
@@ -1004,6 +1006,12 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
         return std::nullopt;
     if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
         return editor_interaction_result_t{.diagnostics = *failure};
+    if (std::ranges::any_of(placement.removals, [&](object_id_t id) {
+            const auto* note = context.scope.chart.find_note(id);
+            return note && note->sound && !note->osu_hitsample;
+        }))
+        return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Linked BMSON stem hold placement cannot consume keysounded notes")}};
     auto prepared = prepare_stem_hold_document(context, pending, placement, **channel, geometry);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
         return editor_interaction_result_t{.diagnostics = *failure};
@@ -1023,6 +1031,12 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
 auto stage_scoped_hold(document_command_transaction_t& transaction, chart_id_t chart,
     const pending_hold_t& pending, const hold_placement_plan_t& placement, local_position_t snapped)
     -> attempt_t<editor_edit_effect_t> {
+        auto diagnostics = stage_hold_note_consumption(transaction, chart, placement.removals);
+        if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+        std::vector<object_id_t> deletions;
+        const auto* remaining = transaction.read_chart(chart);
+        for (const auto id : placement.removals)
+            if (remaining->find_note(id)) deletions.push_back(id);
         std::vector<bms_native_event_t> additions;
         if (placement.adds_note)
             additions.push_back(note_t{.position = placement.head, .lane = pending.lane,
@@ -1030,7 +1044,7 @@ auto stage_scoped_hold(document_command_transaction_t& transaction, chart_id_t c
                 .end = placement.tail, .sound = pending.sound,
                 .semantic_layers = pending.layers.value_or(std::vector<layer_id_t>{}),
                 .osu_hitsample = pending.hitsample});
-        auto staged = transaction.stage_bms_native_events(chart, placement.removals,
+        auto staged = transaction.stage_bms_native_events(chart, deletions,
             additions, "Place hold note");
         if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
         return {.value = editor_edit_effect_t{.label = "Place hold note", .cursor = snapped,
@@ -1077,6 +1091,8 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
     auto transaction = document_command_transaction_t(history);
+    auto diagnostics = stage_hold_note_consumption(transaction, state.chart, placement.removals);
+    if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     std::optional<object_id_t> id;

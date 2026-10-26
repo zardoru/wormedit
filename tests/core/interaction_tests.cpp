@@ -3390,6 +3390,117 @@ TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][int
     CHECK(note.position == local_position_t{measure_id_t{1}, 240});
 }
 
+namespace {
+auto make_hold_consumption_song(int sound_mode, bool resizing) -> song_document_t {
+    auto song = make_paint_sound_song();
+    song.charts.front().sound_layer_defaults.clear();
+    auto& notes = song.charts.front().measures.front().notes;
+    notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+             {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}}};
+    if (resizing) notes.front().sound = resource_id_t{7};
+    if (sound_mode == 1 || sound_mode == 3) notes.back().sound = resource_id_t{7};
+    if (sound_mode >= 2) notes.back().osu_hitsample = osu_hitsample_t{.clap = true};
+    notes.back().provenance = {.family = format_family_t::bms, .profile = "test"};
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+void preview_hold_consumption(document_history_t& history, editor_interaction_state_t& state, bool resizing) {
+    constexpr local_position_t tail{measure_id_t{1}, 720};
+    REQUIRE(dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{begin_note_duration_gesture_action_t{object_id_t{101}}}
+        : editor_interaction_action_t{begin_hold_action_t{{measure_id_t{1}, 0}}}));
+    const auto preview = dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{update_note_duration_gesture_action_t{tail}}
+        : editor_interaction_action_t{update_hold_preview_action_t{tail}});
+    REQUIRE(preview);
+    CHECK_FALSE(preview.document_changed);
+    CHECK(note_count(history) == 2);
+}
+
+void check_hold_consumption_preview_removals(const editor_interaction_state_t& state, bool resizing) {
+    const auto& removals = resizing ? state.gesture<pending_note_duration_gesture_t>()->removals
+                                   : *state.hold()->placement_preview->removals;
+    const auto expected = resizing ? std::vector{object_id_t{102}}
+                                  : std::vector{object_id_t{101}, object_id_t{102}};
+    CHECK(removals == expected);
+}
+
+void commit_hold_consumption(document_history_t& history, editor_interaction_state_t& state, bool resizing) {
+    constexpr local_position_t tail{measure_id_t{1}, 720};
+    const auto result = dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{update_note_duration_gesture_action_t{
+            .reference_end = tail, .operation = proposal_operation_t::apply}}
+        : editor_interaction_action_t{commit_hold_action_t{tail}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    CHECK(result.diagnostics.empty());
+    CHECK(note_count(history) == 1);
+}
+
+void check_consumed_hold(const document_history_t& history, bool resizing) {
+    const auto& chart = history.document.charts.front();
+    const auto& hold = chart.measures.front().notes.front();
+    CHECK(hold.kind == note_kind_t::hold);
+    CHECK(hold.end == local_position_t{measure_id_t{1}, 720});
+    if (resizing) CHECK(hold.sound == resource_id_t{7});
+}
+
+void check_consumed_keysound(const document_history_t& history, const note_t& original, int sound_mode) {
+    const auto& chart = history.document.charts.front();
+    const auto& bgm = chart.measures.front().bgm_events;
+    REQUIRE(bgm.size() == (sound_mode == 1 ? 1 : 0));
+    if (sound_mode != 1) return;
+    CHECK(bgm.front() == bgm_event_t{.id = original.id, .position = original.position,
+        .source_lane = bgm.front().source_lane, .sound = original.sound,
+        .provenance = original.provenance, .semantic_layers = original.semantic_layers,
+        .end = original.end});
+}
+
+void check_hold_consumption_history(document_history_t& history, const std::vector<note_t>& original) {
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().notes == original);
+    CHECK(history.document.charts.front().measures.front().bgm_events.empty());
+    REQUIRE(redo_document_command(history));
+    CHECK(note_count(history) == 1);
+}
+} // namespace
+
+TEST_CASE("Hold drawing and duration dragging consume taps according to their sound semantics",
+          "[unit][core][interaction][hold][consumption]") {
+    const auto sound_mode = GENERATE(0, 1, 2, 3);
+    const auto resizing = GENERATE(false, true);
+    auto history = document_history_t::from(make_hold_consumption_song(sound_mode, resizing));
+    const auto original = history.document.charts.front().measures.front().notes;
+    auto state = make_state(history);
+    preview_hold_consumption(history, state, resizing);
+    check_hold_consumption_preview_removals(state, resizing);
+    commit_hold_consumption(history, state, resizing);
+    check_consumed_hold(history, resizing);
+    check_consumed_keysound(history, original.back(), sound_mode);
+    check_hold_consumption_history(history, original);
+    check_consumed_keysound(history, original.back(), sound_mode);
+}
+
+TEST_CASE("Hold union preserves a consumed keysounded hold and its end in BGM",
+          "[unit][core][interaction][hold][consumption]") {
+    auto song = make_hold_consumption_song(1, false);
+    auto& covered = song.charts.front().measures.front().notes.back();
+    covered.kind = note_kind_t::hold;
+    covered.end = local_position_t{measure_id_t{2}, 0};
+    const auto original = song.charts.front().measures.front().notes;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    preview_hold_consumption(history, state, false);
+    check_hold_consumption_preview_removals(state, false);
+    commit_hold_consumption(history, state, false);
+    CHECK(history.document.charts.front().measures.front().notes.front().end ==
+          local_position_t{measure_id_t{2}, 0});
+    check_consumed_keysound(history, original.back(), 1);
+    check_hold_consumption_history(history, original);
+}
+
 TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atomically",
           "[unit][core][interaction][gesture][hold]") {
     auto history = document_history_t::from(make_song());
@@ -3905,7 +4016,8 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
          .lane = lane_id_t{1},
          .kind = note_kind_t::hold,
          .end = local_position_t{measure_id_t{1}, 240}},
-        {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1},
+         .kind = note_kind_t::mine},
     };
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
@@ -4839,7 +4951,8 @@ TEST_CASE("duration resizing applies the reference delta to every selected note"
          .end = local_position_t{measure_id_t{1}, 480}},
     };
     song.charts.front().measures.back().notes = {
-        {.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}},
+        {.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2},
+         .kind = note_kind_t::mine},
     };
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
@@ -5933,7 +6046,7 @@ TEST_CASE("lane-key interaction cancels a sound hold after a resource deletion",
     check_lane_sound(history.undo.empty());
 }
 
-TEST_CASE("lane-key interaction protects hidden or locked sounded notes and never merges their sound away",
+TEST_CASE("lane-key interaction protects hidden or locked sounded notes and previews editable consumption",
           "[unit][core][interaction][lane-key-sound]") {
     const auto protection = GENERATE(0, 1, 2);
     auto history = document_history_t::from(make_paint_sound_song());
@@ -5954,7 +6067,7 @@ TEST_CASE("lane-key interaction protects hidden or locked sounded notes and neve
             begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}})
         : dispatch_editor_action(history, state,
             move_edit_cursor_action_t{interaction_direction_t::forward});
-    check_lane_sound_false(result);
+    check_lane_sound(result.accepted == (protection == 0));
     check_lane_sound(history.document.revision == revision);
     check_lane_sound(history.undo.empty());
     check_lane_sound(note_count(history) == 1);

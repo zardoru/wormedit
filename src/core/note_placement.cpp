@@ -9,12 +9,14 @@ namespace wormedit::interaction_detail {
 auto is_plain_editable_note(const note_t& note) -> bool {
     const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
                             (note.kind == note_kind_t::hold && note.end.has_value());
-    return plain_kind && !note.sound.has_value() && note.semantic_layers.empty() &&
+    return plain_kind && !note.sound.has_value() && !note.sound_channel_event && note.semantic_layers.empty() &&
            !note.label.has_value() && !note.branch.has_value();
 }
 
 auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) -> bool {
-    if (!note.sound || note.sound_channel_event || note.label || note.branch)
+    const auto ordinary = (note.kind == note_kind_t::tap && !note.end) ||
+                          (note.kind == note_kind_t::hold && note.end);
+    if (!ordinary || !note.sound || note.sound_channel_event || note.label || note.branch)
         return false;
     return std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
         const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
@@ -141,6 +143,23 @@ void erase_notes(chart_document_t& chart, std::span<const object_id_t> ids) {
         std::erase_if(measure.notes,
                       [&](const auto& note) { return wanted.contains(note.id.value); });
     }
+}
+
+auto stage_hold_note_consumption(document_command_transaction_t& transaction, chart_id_t chart_id,
+                                 std::span<const object_id_t> removals) -> diagnostic_list_t {
+    const auto* chart = transaction.read_chart(chart_id);
+    std::vector<object_id_t> keysounds;
+    for (const auto id : removals) {
+        const auto* note = chart ? chart->find_note(id) : nullptr;
+        if (!note)
+            return {error(diagnostic_code_t::invalid_id, "Consumed hold note no longer exists", id)};
+        // osu! custom samples are hitsounds too: they disappear with the covered note.
+        if (note->sound && !note->osu_hitsample)
+            keysounds.push_back(id);
+    }
+    if (keysounds.empty()) return {};
+    auto moved = stage_move_notes_to_bgm(transaction, chart_id, keysounds, std::nullopt);
+    return std::move(moved.diagnostics);
 }
 
 auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_t> targets)

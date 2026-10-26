@@ -88,7 +88,7 @@ struct hold_row_expansion_t {
     std::uint64_t begin_row;
     std::uint64_t end_row;
     std::unordered_set<std::uint64_t> removals;
-    hold_overlap_policy_t overlap_policy{hold_overlap_policy_t::merge_plain};
+    hold_overlap_policy_t overlap_policy{hold_overlap_policy_t::remove_sound};
 
     auto is_intersecting(std::uint64_t begin, std::uint64_t end) const -> bool {
         return begin <= end_row && end >= begin_row;
@@ -127,7 +127,7 @@ struct hold_row_expansion_t {
 
 auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index, lane_id_t lane,
                     std::uint64_t anchor_row, std::uint64_t moving_row,
-                    hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
+                    hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::remove_sound)
     -> std::variant<hold_row_plan_t, diagnostic_list_t>;
 
 auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_index_t& index,
@@ -309,7 +309,7 @@ template <class Removals = std::vector<object_id_t>>
 auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& index,
                          lane_id_t lane, local_position_t anchor, local_position_t moving,
                          note_kind_t armed_kind = note_kind_t::hold, bool committing = false,
-                         hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
+                         hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::remove_sound)
     -> std::variant<hold_placement_t<Removals>, diagnostic_list_t> {
     const auto anchor_row = index.row_of(anchor);
     const auto moving_row = index.row_of(moving);
@@ -347,6 +347,9 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
 }
 
 void erase_notes(chart_document_t& chart, std::span<const object_id_t> ids);
+
+auto stage_hold_note_consumption(document_command_transaction_t& transaction, chart_id_t chart,
+                                 std::span<const object_id_t> removals) -> diagnostic_list_t;
 
 struct note_paint_plan_t {
     std::vector<note_paint_target_t> additions;
@@ -459,6 +462,7 @@ struct duration_resize_plan_t {
     local_position_t reference_end;
     std::vector<object_id_t> notes;
     std::vector<resized_note_t> resized;
+    std::vector<object_id_t> removals;
 };
 
 struct resize_parameters_t {

@@ -168,6 +168,7 @@ struct pending_note_duration_gesture_t {
     std::vector<object_id_t> notes;
     local_position_t preview_end;
     std::vector<note_duration_preview_t> preview;
+    std::vector<object_id_t> removals;
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t)
         -> diagnosed_t<std::optional<pending_note_duration_gesture_t>>;

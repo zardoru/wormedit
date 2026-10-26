@@ -6868,7 +6868,7 @@ TEST_CASE("Rejected Alt duration release retires the production gesture and pres
           "[frontend-state][event-harness][gesture-registry][duration]") {
     auto song = t422_song();
     song.charts.front().measures.front().notes.push_back({.id = object_id_t{104},
-        .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}});
+        .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}, .kind = note_kind_t::mine});
     t422_fixture_t f{std::move(song)};
     f.interaction->selected_notes = {object_id_t{102}};
     f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{102}}};

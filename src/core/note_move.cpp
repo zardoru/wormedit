@@ -105,6 +105,31 @@ auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
     return std::nullopt;
 }
 
+auto plan_duration_consumption(duration_resize_context_t& context, duration_resize_plan_t& plan)
+    -> std::optional<diagnostic_t> {
+    for (const auto& existing : context.collisions) {
+        if (existing.proposed) continue;
+        const auto covered = std::ranges::any_of(plan.resized, [&](const resized_note_t& candidate) {
+            return existing.lane == lane_occupancy_key_t::from(candidate.lane) &&
+                   candidate.end > candidate.begin && existing.begin >= candidate.begin &&
+                   existing.end <= candidate.end;
+        });
+        if (!covered) continue;
+        const auto* note = context.chart.find_note(existing.note);
+        if (!note || note->kind != note_kind_t::tap || note->end ||
+            (!is_plain_editable_note(*note) && !is_removable_sound_note(context.chart, *note)))
+            return error(diagnostic_code_t::collision,
+                         "Duration resize overlaps a non-editable same-lane note", existing.note);
+        plan.removals.push_back(existing.note);
+    }
+    std::unordered_set<std::uint64_t> removed;
+    for (const auto id : plan.removals) removed.insert(id.value);
+    std::erase_if(context.collisions, [&](const lane_occupant_t& entry) {
+        return !entry.proposed && removed.contains(entry.note.value);
+    });
+    return std::nullopt;
+}
+
 auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& index,
                           std::vector<object_id_t> targets, object_id_t reference_id,
                           local_position_t reference_end, snap_grid_t snap,
@@ -131,6 +156,8 @@ auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& 
                                 .notes = std::move(targets),
                                 .resized = {}};
     if (auto failure = resize_selected_notes(context, parameters, plan))
+        return diagnostic_list_t{*failure};
+    if (auto failure = plan_duration_consumption(context, plan))
         return diagnostic_list_t{*failure};
     if (auto failure = validate_resize_collisions(context.collisions))
         return diagnostic_list_t{*failure};
@@ -753,9 +780,33 @@ auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t {
 
 namespace wormedit {
 using namespace interaction_detail;
+auto stage_duration_consumption(document_command_transaction_t& transaction, chart_id_t chart_id,
+                                 const duration_resize_plan_t& plan) -> diagnostic_list_t {
+    auto diagnostics = stage_hold_note_consumption(transaction, chart_id, plan.removals);
+    if (!diagnostics.empty()) return diagnostics;
+    if (!transaction.has_bms_program(chart_id)) {
+        auto removed = transaction.stage(chart_id, "Duration resize chart no longer exists",
+            [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
+                erase_notes(chart, plan.removals);
+                return {.value = document_edit_effect_t{.changed = !plan.removals.empty(),
+                    .command_label = "Consume covered notes"}};
+            });
+        return std::move(removed.diagnostics);
+    }
+    std::vector<object_id_t> deletions;
+    const auto* chart = transaction.read_chart(chart_id);
+    for (const auto id : plan.removals)
+        if (chart->find_note(id)) deletions.push_back(id);
+    if (deletions.empty()) return {};
+    auto removed = transaction.stage_bms_native_events(chart_id, deletions, {}, "Consume covered notes");
+    return std::move(removed.diagnostics);
+}
+
 auto apply_scoped_duration_resize(editor_edit_context_t& context, const duration_resize_plan_t& plan)
     -> editor_interaction_result_t {
     return run_editor_edit(context, [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+        auto diagnostics = stage_duration_consumption(transaction, context.state.chart, plan);
+        if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
         auto staged = transaction.stage_bms_native_objects(context.state.chart, plan.notes, bms_existing_edit_kind_t::update,
             [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
                 bool changed{};
@@ -783,6 +834,8 @@ auto apply_duration_resize_plan(editor_edit_context_t& context, const duration_r
     if (history.document.find_bms_program(state.chart)) return apply_scoped_duration_resize(context, plan);
 
     auto transaction = document_command_transaction_t(history);
+    auto diagnostics = stage_duration_consumption(transaction, state.chart, plan);
+    if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     auto changed = false;

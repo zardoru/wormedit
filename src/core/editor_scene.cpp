@@ -729,6 +729,14 @@ auto collect_duration_proposals(scene_geometry_context_t& context, duration_prop
                   "field-scene duration preview omitted a selected note proposal"));
         return false;
     }
+    for (const auto id : pending.removals) {
+        if (!operate() || !context.index.note_indices_by_id.contains(id.value) ||
+            !duration.origin_notes.insert(id.value).second) {
+            context.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                "field-scene duration consumption refers to an invalid or duplicate note", id));
+            return false;
+        }
+    }
     return true;
 }
 

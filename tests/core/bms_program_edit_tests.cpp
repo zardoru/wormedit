@@ -558,6 +558,82 @@ TEST_CASE("Actual scoped hold dispatch keeps its captured Chart after selection 
     CHECK(history.undo.size() == 1);
 }
 
+namespace {
+void preview_scoped_consumption(document_history_t& history, editor_interaction_state_t& state,
+    const std::vector<note_t>& original, local_position_t tail, bool resizing) {
+    const auto before = history.document.prepared_bms_programs.front();
+    state.active_lane = original.front().lane;
+    REQUIRE(dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{begin_note_duration_gesture_action_t{original.front().id}}
+        : editor_interaction_action_t{begin_hold_action_t{{tail.measure, tail.row / 3}}}));
+    const auto preview = dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{update_note_duration_gesture_action_t{tail}}
+        : editor_interaction_action_t{update_hold_preview_action_t{tail}});
+    for (const auto& diagnostic : preview.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(preview);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+}
+
+auto commit_scoped_consumption(document_history_t& history, editor_interaction_state_t& state,
+    local_position_t tail, bool resizing) -> editor_interaction_result_t {
+    const auto result = dispatch_editor_action(history, state, resizing
+        ? editor_interaction_action_t{update_note_duration_gesture_action_t{
+            .reference_end = tail, .operation = proposal_operation_t::apply}}
+        : editor_interaction_action_t{commit_hold_action_t{tail}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    CHECK(result.diagnostics.empty());
+    return result;
+}
+
+void check_scoped_consumed_keysound(const chart_document_t& chart, const note_t& original) {
+    REQUIRE(chart.measures.front().bgm_events.size() == 1);
+    const auto& event = chart.measures.front().bgm_events.front();
+    CHECK(event.id == original.id);
+    CHECK(event.position == original.position);
+    CHECK(event.sound == original.sound);
+    CHECK_FALSE(chart.find_note(original.id));
+}
+
+void check_scoped_consumed_hold(const chart_document_t& chart, object_id_t id, local_position_t tail,
+    const note_t& original, bool resizing) {
+    const auto* hold = chart.find_note(id);
+    REQUIRE(hold);
+    CHECK(hold->kind == note_kind_t::hold);
+    CHECK(hold->end == tail);
+    if (resizing) CHECK(hold->sound == original.sound);
+}
+
+void check_scoped_consumption_history(document_history_t& history,
+    const std::shared_ptr<const bms_program_document_t>& before) {
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.prepared_bms_programs.front() == before);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.read_chart(difficulty)->measures.front().bgm_events.size() == 1);
+}
+} // namespace
+
+TEST_CASE("Scoped hold drawing and duration dragging preserve consumed keysounds in BGM",
+          "[bms-program-edit][hold][consumption]") {
+    const auto resizing = GENERATE(false, true);
+    auto history = history_from("#WAV01 a.wav\n#BPM 120\n#00011:0101\n");
+    auto state = scoped_state(history);
+    const auto* chart = history.read_chart(difficulty);
+    const auto original = chart->measures.front().notes;
+    REQUIRE(original.size() == 2);
+    const auto before = history.document.prepared_bms_programs.front();
+    const local_position_t tail{chart->measures.front().id, chart->divisions_per_standard_measure * 3 / 4};
+    preview_scoped_consumption(history, state, original, tail, resizing);
+    const auto result = commit_scoped_consumption(history, state, tail, resizing);
+    chart = history.read_chart(difficulty);
+    REQUIRE(chart->measures.front().notes.size() == (resizing ? 1 : 2));
+    check_scoped_consumed_keysound(*chart, original.back());
+    check_scoped_consumed_hold(*chart, resizing ? original.front().id : *result.created_note,
+        tail, original.front(), resizing);
+    check_scoped_consumption_history(history, before);
+}
+
 TEST_CASE("Scoped resource placement creates notes BGM and BGA through their domain command", "[bms-program-edit]") {
     auto history = history_from();
     const auto kind = GENERATE(resource_placement_kind_t::sample_note,

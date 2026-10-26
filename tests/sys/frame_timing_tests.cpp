@@ -6349,6 +6349,49 @@ void check_move_release_warning(move_feedback_dispatch_fixture_t& fixture) {
 }
 } // namespace
 
+TEST_CASE("Compose direct drag moves an unselected note without moving the previous selection",
+          "[sys][compose][move][direct-drag]") {
+    const bool other_selected = GENERATE(false, true);
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
+    const std::vector<object_id_t> selection = other_selected
+        ? std::vector<object_id_t>{object_id_t{201}} : std::vector<object_id_t>{};
+    expect_compose_test(dispatch_editor_action(fixture.compose.history, *fixture.compose.interaction,
+        select_editor_notes_action_t{selection}).accepted);
+    fixture.compose.project();
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
+    const auto* pending = fixture.compose.interaction->gesture<pending_note_move_gesture_t>();
+    expect_compose_test(pending != nullptr);
+    expect_compose_test(pending->notes == std::vector<object_id_t>{object_id_t{101}});
+    expect_compose_test(fixture.compose.interaction->selected_notes == selection);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 120);
+    expect_compose_test(fixture.compose.history.undo.empty());
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 120);
+    const auto* chart = fixture.compose.history.read_chart(chart_id_t{1});
+    expect_compose_test(chart->find_note(object_id_t{101})->position == local_position_t{measure_id_t{1}, 120});
+    expect_compose_test(chart->find_note(object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
+    expect_compose_test(chart->find_note(object_id_t{201})->position == local_position_t{measure_id_t{1}, 600});
+    expect_compose_test(fixture.compose.interaction->selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    expect_compose_test(fixture.compose.history.undo.size() == 1);
+}
+
+TEST_CASE("Compose rejected note drags ignore trailing motion and release without repeated notifications",
+          "[sys][compose][move][direct-drag]") {
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 480);
+    expect_compose_test(!fixture.compose.interaction->is_pending());
+    for (int motion = 0; motion < 3; ++motion)
+        (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 500);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 500);
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto messages = fixture.center.snapshot(notification_capacity);
+    expect_compose_test(messages.size() == 1);
+    expect_compose_test(messages.front().severity == notification_severity_t::warning);
+    expect_compose_test(!fixture.compose.interaction->is_pending());
+    expect_compose_test(fixture.compose.history.undo.empty());
+}
+
 TEST_CASE("Compose move motion projects all conflicts without notifications and release warns once",
           "[sys][compose][move][t420]") {
     move_feedback_dispatch_fixture_t fixture;
@@ -6400,6 +6443,8 @@ TEST_CASE("Compose move release outside actual chart geometry cancels without ed
     expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
+    fixture.center.drain_inbox(notification_time_t{0});
+    expect_compose_test(fixture.center.snapshot(notification_capacity).empty());
 }
 
 TEST_CASE("Compose vertical move through an empty target layout keeps red proposals until release",
@@ -6427,10 +6472,14 @@ TEST_CASE("Compose no-hit move outside the horizontal field cancels without edit
           "[sys][compose][move][t420]") {
     move_feedback_dispatch_fixture_t fixture;
     fixture.x = -10000;
-    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    for (int motion = 0; motion < 3; ++motion)
+        (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
     expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
+    fixture.center.drain_inbox(notification_time_t{0});
+    expect_compose_test(fixture.center.snapshot(notification_capacity).empty());
 }
 
 TEST_CASE("Compose routes a shifted BGM drop and projects transient amber hold ghosts", "[sys][compose][bgm-move]") {
@@ -8477,6 +8526,56 @@ TEST_CASE("Recipes and timing graphs remain visible after preceding export cuts"
     check_recipe_span_after_cut(view);
     CHECK(view.sv_graph_maximum == 2);
     CHECK(fixture.flattened.compose.timing_geometry.speed_graph.maximum == 3);
+}
+
+namespace {
+void check_retained_timing_marker_positions(const ui::compose_view_t& view) {
+    expect_compose_test(view.cut_axis != nullptr);
+    expect_compose_test(view.static_scene != nullptr);
+    const auto& source = *view.static_scene;
+    const auto origin = view.downscroll ? -view.area_scroll_pixels - view.viewport_height_pixels
+                                       : view.area_scroll_pixels;
+    std::size_t checked{};
+    for (const auto& marker : view.timing_markers) {
+        if (marker.object_id.value < 7001) continue;
+        CAPTURE(view.downscroll, view.area_scroll_pixels, marker.lane);
+        const auto retained = std::ranges::find(source.timing_markers, marker.object_id,
+            &ui::compose_timing_marker_view_t::object_id);
+        REQUIRE(retained != source.timing_markers.end());
+        CHECK(retained->marker_y_pixels + view.static_scene_world_origin_pixels - origin ==
+            Catch::Approx(marker.marker_y_pixels));
+        ++checked;
+    }
+    // Kiai uses merged spans rather than point markers.
+    CHECK(checked == timing_lane_kind_count - 1);
+}
+} // namespace
+
+TEST_CASE("Retained timing markers agree with live positions after export cuts while scrolling",
+          "[sys][export-cut][timing-geometry][static-source]") {
+    const bool downscroll = GENERATE(false, true);
+    auto song = dense_song(12, 0);
+    song.export_cuts = {{.id = object_id_t{9001}, .label = "Shorten intro",
+        .begin_milliseconds = 0, .end_milliseconds = 16000}};
+    auto& chart = song.charts.front();
+    const local_position_t position{chart.measures[9].id, 240};
+    chart.bpms.push_back({.id = object_id_t{7001}, .position = position,
+        .beats_per_minute = {120, 1}});
+    chart.scrolls = {{.id = object_id_t{7002}, .position = position, .multiplier = {2, 1}}};
+    chart.speeds = {{.id = object_id_t{7003}, .position = position, .multiplier = {3, 1}}};
+    chart.pauses = {{.id = object_id_t{7004}, .position = position, .duration = {1, 4}},
+        {.id = object_id_t{7005}, .position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}};
+    chart.warps = {{.id = object_id_t{7006}, .span = {position, {position.measure, 480}}}};
+    chart.timing_anchors = {{.id = object_id_t{7008}, .position = position}};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.preferences.editor_preferences.scroll_directions[
+        static_cast<std::size_t>(editor_mode_family_t::other)] = downscroll ? 2 : 1;
+    fixture.project();
+    for (const double scroll : {0.0, 48.5, 96.0}) {
+        fixture.interaction->viewport_scroll_pixels = scroll;
+        fixture.project();
+        check_retained_timing_marker_positions(fixture.flattened.view.compose);
+    }
 }
 
 TEST_CASE("Timing-focus cut begin drags respect snap and retain the untouched millisecond endpoint",

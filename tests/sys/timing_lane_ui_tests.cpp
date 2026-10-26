@@ -27,7 +27,7 @@ TEST_CASE("Marker selection and area geometry agree for all timing lane families
     CHECK(area.objects.front().object == object);
 }
 
-TEST_CASE("Retained timing graphs reset their visible range between refills",
+TEST_CASE("Retained timing graphs preserve their chart range between refills",
           "[sys][timing-geometry][retained-view]") {
     using namespace wormedit::sys;
     const auto y_of = [](auto row) { return static_cast<double>(row); };
@@ -41,8 +41,8 @@ TEST_CASE("Retained timing graphs reset their visible range between refills",
     build_sv_graph(steps, 100, 200, y_of, graph);
     CHECK(graph.points.data() == points);
     REQUIRE(graph.points.size() == 2);
-    CHECK(graph.points.front().x == 0.5);
-    CHECK((std::tuple{graph.minimum, graph.maximum} == std::tuple{4.0, 4.0}));
+    CHECK(graph.points.front().x == 1.0);
+    CHECK((std::tuple{graph.minimum, graph.maximum} == std::tuple{2.0, 4.0}));
     build_sv_graph(steps, 200, 200, y_of, graph);
     CHECK((std::tuple{graph.points.empty(), graph.minimum, graph.maximum, graph.one_x} ==
            std::tuple{true, 1.0, 1.0, -1.0}));

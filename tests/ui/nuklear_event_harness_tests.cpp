@@ -4155,6 +4155,23 @@ struct move_event_fixture_t {
 };
 } // namespace
 
+TEST_CASE("Select mode starts an unselected note drag without a separate selection click",
+          "[frontend-state][event-harness][move][direct-drag]") {
+    move_event_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.note_endpoints.front().selected = false;
+    view.selected_note_count = 0;
+    const auto begun = fixture.start();
+    (void)move_event_input(begun, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN);
+    (void)move_event_input(begun, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
+    const auto released = fixture.release(440);
+    (void)move_event_input(released, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE);
+    expect_lane_key(!worm_ui_nuklear_compose_state().note_move.note_move_active);
+    expect_lane_key(std::ranges::none_of(begun.get().compose_inputs, [](const auto& input) {
+        return input.kind == WORM_UI_COMPOSE_INPUT_POINTER_CLICK;
+    }));
+}
+
 TEST_CASE("Native note drag continues through red hold ghosts and recovers before release",
           "[frontend-state][event-harness][move][t420]") {
     move_event_fixture_t fixture;

@@ -1603,6 +1603,7 @@ auto make_compose_static_view(const wormedit::ui::compose_view_t& view,
     retained.playable_field_right_pixels = view.playable_field_right_pixels;
     retained.timing_lane_visibility_mask = view.timing_lane_visibility_mask;
     retained.timing_focus = view.timing_focus;
+    retained.cut_axis = view.cut_axis;
     retained.pixels_per_standard_measure = view.pixels_per_standard_measure;
     retained.viewport_height_pixels = expanded.viewport_height_pixels;
     retained.area_scroll_pixels = expanded.viewport_scroll_pixels;

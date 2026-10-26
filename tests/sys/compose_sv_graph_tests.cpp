@@ -67,20 +67,32 @@ TEST_CASE("sv graph holds each value and jumps vertically at the event", "[unit]
     CHECK(graph.one_x < 1.0);
 }
 
-TEST_CASE("sv graph normalizes to the visible window", "[unit][sys][sv-graph]") {
+TEST_CASE("sv graph keeps its value axis stable while scrolling", "[unit][sys][sv-graph]") {
     auto chart = base_chart();
     add_scroll(chart, 1, 0, 100, 4);
     add_scroll(chart, 2, 0, 500, 2);
     const auto steps = project(chart);
-    // A window after the spike sees only the value in force (2.0): a flat line at the center.
+    // Offscreen values still define the axis, so the held value cannot jump sideways.
+    const auto before = build_sv_graph(steps, 400, 800, y_of);
     const auto window = build_sv_graph(steps, 600, 800, y_of);
-    CHECK(window.minimum == 2.0);
-    CHECK(window.maximum == 2.0);
+    CHECK(window.minimum == 1.0);
+    CHECK(window.maximum == 4.0);
     REQUIRE(window.points.size() == 2);
-    CHECK(window.points[0].x == 0.5);
-    CHECK(window.points[1].x == 0.5);
-    CHECK(window.one_x < 0.0);
-    CHECK(build_sv_graph(steps, 10, 10, y_of).points.empty());
+    CHECK(window.points[0].x == before.points.back().x);
+    CHECK(window.points[1].x == before.points.back().x);
+    CHECK(window.one_x == before.one_x);
+}
+
+TEST_CASE("sv graph centers a chart with one constant value", "[unit][sys][sv-graph]") {
+    auto chart = base_chart();
+    add_scroll(chart, 1, 0, 0, 2);
+    const auto graph = build_sv_graph(project(chart), 100, 800, y_of);
+    CHECK(graph.minimum == 2.0);
+    CHECK(graph.maximum == 2.0);
+    REQUIRE(graph.points.size() == 2);
+    CHECK(graph.points.front().x == 0.5);
+    CHECK(graph.points.back().x == 0.5);
+    CHECK(graph.one_x < 0.0);
 }
 
 TEST_CASE("SV projection converts fractions with shared careful rounding", "[sys][sv-graph][shared-arithmetic]") {

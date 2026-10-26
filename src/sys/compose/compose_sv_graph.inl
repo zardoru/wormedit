@@ -22,10 +22,13 @@ auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row, std::
     held.emplace_back(first_row, current);
     for (; next < steps.steps.size() && steps.steps[next].row < last_row; ++next)
         held.emplace_back(steps.steps[next].row, steps.steps[next].value);
-    graph.minimum = graph.maximum = held.front().second;
-    for (const auto& [row, value] : held) {
-        graph.minimum = std::min(graph.minimum, value);
-        graph.maximum = std::max(graph.maximum, value);
+    // Keep the value axis independent of the viewport. The implicit 1x segment
+    // participates only when it precedes the first authored event.
+    graph.minimum = graph.maximum = steps.steps.empty() || steps.steps.front().row > 0
+        ? 1.0 : steps.steps.front().value;
+    for (const auto& step : steps.steps) {
+        graph.minimum = std::min(graph.minimum, step.value);
+        graph.maximum = std::max(graph.maximum, step.value);
     }
     const auto span = graph.maximum - graph.minimum;
     const auto normalize = [&](double value) { return span > 0.0 ? (value - graph.minimum) / span : 0.5; };

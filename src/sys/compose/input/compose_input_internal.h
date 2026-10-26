@@ -1055,6 +1055,10 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
+    // A rejected/canceled start can leave pointer events queued until release.
+    if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN &&
+        !state.gesture<pending_note_move_gesture_t>())
+        return compose_input_family_result_t::continue_batch({});
     const auto* chart = history.read_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
     if (chart == nullptr || !view) {
@@ -1064,10 +1068,9 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN) {
         const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
-        if (!target || !target->note ||
-            std::ranges::find(state.selected_notes, *target->note) == state.selected_notes.end())
+        if (!target || !target->note)
             return compose_input_family_result_t::from(
-                "Begin a note move by dragging a selected playable note.");
+                "Begin a note move by dragging a playable note.");
         state.active_lane = target->lane;
         place_cursor_on_picked_row(state, target->position);
         result = dispatch_editor_action(
@@ -1085,9 +1088,9 @@ auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& inpu
     const auto position = position_at_compose_y(*chart, *view, y);
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!position || (!target && !input.note_move_to_bgm)) {
-        (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return compose_input_family_result_t::from(
-            "Note move input fell outside chart lane geometry and was canceled.");
+        result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        accepted = "Note move canceled.";
+        return compose_input_family_result_t::continue_with_result();
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) {
         result = dispatch_editor_action(

@@ -48,7 +48,7 @@ struct sv_graph_t {
 };
 
 // The graph of `steps` between the viewport's first and last source row. The range is normalized to
-// the values in force inside the window (a single value centers at 0.5). `row_to_y` maps an
+// all chart values so scrolling preserves the x axis (a constant chart centers at 0.5). `row_to_y` maps an
 // absolute row to viewport pixels in drawn orientation.
 template <typename RowToY>
 [[nodiscard]] auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row,

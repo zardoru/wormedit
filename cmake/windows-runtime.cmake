@@ -40,10 +40,3 @@ install(RUNTIME_DEPENDENCY_SET wormedit_windows_runtime
     # its mixed-case import through the PE resolver's lowercase Linux lookup.
     PRE_EXCLUDE_REGEXES ${wormedit_windows_system_patterns} "^[Ss][Dd][Ll]3[.][Dd][Ll][Ll]$"
     RUNTIME DESTINATION ".")
-install(FILES "${sdl3_SOURCE_DIR}/LICENSE.txt" DESTINATION "third-party/SDL3")
-install(FILES "${nuklear_SOURCE_DIR}/LICENSE" DESTINATION "third-party/nuklear")
-install(FILES "${nlohmann_json_SOURCE_DIR}/LICENSE.MIT" DESTINATION "third-party/nlohmann-json")
-if(WORMEDIT_ENABLE_AUDIO_DECODER)
-    install(FILES "${wormedit_miniaudio_source_dir}/LICENSE" DESTINATION "third-party/miniaudio")
-endif()
-install(FILES "${wormedit_zlib_SOURCE_DIR}/LICENSE" DESTINATION "third-party/zlib")

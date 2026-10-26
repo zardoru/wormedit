@@ -1,0 +1,7 @@
+4c4f6df4647c9f01f871d7edd3716d8aeeffda9d22ffbebe3fccd95a6ab52c95  type2-runtime-20251108.tar.gz  https://codeload.github.com/AppImage/type2-runtime/tar.gz/refs/tags/20251108
+70589cfd5e1cff7ccd6ac91c86c01be340b227285c5e200baa284e401eea2ca0  fuse-3.15.0.tar.xz  https://github.com/libfuse/libfuse/releases/download/fuse-3.15.0/fuse-3.15.0.tar.xz
+db0238c5981dabbd80ee09ae15387f390091668ca060a7bc38047912491443d3  squashfuse-0.5.2.tar.gz  https://codeload.github.com/vasi/squashfuse/tar.gz/refs/tags/0.5.2
+f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af  musl-COPYRIGHT  https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.5
+7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8  zstd-LICENSE  https://raw.githubusercontent.com/facebook/zstd/v1.5.7/LICENSE
+845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243  zlib-LICENSE  https://raw.githubusercontent.com/madler/zlib/v1.3.1/LICENSE
+82ade5d7d9b029044b5fbbc326207fc47c2d44ee4dd71e8a559c36d728217de9  mimalloc-LICENSE  https://raw.githubusercontent.com/microsoft/mimalloc/v2.1.9/LICENSE

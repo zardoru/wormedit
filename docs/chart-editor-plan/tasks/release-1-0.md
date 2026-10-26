@@ -27,7 +27,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-761 Carry a pre-release suffix in the version
 
-- **Status:** ready
+- **Status:** partial (2026-10-26; version and About verified; GATE has one reproducible timing-stage failure)
 - **Outcome:** the build reports `1.0.0-rc1` in About, in `wormedit-convert` output where it reports a version, and in package file names, from a numeric CMake `project(VERSION 1.0.0)` plus one `WORMEDIT_VERSION_SUFFIX` cache variable (default `-rc1`; empty for a final release).
 - **Read first:** `CMakeLists.txt` (`project(` and `configure_file`), `config.h.in`, `src/ui/nuklear/app/frontend.cpp` (About dialog), `scripts/windows-cross-package.sh`, `README.md` (status line).
 - **Files owned:** `CMakeLists.txt` (project version, suffix variable, configure step), `config.h.in`, `README.md` (status line only), `docs/building.md` (a short "Release versions" section), `scripts/windows-cross-package.sh` (archive name only), a focused test only if one already checks the version string.
@@ -39,6 +39,21 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Invariants:** `PROJECT_VERSION` stays purely numeric (Windows resource and macOS bundle versions need it).
 - **Reject/failure behavior:** a suffix containing characters outside `[-.0-9A-Za-z]` fails configuration with a message.
 - **Verify:** configure `build`, rebuild, `grep WORMEDIT_VERSION build/config.h`, GATE; isolated Xvfb About-dialog capture showing `1.0.0-rc1`.
+- **Done so far:** stale-plan check found numeric `0.1.0` and source-parsed Windows names. `PROJECT_VERSION` is now numeric `1.0.0`; cache suffix defaults to `-rc1`; normal CMake variable `WORMEDIT_VERSION_FULL` is `1.0.0-rc1`. Both `build/config.h` and the application include expose the full string and numeric macros. The converter currently has no application-version output to update. Empty-suffix configuration succeeds; `bad_suffix` is rejected with `WORMEDIT_VERSION_SUFFIX may contain only [-.0-9A-Za-z]`.
+- **Evidence (2026-10-26):** native configure/rebuild exit 0; `grep WORMEDIT_VERSION build/config.h` prints `"1.0.0-rc1"` plus numeric `1`, `0`, `0`; final-suffix configure exits 0 with `"1.0.0"`; invalid suffix fails as required. Logs: `/tmp/wormedit-lanes/rc1/drake/t761-{configure,build,version-checks}.log`. `STEPS=/tmp/wormedit-lanes/rc1/drake/about-steps.sh scripts/smoke-compose-virtual-x.sh /tmp/wormedit-lanes/rc1/drake/t761-about.png landing` exits 0; both its Help-menu screenshot and About screenshot were inspected, and About visibly reads `WormEdit 1.0.0-rc1`. Code-style review checklist: no new C++ functions, copied helpers or parallel version owner.
+- **GATE evidence:** `scripts/gate.sh --jobs 3` exits 1; full logs `/tmp/wormedit-gate.QVRSOh/`, summary `/tmp/wormedit-lanes/rc1/drake/t761-gate.log`:
+
+  ```text
+  pass  build
+  FAIL  ctest  (/tmp/wormedit-gate.QVRSOh/ctest.log)
+  pass  whitespace
+  pass  complexity
+  99% tests passed, 1 tests failed out of 5292
+  gate: FAILED (ctest)
+  ```
+
+- **Documentation evidence:** `ctest --test-dir build -j 3 --output-on-failure -R '^documentation\.'` exits 0; tail `100% tests passed out of 6` (log `/tmp/wormedit-lanes/rc1/drake/t761-documentation-final.log`).
+- **Finding / remaining:** `frontend-state.Timing stage preserves fine row targets from the drawn cut axis` fails at `tests/ui/nuklear_event_harness_tests.cpp:7489` for `cuts=true`, `row=9120`, both scroll directions (70/72 assertions pass). Reproduce: `ctest --test-dir build -j 3 --output-on-failure -R '^frontend-state\.Timing stage preserves fine row targets from the drawn cut axis$'`; the isolated rerun also fails (log `/tmp/wormedit-lanes/rc1/drake/t761-timing-recheck.log`). These C++ files are unchanged by T-761. Resolve this timing-stage finding in its owning lane and rerun GATE before marking T-761 done; version work is committed before T-762 starts.
 - **Out of scope:** AppImage and macOS names (T-763, T-764 consume the variable).
 
 ## T-762 Build and check the Windows release zip under Wine

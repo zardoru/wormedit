@@ -2,6 +2,20 @@
 
 The headless core and its tests build without a window or GPU; the application is an SDL3 GPU program with a Nuklear frontend. Both use the same CMake project and presets.
 
+## Release versions
+
+The numeric CMake `PROJECT_VERSION` is `1.0.0`. `WORMEDIT_VERSION_SUFFIX` defaults
+to `-rc1`; the normal CMake variable `WORMEDIT_VERSION_FULL` joins them as
+`1.0.0-rc1`. The configured `config.h` exposes that full `WORMEDIT_VERSION` and
+separate numeric `WORMEDIT_VERSION_MAJOR`, `MINOR` and `PATCH` macros. About and
+Windows archive names use the full version. Suffix characters are limited to
+`[-.0-9A-Za-z]`.
+
+For a final release, configure with `cmake -S . -B build -DWORMEDIT_VERSION_SUFFIX=`.
+For the Windows package, pass `CMAKE_ARGS=-DWORMEDIT_VERSION_SUFFIX=` to the
+package script. This produces `wormedit-1.0.0-windows-x64.zip`; RC1 produces
+`wormedit-1.0.0-rc1-windows-x64.zip`.
+
 ## Native headless build
 
 nlohmann/json, Catch2, and Lua accept local source directories for offline/reproducible builds:

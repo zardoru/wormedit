@@ -12,15 +12,11 @@ export PKG_CONFIG_PATH=
 jobs=${WORMEDIT_BUILD_JOBS:-$(scripts/gate.sh --print-jobs | cut -d' ' -f1)}
 out="$(realpath -m "${1:-build/dist}")"
 stage="build/windows-cross-stage"
-version="$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)"
-hash="$(git rev-parse --short=8 HEAD 2>/dev/null || echo nogit)"
-name="wormedit-${version}-${hash}-windows-x64"
-if [[ -n $(git status --porcelain --untracked-files=normal) ]]; then
-    name="wormedit-${version}-${hash}-preview-windows-x64"
-fi
 
 # shellcheck disable=SC2086
 cmake --preset windows-cross-release ${CMAKE_ARGS:-}
+version=$(sed -n 's/^#define WORMEDIT_VERSION "\([^"]*\)"$/\1/p' build/windows-cross-release/config.h)
+name="wormedit-${version}-windows-x64"
 cmake --build --preset windows-cross-release --parallel "$jobs"
 rm -rf "$stage"
 cmake --install build/windows-cross-release --prefix "$stage/$name" --strip

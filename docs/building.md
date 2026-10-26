@@ -196,16 +196,47 @@ without building or writing a ZIP.
 The package install includes `wormedit.exe`, required runtime DLLs, `assets/`, the offline
 manual, license notices and a launch note. Its filename uses `WORMEDIT_VERSION_FULL`;
 `BUILD-REVISION.txt` and `BUILD-CHANGES.patch` record the revision and tracked local changes.
+Only the `Wormedit` and `Manual` install components are selected: dependency SDK
+headers, static libraries and absolute install paths stay out of the release.
+The shared notice installer supplies the complete `third-party/` tree, including
+the embedded SDL/miniaudio/libotoworm dependencies and static MinGW/GCC runtimes.
 FFmpeg's corresponding source archive, license and build configuration are included under
 `third-party/ffmpeg`; keep these when redistributing.
 Installation resolves DLL imports recursively and fails for missing third-party
-dependencies. Extract the entire ZIP before launching; assets and DLLs belong next
-to the executable.
+dependencies. Before writing a ZIP, packaging rejects host/shared libraries,
+static SDK libraries, debug DLLs/PDBs and executables/DLLs that are not x64 PE.
+The `.zip.files.txt` sidecar records the installed file inventory.
+Extract the entire ZIP before launching; assets and DLLs belong next to the executable.
 
 Release verification is recorded on [T-762](chart-editor-plan/tasks/release-1-0.md#t-762-build-and-check-the-windows-release-zip-under-wine).
 Check the archive's DLLs and notices, then use a fresh temporary Wine prefix inside isolated
 Xvfb for the packaged tutorial project, audio, osu!mania export and offline-manual checks.
 Inspect the screenshots before recording a pass; Wine windows must stay off the desktop.
+For a manual runtime session (requires Wine, Xvfb and xauth), extract outside the
+build tree and launch with a disposable prefix; this command keeps the app and
+Wine's helper windows on the isolated display:
+
+```sh
+wine_work=$(mktemp -d /tmp/wormedit-wine-release.XXXXXX)
+unzip -q build/dist/wormedit-1.0.0-rc1-windows-x64.zip -d "$wine_work"
+package="$wine_work/wormedit-1.0.0-rc1-windows-x64"
+cp -R "$package/manual/fixtures/tutorial" "$wine_work/曲"
+xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' \
+  env WINEPREFIX="$wine_work/prefix" WINEARCH=win64 WINEDEBUG=-all \
+  bash -c 'wine "$1" "$(winepath -w "$2")"' _ \
+    "$package/wormedit.exe" "$wine_work/曲/tutorial.wormedit"
+# After the isolated session and screenshot inspection:
+WINEPREFIX="$wine_work/prefix" wineserver -k
+rm -rf "$wine_work"
+```
+
+Generate the Windows project path inside the same temporary prefix if using
+custom drive mappings. Check open, Save As/reopen and export in the `曲` folder
+as well as an ASCII path. Playback must produce real nonzero audio; an SDL disk
+audio capture can verify decoded PCM in an unattended run, but does not verify
+physical speakers. Test the tutorial's osu!mania output group explicitly and
+record any application rejection with its full message. Use Help → User manual
+to open the packaged local HTML, keeping its browser on the isolated display.
 
 ## macOS owner-verification bundle (unsigned)
 

@@ -244,16 +244,24 @@ For the tutorial, create an osu!mania export target in Project and enable
 **Flatten BMS branches to the active outcome** before saving the target. This
 choice is saved per output group in native schema 25. Export from Compose, then
 reimport the resulting `.osu` and check its 16 notes, eight columns and all four
-keysounds. Confirm that every referenced Ogg file is present beside the exported
-chart; round-3 Wine verification found that this tutorial export publishes the
-chart and manifest but omits its audio assets, so reimport currently reports
-missing audio. T-762 remains partial pending that application fix.
-Unicode startup arguments and all four Export footer buttons pass at `3229cfe`;
+keysounds. Confirm that the output's `assets/` directory contains `keysound-c4.ogg`,
+`keysound-e4.ogg`, `keysound-g4.ogg` and `chord.ogg`, and that the `.osu` references
+those paths. Repeat under ASCII and `曲` paths; reimport must load all four
+keysounds without audio errors and playback must produce finite nonzero PCM.
+Round-4 Wine verification passes at `6c3d91f`, resolving the missing exported
+audio found in round 3. T-762 records the archive and runtime evidence.
+Unicode startup arguments and all four Export footer buttons pass too;
 include a direct command-line launch and an Explorer-style wide-character shell
 launch with a `曲` path when repeating the release smoke.
 For the Help check, set `HKCU\Software\Wine\WineBrowser`'s `Browsers` value in
 the temporary prefix to a browser wrapper that uses its own temporary profile
 on the same Xvfb display. This avoids the desktop browser's profile/IPC routing.
+At a 1000×700 client size, also select **200%** UI scale in Options → Appearance
+and click **Apply all**. The dialog must fit, with its footer accessible, and
+show **Using 125% to fit this window**. Close and reopen Options to check the
+saved preference and the fitted scale together. For scripted Wine resizing,
+resize the Win32 client (for example with `SetWindowPos`); changing only its
+outer X window can leave Wine's client at its old size.
 
 ## macOS owner-verification bundle (unsigned)
 

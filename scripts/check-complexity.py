@@ -107,7 +107,8 @@ def compiler_arguments(entry, resource):
             skip = True
         elif argument not in ("-c", entry["file"]):
             result.append(argument)
-    return result + ["-working-directory=" + entry["directory"], "-resource-dir=" + resource]
+    return result + ["-Wno-unknown-warning-option", "-working-directory=" + entry["directory"],
+                     "-resource-dir=" + resource]
 
 
 def token_text(tu, file, start, end, clang):
@@ -257,8 +258,9 @@ def attribute_diagnostics(file, diagnostics, entries, resource, clang):
 def inspect_file(item, build, entries, resource, log_dir, tidy, yaml, clang):
     number, file = item
     fixes = log_dir / f"{number:04}.yaml"
+    # GCC build directories carry GCC-only warning flags that Clang does not know.
     command = [tidy, "-p", str(build), str(file), "--config=" + json.dumps(CONFIG),
-               "--export-fixes=" + str(fixes)]
+               "--extra-arg=-Wno-unknown-warning-option", "--export-fixes=" + str(fixes)]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=300)
     output = result.stdout + result.stderr
     (log_dir / f"{number:04}.log").write_text(output)

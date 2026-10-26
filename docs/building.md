@@ -95,9 +95,10 @@ host; linuxdeploy's excludelist plus explicit GL/Vulkan exclusions keep them out
 of the image. GCC 14 provides the application’s C++23 library features; its C++ runtime is bundled.
 The container enables `WORMEDIT_WARNINGS_AS_ERRORS=ON` with the shared policy in
 `cmake/warnings.cmake`: GCC's optimizer-dependent `maybe-uninitialized` and
-`array-bounds` diagnostics remain visible and non-fatal; other enabled warnings
-are errors (see `packaging/linux/README.md`). Test older distributions separately;
-building against this floor does not prove every desktop/driver combination.
+`array-bounds` diagnostics remain visible and non-fatal. Targets using this policy
+treat other enabled warnings as errors (see `packaging/linux/README.md`). Test
+older distributions separately; building against this floor does not prove every
+desktop/driver combination.
 
 CMake, linuxdeploy, appimagetool, the AppImage runtime and FFmpeg use fixed release
 URLs with recorded SHA-256 checks. The runtime is supplied to appimagetool so it

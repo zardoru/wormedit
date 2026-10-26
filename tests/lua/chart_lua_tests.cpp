@@ -1,6 +1,7 @@
 #include "../../src/scripting/chart_lua.h"
 #include "../../src/scripting/lua_project.h"
 #include "../support/lua_documentation.h"
+#include "../support/native_bms_fixture.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
@@ -133,9 +134,13 @@ TEST_CASE("chart Lua native round trips retain frozen sources witnesses and decl
                 history.document.generator_recipes.front().generated_charts);
     auto compatible = nlohmann::json::parse(*encoded.value);
     compatible["document"]["generator_recipes"][0].erase("generated_charts");
+    compatible["document"]["generator_recipes"][0].erase("generated_scrolls");
+    compatible["document"]["generator_recipes"][0].erase("generated_sv_recipes");
     const auto optional = parse_native_project(compatible.dump());
     require_chart(optional.value.has_value());
     check_chart(optional.value->generator_recipes.front().generated_charts.empty());
+    compatible["document"]["generator_recipes"][0].erase("seed");
+    check_chart(!parse_native_project(compatible.dump()).value.has_value());
 }
 TEST_CASE("chart Lua reports bounded numeric rationalization and preserves exact helper meanings",
           "[chart-lua]") {
@@ -447,4 +452,181 @@ TEST_CASE("chart Lua allocates above retained SV definition identities without l
     require_chart(apply_generator(history, *proposal.value).applied);
     check_chart(history.document.sv_recipe_definitions.front().id == definition);
     check_chart(history.document.find_chart(chart_id)->sv_recipes.empty());
+}
+
+TEST_CASE("Lua SV batches publish persistent spans and explicit baseline points together", "[lua-generator][sv]") {
+    auto history = chart_history();
+    const auto recipe = chart_recipe(R"(
+local m = wormedit.measures[1].id
+return {
+  sv_points = {sv_point {key='baseline', at=at_measure(m,0), value=ratio(2,1)},
+               sv_point {key='reset', at=at_measure(m,720), value=1}},
+  sv_spans = {sv_span {key='rise', name='Rise', from=at_measure(m,0), to=at_measure(m,480),
+               value_from=1, value_to=2, points=5}}
+})");
+    auto proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    check_chart(proposal.value->payload.sv.added == 3);
+    require_chart(apply_generator(history, *proposal.value).applied);
+    check_chart(history.undo.size() == 1);
+    const auto& chart = history.document.charts.front();
+    require_chart(chart.sv_recipes.size() == 1);
+    check_chart(chart.sv_recipes.front().curve == sv_recipe_curve_t::linear);
+    const auto compiled = compile_sv_recipes(chart, sv_recipe_output_t::sv);
+    INFO((compiled.diagnostics.empty() ? "success" : compiled.diagnostics.front().message));
+    require_chart(static_cast<bool>(compiled));
+    check_chart(compiled.points.front().value == 2); // span multiplier 1 over baseline 2
+    const auto written = write_native_project(history.document);
+    require_chart(written.value.has_value());
+    const auto loaded = parse_native_project(*written.value);
+    require_chart(loaded.value.has_value());
+    check_chart(loaded.value->generator_recipes == history.document.generator_recipes);
+    const auto stored = history.document.generator_recipes.front();
+    const auto regenerated = prepare_chart(history, stored);
+    INFO((regenerated.diagnostics.empty() ? "success" : regenerated.diagnostics.front().message));
+    require_chart(regenerated.value.has_value());
+    check_chart(regenerated.value->payload.sv.unchanged == 3);
+    check_chart(regenerated.value->payload.recipe.generated_scrolls == stored.generated_scrolls);
+    require_chart(undo_document_command(history));
+    check_chart(history.document.charts.front().scrolls.empty());
+    require_chart(redo_document_command(history));
+    check_chart(history.document.charts.front().sv_recipes.size() == 1);
+    history.document.charts.front().scrolls.front().multiplier = {3, 1};
+    check_chart(!(prepare_chart(history, stored).value));
+}
+
+TEST_CASE("Lua SV batches reject collisions invalid spans and nonfinite values atomically", "[lua-generator][sv]") {
+    const auto body = GENERATE(
+        "sv_points={sv_point{key='a',at=p,value=1},sv_point{key='b',at=p,value=2}}",
+        "sv_spans={sv_span{key='a',from=p,to=p,value_from=1}}",
+        "sv_points={sv_point{key='a',at=p,value=0/0}}",
+        "sv_spans={sv_span{key='a',from=p,to=at_measure(m,480),value_from=math.huge}}",
+        "sv_spans={sv_span{key='a',from=p,to=at_measure(m,480),value_from=1,points=4097}}",
+        "sv_spans={sv_span{key='a',from=p,to=at_measure(m,480),value_from=1,step_rows=0}}",
+        "sv_points={sv_point{key='a',at=at_measure(m,960),value=1}}",
+        "sv_spans={sv_span{key='a',from=p,to=at_measure(m,480),value_from=1,curve='unknown'}}");
+    auto history = chart_history();
+    const auto recipe = chart_recipe(std::string{"local m=wormedit.measures[1].id; local p=at_measure(m,0); return {notes={{key='hit',measure=m,row=0,lane='1'}},"} + body + "}");
+    check_chart(!(prepare_chart(history, recipe).value));
+    check_chart(history.undo.empty());
+    check_chart(history.document.charts.front().scrolls.empty());
+    check_chart(history.document.charts.front().measures.front().notes.empty());
+}
+
+TEST_CASE("Generated difficulty SV spans use declaration identities and preserve independent recipes", "[lua-generator][sv]") {
+    auto history = chart_history();
+    const auto recipe = chart_recipe(R"(
+difficulty 'SV'
+measure {id='a'}
+measure {id='end'}
+scroll {key='base',at=at_measure('a',0),value=2}
+sv_span {key='ramp',from=at_measure('a',0),to=at_measure('end',0),
+         curve='exponential',value_from=1,value_to=2,shape=1,step_rows=120}
+)");
+    auto proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    const auto& created = history.document.charts.back();
+    require_chart(created.sv_recipes.size() == 1);
+    check_chart(created.sv_recipes.front().range.begin.measure == created.measures.front().id);
+    const auto stored = history.document.generator_recipes.front();
+    require_chart(prepare_chart(history, stored).value.has_value());
+    const auto written = write_native_project(history.document);
+    require_chart(written.value.has_value());
+    require_chart(parse_native_project(*written.value).value.has_value());
+    history.document.charts.back().sv_recipes.front().name = "Edited";
+    check_chart(!(prepare_chart(history, stored).value));
+}
+
+TEST_CASE("Lua SV regeneration removes omitted keys while preserving authored baseline points", "[lua-generator][sv]") {
+    auto history = chart_history();
+    history.document.charts.front().scrolls.push_back({.id=object_id_t{900}, .position={measure_id_t{3},720}, .multiplier={3,1}});
+    auto recipe = chart_recipe("return {sv_points={sv_point{key='a',at=at_measure('3',0),value=2}}}");
+    auto proposal = prepare_chart(history, recipe);
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    recipe = history.document.generator_recipes.front();
+    recipe.source = "return {sv_points={}}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    proposal = prepare_chart(history, recipe);
+    require_chart(proposal.value.has_value());
+    check_chart(proposal.value->payload.sv.removed == 1);
+    require_chart(apply_generator(history, *proposal.value).applied);
+    require_chart(history.document.charts.front().scrolls.size() == 1);
+    check_chart(history.document.charts.front().scrolls.front().id == object_id_t{900});
+    recipe.source = "return {sv_points={sv_point{key='collision',at=at_measure('3',720),value=2}}}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    check_chart(!(prepare_chart(history, recipe).value));
+}
+
+TEST_CASE("Lua SV batches retain scoped BMS semantic owners through regeneration", "[lua-generator][sv][bms]") {
+    const auto flat = chart_history();
+    auto history = document_history_t::from(test::native_bms_fixture(flat.document, flat.document.charts.front()));
+    auto recipe = chart_recipe(R"(
+local m=wormedit.measures[1].id
+return {sv_points={sv_point{key='base',at=at_measure(m,0),value=2}},
+        sv_spans={sv_span{key='rise',from=at_measure(m,0),to=at_measure(m,480),value_from=1,value_to=2}}}
+)");
+    auto proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    require_chart(history.document.charts.empty());
+    require_chart(history.read_chart(chart_id_t{2})->scrolls.size() == 1);
+    require_chart(history.read_chart(chart_id_t{2})->sv_recipes.size() == 1);
+    recipe = history.document.generator_recipes.front();
+    check_chart(recipe.bms_chart.has_value());
+    recipe.source = "local m=wormedit.measures[1].id; return {sv_points={sv_point{key='base',at=at_measure(m,0),value=3}},sv_spans={}}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    check_chart(history.read_chart(chart_id_t{2})->sv_recipes.empty());
+    check_chart(history.read_chart(chart_id_t{2})->scrolls.front().multiplier == signed_rational_t{3,1});
+}
+
+TEST_CASE("Documented SV example creates generator-owned points and recipes", "[lua-generator][documentation][sv]") {
+    auto history = chart_history();
+    const auto proposal = prepare_chart(history, chart_recipe(lua_documentation_example("sv.lua")));
+    require_chart(proposal.value.has_value());
+    check_chart(proposal.value->payload.sv.added == 3);
+}
+
+TEST_CASE("Generated difficulty removes its last omitted SV span", "[lua-generator][sv]") {
+    auto history = chart_history();
+    auto recipe = chart_recipe(R"(
+difficulty 'SV'
+measure {id='a'}
+sv_span {key='ramp',from=at_measure('a',0),to=at_measure('a',480),value_from=1,value_to=2}
+)");
+    auto proposal = prepare_chart(history, recipe);
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    recipe = history.document.generator_recipes.front();
+    recipe.source = "difficulty 'SV'; measure {id='a'}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    check_chart(history.document.charts.back().sv_recipes.empty());
+}
+
+TEST_CASE("Adding generated spans cannot acquire independently authored recipe ownership", "[lua-generator][sv]") {
+    auto history = chart_history();
+    auto recipe = chart_recipe("difficulty 'SV'; measure {id='a'}");
+    auto proposal = prepare_chart(history, recipe);
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    auto& chart = history.document.charts.back();
+    chart.sv_recipes.push_back({.id=recipe_id_t{900}, .name="Authored",
+        .range={{chart.measures.front().id,0},{chart.measures.front().id,480}}});
+    recipe = history.document.generator_recipes.front();
+    recipe.source += "; sv_span {key='rise',from=at_measure('a',0),to=at_measure('a',480),value_from=1,value_to=2}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    check_chart(!(prepare_chart(history, recipe).value));
+    check_chart(history.document.charts.back().sv_recipes.front().name == "Authored");
 }

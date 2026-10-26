@@ -107,3 +107,44 @@
 --- Chart-level signed scroll multiplier.
 -- @param descriptor `{at=at_measure("intro",0), value=ratio(-1,2)}`; key optional.
 -- @function scroll
+
+--- Explicit SV point. In a generated difficulty this appends a scroll declaration.
+-- Outside a difficulty it returns a descriptor for `generator.Output.sv_points`.
+-- A point sets the authored baseline multiplier, held until the next point; it does
+-- not multiply the previous point or restore an earlier value automatically.
+-- @param descriptor `{key="base", at=at_measure(id,0), value=ratio(3,2)}`.
+-- Loose output rejects duplicate rows. Difficulty declarations retain scroll's existing
+-- ordering: the last declaration at a coincident row supplies the baseline.
+-- Key is required for loose output and optional in a difficulty. Loose positions use
+-- native measure IDs from wormedit.measures; difficulty positions use declaration anchors.
+-- Values are signed dimensionless numbers or exact helpers. Zero/reverse values are allowed.
+-- @function sv_point
+
+--- Persistent authored SV span, stored as a canonical recipe rather than sampled points.
+-- Appends to the current difficulty, or returns a descriptor for `generator.Output.sv_spans`.
+-- Range is half-open; values multiply authored scrolls (or speeds) only inside it.
+-- Overlapping enabled recipes multiply in declaration order. They never replace chart points.
+-- @param descriptor @{SpanDescriptor}.
+-- @function sv_span
+
+--- Persistent span descriptor. Unknown fields reject the complete batch.
+-- @field key Stable key, required for loose output; optional in a difficulty.
+-- Difficulty timing keys share one namespace across BPM, scroll, spans and other timing events.
+-- @field name Optional inspector label; defaults to key, or "Generated SV" for unkeyed declarations.
+-- @field from Required at_measure(id,row), inclusive beginning.
+-- @field to Required at_measure(id,row), exclusive end strictly after from.
+-- In difficulties use next measure row 0 for boundary ends. Loose spans also accept the
+-- final measure capacity as the exact exclusive chart end. Point events never accept it.
+-- @field curve Optional `constant`, `linear` (default), or `exponential`.
+-- Arbitrary Lua formulas emit explicit points in the generator; the separate curve host
+-- remains available for editable Lua function recipes.
+-- @field value_from Required signed multiplier (number or exact helper).
+-- @field value_to Optional signed ending multiplier, defaults to value_from.
+-- @field shape Optional exponential shape, defaults to zero (linear limit).
+-- @field points Optional fixed sample count, 2 through 4096; default 2.
+-- @field step_rows Optional positive integer sample spacing, mutually exclusive with points.
+-- Sampling is evaluated by the existing recipe owner and retains its point cap/grid rules.
+-- @field output Optional `sv` (default: osu!mania SV / StepMania SCROLLS) or `speeds`.
+-- SPEEDS spans use instantaneous transitions. Sampling, composition and format rounding
+-- follow the ordinary SV recipe preview/export path.
+-- @table SpanDescriptor

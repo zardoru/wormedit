@@ -106,6 +106,8 @@ void preview_summary(nk_context* context,const wormedit::ui::compose_generator_v
         nk_labelf(context,NK_TEXT_LEFT,"Notes +%zu / ~%zu / -%zu",view.notes.added,view.notes.changed,view.notes.removed);
         nk_layout_row_dynamic(context,24,1);
         nk_labelf(context,NK_TEXT_LEFT,"Layers +%zu / ~%zu / -%zu",view.layers.added,view.layers.changed,view.layers.removed);
+        nk_layout_row_dynamic(context,24,1);
+        nk_labelf(context,NK_TEXT_LEFT,"SV outputs +%zu / ~%zu / -%zu",view.sv.added,view.sv.changed,view.sv.removed);
     }
     if (!view.chart_previews.empty() || view.charts.removed) {
         nk_layout_row_dynamic(context,24,1);

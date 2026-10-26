@@ -234,6 +234,18 @@ template<class Id> struct id_ceiling_t {
         }
     }
 
+    void reserve_generator_outputs(const generator_recipe_t& recipe) {
+        reserve_generated_charts(recipe);
+        if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, recipe_id_t>) {
+            for (const auto& binding : recipe.generated_scrolls) reserve(Id{binding.value.id.value});
+            for (const auto& binding : recipe.generated_sv_recipes) reserve(Id{binding.value.id.value});
+        }
+        if constexpr (std::same_as<Id, object_id_t>)
+            for (const auto& binding : recipe.generated_notes) reserve(Id{binding.value.id.value});
+        if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, layer_id_t>)
+            for (const auto& binding : recipe.generated_layers) reserve(Id{binding.value.id.value});
+    }
+
     template<class Owner>
     static auto from(const Owner& owner,
                      std::size_t bound = std::numeric_limits<std::size_t>::max())
@@ -244,15 +256,8 @@ template<class Id> struct id_ceiling_t {
             if constexpr (std::same_as<Id, recipe_id_t> || std::same_as<Id, object_id_t>)
                 for (const auto& definition : owner.sv_recipe_definitions)
                     result.reserve(Id{definition.id.value});
-            for (const auto& recipe : owner.generator_recipes) {
-                result.reserve_generated_charts(recipe);
-                if constexpr (std::same_as<Id, object_id_t>)
-                    for (const auto& binding : recipe.generated_notes)
-                        result.reserve(Id{binding.value.id.value});
-                if constexpr (std::same_as<Id, object_id_t> || std::same_as<Id, layer_id_t>)
-                    for (const auto& binding : recipe.generated_layers)
-                        result.reserve(Id{binding.value.id.value});
-            }
+            for (const auto& recipe : owner.generator_recipes)
+                result.reserve_generator_outputs(recipe);
         }
         if constexpr (std::same_as<Owner, song_document_t> && !std::same_as<Id, object_id_t>) {
             if (!owner.prepared_bms_programs.empty())

@@ -659,7 +659,13 @@ layout/input and declared timing; `generator_chart_binding_t` maps stable declar
 native chart/object IDs. `generator_preview_t` allocates history-safe IDs and stages all owned
 difficulties through the same transaction. The shared chart ID visitor serves duplication and
 generator remapping; historical declarations reserve ceilings without counting as live objects.
-Schema23 stores these optional bindings. The inspector summarizes difficulty output instead of
+Schema23 stores these optional bindings. The same generator host accepts keyed `sv_points`
+and `sv_spans`, decoded to canonical scroll events and built-in SV recipes. Witnesses protect
+manual edits and retain identities; BMS materialization shares the native event adapters.
+Points set the held authored baseline, while half-open spans compose through the existing
+SV recipe owner. Generated difficulties acquire recipe-list ownership only when declaring
+spans, preserving independent recipes for older scripts. Additive optional schema23 fields
+store these witnesses; no VM state or sampled recipe cloud is persisted. The inspector summarizes difficulty output instead of
 projecting it onto the launch chart. Independent authored positions block resolution changes;
 full document validation rejects regeneration that removes their referenced measures.
 

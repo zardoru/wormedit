@@ -152,8 +152,8 @@ A recipe is a scroll curve over that area, kept as a curve rather than a cloud o
 * *Curve*: constant, linear, exponential, bump or a Lua function, with its values. A small plot
 above the values shows the whole span as it will be written.
 * *Points*: *Count* (evenly spaced), *Grid* (one per line of a snap grid, such as every 1/16) or
-*Auto* (added where the curve bends, up to a maximum). Points are only generated when the chart
-is exported.
+*Auto* (added where the curve bends, up to a maximum; see <<sv-max-error>>). Points are only
+generated when the chart is exported.
 
 *Add SPEEDS span* does the same for a StepMania speed change across the area.
 
@@ -182,6 +182,36 @@ Stages run in their listed order on the same sampled step values used by preview
 Raw and final samples are transient; the project stores only the recipe and its stages.
 Zero denominators, non-finite values and target-forbidden results reject the batch.
 
+[#sv-max-error]
+=== Choosing points: Count, Grid and Auto
+
+A recipe stays a curve in the project, but osu!mania and StepMania files only hold separate SV
+points, each one lasting until the next. *Points* decides where those points go:
+
+* *Count* places that many points evenly across the range, both ends included. A new recipe uses
+  2, which writes only its start and end values. Raise it for a smooth ramp.
+* *Grid* places a point on every line of a snap grid: *Every* `1/16` puts one on each sixteenth
+  note. It is predictable, and the right choice for waves and other repeating shapes.
+* *Auto* adds points only where the curve needs them, controlled by *Max error* and *Max points*.
+
+*Max error* is how far the written points may stray from the curve, in the curve's own units:
+speed multipliers for SV, so the default `0.001` allows 1.000× where the curve says 1.001×, and
+`0.05` allows a difference of 5% of normal speed. Auto starts from the two ends of the range. It
+then checks the curve halfway between two neighbouring points against the straight line joining
+them. If they differ by more than *Max error*, it adds a point there and checks both halves the
+same way; otherwise that stretch is finished. A smaller *Max error* gives more points and a closer
+match. Auto never places points closer than one row apart.
+
+*Max points* (default 256, up to 4096) caps the total. When the cap is reached, Auto stops adding
+points and leaves the rest of the curve coarser, without a warning. If the point count under the
+plot equals *Max points*, raise *Max points* or *Max error*.
+
+Because Auto only looks at midpoints, it can miss shapes that cross the straight line exactly
+there. A wave with a whole number of cycles is 1× at the start, middle and end, so Auto sees a
+flat line and writes two points. Use Auto for ramps and curves that bend one way, such as
+*Exponential*, and *Grid* for waves, bumps that repeat or Lua curves you are unsure about. *Max
+error* is checked before *Adjust* stages, so *Multiply by* `2` also doubles the remaining error.
+
 === Impulses
 
 Expand *Impulses* in an SV recipe form to add an exact normalized position `p` and signed
@@ -203,37 +233,8 @@ point cloud is stored in the project.
 
 === Lua functions
 
-The link:lua-api/index.html[packaged Lua API reference] documents all context fields, return
-values, sandbox limits and complete examples. It works offline alongside this manual.
-
-In a Lua-enabled build, choose *Lua function* in the recipe inspector. Use *Choose module…*
-to select a `.lua` file within the project, then *Reload* after editing it externally.
-The project keeps a frozen source snapshot; reopening or exporting does not reread the file.
-Set an entry point when the module returns a table of factories, for example:
-
-[listing]
-----
-return {
-  rise = function(ctx)
-    return function(p, ctx)
-      return 1 + p * ctx.parameters.height
-    end
-  end
-}
-----
-
-Enter `rise` as the entry point and add the exact rational parameter `height`.
-The inspector evaluates changes in the background. *Apply* stores a successfully previewed
-recipe as one undoable edit; an error keeps the last good graph and reports the Lua location.
-*Revert* drops the draft. Evaluation has instruction and memory limits and cannot access files,
-the network or the document.
-
-Use *Pure* for functions whose answer depends only on their inputs. They support adaptive sampling
-and cannot change captured state or draw random values during a query. Use *Ordered* for counters,
-accumulators or seeded randomness. Ordered mode needs fixed sampling and cycle emission counts
-whose sum equals the sample schedule, including its endpoint query. Indices start at one and
-`p` still spans the whole range. Every new preview or export resets the session from its seed.
-Post-processing and composition reuse prepared values without advancing the function.
+Choose *Lua function* as the *Curve* to describe a recipe with a formula written in Lua.
+<<scripting-sv>> walks through it, step by step.
 
 == Metronome
 

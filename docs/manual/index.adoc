@@ -48,6 +48,8 @@ include::chapters/measures.adoc[leveloffset=+1]
 
 include::chapters/timing.adoc[leveloffset=+1]
 
+include::chapters/scripting.adoc[leveloffset=+1]
+
 include::chapters/bms-branches.adoc[leveloffset=+1]
 
 include::chapters/comparing.adoc[leveloffset=+1]

@@ -668,7 +668,9 @@ if(WORMEDIT_ENABLE_LUA)
         lua/lua_project_tests.cpp
         lua/chart_lua_tests.cpp
         lua/lua_generator_tests.cpp
+        lua/lua_manual_tutorial_tests.cpp
     )
+    target_include_directories(wormedit_lua_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(wormedit_lua_tests
         PRIVATE
             nlohmann_json::nlohmann_json
@@ -677,7 +679,8 @@ if(WORMEDIT_ENABLE_LUA)
             Catch2::Catch2WithMain
     )
     target_compile_definitions(wormedit_lua_tests PRIVATE
-        WORMEDIT_LUA_EXAMPLE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/lua-api/examples")
+        WORMEDIT_LUA_EXAMPLE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/lua-api/examples"
+        WORMEDIT_MANUAL_TUTORIAL_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/docs/manual/fixtures/tutorial")
     catch_discover_tests(wormedit_lua_tests
         TEST_PREFIX "lua."
         PROPERTIES LABELS lua TIMEOUT 10

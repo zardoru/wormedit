@@ -21,7 +21,7 @@ local make_environment = _wormedit_make_project_environment
 _wormedit_make_project_environment = nil
 local include_from, asset
 local active, loaded, seen = {}, {}, {}
-local output = {notes = {}, layers = {}}
+local output = {notes = {}, layers = {}, sv_points = {}, sv_spans = {}}
 local failed
 local configuration = {assets = {}}
 local declared_name
@@ -52,13 +52,15 @@ local function append(destination, values, maximum)
   end
 end
 local function collect(value)
-  if type(value) ~= 'table' or seen[value] or (value.notes == nil and value.layers == nil) then return end
+  if type(value) ~= 'table' or seen[value] or (value.notes == nil and value.layers == nil and value.sv_points == nil and value.sv_spans == nil) then return end
   seen[value] = true
   for key in pairs(value) do
-    if key ~= 'notes' and key ~= 'layers' then fail('Unknown generator proposal field') end
+    if key ~= 'notes' and key ~= 'layers' and key ~= 'sv_points' and key ~= 'sv_spans' then fail('Unknown generator proposal field') end
   end
   append(output.notes, value.notes, maximum_notes)
   append(output.layers, value.layers, maximum_layers)
+  append(output.sv_points, value.sv_points, maximum_notes)
+  append(output.sv_spans, value.sv_spans, maximum_layers)
 end
 function worm_project(name)
   if type(name) ~= 'string' or name == '' or declared_name then fail('Declare worm_project once with a name') end

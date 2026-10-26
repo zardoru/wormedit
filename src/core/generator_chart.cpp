@@ -8,7 +8,7 @@
 #include <map>
 #include <set>
 namespace wormedit {
-auto generator_chart_content_t::from(const chart_document_t& chart) -> generator_chart_content_t {
+auto generator_chart_content_t::from(const chart_document_t& chart, bool owns_sv) -> generator_chart_content_t {
     return {.name = chart.metadata.name,
             .resolution = chart.divisions_per_standard_measure,
             .offset = chart.beat_zero_audio_offset_seconds,
@@ -19,7 +19,8 @@ auto generator_chart_content_t::from(const chart_document_t& chart) -> generator
             .bpms = chart.bpms,
             .pauses = chart.pauses,
             .warps = chart.warps,
-            .scrolls = chart.scrolls};
+            .scrolls = chart.scrolls,
+            .sv_recipes = owns_sv ? std::optional{chart.sv_recipes} : std::nullopt};
 }
 void generator_chart_content_t::apply_to(chart_document_t& chart) const {
     chart.metadata.name = name;
@@ -33,6 +34,7 @@ void generator_chart_content_t::apply_to(chart_document_t& chart) const {
     chart.pauses = pauses;
     chart.warps = warps;
     chart.scrolls = scrolls;
+    if (sv_recipes) chart.sv_recipes = *sv_recipes;
 }
 namespace {
 auto find_chart_binding(const generator_recipe_t& recipe, std::string_view key)
@@ -45,7 +47,7 @@ auto check_chart_witnesses(const song_document_t& song, const generator_recipe_t
     -> diagnostic_list_t {
     for (const auto& binding : recipe.generated_charts) {
         const auto* current = song.find_chart(binding.chart);
-        if (!current || generator_chart_content_t::from(*current) != binding.content)
+        if (!current || generator_chart_content_t::from(*current, binding.content.sv_recipes.has_value()) != binding.content)
             return {error(diagnostic_code_t::invalid_binding,
                           "Generated difficulty was edited or deleted. Detach its generator "
                           "before replacing owned measures or timing.")};
@@ -99,7 +101,7 @@ auto bind_chart_ids(generator_chart_binding_t& candidate, const generator_chart_
     if (visitor.missing)
         return {error(diagnostic_code_t::invalid_binding,
                       "Generated chart has an undeclared object reference.")};
-    candidate.content = generator_chart_content_t::from(chart);
+    candidate.content = generator_chart_content_t::from(chart, candidate.content.sv_recipes.has_value());
     return {};
 }
 auto validate_chart_content(const generator_chart_binding_t& binding) -> diagnostic_list_t {
@@ -112,6 +114,25 @@ auto validate_chart_content(const generator_chart_binding_t& binding) -> diagnos
         return {error(diagnostic_code_t::invalid_binding,
                       "Generated difficulty contains overlapping playable notes or holds.")};
     return {};
+}
+auto check_recipe_ownership(const song_document_t& song, const generator_chart_binding_t& candidate,
+    const generator_chart_binding_t* old) -> diagnostic_list_t {
+    if (!old) return {};
+    if (old->content.sv_recipes && !candidate.content.sv_recipes)
+        return {error(diagnostic_code_t::invalid_binding, "Generated difficulty cannot silently discard SV recipe ownership.")};
+    if (old->content.sv_recipes || !candidate.content.sv_recipes) return {};
+    const auto* chart = song.find_chart(old->chart);
+    if (chart && !chart->sv_recipes.empty())
+        return {error(diagnostic_code_t::invalid_binding,
+            "Generated spans would replace independently authored SV recipes. Detach the generator first.")};
+    return {};
+}
+auto prepare_recipe_ownership(const song_document_t& song, generator_chart_binding_t& candidate,
+    const generator_chart_binding_t* old) -> diagnostic_list_t {
+    // Once acquired, an omitted span list means removing the previously owned spans.
+    if (old && old->content.sv_recipes && !candidate.content.sv_recipes)
+        candidate.content.sv_recipes.emplace();
+    return check_recipe_ownership(song, candidate, old);
 }
 auto check_fresh_identity(std::uint64_t value, std::uint64_t old, std::uint64_t first,
                           std::set<std::uint64_t>& allocated) -> bool {
@@ -133,6 +154,8 @@ auto check_materialization_ids(document_command_transaction_t& transaction,
         allocated.insert(item.value.id.value);
     for (const auto& item : recipe.generated_layers)
         allocated.insert(item.value.id.value);
+    for (const auto& item : recipe.generated_scrolls) allocated.insert(item.value.id.value);
+    for (const auto& item : recipe.generated_sv_recipes) allocated.insert(item.value.id.value);
     for (const auto& chart : recipe.generated_charts) {
         const auto* previous = find_chart_binding(old, chart.key);
         if (!check_fresh_identity(chart.chart.value, previous ? previous->chart.value : 0, floor,
@@ -154,9 +177,9 @@ auto check_materialization_ids(document_command_transaction_t& transaction,
     }
     return {};
 }
-auto can_remove_chart(const chart_document_t& chart) -> bool {
+auto can_remove_chart(const chart_document_t& chart, bool owns_sv) -> bool {
     return chart.semantic_layers.empty() && chart.sound_layer_defaults.empty() &&
-           chart.speeds.empty() && chart.sv_recipes.empty() && chart.kiai.empty() &&
+           chart.speeds.empty() && (owns_sv || chart.sv_recipes.empty()) && chart.kiai.empty() &&
            chart.timing_anchors.empty() && chart.bookmarks.empty() && chart.sections.empty() &&
            chart.bga_events.empty() && chart.sound_channels.empty() &&
            chart.metadata.author.empty() && !chart.metadata.rating &&
@@ -164,9 +187,10 @@ auto can_remove_chart(const chart_document_t& chart) -> bool {
            chart.metadata.overrides == metadata_overrides_t{} &&
            chart.timing_links == timing_links_t{};
 }
-auto has_authored_positions(const chart_document_t& chart) -> bool {
+auto has_authored_positions(const chart_document_t& chart, bool owns_sv) -> bool {
     auto authored = chart;
     generator_chart_content_t{}.apply_to(authored);
+    if (owns_sv) authored.sv_recipes.clear();
     bool positioned = false;
     for_each_chart_position(
         authored, [&](const local_position_t&, measure_chart_end_policy_t) { positioned = true; });
@@ -174,7 +198,7 @@ auto has_authored_positions(const chart_document_t& chart) -> bool {
 }
 auto check_chart_grid(const chart_document_t& chart, const generator_chart_content_t& content)
     -> diagnostic_list_t {
-    if (chart.divisions_per_standard_measure != content.resolution && has_authored_positions(chart))
+    if (chart.divisions_per_standard_measure != content.resolution && has_authored_positions(chart, content.sv_recipes.has_value()))
         return {error(diagnostic_code_t::invalid_binding,
                       "Generated difficulty resolution cannot change while authored positions "
                       "remain. Detach the generator or remove that content first.")};
@@ -186,7 +210,7 @@ auto replace_charts(song_document_t& song, const generator_recipe_t& recipe,
         if (find_chart_binding(recipe, previous.key))
             continue;
         const auto* current = song.find_chart(previous.chart);
-        if (!current || !can_remove_chart(*current))
+        if (!current || !can_remove_chart(*current, previous.content.sv_recipes.has_value()))
             return {.diagnostics = {
                         error(diagnostic_code_t::invalid_binding,
                               "An omitted generated difficulty has additional authored content. "
@@ -275,6 +299,7 @@ auto generator_preview_t::bind_charts(const document_history_t& history,
             return {error(diagnostic_code_t::invalid_binding,
                           "Generated difficulties need unique stable keys.")};
         const auto* previous = find_chart_binding(old, chart.key);
+        if (auto errors = prepare_recipe_ownership(history.document, chart, previous); !errors.empty()) return errors;
         chart.chart = previous ? previous->chart : chart_id_t{next++};
         if (!chart.chart)
             return {error(diagnostic_code_t::invalid_binding, "Chart identity space exhausted.")};
@@ -301,6 +326,9 @@ auto generator_preview_t::stage_charts(document_command_transaction_t& transacti
     -> attempt_t<document_edit_effect_t> {
     if (auto errors = check_chart_witnesses(transaction.source_document(), old); !errors.empty())
         return {.diagnostics = std::move(errors)};
+    for (const auto& binding : recipe.generated_charts)
+        if (auto errors = check_recipe_ownership(transaction.source_document(), binding, find_chart_binding(old, binding.key)); !errors.empty())
+            return {.diagnostics = std::move(errors)};
     if (auto errors = check_materialization_ids(transaction, recipe, old); !errors.empty())
         return {.diagnostics = std::move(errors)};
     return transaction.stage(

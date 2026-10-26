@@ -23,7 +23,9 @@ volatile sig_atomic_t handling_fatal_signal = 0;
 
 template <std::size_t Size>
 void write_stderr(const char (&message)[Size]) noexcept {
-    (void)write(STDERR_FILENO, message, Size - 1);
+    // Best effort inside a signal handler. GCC ignores a (void) cast on glibc's
+    // warn_unused_result write() under _FORTIFY_SOURCE, so keep the result instead.
+    [[maybe_unused]] const auto written = write(STDERR_FILENO, message, Size - 1);
 }
 
 void write_signal_name(int signal_number) noexcept {

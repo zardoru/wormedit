@@ -11,6 +11,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/numeric_text.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/sv_recipe.h>
 namespace wormedit::scripting {
 namespace {
 namespace values = lua_value_detail;
@@ -92,12 +93,20 @@ function stop(value) return timing('stop',value) end
 function delay(value) return timing('delay',value) end
 function warp(value) return timing('warp',value) end
 function scroll(value) return timing('scroll',value) end
+function sv_point(value)
+  if chart_current then return timing('scroll',value) end
+  return descriptor('sv_point',value)
+end
+function sv_span(value)
+  if chart_current then return timing('sv_span',value) end
+  return descriptor('sv_span',value)
+end
 local function finish_chart_declarations(value)
   if #chart_result == 0 then return value end
   if value ~= nil then
     if chart_type(value) ~= 'table' then chart_error('Chart declarations require a table or no return value',0) end
     for key, items in chart_pairs(value) do
-      if key ~= 'notes' and key ~= 'layers' then chart_error('Unknown output mixed with chart declarations',0) end
+      if key ~= 'notes' and key ~= 'layers' and key ~= 'sv_points' and key ~= 'sv_spans' then chart_error('Unknown output mixed with chart declarations',0) end
       if chart_type(items) ~= 'table' or chart_next(items) ~= nil then
         chart_error('Chart declarations cannot be mixed with loose note/layer output',0)
       end
@@ -129,6 +138,29 @@ class chart_decoder_t {
         parse_notes(values::children(values::required(value, "measures")));
         parse_timing(values::children(values::required(value, "timing")));
         return std::move(result_);
+    }
+
+    void decode_sv(const values::table_t& table, generator_output_t& output) {
+        if (const auto* points = values::field(table, "sv_points")) {
+            const auto& entries = values::children(*points); values::dense(entries);
+            if (entries.size() > maximum_generator_notes) values::malformed("Generator SV point limit exceeded.");
+            for (const auto& entry : entries) {
+                const auto& value = values::children(entry);
+                values::only_fields(value, {"_kind", "key", "at", "value"});
+                output.scrolls.push_back({.key = values::text(values::required(value, "key")),
+                    .value = {.position = position_value(values::required(value, "at")),
+                        .multiplier = signed_value(values::required(value, "value"), "SV point")}});
+            }
+        }
+        if (const auto* spans = values::field(table, "sv_spans")) {
+            const auto& entries = values::children(*spans); values::dense(entries);
+            if (entries.size() > maximum_sv_recipes_per_chart) values::malformed("Generator SV span limit exceeded.");
+            for (const auto& entry : entries) {
+                const auto& value = values::children(entry);
+                output.sv_recipes.push_back({.key = values::text(values::required(value, "key")),
+                    .value = span_value(value)});
+            }
+        }
     }
 
   private:
@@ -322,6 +354,9 @@ class chart_decoder_t {
         if (values::text(values::required(data, "_kind")) != "position")
             values::malformed("Use at_measure(id,row) for chart-level positions.");
         const auto& measure = values::required(data, "measure");
+        if (result_.content.measures.empty())
+            return {.measure = measure_id_t{values::integer(measure)},
+                    .row = values::integer(values::required(data, "row"))};
         std::string key;
         if (const auto* text_value = std::get_if<std::string>(&values::scalar(measure)))
             key = *text_value;
@@ -450,9 +485,52 @@ class chart_decoder_t {
                                          .position = origin,
                                          .beats_per_minute = {120, 1}});
     }
+    auto span_value(const values::table_t& value) -> sv_recipe_t {
+        values::only_fields(value, {"_kind", "key", "name", "from", "to", "curve", "value_from", "value_to", "shape", "points", "step_rows", "output"});
+        sv_recipe_t recipe{.name = values::field(value, "key") ? values::text(*values::field(value, "key")) : "Generated SV",
+                           .range = {position_value(values::required(value, "from")),
+                                     position_value(values::required(value, "to"))}};
+        if (const auto* item = values::field(value, "name")) recipe.name = values::text(*item);
+        const auto curve = values::field(value, "curve") ? values::text(*values::field(value, "curve")) : "linear";
+        if (curve == "constant") recipe.curve = sv_recipe_curve_t::constant;
+        else if (curve == "linear") recipe.curve = sv_recipe_curve_t::linear;
+        else if (curve == "exponential") recipe.curve = sv_recipe_curve_t::exponential;
+        else values::malformed("SV span curve must be constant, linear or exponential; emit explicit points for arbitrary Lua curves.");
+        const auto output = values::field(value, "output") ? values::text(*values::field(value, "output")) : "sv";
+        if (output == "speeds") recipe.output = sv_recipe_output_t::speeds;
+        else if (output != "sv") values::malformed("SV span output must be sv or speeds.");
+        recipe.parameters.value_from = signed_value(values::required(value, "value_from"), "SV span value_from");
+        if (const auto* item = values::field(value, "value_to")) recipe.parameters.value_to = signed_value(*item, "SV span value_to");
+        else recipe.parameters.value_to = recipe.parameters.value_from;
+        if (const auto* item = values::field(value, "shape")) recipe.parameters.shape = signed_value(*item, "SV span shape");
+        span_sampling(value, recipe);
+        return recipe;
+    }
+    void span_sampling(const values::table_t& value, sv_recipe_t& recipe) {
+        if (values::field(value, "points") && values::field(value, "step_rows"))
+            values::malformed("SV span needs points or step_rows, never both.");
+        if (const auto* item = values::field(value, "points")) {
+            const auto count = values::integer(*item);
+            if (count < 2 || count > maximum_sv_recipe_sample_points) values::malformed("SV span points must be 2 through 4096.");
+            recipe.sampling.fixed_point_count = static_cast<std::uint32_t>(count);
+        }
+        if (const auto* item = values::field(value, "step_rows")) {
+            recipe.sampling.fixed_point_count.reset();
+            recipe.sampling.fixed_step_rows = values::integer(*item);
+            if (!*recipe.sampling.fixed_step_rows) values::malformed("SV span step_rows must be positive.");
+        }
+    }
     void parse_timing_event(const values::table_t& value, std::size_t ordinal) {
         const auto kind = values::text(values::required(value, "_kind"));
         const auto id = object_id_t{identity(event_key(value, "timing:", ordinal))};
+        if (kind == "sv_span") {
+            if (!result_.content.sv_recipes) result_.content.sv_recipes.emplace();
+            if (result_.content.sv_recipes->size() >= maximum_sv_recipes_per_chart) values::malformed("Too many SV spans.");
+            auto recipe = span_value(value);
+            recipe.id = recipe_id_t{id.value};
+            result_.content.sv_recipes->push_back(std::move(recipe));
+            return;
+        }
         if (kind == "warp") {
             values::only_fields(value, {"_kind", "key", "from", "to"});
             result_.content.warps.push_back(
@@ -494,6 +572,10 @@ class chart_decoder_t {
 } // namespace
 auto chart_lua_prelude() -> std::string_view {
     return declarations;
+}
+void decode_lua_sv(const lua_sandbox_context_t& values, generator_output_t& output) {
+    chart_decoder_t decoder(output.rationalizations);
+    decoder.decode_sv(values, output);
 }
 auto decode_lua_charts(const lua_sandbox_context_t& values) -> generator_output_t {
     values::dense(values);

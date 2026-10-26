@@ -147,3 +147,23 @@ TEST_CASE("project Lua requires its declaration even if a module writes project 
     source_file(root->path(), "project.lua", "project.name='bypass'; return {notes={}}");
     CHECK_FALSE(freeze(project_song(), root->path()).ok());
 }
+
+TEST_CASE("project Lua collects SV proposals from included modules under frozen replay", "[lua-project][sv]") {
+    auto root = test::temporary_directory_t::from(); REQUIRE(root);
+    source_file(root->path(), "project.lua", "worm_project 'SV'; include 'sv.lua'; include 'sv.lua'");
+    source_file(root->path(), "sv.lua", R"(
+local m=wormedit.measures[1].id
+return {sv_points={sv_point{key='base',at=at_measure(m,0),value=2}},
+        sv_spans={sv_span{key='rise',from=at_measure(m,0),to=at_measure(m,480),value_from=1,value_to=2}}}
+)");
+    const auto song = project_song();
+    const auto frozen = freeze(song, root->path());
+    INFO((frozen.diagnostics.empty() ? "success" : frozen.diagnostics.front().message));
+    REQUIRE(frozen.ok());
+    std::filesystem::remove_all(root->path());
+    const auto output = execute(song, frozen.value);
+    INFO((output.diagnostics.empty() ? "success" : output.diagnostics.front().message));
+    REQUIRE(output.ok());
+    CHECK(output.value.scrolls.size() == 1);
+    CHECK(output.value.sv_recipes.size() == 1);
+}

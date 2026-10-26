@@ -1,4 +1,4 @@
---- Note-generator configuration and return values.
+--- Generator configuration and return values.
 -- A source chunk reads `wormedit` and `generator`, then returns an @{Output}.
 -- No import or library registration is needed. See the complete generator example.
 -- @module generator
@@ -18,6 +18,14 @@
 -- duplicate keys, nonfinite/fractional row values, and out-of-chart positions reject the result.
 -- @field notes Optional array of @{NoteProposal}.
 -- @field layers Optional array of @{LayerProposal}.
+-- @field sv_points Optional array of @{chart.sv_point} descriptors, at most 16384.
+-- @field sv_spans Optional array of @{chart.SpanDescriptor} descriptors, at most 256.
+-- Both may accompany notes/layers. Points and spans have separate stable-key namespaces.
+-- Existing points at the same absolute row cause rejection; no automatic replacement occurs.
+-- Regeneration replaces only unchanged owned output, removes omitted owned keys, and keeps
+-- unrelated authored data. Manual edits/deletions require Detach before regeneration.
+-- Scoped BMS output uses the selected semantic Chart and its normal bounded validation.
+-- The whole batch previews before one Undo publication; Undo/Redo never runs Lua.
 -- @table Output
 
 --- Generated note proposal. Stable keys identify output across regeneration.

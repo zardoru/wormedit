@@ -130,6 +130,21 @@ TEST_CASE("real generator inspector Run previews ghosts and Apply commits one Un
     check_generator_ui(fixture.history.document.charts.front().measures.front().notes.empty());
     check_generator_ui(fixture.history.document.generator_recipes.empty());
 }
+TEST_CASE("real generator inspector previews and applies SV output", "[frontend-state][event-harness][generator][sv]") {
+    auto directory = test::temporary_directory_t::from(); require_generator_ui(directory.has_value());
+    {
+        std::ofstream output{directory->path() / "pattern.lua"};
+        output << "return {sv_points={sv_point{key='base',at=at_measure('1',0),value=2}},"
+                  "sv_spans={sv_span{key='rise',from=at_measure('1',0),to=at_measure('1',480),value_from=1,value_to=2}}}";
+    }
+    generator_ui_fixture_t fixture; fixture.base = directory->path(); fixture.run();
+    check_generator_ui(fixture.history.undo.empty());
+    check_generator_ui(fixture.harness.view().compose.generator.sv.added == 2);
+    fixture.dispatch(fixture.click("Apply", WORM_UI_COMPOSE_ACTION_GENERATOR_APPLY)); fixture.project();
+    check_generator_ui(fixture.history.undo.size() == 1);
+    check_generator_ui(fixture.history.document.charts.front().scrolls.size() == 1);
+    check_generator_ui(fixture.history.document.charts.front().sv_recipes.size() == 1);
+}
 TEST_CASE("real generator inspector Cancel discards ghosts and stale Apply cannot publish", "[frontend-state][event-harness][generator]") {
     auto directory = test::temporary_directory_t::from(); require_generator_ui(directory.has_value());
     write_generator(directory->path());

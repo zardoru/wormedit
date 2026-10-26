@@ -59,13 +59,14 @@ auto decode_layer(const values::node_t& node) -> generator_layer_t {
     return layer;
 }
 auto decode_output(const values::table_t& table) -> generator_output_t {
-    values::only_fields(table, {"notes", "layers", "charts"});
+    values::only_fields(table, {"notes", "layers", "charts", "sv_points", "sv_spans"});
     if (const auto* charts = values::field(table, "charts")) {
-        if (values::field(table, "notes") || values::field(table, "layers")) values::malformed("Chart batches cannot mix loose note/layer output.");
+        if (values::field(table, "notes") || values::field(table, "layers") || values::field(table, "sv_points") || values::field(table, "sv_spans")) values::malformed("Chart batches cannot mix loose generator output.");
         return decode_lua_charts(values::children(*charts));
     }
-    if (!values::field(table, "notes") && !values::field(table, "layers")) values::malformed("Generator must return notes or layers arrays explicitly.");
+    if (!values::field(table, "notes") && !values::field(table, "layers") && !values::field(table, "sv_points") && !values::field(table, "sv_spans")) values::malformed("Generator must return an explicit notes, layers, sv_points or sv_spans array.");
     generator_output_t output;
+    decode_lua_sv(table, output);
     if (const auto* layers = values::field(table, "layers")) {
         const auto& values = values::children(*layers); values::dense(values);
         if (values.size() > maximum_generator_layers) values::malformed("Generator layer limit exceeded.");

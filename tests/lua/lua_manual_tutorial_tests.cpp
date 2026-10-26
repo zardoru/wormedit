@@ -6,6 +6,7 @@
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -140,4 +141,14 @@ TEST_CASE("Manual wobble curve needs Grid points because Auto only checks midpoi
     INFO((grid.diagnostics.empty() ? "success" : grid.diagnostics.front().message));
     REQUIRE(grid);
     CHECK(grid.points.size() > 30);
+}
+
+TEST_CASE("Manual SV generator scripts apply spans and explicit points through the generator workflow", "[lua-manual][sv]") {
+    const auto path = GENERATE("scripts/sv/generate.lua", "scripts/sv/points.lua");
+    auto history = tutorial_history();
+    const auto recipe = script_recipe(history, path);
+    auto output = run(history, recipe);
+    CHECK_FALSE(output.value.scrolls.empty());
+    require_applies(history, recipe, std::move(output.value));
+    CHECK_FALSE(tutorial_chart(history).scrolls.empty());
 }

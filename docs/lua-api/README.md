@@ -151,6 +151,40 @@ Nonfinite curve values, nondeterministic output, unsupported versions, invalid
 hashes, cancellation, and resource exhaustion reject the operation with diagnostics.
 Prepared curve samples are immutable; composition/postprocessing do not run Lua.
 
+## Generating SV data
+
+The generator host accepts `sv_points` and `sv_spans` together with notes/layers.
+Use `sv_point {key=..., at=at_measure(native_measure_id,row), value=...}` for explicit
+held baseline values and `sv_span {key=..., from=..., to=..., value_from=...,
+value_to=..., step_rows=...}` for persistent built-in recipes. A project include can
+return these same arrays. Inside a difficulty declaration, the helpers append directly;
+`scroll` retains its existing meaning and scripts remain API1.
+
+Spans multiply the existing authored baseline within a half-open range. Explicit
+points set that baseline and hold beyond their position, so write a reset point when
+needed. Values are dimensionless multipliers, positions are integer chart rows, and
+`step_rows` is a sampling interval rather than seconds or beats. Exact `ratio` values
+avoid floating approximation; finite Lua numbers use the chart API's bounded
+rationalization and exact-value report. Duplicate point rows reject, including rows
+already occupied by unrelated authored points. Regeneration replaces only owned,
+unchanged keys. Overlapping spans compose through the ordinary SV owner.
+
+The generated difficulty witness owns its recipe list only when it declares spans.
+Earlier scripts that declare no spans keep independently authored recipes outside
+ownership. After declaring spans, editing that list blocks regeneration until Detach.
+Native schema23 stores additive optional witnesses; earlier schema23 files remain
+readable. Saving/loading and Undo/Redo never evaluate scripts. Prepared scoped BMS
+uses existing native event adapters and rejects any unsupported or unprovable edit
+with diagnostics. There is no flat mutable BMS mirror.
+
+Only constant, linear and exponential persistent descriptors are exposed initially.
+For other generator formulas, emit explicit points; use the separate Lua curve host
+for persistent Lua function recipes. No closures or live VM state are serialized.
+SPEEDS spans are available with `output="speeds"`; explicit generator points currently
+write the scroll/SV baseline. Sampling and export retain their existing grid,
+point-cap and target-format limitations. The runnable tutorial scripts
+`sv/generate.lua` and `sv/points.lua` demonstrate both choices.
+
 ## Building and maintaining this reference
 
 `cmake --build build --target lua-api --parallel 2` generates this book with pinned

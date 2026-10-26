@@ -40,7 +40,7 @@ struct compose_generator_view_t {
     generator_form_t selected_form;
     bool has_selection{};
     bool busy{}, can_apply{}, requires_confirmation{};
-    generator_diff_t notes, layers, charts;
+    generator_diff_t notes, layers, charts, sv;
     std::vector<generator_chart_preview_t> chart_previews;
     std::vector<std::string> rationalizations;
     std::string_view status;

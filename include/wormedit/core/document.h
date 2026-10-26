@@ -976,17 +976,15 @@ struct generator_input_t {
 
 // Historical materialization witnesses, separate from the ordinary editable
 // chart objects. Regeneration checks these before replacing authored changes.
-struct generator_note_binding_t {
+template<class Value> struct generator_binding_t {
     std::string key;
-    note_t value;
-    auto operator==(const generator_note_binding_t&) const -> bool = default;
+    Value value;
+    auto operator==(const generator_binding_t&) const -> bool = default;
 };
-
-struct generator_layer_binding_t {
-    std::string key;
-    semantic_layer_t value;
-    auto operator==(const generator_layer_binding_t&) const -> bool = default;
-};
+using generator_note_binding_t = generator_binding_t<note_t>;
+using generator_layer_binding_t = generator_binding_t<semantic_layer_t>;
+using generator_scroll_binding_t = generator_binding_t<scroll_event_t>;
+using generator_sv_binding_t = generator_binding_t<sv_recipe_t>;
 
 // Typed historical witnesses for fields authored by a generated difficulty. Non-generated
 // chart metadata/annotations are not mirrored here and remain independently editable.
@@ -1002,7 +1000,9 @@ struct generator_chart_content_t {
     std::vector<pause_event_t> pauses;
     std::vector<warp_event_t> warps;
     std::vector<scroll_event_t> scrolls;
-    [[nodiscard]] static auto from(const chart_document_t&) -> generator_chart_content_t;
+    // Absent in older declarations: independently authored recipes stay outside ownership.
+    std::optional<std::vector<sv_recipe_t>> sv_recipes;
+    [[nodiscard]] static auto from(const chart_document_t&, bool owns_sv = false) -> generator_chart_content_t;
     void apply_to(chart_document_t&) const;
     auto operator==(const generator_chart_content_t&) const -> bool = default;
 };
@@ -1034,6 +1034,8 @@ struct generator_recipe_t {
     std::vector<generator_note_binding_t> generated_notes;
     std::vector<generator_layer_binding_t> generated_layers;
     std::vector<generator_chart_binding_t> generated_charts;
+    std::vector<generator_scroll_binding_t> generated_scrolls;
+    std::vector<generator_sv_binding_t> generated_sv_recipes;
     auto operator==(const generator_recipe_t&) const -> bool = default;
 };
 

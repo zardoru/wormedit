@@ -722,15 +722,40 @@ void from_json(const json& value, midi_asset_t& asset) {
     value.at("events").get_to(asset.events);
 }
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_content_t, name, resolution, offset, measures,
-    layouts, input, bgm_lanes, bpms, pauses, warps, scrolls)
+void to_json(json& value, const generator_chart_content_t& content) {
+    value = json{{"name", content.name}, {"resolution", content.resolution}, {"offset", content.offset},
+        {"measures", content.measures}, {"layouts", content.layouts}, {"input", content.input},
+        {"bgm_lanes", content.bgm_lanes}, {"bpms", content.bpms}, {"pauses", content.pauses},
+        {"warps", content.warps}, {"scrolls", content.scrolls}};
+    if (content.sv_recipes) value["sv_recipes"] = *content.sv_recipes;
+}
+void from_json(const json& value, generator_chart_content_t& content) {
+    value.at("name").get_to(content.name);
+    value.at("resolution").get_to(content.resolution);
+    value.at("offset").get_to(content.offset);
+    value.at("measures").get_to(content.measures);
+    value.at("layouts").get_to(content.layouts);
+    value.at("input").get_to(content.input);
+    value.at("bgm_lanes").get_to(content.bgm_lanes);
+    value.at("bpms").get_to(content.bpms);
+    value.at("pauses").get_to(content.pauses);
+    value.at("warps").get_to(content.warps);
+    value.at("scrolls").get_to(content.scrolls);
+    content.sv_recipes.reset();
+    if (value.contains("sv_recipes")) content.sv_recipes = value.at("sv_recipes").get<std::vector<sv_recipe_t>>();
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_identity_t, key, value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_chart_binding_t, key, chart, content, identities)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_parameter_t, name, serialized_value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_input_t, asset, content_hash)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_note_binding_t, key, value)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_layer_binding_t, key, value)
+template<class Value> void to_json(json& value, const generator_binding_t<Value>& binding) {
+    value = json{{"key", binding.key}, {"value", binding.value}};
+}
+template<class Value> void from_json(const json& value, generator_binding_t<Value>& binding) {
+    value.at("key").get_to(binding.key);
+    value.at("value").get_to(binding.value);
+}
 
 void to_json(json& value, const generator_recipe_t& recipe) {
     value = json{{"id", recipe.id},
@@ -746,7 +771,9 @@ void to_json(json& value, const generator_recipe_t& recipe) {
                  {"bms_chart", recipe.bms_chart},
                  {"generated_notes", recipe.generated_notes},
                  {"generated_layers", recipe.generated_layers},
-                 {"generated_charts", recipe.generated_charts}};
+                 {"generated_charts", recipe.generated_charts},
+                 {"generated_scrolls", recipe.generated_scrolls},
+                 {"generated_sv_recipes", recipe.generated_sv_recipes}};
 }
 
 void from_json(const json& value, generator_recipe_t& recipe) {
@@ -763,6 +790,10 @@ void from_json(const json& value, generator_recipe_t& recipe) {
     value.at("bms_chart").get_to(recipe.bms_chart);
     value.at("generated_notes").get_to(recipe.generated_notes);
     value.at("generated_layers").get_to(recipe.generated_layers);
+    recipe.generated_scrolls.clear();
+    recipe.generated_sv_recipes.clear();
+    if (value.contains("generated_scrolls")) value.at("generated_scrolls").get_to(recipe.generated_scrolls);
+    if (value.contains("generated_sv_recipes")) value.at("generated_sv_recipes").get_to(recipe.generated_sv_recipes);
     recipe.generated_charts.clear();
     if (value.contains("generated_charts")) value.at("generated_charts").get_to(recipe.generated_charts);
 }
@@ -1226,6 +1257,10 @@ auto is_valid_bms_owner_domains(const bms_program_document_t& owner, std::size_t
 
 auto is_valid_generated_chart_domains(const song_document_t& song,std::size_t maximum_depth) -> bool {
     for (const auto& recipe:song.generator_recipes) {
+        chart_document_t sv;
+        for (const auto& binding : recipe.generated_scrolls) sv.scrolls.push_back(binding.value);
+        for (const auto& binding : recipe.generated_sv_recipes) sv.sv_recipes.push_back(binding.value);
+        if (!is_valid_chart_enum_domains(sv, maximum_depth)) return false;
         for (const auto& binding:recipe.generated_charts) {
             chart_document_t chart;
             binding.content.apply_to(chart);
@@ -1471,8 +1506,16 @@ enum class schema_shape_context_t {
 auto schema_shape_equal(const json& input, const json& canonical,
                        schema_shape_context_t context) -> bool;
 
+auto is_allows_legacy_generator_shape(const json& input, const json& canonical) -> bool {
+    std::size_t missing{};
+    for (const auto key : {"generated_charts", "generated_scrolls", "generated_sv_recipes"})
+        if (!input.contains(key) && canonical.contains(key) && canonical.at(key).empty()) ++missing;
+    return missing != 0 && input.size() + missing == canonical.size();
+}
+
 auto is_allows_legacy_object_shape(const json& input, const json& canonical,
                                 schema_shape_context_t context) -> bool {
+    if (is_allows_legacy_generator_shape(input, canonical)) return true;
     if (input.size() + 1 != canonical.size()) {
         return false;
     }
@@ -1489,9 +1532,6 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     if (context == schema_shape_context_t::bgm_event_entry) {
         return !input.contains("end") && canonical.contains("end");
     }
-    // Independent unreleased schema23 additions can be absent in the other feature branch.
-    if (!input.contains("generated_charts") && canonical.contains("generated_charts") &&
-        canonical.at("generated_charts").empty()) return true;
     // Lane definitions saved before key colors existed; derived on load.
     return !input.contains("key_color") && canonical.contains("key_color");
 }

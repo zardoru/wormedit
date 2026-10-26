@@ -29,6 +29,10 @@ the tutorial project so you can run it before changing it.
 |A `.chart.lua` file
 |Inspector → *Lua note generator*
 
+|Generate SV spans or explicit points on the selected chart
+|A `.lua` file returning `sv_spans` or `sv_points`
+|Inspector → *Lua note generator*
+
 |Shape osu!mania SV or StepMania scrolls with a formula
 |An *SV curve*: a file returning `function(p, ctx)`
 |An SV recipe's *Curve* → *Lua function*
@@ -303,13 +307,92 @@ file. They let *Regenerate* update the existing difficulty instead of replacing 
 
 The recipe owns what it describes: chart name, grid, offset, measures, their notes and BGM, lane
 layout, BPM, stops, delays, warps and scroll. Editing those in the generated chart and then
-regenerating is a conflict. Markers, SV recipes and metadata you add yourself are kept, unless the
+regenerating is a conflict. Markers, metadata and SV recipes (when the script declares no spans)
+you add yourself are kept, unless the
 new version removes a measure they are attached to; then the whole regeneration is refused.
 A version of the file that leaves out a difficulty removes that chart only if you have added
 nothing of your own to it. Changing `resolution` is refused while your own markers or recipes are
 placed in the chart. *Detach recipe* keeps the charts and ends the recipe's ownership. `sound`
 fields in `note` and `bgm` take the ID of a sound already in the project. The
 link:lua-api/modules/chart.html[chart reference] covers every declaration.
+
+[#scripting-generate-sv]
+== Generate SV spans or write points
+
+The *Lua note generator* can also create SV data on the selected chart. Use the same
+*Choose script…* → *Run* → *Apply* workflow as the first-note example. There are two choices:
+
+* A *span* stays an editable SV recipe in the chart. Its curve is sampled by the normal
+  SV preview/export code. You can select it and inspect its range and curve settings.
+* A *point* becomes an ordinary scroll/SV event. It sets a value that holds until another
+  point changes it. This is useful when your script computes a custom pattern directly.
+
+Start from a fresh copy of `tutorial-empty.wormedit`, with its six measures. Choose
+`scripts/sv/generate.lua` in *Lua note generator*:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/sv/generate.lua[]
+----
+
+. Leave *Keep recipe* ticked and press *Run*. The *SV outputs* summary should show three
+  additions: two explicit points and one persistent span. The chart has not changed yet.
+. Press *Apply*. The baseline becomes 1.5 at the beginning. The span multiplies that baseline
+  from 1 to 2 across the first two measures, so the effective value rises from 1.5 toward 3.
+  Its end is exclusive; at the third measure the span stops and the explicit reset sets 1.
+. Open the ordinary SV recipe inspector to inspect _Tutorial rise_. `step_rows=60` is the
+  sample spacing in chart rows, not milliseconds. The range remains authored data;
+  sampled points are derived when needed.
+. Press kbd:[Ctrl+Z] once to remove all three outputs, then redo to restore them. Neither
+  action runs the script. To change the script, select its generator recipe, edit the file,
+  *Regenerate*, acknowledge changed source if prompted, then *Apply*.
+
+`at_measure` means different things in the two generator styles. Here it takes a native
+measure ID from `wormedit.measures`. In `.chart.lua` it takes that difficulty's declared
+measure name or ordinal. Rows are zero-based integer chart rows. Inside a difficulty,
+`sv_span {...}` appends the span directly, just as `scroll {...}` appends a baseline point.
+The link:lua-api/modules/chart.html[chart reference] lists the fields and defaults.
+
+Spans use *relative multipliers*. They multiply existing chart SV and overlapping enabled
+spans within their half-open ranges; they do not replace the existing baseline. A span's
+`output="speeds"` instead targets StepMania SPEEDS with instantaneous transitions. The default
+`output="sv"` targets the scroll/SV family. Values are signed and dimensionless; zero and
+reverse scroll are allowed. `ratio(3,2)` is exactly 1.5. Computed finite Lua numbers are
+converted to bounded rationals, reported under *Exact values*.
+
+For a custom wave written as ordinary points, undo the first example or use another fresh
+copy, then choose `scripts/sv/points.lua`:
+
+[listing]
+----
+include::../fixtures/tutorial/scripts/sv/points.lua[]
+----
+
+*Run* should show nine additions. *Apply* writes eight held values in the first measure
+and a reset at the next measure. There is no persistent wave curve to resample later;
+edit the script and regenerate to change its density. These points write the scroll/SV
+baseline. To author a persistent Lua function curve instead, follow the next section.
+
+Each output needs a stable `key`. Keep it unchanged to preserve the native identity during
+regeneration; omitted owned keys are removed. Other authored events remain. A proposed point
+at an already occupied row rejects the entire batch, including any accompanying notes or spans;
+move the point or deliberately edit the existing chart event first. There is no implicit
+replace-all range. The last point holds indefinitely unless you add a reset.
+
+Changing or deleting generated output by hand blocks regeneration so your edit cannot be
+silently overwritten. Use *Detach recipe* before taking over the output yourself. Detach
+removes generator ownership and leaves the points and spans in place. Materializing a generated
+span also changes owned output; detach its generator first if you want to take over those events. For a generated
+`.chart.lua` difficulty that declares spans, the span list belongs to that generator;
+older scripts without spans continue to preserve independently added recipes.
+
+An included `project.lua` module can return the same `sv_points` and `sv_spans` arrays next to
+notes and layers; they collect in include order and publish together. Scoped BMS charts use
+the selected semantic Chart through the existing adapters. Ownership conflicts or unsupported
+conditional mappings report an error and publish nothing. The normal sandbox limits still
+apply: at most 16,384 explicit SV points and 256 spans per generator output, with at most
+4,096 sample points per span and the existing whole-result/instruction/memory limits.
+Invalid ranges, nonfinite values and collisions reject the whole preview.
 
 [#scripting-sv]
 == Scroll curves: Lua SV recipes

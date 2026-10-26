@@ -670,6 +670,7 @@ if(WORMEDIT_ENABLE_LUA)
         lua/lua_generator_tests.cpp
         lua/lua_manual_tutorial_tests.cpp
     )
+    target_include_directories(wormedit_lua_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(wormedit_lua_tests
         PRIVATE
             nlohmann_json::nlohmann_json

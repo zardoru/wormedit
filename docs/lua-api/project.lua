@@ -46,3 +46,9 @@
 -- Absent when the file has not been imported. This identifies imported media.
 -- NoteProposal.sound takes a sound resource ID; asset IDs cannot be assigned directly.
 -- @table Asset
+
+--- SV output in included modules.
+-- Included proposal tables may contain sv_points and sv_spans alongside notes/layers.
+-- The entry point collects each returned table once, in include order, under the same
+-- aggregate limits and deterministic replay as standalone generator output.
+-- @table SVOutput

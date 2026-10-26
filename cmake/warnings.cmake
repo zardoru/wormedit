@@ -24,5 +24,13 @@ function(wormedit_enable_warnings target)
     endif()
     if(WORMEDIT_WARNINGS_AS_ERRORS)
         target_compile_options(${target} PRIVATE -Werror)
+        # GCC's optimizer-dependent flow warnings report false positives inside libstdc++
+        # (string destructors on constructor unwind paths with MinGW GCC 16, vector
+        # assignment bounds with GCC 14) that change with inlining. They stay visible as
+        # warnings but do not fail release builds; Clang still checks the same code.
+        if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(${target} PRIVATE
+                -Wno-error=maybe-uninitialized -Wno-error=array-bounds)
+        endif()
     endif()
 endfunction()

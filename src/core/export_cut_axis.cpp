@@ -183,9 +183,12 @@ auto editor_axis_projection_t::y_for_row(long double row) const -> double {
 }
 
 auto editor_axis_projection_t::row_at_y(long double y, bool before_seam) const -> long double {
-    const auto row = divisions_per_standard_measure
+    auto row = divisions_per_standard_measure
         ? (y + viewport_scroll_pixels) * divisions_per_standard_measure / pixels_per_standard_measure
         : (y + viewport_scroll_pixels) / pixels_per_row;
+    // A y drawn for an exact row can return a hair below it after the pixel round trip;
+    // without this, a seam's y would pick the hidden row before the cut instead of its kept end.
+    if (const auto nearest = std::round(row); std::fabs(row - nearest) < 1e-6L) row = nearest;
     return cut_axis ? (before_seam ? cut_axis->source_row_before_seam(row) : cut_axis->source_row(row)) : row;
 }
 

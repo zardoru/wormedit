@@ -1,5 +1,6 @@
 #include "sys/preferences/external_player.h"
 #include "core/text_util.h"
+#include <wormedit/core/atomic_file_storage.h>
 #include <wormedit/core/catalogs.h>
 
 #include <wormedit/formats/bms_writer.h>
@@ -124,11 +125,7 @@ auto read_open_file_identity(std::FILE* file) -> std::optional<file_identity_t> 
 
 auto write_exclusive(const std::filesystem::path& path, std::string_view bytes)
     -> result_t<file_identity_t, exclusive_write_error_t> {
-#ifdef _WIN32
-    auto* file = _wfopen(path.c_str(), L"wbx");
-#else
-    auto* file = std::fopen(path.c_str(), "wbx");
-#endif
+    auto* file = open_exclusive_file(path).release();
     if (!file) return std::unexpected(exclusive_write_error_t{
         .error = "Cannot exclusively create file: " + path.string()});
     const auto identity = read_open_file_identity(file);

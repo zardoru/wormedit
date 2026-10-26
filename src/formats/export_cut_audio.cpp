@@ -1,5 +1,6 @@
 #include <wormedit/formats/export_cut_audio.h>
 #include <wormedit/audio/slice_render.h>
+#include <wormedit/core/atomic_file_storage.h>
 #include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/metadata_inheritance.h>
@@ -188,7 +189,7 @@ auto render_plan(const song_document_t& song, const export_cut_audio_plan_t& pla
     auto opened = open_plan(song, plan, options, decoder);
     if (!opened) return opened;
     const auto path = options.output_directory / plan.filename;
-    std::unique_ptr<std::FILE, decltype(&std::fclose)> file{std::fopen(path.c_str(), "wbx"), &std::fclose};
+    auto file = open_exclusive_file(path);
     if (!file) return std::unexpected(slice_span_render_payload_t::from("Cannot exclusively create cut audio: " + path.string(), plan.asset));
     files.paths.push_back(path);
     if (!write_bytes(file.get(), header)) return std::unexpected(slice_span_render_payload_t::from("Cannot write cut WAV header", plan.asset));

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -29,4 +30,11 @@ class prepared_atomic_file_t {
 // Before successful publication, failures preserve the destination and remove only our temporary.
 [[nodiscard]] auto create_file_atomic(const std::filesystem::path& path, std::string_view bytes,
                                       std::size_t maximum_bytes) -> atomic_file_save_outcome_t;
+struct file_closer_t {
+    void operator()(std::FILE* file) const noexcept { std::fclose(file); }
+};
+using unique_file_t = std::unique_ptr<std::FILE, file_closer_t>;
+// Creates a new file for binary writing and fails if it already exists. Windows paths
+// open through the wide API so non-ASCII names work.
+[[nodiscard]] auto open_exclusive_file(const std::filesystem::path& path) -> unique_file_t;
 } // namespace wormedit

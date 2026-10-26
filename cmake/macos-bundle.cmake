@@ -7,12 +7,8 @@ endif()
 # earlier with their own default component; never install their SDK headers/libraries.
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME Wormedit)
 set(WORMEDIT_INSTALL_BINDIR "Wormedit.app/Contents/Resources")
-# TODO(T-763/T-764 merge): use the shared notices module's destination variable here
-# if it differs, and ensure its include runs after this override. Never duplicate its list.
-set(WORMEDIT_THIRD_PARTY_DESTINATION "${WORMEDIT_INSTALL_BINDIR}/third-party")
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/cmake/third-party-notices.cmake")
-    message(WARNING "T-763 merge pending: shared third-party notices are not available yet")
-endif()
+# cmake/third-party-notices.cmake is included after this file, so its notices follow this
+# override into Contents/Resources/third-party under the Wormedit component.
 
 if(DEFINED WORMEDIT_VERSION_FULL)
     set(wormedit_macos_version "${WORMEDIT_VERSION_FULL}")

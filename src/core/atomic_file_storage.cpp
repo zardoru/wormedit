@@ -285,4 +285,11 @@ auto create_file_atomic(const std::filesystem::path& path, std::string_view byte
     if (!prepared) return std::unexpected(std::move(prepared.error()));
     return prepared->publish();
 }
+auto open_exclusive_file(const std::filesystem::path& path) -> unique_file_t {
+#ifdef _WIN32
+    return unique_file_t{_wfopen(path.c_str(), L"wbx")};
+#else
+    return unique_file_t{std::fopen(path.c_str(), "wbx")};
+#endif
+}
 } // namespace wormedit

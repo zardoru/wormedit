@@ -64,9 +64,8 @@ for resource in assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/NotoSansCJKjp-
     manual/index.html manual/lua-api/index.html Wormedit.icns; do
     [[ -e $resources/$resource ]] || fail "missing bundle resource: $resource"
 done
-# TODO(T-763/T-764 merge): the shared notices module must install this directory.
-# Do not silently archive a bundle with missing notices during lane integration.
-[[ -d $resources/third-party ]] || fail "merge T-763 shared third-party-notices.cmake and its macOS destination override first"
+# Never archive a bundle without the shared third-party notices.
+[[ -d $resources/third-party ]] || fail "missing bundle resource: third-party notices"
 
 cmake "-DWORMEDIT_APP=$app" -P "$build/macos-fixup.cmake"
 python3 packaging/macos/verify-bundle.py "$app" "$arch" > "$build/macos-dependencies.txt"

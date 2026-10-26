@@ -19,4 +19,3 @@ FetchContent_MakeAvailable(lua)
 if(NOT EXISTS "${lua_SOURCE_DIR}/onelua.c" OR NOT EXISTS "${lua_SOURCE_DIR}/lua.h")
     message(FATAL_ERROR "Lua source directory must contain Lua 5.4.8 onelua.c and lua.h")
 endif()
-

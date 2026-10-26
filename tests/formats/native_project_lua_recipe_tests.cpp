@@ -198,3 +198,12 @@ TEST_CASE("Additive schema23 files without SV definitions retain independent rec
     check_shared_recipe(loaded.value->sv_recipe_definitions.empty());
     check_shared_recipe(loaded.value->charts.front().sv_recipes == song.charts.front().sv_recipes);
 }
+
+TEST_CASE("Schema22 migration adds SV definitions even without generator metadata",
+          "[unit][format][native-project][sv-recipe][migration]") {
+    json document = {{"schema_version", 22U}};
+    const auto migrated = native_project_internal::migrate_document(
+        document, 23, native_project_internal::default_migrations());
+    REQUIRE(migrated);
+    CHECK(document.at("sv_recipe_definitions") == json::array());
+}

@@ -408,6 +408,14 @@ TEST_CASE("Untitled imported sessions journal complete native state with anchore
     auto imported = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
     REQUIRE(imported.value);
     auto history = document_history_t::from(std::move(*imported.value), 128, false);
+    const std::string script = "return {notes={},layers={}}";
+    history.document.generator_recipes.push_back(
+        {.id = recipe_id_t{9000},
+         .api_version = "1",
+         .source_path = "scripts/generate.lua",
+         .source_hash = native_project_content_checksum(script),
+         .source = script,
+         .chart = history.document.charts.front().id});
     task_scheduler_t scheduler{1, 1};
     native_project_autosave_loop_t loop{native_project_autosave_loop_t::clock_t::now(), scheduler};
     auto target = native_project_autosave_target_t::from(history.document.id, false, {}, directory->path());
@@ -418,6 +426,8 @@ TEST_CASE("Untitled imported sessions journal complete native state with anchore
     const auto scan = scan_native_project_recovery_candidates({.caller_supplied_directories = {directory->path()}});
     check_preferred_title(scan, "Recovered import");
     check_imported_recovery(*scan.value.candidates[*scan.value.preferred_recovery_candidate].document);
+    CHECK(scan.value.candidates[*scan.value.preferred_recovery_candidate]
+              .document->generator_recipes == history.document.generator_recipes);
 }
 
 TEST_CASE("New journal generations continue recovery chronology across revision rewinds", "[core][recovery][autosave][command-journal]") {

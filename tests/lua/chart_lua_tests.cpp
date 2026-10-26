@@ -4,7 +4,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
+#include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 using namespace wormedit;
@@ -313,4 +315,136 @@ TEST_CASE("Documented chart example materializes an owned difficulty",
     require_chart(apply_generator(history, *proposal.value).applied);
     check_chart(history.document.charts.size() == 2);
     check_chart(history.document.charts.back().measures.size() == 2);
+}
+
+namespace {
+constexpr std::string_view shared_sv_chart = "difficulty 'A'; stable_id 'a'; measure {id='first'}; "
+                                             "measure {id='middle'}; measure {id='last'}";
+
+auto shared_sv_chart_history() -> document_history_t {
+    auto history = chart_history();
+    const auto proposal = prepare_chart(history, chart_recipe(std::string(shared_sv_chart)));
+    require_chart(proposal.value.has_value());
+    require_chart(apply_generator(history, *proposal.value).applied);
+    const auto chart_id = history.document.generator_recipes.front().generated_charts.front().chart;
+    const auto* chart = history.document.find_chart(chart_id);
+    const auto first = chart->measures[0].id;
+    const auto middle = chart->measures[1].id;
+    const std::string source = "return function(p, ctx) return 1 + p end";
+    const sv_recipe_t recipe{
+        .id = recipe_id_t{50000},
+        .name = "Shared frozen curve",
+        .range = {{first, 0}, {middle, 0}},
+        .curve = sv_recipe_curve_t::lua_expression,
+        .expression_source = source,
+        .lua = sv_recipe_lua_t{.source_reference = "curves/shared.lua",
+                               .source_hash = native_project_content_checksum(source),
+                               .parameters = {{.name = "height", .value = {3, 2}}},
+                               .seed = 17}};
+    require_chart(apply_sv_recipe_edit(
+                      history, insert_edit_t<sv_recipe_t>{.chart = chart_id, .value = recipe})
+                      .applied);
+    const editor_interaction_state_t selection{.chart = chart_id};
+    const auto clipboard = chart_clipboard_t::from(history.document, selection,
+                                                   history.document.revision, {}, recipe.id);
+    require_chart(clipboard.has_value());
+    require_chart(paste_chart_clipboard(history, chart_id, *clipboard, {middle, 0}).applied);
+    return history;
+}
+} // namespace
+
+TEST_CASE("chart Lua regeneration preserves shared SV definitions and frozen source metadata",
+          "[chart-lua][sv-recipe][integration]") {
+    auto history = shared_sv_chart_history();
+    auto recipe = history.document.generator_recipes.front();
+    const auto chart_id = recipe.generated_charts.front().chart;
+    const auto placements = history.document.find_chart(chart_id)->sv_recipes;
+    const auto definitions = history.document.sv_recipe_definitions;
+    recipe.source += "; measure {id='extra'}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    const auto proposal = prepare_chart(history, recipe);
+    INFO((proposal.diagnostics.empty() ? "success" : proposal.diagnostics.front().message));
+    require_chart(proposal.value.has_value());
+    const auto& generated = proposal.value->payload.recipe.generated_charts.front();
+    check_chart(generated.content.measures.back().id.value > definitions.front().id.value);
+    require_chart(apply_generator(history, *proposal.value).applied);
+    check_chart(history.document.find_chart(chart_id)->sv_recipes == placements);
+    check_chart(history.document.sv_recipe_definitions == definitions);
+    const auto written = write_native_project(history.document);
+    require_chart(written.value.has_value());
+    const auto loaded = parse_native_project(*written.value);
+    require_chart(loaded.value.has_value());
+    check_chart(loaded.value->find_chart(chart_id)->sv_recipes == placements);
+    check_chart(loaded.value->sv_recipe_definitions == definitions);
+    check_chart(loaded.value->generator_recipes.front() ==
+                history.document.generator_recipes.front());
+    require_chart(undo_document_command(history));
+    check_chart(history.document.find_chart(chart_id)->measures.size() == 3);
+    check_chart(history.document.find_chart(chart_id)->sv_recipes == placements);
+    require_chart(redo_document_command(history));
+    check_chart(history.document.find_chart(chart_id)->measures.size() == 4);
+    check_chart(history.document.sv_recipe_definitions == definitions);
+    const auto stale = prepare_chart(history, history.document.generator_recipes.front());
+    require_chart(stale.value.has_value());
+    auto edited = history.document.find_chart(chart_id)->sv_recipes.front();
+    edited.lua->seed = 99;
+    require_chart(apply_sv_recipe_edit(history, update_edit_t<sv_recipe_t>{.chart = chart_id,
+                                                                           .id = edited.id,
+                                                                           .value = edited})
+                      .applied);
+    check_chart(!apply_generator(history, *stale.value).applied);
+    check_chart(history.document.find_chart(chart_id)->sv_recipes.back().lua == edited.lua);
+}
+
+TEST_CASE("chart Lua rejects incompatible regeneration with shared SV ranges atomically",
+          "[chart-lua][sv-recipe][integration]") {
+    auto history = shared_sv_chart_history();
+    auto recipe = history.document.generator_recipes.front();
+    const auto source =
+        GENERATE("resolution(480); difficulty 'A'; stable_id 'a'; measure {id='first'}; "
+                 "measure {id='middle'}; measure {id='last'}",
+                 "difficulty 'A'; stable_id 'a'; measure {id='first'}; measure {id='middle'}",
+                 "difficulty 'Other'; stable_id 'other'; measure {};");
+    recipe.source = source;
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    const auto before = write_native_project(history.document);
+    require_chart(before.value.has_value());
+    const auto undo_count = history.undo.size();
+    const auto proposal = prepare_chart(history, recipe);
+    check_chart(!proposal.value.has_value());
+    check_chart(diagnostic_queries::has_errors(proposal.diagnostics));
+    const auto after = write_native_project(history.document);
+    require_chart(after.value.has_value());
+    check_chart(*after.value == *before.value);
+    check_chart(history.undo.size() == undo_count);
+}
+
+TEST_CASE("chart Lua allocates above retained SV definition identities without live placements",
+          "[chart-lua][sv-recipe][integration]") {
+    auto history = shared_sv_chart_history();
+    auto recipe = history.document.generator_recipes.front();
+    const auto chart_id = recipe.generated_charts.front().chart;
+    const auto definition = history.document.sv_recipe_definitions.front().id;
+    const auto placements = history.document.find_chart(chart_id)->sv_recipes;
+    for (const auto& placement : placements)
+        require_chart(apply_sv_recipe_edit(history, delete_edit_t<sv_recipe_t>{.chart = chart_id,
+                                                                               .id = placement.id})
+                          .applied);
+    // Reopen the saved snapshot so Undo history and live placement IDs cannot
+    // conceal a missing reservation of the retained definition itself.
+    const auto written = write_native_project(history.document);
+    require_chart(written.value.has_value());
+    auto loaded = parse_native_project(*written.value);
+    require_chart(loaded.value.has_value());
+    history = document_history_t::from(std::move(*loaded.value));
+    recipe.source += "; measure {id='extra'}";
+    recipe.source_hash = native_project_content_checksum(recipe.source);
+    const auto proposal = prepare_chart(history, recipe);
+    require_chart(proposal.value.has_value());
+    check_chart(
+        proposal.value->payload.recipe.generated_charts.front().content.measures.back().id.value >
+        definition.value);
+    require_chart(apply_generator(history, *proposal.value).applied);
+    check_chart(history.document.sv_recipe_definitions.front().id == definition);
+    check_chart(history.document.find_chart(chart_id)->sv_recipes.empty());
 }

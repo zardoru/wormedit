@@ -191,6 +191,9 @@ writer retains validated sequence metadata, while recovery reads verify the enti
 bounded stream. A successful autosave acknowledges its captured journal cursor before
 compaction, preserving later publications. Capacity or I/O failures request an early
 native checkpoint through the existing autosave coordinator.
+Recovery preparation anchors media paths for both snapshots and journals, while
+generator recipes retain their project-relative reload origins and frozen source.
+Reload origins are not media assets and must remain valid native recipe metadata.
 
 Accepted audition requests travel on those outcomes to the shared finisher, which submits them
 to the project-owned `compose_auditions_t`. Its input scope delivers the last object request,
@@ -663,9 +666,13 @@ Each placement keeps its own ID, range and enabled flag; the definition owns all
 other built-in and Lua configuration, including frozen source and its descriptor.
 Existing chart consumers read effective placement snapshots. The shared publication
 boundary reconciles configuration edits through the definition and refreshes all
-uses before validation and one Undo publication; conflicting edits reject together.
+uses after timing-link resolution, before validation and one Undo publication;
+conflicting edits reject together.
 Deleting a placement retains the definition, and Duplicate explicitly creates an
 independent recipe. Native schema23 stores definitions once and placements as
 references, rebuilding effective snapshots on load. The optional definition list
 defaults empty for other additive schema23 files. Scoped BMS recipe clipboard
 operations currently refuse explicitly until reference edits have a semantic adapter.
+The single schema22-to-23 migration initializes both this definition pool and empty
+generated-chart bindings; both codecs also accept their absent optional additions
+on documents already tagged schema23.

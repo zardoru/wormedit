@@ -1,11 +1,12 @@
-#include <wormedit/formats/native_project.h>
-#include <wormedit/core/bms_program_edit.h>
 #include "../support/bms_program_fixture.h"
-#include <wormedit/formats/native_project_storage.h>
-#include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
 #include <algorithm>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <nlohmann/json.hpp>
 #include <utility>
+#include <wormedit/core/bms_program_edit.h>
+#include <wormedit/formats/native_project.h>
+#include <wormedit/formats/native_project_storage.h>
 
 namespace {
 using namespace wormedit;
@@ -77,6 +78,21 @@ TEST_CASE("native generator recipes retain frozen inputs and historical material
     REQUIRE(loaded.value);
     REQUIRE(loaded.value->generator_recipes.size() == 1);
     check_frozen_metadata(loaded.value->generator_recipes.front(), generator_song().generator_recipes.front());
+}
+
+TEST_CASE("native schema23 additions migrate and decode together without losing frozen inputs",
+          "[unit][format][native-project][generator][sv-recipe][migration]") {
+    auto encoded = generator_json();
+    encoded["document"]["schema_version"] = GENERATE(22U, 23U);
+    encoded["document"].erase("sv_recipe_definitions");
+    encoded["document"]["generator_recipes"][0].erase("generated_charts");
+    const auto loaded = parse_native_project(encoded.dump());
+    REQUIRE(loaded.value);
+    CHECK(loaded.value->schema_version == current_document_schema_version);
+    CHECK(loaded.value->sv_recipe_definitions.empty());
+    CHECK(loaded.value->generator_recipes.front().generated_charts.empty());
+    check_frozen_metadata(loaded.value->generator_recipes.front(),
+                          generator_song().generator_recipes.front());
 }
 
 TEST_CASE("schema eighteen generator metadata migrates without evaluating or losing legacy fields",

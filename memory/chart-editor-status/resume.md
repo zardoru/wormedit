@@ -28,10 +28,30 @@ conflict; independent authored positions survive compatible regeneration and blo
 changes. The manual and packaged API include the workflow and a tested downloadable example.
 Final GATE (`/tmp/wormedit-gate.Mh5CXZ`) passes **5,308/5,308**, whitespace and **24 changed-TU
 complexity checks**, without allowance increases. Native Run/Apply/Save and both native/Windows
-12-page offline books pass. Additional Clang compilation has only the existing export-cut
-initializer blocker, already fixed by pending SV parent `1ecb78c`. Coordinator owns the shared
-SV integration, the union of both additive schema23 migrations/ID reservations and combined
-regeneration regressions; no SV merge or combined gate has happened here.
+12-page offline books pass. The handoff's Clang initializer blocker and native recovery warnings
+are resolved in the combined integration below.
+
+Integrated **shared SV recipe references with T-186/T-187** (2026-10-25): preserved the frozen
+70-file handoff in `2f60da0`, included the Clang initializer fix in `2939de1`, and integrated SV
+definitions in `dce7d2a`. One additive schema23 migration initializes both optional additions;
+definition keys and generated witnesses both reserve identity ceilings. Compatible regeneration
+preserves shared SV placements; incompatible grids, removed referenced measures and stale
+proposals reject atomically. Integration review also fixed recovery preparation incorrectly
+making generator reload origins absolute, which broke both journaling and autosave despite
+successful explicit saves. The shared recovery owner now preserves frozen project-relative
+generator metadata while continuing to anchor media assets.
+
+Combined GATE (`scripts/gate.sh build --jobs 4 --complexity-base c715daf`) passes
+**5,329/5,329**, build, whitespace and **45 changed-TU complexity checks**, with eight additional
+header consumers passing and no allowance increases. Combined feature/schema tests pass
+**92 assertions / five cases**; both recovery pipeline regressions failed before the fix and pass
+**19 / two** afterwards. Clang core/scripting and the incremental recovery build pass. Fresh
+isolated native Regenerate/Apply/Save retains two charts, one owned binding, three placements
+sharing one definition, frozen source/hash and relative origin in both the saved file and a
+published journal record, with no recovery errors visible. The generated chart's notes and
+three SV areas were also inspected. Evidence: `/tmp/wormedit-integration-final-gate.log`,
+`/tmp/wormedit-gate.vInK43`, `/tmp/wormedit-integration-header-complexity.log`,
+`/tmp/wormedit-integration-clang{,-recovery}.log` and `/tmp/wormedit-integration-native/`.
 
 Owner-approved status follow-up preserves HEAD `c715daf`'s millisecond/row/musical readouts,
 fixes the old clock assertion and keeps selection summaries visible at 800–1280 px. Notification

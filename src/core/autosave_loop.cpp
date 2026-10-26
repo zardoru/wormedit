@@ -23,7 +23,9 @@ void anchor_recovery_asset_paths(song_document_t& snapshot, const std::filesyste
     assets(snapshot.audio_assets);
     assets(snapshot.visual_assets);
     assets(snapshot.midi_assets);
-    assets(snapshot.generator_recipes);
+    // Generator sources are frozen in the recipe. Its project-relative path is
+    // a reload origin, not a media asset; making it absolute invalidates the
+    // same native payload used by both autosave and command journals.
     for (auto& asset : snapshot.audio_assets)
         if (asset.waveform_cache_path) anchor(*asset.waveform_cache_path);
 }

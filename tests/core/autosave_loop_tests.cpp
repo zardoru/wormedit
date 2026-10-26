@@ -495,6 +495,15 @@ TEST_CASE("Recovery snapshots anchor imported assets without changing the live d
     std::filesystem::create_directories(recovery);
     std::ofstream(source / "stem.wav") << "fixture";
     auto document = song(71, 2);
+    document.schema_version = current_document_schema_version;
+    document.charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}};
+    const std::string script = "return {notes={},layers={}}";
+    document.generator_recipes.push_back({.id = recipe_id_t{5},
+                                          .api_version = "1",
+                                          .source_path = "scripts/generate.lua",
+                                          .source_hash = native_project_content_checksum(script),
+                                          .source = script,
+                                          .chart = chart_id_t{2}});
     document.audio_assets = {{.id = asset_id_t{1}, .source_path = "stem.wav",
                               .waveform_cache_path = "stem.waveform"}};
     auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
@@ -514,4 +523,5 @@ TEST_CASE("Recovery snapshots anchor imported assets without changing the live d
     expect_autosave_interval(asset.waveform_cache_path == source / "stem.waveform");
     expect_autosave_interval(document.audio_assets.front().source_path == "stem.wav");
     expect_autosave_interval(document.audio_assets.front().waveform_cache_path == "stem.waveform");
+    expect_autosave_interval(parsed.value->song.generator_recipes == document.generator_recipes);
 }

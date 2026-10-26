@@ -26,7 +26,8 @@ struct native_project_autosave_target_t {
     std::filesystem::path backup_path;
     std::filesystem::path original_source_path;
     std::filesystem::path intended_project_path;
-    // Relative source assets are anchored to this live session directory.
+    // Relative media assets are anchored to this live session directory.
+    // Frozen generator recipes retain their project-relative reload origins.
     std::filesystem::path asset_base;
     void anchor_assets(song_document_t&) const;
 };

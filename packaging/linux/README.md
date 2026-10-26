@@ -12,10 +12,8 @@ this is a pinned compatibility baseline, not a bit-reproducible package lock.
 
 See `docs/building.md` for release commands and system requirements.
 
-The container uses the project's `WORMEDIT_WARNINGS_AS_ERRORS=OFF` option:
-older GCC at `-O3` diagnoses conditional `std::vector` copy assignment and
-guarded `std::optional` reads. A type-safe, vector-only reproduction fails with
-GCC 14 and passes with GCC 16. All diagnostics remain visible in the build log;
-no application source or warning classes are suppressed. Native GATE retains
-its usual warnings-as-errors policy. Recheck these findings when upgrading the
-container compiler.
+The container enables `WORMEDIT_WARNINGS_AS_ERRORS=ON`, using the shared policy
+in `cmake/warnings.cmake`. GCC's optimizer-dependent `maybe-uninitialized` and
+`array-bounds` diagnostics remain visible without failing the build. Targets
+using this policy treat other enabled warnings as errors. Recheck the recorded
+GCC 14 vector/optional findings when upgrading the container compiler.

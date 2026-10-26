@@ -20,10 +20,10 @@ if [[ -f /work/build/CMakeCache.txt ]]; then
         fi
     done
 fi
-# Keep older GCC optimizer diagnostics visible; native GATE keeps -Werror.
+# Use the shared warnings policy, including its non-fatal GCC optimizer diagnostics.
 cmake "${configure_mode[@]}" -S /source -B /work/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
-    -DWORMEDIT_WARNINGS_AS_ERRORS=OFF \
+    -DWORMEDIT_WARNINGS_AS_ERRORS=ON \
     -DWORMEDIT_ENABLE_LUA=ON -DWORMEDIT_REQUIRE_FFMPEG=ON \
     -DWORMEDIT_FFMPEG_NOTICES_DIR=/opt/ffmpeg/share/wormedit-ffmpeg \
     -DCMAKE_INSTALL_PREFIX=/usr

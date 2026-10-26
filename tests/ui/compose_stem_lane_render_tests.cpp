@@ -4,6 +4,7 @@
 #include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/app/sdl_backend.h"
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/project/compare_panel.h"
 #include <wormedit/core/export_cut_axis.h>
 #include <wormedit/core/marker_editor.h>
@@ -1069,6 +1070,45 @@ TEST_CASE("Original timing marker bodies and labels survive warm tiles cuts scro
         check_cut_timing_raster_revision(fixture, projection, history, workspace);
         expect_field(static_cast<bool>(redo_document_command(history)));
         check_cut_timing_raster_revision(fixture, projection, history, workspace);
+    }
+}
+
+TEST_CASE("Export cut edge grips paint visible labels outside their hatched band",
+          "[ui][field][pixel][export-cut][cut-grip][isolated-software-render]") {
+    using namespace wormedit;
+    constexpr int width = 320, height = 240;
+    field_submission_fixture_t fixture{false, width, height};
+    expect_field(fixture.context != nullptr);
+    worm_ui_nuklear_reset_compose_state();
+    ui::compose_view_t view;
+    view.scene_available = view.timing_focus = true;
+    view.viewport_width_pixels = width;
+    view.viewport_height_pixels = height;
+    view.playable_field_left_pixels = 42;
+    view.playable_field_right_pixels = width;
+    view.export_cuts = {{.id = object_id_t{9001}, .span = {
+        .available = true, .has_length = true,
+        .begin_projection_visible = true, .end_projection_visible = true,
+        .span_projection_visible = true, .projected_begin_y_pixels = 60,
+        .projected_end_y_pixels = 180, .projected_span_top_y_pixels = 60,
+        .projected_span_bottom_y_pixels = 180}}};
+    auto without_grips = view;
+    without_grips.export_cuts.front().span.begin_projection_visible = false;
+    without_grips.export_cuts.front().span.end_projection_visible = false;
+    const auto baseline = render_static_pixels(fixture, without_grips);
+    const auto pixels = render_static_pixels(fixture, view);
+    for (const auto edge : {WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END}) {
+        const auto grip = ui::compose_export_cut_handle_t::from(view, view.export_cuts.front(), edge);
+        expect_field(grip.has_value());
+        std::size_t label_pixels{};
+        for (auto y = static_cast<int>(grip->bounds.top) + 2; y < grip->bounds.bottom - 2; ++y)
+            for (auto x = static_cast<int>(grip->bounds.left) + 18; x < grip->bounds.right - 2; ++x) {
+                const auto at = static_cast<std::size_t>(y * width + x);
+                const auto& pixel = pixels[at];
+                if (pixel[0] > 160 && pixel[2] > 100 &&
+                    is_field_color_different(pixel, baseline[at])) ++label_pixels;
+            }
+        expect_field(label_pixels > 30);
     }
 }
 

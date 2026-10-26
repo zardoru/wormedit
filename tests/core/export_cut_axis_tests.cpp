@@ -81,6 +81,12 @@ void check_event_navigation(const chart_document_t& chart, const export_cut_axis
     REQUIRE(dispatch_editor_action(history, *setup.state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(setup.state->cursor.row == start);
 }
+void check_cut_event_membership(const timing_index_t& timing, const export_cut_timeline_t& timeline,
+                                std::uint64_t row, bool hidden) {
+    const auto seconds = timing.seconds_at(row);
+    REQUIRE(seconds.seconds);
+    CHECK(timeline.contains_seconds(*seconds.seconds) == hidden);
+}
 void check_paused_event_scene(const export_cut_axis_t& axis, bool visible) {
     check_event_scene(paused_axis_chart(), axis, visible, 240);
 }
@@ -165,6 +171,29 @@ TEST_CASE("Cursor navigation skips removed rows on the active musical grid", "[c
     check_forward_cursor(*setup.state);
     REQUIRE(dispatch_editor_action(history, *setup.state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(setup.state->cursor.row == 0);
+}
+
+TEST_CASE("Cuts made from rows preserve their exclusive end after millisecond conversion",
+          "[core][export-cut][cursor][rounded-cut-boundary]") {
+    using namespace wormedit;
+    auto chart = paused_axis_chart();
+    chart.pauses.clear();
+    chart.bpms.front().beats_per_minute = {381024000, 2880079};
+    chart.beat_zero_audio_offset_seconds = {5539, 44100};
+    chart.measures.front().definition = {.length = {128, 1}};
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto cut = export_cut_interval_t::from_rows(*timing.value, 57600, 61440);
+    REQUIRE(cut);
+    // This earlier boundary rounds upward with nearest-millisecond conversion.
+    CHECK(export_cut_interval_t::milliseconds_at(*timing.value, 38400) == 72689);
+    const auto timeline = axis_cuts(cut->begin_milliseconds, cut->end_milliseconds);
+    check_cut_event_membership(*timing.value, timeline, 57600, true);
+    check_cut_event_membership(*timing.value, timeline, 61440, false);
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline);
+    REQUIRE(axis.ok());
+    CHECK_FALSE(axis.value.contains_row(61440));
+    check_event_navigation(chart, axis.value, 61440, 57540, 16);
 }
 
 TEST_CASE("Overview fractions use the physical seam and preserve its right side", "[core][export-cut][frames]") {

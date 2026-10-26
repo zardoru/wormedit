@@ -3030,8 +3030,8 @@ TEST_CASE("Export-cut selection actions use source milliseconds and the edit sna
     check_action(fixture.dispatch(action) == "Export cut updated.");
     require_action(fixture.history.document.export_cuts.size() == 1);
     const auto& cut = fixture.history.document.export_cuts.front();
-    check_action(cut.begin_milliseconds == (snapped ? 500 : 271));
-    check_action(cut.end_milliseconds == (snapped ? 1500 : 1271));
+    check_action(cut.begin_milliseconds == (snapped ? 500 : 270));
+    check_action(cut.end_milliseconds == (snapped ? 1500 : 1270));
     check_action(cut.label == "Selected cut");
     check_action(fixture.history.undo.size() == 1);
     require_action(undo_document_command(fixture.history));

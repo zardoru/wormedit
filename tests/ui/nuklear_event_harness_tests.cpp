@@ -20,6 +20,7 @@
 #include "ui/nuklear/audio/audio_state.h"
 #include "ui/nuklear/compose/compose_area_menu.h"
 #include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/compose/compose_inspector.h"
 #include "ui/nuklear/compose/compose_input_internal.h"
 #include "ui/nuklear/compose/compose_note_menu.h"
@@ -8031,6 +8032,106 @@ TEST_CASE("Production arrow and Alt wheel share stopped paused and playing step 
     CAPTURE(f.interaction->cursor.row, f.interaction->cursor.measure.value, previous_cursor.row);
     expect_t422(f.interaction->cursor == (mode == 2 ? previous_cursor : local_position_t{previous_cursor.measure, previous_cursor.row + 60}));
     expect_t422(f.history.undo.empty());
+}
+
+namespace {
+auto make_rounded_cut_navigation_song() -> song_document_t {
+    auto song = make_timing_placement_song(false);
+    auto& chart = song.charts.front();
+    for (std::uint64_t id = 13; id <= 128; ++id)
+        chart.measures.push_back({.id = measure_id_t{id}});
+    chart.bpms.front().beats_per_minute = {381024000, 2880079};
+    chart.beat_zero_audio_offset_seconds = {5539, 44100};
+    chart.measures[64].notes.push_back({.id = object_id_t{7001},
+        .position = {measure_id_t{65}, 0}, .lane = lane_id_t{1}});
+    const auto timing = timing_index_t::from(chart);
+    expect_t422(timing.value.has_value());
+    const auto cut = export_cut_interval_t::from_rows(*timing.value, 57600, 61440);
+    expect_t422(cut.has_value());
+    song.export_cuts = {{.id = object_id_t{9001},
+        .begin_milliseconds = cut->begin_milliseconds, .end_milliseconds = cut->end_milliseconds}};
+    return song;
+}
+}
+
+TEST_CASE("Stopped arrow steps align with the projected snap grid across rounded audio cuts",
+          "[frontend-state][event-harness][cut-snap-navigation]") {
+    const auto downscroll = GENERATE(false, true);
+    const auto denominator = GENERATE(8ULL, 16ULL, 24ULL);
+    t422_fixture_t f{make_rounded_cut_navigation_song()};
+    f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.project.compose_view.requested_snap_denominators[1] = denominator;
+    f.project();
+    const auto& chart = *f.history.read_chart(chart_id_t{1});
+    const auto& index = *f.history.indices(chart.id)->measures;
+    const auto step = 960 / denominator;
+    const auto origin = downscroll ? 57600 - step : 61440 + step;
+    const auto target = 61440;
+    const auto position = index.position_at(origin);
+    expect_t422(position.has_value());
+    expect_t422(dispatch_editor_action(f.history, *f.interaction,
+        jump_edit_cursor_action_t{*position, f.history.document.revision}).accepted);
+    f.project();
+    (void)f.harness.frame();
+    const auto up = key_event(SDL_EVENT_KEY_DOWN, SDLK_UP, SDL_SCANCODE_UP);
+    (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
+    f.project();
+    CAPTURE(downscroll, denominator, origin, target, f.interaction->cursor.row);
+    expect_t422(index.row_of(f.interaction->cursor) == target);
+    expect_t422(f.interaction->cursor_subrow == 0.0);
+    const auto& grid = f.flattened.compose.grid.row;
+    const auto line = std::ranges::find(grid, target, &exact_chart_row_t::whole_rows);
+    expect_t422(line != grid.end());
+    const auto offset = static_cast<std::size_t>(line - grid.begin());
+    const auto& view = f.harness.view().compose;
+    expect_t422(std::abs(view.grid_lines[offset].y_pixels -
+        *f.interaction->fixed_cursor_screen_y_pixels) < 0.000001);
+    expect_t422(t422_note_screen_center(f, 7001).has_value());
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Drawn export cut grips resize through production input with one Undo",
+          "[frontend-state][event-harness][export-cut][cut-grip-workflow]") {
+    const auto downscroll = GENERATE(false, true);
+    const auto edge = GENERATE(WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END);
+    auto song = t422_song();
+    song.export_cuts = {{.id = object_id_t{9001}, .begin_milliseconds = 500, .end_milliseconds = 1500}};
+    t422_fixture_t f{std::move(song)};
+    f.application.project.compose_view.compose_timing_focus = true;
+    f.application.project.compose_view.requested_snap_denominators[1] = 16;
+    f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    set_cursor_scale(*f.interaction, 960);
+    f.project();
+    (void)f.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto& view = f.harness.view().compose;
+    const auto grip = ui::compose_export_cut_handle_t::from(view, view.export_cuts.front(), edge);
+    expect_t422(grip.has_value());
+    const auto x = viewport->x + static_cast<float>((grip->bounds.left + grip->bounds.right) / 2 *
+        viewport->width / view.viewport_width_pixels);
+    const auto y = viewport->y + static_cast<float>((grip->bounds.top + 4) *
+        viewport->height / view.viewport_height_pixels);
+    (void)f.dispatch(f.harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)}));
+    expect_t422(worm_ui_nuklear_compose_state().audio_span_drag.candidate_active);
+    const auto destination = y + static_cast<float>((downscroll ? -120 : 120) *
+        viewport->height / view.viewport_height_pixels);
+    const auto motion = mouse_motion(x, destination);
+    (void)f.dispatch(f.harness.frame(std::span{&motion, 1}));
+    const auto release = mouse_button(false, x, destination);
+    (void)f.dispatch(f.harness.frame(std::span{&release, 1}));
+    const auto cut = f.history.document.export_cuts.front();
+    expect_t422(cut.begin_milliseconds == (edge == WORM_UI_SPAN_HANDLE_BEGIN ? 750 : 500));
+    expect_t422(cut.end_milliseconds == (edge == WORM_UI_SPAN_HANDLE_END ? 1750 : 1500));
+    expect_t422(f.history.undo.size() == 1);
+    expect_t422(!worm_ui_nuklear_compose_state().audio_span_drag.candidate_active);
+    expect_t422(static_cast<bool>(undo_document_command(f.history)));
+    f.project();
+    expect_t422(f.history.document.export_cuts.front().begin_milliseconds == 500);
+    expect_t422(f.history.document.export_cuts.front().end_milliseconds == 1500);
+    expect_t422(static_cast<bool>(redo_document_command(f.history)));
+    f.project();
+    expect_t422(f.history.document.export_cuts.front() == cut);
 }
 
 namespace {

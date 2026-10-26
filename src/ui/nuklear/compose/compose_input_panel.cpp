@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose/compose_gesture_registry.h"
 #include "ui/nuklear/compose/compose_action_stamp.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/compose/compose_measure_resize_input.h"
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
@@ -999,7 +1000,8 @@ static auto is_beat_bookmark(const wormedit::ui::compose_view_t& view, std::uint
 // A press that a full-width marker line (a bookmark or the song preview) may not claim: another
 // capture owns the pointer, or an object under the press keeps priority.
 static auto is_marker_line_press_blocked(const ComposePointerEventContext& input,
-                                         bool paint_pointer_consumed) -> bool {
+                                         bool paint_pointer_consumed,
+                                         bool explicit_handle = false) -> bool {
     const auto& view = *input.view;
     return state.input_queue.action_overflowed || paint_pointer_consumed || !view.scene_available ||
         !view.visible || view.input_occluded || !input.pointer_started_in_view ||
@@ -1010,7 +1012,8 @@ static auto is_marker_line_press_blocked(const ComposePointerEventContext& input
         state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
         state.note_move.note_move_active || state.note_move.note_move_candidate_active || state.area_selection.area_selection_active ||
         state.area_selection.area_selection_candidate_active || state.bga_interaction.bga_event_move_candidate_active ||
-        state.timing_marker.timing_marker_candidate_active || compose_pointer_start_hits_element(input);
+        state.timing_marker.timing_marker_candidate_active ||
+        (!explicit_handle && compose_pointer_start_hits_element(input));
 }
 
 static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
@@ -1105,7 +1108,9 @@ static auto update_audio_span_drag_capture(const ComposePointerEventContext& inp
         reset_audio_span_drag_capture();
         return true;
     }
-    drag.current_y_pixels = input.pointer_y;
+    const auto press_y = (drag.anchor_screen_y - input.viewport.y) *
+        input.view->viewport_height_pixels / input.viewport.h;
+    drag.current_y_pixels = input.pointer_y - press_y + drag.anchor_y_pixels;
     drag.active = continuation.moved;
     if (continuation.phase == compose_drag_phase_t::update) return true;
     const auto moved = continuation.phase == compose_drag_phase_t::commit;
@@ -1116,10 +1121,12 @@ static auto update_audio_span_drag_capture(const ComposePointerEventContext& inp
 }
 
 static auto begin_audio_span_drag_capture(const ComposePointerEventContext& input,
-                                       bool paint_pointer_consumed) -> bool {
-    if (is_marker_line_press_blocked(input, paint_pointer_consumed)) return false;
+    bool paint_pointer_consumed,
+    const std::optional<wormedit::ui::compose_export_cut_handle_t>& grip = {}) -> bool {
     const auto& view = *input.view;
-    const auto cut = compose_export_cut_handle_at(view, input.pointer_started_x, input.pointer_started_y);
+    if (is_marker_line_press_blocked(input, paint_pointer_consumed, grip.has_value())) return false;
+    const auto cut = grip ? std::optional{std::pair{grip->cut, grip->edge}}
+        : compose_export_cut_handle_at(view, input.pointer_started_x, input.pointer_started_y);
     const auto edge = cut ? std::optional{cut->second}
         : compose_audio_span_handle_at(view, view.preview_span, input.pointer_started_x, input.pointer_started_y);
     if (!edge) return false;
@@ -1133,8 +1140,8 @@ static auto begin_audio_span_drag_capture(const ComposePointerEventContext& inpu
                           .edge = *edge,
                           .chart_id = view.chart_id.value,
                           .revision = view.document_revision,
-                          .anchor_y_pixels = input.pointer_started_y,
-                          .current_y_pixels = input.pointer_started_y,
+                          .anchor_y_pixels = grip ? grip->y_pixels : input.pointer_started_y,
+                          .current_y_pixels = grip ? grip->y_pixels : input.pointer_started_y,
                           .anchor_screen_y = static_cast<float>(input.left_clicked_screen_y)};
     return true;
 }
@@ -1142,6 +1149,10 @@ static auto begin_audio_span_drag_capture(const ComposePointerEventContext& inpu
 static auto process_compose_bookmark_pointer(const ComposePointerEventContext& input,
                                              bool paint_pointer_consumed) -> bool {
     if (update_bookmark_move_capture(input) || update_audio_span_drag_capture(input)) return true;
+    if (!input.left_down || !input.pointer_started_in_view) return false;
+    const auto grip = wormedit::ui::compose_export_cut_handle_t::at(*input.view,
+        input.pointer_started_x, input.pointer_started_y, state.export_cut_editor.selected);
+    if (grip) return begin_audio_span_drag_capture(input, paint_pointer_consumed, grip);
     return begin_bookmark_move_capture(input, paint_pointer_consumed) ||
            begin_audio_span_drag_capture(input, paint_pointer_consumed);
 }

@@ -52,7 +52,10 @@ auto export_cut_interval_t::milliseconds_at(const timing_index_t& timing, std::u
     -> std::optional<std::int64_t> {
     const auto query = timing.seconds_at(row);
     if (!query.seconds || query.seconds->numerator < 0) return std::nullopt;
-    const auto frame = sample_frame_at(*query.seconds, 1000).frame;
+    // Both edges belong to the millisecond containing the picked row. Rounding
+    // an exclusive end upward would remove that row from the retained timeline;
+    // rounding a start upward could leave its first selected row outside the cut.
+    const auto frame = sample_frame_at(*query.seconds, 1000, sample_rounding_t::floor).frame;
     if (!frame || *frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
     return static_cast<std::int64_t>(*frame);

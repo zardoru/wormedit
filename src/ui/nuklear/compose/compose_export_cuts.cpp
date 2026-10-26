@@ -1,9 +1,63 @@
 #include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/compose/compose_action_stamp.h"
+#include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/compose_mode.h"
 #include <algorithm>
 #include <cstdio>
+
+namespace wormedit::ui {
+auto compose_export_cut_handle_t::from(const compose_view_t& view,
+    const compose_export_cut_view_t& cut, std::uint8_t edge)
+    -> std::optional<compose_export_cut_handle_t> {
+    // The canvas extends beneath the side docks; keep grips on the exposed field.
+    const auto right_edge = std::min(view.viewport_width_pixels, view.playable_field_right_pixels);
+    if (!compose_export_cuts_visible(compose_mode_of(view)) || !cut.span.available ||
+        right_edge <= 8 || view.viewport_height_pixels <= 0)
+        return std::nullopt;
+    const auto begin = edge == WORM_UI_SPAN_HANDLE_BEGIN;
+    if ((!begin && edge != WORM_UI_SPAN_HANDLE_END) ||
+        !(begin ? cut.span.begin_projection_visible : cut.span.end_projection_visible))
+        return std::nullopt;
+    const auto y = begin ? cut.span.projected_begin_y_pixels : cut.span.projected_end_y_pixels;
+    if (!std::isfinite(y)) return std::nullopt;
+    const auto width = std::min(96.0, (right_edge - 8) / 2);
+    const auto height = std::min(18.0, view.viewport_height_pixels);
+    const auto right = right_edge - 4 - (begin ? width + 4 : 0);
+    const auto top = std::clamp(y - height / 2, 0.0, view.viewport_height_pixels - height);
+    return compose_export_cut_handle_t{.cut = cut.id, .edge = edge,
+        .bounds = {right - width, top, right, top + height}, .y_pixels = y};
+}
+
+auto compose_export_cut_handle_t::contains(double x, double y) const -> bool {
+    return x >= bounds.left && x < bounds.right && y >= bounds.top && y <= bounds.bottom;
+}
+
+namespace {
+auto cut_handle_at(const compose_view_t& view, const compose_export_cut_view_t& cut,
+                    double x, double y) -> std::optional<compose_export_cut_handle_t> {
+    for (const auto edge : {WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END}) {
+        const auto handle = compose_export_cut_handle_t::from(view, cut, edge);
+        if (handle && handle->contains(x, y)) return handle;
+    }
+    return std::nullopt;
+}
+}
+
+auto compose_export_cut_handle_t::at(const compose_view_t& view, double x, double y,
+    object_id_t preferred) -> std::optional<compose_export_cut_handle_t> {
+    if (!compose_export_cuts_visible(compose_mode_of(view))) return std::nullopt;
+    const auto selected = std::ranges::find(view.export_cuts, preferred, &compose_export_cut_view_t::id);
+    if (selected != view.export_cuts.end())
+        if (const auto handle = cut_handle_at(view, *selected, x, y)) return handle;
+    for (const auto& cut : view.export_cuts) {
+        if (cut.id == preferred) continue;
+        if (const auto handle = cut_handle_at(view, cut, x, y)) return handle;
+    }
+    return std::nullopt;
+}
+}
 
 namespace {
 using editor_t = worm_ui_nuklear_compose_state_t::export_cut_editor_t;

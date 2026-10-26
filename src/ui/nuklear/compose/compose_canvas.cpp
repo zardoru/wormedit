@@ -7,6 +7,7 @@
 #include "ui/nuklear/chrome/text_fit.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include "ui/nuklear/compose/compose_canvas.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 #include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/compose/compose_inspector.h"
 #include "ui/nuklear/chrome/chrome.h"
@@ -2924,6 +2925,29 @@ static void draw_compose_dead_spans(const ComposePaintContext& paint) {
     }
 }
 
+static void draw_compose_export_cut_handle(const ComposePaintContext& paint,
+    const wormedit::ui::compose_export_cut_handle_t& handle) {
+    const auto rect = compose_screen_rect(&handle.bounds, paint.view, paint.viewport);
+    const auto hovered = wormedit::ui::nuklear::tooltip::hovered(paint.context, rect);
+    const auto active = state.audio_span_drag.candidate_active &&
+        state.audio_span_drag.export_cut_id == handle.cut && state.audio_span_drag.edge == handle.edge;
+    const auto color = hovered || active ? compose(ComposeColor::timing_hover)
+                                        : compose(ComposeColor::export_cut);
+    field_rect(paint, rect, 2.0f, nk_rgb(24, 27, 36), 10);
+    field_stroke_rect(paint, rect, 2.0f, hovered || active ? 2.0f : 1.0f, color, 10);
+    for (const auto offset : {-2.0f, 2.0f})
+        field_line(paint, rect.x + 4, rect.y + rect.h / 2 + offset,
+            rect.x + 12, rect.y + rect.h / 2 + offset, 1.0f, color, 10);
+    const auto begin = handle.edge == WORM_UI_SPAN_HANDLE_BEGIN;
+    const auto label = begin ? "Cut start" : "Cut end";
+    field_text(paint, nk_rect(rect.x + 17, rect.y + 1, std::max(0.0f, rect.w - 19), rect.h - 2),
+        label, static_cast<int>(std::strlen(label)), paint.context->style.font, {}, color, 10);
+    if (hovered && !active)
+        wormedit::ui::nuklear::tooltip::text(paint.context,
+            begin ? "Drag to resize the export cut start on the active grid."
+                  : "Drag to resize the export cut end on the active grid.");
+}
+
 static void draw_compose_export_cuts(const ComposePaintContext& paint) {
     if (!wormedit::ui::compose_export_cuts_visible(compose_mode_of(*paint.view))) return;
     const auto color = compose(ComposeColor::export_cut);
@@ -2935,6 +2959,10 @@ static void draw_compose_export_cuts(const ComposePaintContext& paint) {
         draw_compose_hatched_span(paint, rect, color, cut.label.empty() ? std::string_view{"EXPORT CUT"}
                                                                    : std::string_view{cut.label});
     }
+    for (const auto& cut : paint.view->export_cuts)
+        for (const auto edge : {WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END})
+            if (const auto handle = wormedit::ui::compose_export_cut_handle_t::from(*paint.view, cut, edge))
+                draw_compose_export_cut_handle(paint, *handle);
     if (state.audio_span_drag.export_cut_id.value) draw_compose_audio_span_drag_ghost(paint);
 }
 

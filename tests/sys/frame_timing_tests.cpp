@@ -8602,7 +8602,7 @@ TEST_CASE("Timing-focus cut end drags preserve an off-grid source-song start", "
     auto action = export_cut_drag_action(fixture, WORM_UI_SPAN_HANDLE_END, 720, 850);
     expect_compose_test(dispatch_paste_action(fixture, action) == "Export cut edited.");
     expect_compose_test(fixture.history.document.export_cuts.front().begin_milliseconds == 501);
-    expect_compose_test(fixture.history.document.export_cuts.front().end_milliseconds == (snapped ? 1750 : 1771));
+    expect_compose_test(fixture.history.document.export_cuts.front().end_milliseconds == (snapped ? 1750 : 1770));
     expect_compose_test(fixture.history.undo.size() == 1);
 }
 

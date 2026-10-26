@@ -1,6 +1,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose/compose_panel.h"
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/compose/compose_export_cuts.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -8,9 +9,15 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <source_location>
 
 namespace {
 using namespace wormedit;
+
+void check_cut_grip(bool condition, std::source_location where = std::source_location::current()) {
+    INFO("Cut grip assertion at " << where.line());
+    REQUIRE(condition);
+}
 
 auto cut_drag_input(const ui::workspace_action_t& action, WormUiComposeInputKind kind)
     -> const ui::compose_input_action_t* {
@@ -160,4 +167,62 @@ TEST_CASE("Overlapping export-cut handles prefer the selected song cut", "[event
     const auto* input = cut_drag_input(released.get(), WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT);
     REQUIRE(input);
     CHECK(input->object_id == cut.id);
+}
+
+TEST_CASE("Visible cut grips take priority over coincident notes and bookmark lines",
+          "[event-harness][export-cut][cut-grip]") {
+    cut_drag_fixture_t fixture;
+    const auto edge = GENERATE(WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END);
+    auto& view = fixture.harness.view().compose;
+    const auto grip = ui::compose_export_cut_handle_t::from(view, view.export_cuts.front(), edge);
+    check_cut_grip(grip.has_value());
+    view.note_endpoints.push_back({.bounds = grip->bounds, .note_id = object_id_t{42}, .lane_id = lane_id_t{1}});
+    view.beat_bookmarks = {{.bookmark_id = object_id_t{43}, .measure_number = 1, .projection_visible = true,
+        .projected_y_pixels = grip->y_pixels}};
+    (void)fixture.harness.frame();
+    check_cut_grip(worm_ui_frontend_compose_viewport_for_testing(&fixture.viewport));
+    const auto x = fixture.viewport.x + static_cast<float>((grip->bounds.left + grip->bounds.right) / 2 *
+        fixture.viewport.width / view.viewport_width_pixels);
+    // Grab away from the original invisible line; the edge must retain this offset.
+    const auto y = fixture.y(grip->y_pixels + 5);
+    CAPTURE(edge, x, y);
+    const auto hover = test::mouse_motion(x, y);
+    (void)fixture.harness.frame(std::span{&hover, 1});
+    check_cut_grip(fixture.harness.drawn_text().find("Drag to resize the export cut") != std::string::npos);
+    (void)fixture.harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(true, x, y)});
+    check_cut_grip(worm_ui_nuklear_compose_state().audio_span_drag.candidate_active);
+    check_cut_grip(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
+    const auto destination = fixture.y(grip->y_pixels + 35);
+    const auto motion = test::mouse_motion(x, destination);
+    (void)fixture.harness.frame(std::span{&motion, 1});
+    const auto release = test::mouse_button(false, x, destination);
+    const auto emitted = fixture.harness.frame(std::span{&release, 1});
+    const auto* input = cut_drag_input(emitted.get(), WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT);
+    check_cut_grip(input != nullptr);
+    check_cut_grip(input->span_edge == edge);
+    check_cut_grip(input->object_id == grip->cut);
+    check_cut_grip(std::abs(input->y_pixels - grip->y_pixels - 30) <
+        view.viewport_height_pixels / fixture.viewport.height + 0.001);
+    check_cut_grip(!worm_ui_nuklear_compose_state().audio_span_drag.candidate_active);
+}
+
+TEST_CASE("Short cuts and viewport edges retain separate visible grips",
+          "[event-harness][export-cut][cut-grip]") {
+    cut_drag_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    auto& cut = view.export_cuts.front();
+    const auto y = GENERATE(0.0, 300.0, 900.0);
+    cut.span.projected_begin_y_pixels = y;
+    cut.span.projected_end_y_pixels = std::min(view.viewport_height_pixels, y + 1);
+    for (const auto edge : {WORM_UI_SPAN_HANDLE_BEGIN, WORM_UI_SPAN_HANDLE_END}) {
+        const auto grip = ui::compose_export_cut_handle_t::from(view, cut, edge);
+        check_cut_grip(grip.has_value());
+        check_cut_grip(grip->bounds.top >= 0);
+        check_cut_grip(grip->bounds.bottom <= view.viewport_height_pixels);
+        const auto hit = ui::compose_export_cut_handle_t::at(view,
+            (grip->bounds.left + grip->bounds.right) / 2,
+            (grip->bounds.top + grip->bounds.bottom) / 2);
+        check_cut_grip(hit.has_value());
+        check_cut_grip(hit->edge == edge);
+    }
 }

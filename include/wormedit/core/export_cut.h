@@ -31,6 +31,7 @@ struct export_cut_t {
 struct export_cut_interval_t {
     std::int64_t begin_milliseconds{};
     std::int64_t end_milliseconds{};
+    // Floors to the containing millisecond so a row-picked exclusive end remains kept.
     [[nodiscard]] static auto milliseconds_at(const timing_index_t& timing,
         std::uint64_t row) -> std::optional<std::int64_t>;
     [[nodiscard]] static auto from_rows(const timing_index_t& timing,

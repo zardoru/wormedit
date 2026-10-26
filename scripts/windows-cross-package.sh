@@ -7,20 +7,44 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/env-mingw.sh
 sdk=$(realpath -e "${WORMEDIT_FFMPEG_ROOT:-build/windows-ffmpeg/prefix}")
+
+validate_ffmpeg_sdk() {
+    local notices="$sdk/share/wormedit-ffmpeg"
+    local notice flag
+    for notice in COPYING.LGPLv2.1 LICENSE.md config.h config.log; do
+        if [[ ! -s "$notices/$notice" ]]; then
+            echo "Missing FFmpeg redistribution file: $notices/$notice" >&2
+            return 1
+        fi
+    done
+    local sources=("$notices"/ffmpeg-*.tar.xz)
+    if [[ ! -s ${sources[0]:-} ]]; then
+        echo "Missing FFmpeg corresponding source archive: $notices/ffmpeg-*.tar.xz" >&2
+        return 1
+    fi
+    for flag in GPL NONFREE; do
+        if ! grep -Eq "^#define[[:space:]]+CONFIG_${flag}[[:space:]]+0$" "$notices/config.h"; then
+            echo "FFmpeg SDK must have CONFIG_${flag}=0 for the Windows release" >&2
+            return 1
+        fi
+    done
+    if [[ -f "$sdk/bin/libwinpthread-1.dll" && ! -s "$notices/winpthreads-notices.h" ]]; then
+        echo "Missing FFmpeg winpthreads redistribution notice: $notices/winpthreads-notices.h" >&2
+        return 1
+    fi
+}
+
+validate_ffmpeg_sdk
 export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
 export PKG_CONFIG_PATH=
 jobs=${WORMEDIT_BUILD_JOBS:-$(scripts/gate.sh --print-jobs | cut -d' ' -f1)}
 out="$(realpath -m "${1:-build/dist}")"
 stage="build/windows-cross-stage"
-version="$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)"
-hash="$(git rev-parse --short=8 HEAD 2>/dev/null || echo nogit)"
-name="wormedit-${version}-${hash}-windows-x64"
-if [[ -n $(git status --porcelain --untracked-files=normal) ]]; then
-    name="wormedit-${version}-${hash}-preview-windows-x64"
-fi
 
 # shellcheck disable=SC2086
 cmake --preset windows-cross-release ${CMAKE_ARGS:-}
+version=$(sed -n 's/^#define WORMEDIT_VERSION "\([^"]*\)"$/\1/p' build/windows-cross-release/config.h)
+name="wormedit-${version}-windows-x64"
 cmake --build --preset windows-cross-release --parallel "$jobs"
 rm -rf "$stage"
 cmake --install build/windows-cross-release --prefix "$stage/$name" --strip

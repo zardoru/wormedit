@@ -4,7 +4,7 @@
 
 ![Compose with a keysounded BME chart: timing lanes, eight playable lanes, a BGM column and the Sounds dock](docs/manual/images/compose-overview.png)
 
-> **Status: pre-release (0.1.0).** Wormedit is used to make real charts, but it is not finished and
+> **Status: release candidate (1.0.0-rc1).** Wormedit is used to make real charts, but it is not finished and
 > has no stable release yet. Storyboards and Quaver support are planned but not
 > shipped. Work is tracked as task cards in [`docs/chart-editor-plan/`](docs/chart-editor-plan.md).
 

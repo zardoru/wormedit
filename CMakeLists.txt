@@ -5,10 +5,32 @@ if(POLICY CMP0177)
 endif()
 
 project(wormedit
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Cross-platform rhythm chart editor"
     LANGUAGES C CXX
 )
+
+set(WORMEDIT_VERSION_SUFFIX "-rc1" CACHE STRING "Release suffix (empty for a final release)")
+if(NOT WORMEDIT_VERSION_SUFFIX MATCHES "^[-.0-9A-Za-z]*$")
+    message(FATAL_ERROR "WORMEDIT_VERSION_SUFFIX may contain only [-.0-9A-Za-z]")
+endif()
+set(WORMEDIT_VERSION_FULL "${PROJECT_VERSION}${WORMEDIT_VERSION_SUFFIX}")
+find_package(Git QUIET)
+set(WORMEDIT_GIT_HASH "nogit")
+if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE WORMEDIT_GIT_HASH_RESULT
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(WORMEDIT_GIT_HASH_RESULT)
+        set(WORMEDIT_GIT_HASH "${WORMEDIT_GIT_HASH_RESULT}")
+    endif()
+endif()
+
+configure_file("${CMAKE_SOURCE_DIR}/config.h.in" "${CMAKE_BINARY_DIR}/config.h" @ONLY)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -363,8 +385,6 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     include(cmake/sdl/bounded-presentation.cmake)
     wormedit_enable_bounded_sdl_presentation("${sdl3_SOURCE_DIR}")
 
-    find_package(Git QUIET)
-
     set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libotoworm" CACHE PATH
         "libotoworm source directory (the third_party submodule by default)")
     if(NOT EXISTS "${WORMEDIT_OTOWORM_SOURCE_DIR}/CMakeLists.txt")
@@ -393,25 +413,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         target_compile_definitions(otoworm PRIVATE WIN32 MINGW)
     endif()
 
-    set(WORMEDIT_GIT_HASH "nogit")
-    if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-        execute_process(
-            COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            OUTPUT_VARIABLE WORMEDIT_GIT_HASH_RESULT
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        if(WORMEDIT_GIT_HASH_RESULT)
-            set(WORMEDIT_GIT_HASH "${WORMEDIT_GIT_HASH_RESULT}")
-        endif()
-    endif()
-
-    configure_file(
-        "${CMAKE_SOURCE_DIR}/config.h.in"
-        "${CMAKE_BINARY_DIR}/generated/wormedit/config.h"
-        @ONLY
-    )
+    configure_file("${CMAKE_BINARY_DIR}/config.h"
+        "${CMAKE_BINARY_DIR}/generated/wormedit/config.h" COPYONLY)
 
     add_library(nuklear_headers INTERFACE)
     if(MINGW)

@@ -48,7 +48,7 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-761 Carry a pre-release suffix in the version
 
-- **Status:** ready
+- **Status:** partial (2026-10-26; version and About verified; GATE has one reproducible timing-stage failure)
 - **Outcome:** the build reports `1.0.0-rc1` in About, in `wormedit-convert` output where it reports a version, and in package file names, from a numeric CMake `project(VERSION 1.0.0)` plus one `WORMEDIT_VERSION_SUFFIX` cache variable (default `-rc1`; empty for a final release).
 - **Read first:** `CMakeLists.txt` (`project(` and `configure_file`), `config.h.in`, `src/ui/nuklear/app/frontend.cpp` (About dialog), `scripts/windows-cross-package.sh`, `README.md` (status line).
 - **Files owned:** `CMakeLists.txt` (project version, suffix variable, configure step), `config.h.in`, `README.md` (status line only), `docs/building.md` (a short "Release versions" section), `scripts/windows-cross-package.sh` (archive name only), a focused test only if one already checks the version string.
@@ -60,11 +60,26 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Invariants:** `PROJECT_VERSION` stays purely numeric (Windows resource and macOS bundle versions need it).
 - **Reject/failure behavior:** a suffix containing characters outside `[-.0-9A-Za-z]` fails configuration with a message.
 - **Verify:** configure `build`, rebuild, `grep WORMEDIT_VERSION build/config.h`, GATE; isolated Xvfb About-dialog capture showing `1.0.0-rc1`.
+- **Done so far:** stale-plan check found numeric `0.1.0` and source-parsed Windows names. `PROJECT_VERSION` is now numeric `1.0.0`; cache suffix defaults to `-rc1`; normal CMake variable `WORMEDIT_VERSION_FULL` is `1.0.0-rc1`. Both `build/config.h` and the application include expose the full string and numeric macros. The converter currently has no application-version output to update. Empty-suffix configuration succeeds; `bad_suffix` is rejected with `WORMEDIT_VERSION_SUFFIX may contain only [-.0-9A-Za-z]`.
+- **Evidence (2026-10-26):** native configure/rebuild exit 0; `grep WORMEDIT_VERSION build/config.h` prints `"1.0.0-rc1"` plus numeric `1`, `0`, `0`; final-suffix configure exits 0 with `"1.0.0"`; invalid suffix fails as required. Logs: `/tmp/wormedit-lanes/rc1/drake/t761-{configure,build,version-checks}.log`. `STEPS=/tmp/wormedit-lanes/rc1/drake/about-steps.sh scripts/smoke-compose-virtual-x.sh /tmp/wormedit-lanes/rc1/drake/t761-about.png landing` exits 0; both its Help-menu screenshot and About screenshot were inspected, and About visibly reads `WormEdit 1.0.0-rc1`. Code-style review checklist: no new C++ functions, copied helpers or parallel version owner.
+- **GATE evidence:** `scripts/gate.sh --jobs 3` exits 1; full logs `/tmp/wormedit-gate.QVRSOh/`, summary `/tmp/wormedit-lanes/rc1/drake/t761-gate.log`:
+
+  ```text
+  pass  build
+  FAIL  ctest  (/tmp/wormedit-gate.QVRSOh/ctest.log)
+  pass  whitespace
+  pass  complexity
+  99% tests passed, 1 tests failed out of 5292
+  gate: FAILED (ctest)
+  ```
+
+- **Documentation evidence:** `ctest --test-dir build -j 3 --output-on-failure -R '^documentation\.'` exits 0; tail `100% tests passed out of 6` (log `/tmp/wormedit-lanes/rc1/drake/t761-documentation-final.log`).
+- **Remaining:** `frontend-state.Timing stage preserves fine row targets from the drawn cut axis` fails at `tests/ui/nuklear_event_harness_tests.cpp:7489` for `cuts=true`, `row=9120`, both scroll directions (70/72 assertions pass). Reproduce: `ctest --test-dir build -j 3 --output-on-failure -R '^frontend-state\.Timing stage preserves fine row targets from the drawn cut axis$'`; the isolated rerun also fails (log `/tmp/wormedit-lanes/rc1/drake/t761-timing-recheck.log`). These C++ files are unchanged by T-761. Resolve this timing-stage finding in its owning lane and rerun GATE before marking T-761 done; version work is committed before T-762 starts.
 - **Out of scope:** AppImage and macOS names (T-763, T-764 consume the variable).
 
 ## T-762 Build and check the Windows release zip under Wine
 
-- **Status:** ready
+- **Status:** partial (2026-10-26; SDK and package preflight verified; application compile failures block the zip and Wine)
 - **Outcome:** `scripts/windows-ffmpeg.sh` then `scripts/windows-cross-package.sh` produce `wormedit-1.0.0-rc1-windows-x64.zip`; unpacked into a fresh Wine prefix inside isolated Xvfb it starts, opens a manual fixture project, plays audio without error, exports an osu!mania output group and opens the offline manual, and the zip contains every third-party license notice.
 - **Read first:** `docs/building.md` (Windows sections), `scripts/windows-cross-package.sh`, `scripts/windows-cross-wine-test.sh`, `scripts/windows-install.sh`, `cmake/windows-runtime.cmake`.
 - **Files owned:** `scripts/windows-cross-package.sh`, `scripts/windows-cross-wine-test.sh`, `scripts/windows-install.sh`, `scripts/windows-ffmpeg.sh`, `cmake/windows-runtime.cmake`, `cmake/toolchains/`, `docs/building.md` (Windows sections), a new `scripts/windows-release-smoke.sh` if the checks are worth keeping.
@@ -76,6 +91,20 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 - **Invariants:** never open windows on the owner's desktop; the Wine prefix is temporary.
 - **Reject/failure behavior:** a missing DLL or license fails the package script instead of producing a zip.
 - **Verify:** the package script exit status and file list, the Wine screenshots (inspect them), `ctest --test-dir build -R '^documentation\.'`.
+- **Done so far:** stale-plan check found no release build/zip or release Wine workflow. T-761 was committed as `6c1350f` before starting this card. With MinGW-w64 GCC 16.2.0, `WORMEDIT_BUILD_JOBS=3 scripts/windows-ffmpeg.sh` exits 0 and installs the pinned FFmpeg 9.0.2 SDK at `build/windows-ffmpeg/prefix`; the source archive passes SHA-256 `8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`. Six SDK DLLs are x64 PE files: `avcodec-63.dll`, `avformat-63.dll`, `avutil-61.dll`, `swresample-7.dll`, `swscale-10.dll`, `libwinpthread-1.dll`. The SDK config has `CONFIG_GPL 0`, `CONFIG_NONFREE 0`, `CONFIG_VERSION3 0`, and configure reports `License: LGPL version 2.1 or later`. Logs: `/tmp/wormedit-lanes/rc1/drake/t762-{ffmpeg,sdk-files,sdk-license-flags,sdk-source-sha256}.log`.
+- **Packaging changes verified:** `scripts/windows-cross-package.sh` now rejects missing FFmpeg license/source/configuration files, GPL/nonfree SDKs and a missing winpthreads notice before configuring or building. The real SDK passes that preflight; six modified copies fail before configuration (missing license, source, configuration, winpthreads notice; GPL enabled; nonfree enabled). The black-box harness uses a CMake sentinel to prevent builds/cache changes: `/tmp/wormedit-lanes/rc1/drake/test-package-preflight.py`; real output tail `7/7 package SDK preflight checks passed (1 accepted, 6 rejected)` in `t762-preflight-tests.log`. `bash -n scripts/windows-cross-package.sh` passes. The exact three-job clean release commands and version-based archive metadata are documented in `docs/building.md`. No license install lines or application code were edited; no ownership extensions.
+- **Build evidence / application findings:** `build/windows-cross-release` was absent before the package command. `WORMEDIT_BUILD_JOBS=3 scripts/windows-cross-package.sh` exits 1; log `/tmp/wormedit-lanes/rc1/drake/t762-package-initial.log`. A keep-going build, `cmake --build --preset windows-cross-release --parallel 3 -- -k 0`, also exits 1 after compiling all reachable targets; log `t762-build-keep-going.log` records exactly two failing translation units:
+  1. `src/formats/export_cut_audio.cpp:191`, `render_plan`: `std::fopen(path.c_str(), "wbx")` passes a Windows `wchar_t*` to `fopen(const char*, ...)`; the subsequent `unique_ptr` constructor error follows from this failure.
+  2. `src/sys/app/application.cpp:1956`, `application_t::implementation_t(bool&)`: GCC 16.2.0 at `-O3 -Werror` reports `basic_string::_M_p` and `_M_allocated_capacity` may be used uninitialized during inlined destruction (`-Werror=maybe-uninitialized`). This is a compiler diagnostic to investigate, not a verified runtime defect.
+
+  ```text
+  error: cannot convert ‘const std::filesystem::__cxx11::path::value_type*’ {aka ‘const wchar_t*’} to ‘const char*’
+  cc1plus: all warnings being treated as errors
+  ninja: build stopped: cannot make progress due to previous errors.
+  ```
+
+- **Final verification evidence:** a full package-entrypoint rerun after adding preflight exits 1 at the same two application translation units (`/tmp/wormedit-lanes/rc1/drake/t762-package-final.log`); no zip exists. Documentation check `ctest --test-dir build -j 3 --output-on-failure -R '^documentation\.'` exits 0, with real tail `100% tests passed out of 6` (`t762-documentation.log`).
+- **Remaining:** the application owner must resolve the two compile findings, then rerun the package command and the archive audit (size, file list, DLLs, all required notices, LGPL configuration). No zip was produced, so zip license completeness and possible findings for T-763 remain unverified. Wine launch, packaged tutorial opening, audio playback, osu!mania output-group export, offline-manual opening and Windows screenshots were **not run**. No Wine prefix or desktop windows were created. Application fixes were deliberately left to their owner per the user's lane boundary. Reproduction/handoff: `/tmp/wormedit-lanes/rc1/drake/windows-build-finding.txt`.
 - **Out of scope:** an installer (zip only for RC1), code signing, the version string (T-761).
 
 ## T-763 Package Linux as an AppImage

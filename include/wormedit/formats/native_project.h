@@ -33,7 +33,7 @@ using native_project_write_outcome_t = attempt_t<std::string, std::vector<native
 using native_project_parse_outcome_t = attempt_t<song_document_t, std::vector<native_project_diagnostic_t>>;
 
 // The codec is independent of project packaging and filesystem publication. It
-// emits one deterministic, versioned UTF-8 JSON payload containing the complete
+// emits one deterministic, versioned, compact UTF-8 JSON payload containing the complete
 // editable song document, including scoped BMS programs and read-only source provenance.
 [[nodiscard]] auto write_native_project(const song_document_t& song,
                                         native_project_limits_t limits = {})

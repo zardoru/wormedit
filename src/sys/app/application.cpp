@@ -3990,6 +3990,9 @@ struct application_t::implementation_t {
             return;
         shutdown_started_ = true;
         platform.display_watchdog.reset();
+        if (!session.autosave_loop.flush_journal(session.history.document))
+            post_project_feedback(notification_severity_t::warning, notification_source_t::recovery,
+                                  "Shutdown could not make the latest edits durable in recovery storage.");
         jobs.project_open_runtime.shutdown();
         jobs.resource_copy_runtime.cancel();
         jobs.preview_audio_runtime.cancel();

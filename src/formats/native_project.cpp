@@ -8,6 +8,7 @@
 #include "../core/bms_native_content_internal.h"
 
 #include "native_project_migrations.h"
+#include "native_project_value_codec.h"
 #include <wormedit/formats/bms.h>
 #include "bms_program_import_internal.h"
 #include "bms_writer_internal.h"
@@ -358,7 +359,21 @@ void from_json(const json& value, bgm_event_t& event) {
         linked->get_to(event.sound_channel_event);
     }
 }
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(measure_chunk_t, id, definition, notes, bgm_events)
+template<class Owner> auto encode_native_owner(const Owner& owner) -> json {
+    auto value = native_project_internal::encode_native_fields(owner);
+    native_project_internal::visit_native_collections(owner, [&](std::string_view key, auto member, bool optional) {
+        const auto& entries = owner.*member;
+        if (!optional || !entries.empty()) value[key] = entries;
+    });
+    return value;
+}
+void to_json(json& value, const measure_chunk_t& measure) { value = encode_native_owner(measure); }
+void from_json(const json& value, measure_chunk_t& measure) {
+    value.at("id").get_to(measure.id);
+    value.at("definition").get_to(measure.definition);
+    value.at("notes").get_to(measure.notes);
+    value.at("bgm_events").get_to(measure.bgm_events);
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_measure_length_projection_t, measure_index, source_order,
                                    imported_length)
 void to_json(json& value, const bgm_source_lane_t& lane) {
@@ -856,30 +871,14 @@ void from_json(const json& value, timing_category_link_t& link) {
 void to_json(json& value, const timing_links_t& links) { value = links.categories; }
 void from_json(const json& value, timing_links_t& links) { value.get_to(links.categories); }
 
-void to_json(json& value, const chart_document_t& chart) {
-    value = json{{"id", chart.id},
+auto native_project_internal::encode_native_fields(const chart_document_t& chart) -> json {
+    auto value = json{{"id", chart.id},
                  {"metadata", chart.metadata},
                  {"timing_links", chart.timing_links.categories},
                  {"source_family", chart.source_family},
                  {"divisions_per_standard_measure", chart.divisions_per_standard_measure},
                  {"beat_zero_audio_offset_seconds", chart.beat_zero_audio_offset_seconds},
-                 {"measures", chart.measures},
-                 {"lane_layouts", chart.lane_layouts},
                  {"input_profile", chart.input_profile},
-                 {"semantic_layers", chart.semantic_layers},
-                 {"bgm_source_lanes", chart.bgm_source_lanes},
-                 {"bpms", chart.bpms},
-                 {"pauses", chart.pauses},
-                 {"warps", chart.warps},
-                 {"scrolls", chart.scrolls},
-                 {"speeds", chart.speeds},
-                 {"sv_recipes", chart.sv_recipes},
-                 {"kiai", chart.kiai},
-                 {"timing_anchors", chart.timing_anchors},
-                 {"bookmarks", chart.bookmarks},
-                 {"sections", chart.sections},
-                 {"bga_events", chart.bga_events},
-                 {"sound_channels", chart.sound_channels},
                  {"bms_measure_length_projections", chart.bms_measure_length_projections},
                  {"bms_bpm_projections", chart.bms_bpm_projections},
                  {"bms_pause_projections", chart.bms_pause_projections},
@@ -889,6 +888,11 @@ void to_json(json& value, const chart_document_t& chart) {
     if (!chart.sound_layer_defaults.empty()) {
         value["sound_layer_defaults"] = chart.sound_layer_defaults;
     }
+    return value;
+}
+
+void to_json(json& value, const chart_document_t& chart) {
+    value = encode_native_owner(chart);
 }
 
 void from_json(const json& value, chart_document_t& chart) {
@@ -950,38 +954,46 @@ void from_json(const json& value, project_settings_t& settings) {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bookmark_list_order_t, chart, bookmarks)
 
-void to_json(json& value, const song_document_t& song) {
-    value = json{{"schema_version", song.schema_version},
+auto native_project_internal::encode_native_fields(const song_document_t& song) -> json {
+    auto value = json{{"schema_version", song.schema_version},
                  {"id", song.id},
                  {"revision", song.revision},
                  {"metadata", song.metadata},
                  {"project_settings", song.settings},
-                 {"audio_assets", song.audio_assets},
-                 {"visual_assets", song.visual_assets},
-                 {"resources", song.resources},
-                 {"midi_assets", song.midi_assets},
-                 {"generator_recipes", song.generator_recipes},
-                 {"sv_recipe_definitions", song.sv_recipe_definitions},
-                 {"storyboards", song.storyboards},
-                 {"charts", song.charts},
                  {"output_groups", song.output_groups},
-                 {"quantization_presets", song.quantization_presets},
-                 {"export_cuts", song.export_cuts}};
-    if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
+                 {"quantization_presets", song.quantization_presets}};
     if (!song.bookmark_orders.empty()) value["bookmark_orders"] = song.bookmark_orders;
     if (!song.chart_order.empty()) value["chart_order"] = song.chart_order;
+    return value;
+}
+
+auto native_project_internal::encode_native_program(const bms_program_document_t& owner, const song_document_t& song) -> json {
+    const auto canonical = bms_program_document_t::from(owner.difficulty(),
+        owner.prepared().with_catalog(song), owner.evaluation());
+    if (!canonical.value || !canonical.ok()) throw std::invalid_argument("Invalid canonical scoped catalog.");
+    json snapshot = **canonical.value;
+    write_bms_pool_references(snapshot, "audio_assets", song.audio_assets);
+    write_bms_pool_references(snapshot, "visual_assets", song.visual_assets);
+    write_bms_pool_references(snapshot, "resources", song.resources);
+    return snapshot;
+}
+auto native_project_internal::encode_native_fields(const bms_program_document_t& owner) -> json {
+    return encode_bms_program_fields(owner, owner.prepared());
+}
+auto native_project_internal::encode_native_program_fields(const bms_program_document_t& owner, const song_document_t& song) -> json {
+    auto snapshot = encode_bms_program_fields(owner, owner.prepared().with_catalog(song));
+    write_bms_pool_references(snapshot, "audio_assets", song.audio_assets);
+    write_bms_pool_references(snapshot, "visual_assets", song.visual_assets);
+    write_bms_pool_references(snapshot, "resources", song.resources);
+    return snapshot;
+}
+void to_json(json& value, const song_document_t& song) {
+    value = encode_native_owner(song);
     if (!song.prepared_bms_programs.empty()) {
         value["prepared_bms_programs"] = json::array();
         for (const auto& owner : song.prepared_bms_programs) {
             if (!owner) throw std::invalid_argument("Null scoped BMS owner.");
-            const auto canonical = bms_program_document_t::from(owner->difficulty(),
-                owner->prepared().with_catalog(song), owner->evaluation());
-            if (!canonical.value || !canonical.ok()) throw std::invalid_argument("Invalid canonical scoped catalog.");
-            json snapshot = **canonical.value;
-            write_bms_pool_references(snapshot, "audio_assets", song.audio_assets);
-            write_bms_pool_references(snapshot, "visual_assets", song.visual_assets);
-            write_bms_pool_references(snapshot, "resources", song.resources);
-            value["prepared_bms_programs"].push_back(std::move(snapshot));
+            value["prepared_bms_programs"].push_back(native_project_internal::encode_native_program(*owner, song));
         }
     }
 }
@@ -1025,6 +1037,47 @@ void from_json(const json& value, song_document_t& song) {
         }
     }
 }
+
+namespace native_project_internal {
+auto encode_native_root(json document) -> json {
+    return {{"format", native_project_format}, {"format_version", native_project_format_version},
+        {"document", std::move(document)}};
+}
+auto encode_native_value(const bms_content_item_t& value) -> json { return value; }
+auto encode_native_value(const bms_program_node_t& value) -> json { return value; }
+auto encode_native_value(const audio_asset_t& value) -> json { return value; }
+auto encode_native_value(const visual_asset_t& value) -> json { return value; }
+auto encode_native_value(const resource_entry_t& value) -> json { return value; }
+auto encode_native_value(const midi_asset_t& value) -> json { return value; }
+auto encode_native_value(const generator_recipe_t& value) -> json { return value; }
+auto encode_native_value(const sv_recipe_definition_t& value) -> json { return value; }
+auto encode_native_value(const storyboard_document_t& value) -> json { return value; }
+auto encode_native_value(const chart_document_t& value) -> json { return value; }
+auto encode_native_value(const export_cut_t& value) -> json { return value; }
+auto encode_native_value(const sound_group_t& value) -> json { return value; }
+auto encode_native_value(const measure_chunk_t& value) -> json { return value; }
+auto encode_native_value(const lane_layout_segment_t& value) -> json { return value; }
+auto encode_native_value(const semantic_layer_t& value) -> json { return value; }
+auto encode_native_value(const bgm_source_lane_t& value) -> json { return value; }
+auto encode_native_value(const bpm_event_t& value) -> json { return value; }
+auto encode_native_value(const pause_event_t& value) -> json { return value; }
+auto encode_native_value(const warp_event_t& value) -> json { return value; }
+auto encode_native_value(const scroll_event_t& value) -> json { return value; }
+auto encode_native_value(const speed_event_t& value) -> json { return value; }
+auto encode_native_value(const sv_recipe_t& value) -> json { return value; }
+auto encode_native_value(const kiai_event_t& value) -> json { return value; }
+auto encode_native_value(const timing_anchor_t& value) -> json { return value; }
+auto encode_native_value(const bookmark_t& value) -> json { return value; }
+auto encode_native_value(const section_t& value) -> json { return value; }
+auto encode_native_value(const bga_event_t& value) -> json { return value; }
+auto encode_native_value(const sound_channel_t& value) -> json { return value; }
+auto encode_native_value(const note_t& value) -> json { return value; }
+auto encode_native_value(const bgm_event_t& value) -> json { return value; }
+auto encode_native_value(const song_document_t& value) -> json { return value; }
+auto encode_native_fields(const measure_chunk_t& value) -> json {
+    return {{"id", value.id}, {"definition", value.definition}};
+}
+} // namespace native_project_internal
 
 namespace {
 
@@ -1687,14 +1740,14 @@ auto migration_diagnostic_code(failure_code_t status)
 
 } // namespace
 
-auto write_native_project(const song_document_t& song, native_project_limits_t limits)
-    -> native_project_write_outcome_t {
-    native_project_write_outcome_t result{};
+auto native_project_internal::validate_native_document(const song_document_t& song, native_project_limits_t limits)
+    -> std::vector<native_project_diagnostic_t> {
+    native_project_write_outcome_t result;
     if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
              "document schema version is unsupported", "$.document.schema_version"});
-        return result;
+        return result.diagnostics;
     }
     if (!is_valid_enum_domains(song, limits.maximum_nesting_depth)) {
         result.diagnostics.push_back(
@@ -1702,7 +1755,7 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
              "document contains an enum value outside the native-project schema", "$.document"});
     }
     if (!result.ok()) {
-        return result;
+        return result.diagnostics;
     }
     const auto validation = native_graph_diagnostics(song);
     for (const auto& diagnostic : validation) {
@@ -1712,9 +1765,14 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
                                           graph_diagnostic_text(diagnostic), "$.document"});
         }
     }
-    if (!result.ok()) {
-        return result;
-    }
+    return result.diagnostics;
+}
+
+auto write_native_project(const song_document_t& song, native_project_limits_t limits)
+    -> native_project_write_outcome_t {
+    native_project_write_outcome_t result{};
+    result.diagnostics = native_project_internal::validate_native_document(song, limits);
+    if (!result.ok()) return result;
     try {
         json serialized_document = song;
         if (song.schema_version < native_project_schema_version) {
@@ -1730,16 +1788,14 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
                 return result;
             }
         }
-        const json root{{"format", native_project_format},
-                        {"format_version", native_project_format_version},
-                        {"document", std::move(serialized_document)}};
+        const auto root = native_project_internal::encode_native_root(std::move(serialized_document));
         if (!is_json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
                  "native project exceeds the configured JSON node or nesting-depth limit", "$"});
             return result;
         }
-        auto bytes = root.dump(2);
+        auto bytes = root.dump();
         bytes.push_back('\n');
         if (bytes.size() > limits.maximum_source_bytes) {
             result.diagnostics.push_back(
@@ -1758,9 +1814,9 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
 
 #include "native_project_bms_migration.inc"
 
-auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
-    auto parsed = native_project_internal::build_native_project_parse(bytes, limits, native_project_schema_version,
-        native_project_internal::default_migrations());
+namespace {
+auto finish_native_project_parse(native_project_parse_outcome_t parsed, native_project_limits_t limits)
+    -> native_project_parse_outcome_t {
     if (!parsed.value || !parsed.ok()) return parsed;
     auto song = std::move(*parsed.value);
     std::vector<chart_id_t> legacy;
@@ -1778,40 +1834,37 @@ auto parse_native_project(std::string_view bytes, native_project_limits_t limits
     parsed.value = std::move(song);
     return parsed;
 }
+} // namespace
+
+auto parse_native_project(std::string_view bytes, native_project_limits_t limits) -> native_project_parse_outcome_t {
+    return finish_native_project_parse(native_project_internal::build_native_project_parse(bytes, limits,
+        native_project_schema_version, native_project_internal::default_migrations()), limits);
+}
 
 namespace native_project_internal {
 
-auto build_native_project_parse(std::string_view bytes, native_project_limits_t limits,
-                                          std::uint32_t target_version,
-                                          std::span<const migration_t> table)
-    -> native_project_parse_outcome_t {
-    native_project_parse_outcome_t result{};
-    if (bytes.size() > limits.maximum_source_bytes) {
-        result.diagnostics.push_back({diagnostic_severity_t::error,
-                                      native_project_diagnostic_code_t::resource_limit,
-                                      "native project exceeds the configured byte limit", "$"});
-        return result;
-    }
-    if (!is_lexical_nesting_within(bytes, limits.maximum_nesting_depth)) {
-        result.diagnostics.push_back(
-            {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
-             "native project exceeds the configured nesting-depth limit", "$"});
-        return result;
-    }
+auto parse_native_root(std::string_view bytes, native_project_limits_t limits)
+    -> result_t<json, error_t<failure_code_t>> {
+    if (bytes.size() > limits.maximum_source_bytes)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
+            "native project exceeds the configured byte limit"});
+    if (!is_lexical_nesting_within(bytes, limits.maximum_nesting_depth))
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
+            "native project exceeds the configured nesting-depth limit"});
     json_limit_sax_t sax{limits.maximum_json_nodes, limits.maximum_nesting_depth};
-    if (!json::sax_parse(bytes.begin(), bytes.end(), &sax)) {
-        result.diagnostics.push_back(
-            {diagnostic_severity_t::error,
-             sax.is_limit_exceeded() ? native_project_diagnostic_code_t::resource_limit
-                                  : native_project_diagnostic_code_t::malformed_json,
-             sax.is_limit_exceeded()
-                 ? "native project exceeds the configured JSON node or nesting-depth limit"
-                 : "native project JSON is malformed",
-             "$"});
-        return result;
-    }
+    if (!json::sax_parse(bytes.begin(), bytes.end(), &sax))
+        return std::unexpected(error_t<failure_code_t>{
+            sax.is_limit_exceeded() ? failure_code_t::capacity_exceeded : failure_code_t::invalid_data,
+            sax.is_limit_exceeded() ? "native project exceeds the configured JSON node or nesting-depth limit"
+                : "native project JSON is malformed"});
+    return json::parse(bytes);
+}
+
+namespace {
+auto build_native_project_from_root(const json& root, native_project_limits_t limits,
+    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_outcome_t {
+    native_project_parse_outcome_t result;
     try {
-        const auto root = json::parse(bytes);
         if (!root.is_object() || root.value("format", std::string{}) != native_project_format) {
             result.diagnostics.push_back({diagnostic_severity_t::error,
                                           native_project_diagnostic_code_t::unsupported_version,
@@ -1890,6 +1943,31 @@ auto build_native_project_parse(std::string_view bytes, native_project_limits_t 
              std::string("native project payload is malformed: ") + exception.what(), "$"});
     }
     return result;
+}
+
+} // namespace
+
+auto build_native_project_parse(std::string_view bytes, native_project_limits_t limits,
+    std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_outcome_t {
+    native_project_parse_outcome_t result;
+    auto parsed = parse_native_root(bytes, limits);
+    if (!parsed) {
+        result.diagnostics.push_back({diagnostic_severity_t::error,
+            parsed.error().code == failure_code_t::capacity_exceeded ? native_project_diagnostic_code_t::resource_limit
+                : native_project_diagnostic_code_t::malformed_json,
+            parsed.error().message, "$"});
+        return result;
+    }
+    return build_native_project_from_root(*parsed, limits, target_version, table);
+}
+
+auto decode_native_root(const json& root, native_project_limits_t limits) -> native_project_parse_outcome_t {
+    if (!is_json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth) ||
+        root.dump().size() > limits.maximum_source_bytes)
+        return {.diagnostics = {{diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
+            "Reconstructed native project exceeds its codec budget.", "$"}}};
+    return finish_native_project_parse(build_native_project_from_root(root, limits,
+        native_project_schema_version, default_migrations()), limits);
 }
 
 auto parse_native_project_with_migrations(std::string_view bytes, native_project_limits_t limits,

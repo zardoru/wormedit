@@ -1,5 +1,15 @@
 # Status: resume checklist
 
+## Recovery journal release blocker (owner, 2026-10-27)
+
+The journal writes a complete post-state per commit (24 MB and about 1.4 s for one note move in
+`0_fgd_I`). This blocks 1.0. [Journal cards](../../docs/chart-editor-plan/tasks/journal-deltas.md):
+T-769–T-772 and T-774–T-776 are done in main's working tree (uncommitted; durable flushes,
+compact payloads, recovery scan budget, 50k benchmark, id-keyed deltas between seeds replayed on
+the encoded tree, no whole-document validation per delta, compact project saves: a one-note
+move in `0_fgd_I` is a 434-byte record). T-773 (provenance table, schema 27) was dropped once
+compact saves were approved; its patch is kept. Remaining: owner review and commit.
+
 ## Release 1.0.0-rc1 (owner, 2026-10-26)
 
 Main is frozen for features. [Release cards](../../docs/chart-editor-plan/tasks/release-1-0.md):

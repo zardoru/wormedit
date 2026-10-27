@@ -1885,7 +1885,7 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     const auto rewritten = wormedit::write_native_project(*old.value);
     REQUIRE(rewritten.value);
     legacy["document"]["schema_version"] = wormedit::current_document_schema_version;
-    CHECK(*rewritten.value == legacy.dump(2) + '\n');
+    CHECK(*rewritten.value == legacy.dump() + '\n');
 }
 
 TEST_CASE("native schema 26 pins the persisted song document key set",

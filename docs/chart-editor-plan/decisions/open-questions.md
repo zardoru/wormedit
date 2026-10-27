@@ -123,6 +123,11 @@
    - **No provisional choice:** never modify the source audio or the authored project when exporting, and never silently shorten holds or truncate sounds at a cut.
    - **Unblocks:** [T-756–T-759](../tasks/markers.md#t-756-persist-song-wide-export-cuts-and-create-them-from-a-selection), planned by [T-729](../tasks/markers.md#t-729-plan-selection-created-export-cut-sections).
 
+28. Should explicit native saves stay indented JSON or switch to compact JSON?
+   - **Context (2026-10-27):** indentation makes saves about three times larger (`0_fgd_I`: 22.5 MB indented, 7.5 MB compact). Recovery journal payloads switched to compact JSON in T-769; readers accept both forms. Compact saves are one long line, which is harder to read or diff by hand.
+   - **Answered (2026-10-27):** compact. Explicit saves write compact JSON; readers keep accepting indented files (owner, 2026-10-27: "compact saves sound fine").
+   - **Unblocks:** [T-775](../tasks/journal-deltas.md#t-775-write-compact-native-saves).
+
 ## How to use this list
 
 An executing model never resolves an open question by itself. If a task depends on one, implement only behavior that holds for the provisional default, keep it behind a policy value, and say in the report which question it relied on. The defaults are unconfirmed suggestions written on 2026-09-29; the user may overturn any of them.

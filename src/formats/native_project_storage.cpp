@@ -547,7 +547,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
                          std::vector<native_project_storage_diagnostic_t>& diagnostics,
                          const std::filesystem::path& path = {})
     -> std::optional<parsed_recovery_t> {
-    if (bytes.starts_with(command_journal_header)) return parse_journal_recovery(bytes, limits, diagnostics, path);
+    if (command_journal_read_t::has_header(bytes)) return parse_journal_recovery(bytes, limits, diagnostics, path);
     const auto maximum_bytes = maximum_recovery_envelope_bytes(limits.maximum_source_bytes);
     if (bytes.size() > maximum_bytes) {
         add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::resource_limit,
@@ -1341,12 +1341,16 @@ auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
                                 directory);
             break;
         }
+        // Mixed project directories can contain arbitrarily many unrelated assets.
+        // Bound matching names before inspecting their type or retaining candidates.
+        const auto filename = path_to_utf8(iterator->path().filename());
+        if (!filename.starts_with(filename_prefix)) continue;
         if (++examined > state.maximum_directory_entries) {
             state.inputs_within_limit = false;
             discovered.clear();
             add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
                                 native_project_storage_diagnostic_code_t::resource_limit,
-                                "caller recovery directory exceeds its entry limit; no partial "
+                                "caller recovery directory exceeds its matching entry limit; no partial "
                                 "candidate set was retained",
                                 directory);
             break;
@@ -1354,8 +1358,6 @@ auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
         std::error_code type_error;
         const auto status = iterator->symlink_status(type_error);
         if (type_error || status.type() != std::filesystem::file_type::regular) continue;
-        const auto filename = path_to_utf8(iterator->path().filename());
-        if (!filename.starts_with(filename_prefix)) continue;
         if (filename.find(".wormedit-quarantine-") != std::string::npos) continue;
         if (filename.find(".wormedit-crash-marker") != std::string::npos) continue;
         const auto kind = filename.find(".wormedit-tmp-") != std::string::npos
@@ -1449,13 +1451,13 @@ void discover_recovery_temporaries(const std::filesystem::path& destination,
                                 directory);
             break;
         }
+        if (!path_to_utf8(iterator->path().filename()).starts_with(prefix)) continue;
         if (++examined > state.maximum_directory_entries) {
             add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
                                 native_project_storage_diagnostic_code_t::resource_limit,
-                                "recovery directory scan reached its entry limit", directory);
+                                "recovery directory scan reached its matching entry limit", directory);
             break;
         }
-        if (!path_to_utf8(iterator->path().filename()).starts_with(prefix)) continue;
         std::error_code type_error;
         if (!iterator->is_regular_file(type_error) || type_error) continue;
         if (!add_recovery_spec(state, iterator->path(), kind)) break;
@@ -1580,7 +1582,7 @@ void parse_recovery_candidate(native_project_recovery_candidate_t& candidate,
                               std::vector<native_project_storage_diagnostic_t>& diagnostics,
                               std::size_t maximum_diagnostics) {
     std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
-    candidate.is_command_journal = bytes.starts_with(command_journal_header);
+    candidate.is_command_journal = command_journal_read_t::has_header(bytes);
     const bool primary_file =
         spec.kind == native_project_recovery_candidate_kind_t::primary ||
         spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
@@ -1788,6 +1790,9 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
     const auto maximum_diagnostics =
         std::min(options.maximum_diagnostics, absolute_maximum_scan_diagnostics);
 
+    // Per pass, inspect at most 512 matching names by default (hard cap 1024).
+    // Dedicated recovery roots match all names; project passes match a destination
+    // prefix. Walking unrelated filenames does not consume the inspection budget.
     const auto maximum_directory_entries =
         std::min(std::max<std::size_t>(maximum_candidates * 16, 64),
                  absolute_maximum_scan_directory_entries);

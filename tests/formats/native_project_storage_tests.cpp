@@ -1,4 +1,5 @@
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/core/command_journal.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -50,6 +51,37 @@ void write_text(const std::filesystem::path& path, std::string_view bytes) {
 
 auto valid_song(std::uint64_t revision) -> wormedit::song_document_t {
     return {.id = wormedit::song_id_t{417}, .revision = revision};
+}
+
+void create_discovery_candidate(const std::filesystem::path& path,
+                                wormedit::native_project_recovery_candidate_kind_t kind) {
+    using namespace wormedit;
+    if (kind == native_project_recovery_candidate_kind_t::caller_supplied_entry) {
+        REQUIRE(command_journal_t{path}.append(
+            {.sequence = 1, .before_revision = 2, .command = "Move note",
+             .snapshot = {.song = valid_song(3)}}));
+    } else if (kind == native_project_recovery_candidate_kind_t::stale_primary_temporary) {
+        REQUIRE(create_native_project_file(path, valid_song(3)).value);
+    } else {
+        REQUIRE(create_native_project_recovery_file(path, valid_song(3), {}).value);
+    }
+}
+
+void check_recovery_beside_assets(const std::filesystem::path& primary,
+                                  const std::filesystem::path& candidate_path) {
+    using namespace wormedit;
+    const native_project_recovery_scan_options_t options{.maximum_candidates = 4};
+    const auto before = scan_native_project_recovery_candidates({.primary_path = primary}, options);
+    REQUIRE(before.value.preferred_recovery_candidate);
+    REQUIRE(before.value.candidates[*before.value.preferred_recovery_candidate].path == candidate_path);
+    // The minimum directory-entry budget is 64; unrelated assets must not consume it.
+    for (std::size_t index = 0; index < 65; ++index)
+        write_text(primary.parent_path() / ("sound-" + std::to_string(index) + ".wav"), "asset");
+    const auto after = scan_native_project_recovery_candidates({.primary_path = primary}, options);
+    CHECK(after.diagnostics.empty());
+    REQUIRE(after.value.preferred_recovery_candidate);
+    CHECK(after.value.candidates[*after.value.preferred_recovery_candidate].path == candidate_path);
+    CHECK(after.value.candidates.size() == 3);
 }
 
 auto fails_at(wormedit::native_project_storage_stage_t failed_stage)
@@ -139,7 +171,7 @@ TEST_CASE("recovery snapshots carry a validated SHA-256 envelope and exact docum
     auto corrupted = bytes;
     const auto payload_position = corrupted.find("\"payload\":");
     REQUIRE(payload_position != std::string::npos);
-    constexpr std::string_view payload_revision = R"(\"revision\": 11)";
+    constexpr std::string_view payload_revision = R"(\"revision\":11)";
     const auto revision_position = corrupted.find(payload_revision, payload_position);
     REQUIRE(revision_position != std::string::npos);
     corrupted[revision_position + payload_revision.size() - 2] = '2';
@@ -401,6 +433,50 @@ TEST_CASE("startup scan validates stale temporaries and never lets their timesta
     CHECK(newer_primary_temporary_scan
               .value.candidates[*newer_primary_temporary_scan.value.preferred_recovery_candidate]
               .path == primary_temporary);
+}
+
+TEST_CASE("unrelated assets do not hide project journals or stale temporaries",
+          "[unit][format][native-project][recovery][scan][directories]") {
+    using namespace wormedit;
+    temporary_directory_t directory;
+    const auto primary = directory.path / "chart.wormedit";
+    const auto backup = native_project_adjacent_backup_path(primary);
+    REQUIRE(create_native_project_file(primary, valid_song(1)).value);
+    REQUIRE(create_native_project_recovery_file(backup, valid_song(2), {}).value);
+    std::filesystem::path candidate_path;
+    auto kind = native_project_recovery_candidate_kind_t::caller_supplied_entry;
+    SECTION("command journal") {
+        candidate_path = native_project_journal_position_t::from(backup).path;
+    }
+    SECTION("primary temporary") {
+        candidate_path = primary.string() + ".wormedit-tmp-interrupted";
+        kind = native_project_recovery_candidate_kind_t::stale_primary_temporary;
+    }
+    SECTION("backup temporary") {
+        candidate_path = backup.string() + ".wormedit-tmp-interrupted";
+        kind = native_project_recovery_candidate_kind_t::stale_recovery_temporary;
+    }
+    create_discovery_candidate(candidate_path, kind);
+    check_recovery_beside_assets(primary, candidate_path);
+}
+
+TEST_CASE("matching recovery names consume the scan budget before file type inspection",
+          "[unit][format][native-project][recovery][scan][limits]") {
+    using namespace wormedit;
+    temporary_directory_t directory;
+    const auto primary = directory.path / "chart.wormedit";
+    const auto backup = native_project_adjacent_backup_path(primary);
+    std::string prefix;
+    SECTION("journal names") { prefix = backup.filename().string() + ".journal-"; }
+    SECTION("temporary names") { prefix = primary.filename().string() + ".wormedit-tmp-"; }
+    for (std::size_t index = 0; index < 65; ++index)
+        REQUIRE(std::filesystem::create_directory(directory.path / (prefix + std::to_string(index))));
+    const auto scan = scan_native_project_recovery_candidates(
+        {.primary_path = primary}, {.maximum_candidates = 3});
+    CHECK(scan.value.candidates.size() == 2);
+    CHECK(std::ranges::any_of(scan.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == native_project_storage_diagnostic_code_t::resource_limit;
+    }));
 }
 
 TEST_CASE("stale temporary quarantine uses matching project identity and completed state",

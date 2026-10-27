@@ -103,14 +103,16 @@ void native_project_autosave_loop_t::observe(document_history_t& history,
     journal_.configure(history.document.id, target, coordinator_.session_sequence());
     history.publications.set([this](const song_document_t& document, std::uint64_t before, std::string_view command) {
         journal_.record(document, before, command);
-    }, [this](const song_document_t& document) { prepare_publication(document); });
+    });
 }
-void native_project_autosave_loop_t::prepare_publication(const song_document_t& document) {
+auto native_project_autosave_loop_t::flush_journal(const song_document_t& document) -> bool {
     flush_journal();
-    if (!journal_.requires_checkpoint()) return;
+    if (!journal_.requires_checkpoint()) return journal_.is_durable();
+    retry_after_.reset();
     coordinator_.request_checkpoint();
     (void)tick(document, true, clock_t::now(), journal_.target());
     flush_journal();
+    return journal_.is_durable();
 }
 void native_project_autosave_loop_t::flush_journal() {
     if (worker_) {
@@ -138,7 +140,7 @@ void native_project_autosave_loop_t::mark_explicit_save(
 }
 void native_project_autosave_loop_t::mark_explicit_save(native_project_document_version_t saved,
     const song_document_t& current) {
-    prepare_publication(current);
+    (void)flush_journal(current);
     mark_explicit_save(saved);
     journal_.record(current, current.revision, "Explicit save baseline");
 }

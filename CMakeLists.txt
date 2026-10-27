@@ -200,6 +200,7 @@ add_library(wormedit_core
     src/formats/conversion_publication.cpp
     src/formats/conversion_publication_storage.cpp
     src/formats/native_project.cpp
+    src/formats/native_project_delta.cpp
     src/formats/native_project_migrations.cpp
     src/formats/native_project_storage.cpp
     src/formats/osu_mania.cpp

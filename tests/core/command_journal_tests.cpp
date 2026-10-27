@@ -5,10 +5,13 @@
 #include <wormedit/formats/osu_mania.h>
 #include "../support/temporary_directory.h"
 #include "../support/timing_links_fixture.h"
+#include "../support/native_bms_fixture.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <fstream>
 #include <iterator>
+#include <future>
+#include <latch>
 #include <nlohmann/json.hpp>
 
 using namespace wormedit;
@@ -32,7 +35,7 @@ void check_recovered(const command_journal_read_t& read, std::uint64_t revision,
 }
 void append_entry(const command_journal_t& journal, const command_journal_entry_t& entry) {
     const auto appended = journal.append(entry);
-    INFO((appended ? std::string{"ok"} : appended.error()));
+    INFO((appended ? std::string{"ok"} : appended.error().message));
     REQUIRE(appended);
 }
 void check_valid_recovery(const diagnosed_t<command_journal_read_t,
@@ -56,6 +59,13 @@ void check_retained_journal(const std::filesystem::path& journal, std::string_vi
     CHECK(std::filesystem::exists(backup) == is_published);
     CHECK(read_bytes(journal) == before);
 }
+void check_checkpoint(const std::filesystem::path& path, std::string_view title, std::uint64_t sequence) {
+    const auto backup = parse_native_project_recovery_snapshot(read_bytes(path));
+    REQUIRE(backup.value);
+    CHECK(backup.value->song.metadata.title == title);
+    REQUIRE(backup.value->metadata.journal_position);
+    CHECK(backup.value->metadata.journal_position->sequence == sequence);
+}
 void check_foreign_baseline_rejection(const command_journal_read_t& read) {
     auto foreign = journal_song(1);
     foreign.id = song_id_t{999};
@@ -64,6 +74,37 @@ void check_foreign_baseline_rejection(const command_journal_read_t& read) {
     CHECK(replay.value.id == foreign.id);
     REQUIRE_FALSE(replay.diagnostics.empty());
     CHECK(replay.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+}
+void check_matching_metadata(const native_project_recovery_metadata_t& cached,
+                             const native_project_recovery_metadata_t& fresh) {
+    CHECK(cached.session_sequence == fresh.session_sequence);
+    CHECK(cached.utc_write_time == fresh.utc_write_time);
+    CHECK(cached.journal_position == fresh.journal_position);
+    CHECK(cached.original_source_path == fresh.original_source_path);
+    CHECK(cached.intended_project_path == fresh.intended_project_path);
+    CHECK(cached.last_explicit_save_revision == fresh.last_explicit_save_revision);
+}
+void check_matching_chain(const command_journal_read_t& cached, const command_journal_read_t& fresh) {
+    CHECK(cached.last_sequence == fresh.last_sequence);
+    CHECK(cached.last_checksum == fresh.last_checksum);
+    CHECK(cached.accepted_records == fresh.accepted_records);
+    CHECK(cached.valid_bytes == fresh.valid_bytes);
+    CHECK(cached.stopped_by_limit == fresh.stopped_by_limit);
+}
+void check_matching_recovery(const command_journal_read_t& cached,
+    const diagnosed_t<command_journal_read_t, std::vector<native_project_storage_diagnostic_t>>& fresh) {
+    REQUIRE(fresh.ok());
+    REQUIRE(cached.snapshot);
+    REQUIRE(fresh.value.snapshot);
+    CHECK(write_native_project(cached.snapshot->song).value == write_native_project(fresh.value.snapshot->song).value);
+    CHECK(cached.positions == fresh.value.positions);
+    CHECK(cached.revisions == fresh.value.revisions);
+    check_matching_metadata(cached.snapshot->metadata, fresh.value.snapshot->metadata);
+    check_matching_chain(cached, fresh.value);
+}
+void repair_recovery_directory(const std::filesystem::path& blocked) {
+    REQUIRE(std::filesystem::remove(blocked));
+    REQUIRE(std::filesystem::create_directory(blocked));
 }
 }
 
@@ -88,6 +129,64 @@ TEST_CASE("Command journal replays full post-states and tolerates a torn final r
     check_recovered(torn.value, 2, 1);
 }
 
+TEST_CASE("Journal readers accept larger configured budgets and reject unsupported budgets", "[core][recovery][command-journal]") {
+    const auto read = command_journal_read_t::from(command_journal_header, {.maximum_bytes = 96U * 1024U * 1024U});
+    CHECK(read.ok());
+    const auto unsupported = GENERATE(
+        command_journal_limits_t{.maximum_bytes = command_journal_limits_t::maximum_supported_bytes + 1},
+        command_journal_limits_t{.maximum_record_bytes = command_journal_limits_t::maximum_supported_record_bytes + 1},
+        command_journal_limits_t{.maximum_records = command_journal_limits_t::maximum_supported_records + 1});
+    const auto rejected = command_journal_read_t::from(command_journal_header, unsupported);
+    CHECK_FALSE(rejected.ok());
+    REQUIRE_FALSE(rejected.diagnostics.empty());
+    CHECK(rejected.diagnostics.front().code == native_project_storage_diagnostic_code_t::resource_limit);
+}
+
+TEST_CASE("Journal version two starts with a seed and keeps version one readable", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "version.journal";
+    append_entry(command_journal_t{path}, journal_entry(1, 1, 2));
+    const auto bytes = read_bytes(path);
+    const auto header_end = bytes.find('\n');
+    CHECK(nlohmann::json::parse(bytes.substr(0, header_end)).at("version") == 2);
+    auto root = nlohmann::json::parse(bytes.substr(header_end + 1));
+    REQUIRE(root.at("record").contains("kind"));
+    CHECK(root.at("record").at("kind") == "seed");
+    root["record"].erase("kind");
+    root["record"].erase("payload_checksum");
+    root["sha256"] = native_project_content_checksum(root.at("record").dump());
+    const auto legacy = std::string{"{\"format\":\"wormedit-command-journal\",\"version\":1}\n"} + root.dump() + '\n';
+    check_valid_recovery(command_journal_read_t::from(legacy), 2, 1);
+}
+
+TEST_CASE("A one-note journal delta stores accepted values by identity", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "notes.journal";
+    command_journal_t journal{path};
+    auto entry = journal_entry(1, 1, 2);
+    auto& chart = entry.snapshot.song.charts.front();
+    chart.lane_layouts.push_back({.id = object_id_t{500}, .position = {measure_id_t{703}, 0},
+        .layout = {.lanes = {lane_definition_t::from(1, 0, stage_group_t::none)}}});
+    for (std::uint64_t i = 0; i < 200; ++i)
+        chart.measures.front().notes.push_back({.id = object_id_t{i + 1},
+            .position = {measure_id_t{703}, i}, .lane = lane_id_t{1}});
+    append_entry(journal, entry);
+    const auto seed_end = read_bytes(path).size();
+    ++entry.sequence;
+    entry.before_revision = entry.snapshot.song.revision++;
+    chart.measures.front().notes.front().label = "Accepted move";
+    append_entry(journal, entry);
+    const auto delta = read_bytes(path).substr(seed_end);
+    CHECK(delta.size() <= 16 * 1024);
+    CHECK(nlohmann::json::parse(delta).at("record").at("kind") == "delta");
+    const auto recovered = journal.read();
+    REQUIRE(recovered.ok());
+    REQUIRE(recovered.value.snapshot);
+    CHECK(write_native_project(recovered.value.snapshot->song).value == write_native_project(entry.snapshot.song).value);
+}
+
 TEST_CASE("Command journal capacity failure retains the old file and checkpoint retains later edits", "[core][recovery][command-journal]") {
     auto directory = test::temporary_directory_t::from();
     REQUIRE(directory);
@@ -101,8 +200,72 @@ TEST_CASE("Command journal capacity failure retains the old file and checkpoint 
     CHECK(read_bytes(path) == before);
     REQUIRE(journal.checkpoint(1));
     const auto read = journal.read();
-    check_valid_recovery(read, 3, 1);
+    // The retained delta still depends on the seed through the checkpoint.
+    check_valid_recovery(read, 3, 2);
     CHECK(read.value.last_sequence == 2);
+}
+
+TEST_CASE("Identical journal retry succeeds at capacity", "[core][recovery][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "retry.journal";
+    command_journal_t journal{path, {.maximum_records = 1}};
+    const auto entry = journal_entry(1, 1, 2);
+    append_entry(journal, entry);
+    const auto before = read_bytes(path);
+    append_entry(journal, entry);
+    CHECK(read_bytes(path) == before);
+    check_valid_recovery(journal.read(), 2, 1);
+}
+
+TEST_CASE("Journal append retains the accepted immutable state and matches fresh recovery", "[core][recovery][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    command_journal_t journal{directory->path() / "cached.journal"};
+    auto entry = journal_entry(7, 1, 2);
+    const auto chart = entry.snapshot.song.charts.front();
+    entry.snapshot.song = test::native_bms_fixture(entry.snapshot.song, chart);
+    entry.snapshot.metadata.session_sequence = 999;
+    entry.snapshot.metadata.original_source_path = "source/import.osu";
+    entry.snapshot.metadata.intended_project_path = "projects/native.wormedit";
+    entry.snapshot.metadata.last_explicit_save_revision = 1;
+    entry.snapshot.metadata.utc_write_time += std::chrono::nanoseconds{123};
+    entry.snapshot.metadata.journal_position = native_project_journal_position_t{.path = "journal", .sequence = 999};
+    append_entry(journal, entry);
+    REQUIRE(journal.accepted_state());
+    const auto cached = *journal.accepted_state();
+    REQUIRE(cached.snapshot);
+    CHECK(cached.snapshot->song.prepared_bms_programs.front() == entry.snapshot.song.prepared_bms_programs.front());
+    check_matching_recovery(cached, journal.read());
+}
+
+TEST_CASE("Journal payloads and native saves use the same compact JSON", "[core][recovery][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "compact.journal";
+    const auto entry = journal_entry(1, 1, 2);
+    append_entry(command_journal_t{path}, entry);
+    const auto root = nlohmann::json::parse(read_bytes(path).substr(command_journal_header.size()));
+    const auto payload = root.at("record").at("payload").get<std::string>();
+    const auto saved = write_native_project(entry.snapshot.song);
+    REQUIRE(saved.value);
+    CHECK(payload == nlohmann::json::parse(payload).dump() + '\n');
+    CHECK(payload == *saved.value);
+    CHECK(parse_native_project(payload).ok());
+}
+
+TEST_CASE("Journal encode budget includes escaped payload and wrapper bytes", "[core][recovery][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    auto entry = journal_entry(1, 1, 2);
+    entry.snapshot.song.metadata.title = std::string(512, '"');
+    const auto payload = write_native_project(entry.snapshot.song);
+    REQUIRE(payload.value);
+    const auto path = directory->path() / "escaped.journal";
+    const auto appended = command_journal_t{path, {.maximum_record_bytes = payload.value->size()}}.append(entry);
+    REQUIRE_FALSE(appended);
+    CHECK(appended.error().code == failure_code_t::capacity_exceeded);
+    CHECK_FALSE(std::filesystem::exists(path));
 }
 
 namespace {
@@ -263,7 +426,7 @@ TEST_CASE("Identical duplicate journal records replay once and compact completel
     REQUIRE(read.ok());
     check_recovered(read.value, 3, 2);
     REQUIRE(journal.checkpoint(1));
-    CHECK(journal.read().value.accepted_records == 1);
+    CHECK(journal.read().value.accepted_records == 2);
 }
 
 TEST_CASE("Journal recovery actions validate the complete scanned bytes including a corrupt tail", "[core][recovery][command-journal]") {
@@ -353,9 +516,15 @@ TEST_CASE("Journal capacity requests an early full checkpoint instead of losing 
     REQUIRE(directory);
     auto history = document_history_t::from(journal_song(1));
     task_scheduler_t scheduler{1, 1};
+    notification_center_t notifications;
+    const auto payload = write_native_project(history.document);
+    REQUIRE(payload.value);
+    const auto limits = GENERATE_COPY(command_journal_limits_t{.maximum_bytes = 512},
+        command_journal_limits_t{.maximum_record_bytes = 128},
+        command_journal_limits_t{.maximum_record_bytes = payload.value->size() + 64});
     const auto started = native_project_autosave_loop_t::clock_t::now();
     native_project_autosave_loop_t loop{started, scheduler, {}, 0, std::chrono::minutes{5},
-        std::chrono::seconds{30}, notification_sink_t::muted(), {.maximum_bytes = 512}};
+        std::chrono::seconds{30}, notification_sink_t{notifications}, limits};
     const auto target = native_project_autosave_target_t::from(history.document.id, false, {}, directory->path());
     loop.observe(history, target);
     (void)change_title(history, "A");
@@ -364,11 +533,115 @@ TEST_CASE("Journal capacity requests an early full checkpoint instead of losing 
     loop.flush_journal();
     (void)loop.tick(history.document, true, native_project_autosave_loop_t::clock_t::now(), target);
     loop.flush_journal();
-    const auto backup = parse_native_project_recovery_snapshot(read_bytes(target.backup_path));
-    REQUIRE(backup.value);
-    CHECK(backup.value->song.metadata.title == "C");
-    REQUIRE(backup.value->metadata.journal_position);
-    CHECK(backup.value->metadata.journal_position->sequence == 3);
+    check_checkpoint(target.backup_path, "C", 3);
+    (void)notifications.drain_inbox({});
+    CHECK(notifications.statistics().posted == 0);
+}
+
+TEST_CASE("Ordinary edits do not wait for an in-flight recovery write", "[core][recovery][autosave][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    auto history = document_history_t::from(journal_song(1));
+    task_scheduler_t scheduler{1, 4};
+    const auto started = native_project_autosave_loop_t::clock_t::now();
+    native_project_autosave_loop_t loop{started, scheduler};
+    const auto primary = directory->path() / "project.wormedit";
+    const auto target = native_project_autosave_target_t::from(history.document.id, true, primary, {});
+    loop.observe(history, target);
+    std::latch worker_started{1}, release_worker{1};
+    task_graph_t graph{1};
+    REQUIRE(graph.create_task({}, [&](std::span<const task_outcome_t>, std::stop_token) -> task_outcome_t {
+        worker_started.count_down();
+        release_worker.wait();
+        return task_value_t{};
+    }));
+    auto submitted = scheduler.begin(std::move(graph));
+    REQUIRE(submitted);
+    worker_started.wait();
+    auto edits = std::async(std::launch::async, [&] {
+        const auto first = change_title(history, "A");
+        const auto second = change_title(history, "B");
+        return first.applied && second.applied;
+    });
+    // Release even on regression so a blocking implementation fails without hanging.
+    const auto status = edits.wait_for(std::chrono::seconds{1});
+    release_worker.count_down();
+    CHECK(status == std::future_status::ready);
+    CHECK(edits.get());
+    loop.flush_journal();
+    const auto scan = checked_scan(primary);
+    check_preferred_title(scan, "B");
+}
+
+TEST_CASE("Durable journal flush checkpoints the latest edit after record capacity", "[core][recovery][autosave][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    auto history = document_history_t::from(journal_song(1));
+    task_scheduler_t scheduler{1, 4};
+    const auto started = native_project_autosave_loop_t::clock_t::now();
+    native_project_autosave_loop_t loop{started, scheduler, {}, 0, std::chrono::minutes{5},
+        std::chrono::seconds{30}, notification_sink_t::muted(), {.maximum_records = 1}};
+    const auto target = native_project_autosave_target_t::from(history.document.id, false, {}, directory->path());
+    loop.observe(history, target);
+    REQUIRE(change_title(history, "A").applied);
+    REQUIRE(loop.flush_journal(history.document));
+    REQUIRE(change_title(history, "B").applied);
+    REQUIRE(loop.flush_journal(history.document));
+    check_checkpoint(target.backup_path, "B", 2);
+}
+
+TEST_CASE("Shutdown drains queued journal recovery before stopping its scheduler", "[core][recovery][autosave][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    auto history = document_history_t::from(journal_song(1));
+    task_scheduler_t scheduler{1, 4};
+    const auto started = native_project_autosave_loop_t::clock_t::now();
+    native_project_autosave_loop_t loop{started, scheduler, {}, 0, std::chrono::minutes{5},
+        std::chrono::seconds{30}, notification_sink_t::muted(), {.maximum_records = 1}};
+    const auto target = native_project_autosave_target_t::from(history.document.id, false, {}, directory->path());
+    loop.observe(history, target);
+    REQUIRE(change_title(history, "A").applied);
+    REQUIRE(change_title(history, "B").applied);
+    REQUIRE(loop.flush_journal(history.document));
+    scheduler.shutdown();
+    CHECK(scheduler.outstanding_tasks() == 0);
+    CHECK_FALSE(loop.is_busy());
+    check_checkpoint(target.backup_path, "B", 2);
+}
+
+TEST_CASE("Durable journal flush reports storage failure and retries the current checkpoint immediately", "[core][recovery][autosave][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto blocked = directory->path() / "blocked";
+    std::ofstream(blocked) << "not a directory";
+    auto history = document_history_t::from(journal_song(1));
+    task_scheduler_t scheduler{1, 4};
+    native_project_autosave_loop_t loop{native_project_autosave_loop_t::clock_t::now(), scheduler};
+    const auto target = native_project_autosave_target_t::from(history.document.id, false, {}, blocked);
+    loop.observe(history, target);
+    REQUIRE(change_title(history, "A").applied);
+    REQUIRE(change_title(history, "B").applied);
+    CHECK_FALSE(loop.flush_journal(history.document));
+    repair_recovery_directory(blocked);
+    REQUIRE(loop.flush_journal(history.document));
+    check_checkpoint(target.backup_path, "B", 2);
+}
+
+TEST_CASE("Invalid journal snapshots still warn and request recovery", "[core][recovery][command-journal]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    task_scheduler_t scheduler{1, 1};
+    notification_center_t notifications;
+    command_journal_runtime_t journal{scheduler, notification_sink_t{notifications}};
+    auto song = journal_song(2);
+    song.schema_version = 0;
+    const auto target = native_project_autosave_target_t::from(song.id, false, {}, directory->path());
+    journal.configure(song.id, target);
+    journal.record(song, 1, "Invalid edit");
+    journal.drain();
+    CHECK(journal.requires_checkpoint());
+    (void)notifications.drain_inbox({});
+    CHECK(notifications.statistics().posted == 1);
 }
 
 TEST_CASE("A cached journal writer refuses to bury an unknown torn tail", "[core][recovery][command-journal]") {
@@ -514,4 +787,341 @@ TEST_CASE("Journal recovery retains linked source updates local overrides Relink
     REQUIRE(replay.ok());
     CHECK(write_native_project(replay.value).value == write_native_project(fixture.history.document).value);
     check_torn_link_journal(candidate.path, fixture.history.redo.back().after, records - 1);
+}
+
+namespace {
+auto delta_entry(std::uint64_t sequence) -> command_journal_entry_t {
+    auto entry = journal_entry(sequence, sequence, sequence + 1);
+    // Keep the conservative seed-size lower bound comfortably above small deltas
+    // for the full 128-record replay budget.
+    entry.snapshot.song.metadata.artist = std::string(4096, 'a');
+    entry.snapshot.song.metadata.title = std::to_string(sequence);
+    return entry;
+}
+auto journal_lines(std::string_view bytes) -> std::vector<nlohmann::json> {
+    std::vector<nlohmann::json> result;
+    auto begin = bytes.find('\n') + 1;
+    while (begin < bytes.size()) {
+        const auto end = bytes.find('\n', begin);
+        REQUIRE(end != std::string_view::npos);
+        result.push_back(nlohmann::json::parse(bytes.substr(begin, end - begin)));
+        begin = end + 1;
+    }
+    return result;
+}
+auto encode_lines(const std::vector<nlohmann::json>& lines) -> std::string {
+    std::string result{command_journal_header};
+    for (auto line : lines) {
+        line["sha256"] = native_project_content_checksum(line.at("record").dump());
+        result += line.dump() + '\n';
+    }
+    return result;
+}
+void check_delta_base(const nlohmann::json& previous, const nlohmann::json& next) {
+    CHECK(next.at("record").at("kind") == "delta");
+    CHECK(next.at("record").at("base_sequence") == previous.at("record").at("sequence"));
+    CHECK(next.at("record").at("base_checksum") == previous.at("sha256"));
+}
+void check_delta_chain(const std::vector<nlohmann::json>& lines) {
+    REQUIRE(lines.size() == 3);
+    CHECK(lines.front().at("record").at("kind") == "seed");
+    for (std::size_t i = 1; i < lines.size(); ++i) check_delta_base(lines[i - 1], lines[i]);
+}
+
+void check_torn_prefix(std::string_view bytes, std::size_t cut, std::size_t record) {
+    INFO(cut);
+    const auto read = command_journal_read_t::from(bytes.substr(0, cut));
+    CHECK_FALSE(read.ok());
+    CHECK(read.value.accepted_records == record);
+    CHECK(read.value.snapshot.has_value() == (record > 0));
+    if (record) CHECK(read.value.snapshot->song.metadata.title == std::to_string(record));
+}
+void check_latest_seed(const command_journal_t& journal, const std::filesystem::path& path, std::uint64_t last) {
+    const auto lines = journal_lines(read_bytes(path));
+    CHECK(lines.back().at("record").at("kind") == "seed");
+    const auto recovered = journal.read();
+    REQUIRE(recovered.ok());
+    CHECK(recovered.value.last_sequence == last);
+    REQUIRE(recovered.value.snapshot);
+    CHECK(recovered.value.snapshot->song.revision == last + 1);
+}
+void check_compacted_segment(const std::filesystem::path& path) {
+    const auto lines = journal_lines(read_bytes(path));
+    REQUIRE(lines.size() == 2);
+    CHECK(lines.front().at("record").at("sequence") == 4);
+    CHECK(lines.front().at("record").at("kind") == "seed");
+    CHECK(lines.back().at("record").at("kind") == "delta");
+}
+
+}
+
+TEST_CASE("Journal deltas chain to the preceding sequence and checksum and retry identically", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "chain.journal";
+    command_journal_t journal{path, {.maximum_records = 3}};
+    for (std::uint64_t i = 1; i <= 2; ++i) append_entry(journal, delta_entry(i));
+    const auto last = delta_entry(3);
+    append_entry(journal, last);
+    const auto bytes = read_bytes(path);
+    const auto lines = journal_lines(bytes);
+    check_delta_chain(lines);
+    append_entry(journal, last);
+    CHECK(read_bytes(path) == bytes);
+    auto duplicate = bytes + lines.back().dump() + '\n';
+    check_valid_recovery(command_journal_read_t::from(duplicate), 4, 3);
+}
+
+TEST_CASE("Journal recovery stops before wrong-base gaps and conflicting duplicate deltas", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "corrupt-chain.journal";
+    command_journal_t journal{path};
+    for (std::uint64_t i = 1; i <= 3; ++i) append_entry(journal, delta_entry(i));
+    auto lines = journal_lines(read_bytes(path));
+    auto& body = lines.back()["record"];
+    SECTION("wrong base checksum") { body["base_checksum"] = std::string(64, '0'); }
+    SECTION("wrong base sequence") { body["base_sequence"] = 1U; }
+    SECTION("gap") { body["sequence"] = 4U; }
+    SECTION("conflicting duplicate") { body["sequence"] = 2U; }
+    const auto read = command_journal_read_t::from(encode_lines(lines));
+    CHECK_FALSE(read.ok());
+    check_recovered(read.value, 3, 2);
+}
+
+TEST_CASE("Journal truncation at each record boundary and within seeds and deltas retains its prefix", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "truncation.journal";
+    command_journal_t journal{path};
+    for (std::uint64_t i = 1; i <= 4; ++i) append_entry(journal, delta_entry(i));
+    const auto bytes = read_bytes(path);
+    std::size_t begin = command_journal_header.size();
+    for (std::size_t record = 0; record < 4; ++record) {
+        const auto end = bytes.find('\n', begin) + 1;
+        for (const auto cut : {begin + 1, begin + (end - begin) / 2, end - 1}) {
+            check_torn_prefix(bytes, cut, record);
+        }
+        const auto complete = command_journal_read_t::from(std::string_view{bytes}.substr(0, end));
+        check_valid_recovery(complete, record + 2, record + 1);
+        begin = end;
+    }
+}
+
+TEST_CASE("Native validation failure after deltas recovers the latest complete seed", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "invalid-graph.journal";
+    command_journal_t journal{path};
+    for (std::uint64_t i = 1; i <= 3; ++i) append_entry(journal, delta_entry(i));
+    auto lines = journal_lines(read_bytes(path));
+    auto payload = nlohmann::json::parse(lines.back()["record"]["payload"].get<std::string>());
+    payload["document"]["fields"]["charts"] = {{"key", "id"}, {"update", {{{"id", 702U},
+        {"patch", {{"fields", {{"source_family", {{"set", 9999U}}}}}}}}}}};
+    lines.back()["record"]["payload"] = payload.dump();
+    const auto recovered = command_journal_read_t::from(encode_lines(lines));
+    CHECK_FALSE(recovered.ok());
+    check_recovered(recovered.value, 2, 1);
+    REQUIRE(recovered.value.snapshot);
+    CHECK(recovered.value.snapshot->song.metadata.title == "1");
+}
+
+TEST_CASE("Failed and skipped journal publications reseed", "[core][recovery][command-journal][delta]") {
+    const auto failed = GENERATE(false, true);
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "reseed.journal";
+    command_journal_t journal{path};
+    append_entry(journal, delta_entry(1));
+    if (failed) {
+        auto invalid = delta_entry(2);
+        invalid.snapshot.song.schema_version = 0;
+        CHECK_FALSE(journal.append(invalid));
+    }
+    const std::uint64_t next = failed ? 2 : 3;
+    append_entry(journal, delta_entry(next));
+    check_latest_seed(journal, path, next);
+}
+
+TEST_CASE("A journal delta exceeding half a seed stores a full seed", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "large-delta.journal";
+    command_journal_t journal{path};
+    append_entry(journal, delta_entry(1));
+    auto large = delta_entry(2);
+    large.snapshot.song.metadata.title = std::string(20'000, 'z');
+    append_entry(journal, large);
+    check_latest_seed(journal, path, 2);
+}
+
+TEST_CASE("Journal seeds bound replay to 128 deltas", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "bounded-replay.journal";
+    command_journal_t journal{path};
+    for (std::uint64_t i = 1; i <= 130; ++i) append_entry(journal, delta_entry(i));
+    const auto lines = journal_lines(read_bytes(path));
+    CHECK(lines[128].at("record").at("kind") == "delta");
+    check_latest_seed(journal, path, 130);
+}
+
+TEST_CASE("Journal compaction retains the newest required seed and drops older segments", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "compact-segments.journal";
+    command_journal_t journal{path};
+    append_entry(journal, delta_entry(1));
+    append_entry(journal, delta_entry(2));
+    append_entry(journal, delta_entry(4)); // A gap starts a fresh seed.
+    append_entry(journal, delta_entry(5));
+    REQUIRE(journal.checkpoint(4));
+    check_compacted_segment(path);
+    check_valid_recovery(journal.read(), 6, 2);
+    REQUIRE(journal.checkpoint(5));
+    CHECK_FALSE(std::filesystem::exists(path));
+    append_entry(journal, delta_entry(6));
+    CHECK(journal_lines(read_bytes(path)).front().at("record").at("kind") == "seed");
+}
+
+namespace {
+void run_overflow_edits(document_history_t& history, task_scheduler_t& scheduler) {
+    std::latch started{1}, release{1};
+    task_graph_t graph{1};
+    REQUIRE(graph.create_task({}, [&](std::span<const task_outcome_t>, std::stop_token) -> task_outcome_t {
+        started.count_down();
+        release.wait();
+        return task_value_t{};
+    }));
+    auto submitted = scheduler.begin(std::move(graph));
+    REQUIRE(submitted);
+    started.wait();
+    bool applied = true;
+    for (unsigned i = 0; i < 10; ++i) applied &= change_title(history, std::to_string(i)).applied;
+    release.count_down();
+    REQUIRE(applied);
+}
+auto checkpoint_overflow(native_project_autosave_loop_t& loop, const document_history_t& history,
+    const native_project_autosave_target_t& target) -> std::filesystem::path {
+    REQUIRE(loop.flush_journal(history.document));
+    check_checkpoint(target.backup_path, "9", 10);
+    const auto backup = parse_native_project_recovery_snapshot(read_bytes(target.backup_path));
+    REQUIRE(backup.value);
+    REQUIRE(backup.value->metadata.journal_position);
+    return backup.value->metadata.journal_position->path;
+}
+void check_overflow_seed(const std::filesystem::path& path) {
+    const auto lines = journal_lines(read_bytes(path));
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.front().at("record").at("kind") == "seed");
+    const auto recovered = command_journal_t{path}.read();
+    REQUIRE(recovered.ok());
+    REQUIRE(recovered.value.snapshot);
+    CHECK(recovered.value.snapshot->song.metadata.title == "After checkpoint");
+}
+}
+
+TEST_CASE("Queue overflow checkpoints the skipped publications and the next edit starts a seed", "[core][recovery][autosave][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    auto history = document_history_t::from(journal_song(1));
+    task_scheduler_t scheduler{1, 4};
+    native_project_autosave_loop_t loop{native_project_autosave_loop_t::clock_t::now(), scheduler};
+    const auto target = native_project_autosave_target_t::from(history.document.id, false, {}, directory->path());
+    loop.observe(history, target);
+    run_overflow_edits(history, scheduler);
+    const auto path = checkpoint_overflow(loop, history, target);
+    REQUIRE(change_title(history, "After checkpoint").applied);
+    REQUIRE(loop.flush_journal(history.document));
+    check_overflow_seed(path);
+}
+
+TEST_CASE("Idempotent journal records still validate their wrapper shape", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "duplicate-wrapper.journal";
+    append_entry(command_journal_t{path}, delta_entry(1));
+    const auto bytes = read_bytes(path);
+    auto duplicate = journal_lines(bytes).front();
+    duplicate["unknown"] = true;
+    const auto read = command_journal_read_t::from(bytes + duplicate.dump() + '\n');
+    CHECK_FALSE(read.ok());
+    check_recovered(read.value, 2, 1);
+}
+
+TEST_CASE("An older-schema seed is never reused as an unmigrated delta base", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "old-schema.journal";
+    command_journal_t journal{path};
+    auto first = delta_entry(1);
+    first.snapshot.song.schema_version = current_document_schema_version - 1;
+    append_entry(journal, first);
+    append_entry(journal, first);
+    append_entry(journal, delta_entry(2));
+    const auto lines = journal_lines(read_bytes(path));
+    REQUIRE(lines.size() == 2);
+    CHECK(lines.back().at("record").at("kind") == "seed");
+    check_valid_recovery(journal.read(), 3, 2);
+}
+
+TEST_CASE("Version one journals remain discoverable and recoverable through the scanner", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto primary = directory->path() / "project.wormedit";
+    REQUIRE(create_native_project_file(primary, journal_song(1)).value);
+    const auto path = std::filesystem::path{primary.string() + ".bak.journal-v1"};
+    append_entry(command_journal_t{path}, journal_entry(1, 1, 2));
+    auto line = journal_lines(read_bytes(path)).front();
+    line["record"].erase("kind");
+    line["record"].erase("payload_checksum");
+    line["sha256"] = native_project_content_checksum(line.at("record").dump());
+    { std::ofstream output(path, std::ios::binary); output << command_journal_v1_header << line.dump() << '\n'; }
+    const auto scan = checked_scan(primary);
+    const auto index = *scan.value.preferred_recovery_candidate;
+    CHECK(scan.value.candidates[index].is_command_journal);
+    const auto inspected = perform_native_project_recovery_action(scan.value.candidates, index,
+        native_project_recovery_action_t::inspect_read_only);
+    REQUIRE(inspected.value.document);
+    CHECK(inspected.value.document->revision == 2);
+}
+
+TEST_CASE("Journal replay validates the final delta state before publishing a snapshot", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "final-validation.journal";
+    command_journal_t journal{path};
+    for (std::uint64_t i = 1; i <= 3; ++i) append_entry(journal, delta_entry(i));
+    auto lines = journal_lines(read_bytes(path));
+    auto patch = nlohmann::json::parse(lines[1]["record"]["payload"].get<std::string>());
+    patch["document"]["fields"]["charts"] = {{"key", "id"}, {"update", {{{"id", 702U},
+        {"patch", {{"fields", {{"source_family", {{"set", 9999U}}}}}}}}}}};
+    lines[1]["record"]["payload"] = patch.dump();
+    lines[1]["sha256"] = native_project_content_checksum(lines[1]["record"].dump());
+    lines[2]["record"]["base_checksum"] = lines[1]["sha256"];
+    patch = nlohmann::json::parse(lines[2]["record"]["payload"].get<std::string>());
+    patch["document"]["fields"]["charts"] = {{"key", "id"}, {"update", {{{"id", 702U},
+        {"patch", {{"fields", {{"source_family", {{"set", static_cast<unsigned int>(format_family_t::native_project)}}}}}}}}}}};
+    lines[2]["record"]["payload"] = patch.dump();
+    const auto recovered = command_journal_read_t::from(encode_lines(lines));
+    REQUIRE(recovered.ok());
+    check_recovered(recovered.value, 4, 3);
+    REQUIRE(recovered.value.snapshot);
+    CHECK(recovered.value.snapshot->song.metadata.title == "3");
+}
+
+TEST_CASE("Reopened migrated journal seeds reseed before accepting another publication", "[core][recovery][command-journal][delta]") {
+    auto directory = test::temporary_directory_t::from();
+    REQUIRE(directory);
+    const auto path = directory->path() / "reopened-old-seed.journal";
+    append_entry(command_journal_t{path}, delta_entry(1));
+    auto lines = journal_lines(read_bytes(path));
+    auto payload = nlohmann::json::parse(lines.front()["record"]["payload"].get<std::string>());
+    payload["document"]["schema_version"] = current_document_schema_version - 1;
+    lines.front()["record"]["payload"] = payload.dump();
+    lines.front()["record"]["payload_checksum"] = native_project_content_checksum(payload.dump());
+    { std::ofstream output(path, std::ios::binary); output << encode_lines(lines); }
+    command_journal_t reopened{path};
+    append_entry(reopened, delta_entry(2));
+    check_latest_seed(reopened, path, 2);
 }

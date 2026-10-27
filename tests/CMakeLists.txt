@@ -222,6 +222,7 @@ add_executable(wormedit_core_tests
     formats/conversion_publication_tests.cpp
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
+    formats/native_project_delta_tests.cpp
     formats/native_project_impulse_tests.cpp
     formats/native_project_generator_tests.cpp
     formats/native_project_lua_recipe_tests.cpp
@@ -253,6 +254,11 @@ catch_discover_tests(wormedit_core_tests
     PROPERTIES LABELS unit LABELS core
     DISCOVERY_MODE PRE_TEST
 )
+
+# Built by the gate, but deliberately not discovered by CTest. Opt in with [.benchmark].
+add_executable(wormedit_command_journal_benchmarks core/command_journal_benchmarks.cpp)
+target_link_libraries(wormedit_command_journal_benchmarks
+    PRIVATE wormedit::core Catch2::Catch2WithMain nlohmann_json::nlohmann_json)
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     # Intentionally not discovered by CTest: opt in with [.performance] in Release.

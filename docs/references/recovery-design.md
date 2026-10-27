@@ -60,10 +60,30 @@ If a crash marker exists but the primary save validates and no newer valid backu
 
 The live history publication boundary captures every accepted command and Undo/Redo
 as a complete native post-state, prior revision, command label and monotonic journal
-sequence. Each record's SHA-256 covers its payload and metadata. Full post-states
-represent replacement deltas, so replay covers every command family without a second
-command serializer. Audio and other external assets remain referenced; relative paths
-are anchored on the worker using the same recovery target as autosave.
+sequence. On the worker, journal version 2 stores a compact native `seed`, followed by
+id-keyed `delta` records containing accepted values. Version 1 full-state journals remain
+readable; extending one requires a checkpoint first. No command intent is replayed.
+Each record's SHA-256 covers its payload and metadata; a seed also checksums its native
+payload, and each delta names the preceding sequence and record checksum.
+Audio and other external assets remain referenced; relative paths are anchored on the
+worker using the same recovery target as autosave.
+
+The differ compares typed chart/measure collections before encoding changed values
+with the native codec's own serializers. Other stable-ID collections, including scoped
+BMS nodes and inactive content items, compare typed values before encoding only
+changed values with the same upsert/remove and explicit-order algebra. Unchanged immutable BMS owners skip encoding unless the shared catalog changed.
+Fields without stable identities are replaced whole. The codec's scalar-field and
+collection definitions are shared with the differ; native schema and explicit-save
+formatting are unchanged.
+
+A segment starts with a seed. A failed, skipped or overflowed publication cannot be
+bridged by a delta. The writer reseeds after a checkpoint, after 128 deltas, for legacy
+BMS/schema comparisons or an unsupported/ambiguous difference, and when a delta record
+exceeds half a conservative lower bound on the next seed size. This bound subtracts
+removed/replaced bytes and ignores additions; it can request a seed early. Reopening
+a writer at a delta tail also reseeds because that lower bound is not persisted.
+Reopening a seed that requires native migration reseeds as well: the migrated domain
+snapshot cannot stand in for its old encoded delta base.
 
 A timing-source edit and all propagated dependents form one journal record. Local
 overrides, remembered sources, relinking and Undo restore complete resolved snapshots;
@@ -73,22 +93,29 @@ graph available, and autosave cursors cover the whole propagated publication. Th
 save/reopen, checkpointed replay, truncation and isolated crash/restart recovery.
 
 Serialization and file publication run through `async_job_t` on the autosave scheduler.
-Before accepting another publication, the history boundary waits for the previous
-record's file and directory flushes. With healthy storage, the current publication is
-the only accepted edit that may still be in flight. The writer owns its generation and
-validated prefix, checks the expected file length before appending, and avoids parsing
-the growing file for each note. Recovery independently verifies every record.
-The default bounds are four queued snapshots, 64 MiB per file, 16 MiB per record and
+Ordinary edits enqueue their immutable snapshots without waiting for recovery I/O.
+The writer owns its generation and validated prefix, checks the expected file length
+before appending, and avoids parsing its own output. Recovery independently verifies
+every record, parses each segment seed into an encoded native tree once, and applies
+its deltas transactionally using cached collection positions. It runs the native reader
+and full validation once on the final state of each segment before exposing a snapshot.
+Structural, checksum and chain failures stop at the preceding record, whose resulting
+state must pass that same validation. Compaction and reopened writers use this replay. A native validation failure falls
+back to the latest seed with a diagnostic. The scanner and recovery actions consume
+one validated snapshot.
+The default bounds are four queued snapshots, 128 MiB per file, 64 MiB per record and
 1,024 records. Reaching a bound or encountering a write failure requests an early full
-checkpoint using the existing autosave coordinator and retry policy. Prior artifacts
-remain available when storage fails, with a recovery warning.
+checkpoint using the existing autosave coordinator and retry policy. Explicit durability
+boundaries flush the journal and any required checkpoint before reporting success.
+Prior artifacts remain available when storage fails, with a recovery warning.
 
 Saved projects use an adjacent `<project>.bak.journal-<generation>`; untitled/imported
 sessions use the corresponding recovery-directory target. New generations preserve
 unresolved artifacts. Opening/startup discovers journals under the existing candidate,
 directory and byte budgets. JSON parsing uses the dependency with record depth, node,
 duplicate-key and payload bounds. A bad checksum, malformed post-state, revision gap,
-sequence gap or torn final record stops replay at the validated prefix. Identical
+delta sequence gap, wrong base or torn final record stops replay at the validated prefix.
+A new seed may cross a skipped sequence because it is independently complete. Identical
 duplicates are idempotent. A corrupt journal never prevents another valid backup from
 being offered.
 
@@ -96,8 +123,9 @@ Autosave captures a path/sequence cursor with its immutable document. Recovery
 envelope version 2 adds that cursor and its checksum; envelopes without a cursor retain
 version 1, and both are readable. Only a successfully flushed backup acknowledges
 compaction, and directory-sync warnings retain the journal. Records newer than the
-captured cursor survive. A completed checkpoint can remove its covered valid prefix
-and unusable tail; an unread limit refuses compaction. Recovery sequence floors continue
+captured cursor survive. Compaction retains the newest seed at or before the first
+retained delta, including any covered deltas needed to reach it. A completed checkpoint
+can remove earlier independent segments and its covered unusable tail; an unread limit refuses compaction. Recovery sequence floors continue
 across generations, and cursor-aware ranking handles Undo's decreasing numeric revision.
 Explicit Save records the resulting baseline, including edits made while Save ran.
 

@@ -126,17 +126,33 @@ auto read_bms_native_content(const json& value) -> bms_native_content_t {
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_content_item_t, id, value, provenance)
 void to_json(json& value, const bms_chart_content_t& content) { value = {{"items", content.items}}; }
 void from_json(const json& value, bms_chart_content_t& content) { value.at("items").get_to(content.items); }
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_program_node_t, id, value, children)
+auto native_project_internal::encode_native_fields(const bms_program_node_t& node) -> json {
+    // Chart content is encoded separately by both the ordinary codec and typed differ.
+    const auto payload = std::holds_alternative<bms_chart_content_t>(node.value)
+        ? bms_program_node_value_t{bms_chart_content_t{}} : node.value;
+    return {{"id", node.id}, {"value", payload}, {"children", node.children}};
+}
+void to_json(json& value, const bms_program_node_t& node) {
+    value = native_project_internal::encode_native_fields(node);
+    if (const auto* chart = std::get_if<bms_chart_content_t>(&node.value)) {
+        auto* items = &value;
+        for (const auto key : native_project_internal::native_bms_content_fields) items = &(*items)[key];
+        *items = chart->items;
+    }
+}
+void from_json(const json& value, bms_program_node_t& node) {
+    value.at("id").get_to(node.id);
+    value.at("value").get_to(node.value);
+    value.at("children").get_to(node.children);
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_input_profile_t, layout, input)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_difficulty_settings_t, name, author, rating, overrides,
     divisions_per_standard_measure, layout_segment, timing_links, show_empty_bgm_columns)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_asset_resolution_t, authored, resolved)
 
-void to_json(json& value, const bms_program_document_t& owner) {
-    const auto& prepared = owner.prepared();
-    value = {{"difficulty", owner.difficulty()},
-        {"nodes", std::vector<bms_program_node_t>(prepared.program.nodes().begin(), prepared.program.nodes().end())},
+auto encode_bms_program_fields(const bms_program_document_t& owner, const bms_prepared_program_t& prepared) -> json {
+    auto value = json{{"difficulty", owner.difficulty()},
         {"measures", prepared.measures}, {"lane_profile", prepared.lane_profile},
         {"bgm_columns", prepared.bgm_columns}, {"resources", prepared.resources},
         {"audio_assets", prepared.audio_assets}, {"visual_assets", prepared.visual_assets},
@@ -144,6 +160,11 @@ void to_json(json& value, const bms_program_document_t& owner) {
         {"evaluation", owner.evaluation().selections}, {"settings", prepared.settings},
         {"source", prepared.source}};
     if (!prepared.resolved_asset_paths.empty()) value["resolved_asset_paths"] = prepared.resolved_asset_paths;
+    return value;
+}
+void to_json(json& value, const bms_program_document_t& owner) {
+    value = encode_bms_program_fields(owner, owner.prepared());
+    value["nodes"] = owner.prepared().program.nodes();
 }
 auto read_bms_program_document(const json& value) -> std::shared_ptr<const bms_program_document_t> {
     auto program = bms_program_t::from(value.at("nodes").get<std::vector<bms_program_node_t>>());

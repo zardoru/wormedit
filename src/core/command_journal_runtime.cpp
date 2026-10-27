@@ -29,7 +29,7 @@ auto publish_journal_work(const std::shared_ptr<const journal_work_t>& request, 
         auto entry = *request->entry;
         request->target.anchor_assets(entry.snapshot.song);
         const auto appended = request->journal->append(entry);
-        if (!appended) return std::unexpected(error_t<failure_code_t>{failure_code_t::publication_failed, appended.error()});
+        if (!appended) return std::unexpected(appended.error());
     }
     return true;
 }
@@ -73,8 +73,9 @@ struct command_journal_runtime_t::storage_t {
         const auto request = pending.front();
         if (completed) pending.pop_front();
         else {
-            notifications.post(notification_severity_t::warning, notification_source_t::recovery,
-                "Command journal could not publish; a full recovery checkpoint was requested: " + completed.error().cause.message);
+            if (completed.error().cause.code != failure_code_t::capacity_exceeded)
+                notifications.post(notification_severity_t::warning, notification_source_t::recovery,
+                    "Command journal could not publish; a full recovery checkpoint was requested: " + completed.error().cause.message);
             if (position && position->path == request->position.path) request_checkpoint(position->sequence);
             else std::erase_if(pending, [&](const auto& old) { return old->position.path == request->position.path; });
             if (!request->entry && !pending.empty() && pending.front() == request) pending.pop_front();
@@ -184,6 +185,9 @@ void command_journal_runtime_t::checkpoint(native_project_journal_position_t pos
 }
 auto command_journal_runtime_t::position() const -> std::optional<native_project_journal_position_t> { return storage_->position; }
 auto command_journal_runtime_t::requires_checkpoint() const -> bool { return storage_->failed_through.has_value(); }
+auto command_journal_runtime_t::is_durable() const -> bool {
+    return !requires_checkpoint() && !is_busy() && storage_->pending.empty() && storage_->checkpoints.empty();
+}
 auto command_journal_runtime_t::is_busy() const -> bool { return storage_->job.is_busy(); }
 auto command_journal_runtime_t::target() const -> const native_project_autosave_target_t& { return storage_->target; }
 } // namespace wormedit

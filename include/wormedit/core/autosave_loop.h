@@ -63,7 +63,11 @@ class native_project_autosave_loop_t {
     void mark_explicit_save(native_project_document_version_t saved_version) noexcept;
     void mark_explicit_save(native_project_document_version_t saved_version, const song_document_t& current);
     void observe(document_history_t&, const native_project_autosave_target_t&);
+    // Wait for queued work only. Use the document overload for durable boundaries.
     void flush_journal();
+    // Current must be the observed session's latest accepted document. Publishes
+    // a checkpoint if necessary, including after capacity or publication failure.
+    [[nodiscard]] auto flush_journal(const song_document_t& current) -> bool;
     [[nodiscard]] auto
     reset_session(clock_t::time_point session_started_at,
                   std::optional<native_project_document_version_t> last_explicit_save,
@@ -81,7 +85,6 @@ class native_project_autosave_loop_t {
     [[nodiscard]] auto session_sequence() const noexcept -> std::uint64_t;
 
   private:
-    void prepare_publication(const song_document_t&);
     struct completion_t {
         native_project_autosave_coordinator_t coordinator;
         native_project_autosave_outcome_t result;

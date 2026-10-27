@@ -193,18 +193,27 @@ scratch histories. Locked/hidden/conditional notes are skipped, and retained-sou
 reject the entire stroke.
 
 Live history may attach `document_publication_observer_t` through the autosave loop.
-The shared commit and Undo/Redo boundaries acknowledge the previous journal record
-before publishing another edit, then capture the accepted post-state with its prior
-revision and command label. Detached previews constructed through the shared preview
+The shared commit and Undo/Redo boundaries capture the accepted post-state with its prior
+revision and command label without waiting for recovery workers. Detached previews constructed through the shared preview
 runner have no observer. Domain edits contain no journal code.
-`command_journal_runtime_t` serializes and appends through `async_job_t`; the single
-writer retains validated sequence metadata, while recovery reads verify the entire
-bounded stream. A successful autosave acknowledges its captured journal cursor before
-compaction, preserving later publications. Capacity or I/O failures request an early
-native checkpoint through the existing autosave coordinator.
-Recovery preparation anchors media paths for both snapshots and journals, while
-generator recipes retain their project-relative reload origins and frozen source.
-Reload origins are not media assets and must remain valid native recipe metadata.
+`command_journal_runtime_t` diffs, serializes and appends through `async_job_t`; the single
+writer retains the accepted snapshot and sequence metadata without decoding its own
+output. Journal version 2 stores compact native seeds and id-keyed accepted-value deltas,
+using the native codec's serializers and shared collection definitions. Immutable BMS
+owners compare by pointer, then typed node/content identity before encoding changed values;
+inactive bodies and shared catalog changes remain lossless. Deltas chain to the preceding sequence and checksum; the writer does not re-validate the whole document for a delta, only for a seed. Missing publications,
+unsupported comparisons, size bounds and the 128-delta replay budget force a new seed.
+Version 1 journals remain readable. Recovery parses each seed into an encoded tree,
+patches deltas with cached collection positions, and runs full native validation once
+on the final state of the segment; a reconstructed validation failure recovers the latest seed with
+a diagnostic. Project saves are compact JSON; readers also accept indented files. A successful autosave
+acknowledges its captured journal cursor before compaction, preserving later publications
+and their required seed. Capacity or I/O failures request an early native checkpoint
+through the existing autosave coordinator. Explicit Save and shutdown report durability
+only after flushing the journal and any required checkpoint. Recovery preparation anchors
+media paths for snapshots and journals; generator recipes retain their project-relative
+reload origins and frozen source. Reader and writer budgets share
+`command_journal_limits_t`; bounded queue overflow also requests a checkpoint.
 
 Accepted audition requests travel on those outcomes to the shared finisher, which submits them
 to the project-owned `compose_auditions_t`. Its input scope delivers the last object request,

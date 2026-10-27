@@ -24,6 +24,7 @@
 #include "sys/compose/views/compose_view_internal.h"
 #include "sys/app/frame_timing.h"
 #include "sys/app/application_frame_view.h"
+#include <wormedit/audio/decoder.h>
 #include <wormedit/audio/transport.h>
 #include <thread>
 #include <wormedit/core/arena.h>
@@ -4796,6 +4797,64 @@ TEST_CASE("Compose wheel displacement follows the same direction during editing 
             }
         }
     }
+}
+
+TEST_CASE("Compose latched autoscroll preserves pixel speed during playback",
+          "[sys][compose][autoscroll][regression]") {
+    const bool downscroll = GENERATE(false, true);
+    const bool playing = GENERATE(false, true);
+    const double zoom = GENERATE(240.0, 960.0);
+    const int frames = GENERATE(20, 120);
+    const double offset = GENERATE(8.25, 40.0);
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.application.preferences.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.project();
+    auto& state = *fixture.interaction;
+    state.viewport_scroll_pixels = 1000.0;
+    state.pixels_per_standard_measure = zoom;
+    fixture.application.project.transport.preview_playhead_absolute_row = 960.0;
+    fixture.application.services.transport_preview_playing = [playing] { return playing; };
+    std::size_t seeks = 0;
+    std::uint64_t sought_frame{};
+    fixture.application.services.transport_seek = [&seeks, &sought_frame](std::uint64_t frame) {
+        ++seeks;
+        sought_frame = frame;
+        return compose_action_outcome_t::from("Seeked.", notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    auto action = cursor_placement_action(fixture);
+    action.compose_viewport_middle_click = true;
+    action.compose_viewport_middle_click_x_pixels = 200.0;
+    action.compose_viewport_middle_click_y_pixels = 100.0;
+    action.compose_viewport_pointer_valid = true;
+    action.compose_viewport_pointer_x_pixels = 200.0;
+    action.compose_viewport_pointer_y_pixels = 100.0 + offset;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
+        state, viewport, navigation, fixture.application, fixture.cache, 0.0);
+    action.compose_viewport_middle_click = false;
+    for (int frame = 0; frame < frames; ++frame)
+        (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
+            state, viewport, navigation, fixture.application, fixture.cache, 1.0 / frames);
+    // A quarter pixel beyond the dead zone requests 1.5 pixels over one second,
+    // including sub-row motion at high zoom, independently of the frame count.
+    const double pixels = (downscroll ? -1.0 : 1.0) * (offset - 8.0) * 6.0;
+    const auto divisions = fixture.history.read_chart(state.chart)->divisions_per_standard_measure;
+    if (playing) {
+        const auto expected_row = 960.0 + pixels * divisions / zoom;
+        expect_compose_test(*fixture.application.project.transport.preview_playhead_absolute_row ==
+                            Catch::Approx(expected_row));
+        const auto expected_frame = static_cast<std::uint64_t>(std::llround(
+            expected_row * 240.0 * audio::output_sample_rate / (154.0 * divisions)));
+        expect_compose_test(sought_frame == expected_frame);
+        expect_compose_test(seeks > 0);
+        expect_compose_test(state.viewport_scroll_pixels == 1000.0);
+    } else {
+        expect_compose_test(state.viewport_scroll_pixels == Catch::Approx(1000.0 + pixels));
+        expect_compose_test(seeks == 0);
+    }
+    expect_compose_test(fixture.history.undo.empty());
 }
 
 TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolling",

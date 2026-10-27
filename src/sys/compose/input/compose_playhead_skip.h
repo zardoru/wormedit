@@ -30,6 +30,12 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
                                          std::uint64_t snap_denominator, playhead_skip_unit_t unit,
                                          double amount) -> compose_action_outcome_t;
 
+// Continuous viewport motion uses displayed pixels, retaining fractional rows through
+// the audio-frame conversion instead of taking one beat step per input frame.
+[[nodiscard]] auto scroll_playing_playhead(const document_history_t& history,
+    application_command_state_t& application, const chart_document_t& chart,
+    const editor_interaction_state_t& state, double delta_pixels) -> compose_action_outcome_t;
+
 [[nodiscard]] auto is_preview_playing(const application_command_state_t& application) -> bool;
 
 } // namespace wormedit::sys

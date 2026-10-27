@@ -1,6 +1,8 @@
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/input/compose_playhead_skip.h"
+#include "sys/audio/preview_cursor_frame.h"
 
+#include <wormedit/core/editor_axis.h>
 #include <wormedit/core/snap.h>
 
 #include <algorithm>
@@ -149,6 +151,46 @@ auto skip_playing_playhead(const document_history_t& history,
     // Chain several skips of one frame from where this one landed.
     application.project.transport.preview_playhead_absolute_row = static_cast<double>(*row);
     application.project.transport.last_playhead_skip = {chart.id, *row, forward, application.bookmarks.now()};
+    return outcome;
+}
+
+auto scroll_playing_playhead(const document_history_t& history,
+    application_command_state_t& application, const chart_document_t& chart,
+    const editor_interaction_state_t& state, double delta_pixels) -> compose_action_outcome_t {
+    const auto playhead = application.project.transport.preview_playhead_absolute_row;
+    if (!playhead || !std::isfinite(*playhead) || !std::isfinite(delta_pixels) ||
+        !std::isfinite(state.pixels_per_standard_measure) ||
+        state.pixels_per_standard_measure <= 0.0 || chart.divisions_per_standard_measure == 0)
+        return compose_action_outcome_t::blocked("The playhead scroll position is unavailable.",
+                                                 notification_source_t::input);
+    const auto* indices = history.indices(chart.id);
+    if (!indices || !indices->measures || indices->measures->total_rows == 0)
+        return compose_action_outcome_t::blocked("The playhead could not be moved.",
+                                                 notification_source_t::input);
+    const auto fallback_timing = indices->timing.value ? std::nullopt
+        : timing_index_t::from(chart, {.allow_bounded_clock = true}).value;
+    const auto* timing = indices->timing.value ? &*indices->timing.value
+        : fallback_timing ? &*fallback_timing : nullptr;
+    if (!timing)
+        return compose_action_outcome_t::blocked("The playhead has no playable timing position.",
+                                                 notification_source_t::input);
+    const auto axis = editor_axis_projection_t::from(state, chart.divisions_per_standard_measure);
+    const auto target = std::clamp(axis.row_at_y(axis.y_for_row(*playhead) + delta_pixels),
+        0.0L, static_cast<long double>(indices->measures->total_rows - 1));
+    const auto row = static_cast<std::uint64_t>(std::floor(target));
+    const auto position = indices->measures->position_at(row);
+    if (!position)
+        return compose_action_outcome_t::blocked("The playhead could not be moved.",
+                                                 notification_source_t::input);
+    const auto frame = preview_cursor_frame(chart, *timing, *position,
+        static_cast<double>(target - row), &indices->measures);
+    if (const auto* error = std::get_if<std::string>(&frame))
+        return compose_action_outcome_t::blocked(*error, notification_source_t::input);
+    auto outcome = seek_compose_navigation_position(history, chart, application,
+        {.position = *position, .preview_frame = std::get<std::uint64_t>(frame)},
+        &*indices->measures);
+    if (outcome.accepted)
+        application.project.transport.preview_playhead_absolute_row = static_cast<double>(target);
     return outcome;
 }
 

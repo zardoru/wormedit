@@ -82,11 +82,12 @@ cp "$build/macos-dependencies.txt" "$resources/BUILD-DEPENDENCIES.txt"
 
 # Sign inside out after ALL install-name/resource edits. Homebrew libraries can
 # arrive signed; replace those signatures too. No hardened runtime/entitlements.
-while IFS= read -r -d '' binary; do
+# A pipe rather than process substitution: macOS bash 3.2 rejects `< <(...)` in POSIX mode.
+find "$app/Contents/Frameworks" -type f -print0 | while IFS= read -r -d '' binary; do
     if file -b "$binary" | grep -q 'Mach-O'; then
         codesign --force -s - "$binary"
     fi
-done < <(find "$app/Contents/Frameworks" -type f -print0)
+done
 codesign --force --deep -s - "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 

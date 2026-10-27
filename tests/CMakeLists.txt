@@ -941,6 +941,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         sys/timing_lane_ui_tests.cpp
+        ../src/sys/app/application_timing_stage.cpp
         ../src/sys/compose/views/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
         sys/presentation_latency_tests.cpp

@@ -490,7 +490,8 @@ auto migrate_v25_to_v26(nlohmann::json&) -> std::string {
     return {};
 }
 
-// Schema27 adds editable osu! sample-control lanes. Missing lanes retain legacy provenance.
+// Schema27 adds editable osu! sample-control lanes. Chart decoding lifts legacy
+// timing-line fields when the two collections are absent.
 auto migrate_v26_to_v27(nlohmann::json&) -> std::string { return {}; }
 
 constexpr std::array<migration_t, 26> released_migrations{{

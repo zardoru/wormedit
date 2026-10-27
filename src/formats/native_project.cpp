@@ -1586,9 +1586,19 @@ auto is_allows_legacy_generator_shape(const json& input, const json& canonical) 
     return missing != 0 && input.size() + missing == canonical.size();
 }
 
+auto can_use_legacy_chart_shape(const json& input, const json& canonical) -> bool {
+    if (input.contains("volumes") != input.contains("sample_sets")) return false;
+    std::size_t missing = input.contains("volumes") ? 0 : 2;
+    if (!input.contains("sv_recipes") && canonical.contains("sv_recipes") &&
+        canonical.at("sv_recipes").empty()) ++missing;
+    return missing != 0 && input.size() + missing == canonical.size();
+}
+
 auto is_allows_legacy_object_shape(const json& input, const json& canonical,
                                 schema_shape_context_t context) -> bool {
     if (is_allows_legacy_generator_shape(input, canonical)) return true;
+    if (context == schema_shape_context_t::chart_entry && can_use_legacy_chart_shape(input, canonical))
+        return true;
     if (input.size() + 1 != canonical.size()) {
         return false;
     }
@@ -1600,10 +1610,6 @@ auto is_allows_legacy_object_shape(const json& input, const json& canonical,
     if (context == schema_shape_context_t::storyboard_entry) {
         return !input.contains("model") && canonical.contains("model") &&
                canonical.at("model").is_null();
-    }
-    if (context == schema_shape_context_t::chart_entry) {
-        return !input.contains("sv_recipes") && canonical.contains("sv_recipes") &&
-               canonical.at("sv_recipes").empty();
     }
     if (context == schema_shape_context_t::bgm_event_entry) {
         return !input.contains("end") && canonical.contains("end");

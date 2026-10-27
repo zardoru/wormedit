@@ -121,6 +121,20 @@ auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart
     return std::nullopt;
 }
 
+auto initialize_sample_control_draw_value(wormedit::timing_lane_value_t& initial,
+                                         const wormedit::ui::workspace_action_t& action) -> bool {
+    using namespace wormedit;
+    if (action.timing_primary_numerator_text.empty() ||
+        (action.timing_lane != timing_lane_kind_t::volume && action.timing_lane != timing_lane_kind_t::sample_set))
+        return true;
+    const auto value = parse_integer<std::int64_t>(action.timing_primary_numerator_text.c_str());
+    if (!value) return false;
+    std::visit([&](auto& item) {
+        if constexpr (requires { item.value; }) item.value = *value;
+    }, initial);
+    return true;
+}
+
 auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked,
@@ -178,14 +192,7 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
     if (!initial) {
         return rejected;
     }
-    if ((kind == timing_lane_kind_t::volume || kind == timing_lane_kind_t::sample_set) &&
-        !action.timing_primary_numerator_text.empty()) {
-        const auto value = parse_integer<std::int64_t>(action.timing_primary_numerator_text.c_str());
-        if (!value) return rejected;
-        std::visit([&](auto& item) {
-            if constexpr (requires { item.value; }) item.value = *value;
-        }, *initial);
-    }
+    if (!initialize_sample_control_draw_value(*initial, action)) return rejected;
     return timing_lane_pseudonote_preview_t::propose(history, action.timing_chart_id, wormedit::timing_lane_pseudonote_state_t{.kind = kind, .position = *position, .value = std::move(*initial), .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, timing_locked);
 }
 

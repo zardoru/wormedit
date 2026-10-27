@@ -10,8 +10,8 @@
 * *macOS:* build `Wormedit.app` with `scripts/macos-package.sh` from the source checkout. The app
   is not signed: open it the first time with right-click *Open*.
 
-Each package includes this manual (*Help → User manual*), the Lua API reference and the
-exercise files used in these chapters.
+Packages include this manual (*Help → User manual*), the Lua API reference and the exercise
+files used in these chapters unless the manual was disabled when building the package.
 
 == The start screen
 

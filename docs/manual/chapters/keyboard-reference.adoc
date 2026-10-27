@@ -27,7 +27,8 @@ bindings, which are also the fallback for a layout you have never customized.
 == Keys that are not commands
 
 These keys are part of Compose itself. Lane keys can be customized separately; the other keys
-in this table cannot be rebound.
+in this table cannot be rebound. On macOS, use the Control key for kbd:[Ctrl+Space] and
+kbd:[Ctrl+G], rather than Command.
 
 [cols="2,3",options="header"]
 |===

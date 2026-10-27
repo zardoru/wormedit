@@ -4,7 +4,7 @@
 Every command in Wormedit, whether it has a key or not, can be run by name. Press
 kbd:[Ctrl+Shift+P] to open the *Command menu*, type a few letters of what you want, and press
 kbd:[Enter]. If you would rather not memorize shortcuts, the palette can be your main way of
-working: the keyboard stays on the keyboard, and nothing is more than a word away.
+working: your hands stay on the keyboard, and nothing is more than a word away.
 
 == Using it
 

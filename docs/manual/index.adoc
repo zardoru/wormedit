@@ -29,8 +29,9 @@ Packages include the HTML book and example projects unless the manual was explic
 when building the package. Examples are in `fixtures/` beside `index.html`; in a source
 checkout they are under `docs/manual/fixtures/`.
 
-Keys are written with Linux and Windows names. On macOS, kbd:[Ctrl] in the tables is
-kbd:[Cmd]{nbsp}(⌘) and kbd:[Alt] is kbd:[Option].
+Keys are written with Linux and Windows names. On macOS, kbd:[Ctrl] in the command tables is
+kbd:[Cmd]{nbsp}(⌘) and kbd:[Alt] is kbd:[Option]. The keyboard reference notes exceptions
+for keys handled directly by Compose.
 
 include::chapters/the-wormedit-way.adoc[leveloffset=+1]
 

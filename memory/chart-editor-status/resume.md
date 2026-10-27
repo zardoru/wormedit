@@ -7,8 +7,8 @@ Main is frozen for features. [Release cards](../../docs/chart-editor-plan/tasks/
 - **Done:** T-760 (schema 24), T-761 (`1.0.0-rc1`), T-762 (Windows zip with Lua, five Wine rounds),
   T-763 (AppImage), T-765 (release notes), T-767 (Flatten BMS branches, schema 25), T-768 (UI
   scale capped to the window).
-- **T-766** release gate, artifacts with SHA-256 and a local annotated `v1.0.0-rc1` tag; the owner
-  pushes (in progress).
+- **T-766** done up to its STOP: local annotated tag `v1.0.0-rc1` on `4d8c8c2` with both artifacts
+  and checksums (see the card); the owner pushes main and the tag and publishes the release.
 - **T-764** macOS bundle: staged; waits on the owner's checklist on a Mac (branch
   `rc1-macos-check` on origin). Not part of the tagged artifacts.
 

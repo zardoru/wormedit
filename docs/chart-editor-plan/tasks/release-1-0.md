@@ -193,7 +193,8 @@ the release beyond these cards; T-58 and the other open feature cards are deferr
 
 ## T-766 Run the release gate and prepare the rc1 tag
 
-- **Status:** blocked-on T-760, T-761, T-762, T-763, T-765, T-767
+- **Status:** done up to its STOP (2026-10-26): annotated tag `v1.0.0-rc1` on `4d8c8c2`, created locally; the owner pushes it.
+- **Evidence:** GATE on `4d8c8c2` passes 5,433/5,433 tests, build, whitespace and complexity (`/tmp/wormedit-gate.pDT2Au`). Both artifacts were built from that clean commit (their `BUILD-REVISION.txt` reads `4d8c8c2`; the Windows changes patch is empty): `wormedit-1.0.0-rc1-windows-x64.zip` SHA-256 `06cdfba109207e4be9f221eed614d30d44cd16d1acd7ff5ad474b33e62116f26` (Lua on) and `wormedit-1.0.0-rc1-x86_64.AppImage` SHA-256 `d90ccecdd779ac0e9b033f1cb1ff2f6f807b55362d08c48402ebfa92d46465a5`, in `/tmp/rc1-release/`. The AppImage starts to the start screen in isolated Xvfb (inspected). A first build at `5472659` was discarded when the macOS signing-loop fix (`4d8c8c2`) landed.
 - **Outcome:** on one release commit the full GATE passes, the Windows zip and AppImage are built from that commit and pass their smoke checks, the documentation and manual checks pass, and an annotated `v1.0.0-rc1` tag is prepared locally for the owner to push.
 - **Read first:** `scripts/gate.sh`, `docs/building.md`, this card file.
 - **Files owned:** `memory/chart-editor-status/resume.md`, `memory/chart-editor-status/current-milestone.md`, this card file.

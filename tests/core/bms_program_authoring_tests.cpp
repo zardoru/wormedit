@@ -296,8 +296,11 @@ void check_move_refused(document_history_t& history, bms_program_move_t move,
 } // namespace
 
 TEST_CASE("Scoped moves reorder Chart and Text siblings without rebasing content", "[bms-program-authoring]") {
-    auto history = history_from("#WAV01 a.wav\n#00011:01\n; ordered\n#00112:01\n");
+    auto history = history_from("#WAV01 a.wav\n#00011:01\n#00112:01\n");
     const auto root = program(history).root();
+    const auto first = *program(history).target_chart(root);
+    const auto boundary = insert(history, root, bms_text_t{"; ordered\n", text_encoding_t::ascii}, first);
+    insert(history, root, bms_chart_content_t{}, boundary);
     const auto charts = nodes_of<bms_chart_content_t>(history);
     const auto text = nodes_of<bms_text_t>(history).front();
     const auto before = program(history);

@@ -1888,11 +1888,11 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     CHECK(*rewritten.value == legacy.dump(2) + '\n');
 }
 
-TEST_CASE("native schema 25 pins the persisted song document key set",
+TEST_CASE("native schema 26 pins the persisted song document key set",
           "[unit][format][native-project][schema-guard]") {
     INFO("Persisted document keys changed: bump current_document_schema_version, add a migration, "
          "and update this schema/key-set guard together.");
-    check_bmson_condition(wormedit::current_document_schema_version == 25);
+    check_bmson_condition(wormedit::current_document_schema_version == 26);
     const auto song = make_schema_guard_song();
     const auto written = wormedit::write_native_project(song);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
@@ -1936,7 +1936,7 @@ TEST_CASE("native schema 25 saves output-group flattening and migrates schema 24
     const auto migrated = wormedit::parse_native_project(encoded.dump());
     INFO((migrated.diagnostics.empty() ? "no diagnostic" : migrated.diagnostics.front().message));
     require_bmson_condition(migrated.value);
-    check_bmson_condition(migrated.value->schema_version == 25);
+    check_bmson_condition(migrated.value->schema_version == wormedit::current_document_schema_version);
     check_bmson_condition(!migrated.value->output_groups.front().flatten_bms_branches);
     const auto rewritten = wormedit::write_native_project(*migrated.value);
     require_bmson_condition(rewritten.value);
@@ -1945,5 +1945,6 @@ TEST_CASE("native schema 25 saves output-group flattening and migrates schema 24
     require_bmson_condition(absent_current.value);
     check_bmson_condition(!absent_current.value->output_groups.front().flatten_bms_branches);
     for (auto& group : encoded["document"]["output_groups"]) group["flatten_bms_branches"] = false;
+    encoded["document"]["schema_version"] = wormedit::current_document_schema_version;
     check_bmson_condition(nlohmann::json::parse(*rewritten.value) == encoded);
 }

@@ -201,6 +201,17 @@ TEST_CASE("BMS Text byte limits include all ordered blocks", "[bms-program]") {
     REQUIRE_FALSE(value);
     CHECK(value.error().code == failure_code_t::capacity_exceeded);
 }
+TEST_CASE("BMS inline and standalone Text share the byte limit", "[bms-program][flat-bms]") {
+    auto nodes = copy_nodes(root_program());
+    nodes[0].children.push_back(branch_id_t{3});
+    nodes.push_back({.id = branch_id_t{3}, .value = bms_text_t{"ab", text_encoding_t::utf8}});
+    std::get<bms_chart_content_t>(nodes[1].value).items.push_back({.id = object_id_t{4},
+        .value = bms_text_t{"cd", text_encoding_t::utf8}});
+    CHECK(bms_program_t::from(nodes, {.maximum_text_bytes = 4}));
+    const auto value = bms_program_t::from(nodes, {.maximum_text_bytes = 3});
+    REQUIRE_FALSE(value);
+    CHECK(value.error().code == failure_code_t::capacity_exceeded);
+}
 TEST_CASE("BMS content item limits include inactive Charts", "[bms-program]") {
     auto nodes = copy_nodes(nested_program());
     std::get<bms_chart_content_t>(nodes[1].value).items.push_back({.id = object_id_t{10}, .value = bms_metadata_declaration_t{}});

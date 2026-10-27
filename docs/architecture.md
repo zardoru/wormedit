@@ -94,6 +94,12 @@ remain on typed BMS content, and hold edits retain both endpoint identities and 
 New BGM columns and semantic batches use the complete prepared/history identity ceiling.
 A transaction cannot implicitly write multiple semantic Charts.
 
+Flat BMS imports use one semantic Chart. Ordered opaque Text inside its content
+retains blank lines, comments and unknown statements without creating another
+edit target; leading Text can remain a separate node. Conditional imports retain
+their ordered scope/Chart/Text boundaries. Both forms share the same Text byte
+budgets, codec validation and writer, including source-equivalence verification.
+
 The explicit BMS note-transfer command names source and destination Charts within one
 scoped difficulty. It resolves selected notes through the source authoring projection,
 collects both proven imported hold endpoints, then constructs one immutable graph with
@@ -704,11 +710,14 @@ The single schema22-to-23 migration initializes both this definition pool and em
 generated-chart bindings; both codecs also accept their absent optional additions
 on documents already tagged schema23.
 
-The current native document schema is 25. Schema25 adds the saved per-output-group
+The current native document schema is 26. Schema26 permits ordered opaque Text
+inside Chart content for flat imports. The 25-to-26 migration preserves existing
+authored nodes and identities; fresh flat imports no longer split at Text.
+Schema25 adds the saved per-output-group
 BMS flattening option; the additive 24-to-25 migration defaults missing choices to preserve.
 Schema24 adds optional per-difficulty bookmark
 list order independently of timeline positions and scoped BMS content. The 23-to-24
 migration leaves data unchanged: absent orders keep the default timeline order,
-and orders from the earlier unbumped schema23 build are retained. Writers use schema25;
+and orders from the earlier unbumped schema23 build are retained. Writers use schema26;
 readers refuse newer schemas before publishing a document. Recovery snapshots and
 command journals use the same native codec and schema limit.

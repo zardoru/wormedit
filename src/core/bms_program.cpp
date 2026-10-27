@@ -153,11 +153,19 @@ struct program_validation_t {
             return failure_t{failure_code_t::invalid_data, "BMS program has a disconnected cycle."};
         return std::nullopt;
     }
+    auto account_text(const bms_text_t& text, std::size_t& bytes) const -> std::optional<failure_t> {
+        if (text.bytes.size() > limits.maximum_text_bytes - bytes)
+            return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its Text byte limit."};
+        bytes += text.bytes.size();
+        return std::nullopt;
+    }
     auto validate_content_ids(const bms_chart_content_t& chart,
-        std::unordered_set<std::uint64_t>& identities, std::size_t& count) const -> std::optional<failure_t> {
+        std::unordered_set<std::uint64_t>& identities, std::size_t& count, std::size_t& text_bytes) const -> std::optional<failure_t> {
         for (const auto& item : chart.items) {
             if (!item.id || !identities.insert(item.id.value).second)
                 return failure_t{failure_code_t::invalid_data, "BMS content IDs must be nonzero and unique across all Charts."};
+            if (const auto* text = std::get_if<bms_text_t>(&item.value))
+                if (auto failure = account_text(*text, text_bytes)) return failure;
             const auto* native = std::get_if<bms_native_content_t>(&item.value);
             if (!native) continue;
             const auto children = native->declared_ids();
@@ -175,9 +183,7 @@ struct program_validation_t {
         std::size_t text_bytes{}, item_count{};
         for (const auto& node : nodes) {
             if (const auto* text = std::get_if<bms_text_t>(&node.value)) {
-                if (text->bytes.size() > limits.maximum_text_bytes - text_bytes)
-                    return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its Text byte limit."};
-                text_bytes += text->bytes.size();
+                if (auto failure = account_text(*text, text_bytes)) return failure;
             }
             if (const auto* arm = std::get_if<bms_case_scope_t>(&node.value)) {
                 if (arm->skips.size() > limits.maximum_content_items - item_count)
@@ -189,7 +195,7 @@ struct program_validation_t {
             if (chart->items.size() > limits.maximum_content_items - item_count)
                 return failure_t{failure_code_t::capacity_exceeded, "BMS program exceeds its content item limit."};
             item_count += chart->items.size();
-            if (auto failure = validate_content_ids(*chart, identities, item_count)) return failure;
+            if (auto failure = validate_content_ids(*chart, identities, item_count, text_bytes)) return failure;
         }
         return std::nullopt;
     }
@@ -439,9 +445,14 @@ auto bms_program_subtree_t::from(const bms_program_t& program, branch_id_t root)
         else if (const auto* chart = std::get_if<bms_chart_content_t>(&node->value)) {
             ++result.charts;
             result.content_items += chart->items.size();
-            for (const auto& item : chart->items)
+            for (const auto& item : chart->items) {
                 if (const auto* native = std::get_if<bms_native_content_t>(&item.value))
                     result.content_items += native->declared_ids().size();
+                if (const auto* text = std::get_if<bms_text_t>(&item.value)) {
+                    ++result.texts;
+                    result.text_bytes += text->bytes.size();
+                }
+            }
         } else if (const auto* text = std::get_if<bms_text_t>(&node->value)) {
             ++result.texts;
             result.text_bytes += text->bytes.size();

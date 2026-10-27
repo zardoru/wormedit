@@ -43,6 +43,9 @@ Root
 - Text nodes retain comments and commands for which the editor has no semantic
   meaning. Text remains in its ordered containing block and travels with that
   block. Meaningful commands must not remain visible as raw-statement scope rows.
+  Flat BMS imports retain interleaved Text inside one Chart's ordered content,
+  so whitespace, comments and unknown statements do not split its editable owner.
+  Conditional imports and explicitly authored Text nodes retain their boundaries.
 - Users can add control nodes and edit the count on a RANDOM node directly.
   RANDOM's `n` is its outcome range, not its number of children or IF arms.
   Changing the range and choosing a preview outcome are different operations.

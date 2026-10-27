@@ -21,6 +21,9 @@ shown in gray as read-only context; select its owning node to edit it. Some impo
 endpoints cannot be paired in an inactive view and remain read-only markers. Selecting their
 branch does not invent a hold pairing.
 
+A flat BMS imports into one Chart selected through Root. Blank lines, comments and unknown
+statements retain their source order without dividing the notes into separate edit targets.
+
 Changing the content target clears object and range selection, keeping the cursor and viewport.
 Tree selection is navigation: Undo does not restore an earlier selection.
 

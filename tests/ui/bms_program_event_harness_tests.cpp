@@ -34,11 +34,11 @@ auto scoped_history() -> document_history_t {
     return document_history_t::from(song_document_t{.id = song_id_t{9001}, .prepared_bms_programs = {std::move(*owner.value)}});
 }
 struct scope_flow_t {
-    document_history_t history{scoped_history()};
+    document_history_t history;
     bms_program_runtime_t runtime;
     editor_interaction_state_t state;
     ui::bms_program_view_t view;
-    scope_flow_t() { project(); }
+    explicit scope_flow_t(document_history_t initial = scoped_history()) : history(std::move(initial)) { project(); }
     void project() { runtime.synchronize(history, difficulty); runtime.refill(view, history); }
     auto action(operation_t operation, branch_id_t node = {}, std::string text = {}) const -> ui::bms_program_action_t {
         return {.project = history.document.id, .difficulty = difficulty, .revision = history.document.revision,
@@ -122,6 +122,25 @@ void write_visual_fixture(const document_history_t& history) {
 
 }
 
+TEST_CASE("Flat imported BMS opens with every note editable in its initial scope",
+          "[bms-scope][flat-bms]") {
+    constexpr std::string_view source = "#TITLE Flat\n\n#WAV01 a.wav\n"
+        "; notes\n#00011:01\n\n#00112:01\n\n#UNKNOWN keep\n#00216:01\n";
+    auto input = prepare_bms_program(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(input.value.prepared);
+    auto owner = bms_program_document_t::from(difficulty, std::move(*input.value.prepared));
+    REQUIRE(owner.value);
+    scope_flow_t flow{document_history_t::from(song_document_t{.id = song_id_t{9001},
+        .prepared_bms_programs = {std::move(*owner.value)}})};
+    scope_projection_t projection;
+    projection.project(flow);
+    check_scope_projection(projection, 3, 0);
+    CHECK(flow.view.selected == flow.history.document.find_bms_program(difficulty)->prepared().program.root());
+    CHECK(projection.frontend.view.compose.note_endpoints[0].key_color == lane_key_color_t::white);
+    CHECK(projection.frontend.view.compose.note_endpoints[1].key_color == lane_key_color_t::black);
+    CHECK(projection.frontend.view.compose.note_endpoints[2].key_color == lane_key_color_t::scratch);
+}
 TEST_CASE("Scope selection is independent of playback and clears retained object selection", "[bms-scope]") {
     scope_flow_t flow;
     const auto evaluation = flow.history.document.find_bms_program(difficulty)->evaluation();

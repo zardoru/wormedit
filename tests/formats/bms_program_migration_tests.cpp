@@ -164,6 +164,23 @@ TEST_CASE("Scoped native snapshots preserve inactive content Text order and stab
     CHECK(read.prepared_bms_programs.front()->prepared().program == song.prepared_bms_programs.front()->prepared().program);
     CHECK(read.prepared_bms_programs.front()->prepared().measures == song.prepared_bms_programs.front()->prepared().measures);
 }
+TEST_CASE("Flat BMS inline Text retains native identities bytes and editable ownership",
+          "[bms-program-migration][flat-bms]") {
+    const auto song = snapshot(prepared("#TITLE Flat\r\n\r\n#WAV01 a.wav\r\n"
+        "#00011:01\r\n; retained\r\n#UNKNOWN keep\r\n#00112:01\r\n"));
+    const auto read = reloaded(song);
+    const auto& before = song.prepared_bms_programs.front()->prepared().program;
+    const auto& after = read.prepared_bms_programs.front()->prepared().program;
+    CHECK(after == before);
+    const auto view = read.prepared_bms_programs.front()->build_projection(after.target_chart(after.root()));
+    REQUIRE(view.value);
+    const auto& chart = view.value->song().charts.front();
+    CHECK(std::ranges::all_of(chart.measures, [&](const auto& measure) {
+        return std::ranges::none_of(measure.notes, [&](const auto& note) {
+            return chart.is_bms_authoring_read_only(note.id);
+        });
+    }));
+}
 TEST_CASE("Scoped native snapshots round trip every native event family", "[bms-program-migration]") {
     const auto kind = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
     const auto song = with_native_event(kind);
@@ -175,6 +192,23 @@ TEST_CASE("An empty scoped Root saves without an imported source or Chart mirror
     REQUIRE(program);
     const auto song = snapshot({.program = std::move(*program), .measures = {measure_id_t{102}}});
     CHECK(reloaded(song).read_chart(difficulty));
+}
+TEST_CASE("Schema 25 upgrades preserve explicitly authored flat Chart boundaries",
+          "[bms-program-migration][flat-bms]") {
+    auto program = bms_program_t::from({
+        {.id = branch_id_t{100}, .value = bms_root_scope_t{},
+            .children = {branch_id_t{101}, branch_id_t{102}, branch_id_t{103}}},
+        {.id = branch_id_t{101}, .value = bms_chart_content_t{}},
+        {.id = branch_id_t{102}, .value = bms_text_t{"; explicit boundary\n", text_encoding_t::ascii}},
+        {.id = branch_id_t{103}, .value = bms_chart_content_t{}}});
+    REQUIRE(program);
+    const auto song = snapshot({.program = std::move(*program), .measures = {measure_id_t{104}}});
+    auto encoded = nlohmann::json::parse(serialized(song));
+    encoded["document"]["schema_version"] = 25;
+    const auto parsed = parse_native_project(encoded.dump());
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->schema_version == 26);
+    CHECK(parsed.value->prepared_bms_programs.front()->prepared().program == song.prepared_bms_programs.front()->prepared().program);
 }
 TEST_CASE("Opaque scoped Text retains non UTF8 bytes and its encoding", "[bms-program-migration]") {
     auto program = bms_program_t::from({

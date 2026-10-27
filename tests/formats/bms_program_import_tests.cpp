@@ -87,14 +87,16 @@ TEST_CASE("Scoped BMS import preserves sibling alternatives and all four BGA lan
     CHECK(nodes_of<bms_else_if_scope_t>(program).size() == 1);
     CHECK(nodes_of<bms_else_scope_t>(program).size() == 1);
 }
-TEST_CASE("Scoped BMS import keeps Text between semantic Chart runs in byte order", "[bms-program-import]") {
+TEST_CASE("Flat BMS import keeps ordered Text within one editable Chart", "[bms-program-import]") {
     const auto imported = accepted("; first\r\n#UNKNOWN keep this\r\n#TITLE A\r\n; middle\r\n#TITLE B\r\n");
     const auto& program = imported.value.prepared->program;
     const auto* root = program.find(program.root());
-    REQUIRE(root->children.size() == 4);
+    REQUIRE(root->children.size() == 2);
     CHECK(std::get<bms_text_t>(program.find(root->children[0])->value).bytes == "; first\r\n#UNKNOWN keep this\r\n");
-    CHECK(std::holds_alternative<bms_chart_content_t>(program.find(root->children[1])->value));
-    CHECK(std::get<bms_text_t>(program.find(root->children[2])->value).bytes == "; middle\r\n");
+    const auto& content = std::get<bms_chart_content_t>(program.find(root->children[1])->value);
+    REQUIRE(content.items.size() == 3);
+    CHECK(std::get<bms_text_t>(content.items[1].value).bytes == "; middle\r\n");
+    CHECK(std::get<std::string>(std::get<bms_metadata_declaration_t>(content.items[2].value).value) == "B");
     CHECK(program.target_chart(program.root()) == root->children[1]);
 }
 TEST_CASE("Scoped BMS declarations keep duplicate slots while sharing asset storage", "[bms-program-import]") {

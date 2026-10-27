@@ -484,7 +484,13 @@ auto migrate_v24_to_v25(nlohmann::json&) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 24> released_migrations{{
+// Schema26 permits ordered opaque Text within a Chart's content. Existing
+// authored node boundaries and identities remain valid and are retained.
+auto migrate_v25_to_v26(nlohmann::json&) -> std::string {
+    return {};
+}
+
+constexpr std::array<migration_t, 25> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -509,6 +515,7 @@ constexpr std::array<migration_t, 24> released_migrations{{
     {22, &migrate_v22_to_v23},
     {23, &migrate_v23_to_v24},
     {24, &migrate_v24_to_v25},
+    {25, &migrate_v25_to_v26},
 }};
 
 } // namespace

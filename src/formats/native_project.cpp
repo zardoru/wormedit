@@ -1229,6 +1229,8 @@ template<class Value> auto is_valid_bms_content_domains(const Value& value, std:
         return is_enum_at_most(value.name_space, bms_resource_namespace_t::bmp);
     } else if constexpr (std::same_as<Value, bms_metadata_declaration_t>) {
         return is_enum_at_most(value.field, bms_metadata_field_t::preview);
+    } else if constexpr (std::same_as<Value, bms_text_t>) {
+        return is_enum_at_most(value.encoding, text_encoding_t::windows_1252);
     } else return true;
 }
 auto is_valid_bms_node_domains(const bms_program_node_t& node, std::size_t maximum_depth) -> bool {

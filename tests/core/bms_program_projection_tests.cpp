@@ -96,8 +96,13 @@ TEST_CASE("Projection reports missing references and shares a missing BMP placeh
     CHECK(result.typed.song().resources.size() == 1);
 }
 TEST_CASE("New Chart program order controls declarations without concatenating musical time", "[bms-program-projection]") {
-    auto input = prepared("#TITLE First\n#00011:01\n; split\n#TITLE Last\n#00012:01\n");
+    auto input = prepared("#TITLE First\n#00011:01\n#TITLE Last\n#00012:01\n");
     auto nodes = std::vector(input.program.nodes().begin(), input.program.nodes().end());
+    auto& items = std::get<bms_chart_content_t>(nodes[1].value).items;
+    bms_chart_content_t last{.items = {items[2], items[3]}};
+    items.resize(2);
+    nodes.push_back({.id = branch_id_t{9000}, .value = std::move(last)});
+    nodes.front().children.push_back(branch_id_t{9000});
     std::ranges::reverse(nodes.front().children);
     input.program = *bms_program_t::from(std::move(nodes));
     const auto result = projected(input);

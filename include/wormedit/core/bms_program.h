@@ -127,9 +127,15 @@ inline constexpr std::array bms_metadata_definitions{
     bms_metadata_definition_t{bms_metadata_field_t::banner, "BANNER"},
     bms_metadata_definition_t{bms_metadata_field_t::backbmp, "BACKBMP"},
     bms_metadata_definition_t{bms_metadata_field_t::preview, "PREVIEW"}};
+struct bms_text_t {
+    static constexpr std::size_t maximum_line_bytes = 1024U * 1024U;
+    std::string bytes;
+    text_encoding_t encoding{text_encoding_t::unknown};
+    auto operator==(const bms_text_t&) const -> bool = default;
+};
 using bms_content_value_t = std::variant<bms_note_content_t, bms_hold_endpoint_t,
     bms_bgm_content_t, bms_bga_content_t, bms_timing_definition_t, bms_timing_reference_t,
-    bms_direct_bpm_t, bms_measure_length_t, bms_resource_declaration_t, bms_metadata_declaration_t, bms_native_content_t>;
+    bms_direct_bpm_t, bms_measure_length_t, bms_resource_declaration_t, bms_metadata_declaration_t, bms_native_content_t, bms_text_t>;
 struct bms_content_item_t {
     object_id_t id;
     bms_content_value_t value;
@@ -140,12 +146,6 @@ struct bms_content_item_t {
 struct bms_chart_content_t {
     std::vector<bms_content_item_t> items;
     auto operator==(const bms_chart_content_t&) const -> bool = default;
-};
-struct bms_text_t {
-    static constexpr std::size_t maximum_line_bytes = 1024U * 1024U;
-    std::string bytes;
-    text_encoding_t encoding{text_encoding_t::unknown};
-    auto operator==(const bms_text_t&) const -> bool = default;
 };
 struct bms_bare_scope_t { auto operator==(const bms_bare_scope_t&) const -> bool = default; };
 struct bms_root_scope_t { auto operator==(const bms_root_scope_t&) const -> bool = default; };

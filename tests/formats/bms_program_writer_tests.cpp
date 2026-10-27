@@ -108,6 +108,22 @@ TEST_CASE("BGM padding and repeated line columns survive scoped output", "[bms-p
     CHECK(bgm_keys(result.before.song()) == bgm_keys(result.after.song()));
     CHECK(result.after.song().charts.front().bgm_source_lanes.size() == 3);
 }
+TEST_CASE("Flat BMS output retains inline whitespace and opaque statements after semantic edits",
+          "[bms-program-writer][flat-bms]") {
+    auto input = prepared("#TITLE Flat\r\n\r\n#BPM 120\r\n#WAV01 a.wav\r\n"
+        "#00011:01\r\n\r\n; between notes\r\n#UNKNOWN keep\r\n#00112:01\r\n");
+    auto nodes = nodes_of(input);
+    auto& items = first_content(nodes).items;
+    const auto note = std::ranges::find_if(items, [](const auto& item) {
+        return std::holds_alternative<bms_note_content_t>(item.value);
+    });
+    REQUIRE(note != items.end());
+    std::get<bms_note_content_t>(note->value).position.fraction = {1, 2};
+    replace_program(input, std::move(nodes));
+    const auto output = written(input);
+    CHECK(output.find("#00011:0001\n\r\n; between notes\r\n#UNKNOWN keep\r\n#00112:01\n") != std::string::npos);
+    CHECK(note_keys(projected(prepared(output)).song()) == note_keys(projected(input).song()));
+}
 TEST_CASE("Trailing empty measures survive without an invented declaration or autoplay column", "[bms-program-writer]") {
     const auto input = prepared("#00911:00\n");
     const auto output = written(input);
@@ -118,7 +134,7 @@ TEST_CASE("Trailing empty measures survive without an invented declaration or au
     CHECK(projected(after).song().charts.front().bpms.empty());
 }
 TEST_CASE("Unchanged scoped backing passes through exactly after typed equivalence verification", "[bms-program-writer]") {
-    const std::string source = "; comment\r\n#TITLE A\r\n#BPM 120\r\n#00011:010000\r\n";
+    const std::string source = "; comment\r\n#TITLE A\r\n\r\n#BPM 120\r\n; before notes\r\n#00011:010000\r\n";
     const auto imported = prepare_bms_program(bytes(source), {.lane_profile_id = "bme-7k-outside-scratch"});
     REQUIRE(imported.value.prepared);
     const auto output = written(*imported.value.prepared, {.source = imported.value.encoding});
@@ -198,8 +214,8 @@ TEST_CASE("Unrepresentable scoped values refuse without partial output", "[bms-p
     CHECK(input.program == snapshot);
 }
 TEST_CASE("Scoped output caps prevent partial bytes and preserve authored values", "[bms-program-writer]") {
-    const auto mode = GENERATE(0, 1, 2, 3, 4, 5, 6);
-    const auto input = prepared("#WAV01 x.wav\n#00011:000001\n");
+    const auto mode = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
+    const auto input = prepared("#WAV01 x.wav\n\n; retained\n#00011:000001\n");
     bms_program_write_options_t options;
     switch (mode) {
     case 0: options.maximum_output_bytes = 4; break;
@@ -209,6 +225,7 @@ TEST_CASE("Scoped output caps prevent partial bytes and preserve authored values
     case 4: options.program_limits.maximum_content_items = 1; break;
     case 5: options.program_limits.maximum_depth = 0; break;
     case 6: options.maximum_input_objects = 1; break;
+    case 7: options.program_limits.maximum_text_bytes = 1; break;
     }
     const auto result = write_bms_program(input, options);
     CHECK_FALSE(result.value);

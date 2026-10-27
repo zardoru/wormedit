@@ -89,6 +89,26 @@ TEST_CASE("Authoring marks inherited notes read-only until their Chart is select
     CHECK(inherited.error().code == failure_code_t::unavailable);
     CHECK(bms_program_edit_target_t::for_authoring(history.document, difficulty, root, visible.front().id));
 }
+TEST_CASE("Flat imported notes separated by whitespace comments and unknown commands edit together",
+          "[bms-program-authoring-view][flat-bms]") {
+    auto history = history_from("#TITLE Flat\n\n#BPM 120\n\n#WAV01 a.wav\n"
+        "; notes\n#00011:01\n\n#UNKNOWN retained\n#00112:01\n\n#00251:0101\n");
+    const auto selected = chart_for(history, owner(history).prepared().program.root());
+    history.bms_edit_target = bms_program_target_key_t{.difficulty = difficulty, .chart = selected};
+    const auto* view = history.read_chart(difficulty);
+    REQUIRE(view);
+    const auto visible = notes(*view);
+    REQUIRE(visible.size() == 3);
+    CHECK(std::ranges::none_of(visible, [&](const auto& note) {
+        return view->is_bms_authoring_read_only(note.id);
+    }));
+    const auto edited = apply_note_label_edit(history, {.chart = difficulty,
+        .notes = {visible[0].id, visible[1].id, visible[2].id}, .label = "editable together"});
+    REQUIRE(edited.applied);
+    CHECK(std::ranges::all_of(notes(*history.read_chart(difficulty)), [](const auto& note) {
+        return note.label == "editable together";
+    }));
+}
 TEST_CASE("Interactive reads use the exact authoring Chart while document reads keep playback", "[bms-program-authoring-view]") {
     auto history = history_from();
     const auto selected = chart_for(history, node_id<bms_else_if_scope_t>(history));

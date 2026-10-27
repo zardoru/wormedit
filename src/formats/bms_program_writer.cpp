@@ -62,6 +62,7 @@ struct program_emission_t {
     void index_catalogs();
     void index_lanes();
     void index_content();
+    void account_text(const bms_text_t& value);
     void select_projection();
     void append(std::string_view bytes);
     auto byte_limit() const -> std::size_t;
@@ -96,6 +97,7 @@ struct program_emission_t {
     void emit(const bms_resource_declaration_t& value);
     void emit(const bms_metadata_declaration_t& value);
     void emit(const bms_native_content_t& value);
+    void emit(const bms_text_t& value) { text(value); }
     void native(const note_t& value, const bms_native_content_t& content);
     void native(const bgm_event_t& value, const bms_native_content_t& content);
     void native(const bga_event_t& value, const bms_native_content_t& content);
@@ -281,10 +283,11 @@ void program_emission_t::index_content() {
             account_input(content->items.size());
             if (!checked_math::account_size(content_items, content->items.size(), options.program_limits.maximum_content_items))
                 fail(bms_write_diagnostic_code_t::resource_limit, "Scoped content item limit exceeded.", "$.program");
+            for (const auto& item : content->items)
+                if (const auto* text = std::get_if<bms_text_t>(&item.value)) account_text(*text);
         }
         if (const auto* text = std::get_if<bms_text_t>(&node.value))
-            if (!checked_math::account_size(text_bytes, text->bytes.size(), options.program_limits.maximum_text_bytes))
-                fail(bms_write_diagnostic_code_t::resource_limit, "Scoped Text byte limit exceeded.", "$.program.Text");
+            account_text(*text);
         if (const auto* arm = std::get_if<bms_case_scope_t>(&node.value)) {
             account_input(arm->skips.size());
             if (!checked_math::account_size(content_items, arm->skips.size(), options.program_limits.maximum_content_items))
@@ -292,6 +295,11 @@ void program_emission_t::index_content() {
             for (const auto& skip : arm->skips) ++skips[{skip.scope, skip.after_child}];
         }
     }
+}
+
+void program_emission_t::account_text(const bms_text_t& value) {
+    if (!checked_math::account_size(text_bytes, value.bytes.size(), options.program_limits.maximum_text_bytes))
+        fail(bms_write_diagnostic_code_t::resource_limit, "Scoped Text byte limit exceeded.", "$.program.Text");
 }
 
 void program_emission_t::index_catalogs() {

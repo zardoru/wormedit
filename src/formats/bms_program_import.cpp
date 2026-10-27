@@ -30,6 +30,7 @@ struct program_import_t {
     std::map<std::pair<bms_resource_namespace_t, std::string>, asset_id_t> assets;
     std::map<std::size_t, std::size_t> bgm_counts;
     std::size_t item_count{}, text_bytes{};
+    bool flat{};
 
     void diagnose(const bms_control_node_t& source, bms_parse_diagnostic_code_t code,
         std::string message) {
@@ -83,6 +84,16 @@ struct program_import_t {
         if (span.byte_begin == span.byte_end) return {};
         return {reinterpret_cast<const char*>(bytes.data() + span.byte_begin), span.byte_end - span.byte_begin};
     }
+    auto append_chart_text(bms_chart_content_t& chart, import_scope_t parent,
+        const bms_control_node_t& source, std::string bytes) -> bool {
+        if (!chart.items.empty()) {
+            if (auto* text = std::get_if<bms_text_t>(&chart.items.back().value)) {
+                text->bytes += bytes;
+                return true;
+            }
+        }
+        return append_content(parent, source, bms_text_t{std::move(bytes), result.value.encoding.detected});
+    }
     auto append_text(import_scope_t parent, const bms_control_node_t& source) -> bool {
         auto bytes = raw_bytes(source);
         if (bytes.size() > limits.maximum_text_bytes - text_bytes) {
@@ -93,6 +104,8 @@ struct program_import_t {
         const auto& children = nodes[parent.node].children;
         if (!children.empty()) {
             const auto last = nodes.begin() + node_indices.at(children.back().value);
+            if (auto* chart = std::get_if<bms_chart_content_t>(&last->value); flat && chart)
+                return append_chart_text(*chart, parent, source, std::move(bytes));
             if (auto* text = std::get_if<bms_text_t>(&last->value)) {
                 text->bytes += bytes;
                 return true;
@@ -415,6 +428,7 @@ auto prepare_bms_program(std::span<const std::byte> bytes, bms_parse_options_t o
     const auto& chart = source.value.song->charts.front();
     const auto& root = *chart.bms_control_tree;
     program_import_t builder{.source_chart = chart, .options = options, .limits = limits, .result = result, .ids = ids};
+    builder.flat = !root.has_control_flow();
     if (!builder.choose_profile(root)) return result;
     builder.nodes.push_back({.id = root.id, .value = bms_root_scope_t{}});
     builder.node_indices.emplace(root.id.value, 0);

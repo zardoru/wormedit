@@ -130,8 +130,8 @@ For BMS charts you can also put sounds into exact `#WAV` slots; see <<bms-slots>
 
 === Compose dock
 
-The narrow strip at the right of Compose opens Inspector, Sounds, Images, Measures, Layers and
-Markers. Click a panel button to show it alone; click the sole active panel again to hide it.
+The narrow strip at the right of Compose opens Inspector, Sounds, Images, Measures, Layers,
+Markers and Mixer. Click a panel button to show it alone; click the sole active panel again to hide it.
 Hold kbd:[Shift] while clicking to add or remove a second panel. Adding a third replaces the second
 pane. Each pane scrolls independently. Drag buttons along the strip to reorder them and the
 visible panes. The *Side-by-side panels* button below the panel buttons switches between two
@@ -139,6 +139,13 @@ full-height columns and a vertical stack. Columns temporarily stack when the win
 The right-hand strip is the only set of panel buttons. Drag the dock's left edge to change its width, or the divider between panes to
 change their split. The layout is saved in application preferences and restored across projects
 and restarts. Markers provides the same search and navigation as the bookmark chooser.
+
+The *Mixer* sets playback levels by category: *Music* (the song audio), *BGM* (BGM lane keysounds
+and stems), *Keysounds* (playable notes) and *Hitsounds* (osu! hitsounds), under a *Master* level
+that also covers metronome clicks. *M* mutes a category; *S* solos it, and soloing several keeps
+all of them audible. Changes apply to sounds that are already playing. The mix lasts for the
+session and only affects listening: exports and the saved chart keep the authored mix. *Reset*
+restores every level and clears mute and solo.
 
 === BGA images
 

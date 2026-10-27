@@ -6,6 +6,7 @@
 #include "timing_links.h"
 #include "audio_slicer.h"
 #include <wormedit/core/timing_edit_policy.h>
+#include <wormedit/core/preview_mix.h>
 #include "workspace_types.h"
 #include "file_jobs.h"
 #include "lane_keys.h"
@@ -514,6 +515,8 @@ struct workspace_action_t {
     wormedit::ui::chart_import_action_t chart_import;
     wormedit::ui::tap_timing_action_t tap_timing;
     wormedit::ui::timing_settings_action_t timing_settings;
+    // The complete next playback mix requested by the Mixer dock.
+    std::optional<wormedit::preview_mix_t> preview_mix;
     WormUiWorkspaceActionKind kind;
     struct wormedit::ui::external_player_action_t external_player;
     std::string project_path;

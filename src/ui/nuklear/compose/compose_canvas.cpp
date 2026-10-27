@@ -3196,8 +3196,8 @@ static void draw_compose_bgm_mix_controls(const ComposePaintContext& paint,
         const auto rect = compose_bgm_mix_button_rect(lane, *paint.view, paint.viewport, solo);
         if (rect.w <= 0) continue;
         const auto active = solo ? lane.solo : lane.muted;
-        const auto fill = active ? (solo ? nk_rgb(144, 106, 28) : nk_rgb(145, 51, 60))
-            : nk_rgb(36, 39, 48);
+        const auto fill = wormedit::ui::chrome::mix_toggle_fill(
+            solo ? wormedit::ui::chrome::MixToggleKind::solo : wormedit::ui::chrome::MixToggleKind::mute, active);
         const auto text = !paint.view->bgm_mix_available ? nk_rgb(90, 94, 105)
             : lane.mix_silent && !active ? nk_rgb(126, 130, 143) : nk_rgb(225, 227, 235);
         field_rect(paint, rect, 2, fill, 5);

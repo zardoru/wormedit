@@ -4,7 +4,7 @@
 
 namespace wormedit::ui::nuklear {
 enum class sdl_region_t {
-    header, status, toolbar, inspector, sounds, images, measures, layers, markers
+    header, status, toolbar, inspector, sounds, images, measures, layers, markers, mixer
 };
 
 // Widgets and input always execute. These barriers only delimit the converted

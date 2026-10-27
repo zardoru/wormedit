@@ -277,6 +277,22 @@ struct ChipGrid {
     auto render(nk_context* context) const -> Result;
 };
 
+// Mute (M) and solo (S) toggles: the same fills mark BGM lanes and Mixer buses.
+enum class MixToggleKind { mute, solo };
+auto mix_toggle_fill(MixToggleKind kind, bool active) -> nk_color;
+
+struct MixToggle {
+    MixToggleKind kind;
+    bool active{};
+    const char* tooltip{};
+    bool enabled{true};
+
+    static constexpr float width = metrics::control_compact;
+
+    // Fills the next layout cell. True when clicked; the caller flips `active`.
+    auto render(nk_context* context) const -> bool;
+};
+
 struct BarAction {
     const char* label;
     ButtonKind kind{ButtonKind::secondary};

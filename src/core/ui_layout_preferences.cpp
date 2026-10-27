@@ -12,16 +12,20 @@ auto panel_from(const json_t& value) -> std::optional<dock_panel_t> {
         if (entry.key == value.get_ref<const std::string&>()) return entry.id;
     return std::nullopt;
 }
-auto ordered_panels(const json_t& value) -> std::optional<std::array<dock_panel_t, 6>> {
-    if (!value.is_array() || value.size() != dock_panel_catalog.size()) return std::nullopt;
-    std::array<dock_panel_t, 6> result{};
-    std::array<bool, 6> seen{};
-    for (std::size_t i = 0; i < result.size(); ++i) {
-        const auto panel = panel_from(value[i]);
+// Records saved before a panel existed omit it; missing panels follow in catalog order.
+auto ordered_panels(const json_t& value) -> std::optional<std::array<dock_panel_t, dock_panel_count>> {
+    if (!value.is_array() || value.empty() || value.size() > dock_panel_count) return std::nullopt;
+    std::array<dock_panel_t, dock_panel_count> result{};
+    std::array<bool, dock_panel_count> seen{};
+    std::size_t count{};
+    for (const auto& item : value) {
+        const auto panel = panel_from(item);
         if (!panel || seen[static_cast<std::size_t>(*panel)]) return std::nullopt;
         seen[static_cast<std::size_t>(*panel)] = true;
-        result[i] = *panel;
+        result[count++] = *panel;
     }
+    for (const auto& entry : dock_panel_catalog)
+        if (!seen[static_cast<std::size_t>(entry.id)]) result[count++] = entry.id;
     return result;
 }
 auto read_visible(const json_t& value, ui_layout_preferences_t& layout) -> bool {

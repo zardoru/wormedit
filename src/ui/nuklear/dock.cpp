@@ -23,6 +23,7 @@ auto glyph(dock_panel_t panel) -> lucide::Glyph {
     case dock_panel_t::measures: return Glyph::grip_vertical;
     case dock_panel_t::layers: return Glyph::layers;
     case dock_panel_t::markers: return Glyph::anchor;
+    case dock_panel_t::mixer: return Glyph::audio_lines;
     }
     return Glyph::panel_right_open;
 }
@@ -96,6 +97,8 @@ void draw_side_by_side(nk_command_buffer* canvas, struct nk_rect bounds, nk_colo
 void render_panel_button(nk_context* context, dock_panel_t panel, const char* tip, bool selected) {
     if (panel == dock_panel_t::images)
         (void)chrome::DrawnIconButton{vector_icons::image, tip, selected}.render(context);
+    else if (panel == dock_panel_t::mixer)
+        (void)chrome::DrawnIconButton{vector_icons::sliders_vertical, tip, selected}.render(context);
     else
         (void)chrome::IconButton{glyph(panel), tip, selected}.render(context);
 }
@@ -106,9 +109,9 @@ auto dock_strip_flags(nk_context* context, const dock_geometry_t& geometry) -> n
 }
 void render_strip(nk_context* context, const dock_geometry_t& geometry,
                     ui_layout_preferences_t& layout, dock_pointer_t& pointer,
-                    const std::array<bool, 6>& available, bool input_available) {
+                    const std::array<bool, dock_panel_count>& available, bool input_available) {
     static const auto tips = [] {
-        std::array<std::string, 6> result;
+        std::array<std::string, dock_panel_count> result;
         for (std::size_t i = 0; i < result.size(); ++i)
             result[i] = std::string{dock_panel_catalog[i].title} + " panel (Shift-click to add; drag to reorder)";
         return result;
@@ -142,7 +145,7 @@ void render_strip(nk_context* context, const dock_geometry_t& geometry,
 }
 }
 auto dock_geometry_t::from(float width, float height, const ui_layout_preferences_t& layout,
-                           const std::array<bool, 6>& available, float reserved_left_width) -> dock_geometry_t {
+                           const std::array<bool, dock_panel_count>& available, float reserved_left_width) -> dock_geometry_t {
     dock_geometry_t result{.strip = {width - 40, 8, width - 8, height - 8}, .reserved_width = 44};
     std::array<std::optional<dock_panel_t>, 2> visible;
     std::size_t count{};
@@ -191,7 +194,7 @@ auto dock_geometry_t::split_extent() const -> double {
 }
 void render_dock_controls(nk_context* context, const dock_geometry_t& geometry,
                           ui_layout_preferences_t& layout, dock_pointer_t& pointer,
-                          const std::array<bool, 6>& available, bool input_available) {
+                          const std::array<bool, dock_panel_count>& available, bool input_available) {
     if (pointer.is_active() && !nk_input_is_mouse_down(&context->input, NK_BUTTON_LEFT) &&
         !nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT)) pointer = {};
     if (!input_available) { pointer = {}; nk_widget_disable_begin(context); }
@@ -200,7 +203,7 @@ void render_dock_controls(nk_context* context, const dock_geometry_t& geometry,
         render_handle(context, *geometry.width_handle, "Resize dock width", input_available ? dock_capture_t::width : dock_capture_t::none, geometry, pointer);
     if (geometry.split_handle)
         render_handle(context, *geometry.split_handle, "Resize dock split", input_available ? dock_capture_t::split : dock_capture_t::none, geometry, pointer);
-    render_strip(context, geometry, layout, pointer, input_available ? available : std::array<bool, 6>{}, input_available);
+    render_strip(context, geometry, layout, pointer, input_available ? available : std::array<bool, dock_panel_count>{}, input_available);
     if (!input_available) { pointer = {}; nk_widget_disable_end(context); }
 }
 } // namespace wormedit::ui

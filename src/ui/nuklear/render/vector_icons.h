@@ -181,6 +181,23 @@ inline void bar_line_time(struct nk_command_buffer* canvas, struct nk_rect bound
     nk_stroke_polyline(canvas, const_cast<float*>(head), 3, thickness, tint);
 }
 
+// Lucide "sliders-vertical": three faders, the Compose mixer.
+inline void sliders_vertical(struct nk_command_buffer* canvas, struct nk_rect bounds,
+                             struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    struct fader_t { float x, gap_top, gap_bottom, knob; };
+    for (const auto fader : {fader_t{4.0f, 10.0f, 14.0f, 14.0f}, fader_t{12.0f, 8.0f, 12.0f, 8.0f},
+                             fader_t{20.0f, 12.0f, 16.0f, 16.0f}}) {
+        nk_stroke_line(canvas, frame.px(fader.x), frame.py(3.0f), frame.px(fader.x),
+                       frame.py(fader.gap_top), thickness, tint);
+        nk_stroke_line(canvas, frame.px(fader.x), frame.py(fader.gap_bottom), frame.px(fader.x),
+                       frame.py(21.0f), thickness, tint);
+        nk_stroke_line(canvas, frame.px(fader.x - 2.0f), frame.py(fader.knob), frame.px(fader.x + 2.0f),
+                       frame.py(fader.knob), thickness, tint);
+    }
+}
+
 // Lucide "list-ordered" in outline: the Compose measures list.
 inline void measure_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
                          struct nk_color tint) {

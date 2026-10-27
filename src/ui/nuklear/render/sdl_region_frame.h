@@ -37,7 +37,7 @@ class sdl_region_frame_t {
         std::size_t first{}, count{};
         bool started{}, closed{}, valid{}, hit{};
     };
-    std::array<region_t, static_cast<std::size_t>(sdl_region_t::markers) + 1> regions_{};
+    std::array<region_t, static_cast<std::size_t>(sdl_region_t::mixer) + 1> regions_{};
     std::vector<sdl_command_batch_t> batches_;
     std::vector<unsigned char> omitted_;
     sdl_command_mesh_t direct_;

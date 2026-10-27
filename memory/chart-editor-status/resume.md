@@ -2,23 +2,21 @@
 
 ## Release 1.0.0-rc1 (owner, 2026-10-26)
 
-Main is frozen for features. Work the [release cards](../../docs/chart-editor-plan/tasks/release-1-0.md)
-in this order; Windows and Linux first, macOS staged for the owner's own Mac:
+Main is frozen for features. [Release cards](../../docs/chart-editor-plan/tasks/release-1-0.md):
 
-- **T-760** schema 24 for bookmark list order, plus the key-set guard (ready).
-- **T-761** `1.0.0` + `-rc1` version suffix (ready).
-- **T-762** Windows release zip checked under Wine (ready; consumes T-761 for its name).
-- **T-763** Linux AppImage and shared third-party notices (ready).
-- **T-764** unsigned macOS bundle and owner checklist (ready; owner verifies on the Mac).
-- **T-767** saved per-output-group "Flatten BMS branches" option, schema 25 (ready; owner decision).
-- **T-765** release notes and known limitations (blocked-on T-762, T-763, T-767).
-- **T-766** release gate and local `v1.0.0-rc1` tag; the owner pushes (blocked-on T-760–T-763, T-765, T-767).
+- **Done:** T-760 (schema 24), T-761 (`1.0.0-rc1`), T-762 (Windows zip with Lua, five Wine rounds),
+  T-763 (AppImage), T-765 (release notes), T-767 (Flatten BMS branches, schema 25), T-768 (UI
+  scale capped to the window).
+- **T-766** release gate, artifacts with SHA-256 and a local annotated `v1.0.0-rc1` tag; the owner
+  pushes (in progress).
+- **T-764** macOS bundle: staged; waits on the owner's checklist on a Mac (branch
+  `rc1-macos-check` on origin). Not part of the tagged artifacts.
 
-Lane results (2026-10-26): all four lanes merged into main (`43f5311`–`5b2a6d1`). Their shared
-GATE failure (cut-axis seam pick at row 9120), the Windows compile errors (narrow `fopen` of a
-wide path in export-cut audio; GCC false-positive `maybe-uninitialized`/`array-bounds`) and the
-macOS notices TODOs were fixed in `75dc758`. The Windows zip/Wine check and the rc1 AppImage
-rebuild rerun from that commit.
+Fixes found by the release checks and landed on main: cut-seam row pick (`75dc758`), Windows
+wide-path file creation and UTF-8 startup arguments (`75dc758`, `3229cfe`), GCC false-positive
+diagnostics made non-fatal (`75dc758`), crash-handler `write()` result (`e467f95`), Export dialog
+footer (`3229cfe`), macOS notices (`75dc758`, `fb48804`), osu!mania/StepMania exports copying
+referenced keysounds (`6c3d91f`), Lua in the Windows package (`185625f`).
 
 Owner decisions: folder-form project format for 1.0 (open question 12), refuse newer schemas,
 every persisted change bumps the schema (`code-style.md`), unsigned ad-hoc-signed macOS app.

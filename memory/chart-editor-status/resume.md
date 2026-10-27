@@ -9,8 +9,8 @@ Main is frozen for features. [Release cards](../../docs/chart-editor-plan/tasks/
   scale capped to the window).
 - **T-766** done up to its STOP: local annotated tag `v1.0.0-rc1` on `4d8c8c2` with both artifacts
   and checksums (see the card); the owner pushes main and the tag and publishes the release.
-- **T-764** macOS bundle: staged; waits on the owner's checklist on a Mac (branch
-  `rc1-macos-check` on origin). Not part of the tagged artifacts.
+- **T-764** done: the owner's checklist passed on macOS 26.6.2 (Apple Silicon M5). Not part of the
+  tagged artifacts (Homebrew FFmpeg; build-it-yourself).
 
 Fixes found by the release checks and landed on main: cut-seam row pick (`75dc758`), Windows
 wide-path file creation and UTF-8 startup arguments (`75dc758`, `3229cfe`), GCC false-positive

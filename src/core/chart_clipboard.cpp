@@ -151,7 +151,9 @@ auto collect_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
                     const measure_index_t& index, std::set<editor_selection_object_t>& selected)
     -> bool {
     using kind_t = editor_selection_object_kind_t;
-    return collect_timing_events(clipboard, chart, index, chart.bpms, selected, kind_t::bpm_event) &&
+    return collect_timing_events(clipboard, chart, index, chart.volumes, selected, kind_t::volume_event) &&
+           collect_timing_events(clipboard, chart, index, chart.sample_sets, selected, kind_t::sample_set_event) &&
+           collect_timing_events(clipboard, chart, index, chart.bpms, selected, kind_t::bpm_event) &&
            collect_pauses(clipboard, chart, index, selected) &&
            collect_timing_events(clipboard, chart, index, chart.warps, selected, kind_t::warp_event) &&
            collect_timing_events(clipboard, chart, index, chart.scrolls, selected,
@@ -524,6 +526,10 @@ void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t obje
             chart.scrolls.push_back(std::move(payload));
         } else if constexpr (std::is_same_v<payload_t, speed_event_t>) {
             chart.speeds.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, volume_event_t>) {
+            chart.volumes.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, sample_set_event_t>) {
+            chart.sample_sets.push_back(std::move(payload));
         } else if constexpr (std::is_same_v<payload_t, kiai_event_t>) {
             chart.kiai.push_back(std::move(payload));
         } else {
@@ -734,9 +740,12 @@ auto scoped_paste_additions(document_command_transaction_t& transaction, chart_i
                 const auto found = columns.find(copy.source_lane.value);
                 if (found != columns.end()) copy.source_lane = found->second;
             }
-            additions.push_back(std::move(copy));
+            if constexpr (std::constructible_from<bms_native_event_t, decltype(copy)>)
+                additions.push_back(std::move(copy));
         }, object);
     }
+    if (additions.size() != report.objects.size()) return {.diagnostics = {error(
+        diagnostic_code_t::unsupported_feature, "osu! sample controls cannot be pasted into scoped BMS content.")}};
     return {.value = std::move(additions)};
 }
 

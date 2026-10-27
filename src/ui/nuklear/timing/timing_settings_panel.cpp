@@ -12,14 +12,14 @@ static void render_timing_lane_visibility(nk_context* context, const wormedit::u
     nk_layout_row_dynamic(context, 15, 1);
     nk_label_colored(context, "Timing lanes", NK_TEXT_LEFT,
                      wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted));
-    for (std::size_t row = 0; row < 4; ++row) {
+    for (std::size_t row = 0; row < (view->timing_lane_captions.entries.size() + 1) / 2; ++row) {
         nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
         for (std::size_t column = 0; column < 2; ++column) {
             const auto index = row * 2 + column;
             if (index >= view->timing_lane_captions.entries.size()) continue;
             const auto& descriptor = view->timing_lane_captions.entries[index];
             const auto lane = static_cast<std::uint32_t>(descriptor.id);
-            const auto bit = static_cast<std::uint8_t>(1U << lane);
+            const auto bit = static_cast<std::uint16_t>(1U << lane);
             const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
             const auto editing_lane = timing_view->stage_active &&
                                       static_cast<std::size_t>(timing_view->stage_lane) == lane;

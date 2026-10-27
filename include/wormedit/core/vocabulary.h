@@ -98,6 +98,8 @@ enum class editor_selection_object_kind_t {
     bga_event,
     bookmark,
     section,
+    volume_event,
+    sample_set_event,
     // The bar line that starts a measure, keyed by that measure's ID. The first measure has none.
     bar_line,
 };
@@ -251,6 +253,8 @@ enum class timing_lane_kind_t {
     warp,
     kiai,
     anchor,
+    volume,
+    sample_set,
 };
 
 enum class editor_grid_line_kind_t {
@@ -281,7 +285,13 @@ enum class native_project_recovery_action_t {
     quarantine,
 };
 
-inline constexpr std::size_t timing_lane_kind_count = static_cast<std::size_t>(timing_lane_kind_t::anchor) + 1;
+inline constexpr std::size_t timing_lane_kind_count = static_cast<std::size_t>(timing_lane_kind_t::sample_set) + 1;
+inline constexpr std::uint16_t all_timing_lane_mask = (1U << timing_lane_kind_count) - 1;
+// Sample-control columns are opt-in, including in Timing focus.
+inline constexpr std::uint16_t optional_timing_lane_mask =
+    (1U << static_cast<unsigned>(timing_lane_kind_t::volume)) |
+    (1U << static_cast<unsigned>(timing_lane_kind_t::sample_set));
+inline constexpr std::uint16_t default_timing_lane_mask = all_timing_lane_mask & ~optional_timing_lane_mask;
 
 enum class sound_usage_kind_t : std::uint8_t {
     note,

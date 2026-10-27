@@ -490,7 +490,10 @@ auto migrate_v25_to_v26(nlohmann::json&) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 25> released_migrations{{
+// Schema27 adds editable osu! sample-control lanes. Missing lanes retain legacy provenance.
+auto migrate_v26_to_v27(nlohmann::json&) -> std::string { return {}; }
+
+constexpr std::array<migration_t, 26> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -516,6 +519,7 @@ constexpr std::array<migration_t, 25> released_migrations{{
     {23, &migrate_v23_to_v24},
     {24, &migrate_v24_to_v25},
     {25, &migrate_v25_to_v26},
+    {26, &migrate_v26_to_v27},
 }};
 
 } // namespace

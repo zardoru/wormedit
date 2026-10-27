@@ -347,6 +347,19 @@ struct warp_event_t {
     auto operator==(const warp_event_t&) const -> bool = default;
 };
 
+template<timing_lane_kind_t Lane> struct sample_control_event_t {
+    object_id_t id;
+    local_position_t position;
+    std::int64_t value{Lane == timing_lane_kind_t::volume ? 100 : 0};
+    source_provenance_t provenance;
+    [[nodiscard]] auto is_valid() const -> bool {
+        return value >= 0 && value <= (Lane == timing_lane_kind_t::volume ? 100 : 3);
+    }
+    auto operator==(const sample_control_event_t&) const -> bool = default;
+};
+using volume_event_t = sample_control_event_t<timing_lane_kind_t::volume>;
+using sample_set_event_t = sample_control_event_t<timing_lane_kind_t::sample_set>;
+
 struct scroll_event_t {
     object_id_t id;
     local_position_t position;
@@ -878,6 +891,8 @@ struct chart_document_t {
     std::vector<pause_event_t> pauses;
     std::vector<warp_event_t> warps;
     std::vector<scroll_event_t> scrolls;
+    std::vector<volume_event_t> volumes;
+    std::vector<sample_set_event_t> sample_sets;
     std::vector<speed_event_t> speeds;
     // Vector order is the stable composition order for enabled recipes.
     std::vector<sv_recipe_t> sv_recipes;
@@ -1119,7 +1134,7 @@ struct bookmark_list_order_t {
     auto operator==(const bookmark_list_order_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 26;
+inline constexpr std::uint32_t current_document_schema_version = 27;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

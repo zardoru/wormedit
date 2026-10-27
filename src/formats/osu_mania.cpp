@@ -1,3 +1,4 @@
+#include "../core/chart_object_ids.h"
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
 #include "../core/text_util.h"
@@ -1838,6 +1839,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         if (const auto preview = find_osu_value(fields, "General", "PreviewTime"))
             song.metadata.preview = song_preview_t::from_osu_preview_time(*preview);
 
+        if (!materialize_osu_sample_controls(chart)) fail(osu_mania_parse_diagnostic_code_t::event_limit,
+            "Cannot allocate sample-control point identities.");
         song.charts.push_back(std::move(chart));
         result.value = std::move(song);
         if (timing_quantized)
@@ -2646,13 +2649,13 @@ auto osu_timing_sample_fields(const source_provenance_t& provenance)
     return fields;
 }
 
-template <typename timestamp_t, typename effects_t, typename account_t, typename fail_t>
+template <typename timestamp_t, typename effects_t, typename sample_fields_t, typename account_t, typename fail_t>
 void append_scroll_and_kiai_timing_lines(
     std::vector<osu_output_event_t>& output, std::set<std::uint64_t>& timing_rows,
     std::size_t& serial, const measure_index_t& measures,
     const std::vector<positioned_scroll_write_t>& scrolls,
     const std::vector<positioned_kiai_write_t>& kiais, timestamp_t&& timestamp_at_row,
-    effects_t&& effects_at, account_t&& account_event, fail_t&& fail) {
+    effects_t&& effects_at, sample_fields_t&& sample_fields_at, account_t&& account_event, fail_t&& fail) {
     std::set<std::uint64_t> unused_red_rows;
     const auto scroll_at = [&](std::uint64_t row) {
         const auto after = std::ranges::upper_bound(scrolls, row, {},
@@ -2672,7 +2675,7 @@ void append_scroll_and_kiai_timing_lines(
                                scroll.event->provenance.source_order
                                    ? scroll.event->provenance.source_order
                                    : scroll.insertion_order,
-                               osu_timing_sample_fields(scroll.event->provenance), measures,
+                               sample_fields_at(scroll.row), measures,
                                timestamp_at_row, effects_at, account_event, fail);
     }
     for (const auto& kiai : kiais) {
@@ -2686,32 +2689,35 @@ void append_scroll_and_kiai_timing_lines(
                                kiai.event->provenance.source_order
                                    ? kiai.event->provenance.source_order
                                    : kiai.insertion_order,
-                               osu_timing_sample_fields(kiai.event->provenance), measures,
+                               sample_fields_at(kiai.row), measures,
                                timestamp_at_row, effects_at, account_event, fail);
     }
 }
 
-// A timing line synthesized at a measure start carries the sample set, index and
-// volume of the source point that is active there, so the sample mix does not
-// change where the file gains a new line.
-template <typename bpm_events_t, typename scrolls_t, typename kiais_t>
-auto active_osu_sample_fields(std::uint64_t row, const bpm_events_t& bpms, const scrolls_t& scrolls,
-                              const kiais_t& kiais) -> std::array<std::int64_t, 3> {
-    std::array<std::int64_t, 3> fields{0, 0, 100};
-    std::optional<std::uint64_t> best_row;
-    const auto consider = [&](const auto& points) {
-        for (const auto& point : points) {
-            if (point.row > row || point.event->provenance.source_spelling.empty() ||
-                (best_row && point.row < *best_row))
-                continue;
-            best_row = point.row;
-            fields = osu_timing_sample_fields(point.event->provenance);
-        }
+// Sample-only rows use a green line carrying the active SV; a coincident red/SV line
+// already carries the same fields and needs no extra point.
+template<class Timestamp, class Effects, class Fields, class Account, class Fail>
+void append_sample_control_timing_lines(std::vector<osu_output_event_t>& output,
+    std::set<std::uint64_t>& timing_rows, std::size_t& serial, const chart_document_t& chart,
+    const measure_index_t& measures, const std::vector<positioned_scroll_write_t>& scrolls,
+    Timestamp timestamp_at_row, Effects effects_at, Fields sample_fields_at, Account account_event, Fail fail) {
+    std::set<std::uint64_t> rows;
+    const auto collect = [&](const auto& events) {
+        for (const auto& event : events)
+            if (const auto row = measures.row_of(event.position)) rows.insert(*row);
     };
-    consider(bpms);
-    consider(scrolls);
-    consider(kiais);
-    return fields;
+    collect(chart.volumes);
+    collect(chart.sample_sets);
+    std::set<std::uint64_t> unused_red_rows;
+    for (const auto row : rows) {
+        if (timing_rows.contains(row)) continue;
+        const auto after = std::ranges::upper_bound(scrolls, row, {}, &positioned_scroll_write_t::row);
+        const auto sv = after == scrolls.begin() ? 1.0L : to_long_double(std::prev(after)->event->multiplier);
+        if (!std::isfinite(sv) || sv <= 0) fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+            "Sample-control timing lines require positive SV.", "scrolls");
+        append_osu_timing_line(output, unused_red_rows, timing_rows, serial, row, -100.0L / sv,
+            4, false, serial, sample_fields_at(row), measures, timestamp_at_row, effects_at, account_event, fail);
+    }
 }
 
 template <typename timestamp_t, typename account_t, typename fail_t>
@@ -2724,6 +2730,11 @@ auto build_osu_timing_output(
     std::vector<osu_output_event_t> output;
     std::set<std::uint64_t> red_rows;
     std::set<std::uint64_t> timing_rows;
+    const auto samples = osu_sample_context_index_t::from(chart);
+    const auto sample_fields_at = [&](std::uint64_t row) {
+        const auto position = measures.position_at(row);
+        return samples && position ? samples->fields_at(*position) : std::array<std::int64_t, 3>{0, 0, 100};
+    };
     const auto effects_at = [&](std::uint64_t row) {
         const auto after = std::ranges::upper_bound(kiais, row, {}, &positioned_kiai_write_t::row);
         if (after == kiais.begin()) return std::uint32_t{};
@@ -2742,7 +2753,7 @@ auto build_osu_timing_output(
                                bpm.event->provenance.source_order
                                    ? bpm.event->provenance.source_order
                                    : bpm.insertion_order,
-                               osu_timing_sample_fields(bpm.event->provenance), measures,
+                               sample_fields_at(bpm.row), measures,
                                timestamp_at_row, effects_at, account_event, fail);
     for (const auto& entry : measures.entries) {
         const auto row = entry.absolute_begin_row;
@@ -2753,10 +2764,12 @@ auto build_osu_timing_output(
             60'000.0L / positive_bpm_value(bpm_timing.groups[active].second, fail),
             osu_meter_at(chart, measures, row, fail), true,
             entry.id.value ? static_cast<std::size_t>(entry.id.value) : serial,
-            active_osu_sample_fields(row, bpm_timing.events, scrolls, kiais), measures, timestamp_at_row, effects_at, account_event, fail);
+            sample_fields_at(row), measures, timestamp_at_row, effects_at, account_event, fail);
     }
     append_scroll_and_kiai_timing_lines(output, timing_rows, serial, measures, scrolls, kiais,
-                                        timestamp_at_row, effects_at, account_event, fail);
+                                        timestamp_at_row, effects_at, sample_fields_at, account_event, fail);
+    append_sample_control_timing_lines(output, timing_rows, serial, chart, measures, scrolls,
+        timestamp_at_row, effects_at, sample_fields_at, account_event, fail);
     std::ranges::stable_sort(output, [](const auto& left, const auto& right) {
         return std::tuple{left.milliseconds, left.row, left.order, left.serial} <
                std::tuple{right.milliseconds, right.row, right.order, right.serial};
@@ -3654,25 +3667,73 @@ auto osu_sample_context_index_t::from(const chart_document_t& chart)
         if (!row || source.family != format_family_t::osu_mania ||
             source.source_spelling.empty()) return;
         const auto fields = osu_timing_sample_fields(source);
-        auto sample = result.initial;
-        if (fields[0] >= 1 && fields[0] <= 3) sample.normal_set = static_cast<osu_sample_set_t>(fields[0]);
-        sample.custom_index = std::max<std::int64_t>(fields[1], 1);
-        sample.volume = std::clamp<std::int64_t>(fields[2], 0, 100);
-        result.entries.push_back({.row = *row, .source_order = source.source_order, .sample = sample});
+        result.entries.push_back({.row = *row, .source_order = source.source_order,
+            .custom_index = std::max<std::int64_t>(fields[1], 0)});
     };
     for (const auto& event : chart.bpms) consider(event.position, event.provenance);
     for (const auto& event : chart.scrolls) consider(event.position, event.provenance);
     std::ranges::stable_sort(result.entries, [](const entry_t& a, const entry_t& b) {
         return std::tie(a.row, a.source_order) < std::tie(b.row, b.source_order);
     });
+    const auto collect = [&](const auto& events, auto& values) {
+        for (const auto& event : events)
+            if (const auto row = result.measures.row_of(event.position)) values.emplace_back(*row, event.value);
+        std::ranges::sort(values);
+    };
+    collect(chart.volumes, result.volumes);
+    collect(chart.sample_sets, result.sample_sets);
     return result;
 }
 
-auto osu_sample_context_index_t::at(local_position_t position) const -> osu_sample_context_t {
+auto osu_sample_context_index_t::fields_at(local_position_t position) const -> std::array<std::int64_t, 3> {
     const auto row = measures.row_of(position);
-    if (!row) return initial;
+    if (!row) return {0, 0, 100};
     const auto next = std::ranges::upper_bound(entries, *row, {}, &entry_t::row);
-    return next == entries.begin() ? initial : std::prev(next)->sample;
+    const auto index = next == entries.begin() ? 0 : std::prev(next)->custom_index;
+    const auto held = [&](const auto& values, std::int64_t fallback) {
+        const auto after = std::ranges::upper_bound(values, *row, {}, &std::pair<std::uint64_t, std::int64_t>::first);
+        return after == values.begin() ? fallback : std::prev(after)->second;
+    };
+    return {held(sample_sets, 0), index, held(volumes, 100)};
+}
+
+auto osu_sample_context_index_t::at(local_position_t position) const -> osu_sample_context_t {
+    const auto fields = fields_at(position);
+    return {.normal_set = fields[0] == 0 ? initial.normal_set : static_cast<osu_sample_set_t>(fields[0]),
+        .custom_index = std::max<std::int64_t>(1, fields[1]), .volume = fields[2]};
+}
+
+namespace {
+using sample_source_rows_t = std::map<std::pair<measure_id_t, std::uint64_t>, const source_provenance_t*>;
+template<class Event>
+void collect_sample_source_rows(const std::vector<Event>& events, sample_source_rows_t& sources) {
+    for (const auto& event : events) {
+        if (event.provenance.family != format_family_t::osu_mania || event.provenance.source_spelling.empty()) continue;
+        auto& source = sources[{event.position.measure, event.position.row}];
+        if (!source || source->source_order <= event.provenance.source_order) source = &event.provenance;
+    }
+}
+}
+auto materialize_osu_sample_controls(chart_document_t& chart) -> bool {
+    if (!chart.volumes.empty() || !chart.sample_sets.empty()) return true;
+    sample_source_rows_t sources;
+    collect_sample_source_rows(chart.bpms, sources);
+    collect_sample_source_rows(chart.scrolls, sources);
+    if (sources.empty()) return true;
+    const auto ceiling = next_chart_object_id(chart);
+    if (!ceiling.id || sources.size() > (UINT64_MAX - ceiling.id->value) / 2) return false;
+    auto id = ceiling.id->value;
+    chart.volumes.reserve(sources.size());
+    chart.sample_sets.reserve(sources.size());
+    for (const auto& [at, source] : sources) {
+        const local_position_t position{at.first, at.second};
+        const auto fields = osu_timing_sample_fields(*source);
+        chart.volumes.push_back({.id = {id++}, .position = position,
+            .value = std::clamp<std::int64_t>(fields[2], 0, 100), .provenance = {.family = format_family_t::osu_mania, .source_order = source->source_order}});
+        chart.sample_sets.push_back({.id = {id++}, .position = position,
+            .value = fields[0] >= 0 && fields[0] <= 3 ? fields[0] : 0, .provenance = {.family = format_family_t::osu_mania, .source_order = source->source_order}});
+    }
+    return true;
 }
 
 } // namespace wormedit

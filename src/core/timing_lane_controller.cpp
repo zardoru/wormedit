@@ -68,6 +68,18 @@ auto is_value_of_kind(timing_lane_kind_t kind, const timing_lane_value_t& value)
     }, false);
 }
 
+auto validate_sample_control_value(const timing_lane_value_t& value, diagnostic_list_t& diagnostics) -> bool {
+    return std::visit([&](const auto& item) {
+        if constexpr (requires { item.is_valid(); }) {
+            if (!item.is_valid()) {
+                diagnostics.push_back(error(diagnostic_code_t::invalid_resolution, "Invalid sample-control value."));
+                return false;
+            }
+        }
+        return true;
+    }, value);
+}
+
 auto is_same_row_is_occupied(const chart_document_t& chart, timing_lane_kind_t kind,
                             local_position_t position) -> bool {
     return visit_timing_events(kind, [&](auto access) {
@@ -308,7 +320,7 @@ auto timing_lane_pseudonote_state_t::validate_value(const chart_document_t& char
     } else if (const auto* warp = std::get_if<timing_warp_value_t>(&value)) {
         return validate_warp_value(chart, position, *warp, diagnostics);
     }
-    return true;
+    return validate_sample_control_value(value, diagnostics);
 }
 
 void timing_lane_pseudonote_state_t::normalize_value() {

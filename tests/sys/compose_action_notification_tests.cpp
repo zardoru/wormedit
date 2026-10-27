@@ -3127,3 +3127,19 @@ TEST_CASE("Compose bookmark rearranging routes through the shared edit finisher"
     CHECK(fixture.history.document.bookmark_orders[0].bookmarks.front() == object_id_t{5});
     CHECK(fixture.history.undo.size() == 1);
 }
+
+TEST_CASE("Optional sample columns start hidden and use independent visibility bits",
+          "[compose-action-notifications][sample-controls]") {
+    const auto lane = GENERATE(timing_lane_kind_t::volume, timing_lane_kind_t::sample_set);
+    action_notification_fixture_t fixture;
+    const auto bit = 1U << static_cast<unsigned>(lane);
+    CHECK((fixture.application.project.compose_view.compose_timing_lane_visibility_mask & optional_timing_lane_mask) == 0);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    action.compose_timing_lane = lane;
+    CHECK(fixture.dispatch(action) == "Compose timing lane shown.");
+    CHECK((fixture.application.project.compose_view.compose_timing_lane_visibility_mask & optional_timing_lane_mask) == bit);
+    action = fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    action.compose_timing_lane = lane;
+    CHECK(fixture.dispatch(action) == "Compose timing lane hidden.");
+    CHECK((fixture.application.project.compose_view.compose_timing_lane_visibility_mask & optional_timing_lane_mask) == 0);
+}

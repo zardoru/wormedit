@@ -252,6 +252,7 @@ auto has_object_id(const song_document_t& document, object_id_t id) -> bool {
         };
         if (in(chart.lane_layouts) || in(chart.bgm_source_lanes) || in(chart.bpms) ||
             in(chart.pauses) || in(chart.warps) || in(chart.scrolls) || in(chart.speeds) ||
+            in(chart.volumes) || in(chart.sample_sets) ||
             in(chart.kiai) || in(chart.timing_anchors) || in(chart.bookmarks) ||
             in(chart.sections) || in(chart.bga_events) || in(chart.sound_channels)) {
             return true;

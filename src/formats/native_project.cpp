@@ -1,3 +1,4 @@
+#include <wormedit/formats/osu_mania.h>
 #include <wormedit/core/catalogs.h>
 #include "../core/text_util.h"
 #include <wormedit/formats/native_project.h>
@@ -396,6 +397,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_bpm_projection_t, event, source_order, im
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_pause_projection_t, event, source_order, imported_position,
                                    imported_kind, imported_duration, imported_source_unit)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(warp_event_t, id, span, source_encoding, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(volume_event_t, id, position, value, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sample_set_event_t, id, position, value, provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(scroll_event_t, id, position, multiplier, provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(speed_event_t, id, position, multiplier, transition_beats,
                                    transition_is_seconds, provenance)
@@ -913,6 +916,8 @@ void from_json(const json& value, chart_document_t& chart) {
     value.at("pauses").get_to(chart.pauses);
     value.at("warps").get_to(chart.warps);
     value.at("scrolls").get_to(chart.scrolls);
+    chart.volumes = value.value("volumes", std::vector<volume_event_t>{});
+    chart.sample_sets = value.value("sample_sets", std::vector<sample_set_event_t>{});
     value.at("speeds").get_to(chart.speeds);
     if (value.contains("sv_recipes")) {
         value.at("sv_recipes").get_to(chart.sv_recipes);
@@ -931,6 +936,8 @@ void from_json(const json& value, chart_document_t& chart) {
     value.at("bms_pause_projections").get_to(chart.bms_pause_projections);
     value.at("bms_control_tree").get_to(chart.bms_control_tree);
     value.at("active_branch_selection").get_to(chart.active_branch_selection);
+    if (!value.contains("volumes") && !value.contains("sample_sets") && !materialize_osu_sample_controls(chart))
+        throw std::invalid_argument("Cannot migrate osu! sample-control identities.");
 }
 
 void to_json(json& value, const project_settings_t& settings) {
@@ -1062,6 +1069,8 @@ auto encode_native_value(const bgm_source_lane_t& value) -> json { return value;
 auto encode_native_value(const bpm_event_t& value) -> json { return value; }
 auto encode_native_value(const pause_event_t& value) -> json { return value; }
 auto encode_native_value(const warp_event_t& value) -> json { return value; }
+auto encode_native_value(const volume_event_t& value) -> json { return value; }
+auto encode_native_value(const sample_set_event_t& value) -> json { return value; }
 auto encode_native_value(const scroll_event_t& value) -> json { return value; }
 auto encode_native_value(const speed_event_t& value) -> json { return value; }
 auto encode_native_value(const sv_recipe_t& value) -> json { return value; }
@@ -1214,6 +1223,9 @@ auto is_valid_chart_timing_domains(const chart_document_t& chart) -> bool {
 }
 
 auto is_valid_chart_effect_domains(const chart_document_t& chart) -> bool {
+    const auto valid_control = [](const auto& event) { return is_valid_provenance(event.provenance); };
+    if (!std::ranges::all_of(chart.volumes, valid_control) ||
+        !std::ranges::all_of(chart.sample_sets, valid_control)) return false;
     if (!std::ranges::all_of(chart.scrolls, [](const auto& item) {
             return is_valid_provenance(item.provenance);
         }) ||

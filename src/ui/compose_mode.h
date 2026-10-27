@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <wormedit/core/vocabulary.h>
 
 namespace wormedit::ui {
 
@@ -18,7 +19,7 @@ struct compose_mode_profile_t {
     // Placing, painting, and resource-assigning notes with the pointer or lane keys.
     bool notes_editable;
     bool note_palette_visible;
-    // Timing lanes ignore the per-lane visibility mask and all draw.
+    // Ordinary timing lanes stay visible; optional sample columns keep their visibility choices.
     bool timing_lanes_forced_visible;
     // The inspector column; timing focus works from the canvas and toolbar alone.
     bool inspector_available;
@@ -87,9 +88,9 @@ inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
 
 // Lane mask in force for drawing and hit testing.
 [[nodiscard]] constexpr auto compose_effective_timing_lane_mask(compose_mode_t mode,
-                                                                std::uint8_t user_mask) noexcept
-    -> std::uint8_t {
-    return compose_timing_lanes_forced_visible(mode) ? std::uint8_t{0xff} : user_mask;
+                                                                std::uint16_t user_mask) noexcept
+    -> std::uint16_t {
+    return compose_timing_lanes_forced_visible(mode) ? (user_mask | wormedit::default_timing_lane_mask) : user_mask;
 }
 
 } // namespace wormedit::ui

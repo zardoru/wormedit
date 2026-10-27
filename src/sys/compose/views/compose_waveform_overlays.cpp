@@ -305,6 +305,10 @@ void append_proposed_markers(proposed_grid_context_t& projection) {
     append_standard_event_markers(projection, projection.scope.chart_scope.chart.kiai,
                                   wormedit::timing_lane_kind_t::kiai);
     append_anchor_markers(projection);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.volumes,
+                                  wormedit::timing_lane_kind_t::volume);
+    append_standard_event_markers(projection, projection.scope.chart_scope.chart.sample_sets,
+                                  wormedit::timing_lane_kind_t::sample_set);
     layout_proposed_marker_overlaps(projection);
 }
 

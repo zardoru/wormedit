@@ -8678,7 +8678,10 @@ TEST_CASE("Retained timing markers agree with live positions after export cuts w
         {.id = object_id_t{7005}, .position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}};
     chart.warps = {{.id = object_id_t{7006}, .span = {position, {position.measure, 480}}}};
     chart.timing_anchors = {{.id = object_id_t{7008}, .position = position}};
+    chart.volumes = {{.id = object_id_t{7009}, .position = position, .value = 75}};
+    chart.sample_sets = {{.id = object_id_t{7010}, .position = position, .value = 2}};
     compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.project.compose_view.compose_timing_lane_visibility_mask = all_timing_lane_mask;
     fixture.application.preferences.editor_preferences.scroll_directions[
         static_cast<std::size_t>(editor_mode_family_t::other)] = downscroll ? 2 : 1;
     fixture.project();

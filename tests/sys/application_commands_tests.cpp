@@ -2642,14 +2642,15 @@ TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note
     check_transient_transport(fixture.fixture.history.undo.empty());
 }
 
-TEST_CASE("Keysound painter arms osu hitsounds without editing selected notes",
+TEST_CASE("Drawing and keysound painting arm osu hitsounds without editing selected notes",
           "[unit][sys][resource-paint]") {
     using namespace wormedit;
     TimingInsertFixture fixture;
     enable_native_hitsounds(fixture);
     const auto original = write_native_project(fixture.fixture.history.document).value;
     fixture.compose_state->selected_notes = {fixture.fixture.history.document.charts.front().measures.front().notes.front().id};
-    require_transient_transport(fixture.invoke(application_command_kind_t::audio_paint_hitsound).value);
+    const auto tool = GENERATE(application_command_kind_t::audio_paint_hitsound, application_command_kind_t::edit_tool_draw);
+    require_transient_transport(fixture.invoke(tool).value);
     const auto edited = invoke_application_command(
         {.kind = application_command_kind_t::hitsound_edit, .hitsound = hitsound_change_t{.field = hitsound_field_t::clap}},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
@@ -3449,7 +3450,7 @@ TEST_CASE("Project reset keeps formerly reset view settings project scoped", "[s
     check_transient_transport(view.edit_snap_enabled);
     check_transient_transport(!view.y_lock);
     check_transient_transport(!view.compose_timing_focus);
-    check_transient_transport(view.compose_timing_lane_visibility_mask == 0xff);
+    check_transient_transport(view.compose_timing_lane_visibility_mask == wormedit::default_timing_lane_mask);
     check_transient_transport(!view.player_preview_visible);
     check_transient_transport(view.player_preview_skin == wormedit::player_preview_skin_t::neutral);
     check_transient_transport(view.compose_editor_right_pixels == 0);

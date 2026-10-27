@@ -326,6 +326,8 @@ auto shift_timing_after_cursor(shift_context_t& context, std::uint64_t cursor_ro
     return shift_timing_family(context, chart.bpms, position, cursor_row, moved) &&
            shift_timing_family(context, chart.pauses, position, cursor_row, moved) &&
            shift_timing_family(context, chart.scrolls, position, cursor_row, moved) &&
+           shift_timing_family(context, chart.volumes, position, cursor_row, moved) &&
+           shift_timing_family(context, chart.sample_sets, position, cursor_row, moved) &&
            shift_timing_family(context, chart.speeds, position, cursor_row, moved) &&
            shift_timing_family(context, chart.kiai, position, cursor_row, moved) &&
            shift_timing_family(context, chart.timing_anchors, position, cursor_row, moved) &&

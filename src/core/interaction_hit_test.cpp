@@ -149,6 +149,12 @@ auto hover_tooltip(const chart_document_t& chart, const editor_hover_index_entry
         return source_tooltip(chart.pauses, index, id, pause_tooltip);
     case editor_selection_object_kind_t::warp_event:
         return source_tooltip(chart.warps, index, id, warp_tooltip);
+    case editor_selection_object_kind_t::volume_event:
+        return source_tooltip(chart.volumes, index, id, [](const auto& event) { return "Volume " + std::to_string(event.value) + "%"; });
+    case editor_selection_object_kind_t::sample_set_event:
+        return source_tooltip(chart.sample_sets, index, id, [](const auto& event) {
+            return std::string{"Sample set: "} + (event.is_valid() ? osu_sample_set_names[static_cast<std::size_t>(event.value)] : "Invalid");
+        });
     case editor_selection_object_kind_t::scroll_event:
         return source_tooltip(chart.scrolls, index, id, scroll_tooltip);
     case editor_selection_object_kind_t::speed_event:
@@ -240,6 +246,7 @@ struct hit_test_index_builder_t {
             spans += measure.notes.size() + measure.bgm_events.size();
         }
         spans += chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
+                 chart.volumes.size() + chart.sample_sets.size() +
                  chart.kiai.size() + chart.timing_anchors.size() + chart.bga_events.size() +
                  chart.pauses.size() + chart.warps.size() + chart.bookmarks.size() +
                  chart.sections.size() + chart.measures.size();
@@ -341,6 +348,8 @@ struct hit_test_index_builder_t {
     auto add_timing_objects() -> std::optional<diagnostic_t> {
         using kind_t = editor_selection_object_kind_t;
         using editor_t = editor_inline_editor_kind_t;
+        if (auto invalid = add_timing(chart.volumes, kind_t::volume_event, editor_t::volume_event)) return invalid;
+        if (auto invalid = add_timing(chart.sample_sets, kind_t::sample_set_event, editor_t::sample_set_event)) return invalid;
         if (auto invalid = add_timing(chart.bpms, kind_t::bpm_event, editor_t::bpm_event))
             return invalid;
         if (auto invalid = add_timing(chart.scrolls, kind_t::scroll_event, editor_t::scroll_event))

@@ -1,17 +1,32 @@
 #pragma once
 
 #include <array>
+#include <wormedit/core/osu_hitsample.h>
 #include <span>
 
 namespace wormedit::ui::hitsound_icons {
 using point_t = std::array<float, 2>;
-enum class shape_t { normal, soft, drum, whistle, cymbal, clap };
+enum class shape_t { normal, soft, drum, whistle, cymbal, clap, automatic };
+inline auto sample_set_shape(osu_sample_set_t set) -> shape_t {
+    switch (set) {
+    case osu_sample_set_t::automatic: return shape_t::automatic;
+    case osu_sample_set_t::normal: return shape_t::normal;
+    case osu_sample_set_t::soft: return shape_t::soft;
+    case osu_sample_set_t::drum: return shape_t::drum;
+    }
+    return shape_t::automatic;
+}
 
 // Shared 24-unit geometry. Backends supply line/path/circle strokes; neither
 // canvas rendering nor toolbar controls own a second definition of a shape.
 template <class Stroke>
 void draw(Stroke& stroke, shape_t shape) {
     switch (shape) {
+    case shape_t::automatic:
+        stroke.circle(12, 12, 8);
+        stroke.line(17, 4, 21, 4);
+        stroke.line(21, 4, 21, 8);
+        break;
     case shape_t::normal:
         stroke.circle(7, 18, 4);
         stroke.line(11, 18, 11, 3);

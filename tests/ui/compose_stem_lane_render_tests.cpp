@@ -882,6 +882,8 @@ auto make_cut_timing_raster_song() -> wormedit::song_document_t {
         {.id = object_id_t{7005}, .position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}};
     chart.warps = {{.id = object_id_t{7006}, .span = {position, {position.measure, 480}}}};
     chart.timing_anchors = {{.id = object_id_t{7008}, .position = position}};
+    chart.volumes = {{.id = object_id_t{7009}, .position = position, .value = 75}};
+    chart.sample_sets = {{.id = object_id_t{7010}, .position = position, .value = 2}};
     song.charts.push_back(std::move(chart));
     return song;
 }
@@ -896,6 +898,7 @@ struct timing_raster_projection_t {
     void refill(wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
                 double scroll) {
         if (interaction) interaction->viewport_scroll_pixels = scroll;
+        application.project.compose_view.compose_timing_lane_visibility_mask = wormedit::all_timing_lane_mask;
         flattened.view.compose.visible = true;
         wormedit::sys::populate_compose_view(flattened, history, workspace, cache,
             timing_raster_width + 48, timing_raster_height + 188, interaction, application, nullptr);
@@ -1003,7 +1006,7 @@ void check_warm_timing_raster(field_submission_fixture_t& fixture,
     const auto direct = render_direct_timing_pixels(fixture, view);
     expect_timing_raster_dispatch(fixture, false);
     auto reference = view;
-    for (auto& marker : reference.timing_markers) marker.short_label = {};
+    for (auto& marker : reference.timing_markers) { marker.short_label = {}; marker.sample_set.reset(); }
     const auto textless = render_direct_timing_pixels(fixture, reference);
     reference.timing_markers.clear();
     const auto empty = render_direct_timing_pixels(fixture, reference);

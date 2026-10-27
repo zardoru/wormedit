@@ -9,6 +9,7 @@
 #include <wormedit/core/pause_warp_editor.h>
 #include <wormedit/core/scroll_speed_editor.h>
 #include <wormedit/core/timing_anchor_editor.h>
+#include <wormedit/core/sample_control_editor.h>
 
 #include <cstdint>
 #include <optional>
@@ -37,7 +38,8 @@ enum class timing_lane_initial_value_source_t {
 using timing_lane_value_t =
     std::variant<timing_bpm_value_t, timing_scroll_value_t, timing_speed_value_t,
                  timing_pause_value_t, timing_warp_value_t, timing_kiai_value_t,
-                 timing_anchor_value_t>;
+                 timing_anchor_value_t, timing_sample_control_value_t<timing_lane_kind_t::volume>,
+                 timing_sample_control_value_t<timing_lane_kind_t::sample_set>>;
 
 // Editor data remains visible after a failed revision, independently of applicability.
 struct timing_lane_pseudonote_state_t {
@@ -186,7 +188,7 @@ static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
     std::tuple<timing_lane_pseudonote_outcome_t, const document_history_t&, local_position_t, bool>,
     chart_stamp_t, diagnostic_list_t>);
 
-// BPM, scroll/SV, speed, stop, delay, warp, kiai, and timing-anchor lanes are
+// BPM, scroll/SV, speed, stop, delay, warp, kiai, timing-anchor, volume and sample-set lanes are
 // supported. Meter editing is outside this controller because the current
 // typed editor command set has no meter-event insertion command. The caller
 // supplies a value resolved either from an explicit default or the effective

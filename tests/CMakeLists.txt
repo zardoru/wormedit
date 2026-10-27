@@ -1143,7 +1143,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 endif()
 
 add_executable(wormedit_compose_mode_tests ui/compose_mode_tests.cpp)
-target_include_directories(wormedit_compose_mode_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_include_directories(wormedit_compose_mode_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
 target_link_libraries(wormedit_compose_mode_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(wormedit_compose_mode_tests
     TEST_PREFIX "frontend-state."

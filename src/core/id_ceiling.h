@@ -101,6 +101,8 @@ template<> struct id_declarations_t<object_id_t> {
             !visit_declared_id_values(chart.pauses, visitor) ||
             !visit_declared_id_values(chart.warps, visitor) ||
             !visit_declared_id_values(chart.scrolls, visitor) ||
+            !visit_declared_id_values(chart.volumes, visitor) ||
+            !visit_declared_id_values(chart.sample_sets, visitor) ||
             !visit_declared_id_values(chart.speeds, visitor) ||
             !visit_declared_id_values(chart.kiai, visitor) ||
             !visit_declared_id_values(chart.timing_anchors, visitor) ||

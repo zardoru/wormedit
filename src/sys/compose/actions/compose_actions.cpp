@@ -751,7 +751,7 @@ struct toggle_compose_timing_lane_action_t {
     }
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         auto& application_state = context.environment.editor.commands;
-        const auto bit = static_cast<std::uint8_t>(1U << static_cast<unsigned>(context.action.compose_timing_lane));
+        const auto bit = static_cast<std::uint16_t>(1U << static_cast<unsigned>(context.action.compose_timing_lane));
         application_state.project.compose_view.compose_timing_lane_visibility_mask ^= bit;
         return compose_action_outcome_t::from(
             (application_state.project.compose_view.compose_timing_lane_visibility_mask & bit) != 0
@@ -3102,7 +3102,8 @@ auto perform_compose_view_action(compose_action_context_t& context) -> compose_a
     if (context.action.compose_hitsound)
         return apply_compose_hitsound(context.environment.document.history, context.state,
                                        *context.action.compose_hitsound,
-            context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active);
+            context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active ||
+            context.environment.editor.commands.project.compose_gesture.note_paint_mode_active);
     const auto* route = compose_action_route_t::find(context.action.compose_action);
     if (auto blocked = process_compose_action_boundary(context, route))
         return std::move(*blocked);

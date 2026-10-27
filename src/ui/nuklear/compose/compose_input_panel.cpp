@@ -875,6 +875,27 @@ static auto update_compose_timing_marker_drag(const ComposePointerEventContext& 
 // Timing focus: Ctrl+click on empty BPM lane space inserts a BPM equal to the one
 // in force; Alt+click on empty Anchor lane space inserts an anchor. Both skip the
 // inline editor and leave modifier-clicks on existing markers to selection.
+static auto begin_sample_control_draw(const ComposePointerEventContext& input) -> bool {
+    const auto& view = *input.view;
+    const auto lane = wormedit::ui::compose_timing_lane_at(view, input.pointer_started_x);
+    if (!view.note_paint_mode_active || !view.hitsounds.visible || !lane ||
+        (*lane != wormedit::timing_lane_kind_t::volume && *lane != wormedit::timing_lane_kind_t::sample_set) ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 || view.waveform_timing_locked ||
+        input.timing_view->stage_active || input.action->timing_stage_action != wormedit::ui::timing_stage_action_t::none)
+        return false;
+    auto& action = *input.action;
+    action.timing_stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
+    action.timing_chart_id = view.chart_id;
+    action.timing_document_revision = view.document_revision;
+    action.timing_lane = *lane;
+    action.timing_object_id = {};
+    action.timing_has_target_y = true;
+    action.timing_target = compose_timing_target(view, input.pointer_started_y);
+    if (*lane == wormedit::timing_lane_kind_t::sample_set)
+        action.timing_primary_numerator_text = std::to_string(view.hitsounds.values.fields[3].value_or(0));
+    return true;
+}
+
 static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -> bool {
     const auto& view = *input.view;
     const auto& timing = *input.timing_view;
@@ -911,7 +932,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
         return false;
     const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
                                                    input.pointer_started_y);
-    if (!marker) return begin_timing_quick_insert(input);
+    if (!marker) return begin_sample_control_draw(input) || begin_timing_quick_insert(input);
     const auto has_modifier = (input.pointer_modifiers & input.any_pointer_modifier) != 0;
     if (marker->object_id.value == 0) {
         state.timing_marker.timing_missing_initial_selected = true;

@@ -147,6 +147,20 @@ template<> struct timing_event_access_t<timing_anchor_t>
     }
 };
 
+template<timing_lane_kind_t Lane> struct timing_event_access_t<sample_control_event_t<Lane>>
+    : timing_event_storage_t<sample_control_storage_t<sample_control_edit_value_t<Lane>>::member,
+        timing_sample_control_value_t<Lane>, sample_control_edit_value_t<Lane>, Lane> {
+    template<class Action>
+    static auto apply(document_command_transaction_t& transaction, const Action& action) -> document_command_result_t {
+        return apply_sample_control_edit<Lane>(transaction, sample_control_edit_action_t<Lane>{action});
+    }
+    template<class Action>
+    static auto apply(document_history_t& history, const Action& action) -> document_command_result_t {
+        document_command_transaction_t transaction{history};
+        return apply(transaction, action);
+    }
+};
+
 // One exhaustive lane dispatch. The caller supplies its own invalid-kind result;
 // lookup/value checks fail closed, while occupancy conservatively reports occupied.
 template<typename Operation, typename Result>
@@ -165,6 +179,10 @@ auto visit_timing_events(timing_lane_kind_t kind, Operation operation, Result in
         return operation(timing_event_access_t<warp_event_t>{});
     case timing_lane_kind_t::kiai:
         return operation(timing_event_access_t<kiai_event_t>{});
+    case timing_lane_kind_t::volume:
+        return operation(timing_event_access_t<volume_event_t>{});
+    case timing_lane_kind_t::sample_set:
+        return operation(timing_event_access_t<sample_set_event_t>{});
     case timing_lane_kind_t::anchor:
         return operation(timing_event_access_t<timing_anchor_t>{});
     }

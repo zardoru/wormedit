@@ -563,6 +563,13 @@ results destroy their temporary without replacing the destination. Replacement i
 project asset destinations are rejected even when replacement was requested.
 
 osu! note samples are semantic `osu_hitsample_t` values, persisted by the native codec.
+Volume and sample-set timing controls are typed chart events, each unique per lane/row.
+Their columns are independently optional and hidden by default, including in Timing focus.
+They use the ordinary timing proposal, selection and clipboard paths. Import and schema27
+migration lift retained timing-line sample fields into these owners; empty saved lanes stay
+empty. The sample-context index combines these held controls with retained custom indices.
+Export combines coincident sample changes with BPM/SV/effect lines and emits inherited
+sample-only lines carrying the active SV. Addition sets remain hit-object overrides.
 `hitsound_values_t` owns mixed-selection presentation and toggle/cycle decisions;
 `apply_hitsound_edit` batches selected-note changes through the transaction. Empty-selection
 palette actions change only `editor_interaction_state_t::armed_hitsample`, captured by tap,
@@ -719,7 +726,8 @@ The single schema22-to-23 migration initializes both this definition pool and em
 generated-chart bindings; both codecs also accept their absent optional additions
 on documents already tagged schema23.
 
-The current native document schema is 26. Schema26 permits ordered opaque Text
+The current native document schema is 27. Schema27 adds typed volume and sample-set control
+lanes, migrating legacy osu! timing-line sample fields when the lanes are absent. Schema26 permits ordered opaque Text
 inside Chart content for flat imports. The 25-to-26 migration preserves existing
 authored nodes and identities; fresh flat imports no longer split at Text.
 Schema25 adds the saved per-output-group

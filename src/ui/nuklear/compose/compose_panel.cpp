@@ -100,7 +100,7 @@ static bool compose_geometry_overlay_valid(const wormedit::ui::compose_view_t* v
         (std::isfinite(view->timing_stage_y_pixels) && view->timing_stage_y_pixels >= 0.0 &&
          view->timing_stage_y_pixels <= view->viewport_height_pixels &&
          view->timing_stage_lane >= wormedit::timing_lane_kind_t::bpm &&
-         view->timing_stage_lane <= wormedit::timing_lane_kind_t::anchor);
+         view->timing_stage_lane <= wormedit::timing_lane_kind_t::sample_set);
     const auto playhead_valid = !view->playhead_visible ||
         (std::isfinite(view->playhead_y_pixels) && view->playhead_y_pixels >= 0.0 &&
          view->playhead_y_pixels <= view->viewport_height_pixels);
@@ -224,7 +224,7 @@ static bool compose_geometry_timing_elements_valid(const wormedit::ui::compose_v
         const auto& marker = view->timing_preview_markers[index];
         if (!std::isfinite(marker.marker_y_pixels) || marker.marker_y_pixels < 0.0 ||
             marker.marker_y_pixels > view->viewport_height_pixels ||
-            marker.lane < wormedit::timing_lane_kind_t::bpm || marker.lane > wormedit::timing_lane_kind_t::anchor)
+            marker.lane < wormedit::timing_lane_kind_t::bpm || marker.lane > wormedit::timing_lane_kind_t::sample_set)
             return 0;
     }
     for (size_t index = 0; index < view->timing_markers.size(); ++index) {
@@ -239,7 +239,7 @@ static bool compose_geometry_timing_elements_valid(const wormedit::ui::compose_v
             marker.marker_left_fraction < 0.0 ||
             marker.marker_right_fraction <= marker.marker_left_fraction ||
             marker.marker_right_fraction > 1.0 || marker.lane < wormedit::timing_lane_kind_t::bpm ||
-            marker.lane > wormedit::timing_lane_kind_t::anchor) {
+            marker.lane > wormedit::timing_lane_kind_t::sample_set) {
             return 0;
         }
     }

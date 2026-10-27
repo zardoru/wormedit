@@ -1,5 +1,6 @@
 #include "nuklear_event_harness.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <array>
 #include <string_view>
 #include "ui/nuklear/compose/compose_state.h"
@@ -231,4 +232,25 @@ TEST_CASE("Timing Settings moves all timing lane controls into a modeless panel"
     view.timing_settings_visible = true;
     (void)harness.frame();
     CHECK(harness.drawn_text().find("ANC: On") != std::string::npos);
+}
+
+TEST_CASE("Volume and sample-set columns toggle independently in Timing Settings",
+          "[event-harness][sample-controls][timing-panels]") {
+    const auto sample_set = GENERATE(false, true);
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view();
+    view.timing_settings_visible = true;
+    view.compose.timing_focus = true;
+    view.compose.timing_lane_visibility_mask = wormedit::default_timing_lane_mask;
+    (void)harness.frame();
+    const auto enabled = click_text(harness, sample_set ? "SET: Off" : "VOL: Off");
+    const auto lane = sample_set ? wormedit::timing_lane_kind_t::sample_set : wormedit::timing_lane_kind_t::volume;
+    CHECK(enabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    CHECK(enabled.get().compose_timing_lane == lane);
+    view.compose.timing_lane_visibility_mask |= 1U << static_cast<unsigned>(lane);
+    (void)harness.frame();
+    const auto disabled = click_text(harness, sample_set ? "SET: On" : "VOL: On");
+    CHECK(disabled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY);
+    CHECK(disabled.get().compose_timing_lane == lane);
 }

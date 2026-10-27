@@ -1888,11 +1888,11 @@ TEST_CASE("native schema 23 migrates without adding bookmark order or changing o
     CHECK(*rewritten.value == legacy.dump() + '\n');
 }
 
-TEST_CASE("native schema 26 pins the persisted song document key set",
+TEST_CASE("native schema 27 pins the persisted song document key set",
           "[unit][format][native-project][schema-guard]") {
     INFO("Persisted document keys changed: bump current_document_schema_version, add a migration, "
          "and update this schema/key-set guard together.");
-    check_bmson_condition(wormedit::current_document_schema_version == 26);
+    check_bmson_condition(wormedit::current_document_schema_version == 27);
     const auto song = make_schema_guard_song();
     const auto written = wormedit::write_native_project(song);
     INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));

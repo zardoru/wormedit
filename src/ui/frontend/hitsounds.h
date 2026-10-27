@@ -30,7 +30,7 @@ struct hitsound_note_view_t {
     }
 
     [[nodiscard]] auto details() const -> std::vector<std::string> {
-        constexpr std::array names{"Auto", "Normal", "Soft", "Drum"};
+        const auto& names = osu_sample_set_names;
         auto set_name = [&](osu_sample_set_t requested, osu_sample_set_t resolved) {
             auto name = std::string{names[static_cast<std::size_t>(requested)]};
             if (requested == osu_sample_set_t::automatic) name += std::string{" → "} + names[static_cast<std::size_t>(resolved)];

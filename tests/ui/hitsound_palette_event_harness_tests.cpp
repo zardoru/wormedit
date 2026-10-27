@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose/compose_panel.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include <catch2/catch_test_macros.hpp>
@@ -99,4 +100,33 @@ TEST_CASE("Note hitsound details retain custom fields and explain inherited sets
     CHECK(details[1] == "Additions: whistle finish clap");
     CHECK(details[2] == "Custom index: 7 (inherited) · volume: 65% (inherited)");
     CHECK(details[3] == "Custom sample: custom-hit.wav");
+}
+
+TEST_CASE("Draw mode places a sample-set control from the armed toolbar bank",
+          "[frontend-state][event-harness][sample-controls]") {
+    using namespace wormedit;
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    view.playable_field_left_pixels = 126;
+    view.playable_field_right_pixels = 850;
+    view.timing_lane_visibility_mask = 1U << static_cast<unsigned>(timing_lane_kind_t::sample_set);
+    view.note_paint_mode_active = true;
+    const std::array samples{osu_hitsample_t{.normal_set = osu_sample_set_t::drum}};
+    view.hitsounds = ui::hitsound_palette_view_t::from(true, samples);
+    (void)harness.frame();
+    ui::testing_rect_view_t viewport{};
+    REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+    const auto x = viewport.x + 84.0f / 900 * viewport.width;
+    const auto y = viewport.y + 200.0f / 600 * viewport.height;
+    const auto frames = test::click_at(harness, x, y);
+    const auto inserted = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().timing_stage_action == ui::timing_stage_action_t::quick_insert;
+    });
+    REQUIRE(inserted != frames.end());
+    CHECK(inserted->get().timing_lane == timing_lane_kind_t::sample_set);
+    CHECK(inserted->get().timing_primary_numerator_text == "3");
+    CHECK(inserted->get().timing_chart_id == view.chart_id);
 }

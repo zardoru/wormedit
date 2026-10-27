@@ -110,6 +110,8 @@ auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_k
     case editor_selection_object_kind_t::stop_event:
     case editor_selection_object_kind_t::delay_event:
     case editor_selection_object_kind_t::warp_event:
+    case editor_selection_object_kind_t::volume_event:
+    case editor_selection_object_kind_t::sample_set_event:
     case editor_selection_object_kind_t::scroll_event:
     case editor_selection_object_kind_t::speed_event:
     case editor_selection_object_kind_t::kiai_event:

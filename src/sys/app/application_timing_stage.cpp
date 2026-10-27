@@ -1,3 +1,4 @@
+#include <wormedit/formats/osu_mania.h>
 #include <wormedit/core/timing_lane_catalog.h>
 #include "sys/app/application_timing_stage.h"
 #include "sys/app/application_edit_inputs.h"
@@ -108,6 +109,12 @@ auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart
     }
     case timing_lane_kind_t::kiai:
         return timing_kiai_value_t{true, 0};
+    case timing_lane_kind_t::volume: {
+        const auto context = osu_sample_context_index_t::from(chart);
+        return timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = context ? context->at(position).volume : 100};
+    }
+    case timing_lane_kind_t::sample_set:
+        return timing_sample_control_value_t<timing_lane_kind_t::sample_set>{};
     case timing_lane_kind_t::anchor:
         return timing_anchor_value_t{0, false};
     }
@@ -170,6 +177,14 @@ auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
         *found, *history.indices(found->id), kind, *position, active_snap_denominator);
     if (!initial) {
         return rejected;
+    }
+    if ((kind == timing_lane_kind_t::volume || kind == timing_lane_kind_t::sample_set) &&
+        !action.timing_primary_numerator_text.empty()) {
+        const auto value = parse_integer<std::int64_t>(action.timing_primary_numerator_text.c_str());
+        if (!value) return rejected;
+        std::visit([&](auto& item) {
+            if constexpr (requires { item.value; }) item.value = *value;
+        }, *initial);
     }
     return timing_lane_pseudonote_preview_t::propose(history, action.timing_chart_id, wormedit::timing_lane_pseudonote_state_t{.kind = kind, .position = *position, .value = std::move(*initial), .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, timing_locked);
 }
@@ -387,6 +402,14 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
         return timing_stage_warp_value(input, chart, indices, active_snap_denominator);
     case timing_lane_kind_t::kiai:
         return timing_stage_toggle_value(input);
+    case timing_lane_kind_t::volume:
+        if (input.primary_numerator && input.primary_denominator == 1)
+            return timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = *input.primary_numerator};
+        return std::nullopt;
+    case timing_lane_kind_t::sample_set:
+        if (input.primary_numerator && input.primary_denominator == 1)
+            return timing_sample_control_value_t<timing_lane_kind_t::sample_set>{.value = *input.primary_numerator};
+        return std::nullopt;
     case timing_lane_kind_t::anchor:
         return timing_stage_anchor_value(input);
     }

@@ -418,6 +418,18 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                compose_timing_short_number(chart.bpms[index].beats_per_minute),
                "BPM " + compose_timing_decimal_detail(chart.bpms[index].beats_per_minute), false);
     }
+    for (std::size_t index = 0; index < chart.volumes.size(); ++index) {
+        const auto& event = chart.volumes[index];
+        append(event.position, event.id.value, event.provenance.source_order, index,
+            wormedit::timing_lane_kind_t::volume, std::to_string(event.value),
+            "Volume " + std::to_string(event.value) + "%", false);
+    }
+    for (std::size_t index = 0; index < chart.sample_sets.size(); ++index) {
+        const auto& event = chart.sample_sets[index];
+        append(event.position, event.id.value, event.provenance.source_order, index,
+            wormedit::timing_lane_kind_t::sample_set, std::to_string(event.value),
+            std::string{"Sample set: "} + wormedit::osu_sample_set_names[static_cast<std::size_t>(event.value)], false);
+    }
     for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
         append(chart.scrolls[index].position, chart.scrolls[index].id.value,
                chart.scrolls[index].provenance.source_order, index, wormedit::timing_lane_kind_t::scroll,

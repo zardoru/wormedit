@@ -49,7 +49,7 @@ static auto valid_timing_markers(const wormedit::ui::timing_view_t& view) -> boo
             !std::isfinite(marker.marker_right_fraction) || marker.marker_left_fraction < 0.0 ||
             marker.marker_right_fraction <= marker.marker_left_fraction ||
             marker.marker_right_fraction > 1.0 || marker.lane < wormedit::timing_lane_kind_t::bpm ||
-            marker.lane > wormedit::timing_lane_kind_t::anchor) return false;
+            marker.lane > wormedit::timing_lane_kind_t::sample_set) return false;
     }
     return true;
 }
@@ -69,7 +69,7 @@ static auto valid_timing_stage(const wormedit::ui::timing_view_t& view) -> bool 
     return std::isfinite(view.stage_marker_y_pixels) && view.stage_marker_y_pixels >= 0.0 &&
         view.stage_marker_y_pixels <= view.viewport_height_pixels &&
         view.stage_lane >= wormedit::timing_lane_kind_t::bpm &&
-        view.stage_lane <= wormedit::timing_lane_kind_t::anchor &&
+        view.stage_lane <= wormedit::timing_lane_kind_t::sample_set &&
         view.stage_pause_unit >= wormedit::pause_unit_t::seconds &&
         view.stage_pause_unit <= wormedit::pause_unit_t::beats &&
         std::isfinite(view.stage_value) && std::isfinite(view.stage_secondary_value);
@@ -204,6 +204,8 @@ static auto timing_stage_primary_label(wormedit::timing_lane_kind_t lane) -> con
     case wormedit::timing_lane_kind_t::speed: return "SPEEDS multiplier";
     case wormedit::timing_lane_kind_t::stop:
     case wormedit::timing_lane_kind_t::delay: return "Duration";
+    case wormedit::timing_lane_kind_t::volume: return "Volume (%)";
+    case wormedit::timing_lane_kind_t::sample_set: return "Sample set (0 Auto, 1 Normal, 2 Soft, 3 Drum)";
     case wormedit::timing_lane_kind_t::anchor: return "Source sample frame";
     default: return "Value";
     }

@@ -144,6 +144,8 @@ auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t 
     case kind_t::delay_event: add_ids(ids, chart.pauses); break;
     case kind_t::warp_event: add_ids(ids, chart.warps); break;
     case kind_t::scroll_event: add_ids(ids, chart.scrolls); break;
+    case kind_t::volume_event: add_ids(ids, chart.volumes); break;
+    case kind_t::sample_set_event: add_ids(ids, chart.sample_sets); break;
     case kind_t::speed_event: add_ids(ids, chart.speeds); break;
     case kind_t::kiai_event: add_ids(ids, chart.kiai); break;
     case kind_t::timing_anchor: add_ids(ids, chart.timing_anchors); break;

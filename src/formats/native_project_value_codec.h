@@ -32,6 +32,8 @@ namespace wormedit::native_project_internal {
 [[nodiscard]] auto encode_native_value(const bpm_event_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const pause_event_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const warp_event_t&) -> nlohmann::json;
+[[nodiscard]] auto encode_native_value(const volume_event_t&) -> nlohmann::json;
+[[nodiscard]] auto encode_native_value(const sample_set_event_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const scroll_event_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const speed_event_t&) -> nlohmann::json;
 [[nodiscard]] auto encode_native_value(const sv_recipe_t&) -> nlohmann::json;
@@ -82,6 +84,8 @@ template<class Visitor> void visit_native_collections(const chart_document_t&, V
     visit("pauses", &chart_document_t::pauses, false);
     visit("warps", &chart_document_t::warps, false);
     visit("scrolls", &chart_document_t::scrolls, false);
+    visit("volumes", &chart_document_t::volumes, false);
+    visit("sample_sets", &chart_document_t::sample_sets, false);
     visit("speeds", &chart_document_t::speeds, false);
     visit("sv_recipes", &chart_document_t::sv_recipes, false);
     visit("kiai", &chart_document_t::kiai, false);

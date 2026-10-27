@@ -18,7 +18,7 @@ namespace wormedit {
 // has a zero duration and lane index 0.
 using chart_clipboard_payload_t =
     std::variant<note_t, bgm_event_t, bpm_event_t, pause_event_t, warp_event_t, scroll_event_t,
-                 speed_event_t, kiai_event_t, timing_anchor_t>;
+                 speed_event_t, kiai_event_t, timing_anchor_t, volume_event_t, sample_set_event_t>;
 
 // A BMSON stem point: the retained sound-channel event a semantic note or BGM marker stands for.
 // Pasting creates a fresh retained event in the same channel (by ID) with the same flags.

@@ -1083,7 +1083,8 @@ auto hitsound_command(command_context_t& context) -> command_result_t {
     }
     if (!context.command.hitsound) return compose_action_outcome_t::blocked("Invalid hitsound command.");
     return apply_compose_hitsound(context.environment.document.history, *state, *context.command.hitsound,
-        context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active);
+        context.environment.editor.commands.project.compose_gesture.resource_paint_mode_active ||
+            context.environment.editor.commands.project.compose_gesture.note_paint_mode_active);
 }
 
 auto note_kind_command(command_context_t& context) -> command_result_t {

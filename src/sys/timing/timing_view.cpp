@@ -116,6 +116,9 @@ void build_timing_stage_value_view(timing_stage_value_context_t& context, const 
         view.stage_secondary_denominator_text = "1";
     } else if constexpr (std::is_same_v<Value, wormedit::timing_kiai_value_t>) {
         view.stage_toggle_primary = value.enabled;
+    } else if constexpr (requires { value.value; }) {
+        view.stage_value = static_cast<double>(value.value);
+        set_primary(value.value, 1);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_anchor_value_t>) {
         view.stage_toggle_primary = value.locked;
         view.stage_primary_numerator_text.clear();

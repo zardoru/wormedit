@@ -529,7 +529,7 @@ bool compose_note_palette_has_buttons(const wormedit::ui::compose_view_t& view) 
 }
 
 namespace {
-constexpr std::array hitsound_set_labels{"Auto", "Normal", "Soft", "Drum"};
+constexpr auto& hitsound_set_labels = wormedit::osu_sample_set_names;
 
 void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_field_t field,
                    std::optional<int> value = {}) {
@@ -574,12 +574,18 @@ void draw_hitsound_set(nk_context* context, struct nk_rect bounds, bool addition
     namespace chrome = wormedit::ui::chrome;
     auto* canvas = nk_window_get_canvas(context);
     nk_stroke_rect(canvas, bounds, 3, 1, chrome::color(wormedit::ui::theme::UiColor::border));
-    wormedit::ui::lucide::draw(context, nk_rect(bounds.x + 3, bounds.y, 22, 20),
-        addition ? Glyph::layers : Glyph::music_2, tint);
-    constexpr std::array labels{"A", "N", "S", "D"};
-    const char* label = value ? labels[static_cast<std::size_t>(*value)] : "−";
-    nk_draw_text(canvas, nk_rect(bounds.x + 4, bounds.y + 16, 14, 14), label,
-        static_cast<int>(std::strlen(label)), context->style.font, nk_rgba(0, 0, 0, 0), tint);
+    if (value) {
+        wormedit::ui::vector_icons::HitsoundStroke stroke{canvas,
+            wormedit::ui::vector_icons::Frame::fit(nk_rect(bounds.x+3, bounds.y+2, 24, 22)), tint};
+        wormedit::ui::hitsound_icons::draw(stroke, wormedit::ui::hitsound_icons::sample_set_shape(
+            static_cast<wormedit::osu_sample_set_t>(*value)));
+    } else {
+        nk_stroke_line(canvas, bounds.x+8, bounds.y+12, bounds.x+22, bounds.y+12, 1.5f, tint);
+    }
+    if (addition) {
+        nk_stroke_line(canvas, bounds.x+2, bounds.y+24, bounds.x+8, bounds.y+24, 1, tint);
+        nk_stroke_line(canvas, bounds.x+5, bounds.y+21, bounds.x+5, bounds.y+27, 1, tint);
+    }
     const float arrow[]{bounds.x + 20, bounds.y + 22, bounds.x + 23, bounds.y + 25,
         bounds.x + 26, bounds.y + 22};
     nk_stroke_polyline(canvas, const_cast<float*>(arrow), 3, 1.2f, tint);
@@ -590,9 +596,12 @@ void render_hitsound_set(const ComposeToolbarContext& toolbar, std::size_t index
     auto* context = toolbar.context;
     const auto value = toolbar.view->hitsounds.values.fields[index];
     const auto field = static_cast<wormedit::hitsound_field_t>(index);
-    const auto tooltip = std::string{index == 3 ? "Normal sample set: " : "Addition sample set: "} +
+    const auto label = index == 3 ? "Normal sample set: " : "Addition sample set: ";
+    const auto tooltip = std::string{label} +
         (value ? hitsound_set_labels[static_cast<std::size_t>(*value)] : "mixed") +
-        "; click cycles, right-click chooses";
+        "; click cycles, right-click chooses" +
+        (index == 3 && toolbar.view->note_paint_mode_active
+            ? "; SET draws use this bank (Auto uses beatmap default)" : "");
     nk_layout_row_static(context, 30, 30, 1);
     const chrome::NativeIconCell cell{context, false, true, tooltip.c_str()};
     draw_hitsound_set(context, cell.bounds(), index == 4, value, cell.tint());

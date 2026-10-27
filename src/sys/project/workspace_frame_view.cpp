@@ -50,7 +50,7 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
 
     args.player_preview_presenter.populate(
         flattened.view.player_preview, args.history, args.selected_chart,
-        args.player_preview_visible, args.player_preview_skin, flattened.view.transport_frame,
+        args.player_preview_visible, args.player_preview_skin, args.transport.source_frame(),
         flattened.view.transport_sample_rate, args.asset_base
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         , args.player_image_job

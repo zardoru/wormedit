@@ -9009,6 +9009,63 @@ void t275_measure_application_frame(unsigned scenario) {
 TEST_CASE("T275 real application frame BMSON projection benchmark", "[.][application-projection-benchmark]") {
     for (unsigned scenario = 0; scenario < 6; ++scenario) t275_measure_application_frame(scenario);
 }
+
+TEST_CASE("Player preview and chart readout follow the source frame across audio cuts",
+          "[sys][player-preview][export-cut]") {
+    t275_application_frame_fixture_t fixture;
+    fixture.commands.project.compose_view.player_preview_visible = true;
+    const std::array cuts{export_cut_t{.id = object_id_t{90000},
+        .begin_milliseconds = 1000, .end_milliseconds = 2000}};
+    const auto timeline = export_cut_timeline_t::from(cuts);
+    const auto frames = export_cut_frame_timeline_t::from(timeline.value, audio::output_sample_rate);
+    expect_compose_test(frames.diagnostics.empty());
+    const auto has_cuts = GENERATE(true, false);
+    if (has_cuts) fixture.preview_state.compiled.value().cut_frames = frames.value;
+    fixture.preview_state.paused = GENERATE(true, false);
+    const auto collapsed = GENERATE(44'099ULL, 44'100ULL, 66'150ULL);
+    fixture.preview_state.resume_frame = collapsed;
+    if (!fixture.preview_state.paused) {
+        const preview_schedule_t schedule{.sample_rate = audio::output_sample_rate};
+        expect_compose_test(static_cast<bool>(fixture.preview.start_session(schedule, {}, {},
+            collapsed, {}, 200'000)));
+    }
+    fixture.refill();
+    const auto& view = fixture.channel.flattened.view;
+    const auto source = !has_cuts || collapsed < 44'100 ? collapsed : collapsed + 44'100;
+    expect_compose_test(view.transport_frame == collapsed);
+    expect_compose_test(view.player_preview.scene_available);
+    expect_compose_test(view.player_preview.sample_frame == source);
+    expect_compose_test(view.transport_position.has_value());
+    expect_compose_test(view.transport_position->row == static_cast<std::int64_t>(source * 480 / 44'100));
+}
+
+TEST_CASE("Stopped cursor and audition preview retain their source clock with compiled cuts",
+          "[sys][player-preview][export-cut]") {
+    t275_application_frame_fixture_t fixture;
+    fixture.commands.project.compose_view.player_preview_visible = true;
+    const std::array cuts{export_cut_t{.id = object_id_t{90000},
+        .begin_milliseconds = 0, .end_milliseconds = 1000}};
+    const auto timeline = export_cut_timeline_t::from(cuts);
+    fixture.preview_state.compiled.value().cut_frames =
+        export_cut_frame_timeline_t::from(timeline.value, audio::output_sample_rate).value;
+    expect_compose_test(fixture.interaction.has_value());
+    fixture.interaction->cursor = {measure_id_t{1}, 720};
+    const auto auditioning = GENERATE(true, false);
+    if (auditioning) {
+        fixture.preview_state.paused = true;
+        const auto source = fixture.channel.sources.create_generated_source({
+            .source = {"cut-preview-audition", "v1"},
+            .interleaved_stereo = std::vector<float>(1024, 0.25F)});
+        expect_compose_test(source.has_value());
+        const audio::audition_clip_t clip{.source = source->source, .frame_count = 512};
+        expect_compose_test(static_cast<bool>(fixture.audition.start_session(std::span{&clip, 1})));
+    }
+    fixture.refill();
+    const auto& view = fixture.channel.flattened.view;
+    const std::uint64_t expected = auditioning ? 0 : 66'150;
+    expect_compose_test(view.transport_frame == expected);
+    expect_compose_test(view.player_preview.sample_frame == expected);
+}
 #endif
 
 

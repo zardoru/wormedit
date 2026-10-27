@@ -87,6 +87,11 @@ struct compose_bga_move_preview_input_t {
                                               wormedit::snap_grid_t snap)
     -> std::optional<wormedit::editor_hit_target_t>;
 
+// Virtual-tail pointer rows shared by placement and idle paint previews. A zero grid is exact.
+[[nodiscard]] auto resolve_compose_virtual_row(const wormedit::chart_document_t& chart,
+    const wormedit::editor_interaction_view_model_t& view, double y, bool downscroll,
+    wormedit::snap_grid_t snap = {}) -> std::optional<std::uint64_t>;
+
 inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
 inline constexpr std::size_t compose_timing_lane_count{8};
 // Core scene construction work budget, independent of frontend list storage.

@@ -706,29 +706,8 @@ struct compose_input_context_t {
     auto virtual_bms_row_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view,
                             double y_pixels) const -> std::optional<std::uint64_t> {
-        using namespace wormedit;
-        if (!has_chart_virtual_tail(chart) || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
-            y_pixels >= view.viewport_height_pixels)
-            return std::nullopt;
-        const auto built = build_virtual_canvas(chart);
-        const auto* canvas = std::get_if<virtual_canvas_t>(&built);
-        if (!canvas)
-            return std::nullopt;
-        const auto source_y = compose_source_y(
-            y_pixels, view.viewport_height_pixels,
-            compose_field_downscroll(chart,
-                                     environment.commands.preferences.editor_preferences));
-        const auto row = (static_cast<long double>(view.viewport_scroll_pixels) + source_y) *
-                         chart.divisions_per_standard_measure / view.pixels_per_standard_measure;
-        if (!std::isfinite(row) || row < 0.0L ||
-            row >= static_cast<long double>(canvas->total_rows))
-            return std::nullopt;
-        const auto canvas_row =
-            nearest_row(row, canvas->total_rows, row_clamp_policy_t::reject_outside);
-        if (!canvas_row)
-            return std::nullopt;
-        const auto measure = canvas->measure_containing(*canvas_row);
-        return measure && !measure->authored ? canvas_row : std::nullopt;
+        return resolve_compose_virtual_row(chart, view, y_pixels,
+            compose_field_downscroll(chart, environment.commands.preferences.editor_preferences));
     }
     auto virtual_bms_hit_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view, double x_pixels,

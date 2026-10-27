@@ -191,6 +191,30 @@ auto resolve_compose_paint_cell(const wormedit::chart_document_t& chart,
     return target;
 }
 
+auto resolve_compose_virtual_row(const wormedit::chart_document_t& chart,
+                                  const wormedit::editor_interaction_view_model_t& view,
+                                  double y, bool downscroll, wormedit::snap_grid_t snap)
+    -> std::optional<std::uint64_t> {
+    using namespace wormedit;
+    if (!has_chart_virtual_tail(chart) || !std::isfinite(y) || y < 0.0 ||
+        y >= view.viewport_height_pixels)
+        return std::nullopt;
+    const auto built = build_virtual_canvas(chart);
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    if (!canvas) return std::nullopt;
+    const auto source_y = downscroll ? view.viewport_height_pixels - y : y;
+    const auto row = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
+                         .row_at_y(source_y);
+    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(canvas->total_rows))
+        return std::nullopt;
+    const auto canvas_row = nearest_row(row, canvas->total_rows, row_clamp_policy_t::reject_outside);
+    if (!canvas_row) return std::nullopt;
+    const auto measure = canvas->measure_containing(*canvas_row);
+    if (!measure || measure->authored) return std::nullopt;
+    return snap_canvas_row_or_exact(chart, canvas->authored_index, *canvas_row, snap,
+                                     canvas->total_rows);
+}
+
 namespace compose_projection_detail {
 auto paste_anchor(application_command_state_t::paste_session_t& session,
                   wormedit::local_position_t cursor) -> wormedit::local_position_t {
@@ -2356,24 +2380,27 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
                                                 input.frame.history.document.revision);
     if (!index) return;
     const auto [x, y] = *cache.frame.paint_pointer;
+    const auto snap = edit_snap_grid(input.scope.chart_scope.chart, *input.frame.retained_state);
     const auto target = resolve_compose_paint_cell(
         input.scope.chart_scope.chart, *index, input.scope.interaction_view, x, y,
         view.playable_field_left_pixels,
         view.playable_field_right_pixels - view.playable_field_left_pixels, input.scope.downscroll,
-        edit_snap_grid(input.scope.chart_scope.chart, *input.frame.retained_state));
-    if (!target) return;
-    const auto row = (input.scope.chart_scope.measures).row_of(target->position);
+        snap);
+    const auto row = target ? input.scope.chart_scope.measures.row_of(target->position)
+                            : resolve_compose_virtual_row(input.scope.chart_scope.chart,
+                                  input.scope.interaction_view, y, input.scope.downscroll, snap);
     if (!row) return;
     const auto source_y = wormedit::editor_axis_projection_t::from(input.scope.interaction_view,
         input.scope.chart_scope.chart.divisions_per_standard_measure).y_for_row(*row);
     const auto ghost_y = input.scope.downscroll ? view.viewport_height_pixels - source_y : source_y;
     const auto lanes = std::span(view.lanes);
     const auto lane = std::ranges::find_if(lanes, [&](const auto& value) {
-        return value.lane_id == target->lane && ghost_y >= value.bounds.top &&
-               ghost_y <= value.bounds.bottom;
+        const auto is_target_lane = target ? value.lane_id == target->lane
+                                          : x >= value.bounds.left && x < value.bounds.right;
+        return is_target_lane && ghost_y >= value.bounds.top && ghost_y <= value.bounds.bottom;
     });
     if (lane == lanes.end()) return;
-    const auto occupied = compose_paint_head_occupied(input, *target, *row);
+    const auto occupied = target && compose_paint_head_occupied(input, *target, *row);
     const auto rectangular = lane->glyph == wormedit::lane_glyph_t::bar ||
                              lane->glyph == wormedit::lane_glyph_t::square;
     const auto height = cache.frame.preview_scene_request.note_head_height_pixels;

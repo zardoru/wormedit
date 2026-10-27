@@ -5097,6 +5097,58 @@ TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene"
     CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
 }
 
+TEST_CASE("Idle paint ghosts preview placement throughout a blank project's virtual tail",
+          "[sys][paint-ghost][regression]") {
+    const auto family = GENERATE(format_family_t::native_project, format_family_t::bms);
+    const auto downscroll = GENERATE(false, true);
+    const auto snap_enabled = GENERATE(false, true);
+    const auto measure_number = GENERATE(1U, 3U, 20U);
+    auto song = dense_song(1, 0);
+    auto& chart = song.charts.front();
+    chart.source_family = family;
+    chart.virtual_tail_measures = native_unanchored_virtual_measure_count;
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    fixture.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    fixture.project();
+    fixture.application.project.compose_view.edit_snap_enabled = snap_enabled;
+    fixture.interaction->active_snap_denominator = 4;
+    fixture.interaction->viewport_scroll_pixels =
+        measure_number * fixture.interaction->pixels_per_standard_measure;
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto lane = view.lanes.front();
+    const auto x = (lane.bounds.left + lane.bounds.right) / 2;
+    const auto source_y = 337.0 / 960 * view.pixels_per_standard_measure;
+    const auto y = downscroll ? view.viewport_height_pixels - source_y : source_y;
+    const auto revision = fixture.history.document.revision;
+    fixture.cache.frame.paint_pointer = std::pair{x, y};
+    fixture.project();
+    expect_compose_test(view.paint_ghost_visible);
+    const auto ghost = view.paint_ghost;
+    CAPTURE(family, downscroll, snap_enabled, measure_number, ghost.bounds.top);
+    expect_compose_test(!ghost.paint_erase_preview);
+    expect_compose_test(fixture.history.document.revision == revision);
+    expect_compose_test(fixture.history.read_chart(fixture.interaction->chart)->measures.size() == 1);
+    expect_compose_test(fixture.history.undo.empty());
+
+    const auto row = measure_number * 960 + (snap_enabled ? 240 : 337);
+    const auto expected_y = (snap_enabled ? 240.0 : 337.0) / 960 * view.pixels_per_standard_measure;
+    const auto anchor_y = downscroll ? view.viewport_height_pixels - expected_y : expected_y;
+    expect_compose_test(ghost.bounds.top == Catch::Approx(downscroll
+        ? anchor_y - fixture.cache.frame.preview_scene_request.note_head_height_pixels : anchor_y));
+    expect_compose_test(dispatch_editor_action(fixture.history, *fixture.interaction,
+        place_virtual_bms_tap_action_t{.canvas_row = row, .lane = lane.lane_id}).document_changed);
+    fixture.project();
+    expect_compose_test(view.note_endpoints.size() == 1);
+    expect_compose_test(view.note_endpoints.front().bounds.top == Catch::Approx(ghost.bounds.top));
+    expect_compose_test(view.note_endpoints.front().bounds.bottom == Catch::Approx(ghost.bounds.bottom));
+
+    fixture.cache.frame.paint_pointer = std::pair{view.playable_field_right_pixels + 1, y};
+    fixture.project();
+    expect_compose_test(!view.paint_ghost_visible);
+}
+
 TEST_CASE("Lane profile switcher uses key roles instead of recognizing the current profile ID",
           "[sys][lane-profile-switch][compatible-layout]") {
     auto scratch_song = compose_test_song();

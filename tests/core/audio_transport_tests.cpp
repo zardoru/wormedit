@@ -357,6 +357,9 @@ TEST_CASE("transport publishes layered voice batches atomically",
 
 namespace {
 void check_bgm_mix(bool condition) { CHECK(condition); }
+// Amplitude of a level 6 dB below full scale.
+const float minus_six_decibels = std::pow(10.0F, -6.0F / 20.0F);
+auto is_near(float actual, float expected) -> bool { return std::abs(actual - expected) < 1e-5F; }
 }
 
 TEST_CASE("BGM mix groups silence active and future voices without losing their source position",
@@ -449,15 +452,15 @@ TEST_CASE("Preview mix buses scale their category and the master scales every vo
     wormedit::preview_mix_t mix;
     mix.bus(wormedit::mix_bus_t::music).level = 0;
     mix.bus(wormedit::mix_bus_t::bgm).muted = true;
-    mix.bus(wormedit::mix_bus_t::keysounds).level = 50;
+    mix.bus(wormedit::mix_bus_t::keysounds).level = 90;
     check_bgm_mix(transport.set_preview_mix(mix));
     check_bgm_mix(transport.mix_frames(*token, 0, output).voices_mixed == 4);
-    check_bgm_mix(output.front() == 0.1875F);
+    check_bgm_mix(is_near(output.front(), 0.125F * (minus_six_decibels + 1.0F)));
     mix.bus(wormedit::mix_bus_t::hitsounds).solo = true;
-    mix.master = 50;
+    mix.master = 90;
     check_bgm_mix(transport.set_preview_mix(mix));
     check_bgm_mix(transport.mix_frames(*token, 8, output).voices_mixed == 4);
-    check_bgm_mix(output.front() == 0.0625F);
+    check_bgm_mix(is_near(output.front(), 0.125F * minus_six_decibels));
     mix.master = 101;
     check_bgm_mix(!transport.set_preview_mix(mix));
     check_bgm_mix(transport.set_preview_mix({}));
@@ -474,9 +477,17 @@ TEST_CASE("Preview mix solo is additive and mute wins over solo", "[unit][core][
     check_bgm_mix(mix.is_silenced(wormedit::mix_bus_t::music));
     check_bgm_mix(!mix.is_silenced(wormedit::mix_bus_t::bgm));
     check_bgm_mix(mix.is_silenced(wormedit::mix_bus_t::keysounds));
-    mix.bus(wormedit::mix_bus_t::bgm).level = 50;
-    mix.master = 50;
-    check_bgm_mix(mix.gain(wormedit::mix_bus_t::bgm) == 0.25F);
+    mix.bus(wormedit::mix_bus_t::bgm).level = 90;
+    mix.master = 90;
+    check_bgm_mix(is_near(mix.gain(wormedit::mix_bus_t::bgm), minus_six_decibels * minus_six_decibels));
+}
+
+TEST_CASE("Preview mix levels follow a decibel taper", "[unit][core][preview-mix]") {
+    check_bgm_mix(wormedit::mix_level_decibels(100) == 0.0F && wormedit::mix_level_gain(100) == 1.0F);
+    check_bgm_mix(is_near(*wormedit::mix_level_decibels(50), -30.0F));
+    check_bgm_mix(is_near(*wormedit::mix_level_decibels(1), -59.4F));
+    check_bgm_mix(is_near(wormedit::mix_level_gain(90), minus_six_decibels));
+    check_bgm_mix(!wormedit::mix_level_decibels(0) && wormedit::mix_level_gain(0) == 0.0F);
 }
 
 namespace {

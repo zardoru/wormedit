@@ -142,7 +142,8 @@ and restarts. Markers provides the same search and navigation as the bookmark ch
 
 The *Mixer* sets playback levels by category: *Music* (the song audio), *BGM* (BGM lane keysounds
 and stems), *Keysounds* (playable notes) and *Hitsounds* (osu! hitsounds), under a *Master* level
-that also covers metronome clicks. *M* mutes a category; *S* solos it, and soloing several keeps
+that also covers metronome clicks. Levels are in decibels: the top of each slider is 0 dB (the
+authored level), each step lowers it by 0.6 dB, and the bottom is silence. *M* mutes a category; *S* solos it, and soloing several keeps
 all of them audible. Changes apply to sounds that are already playing. The mix lasts for the
 session and only affects listening: exports and the saved chart keep the authored mix. *Reset*
 restores every level and clears mute and solo.

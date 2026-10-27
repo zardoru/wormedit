@@ -6,6 +6,7 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,7 +18,7 @@ using wormedit::ui::chrome::color;
 using wormedit::ui::theme::UiColor;
 
 constexpr float name_width = 84.0f;
-constexpr float level_width = 44.0f;
+constexpr float level_width = 52.0f;
 
 // A bus that cannot be heard (muted, or outside the solo set) reads like disabled text.
 auto strip_text(bool silenced) -> nk_color {
@@ -59,7 +60,11 @@ void render_strip_name(nk_context* context, std::string_view title, std::string_
 auto render_level(nk_context* context, std::uint8_t level, bool silenced) -> std::optional<std::uint8_t> {
     int value = level;
     const auto changed = nk_slider_int(context, 0, &value, wormedit::maximum_mix_level, 1) != 0;
-    nk_labelf_colored(context, NK_TEXT_RIGHT, strip_text(silenced), "%d%%", value);
+    const auto decibels = wormedit::mix_level_decibels(static_cast<std::uint8_t>(value));
+    if (decibels)
+        nk_labelf_colored(context, NK_TEXT_RIGHT, strip_text(silenced), "%.0f dB", std::round(*decibels) + 0.0f);
+    else
+        nk_label_colored(context, "-inf dB", NK_TEXT_RIGHT, strip_text(silenced));
     if (!changed || value == level) return std::nullopt;
     return static_cast<std::uint8_t>(value);
 }

@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace wormedit {
@@ -19,6 +20,13 @@ inline constexpr std::array mix_bus_catalog{
     mix_bus_definition_t{mix_bus_t::hitsounds, "Hitsounds", "osu! hitsounds"}};
 inline constexpr std::size_t mix_bus_count = mix_bus_catalog.size();
 inline constexpr std::uint8_t maximum_mix_level = 100;
+// Levels follow a decibel taper: the maximum is 0 dB and each step below it is an equal share of
+// the range to the floor (0.6 dB), except level 0, which is silence rather than the floor.
+inline constexpr float minimum_mix_decibels = -60.0F;
+// Attenuation for a level, or nothing for silence.
+[[nodiscard]] auto mix_level_decibels(std::uint8_t level) -> std::optional<float>;
+// Linear amplitude factor for a level.
+[[nodiscard]] auto mix_level_gain(std::uint8_t level) -> float;
 
 struct mix_strip_t {
     std::uint8_t level{maximum_mix_level};
@@ -38,7 +46,7 @@ struct preview_mix_t {
     [[nodiscard]] auto has_solo() const -> bool;
     // Muted, or left out while another bus is soloed.
     [[nodiscard]] auto is_silenced(mix_bus_t id) const -> bool;
-    // Linear factor for the bus, including the master level.
+    // Amplitude factor for the bus, including the master level.
     [[nodiscard]] auto gain(mix_bus_t id) const -> float;
     auto operator==(const preview_mix_t&) const -> bool = default;
 };

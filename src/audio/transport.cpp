@@ -257,7 +257,7 @@ auto transport_t::set_preview_mix(const preview_mix_t& mix) -> bool {
     for (const auto& bus : mix_bus_catalog) gains[static_cast<std::size_t>(bus.id)] = mix.gain(bus.id);
     const std::scoped_lock lock(mutex_);
     bus_gains_ = gains;
-    master_gain_ = static_cast<float>(mix.master) / static_cast<float>(maximum_mix_level);
+    master_gain_ = mix_level_gain(mix.master);
     return true;
 }
 void transport_t::set_hitsounds_enabled(bool enabled) noexcept {

@@ -2384,97 +2384,181 @@ struct WorkspaceRenderContext {
 };
 
 
-static void render_recovery_buttons(const wormedit::ui::recovery_candidate_view_t* candidate,
-                                   wormedit::ui::workspace_action_t& action) {
-    const struct {
-        wormedit::native_project_recovery_action_t action;
-        const char* label;
-        WormUiWorkspaceActionKind kind;
-    } buttons[] = {
-        {wormedit::native_project_recovery_action_t::inspect_read_only, "Inspect", WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
-        {wormedit::native_project_recovery_action_t::recover_into_session, "Recover", WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
-        {wormedit::native_project_recovery_action_t::save_as_new_project, "Save as", WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
-        {wormedit::native_project_recovery_action_t::discard, "Discard", WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
-        {wormedit::native_project_recovery_action_t::quarantine, "Quarantine",
-         WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE},
-    };
-    nk_layout_row_dynamic(g_context, 25, 5);
-    for (size_t button = 0; button < sizeof(buttons) / sizeof(buttons[0]); ++button) {
-        const bool offered = candidate && candidate->can(buttons[button].action);
-        if (!offered) nk_widget_disable_begin(g_context);
-        const int clicked = nk_button_label(g_context, buttons[button].label);
-        if (!offered) nk_widget_disable_end(g_context);
-        const int save_as_ready = buttons[button].kind != WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS ||
-                                  g_recovery_save_as_destination[0] != '\0';
-        if (offered && save_as_ready && clicked &&
-            action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
-            set_recovery_action(&action, candidate, buttons[button].kind);
+using recovery_card_layout_t = wormedit::ui::workspace_view_t::recovery_card_layout_t;
+
+struct recovery_button_t {
+    wormedit::native_project_recovery_action_t action;
+    const char* label;
+    WormUiWorkspaceActionKind kind;
+    wormedit::ui::chrome::ButtonKind look;
+};
+
+// Recover is the expected path; Discard is the one that loses data.
+static constexpr std::array<recovery_button_t, 5> recovery_buttons{{
+    {wormedit::native_project_recovery_action_t::recover_into_session, "Recover",
+     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER, wormedit::ui::chrome::ButtonKind::primary},
+    {wormedit::native_project_recovery_action_t::inspect_read_only, "Inspect",
+     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT, wormedit::ui::chrome::ButtonKind::secondary},
+    {wormedit::native_project_recovery_action_t::save_as_new_project, "Save as",
+     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS, wormedit::ui::chrome::ButtonKind::secondary},
+    {wormedit::native_project_recovery_action_t::quarantine, "Quarantine",
+     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE, wormedit::ui::chrome::ButtonKind::secondary},
+    {wormedit::native_project_recovery_action_t::discard, "Discard",
+     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD, wormedit::ui::chrome::ButtonKind::destructive},
+}};
+static constexpr float recovery_button_width = 104.0f;
+static constexpr float recovery_status_width = 96.0f;
+static constexpr float recovery_field_label_width = 140.0f;
+
+// A pill of fixed height, centered in its cell and clear of the file name beside it.
+static void render_recovery_status(const wormedit::ui::recovery_candidate_view_t& candidate) {
+    using namespace wormedit::ui::chrome;
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
+    constexpr float chip_height = 18.0f;
+    const auto chip = nk_rect(bounds.x, bounds.y + (bounds.h - chip_height) * 0.5f,
+                              bounds.w - wormedit::ui::metrics::gap_medium, chip_height);
+    const auto tone = candidate.problem ? color(UiColor::conflict) : color(UiColor::text_muted);
+    auto* canvas = nk_window_get_canvas(g_context);
+    nk_fill_rect(canvas, chip, chip_height * 0.5f, color(UiColor::surface_active));
+    nk_stroke_rect(canvas, chip, chip_height * 0.5f, 1.0f, tone);
+    const std::string_view status = candidate.status.empty() ? "unknown" : candidate.status;
+    const auto* font = g_context->style.font;
+    const float width = text_width(font, status);
+    nk_draw_text(canvas, nk_rect(chip.x + (chip.w - width) * 0.5f, chip.y + (chip.h - font->height) * 0.5f,
+                                 width, font->height),
+                 status.data(), static_cast<int>(status.size()), font, color(UiColor::surface_active), tone);
+}
+
+static void render_recovery_buttons(const wormedit::ui::recovery_candidate_view_t& candidate,
+                                    wormedit::ui::workspace_action_t& action) {
+    for (const auto& button : recovery_buttons) {
+        if (!candidate.can(button.action)) continue;
+        const bool save_as = button.kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS;
+        const bool ready = !save_as || g_recovery_save_as_destination[0] != '\0';
+        const wormedit::ui::chrome::Button control{.label = button.label, .kind = button.look,
+            .tooltip = ready ? nullptr : "Enter a new project path first.", .enabled = ready};
+        if (control.render(g_context) && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            set_recovery_action(&action, &candidate, button.kind);
     }
 }
 
-static void render_recovery_candidate(const wormedit::ui::recovery_candidate_view_t* candidate,
+static void render_recovery_save_as(const wormedit::ui::recovery_candidate_view_t& candidate) {
+    if (!candidate.can(wormedit::native_project_recovery_action_t::save_as_new_project)) return;
+    using namespace wormedit::ui::chrome;
+    nk_layout_row_template_begin(g_context, recovery_card_layout_t::field);
+    nk_layout_row_template_push_static(g_context, recovery_field_label_width);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_end(g_context);
+    nk_label_colored(g_context, "New project path", NK_TEXT_LEFT, color(UiColor::text_muted));
+    (void)worm_ui_nuklear_text_field(g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
+                                     sizeof(g_recovery_save_as_destination), nk_filter_default);
+    if (g_recovery_save_as_destination[0] != '\0') return;
+    nk_layout_row_dynamic(g_context, recovery_card_layout_t::note, 1);
+    nk_label_colored(g_context, "Save as is available once a new destination is entered.",
+                     NK_TEXT_LEFT, color(UiColor::text_muted));
+}
+
+static void render_recovery_candidate(const wormedit::ui::recovery_candidate_view_t& candidate,
                                       wormedit::ui::workspace_action_t& action) {
-    nk_layout_row_dynamic(g_context, 20, 1);
-    nk_labelf(g_context, NK_TEXT_LEFT, "%s  %s",
-              candidate->path_label.empty() ? "(unknown recovery path)" : candidate->path_label.c_str(),
-              candidate->summary.c_str());
+    using namespace wormedit::ui::chrome;
+    const auto offered = std::ranges::count_if(recovery_buttons,
+        [&](const recovery_button_t& button) { return candidate.can(button.action); });
+    nk_layout_row_template_begin(g_context, recovery_card_layout_t::candidate);
+    nk_layout_row_template_push_static(g_context, recovery_status_width);
+    nk_layout_row_template_push_dynamic(g_context);
+    for (std::ptrdiff_t button = 0; button < offered; ++button)
+        nk_layout_row_template_push_static(g_context, recovery_button_width);
+    nk_layout_row_template_end(g_context);
+    render_recovery_status(candidate);
+    const auto file_name = candidate.file_name();
+    nk_text_colored(g_context, file_name.data(), static_cast<int>(file_name.size()), NK_TEXT_LEFT,
+                    color(UiColor::text_bright));
     render_recovery_buttons(candidate, action);
-    if (candidate->can(wormedit::native_project_recovery_action_t::save_as_new_project)) {
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
-        nk_layout_row_push(g_context, 0.18f);
-        nk_label(g_context, "New project path", NK_TEXT_LEFT);
-        nk_layout_row_push(g_context, 0.82f);
-        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
-            g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
-            sizeof(g_recovery_save_as_destination), nk_filter_default);
-        nk_layout_row_end(g_context);
-        if (g_recovery_save_as_destination[0] == '\0') {
-            nk_layout_row_dynamic(g_context, 18, 1);
-            nk_label(g_context, "Save as is disabled until a new destination is entered.",
-                     NK_TEXT_LEFT);
-        }
+    nk_layout_row_template_begin(g_context, recovery_card_layout_t::detail);
+    nk_layout_row_template_push_static(g_context, recovery_status_width);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_end(g_context);
+    nk_spacing(g_context, 1);
+    nk_labelf_colored(g_context, NK_TEXT_LEFT, color(UiColor::text_muted), "%s  ·  %s",
+                      candidate.summary.c_str(), candidate.path_label.c_str());
+    render_recovery_save_as(candidate);
+}
+
+// Candidates without a safe action are context, not choices: one muted line each.
+static void render_inactive_recovery_candidate(const wormedit::ui::recovery_candidate_view_t& candidate) {
+    using namespace wormedit::ui::chrome;
+    nk_layout_row_template_begin(g_context, recovery_card_layout_t::inactive);
+    nk_layout_row_template_push_static(g_context, recovery_status_width);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_end(g_context);
+    render_recovery_status(candidate);
+    const auto file_name = candidate.file_name();
+    nk_labelf_colored(g_context, NK_TEXT_LEFT, color(UiColor::text_muted), "%.*s  ·  %s  ·  %.*s",
+                      static_cast<int>(file_name.size()), file_name.data(), candidate.summary.c_str(),
+                      static_cast<int>(candidate.disabled_reason.size()), candidate.disabled_reason.data());
+}
+
+static void render_recovery_header(const wormedit::ui::workspace_view_t& view) {
+    using namespace wormedit::ui::chrome;
+    const std::string_view heading = view.recovery_heading.empty() ? "Recovery" : view.recovery_heading;
+    nk_layout_row_template_begin(g_context, recovery_card_layout_t::header);
+    nk_layout_row_template_push_static(g_context,
+        text_width(g_context->style.font, heading) + 2.0f * wormedit::ui::metrics::gap_large);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_end(g_context);
+    nk_text_colored(g_context, heading.data(), static_cast<int>(heading.size()), NK_TEXT_LEFT,
+                    color(UiColor::text_bright));
+    nk_text_colored(g_context, view.recovery_notice.data(), static_cast<int>(view.recovery_notice.size()),
+                    NK_TEXT_LEFT, color(UiColor::text_muted));
+}
+
+static void render_recovery_rows(const wormedit::ui::workspace_view_t& view,
+                                 wormedit::ui::workspace_action_t& action) {
+    using namespace wormedit::ui::chrome;
+    render_recovery_header(view);
+    for (const auto& candidate : view.recovery_candidates) {
+        if (candidate.actions.empty()) render_inactive_recovery_candidate(candidate);
+        else render_recovery_candidate(candidate, action);
     }
-    if (!candidate->disabled_reason.empty()) {
-        nk_layout_row_dynamic(g_context, 20, 1);
-        nk_text(g_context, candidate->disabled_reason.data(),
-                 static_cast<int>(candidate->disabled_reason.size()), NK_TEXT_LEFT);
+    nk_layout_row_dynamic(g_context, recovery_card_layout_t::note, 1);
+    if (view.recovery_rows_truncated)
+        nk_label_colored(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT,
+                         color(UiColor::text_muted));
+    for (const auto& diagnostic : view.recovery_diagnostics) {
+        if (!diagnostic.empty())
+            nk_label_colored(g_context, diagnostic.c_str(), NK_TEXT_LEFT, color(UiColor::conflict));
     }
 }
 
+// One bordered card. Its height comes from the view, so the content below never moves when the
+// card's rows change; more rows than the view reserves scroll inside the card.
 static auto render_recovery_panel(const wormedit::ui::workspace_view_t& view,
                                   wormedit::ui::workspace_action_t& action) -> float {
     if (!view.recovery_panel_visible || !view.recovery_has_actionable_candidate) return 0.0f;
+    using namespace wormedit::ui::chrome;
     const auto height = view.recovery_panel_height(g_recovery_save_as_destination[0] != '\0');
-    const bool scrollable = view.has_scrollable_recovery();
-    if (scrollable) {
-        nk_layout_row_dynamic(g_context, height, 1);
-        if (!nk_group_begin(g_context, "project-recovery-scroll", 0)) return height;
+    auto& style = g_context->style;
+    nk_style_push_style_item(g_context, &style.window.fixed_background, nk_style_item_color(color(UiColor::surface)));
+    nk_style_push_color(g_context, &style.window.group_border_color, color(UiColor::border));
+    nk_style_push_vec2(g_context, &style.window.group_padding,
+                       nk_vec2(recovery_card_layout_t::padding, recovery_card_layout_t::padding));
+    nk_layout_row_dynamic(g_context, height, 1);
+    const nk_flags flags = NK_WINDOW_BORDER | (view.has_scrollable_recovery() ? 0 : NK_WINDOW_NO_SCROLLBAR);
+    if (nk_group_begin(g_context, "project-recovery", flags)) {
+        render_recovery_rows(view, action);
+        nk_group_end(g_context);
     }
-    nk_layout_row_dynamic(g_context, 24, 1);
-    nk_label(g_context, view.recovery_heading.empty() ? "Recovery" : view.recovery_heading.data(), NK_TEXT_LEFT);
-    if (!view.recovery_notice.empty()) {
-        nk_layout_row_dynamic(g_context, 22, 1);
-        nk_label(g_context, view.recovery_notice.data(), NK_TEXT_LEFT);
-    }
-    for (size_t row = 0; row < view.recovery_candidates.size(); ++row)
-        render_recovery_candidate(&view.recovery_candidates[row], action);
-    if (view.recovery_rows_truncated) {
-        nk_layout_row_dynamic(g_context, 18, 1);
-        nk_label(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT);
-    }
-    for (size_t diagnostic = 0; diagnostic < view.recovery_diagnostics.size(); ++diagnostic) {
-        if (!view.recovery_diagnostics[diagnostic].empty()) {
-            nk_layout_row_dynamic(g_context, 18, 1);
-            nk_label(g_context, view.recovery_diagnostics[diagnostic].c_str(), NK_TEXT_LEFT);
-        }
-    }
-    if (scrollable) nk_group_end(g_context);
+    nk_style_pop_vec2(g_context);
+    nk_style_pop_color(g_context);
+    nk_style_pop_style_item(g_context);
     return height;
 }
 
+// Project and Metadata draw the card at the top of their own column.
 static auto render_recovery_above_content(const wormedit::ui::workspace_view_t& view,
     wormedit::ui::workspace_action_t& action) -> float {
-    if (view.setup.visible) return 0.0f;
+    if (view.setup.visible || view.metadata.visible) return 0.0f;
     return render_recovery_panel(view, action);
 }
 
@@ -2605,16 +2689,12 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
         !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
     if (!metadata_interactive) worm_ui_nuklear_cancel_metadata_tag_drag();
     prepare_workspace_content_scroll(g_context, view.compose.visible);
-    // Project and Metadata share the form side margins.
+    // Project and Metadata share the form column and its margins.
     const bool padded = view.metadata.visible || view.setup.visible;
     if (padded) {
-        const auto padding = g_context->style.window.group_padding;
-        const auto form_margin = wormedit::ui::layout::form_side_margin(
-            static_cast<float>(g_last_window_width), static_cast<float>(g_last_window_height));
-        // The multi-column chart table needs more width than Metadata's form fields.
-        const auto margin = view.setup.visible ? std::min(form_margin, 48.0f) : form_margin;
+        const auto margin = wormedit::ui::layout::form_side_margin(static_cast<float>(g_last_window_width));
         nk_style_push_vec2(g_context, &g_context->style.window.group_padding,
-                           nk_vec2(margin, padding.y));
+                           nk_vec2(margin, wormedit::ui::layout::vertical_margin));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
                                      workspace_content_flags(view.compose.visible, view.metadata.visible)) != 0;
@@ -2623,9 +2703,10 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
     retire_sound_picker(view, action);
     retire_bookmark_editors(view, action);
     if (view.setup.visible) {
-        worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
         (void)render_recovery_panel(view, action);
+        worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
     } else if (view.metadata.visible) {
+        (void)render_recovery_panel(view, action);
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               metadata_interactive);
     } else if (view.compose.visible) {

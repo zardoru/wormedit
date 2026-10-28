@@ -16,6 +16,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cmath>
+#include <initializer_list>
 #include <numeric>
 #include <span>
 #include <string>
@@ -31,11 +32,33 @@
 
 namespace {
 
+// Section headers: the heading fills the row and the section's actions sit at its right edge.
+constexpr float project_section_header_height = 32.0f;
+
+void begin_project_section_header(nk_context* context, std::initializer_list<float> action_widths) {
+    nk_layout_row_template_begin(context, project_section_header_height);
+    nk_layout_row_template_push_dynamic(context);
+    for (const float width : action_widths) nk_layout_row_template_push_static(context, width);
+    nk_layout_row_template_end(context);
+}
+
+void project_section_gap(nk_context* context) {
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::gap_large, 1);
+    nk_spacing(context, 1);
+}
+
+// Painted like a tree tab header (Project settings, the Metadata sections), so every section on
+// the form screens opens with the same bar.
 void project_section_heading(nk_context* context, const char* text) {
-    using namespace wormedit::ui::chrome;
-    const auto bounds = nk_widget_bounds(context);
-    nk_fill_rect(nk_window_get_canvas(context), bounds, 4.0f, color(UiColor::surface));
-    nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    auto* canvas = nk_window_get_canvas(context);
+    const auto& style = context->style;
+    nk_fill_rect(canvas, bounds, 0.0f, style.tab.border_color);
+    const float inset = wormedit::ui::metrics::gap_medium + wormedit::ui::metrics::gap_small;
+    const float height = style.font->height;
+    nk_draw_text(canvas, nk_rect(bounds.x + inset, bounds.y + (bounds.h - height) * 0.5f, bounds.w - inset, height),
+                 text, static_cast<int>(std::strlen(text)), style.font, style.tab.border_color, style.tab.text);
 }
 
 struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
@@ -646,11 +669,7 @@ void render_project_charts(nk_context* context, const wormedit::ui::setup_view_t
     const auto shown_count = shown.size();
     for (std::size_t index = 0; index < shown_count; ++index) shown[index] = view.charts[index].chart_id.value;
 
-    nk_layout_row_template_begin(context, 32);
-    nk_layout_row_template_push_dynamic(context);
-    nk_layout_row_template_push_static(context, 160);
-    nk_layout_row_template_push_static(context, 32);
-    nk_layout_row_template_end(context);
+    begin_project_section_header(context, {160.0f, 32.0f});
     char heading[64];
     std::snprintf(heading, sizeof(heading), "Charts · %zu", view.chart_count);
     project_section_heading(context, heading);
@@ -1294,33 +1313,27 @@ void render_output_group_delete(nk_context* context, const wormedit::ui::setup_v
 }
 void render_output_groups(nk_context* context, const wormedit::ui::setup_view_t& view, wormedit::ui::workspace_action_t& action) {
     (void)wormedit::ui::chrome::context_menu_update(project_state.group_menu, context);
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_spacing(context, 1);
-    nk_layout_space_begin(context, NK_STATIC, 32.0f, 3);
-    const auto header = nk_layout_space_bounds(context);
-    const auto viewport = wormedit::ui::nuklear::tooltip::viewport();
-    const auto width = std::max(250.0f,
-        std::min(header.w, viewport.x + viewport.w - header.x - 8.0f));
+    project_section_gap(context);
+    begin_project_section_header(context, {110.0f, 96.0f});
     char heading[64];
     std::snprintf(heading, sizeof(heading), "Exports · %zu", view.output_groups.size());
-    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, std::max(1.0f, width - 248.0f), 32.0f));
     project_section_heading(context, heading);
-    nk_layout_space_push(context, nk_rect(width - 240.0f, 0.0f, 110.0f, 32.0f));
     if (wormedit::ui::chrome::Button{"Export all", wormedit::ui::chrome::ButtonKind::secondary,
                                      "Prepare every export target, then publish them",
                                      view.project_has_native_path && !view.output_groups.empty()}
             .render(context))
         export_all_project_groups(view, action);
-    nk_layout_space_push(context, nk_rect(width - 122.0f, 0.0f, 122.0f, 32.0f));
-    if (nk_button_label(context, "+ New")) begin_output_group_editor(view, nullptr);
-    nk_layout_space_end(context);
+    if (wormedit::ui::chrome::Button{"+ New", wormedit::ui::chrome::ButtonKind::secondary,
+                                     "Configure a new export target"}.render(context))
+        begin_output_group_editor(view, nullptr);
     if (view.output_groups.size() == 0) {
         nk_layout_row_dynamic(context, 24, 1);
         nk_label_wrap(context, view.output_suggestions.empty()
             ? "No export targets yet. Choose + New to configure a target."
             : "No export targets yet. Start with a target suggested for this layout:");
+        // An empty row would still take its height, so only lay it out for suggestions.
         constexpr int columns = 3;
-        nk_layout_row_dynamic(context, 30, columns);
+        if (!view.output_suggestions.empty()) nk_layout_row_dynamic(context, 30, columns);
         for (const auto& suggestion : view.output_suggestions)
             if (wormedit::ui::chrome::Button{suggestion.name.data(),
                     wormedit::ui::chrome::ButtonKind::secondary,
@@ -1474,10 +1487,11 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
         return;
 
     nk_layout_row_dynamic(context, 22, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Audio assets: %zu · Visual assets: %zu",
-              view->audio_asset_count, view->visual_asset_count);
+    nk_labelf_colored(context, NK_TEXT_LEFT, wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted),
+                      "Audio assets: %zu · Visual assets: %zu", view->audio_asset_count, view->visual_asset_count);
     render_project_charts(context, *view, *action);
     render_output_groups(context, *view, *action);
+    project_section_gap(context);
     render_project_settings(context, *view, *action);
 }
 

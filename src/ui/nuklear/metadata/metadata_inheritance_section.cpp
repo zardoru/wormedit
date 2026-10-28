@@ -9,8 +9,7 @@ void render_inheritance_row(const MetadataPanel& panel,
     auto* context = panel.context;
     auto& row = state.inheritance.row_for(field.field);
     const bool editable = panel.metadata->chart_fields_editable && row.can_override;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 26);
     char label[64];
     std::snprintf(label, sizeof(label), "Inherit %s", field.label.c_str());
     if (!editable) nk_widget_disable_begin(context);
@@ -18,7 +17,6 @@ void render_inheritance_row(const MetadataPanel& panel,
     (void)nk_checkbox_label(context, label, &inherit);
     if (!editable) nk_widget_disable_end(context);
     if (editable) row.inherit = inherit != 0;
-    nk_layout_row_push(context, 0.72f);
     if (row.inherit) nk_label_colored(context, field.inherited.empty() ? "(empty)" : field.inherited.c_str(),
         NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
     else {
@@ -27,7 +25,6 @@ void render_inheritance_row(const MetadataPanel& panel,
             row.text.data(), row.text.size(), nk_filter_default);
         if (!editable) nk_widget_disable_end(context);
     }
-    nk_layout_row_end(context);
     if (!row.can_override && (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "This source value exceeds the editable metadata limit.");
 }

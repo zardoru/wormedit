@@ -406,15 +406,12 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
 static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, bool editable) {
     auto* context = panel.context;
     auto& buffer = state.bmson_fields[typed];
-    nk_layout_row_begin(context, NK_DYNAMIC, typed == 1 ? 58 : 26, 2);
-    nk_layout_row_push(context, 0.27f);
+    metadata_form_row(context, typed == 1 ? 58 : 26);
     nk_label(context, bmson_field_labels[typed], NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.73f);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,
                                          buffer.data(), buffer.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
 }
 
 static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,

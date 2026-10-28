@@ -159,15 +159,12 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
     finish_tag_drag(context);
     if (state.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count)
         muted_label(context, "Some search tags are hidden by the row limit.");
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 25, {metadata_row_button_width});
     nk_label(context, "Search tags", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.52f);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.new_search_tag.data(),
                                          state.new_search_tag.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.20f);
     const auto can_add = editable && state.search_tags.size() < wormedit::default_metadata_edit_limits.maximum_search_tags &&
                          state.new_search_tag[0] != '\0';
     if (!can_add) nk_widget_disable_begin(context);
@@ -178,7 +175,6 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
         state.search_tags.push_back(state.new_search_tag);
         state.new_search_tag.fill('\0');
     }
-    nk_layout_row_end(context);
 }
 
 } // namespace

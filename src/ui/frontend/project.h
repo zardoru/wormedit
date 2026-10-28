@@ -26,12 +26,21 @@ class project_chart_runtime_t;
 namespace wormedit::ui {
 struct recovery_candidate_view_t {
     std::string path_label;
-    std::string summary;
+    std::string_view status;
+    bool problem{}; // the candidate is damaged (invalid or unreadable)
+    std::string summary; // comparison, revision and session after the status
     std::string_view disabled_reason;
     std::vector<wormedit::native_project_recovery_action_t> actions;
     std::uint64_t scan_generation{};
     std::size_t row_index{}, candidate_index{};
 
+    // The last component of the path label. A view, so warm frame refills stay allocation-free.
+    [[nodiscard]] auto file_name() const -> std::string_view {
+        const std::string_view path{path_label};
+        const auto separator = path.find_last_of("/\\");
+        return separator == std::string_view::npos || separator + 1 == path.size()
+            ? path : path.substr(separator + 1);
+    }
     [[nodiscard]] auto can(wormedit::native_project_recovery_action_t action) const -> bool {
         return std::ranges::find(actions, action) != actions.end();
     }

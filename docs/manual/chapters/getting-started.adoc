@@ -91,8 +91,9 @@ edit waits for the previous record's worker flush, so the current edit may still
 flight if the process stops. A full backup clears only the journal records it covers.
 
 On reopening, use the recovery banner to inspect a validated snapshot, recover it into
-the session, or save it as a new project. A damaged final record leaves earlier valid
-edits recoverable. Recovery does not overwrite the primary project automatically.
+the session, or save it as a new project. Each candidate shows only the actions that are
+safe for it; candidates without one are listed on a single line for context. A damaged
+final record leaves earlier valid edits recoverable. Recovery does not overwrite the primary project automatically.
 Storage problems retain earlier artifacts and report a warning.
 
 === Per-difficulty metadata

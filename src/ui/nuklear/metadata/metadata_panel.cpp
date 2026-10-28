@@ -167,12 +167,18 @@ static int metadata_buffer_key_changed(const wormedit::ui::metadata_view_t* meta
                         state.buffer_chart_id != chart_id || state.buffer_has_chart != has_chart);
 }
 
+void metadata_form_row(nk_context* context, float height, std::initializer_list<float> trailing) {
+    nk_layout_row_template_begin(context, height);
+    nk_layout_row_template_push_static(context, metadata_label_width);
+    nk_layout_row_template_push_dynamic(context);
+    for (const float width : trailing) nk_layout_row_template_push_static(context, width);
+    nk_layout_row_template_end(context);
+}
+
 void metadata_input_row(struct nk_context* context, const char* label, char* buffer,
                         size_t capacity, int enabled) {
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 26);
     nk_label(context, label, NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.72f);
     if (!enabled) {
         nk_widget_disable_begin(context);
     }
@@ -181,7 +187,6 @@ void metadata_input_row(struct nk_context* context, const char* label, char* buf
     if (!enabled) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_end(context);
 }
 
 void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_enabled,

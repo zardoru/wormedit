@@ -529,7 +529,9 @@ void check_recovery_arena_rows(const wormedit::ui::workspace_view_t& view) {
     REQUIRE(view.recovery_candidates.size() == 2);
     const auto& active = view.recovery_candidates[0];
     check_frame_storage(active.path_label == "/tmp/a-long-actionable-recovery-path.wormedit");
-    check_frame_storage(active.summary == "valid · newer");
+    check_frame_storage(active.file_name() == "a-long-actionable-recovery-path.wormedit");
+    check_frame_storage(active.status == "valid" && !active.problem);
+    check_frame_storage(active.summary == "newer");
     check_frame_storage(active.disabled_reason.empty());
     using action_t = wormedit::native_project_recovery_action_t;
     for (const auto action : {action_t::inspect_read_only, action_t::recover_into_session,
@@ -537,8 +539,9 @@ void check_recovery_arena_rows(const wormedit::ui::workspace_view_t& view) {
         check_frame_storage(active.can(action));
     check_frame_storage(active.scan_generation == 9 && active.row_index == 2 && active.candidate_index == 8);
     const auto& inactive = view.recovery_candidates[1];
+    check_frame_storage(inactive.status == "invalid" && inactive.problem);
     check_frame_storage(inactive.summary ==
-        "invalid · older · revision 42 · session 0 · recommended recovery");
+        "older · revision 42 · session 0 · recommended recovery");
     check_frame_storage(inactive.disabled_reason == "No safe action is available for this candidate.");
     check_frame_storage(inactive.actions.empty());
     check_frame_storage(inactive.scan_generation == 9 && inactive.row_index == 4 && inactive.candidate_index == 3);
@@ -574,9 +577,8 @@ TEST_CASE("Recovery arena summaries retain maximum numeric values and disabled a
     active.available_actions = {wormedit::native_project_recovery_action_t::inspect_read_only};
     const auto frame = project_setup_recovery(recovery);
     check_frame_storage(frame.view.recovery_candidates[0].summary ==
-        "valid · newer · revision 18446744073709551615 · session 18446744073709551615");
-    check_frame_storage(frame.view.recovery_candidates[0].disabled_reason ==
-        "Unavailable actions are disabled by the recovery controller's safety checks.");
+        "newer · revision 18446744073709551615 · session 18446744073709551615");
+    check_frame_storage(frame.view.recovery_candidates[0].disabled_reason.empty());
     check_frame_storage(frame.view.recovery_candidates[0].can(
         wormedit::native_project_recovery_action_t::inspect_read_only));
     recovery.rows.resize(5, active);

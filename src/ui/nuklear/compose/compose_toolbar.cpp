@@ -483,9 +483,6 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
 
 void render_compose_inspector_offset_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    nk_label_colored(context, "Audio offset · seconds", NK_TEXT_LEFT,
-                     wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
     nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);
     nk_layout_row_template_push_dynamic(context);

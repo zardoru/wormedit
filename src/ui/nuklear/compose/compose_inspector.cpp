@@ -153,29 +153,30 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED)) {
         namespace chrome = wormedit::ui::chrome;
         const ComposeToolbarContext toolbar{inspector.context, inspector.view, inspector.action};
-        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Tempo", NK_MAXIMIZED)) {
+        // Cards sit directly under the Timing header and each other, so they ask for the tight gap.
+        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Tempo", NK_MAXIMIZED, true)) {
             render_initial_bpm_control(inspector);
-            // The event being edited belongs to the tempo, so it stays with the BPM row.
-            if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
-                inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
-                chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED, true)) {
-                worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
-                                                           inspector.action);
-                chrome::section_pop(inspector.context);
-            }
             render_compose_inspector_snap_control(toolbar);
+            nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
+            if (chrome::Button{"Timing settings…"}.render(inspector.context))
+                inspector.action->timing_settings.toggle = true;
             chrome::section_pop(inspector.context);
         }
-        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Audio offset", NK_MAXIMIZED)) {
+        // The event being edited is a card beside Tempo, not a third level inside it.
+        if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
+            inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+            chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED, true)) {
+            worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
+                                                       inspector.action);
+            chrome::section_pop(inspector.context);
+        }
+        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Audio offset · seconds", NK_MAXIMIZED, true)) {
             render_compose_inspector_offset_controls(toolbar);
             chrome::section_pop(inspector.context);
         } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
             worm_ui_nuklear_cancel_inline_offset(state);
             nk_edit_unfocus(inspector.context);
         }
-        nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
-        if (wormedit::ui::chrome::Button{"Timing settings…"}.render(inspector.context))
-            inspector.action->timing_settings.toggle = true;
         wormedit::ui::chrome::section_pop(inspector.context);
     } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
         worm_ui_nuklear_cancel_inline_offset(state);

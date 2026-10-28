@@ -27,6 +27,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <chrono>
 #include <limits>
 #include <string>
 #include <fstream>
@@ -3720,5 +3721,67 @@ TEST_CASE("Applying saved transport fields preserves unrelated session playback 
     initialize_preferred_transport(preferences, state, &previous);
     expect_keep_pitch(rate_calls == 1 && pitch_calls == 1);
     expect_keep_pitch(!state.preferences.transport_keep_pitch);
+}
+#endif
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+namespace {
+struct osu_skin_sample_export_t {
+    std::filesystem::path root = std::filesystem::temp_directory_path() /
+        ("wormedit-osu-skin-samples-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    wormedit::song_document_t document;
+    wormedit::output_group_t group;
+    osu_skin_sample_export_t() {
+        using namespace wormedit;
+        auto initial = sys::make_initial_document(song_id_t{1}, "osu-mania-4k");
+        REQUIRE(initial);
+        document = std::move(*initial);
+        std::filesystem::create_directories(root / "assets");
+        group = {.name = "osu", .family = format_family_t::osu_mania, .charts = {document.charts.front().id},
+                 .relative_output_path = "exports", .existing_files = existing_files_policy_t::replace};
+    }
+    ~osu_skin_sample_export_t() {
+        std::error_code error;
+        std::filesystem::remove_all(root, error);
+    }
+    void add_sound(std::uint64_t id, const std::filesystem::path& path, std::string_view bytes) {
+        using namespace wormedit;
+        std::ofstream(root / path, std::ios::binary) << bytes;
+        document.audio_assets.push_back({.id = asset_id_t{9000 + id}, .source_path = path});
+        document.resources.push_back({.id = resource_id_t{9000 + id}, .name = path.filename().string(),
+            .asset = asset_id_t{9000 + id}, .roles = {resource_role_t::sample}});
+    }
+    [[nodiscard]] auto run() const -> wormedit::sys::output_group_export_task_result_t {
+        using namespace wormedit::sys;
+        return run_output_group_export({.document = document,
+            .plan = output_group_export_plan_t::from(document, group), .asset_base = root}, {});
+    }
+};
+}
+
+TEST_CASE("osu export copies project sounds named like skin samples beside the chart",
+          "[unit][sys][output-groups][hitsound]") {
+    osu_skin_sample_export_t project;
+    project.add_sound(1, "assets/Soft-HitClap2.wav", "clap");
+    project.add_sound(2, "assets/tone.wav", "tone");
+    const auto exported = project.run();
+    INFO(exported.message);
+    REQUIRE(exported.published);
+    std::ifstream copied{project.root / "exports/soft-hitclap2.wav", std::ios::binary};
+    CHECK(std::string{std::istreambuf_iterator<char>{copied}, std::istreambuf_iterator<char>{}} == "clap");
+    CHECK(std::filesystem::exists(project.root / "exports/assets/tone.wav"));
+    CHECK_FALSE(std::filesystem::exists(project.root / "exports/assets/Soft-HitClap2.wav"));
+}
+
+TEST_CASE("osu export refuses two sounds that share one skin sample name",
+          "[unit][sys][output-groups][hitsound]") {
+    osu_skin_sample_export_t project;
+    std::filesystem::create_directories(project.root / "other");
+    project.add_sound(1, "assets/soft-hitclap.wav", "first");
+    project.add_sound(2, "other/Soft-HitClap.wav", "second");
+    const auto exported = project.run();
+    CHECK_FALSE(exported.published);
+    CHECK(exported.message.find("soft-hitclap.wav") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(project.root / "exports"));
 }
 #endif

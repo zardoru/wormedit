@@ -10,6 +10,10 @@ struct hitsound_environment_t {
     std::filesystem::path map_directory;
     std::filesystem::path skin_directory;
     std::filesystem::path bundle_directory;
+    // Project sounds named like osu! samples, by stem (`soft-hitnormal2`). They win over
+    // loose files in map_directory; hitsound_resolver_t::bindings fills them from the song.
+    std::map<std::string, std::filesystem::path> project_samples;
+    void refill_project_samples(const song_document_t& song);
     auto operator==(const hitsound_environment_t&) const -> bool = default;
 };
 
@@ -42,7 +46,7 @@ class hitsound_resolver_t {
     bool fallback_reported_{};
     [[nodiscard]] auto voice(const std::filesystem::path&, decoded_source_registry_t&)
         -> std::optional<preview_voice_source_t>;
-    [[nodiscard]] auto binding_for(const note_t&, decoded_source_registry_t&, osu_sample_context_t,
-                                   bool custom_normal) -> hitsound_binding_t;
+    [[nodiscard]] auto binding_for(const note_t&, const hitsound_environment_t&, decoded_source_registry_t&,
+                                   osu_sample_context_t, bool custom_normal) -> hitsound_binding_t;
 };
 }

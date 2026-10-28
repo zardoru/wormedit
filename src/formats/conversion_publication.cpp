@@ -2,6 +2,7 @@
 #include <wormedit/formats/conversion_publication.h>
 
 #include <wormedit/core/resource_file_copy.h>
+#include <wormedit/formats/osu_mania.h>
 
 #include <algorithm>
 #include <set>
@@ -193,11 +194,20 @@ auto append_staged_assets(const std::filesystem::path& project_directory,
     return std::nullopt;
 }
 
+// Conversion copies these beside the osu! chart, where osu! looks them up by name.
+auto osu_skin_sample_asset_ids(const song_document_t& song, const output_group_t& group) -> std::set<asset_id_t> {
+    std::set<asset_id_t> result;
+    if (group.family != format_family_t::osu_mania) return result;
+    for (const auto& found : build_osu_skin_sample_assets(song)) result.insert(found.asset);
+    return result;
+}
+
 auto referenced_export_assets(const song_document_t& song, const output_group_t& group)
     -> result_t<std::set<asset_id_t>, std::string> {
     std::set<asset_id_t> referenced;
+    const auto skin_samples = osu_skin_sample_asset_ids(song, group);
     for (const auto& resource : song.resources) {
-        if (resource.asset) referenced.insert(resource.asset);
+        if (resource.asset && !skin_samples.contains(resource.asset)) referenced.insert(resource.asset);
     }
     for (const auto chart_id : group.charts) {
         const auto chart = song.read_chart(chart_id);

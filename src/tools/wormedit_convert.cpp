@@ -328,7 +328,8 @@ auto run_request(const json& body) -> std::pair<int, json> {
         result["error"] = *conflict;
         return {1, result};
     }
-    const auto failure = (is_conversion_needs_slice_spans(*opened.document, request.conversion) || !converted.cut_audio_plans.empty())
+    const auto failure = (is_conversion_needs_slice_spans(*opened.document, request.conversion) ||
+                          !converted.cut_audio_plans.empty() || !converted.asset_copies.empty())
         ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
         : write_outputs(converted, request.output_directory, result["artifacts"]);
     if (failure) {

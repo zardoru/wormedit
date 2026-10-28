@@ -122,6 +122,19 @@ Playback prefers map samples, then the folder set under *Options → Playback & 
 hitsound skin folder*, then Wormedit's bundled samples. Auto sets, index zero and volume zero
 inherit the map's timing-point settings.
 
+To replace a default sample for one map, add a sound named the way osu! names skin samples:
+the set (`normal`, `soft` or `drum`), a dash, the sample (`hitnormal`, `hitwhistle`,
+`hitfinish` or `hitclap`), an optional custom index from 2 up, and `.wav`, `.ogg` or `.mp3`.
+For example, `soft-hitclap.wav` replaces the soft clap and `drum-hitnormal3.ogg` replaces the
+drum normal sample for custom index 3. Import the file into *Sounds*, or place it next to the
+`.wormedit` file. Imported sounds win over files beside the project, and the case of the name
+does not matter. Opening an osu! chart imports matching files from its folder automatically.
+A timing point with custom index 0 asks for the skin's samples, so map samples do not play there.
+
+osu! export copies these sounds beside the chart under their lowercase names, because osu! looks
+for them only there. Files beside the project that were not imported into *Sounds* are not
+exported. Two sounds that would export under the same name stop the export with an error.
+
 Notes with hitsounds show compact sample-set and addition icons, with contrast chosen for the
 note color. Hover a note for the requested and resolved sets, additions, custom index, volume
 and filename. Imported custom-set references are retained for playback; they are not a separate

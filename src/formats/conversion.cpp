@@ -1147,6 +1147,36 @@ auto prepare_export_cuts(conversion_context_t& context, song_document_t& prepare
 
 namespace {
 struct prepared_conversion_t { song_document_t document; std::vector<chart_id_t> charts; };
+// osu! finds skin-named samples only beside the chart, under their exact names.
+auto prepare_osu_skin_samples(conversion_context_t& context, song_document_t& prepared) -> bool {
+    if (context.request.target != format_family_t::osu_mania) return true;
+    std::unordered_set<std::string> filenames;
+    for (const auto& found : build_osu_skin_sample_assets(prepared)) {
+        if (std::ranges::contains(context.result.value.asset_copies, found.asset, &conversion_asset_copy_t::asset))
+            continue;
+        const auto filename = found.export_filename();
+        if (found.missing) {
+            add_diagnostic(context.result, diagnostic_severity_t::warning,
+                           conversion_diagnostic_code_t::target_diagnostic, conversion_stage_t::transform,
+                           context.request.target, std::nullopt,
+                           "Missing osu! hitsound sample was not exported: " + filename, {}, true);
+            continue;
+        }
+        if (!filenames.insert(filename).second) {
+            add_diagnostic(context.result, diagnostic_severity_t::error,
+                           conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                           context.request.target, std::nullopt,
+                           "Two sounds would both export as the osu! hitsound sample " + filename);
+            return false;
+        }
+        context.result.value.asset_copies.push_back({found.asset, filename});
+        prepared.find_audio_asset(found.asset)->source_path = filename;
+        for (auto& resource : prepared.resources)
+            if (resource.asset == found.asset) resource.name = filename;
+    }
+    return true;
+}
+
 auto prepare_conversion(conversion_context_t& context, const song_document_t& song,
                         bool diagnostics_only = false) -> std::optional<prepared_conversion_t> {
     if (!context.can_continue() || !validate_request_policies(context, song, diagnostics_only)) {
@@ -1169,7 +1199,8 @@ auto prepare_conversion(conversion_context_t& context, const song_document_t& so
         return {};
     }
     prepare_bms_osu_layouts(*prepared, context.request, charts);
-    if (!prepare_slice_exports(context, *prepared, charts) || !prepare_export_cuts(context, *prepared, charts)) {
+    if (!prepare_slice_exports(context, *prepared, charts) || !prepare_export_cuts(context, *prepared, charts) ||
+        !prepare_osu_skin_samples(context, *prepared)) {
         context.result.value = {};
         return {};
     }

@@ -52,6 +52,55 @@ TEST_CASE("Osu hitsounds resolve map indexed files before skin and bundled sampl
     CHECK(resolved.gain == 0.5F);
 }
 
+TEST_CASE("Osu skin sample names parse to one set, kind and index", "[unit][audio][hitsound]") {
+    CHECK(osu_skin_sample_t::from("soft-hitnormal.wav") ==
+          osu_skin_sample_t{.set = osu_sample_set_t::soft, .kind = osu_sample_kind_t::hitnormal});
+    CHECK(osu_skin_sample_t::from("Drum-HitClap12.OGG") ==
+          osu_skin_sample_t{.set = osu_sample_set_t::drum, .kind = osu_sample_kind_t::hitclap, .index = 12});
+    CHECK(osu_skin_sample_t{.set = osu_sample_set_t::drum, .kind = osu_sample_kind_t::hitclap, .index = 12}.stem() ==
+          "drum-hitclap12");
+    for (const auto* name : {"soft-hitnormal1.wav", "soft-hitnormal02.wav", "soft-hitnormal.flac",
+                             "auto-hitnormal.wav", "soft-hitnormalx.wav", "soft-slidertick.wav", "hitnormal.wav"}) {
+        INFO(name);
+        CHECK_FALSE(osu_skin_sample_t::from(name));
+    }
+}
+
+TEST_CASE("Osu project sample table keeps one existing Sounds file per name, preferring wav",
+          "[unit][audio][hitsound]") {
+    hitsound_files_t files;
+    const auto map = files.environment.map_directory;
+    REQUIRE(std::filesystem::create_directory(map / "assets"));
+    for (const auto* name : {"assets/Soft-HitNormal.ogg", "assets/soft-hitnormal.wav", "assets/soft-hitfinish.wav"})
+        files.copy(map / name);
+    song_document_t song{.audio_assets = {{.id = asset_id_t{1}, .source_path = "assets/Soft-HitNormal.ogg"},
+        {.id = asset_id_t{2}, .source_path = "assets/soft-hitnormal.wav"},
+        {.id = asset_id_t{3}, .source_path = "assets/soft-hitwhistle.wav"},
+        {.id = asset_id_t{4}, .source_path = "assets/soft-hitfinish.wav"}}};
+    for (const std::uint64_t id : {1, 2, 3})
+        song.resources.push_back({.id = resource_id_t{id}, .asset = asset_id_t{id}, .roles = {resource_role_t::sample}});
+    files.environment.refill_project_samples(song);
+    CHECK(files.environment.project_samples ==
+          std::map<std::string, std::filesystem::path>{{"soft-hitnormal", map / "assets/soft-hitnormal.wav"}});
+}
+
+TEST_CASE("Osu project samples win over loose map files, and index 0 uses the skin", "[unit][audio][hitsound]") {
+    hitsound_files_t files;
+    const auto map = files.environment.map_directory;
+    files.copy(map / "soft-hitnormal.wav");
+    files.copy(files.environment.skin_directory / "soft-hitnormal.wav");
+    const auto only_path = [](const hitsound_paths_t& resolved) {
+        REQUIRE(resolved.paths.size() == 1);
+        return resolved.paths.front();
+    };
+    const osu_hitsample_t sample{.normal_set = osu_sample_set_t::soft};
+    CHECK(only_path(hitsound_paths_t::from(sample, files.environment)) == map / "soft-hitnormal.wav");
+    files.environment.project_samples = {{"soft-hitnormal", map / "assets/soft-hitnormal.wav"}};
+    CHECK(only_path(hitsound_paths_t::from(sample, files.environment)) == map / "assets/soft-hitnormal.wav");
+    CHECK(only_path(hitsound_paths_t::from(sample, files.environment, false, {.custom_index = 0})) ==
+          files.environment.skin_directory / "soft-hitnormal.wav");
+}
+
 TEST_CASE("Osu explicit custom filename wins and missing custom samples fall back", "[unit][audio][hitsound]") {
     hitsound_files_t files;
     osu_hitsample_t sample{.filename = "custom.wav"};

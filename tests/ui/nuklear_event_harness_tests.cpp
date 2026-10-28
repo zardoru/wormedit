@@ -654,8 +654,11 @@ namespace {
 
 auto edit_metadata_title(nuklear_event_harness_t& harness, const char* value)
     -> std::vector<workspace_action_snapshot_t> {
-    // At 960x720 the title field is (287,135,631,26); Apply is (822,224,96,23).
-    static_cast<void>(click_at(harness, 450.0f, 148.0f));
+    // The title field follows its label in the fixed label column; the Song section's Apply is
+    // the first one drawn. Locate both so form margins can change without moving this test.
+    const auto title = harness.drawn_text_center("Title");
+    REQUIRE(title);
+    static_cast<void>(click_at(harness, 450.0f, title->second));
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
     // These ASCII fixture strings use one codepoint per backend text event.
@@ -664,7 +667,9 @@ auto edit_metadata_title(nuklear_event_harness_t& harness, const char* value)
         text.text.text = codepoint;
         static_cast<void>(harness.frame(std::span{&text, 1}));
     }
-    auto actions = click_at(harness, 870.0f, 235.0f);
+    const auto apply = harness.drawn_text_center("Apply");
+    REQUIRE(apply);
+    auto actions = click_at(harness, apply->first, apply->second);
     REQUIRE(actions[0].get().metadata_edit == WORM_UI_METADATA_EDIT_SONG);
     return actions;
 }

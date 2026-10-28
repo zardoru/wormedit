@@ -137,20 +137,16 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
     const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
     const auto redivide_enabled = editable && resolution &&
         *resolution != metadata.chart_divisions_per_standard_measure;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 3);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 26, {metadata_row_button_width});
     nk_label(context, "Resolution", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.57f);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
                                          state.chart_resolution_text.data(),
                                          state.chart_resolution_text.size(), nk_filter_decimal);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.15f);
     if (!redivide_enabled) nk_widget_disable_begin(context);
     const auto redivide = nk_button_label(context, "Redivide") != 0 && redivide_enabled;
     if (!redivide_enabled) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "Divisions per standard measure. Redivide moves every position exactly, or changes nothing.");
     if (redivide) set_metadata_redivision_action(panel.action, &metadata);
@@ -411,10 +407,9 @@ void render_difficulty_section(const MetadataPanel& panel) {
     metadata_input_row(context, "Name", state.chart_name.data(), state.chart_name.size(), editable);
     metadata_input_row(context, "Mapper", state.chart_author.data(), state.chart_author.size(), editable);
     const auto has_rating = metadata.has_chart_rating;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, has_rating ? 3 : 2);
-    nk_layout_row_push(context, 0.28f);
+    if (has_rating) metadata_form_row(context, 26, {metadata_row_button_width});
+    else metadata_form_row(context, 26);
     nk_label(context, "Rating", NK_TEXT_LEFT);
-    nk_layout_row_push(context, has_rating ? 0.57f : 0.72f);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.chart_rating_text.data(),
                                          state.chart_rating_text.size(), nk_filter_default);
@@ -423,12 +418,10 @@ void render_difficulty_section(const MetadataPanel& panel) {
         wormedit::ui::nuklear::tooltip::text(context, "Number or fraction, e.g. 12, 12.5 or 25/2. Stored exactly.");
     bool clear = false;
     if (has_rating) {
-        nk_layout_row_push(context, 0.15f);
         if (!editable) nk_widget_disable_begin(context);
         clear = nk_button_label(context, "Clear") != 0 && editable;
         if (!editable) nk_widget_disable_end(context);
     }
-    nk_layout_row_end(context);
     const auto rating = metadata_chart_rating_value(&metadata);
     if (!rating) {
         nk_layout_row_dynamic(context, 19, 1);

@@ -100,22 +100,42 @@ struct workspace_view_t {
                recovery_diagnostics.size() > maximum_visible_recovery_diagnostics;
     }
 
+    // Rows of the recovery card. The renderer lays these out and the views reserve their sum.
+    struct recovery_card_layout_t {
+        static constexpr float padding = 10.0f; // card padding on every side
+        static constexpr float spacing = 4.0f;  // row spacing (metrics::gap_small)
+        static constexpr float header = 24.0f;  // heading and notice
+        static constexpr float candidate = 28.0f; // status, file name and offered actions
+        static constexpr float detail = 18.0f;  // comparison and full path
+        static constexpr float inactive = 22.0f; // one line for a candidate without actions
+        static constexpr float field = 28.0f;   // Save as destination
+        static constexpr float note = 18.0f;    // hints, truncation and diagnostics
+    };
+
+    [[nodiscard]] static auto recovery_candidate_height(const recovery_candidate_view_t& candidate,
+                                                        std::optional<bool> save_as_destination_entered)
+        -> float {
+        using layout = recovery_card_layout_t;
+        if (candidate.actions.empty()) return layout::inactive + layout::spacing;
+        float height = layout::candidate + layout::detail + 2.0f * layout::spacing;
+        if (candidate.can(wormedit::native_project_recovery_action_t::save_as_new_project)) {
+            height += layout::field + layout::spacing;
+            if (!save_as_destination_entered.value_or(!candidate.path_label.empty()))
+                height += layout::note + layout::spacing;
+        }
+        return height;
+    }
+
     [[nodiscard]] auto recovery_panel_height(
         std::optional<bool> save_as_destination_entered = std::nullopt) const -> float {
+        using layout = recovery_card_layout_t;
         const auto rows = std::min(recovery_candidates.size(), maximum_visible_recovery_candidates);
         const auto diagnostics = std::min(recovery_diagnostics.size(), maximum_visible_recovery_diagnostics);
-        float height = 40.0f + (!recovery_notice.empty() ? 22.0f : 0.0f) +
-                       static_cast<float>(rows) * 48.0f + static_cast<float>(diagnostics) * 18.0f;
-        for (std::size_t index = 0; index < rows; ++index) {
-            const auto& candidate = recovery_candidates[index];
-            if (candidate.can(wormedit::native_project_recovery_action_t::save_as_new_project)) {
-                height += 25.0f;
-                const bool has_destination = save_as_destination_entered.value_or(
-                    !candidate.path_label.empty());
-                if (!has_destination) height += 18.0f;
-            }
-            if (!candidate.disabled_reason.empty()) height += 20.0f;
-        }
+        float height = 2.0f * layout::padding + 2.0f + layout::header + layout::spacing +
+                       static_cast<float>(diagnostics) * (layout::note + layout::spacing);
+        if (recovery_rows_truncated) height += layout::note + layout::spacing;
+        for (std::size_t index = 0; index < rows; ++index)
+            height += recovery_candidate_height(recovery_candidates[index], save_as_destination_entered);
         return height;
     }
 };

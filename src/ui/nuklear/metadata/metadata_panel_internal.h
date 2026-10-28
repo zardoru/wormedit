@@ -3,6 +3,7 @@
 #include "ui/nuklear/metadata/metadata_state.h"
 
 #include <cstddef>
+#include <initializer_list>
 
 struct nk_context;
 struct nk_style_button;
@@ -33,6 +34,12 @@ int metadata_tree_push(nk_context* context, int tree_type, const char* title, in
 void muted_label(nk_context* context, const char* text);
 int copy_metadata_text(char* destination, std::size_t capacity, const char* source,
                        std::size_t source_bytes);
+// Form rows share a fixed label column, so a label stays beside its field at any width.
+inline constexpr float metadata_label_width = 176.0f;
+inline constexpr float metadata_row_button_width = 120.0f;
+inline constexpr float metadata_unit_width = 24.0f;
+// Label column, one dynamic field, then fixed-width trailing controls.
+void metadata_form_row(nk_context* context, float height, std::initializer_list<float> trailing = {});
 void metadata_input_row(nk_context* context, const char* label, char* buffer, std::size_t capacity,
                         int enabled);
 void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented);

@@ -93,20 +93,20 @@ void populate_recovery_candidate(
     const auto& row = recovery.rows[source_index];
     auto& projected = result.view.recovery_candidates[index];
     projected.path_label = row.path_label;
+    projected.status = recovery_status_name(row.status);
+    using status_t = wormedit::native_project_recovery_candidate_status_t;
+    projected.problem = row.status == status_t::invalid || row.status == status_t::unreadable;
     const auto revision = recovery_number_suffix("revision", row.version
         ? std::optional<std::uint64_t>{row.version->revision} : std::nullopt);
     const auto session = recovery_number_suffix("session", row.recovery_session_sequence);
-    projected.summary = recovery_status_name(row.status);
-    projected.summary += " · ";
-    projected.summary += recovery_comparison_name(row.comparison);
+    projected.summary = recovery_comparison_name(row.comparison);
     projected.summary += revision.data();
     projected.summary += session.data();
     if (recovery.preferred_recovery_row == source_index) projected.summary += " · recommended recovery";
     projected.disabled_reason = {};
+    // The card offers only the actions the controller allows, so only an empty set needs a reason.
     if (row.available_actions.empty())
         projected.disabled_reason = "No safe action is available for this candidate.";
-    else if (row.available_actions.size() != 5)
-        projected.disabled_reason = "Unavailable actions are disabled by the recovery controller's safety checks.";
     projected.actions.assign(row.available_actions.begin(), row.available_actions.end());
     projected.scan_generation = row.target.scan_generation;
     projected.row_index = row.target.row_index;

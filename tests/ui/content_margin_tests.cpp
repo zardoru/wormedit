@@ -4,21 +4,18 @@
 #include <catch2/catch_test_macros.hpp>
 
 using wormedit::ui::layout::form_side_margin;
+using wormedit::ui::layout::maximum_column_width;
 
-TEST_CASE("Form margins grow with the window aspect ratio", "[unit][frontend][layout]") {
-    const float wide = form_side_margin(1920, 1080);
-    const float sixteen_ten = form_side_margin(1920, 1200);
-    const float three_two = form_side_margin(1800, 1200);
-    const float four_three = form_side_margin(1600, 1200);
-    CHECK(wide == Catch::Approx(480.0f));
-    CHECK(wide > sixteen_ten);
-    CHECK(sixteen_ten > three_two);
-    CHECK(three_two > four_three);
-    CHECK(four_three == Catch::Approx(40.0f));
+TEST_CASE("Form columns stop growing on wide windows", "[unit][frontend][layout]") {
+    CHECK(form_side_margin(1920) == Catch::Approx((1920.0f - maximum_column_width) * 0.5f));
+    CHECK(form_side_margin(2560) == Catch::Approx((2560.0f - maximum_column_width) * 0.5f));
+    CHECK(1920.0f - 2.0f * form_side_margin(1920) == Catch::Approx(maximum_column_width));
 }
 
-TEST_CASE("Form margins keep a usable column and handle bad sizes", "[unit][frontend][layout]") {
-    CHECK(form_side_margin(0, 0) == Catch::Approx(12.0f));
-    CHECK(form_side_margin(500, 200) <= (500 - 420) * 0.5f + 0.001f);
-    CHECK(form_side_margin(300, 700) == Catch::Approx(12.0f));
+TEST_CASE("Form columns fill narrow windows and handle bad sizes", "[unit][frontend][layout]") {
+    CHECK(form_side_margin(1366) == Catch::Approx(63.0f));
+    CHECK(form_side_margin(1280) == Catch::Approx(32.0f));
+    CHECK(form_side_margin(1024) == Catch::Approx(32.0f));
+    CHECK(form_side_margin(0) == Catch::Approx(32.0f));
+    CHECK(form_side_margin(-5) == Catch::Approx(32.0f));
 }

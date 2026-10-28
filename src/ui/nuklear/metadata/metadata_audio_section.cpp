@@ -89,20 +89,16 @@ void render_audio_sync_section(const MetadataPanel& panel) {
         return;
     }
     const auto editable = metadata.audio_offset_editable && !metadata.timing_locked;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 3);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 26, {metadata_unit_width});
     nk_label(context, "Audio offset", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.67f);
     if (!editable) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_offset_text.data(),
                                          state.audio_offset_text.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
         wormedit::ui::nuklear::tooltip::text(context, "Seconds. Accepts 0.125, 1/8 or 125 ms.");
-    nk_layout_row_push(context, 0.05f);
     nk_label_colored(context, "s", NK_TEXT_LEFT,
                      wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
-    nk_layout_row_end(context);
     const auto parsed = metadata_audio_offset_value();
     if (!parsed) {
         nk_layout_row_dynamic(context, 19, 1);
@@ -413,22 +409,18 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
     apply_picked_music(panel);
     const auto dialog_open = worm_ui_nuklear_metadata_file_dialog_open();
     const auto filename = current_music_filename(*panel.metadata);
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 25, {metadata_row_button_width});
     nk_label(context, "Audio file", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.13f);
-    const auto disabled = dialog_open || panel.metadata->import_copy_pending;
-    if (disabled) nk_widget_disable_begin(context);
-    const auto browse = nk_button_label(context, dialog_open ? "Choosing..." : "Choose...");
-    if (disabled) nk_widget_disable_end(context);
-    if (browse && !disabled) open_metadata_file_dialog();
-    nk_layout_row_push(context, 0.59f);
     if (!filename.empty())
         nk_label(context, filename.c_str(), NK_TEXT_LEFT);
     else
         nk_label_colored(context, "None", NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
-    nk_layout_row_end(context);
+    const auto disabled = dialog_open || panel.metadata->import_copy_pending;
+    if (disabled) nk_widget_disable_begin(context);
+    const auto browse = nk_button_label(context, dialog_open ? "Choosing..." : "Choose...");
+    if (disabled) nk_widget_disable_end(context);
+    if (browse && !disabled) open_metadata_file_dialog();
     if (state.external_music_error[0]) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, state.external_music_error.data(), NK_TEXT_LEFT);
@@ -565,10 +557,8 @@ static auto render_output_group_combo(const MetadataPanel& panel)
         selected = &metadata.output_groups[0];
         state.selected_output_group_index = selected->document_index;
     }
-    nk_layout_row_begin(panel.context, NK_DYNAMIC, 25, 2);
-    nk_layout_row_push(panel.context, 0.28f);
+    metadata_form_row(panel.context, 25);
     nk_label(panel.context, "Export format", NK_TEXT_LEFT);
-    nk_layout_row_push(panel.context, 0.72f);
     const auto* label = selected->name[0] ? selected->name.c_str() : selected->relative_output_path.c_str();
     if (wormedit::ui::chrome::safe_combo_begin_label(panel.context, label,
                              nk_vec2(nk_widget_width(panel.context), 180.0f))) {
@@ -582,7 +572,6 @@ static auto render_output_group_combo(const MetadataPanel& panel)
         }
         wormedit::ui::chrome::safe_combo_end(panel.context);
     }
-    nk_layout_row_end(panel.context);
     return selected;
 }
 
@@ -619,17 +608,14 @@ static void render_output_path_editor(const MetadataPanel& panel,
                                      const wormedit::ui::compose_output_group_view_t& selected) {
     auto* context = panel.context;
     synchronize_output_path_buffer(*panel.metadata, selected);
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
-    nk_layout_row_push(context, 0.28f);
+    metadata_form_row(context, 25);
     nk_label(context, "Export folder", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.72f);
     metadata_register_drop_target(context,
         {WORM_UI_METADATA_DROP_OUTPUT_PATH, selected.document_index});
     if (!state.output_path_buffer_valid) nk_widget_disable_begin(context);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.output_path.data(),
                                          state.output_path.size(), nk_filter_default);
     if (!state.output_path_buffer_valid) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
     const auto changed = state.output_path_buffer_valid &&
         std::strcmp(state.output_path.data(), selected.relative_output_path.c_str()) != 0;
     const auto apply_enabled = changed && state.output_path[0] != '\0';

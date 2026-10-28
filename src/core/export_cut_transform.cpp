@@ -921,6 +921,14 @@ auto cut_music_filename(const export_cut_transform_t& result, asset_id_t id,
         return filename;
     }).generic_string();
 }
+auto has_audio_reference(const song_document_t& song, asset_id_t asset) -> bool {
+    if (std::ranges::contains(song.resources, asset, &resource_entry_t::asset)) return true;
+    for (const auto* chart : song.read_charts()) {
+        const auto references = metadata_audio_references_t::from(song, chart->metadata.overrides);
+        if (!references.ok() || std::ranges::contains(references.value.assets, asset)) return true;
+    }
+    return false;
+}
 auto append_cut_music(export_cut_transform_t& result, asset_id_t id,
                       export_cut_detail::transform_context_t& context) -> bool {
     if (!context.reserve_work(context.source.resources.size() + result.document.prepared_bms_programs.size())) return false;
@@ -964,7 +972,8 @@ auto append_cut_music(export_cut_transform_t& result, asset_id_t id,
     auto encoding = context.audio;
     encoding.mp3_bitrate_kbps = encoding.bitrate_for(geometry->bitrate_bits_per_second);
     result.audio_plans.push_back({.asset = id, .filename = filename, .source = *geometry,
-        .output_frames = count, .encoding = encoding});
+        .output_frames = count, .encoding = encoding,
+        .retain_source = has_audio_reference(result.document, id)});
     return true;
 }
 auto transform_selected_charts(song_document_t& document, std::span<const chart_id_t> charts,

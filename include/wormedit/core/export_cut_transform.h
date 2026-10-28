@@ -24,6 +24,8 @@ struct export_cut_audio_plan_t {
     export_cut_source_t source;
     std::uint64_t output_frames{};
     export_audio_settings_t encoding;
+    // A keysound or explicit metadata reference may still need the uncut source.
+    bool retain_source{};
     auto operator==(const export_cut_audio_plan_t&) const -> bool = default;
 };
 struct export_cut_location_t {

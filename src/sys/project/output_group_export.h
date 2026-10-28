@@ -82,6 +82,7 @@ struct output_group_export_preparation_t {
     [[nodiscard]] static auto from(const output_group_export_request_t& input,
                                    std::stop_token stop = {})
         -> result_t<output_group_export_preparation_t, std::string>;
+    void discard_replaced_music_sources();
     conversion_request_t request;
     conversion_result_t converted;
     std::vector<project_asset_copy_request_t> pending_assets;

@@ -122,6 +122,7 @@ their original content.
 In an export target's editor, *Cut audio* chooses MP3 or Ogg Vorbis for the physically shortened
 song. MP3 defaults to the source bitrate capped at 192 kbps; explicit choices extend to 320 kbps.
 Ogg Vorbis has a quality control. Each exported chart references its target's encoded audio.
+The original song is copied only if another exported sound or metadata reference still needs it.
 
 SM/SSC exports arrange retained content into standard four-beat bars on a bounded 192-row
 grid, reporting any rounding as a conversion loss. Cuts do not add warps. Export also refuses timing combinations that the target model cannot express

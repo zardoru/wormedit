@@ -279,6 +279,22 @@ TEST_CASE("Cut music is planned once on the canonical clock and anchors follow i
         song.audio_assets.front().stream.sample_rate == 44100 &&
         song.charts.front().timing_anchors.front().source_sample_frame == 66150));
 }
+TEST_CASE("Cut music retains its source only for remaining audio references", "[core][export-cut][export]") {
+    const auto use = GENERATE(0, 1, 2);
+    auto song = export_song();
+    song.audio_assets = {{.id = asset_id_t{60}, .source_path = "music.wav",
+        .stream = {.sample_rate = 44100, .channels = 2, .frame_count = 176400, .seekable = true}}};
+    song.resources = {{.id = resource_id_t{61}, .name = "music.wav", .asset = asset_id_t{60},
+        .roles = {resource_role_t::music}}};
+    if (use == 1) song.charts.front().measures.front().notes = {{.id = object_id_t{20},
+        .position = {measure_id_t{3}, 720}, .lane = lane_id_t{1}, .sound = resource_id_t{61}}};
+    if (use == 2) song.charts.front().metadata.overrides.value(inherited_metadata_field_t::preview) = "music.wav";
+    const auto result = export_cut_transform_t::from(song, {});
+    check_cut_success(result);
+    REQUIRE(result.value->audio_plans.size() == 1);
+    CHECK(result.value->audio_plans.front().retain_source == (use != 0));
+    CHECK(song.resources.front().asset == asset_id_t{60});
+}
 namespace {
 auto storyboard_cut_song() -> song_document_t {
     auto song = export_song();

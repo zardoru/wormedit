@@ -3214,7 +3214,9 @@ auto dispatch_project_export_action(const wormedit::ui::workspace_action_t& acti
     auto& application = environment.editor.commands;
     auto& notifications = environment.document.notifications;
 
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP) return false;
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP &&
+        action.compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT &&
+        action.compose_action != WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT) return false;
     const auto* chart = selected_chart(history, workspace);
     if (!chart || action.compose_input_project_id.value != history.document.id.value ||
         action.compose_input_chart_id.value != chart->id.value ||

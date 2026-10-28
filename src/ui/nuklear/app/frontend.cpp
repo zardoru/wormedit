@@ -2982,7 +2982,8 @@ static bool external_project_modal_active(const wormedit::ui::workspace_view_t& 
 
 static bool project_modal_active(const wormedit::ui::workspace_view_t& view) {
     const auto& state = worm_ui_nuklear_compose_state();
-    return external_project_modal_active(view) || state.dialogs.export_dialog_open || state.preview_audio.open ||
+    return external_project_modal_active(view) || state.dialogs.export_dialog_open ||
+        view.compose.export_confirmation_required || state.preview_audio.open ||
         state.layer_editor.layer_creation_context.has_value();
 }
 

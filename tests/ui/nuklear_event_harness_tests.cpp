@@ -6318,16 +6318,27 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
 
 TEST_CASE("Ask conflict confirmation dispatches replace or cancel without changing target policy",
           "[unit][frontend-state][event-harness][project-access]") {
+    const auto tab = GENERATE(WORM_UI_WORKSPACE_TAB_SETUP, WORM_UI_WORKSPACE_TAB_METADATA,
+        WORM_UI_WORKSPACE_TAB_COMPOSE, WORM_UI_WORKSPACE_TAB_AUDIO_SLICES,
+        WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE);
     const auto choice = GENERATE(std::pair{"Replace", WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT},
                                  std::pair{"Cancel", WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT});
     nuklear_event_harness_t harness{960, 720};
     auto& view = harness.view();
+    view.active_tab = tab;
+    view.setup.visible = tab == WORM_UI_WORKSPACE_TAB_SETUP;
+    view.metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
+    view.compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
+    view.audio_slices.visible = tab == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
+    view.compare.visible = tab == WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
     view.compose.export_confirmation_required = true;
     view.compose.export_confirmation_message = "Replace existing files?";
     view.compose.export_confirmation_detail = "BMS: exports/chart.bms";
     (void)harness.frame();
     (void)harness.frame();
     require_project_access(harness.drawn_text_center("Replace existing files?").has_value());
+    require_project_access(!worm_ui_frontend_open_project_export(view.project_id.value,
+        view.selected_chart_id.value, view.document_revision));
     const auto button = harness.drawn_text_center(choice.first);
     require_project_access(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);

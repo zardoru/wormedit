@@ -1128,6 +1128,40 @@ auto wait_for_slice_export(action_notification_fixture_t& fixture) -> std::optio
     }
     return std::nullopt;
 }
+
+auto replacement_confirmation_worker(const output_group_export_request_t& request, std::stop_token)
+    -> output_group_export_task_result_t {
+    if (request.plan.existing_files == existing_files_policy_t::ask)
+        return {.confirmation_required = true, .message = "Replace existing files?"};
+    return {.published = true, .message = "Replacement published."};
+}
+}
+
+TEST_CASE("Export replacement choices reach the pending job from every workspace tab",
+          "[unit][sys][conversion][publication]") {
+    const auto tab = GENERATE(workspace_tab_t::setup, workspace_tab_t::metadata,
+        workspace_tab_t::compose, workspace_tab_t::audio_slices, workspace_tab_t::compare_validate);
+    const auto choice = GENERATE(WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT,
+                                 WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT);
+    action_notification_fixture_t fixture;
+    fixture.workspace.active_tab = tab;
+    std::optional<editor_interaction_state_t> retained;
+    if (tab == workspace_tab_t::compose) retained = fixture.state;
+    auto plan = output_group_export_plan_t::from(fixture.history.document,
+        {.charts = {fixture.state.chart}, .existing_files = existing_files_policy_t::ask});
+    require_action(static_cast<bool>(fixture.export_runtime.start(
+        fixture.history.document, std::move(plan), {}, replacement_confirmation_worker)));
+    require_action(wait_for_slice_export(fixture).has_value());
+    require_action(fixture.export_runtime.confirmation_view().required);
+
+    require_action(fixture.dispatch_workspace(fixture.action(choice), retained));
+    require_action(!fixture.export_runtime.confirmation_view().required);
+    check_action(fixture.export_runtime.is_busy() ==
+        (choice == WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT));
+    if (choice == WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT)
+        check_action(wait_for_slice_export(fixture) == "Replacement published.");
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.output_groups.empty());
 }
 
 TEST_CASE("BMSON output export rejects missing stem before writing music or destination",

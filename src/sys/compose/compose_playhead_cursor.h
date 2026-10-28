@@ -52,7 +52,8 @@ namespace wormedit::sys {
     return static_cast<double>(target);
 }
 
-// Keep Compose's snapped edit cursor on the currently audible chart row.
+// Use the viewport's nearest-snap rule for editing, retaining the exact audible
+// row in the cursor's fractional offset.
 [[nodiscard]] inline auto follow_compose_playhead(document_history_t& history,
                                                    editor_interaction_state_t& state,
                                                    double absolute_row, bool anchored,
@@ -78,10 +79,6 @@ namespace wormedit::sys {
                                       static_cast<long double>(index->total_rows - 1));
     auto snapped = snap_canvas_row(*chart, *index, bounded_row,
                                    active_snap_grid(state), index->total_rows);
-    if (!snapped) return false;
-    if (*snapped > bounded_row)
-        snapped = adjacent_snap_canvas_row(*chart, *index, bounded_row,
-            active_snap_grid(state), index->total_rows, false);
     if (!snapped) return false;
     while (state.cut_axis && state.cut_axis->contains_row(*snapped)) {
         snapped = adjacent_snap_canvas_row(*chart, *index,

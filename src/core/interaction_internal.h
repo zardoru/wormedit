@@ -75,7 +75,7 @@ struct hold_row_plan_t {
     bool adds_note{};
 };
 
-auto is_plain_editable_note(const note_t& note) -> bool;
+auto is_plain_editable_note(const chart_document_t& chart, const note_t& note) -> bool;
 
 auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) -> bool;
 
@@ -105,14 +105,14 @@ struct hold_row_expansion_t {
                 if (!note_begin || !note_end || *note_end < *note_begin ||
                     !is_intersecting(*note_begin, *note_end))
                     continue;
-                if (!is_plain_editable_note(note) &&
+                if (!is_plain_editable_note(chart, note) &&
                     !(overlap_policy == hold_overlap_policy_t::remove_sound &&
                       is_removable_sound_note(chart, note)))
                     return diagnostic_list_t{
                         error(diagnostic_code_t::collision,
                               "hold placement overlaps a non-editable same-lane note", note.id)};
                 removals.insert(note.id.value);
-                if (note.kind == note_kind_t::hold) {
+                if (note.kind == note_kind_t::hold && begin_row != end_row) {
                     const auto old_begin = begin_row;
                     const auto old_end = end_row;
                     begin_row = std::min(begin_row, *note_begin);
@@ -354,6 +354,8 @@ auto stage_hold_note_consumption(document_command_transaction_t& transaction, ch
 struct note_paint_plan_t {
     std::vector<note_paint_target_t> additions;
     std::vector<object_id_t> removals;
+    std::vector<object_id_t> consumed_holds;
+    auto plan_hold_consumption(const chart_document_t& chart) -> diagnostic_list_t;
 };
 
 struct paint_row_t {
@@ -417,6 +419,10 @@ struct paint_overlap_sweep_t {
                          "paint gesture overlaps multiple same-lane notes",
                          active.begin()->second.note);
         const auto& [id, note] = *active.begin();
+        if (note.kind == note_kind_t::hold && note.has_end) {
+            plan.removals.push_back(object_id_t{id});
+            return std::nullopt;
+        }
         if (note.kind == kind && !note.has_end && note.begin == row.row && note.end == row.row) {
             plan.removals.push_back(object_id_t{id});
             return std::nullopt;
@@ -1066,7 +1072,7 @@ struct prepared_note_paint_t {
     std::vector<object_id_t> painted_notes;
     void set_hitsample(chart_id_t chart, const std::optional<osu_hitsample_t>& sample);
 };
-auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
+auto prepare_stem_note_paint(const song_document_t& document, chart_id_t chart_id,
                              const note_paint_plan_t& plan, object_id_t channel,
                              const std::optional<std::vector<layer_id_t>>& armed_layers,
                              std::optional<bmson_source_geometry_t> geometry)
@@ -1077,7 +1083,7 @@ auto resolve_note_paint_targets(const chart_document_t& chart, std::span<const n
     -> attempt_t<std::vector<note_paint_target_t>>;
 auto materialize_note_paint_targets(chart_document_t& chart, std::span<const note_paint_target_t> targets)
     -> attempt_t<std::vector<note_paint_target_t>>;
-auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
+auto prepare_note_paint_document(document_history_t& history, chart_id_t chart_id,
                                  const note_paint_plan_t& plan, note_kind_t kind,
                                  std::optional<resource_id_t> sound,
                                  const std::optional<std::vector<layer_id_t>>& armed_layers,

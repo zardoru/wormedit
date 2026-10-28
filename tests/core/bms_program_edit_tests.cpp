@@ -8,6 +8,7 @@
 #include <wormedit/core/scroll_speed_editor.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/hitsound_editor.h>
 #include <wormedit/core/metadata_editor.h>
@@ -631,6 +632,47 @@ TEST_CASE("Scoped hold drawing and duration dragging preserve consumed keysounds
     check_scoped_consumed_keysound(*chart, original.back());
     check_scoped_consumed_hold(*chart, resizing ? original.front().id : *result.created_note,
         tail, original.front(), resizing);
+    check_scoped_consumption_history(history, before);
+}
+
+namespace {
+auto enter_scoped_hold_body(document_history_t& history, editor_interaction_state_t& state,
+    lane_id_t lane, local_position_t position, int entry) -> editor_interaction_result_t {
+    if (entry == 0)
+        return dispatch_editor_action(history, state, place_tap_action_t{position});
+    if (entry == 1) {
+        REQUIRE(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{
+            .lane = lane, .position = position, .pointer_captured = true,
+            .intent = note_paint_intent_t::draw}));
+        return dispatch_editor_action(history, state, end_note_paint_gesture_action_t{
+            .lane = lane, .position = position, .pointer_captured = true});
+    }
+    place_cursor_at(state, position);
+    REQUIRE(dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane}));
+    return dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{lane});
+}
+} // namespace
+
+TEST_CASE("Scoped hold body entry moves the hold and both endpoints to BGM",
+          "[bms-program-edit][hold][consumption][hold-body-entry]") {
+    const auto entry = GENERATE(0, 1, 2);
+    auto history = history_from("#WAV01 a.wav\n#BPM 120\n#LNTYPE 1\n#00051:0101\n");
+    auto state = scoped_state(history);
+    const auto* chart = history.read_chart(difficulty);
+    REQUIRE(chart->measures.front().notes.size() == 1);
+    const auto original = chart->measures.front().notes.front();
+    state.active_lane = original.lane;
+    REQUIRE(original.end);
+    const local_position_t position{original.position.measure,
+        chart->divisions_per_standard_measure / 4};
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto result = enter_scoped_hold_body(history, state, original.lane, position, entry);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    CHECK_FALSE(result.created_note);
+    chart = history.read_chart(difficulty);
+    check_scoped_consumed_keysound(*chart, original);
+    CHECK(chart->measures.front().bgm_events.front().end == original.end);
     check_scoped_consumption_history(history, before);
 }
 

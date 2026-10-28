@@ -117,7 +117,7 @@ auto plan_duration_consumption(duration_resize_context_t& context, duration_resi
         if (!covered) continue;
         const auto* note = context.chart.find_note(existing.note);
         if (!note || note->kind != note_kind_t::tap || note->end ||
-            (!is_plain_editable_note(*note) && !is_removable_sound_note(context.chart, *note)))
+            (!is_plain_editable_note(context.chart, *note) && !is_removable_sound_note(context.chart, *note)))
             return error(diagnostic_code_t::collision,
                          "Duration resize overlaps a non-editable same-lane note", existing.note);
         plan.removals.push_back(existing.note);

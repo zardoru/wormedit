@@ -67,6 +67,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
         const auto anchor =
             hold.anchor_canvas_row ? hold.anchor_canvas_row : index.row_of(hold.position);
         const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
+        if (hold.requires_span && anchor == end) continue;
         if (!has_chart_virtual_tail(chart) || !anchor || !end || *anchor >= canvas_rows || *end >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "canvas lane hold is stale or outside BMS geometry")};

@@ -266,6 +266,11 @@ Keyboard navigation in that batch uses the same stamp, so a chord release or sna
 the note's commit in one frame. Pointer/viewport inputs still require the original geometry stamp.
 External changes and failed rebinding stop continuation.
 
+Lane-key deletion publishes immediately while retaining the pressed key's original row as a
+hold anchor. Moving away previews a new hold through the same gesture; release commits it.
+Release at the anchor or cancellation leaves the deletion in place. The shared gesture runner
+recaptures surviving keys after each publication, including independently released chord keys.
+
 Selection commits share Undo/Redo chronology with document commands through the history owner's
 monotonic event sequence. Selection snapshots live only in its bounded transient selection
 history, not in song snapshots, codecs, saved revisions or document dirty state. The editor

@@ -3998,10 +3998,12 @@ TEST_CASE("BMS canvas hold commit reuses measures materialized by another lane",
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
-TEST_CASE("wheel anchored scrolling extends a held BMS lane key into virtual measures",
+TEST_CASE("wheel anchored scrolling extends a removed BMS note into a hold in virtual measures",
           "[unit][core][interaction][gesture][hold][virtual-canvas][scroll]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}}};
     auto history = document_history_t::from(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}};
     auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
@@ -4010,6 +4012,10 @@ TEST_CASE("wheel anchored scrolling extends a held BMS lane key into virtual mea
     auto state = std::move(*setup.state);
     const auto pressed = dispatch_editor_action(
         history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_hold_merge_action(pressed);
+    CHECK(pressed.document_changed);
+    CHECK(note_count(history) == 0);
+    expect_cursor_gesture(state.hold() != nullptr);
     const auto first_scroll = dispatch_editor_action(
         history, state,
         scroll_editor_view_action_t{192.0, 38.4, editor_field_scroll_direction_t::up});
@@ -4020,23 +4026,41 @@ TEST_CASE("wheel anchored scrolling extends a held BMS lane key into virtual mea
                                second.view->pending_canvas_keyboard_holds.size() == 1;
     const auto committed = dispatch_editor_action(
         history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
-    const auto* note = find_note(history, object_id_t{101});
+    const auto* note = committed.created_note ? find_note(history, *committed.created_note) : nullptr;
     const std::array checks{bool(pressed), bool(first_scroll), bool(second), preview_valid,
                             bool(committed), committed.document_changed,
                             history.document.charts.front().measures.size() >= 3,
+                            note && note->position == local_position_t{measure_id_t{1}, 0},
                             note && note->end.has_value()};
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
+namespace {
+void check_lane_hold_scene(const document_history_t& history, editor_interaction_view_model_t view,
+                           bool has_preview) {
+    const auto& chart = history.document.charts.front();
+    view.viewport_height_pixels = 384;
+    view.viewport_scroll_pixels = 0;
+    const auto built = build_editor_field_scene_index(chart, history.document.revision);
+    REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));
+    const auto scene = editor_field_scene_view_t::from(chart, std::get<editor_field_scene_index_t>(built), view,
+        {.field_left_pixels = 0, .field_width_pixels = 400});
+    REQUIRE(scene);
+    CHECK(std::ranges::any_of(scene.scene->note_endpoints,
+        [](const auto& endpoint) { return endpoint.proposal_ghost; }) == has_preview);
+}
+} // namespace
+
 TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
           "[unit][core][interaction][hold]") {
+    const auto is_hold = GENERATE(false, true);
     auto song = make_song();
     song.charts.front().measures.front().notes = {
         {.id = object_id_t{101},
          .position = {measure_id_t{1}, 480},
          .lane = lane_id_t{1},
-         .kind = note_kind_t::hold,
-         .end = local_position_t{measure_id_t{1}, 720}},
+         .kind = is_hold ? note_kind_t::hold : note_kind_t::tap,
+         .end = is_hold ? std::optional{local_position_t{measure_id_t{1}, 720}} : std::nullopt},
     };
     auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
@@ -4044,16 +4068,109 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
 
     const auto pressed =
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
-    REQUIRE(pressed);
+    require_hold_merge_action(pressed);
     CHECK(pressed.document_changed);
-    CHECK_FALSE((state.hold() != nullptr));
+    expect_cursor_gesture(state.hold() != nullptr);
     CHECK(note_count(history) == 0);
+    check_lane_hold_scene(history, *pressed.view, false);
     const auto released =
         dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
-    REQUIRE(released);
+    require_hold_merge_action(released);
     CHECK_FALSE(released.document_changed);
+    CHECK_FALSE(state.hold());
+    CHECK(note_count(history) == 0);
     REQUIRE(undo_document_command(history));
     CHECK(find_note(history, object_id_t{101}) != nullptr);
+}
+
+TEST_CASE("A removed lane-key note anchors a hold while the key remains pressed",
+          "[unit][core][interaction][hold][removed-note-hold]") {
+    const auto backward = GENERATE(false, true);
+    const auto sounded = GENERATE(false, true);
+    auto song = make_paint_sound_song();
+    const auto sound = sounded ? std::optional{resource_id_t{7}} : std::nullopt;
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}, .sound = sound}};
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    place_cursor_at(state, {measure_id_t{1}, 480});
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{.lane = lane_id_t{1}, .sound = sound}));
+    expect_cursor_gesture(note_count(history) == 0);
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{backward ? interaction_direction_t::backward : interaction_direction_t::forward}));
+    expect_cursor_gesture(state.hold() != nullptr);
+    expect_cursor_gesture(state.hold()->position == local_position_t{measure_id_t{1}, 480});
+    expect_cursor_gesture(state.hold()->placement_preview->tail.has_value());
+    check_lane_hold_scene(history, *editor_interaction_result_t::from(history, state).view, true);
+    const auto committed = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_hold_merge_action(committed);
+    expect_cursor_gesture(committed.created_note.has_value());
+    const auto* note = find_note(history, *committed.created_note);
+    expect_cursor_gesture(note != nullptr);
+    expect_cursor_gesture(note->position == local_position_t{measure_id_t{1}, backward ? 240u : 480u});
+    expect_cursor_gesture(note->end == local_position_t{measure_id_t{1}, backward ? 480u : 720u});
+    expect_cursor_gesture(note->sound == sound);
+    expect_cursor_gesture(bool(undo_document_command(history)));
+    expect_cursor_gesture(note_count(history) == 0);
+    expect_cursor_gesture(bool(undo_document_command(history)));
+    expect_cursor_gesture(find_note(history, object_id_t{101}) != nullptr);
+}
+
+TEST_CASE("Returning a removed lane-key note to its anchor or cancelling keeps it deleted",
+          "[unit][core][interaction][hold][removed-note-hold]") {
+    const auto cancel = GENERATE(false, true);
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}}};
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    place_cursor_at(state, {measure_id_t{1}, 480});
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::forward}));
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::backward}));
+    check_lane_hold_scene(history, *editor_interaction_result_t::from(history, state).view, false);
+    require_hold_merge_action(dispatch_editor_action(history, state, cancel
+        ? editor_interaction_action_t{cancel_editor_gesture_action_t{}}
+        : editor_interaction_action_t{release_lane_key_hold_gesture_action_t{lane_id_t{1}}}));
+    expect_cursor_gesture(note_count(history) == 0);
+    expect_cursor_gesture(history.undo.size() == 1);
+    expect_cursor_gesture(state.hold() == nullptr);
+}
+
+TEST_CASE("Removed notes in a held chord extend and release independently",
+          "[unit][core][interaction][hold][removed-note-hold]") {
+    const auto first_lane = GENERATE(lane_id_t{1}, lane_id_t{2});
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}}};
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    place_cursor_at(state, {measure_id_t{1}, 480});
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{2}}));
+    expect_cursor_gesture(note_count(history) == 0);
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::forward}));
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{first_lane}));
+    expect_cursor_gesture(note_count(history) == 1);
+    expect_cursor_gesture(state.hold() != nullptr);
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{3 - first_lane.value}}));
+    expect_cursor_gesture(note_count(history) == 2);
+    for (const auto& note : history.document.charts.front().measures.front().notes) {
+        expect_cursor_gesture(note.position == local_position_t{measure_id_t{1}, 480});
+        expect_cursor_gesture(note.end == local_position_t{measure_id_t{1}, 720});
+    }
+    expect_cursor_gesture(state.hold() == nullptr);
 }
 
 TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss",

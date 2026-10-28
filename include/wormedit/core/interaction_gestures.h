@@ -62,8 +62,10 @@ struct pending_hold_t {
     std::optional<std::vector<layer_id_t>> layers;
     std::shared_ptr<const bmson_source_geometry_t> source_geometry;
     std::optional<osu_hitsample_t> hitsample;
+    // An immediate lane-key deletion stays deleted unless the key draws a span.
+    bool requires_span{};
 
-    [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&)
+    [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&, bool requires_span = false)
         -> diagnosed_t<std::optional<pending_hold_t>>;
     [[nodiscard]] auto validate_start(const editor_edit_context_t&) const -> diagnostic_list_t;
     [[nodiscard]] auto revise(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;

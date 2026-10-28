@@ -20,6 +20,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -48,13 +49,13 @@ void scope_warning_icon(nk_context* context, nk_color color) {
     nk_stroke_line(canvas, x, y + 4, x, y + 8, 1.5f, color);
     nk_fill_circle(canvas, nk_rect(x - 1, y + 10, 2, 2), color);
 }
-void scope_message(nk_context* context, const char* text, bool warning, bool error = false) {
+void scope_message(nk_context* context, const char* text, bool warning, bool error = false, std::size_t count = 1) {
     const auto color = error ? nk_rgb(255, 130, 130) : warning ? scope_warning_color() : context->style.text.color;
     nk_style_push_color(context, &context->style.text.color, color);
     if (warning) {
         nk_layout_row_begin(context, NK_DYNAMIC, 20.0f, 2);
         nk_layout_row_push(context, 0.09f); scope_warning_icon(context, color);
-        nk_layout_row_push(context, 0.91f); nk_label(context, "Warning", NK_TEXT_LEFT);
+        nk_layout_row_push(context, 0.91f); nk_label(context, count > 1 ? ("Warning ×" + std::to_string(count)).c_str() : "Warning", NK_TEXT_LEFT);
         nk_layout_row_end(context);
     }
     wormedit::ui::chrome::text_block_t{.text = text}.render(context);
@@ -429,6 +430,17 @@ void render_scope_confirmation(nk_context* context, const scope_view_t& view, wo
     if (chrome::Button{"Cancel", chrome::ButtonKind::secondary}.render(context))
         emit_scope_action(action, view, scope_operation_t::cancel);
 }
+// The runtime reports one message per offending reference; identical ones collapse into a counted row.
+void render_scope_messages(nk_context* context, const scope_view_t& view) {
+    std::vector<std::pair<const wormedit::ui::bms_program_message_t*, std::size_t>> unique;
+    for (const auto& message : view.messages) {
+        const auto same = std::ranges::find_if(unique, [&](const auto& entry) { return *entry.first == message; });
+        if (same == unique.end()) unique.emplace_back(&message, 1);
+        else ++same->second;
+    }
+    for (const auto& [message, count] : unique)
+        scope_message(context, message->text.c_str(), message->warning, message->error, count);
+}
 void render_scope_panel(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (tree_state.popup != popup_t::none && tree_state.popup_node != view.selected) tree_state.popup = popup_t::none;
     render_scope_bar(context, view, action);
@@ -446,7 +458,7 @@ void render_scope_panel(nk_context* context, const scope_view_t& view, wormedit:
     if (view.has_parameter || view.has_text) render_scope_detail(context, view, action);
     if (view.can_preview) render_scope_preview(context, view, action);
     render_scope_confirmation(context, view, action);
-    for (const auto& message : view.messages) scope_message(context, message.text.c_str(), message.warning, message.error);
+    render_scope_messages(context, view);
 }
 } // namespace
 

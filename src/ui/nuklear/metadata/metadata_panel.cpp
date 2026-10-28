@@ -2,7 +2,6 @@
 #include "ui/nuklear/audio/audio_panel.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/metadata/metadata_panel_internal.h"
-#include "ui/nuklear/metadata/metadata_timing_links_section.h"
 #include "ui/nuklear/metadata/metadata_audio_section.h"
 #include "ui/nuklear/metadata/metadata_difficulty_section.h"
 #include "ui/nuklear/metadata/metadata_format_fields.h"
@@ -224,7 +223,6 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
     render_song_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
     render_difficulty_section(panel);
-    render_metadata_timing_links_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
     render_audio_sync_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);

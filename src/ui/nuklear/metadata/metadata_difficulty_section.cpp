@@ -1,5 +1,6 @@
 #include "ui/nuklear/metadata/metadata_difficulty_section.h"
 #include "ui/nuklear/metadata/metadata_inheritance_section.h"
+#include "ui/nuklear/metadata/metadata_timing_links_section.h"
 #include "ui/nuklear/chrome/tooltip.h"
 
 #include "ui/nuklear/chrome/chrome.h"
@@ -446,5 +447,6 @@ void render_difficulty_section(const MetadataPanel& panel) {
     render_lane_profile_section(panel);
     render_channel_map_section(panel);
     render_metadata_inheritance_section(panel);
+    render_metadata_timing_links_section(panel);
     wormedit::ui::chrome::section_pop(context);
 }

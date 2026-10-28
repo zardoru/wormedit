@@ -556,7 +556,11 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
                                    metrics::radius_bar);
     const bool text_pushed = !level_one && nk_style_push_color(context, &context->style.tab.text,
                                                                  color(UiColor::text));
+    // Cards get taller headers so the title has room inside its fill.
+    const bool padding_pushed = !level_one && nk_style_push_vec2(context, &context->style.tab.padding,
+        nk_vec2(context->style.tab.padding.x, context->style.tab.padding.y + metrics::gap_small));
     const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (padding_pushed) nk_style_pop_vec2(context);
     if (text_pushed) nk_style_pop_color(context);
 
     // The header is the last row laid out, so its top and height are known here.

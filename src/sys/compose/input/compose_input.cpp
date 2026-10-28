@@ -2520,6 +2520,8 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
+    state.solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
+        ? application_state.project.semantic_layer.semantic_layer_target : std::nullopt;
     const auto* input_chart = history.read_chart(state.chart);
     if (input_chart != nullptr)
         arm_compose_note_layers(state, application_state, *input_chart);

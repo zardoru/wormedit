@@ -160,6 +160,38 @@ void check_lane_chord(compose_notification_fixture_t& fixture) {
     }));
 }
 
+TEST_CASE("Compose area input follows solo target changes and disabling solo",
+          "[unit][sys][selection][solo]") {
+    compose_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.semantic_layers.push_back({.id = layer_id_t{9}, .name = "Other"});
+    chart.measures.front().notes.front().semantic_layers = {layer_id_t{8}};
+    chart.measures.front().notes.push_back({.id = object_id_t{2},
+        .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1},
+        .semantic_layers = {layer_id_t{9}}});
+    fixture.state.viewport_height_pixels = 192.0;
+    const auto layout = compose_horizontal_layout(800, 1, false, 0,
+        effective_compose_timing_lane_mask(fixture.application));
+    const auto x = layout.field_left_pixels + layout.playable_field_width_pixels / 2;
+    const auto downscroll = compose_field_downscroll(chart, fixture.application.preferences.editor_preferences);
+    const std::array inputs{
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN,
+            .x_pixels = x, .y_pixels = downscroll ? 191.0 : 1.0},
+        wormedit::ui::compose_input_action_t{.kind = WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
+            .x_pixels = x, .y_pixels = downscroll ? 42.0 : 150.0}};
+    fixture.application.project.semantic_layer.semantic_layer_solo_active = true;
+    (void)fixture.batch(inputs);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{1}});
+    fixture.application.project.semantic_layer.semantic_layer_target = layer_id_t{9};
+    (void)fixture.batch(inputs);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{2}});
+    fixture.application.project.semantic_layer.semantic_layer_solo_active = false;
+    (void)fixture.batch(inputs);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{1}, object_id_t{2}});
+    CHECK(fixture.history.undo.empty());
+    CHECK(fixture.history.document.revision == 9);
+}
+
 TEST_CASE("Lane draw chords admit their own note commits within one frame", "[unit][sys][lane-chord]") {
     compose_notification_fixture_t fixture;
     fixture.prepare_lane_chord();

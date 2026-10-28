@@ -308,6 +308,7 @@ auto collect_area_note_spans(note_area_query_t& query, std::vector<object_id_t>&
     if (last - first == 1) {
         if (first >= index.note_spans.size()) return;
         const auto& span = index.note_spans[first];
+        if (!index.is_note_in_solo_layer(query.chart, span.note, query.view.solo_semantic_layer)) return;
         if (query.is_point_intersecting(span.lane, span.begin_row) ||
             query.is_point_intersecting(span.lane, span.end_row) ||
             query.is_body_intersecting(span.lane, span.begin_row, span.end_row))
@@ -367,7 +368,8 @@ auto validate_row_canvas(const chart_document_t& chart, std::uint64_t last_row)
 }
 
 auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_index_t& index,
-                           editor_selection_scope_t scope, std::size_t candidate_count,
+                           editor_selection_scope_t scope, std::optional<layer_id_t> solo_layer,
+                           std::size_t candidate_count,
                            std::uint64_t first_row, std::uint64_t last_row,
                            std::vector<editor_selection_object_t>& selected,
                            std::size_t node, std::size_t first, std::size_t last) -> void {
@@ -378,6 +380,7 @@ auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_
         if (span.begin_row > last_row || span.end_row < first_row ||
             !is_scope_accepted(scope, span.object.kind)) return;
         if (span.object.kind == editor_selection_object_kind_t::note) {
+            if (!index.is_note_in_solo_layer(chart, span.object.id, solo_layer)) return;
             const auto position = position_at(index.measures, span.begin_row);
             if (!position || !span.lane ||
                 find_active_lane(chart, index.measures, *position, *span.lane) == nullptr) return;
@@ -386,9 +389,9 @@ auto collect_row_selection(const chart_document_t& chart, const editor_hit_test_
         return;
     }
     const auto middle = first + (last - first) / 2;
-    collect_row_selection(chart, index, scope, candidate_count, first_row, last_row,
+    collect_row_selection(chart, index, scope, solo_layer, candidate_count, first_row, last_row,
                           selected, node * 2, first, middle);
-    collect_row_selection(chart, index, scope, candidate_count, first_row, last_row,
+    collect_row_selection(chart, index, scope, solo_layer, candidate_count, first_row, last_row,
                           selected, node * 2 + 1, middle, last);
 }
 
@@ -401,7 +404,8 @@ auto is_editor_selection_scope_accepted(editor_selection_scope_t scope,
 
 auto editor_objects_in_row_range(const chart_document_t& chart,
                                  const editor_hit_test_index_t& index, std::uint64_t first_row,
-                                 std::uint64_t last_row, editor_selection_scope_t scope)
+                                 std::uint64_t last_row, editor_selection_scope_t scope,
+                                 std::optional<layer_id_t> solo_layer)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t> {
     if (!is_valid_row_selection_index(chart, index, first_row, last_row))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
@@ -418,7 +422,7 @@ auto editor_objects_in_row_range(const chart_document_t& chart,
         std::distance(index.selection_spans.begin(), after));
     std::vector<editor_selection_object_t> selected;
     if (count != 0)
-        collect_row_selection(chart, index, scope, count, first_row, last_row, selected,
+        collect_row_selection(chart, index, scope, solo_layer, count, first_row, last_row, selected,
                               1, 0, index.selection_span_tree_leaf_base);
     std::ranges::sort(selected);
     return selected;

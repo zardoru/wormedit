@@ -117,6 +117,9 @@ struct editor_hover_index_entry_t {
 // Build once per document revision and reuse while querying pointer motion.
 // Each measure bucket contains note heads and hold tails owned by that measure.
 struct editor_hit_test_index_t {
+    [[nodiscard]] auto is_note_in_solo_layer(const chart_document_t& chart, object_id_t note,
+        std::optional<layer_id_t> solo_layer) const -> bool;
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     measure_index_t measures;
@@ -245,7 +248,8 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 [[nodiscard]] auto editor_objects_in_row_range(const chart_document_t& chart,
                                                const editor_hit_test_index_t& index,
                                                std::uint64_t first_row, std::uint64_t last_row,
-                                               editor_selection_scope_t scope)
+                                               editor_selection_scope_t scope,
+                                               std::optional<layer_id_t> solo_layer = std::nullopt)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
 [[nodiscard]] auto editor_objects_in_area_selection(const chart_document_t& chart,
                                                     const editor_hit_test_index_t& index,

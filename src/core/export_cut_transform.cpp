@@ -50,6 +50,15 @@ void transform_context_t::report(diagnostic_severity_t severity, diagnostic_code
     diagnostics.push_back({.severity = severity, .code = code, .message = std::move(message),
                            .location = {.chart = chart, .object = object}});
 }
+void transform_context_t::report_cut_omission(object_id_t object, bool crosses_boundary) {
+    auto& reported = crosses_boundary ? reported_crossing_omission : reported_contained_omission;
+    if (reported) return;
+    reported = true;
+    report(crosses_boundary ? diagnostic_severity_t::warning : diagnostic_severity_t::info,
+        diagnostic_code_t::dropped_feature, crosses_boundary
+            ? "Objects crossing export-cut boundaries were omitted."
+            : "Objects wholly inside export cuts were omitted.", object);
+}
 auto exact_source_duration(std::uint32_t rate, std::optional<std::uint64_t> frames)
     -> std::optional<signed_rational_t> {
     if (!rate || !frames || *frames > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return {};
@@ -157,15 +166,15 @@ struct chart_cut_t {
         return next != intervals.end() && less({next->begin_milliseconds, 1000}, end);
     }
     auto keep_span(object_id_t id, signed_rational_t begin, signed_rational_t end,
-                   std::string_view kind) -> bool {
+                   bool preserve_crossing = false) -> bool {
         if (wholly_removed(begin, end)) {
-            context.report(diagnostic_severity_t::info, diagnostic_code_t::dropped_feature,
-                std::string(kind) + " lies wholly inside an export cut and is omitted.", id);
+            context.report_cut_omission(id, false);
             return false;
         }
-        if (intersects(begin, end))
-            context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
-                std::string(kind) + " crosses an export-cut boundary; move the cut or the object before exporting.", id);
+        if (!preserve_crossing && intersects(begin, end)) {
+            context.report_cut_omission(id, true);
+            return false;
+        }
         return true;
     }
     auto custom_sound_end(const note_t& note, signed_rational_t begin) -> std::optional<signed_rational_t> {
@@ -183,6 +192,11 @@ struct chart_cut_t {
         if (!context.timeline.intervals().empty() && !less(*begin,
             {context.timeline.intervals().back().end_milliseconds, 1000})) return true;
         auto end = event.end ? source_time(*event.end) : begin;
+        if constexpr (std::is_same_v<Event, note_t>) {
+            // Holds retain the body visible on Compose's collapsed axis. Their
+            // authored endpoints map to the cut seams just like visible rows.
+            if (event.end) return end && keep_span(event.id, *begin, *end, true);
+        }
         if (event.sound && !event.sound_channel_event) {
             const auto duration = context.duration(*event.sound);
             if (!duration) {
@@ -199,7 +213,7 @@ struct chart_cut_t {
             if (!custom) return true;
             if (!end || less(*end, *custom)) end = custom;
         }
-        return end && keep_span(event.id, *begin, *end, "Sound or hold");
+        return end && keep_span(event.id, *begin, *end);
     }
     auto prepare_measures() -> bool {
         result = source;
@@ -566,19 +580,7 @@ struct chart_cut_t {
             const auto begin = source_time(event.position);
             const auto end = ends.find(event.id.value);
             if (!begin || end == ends.end()) continue;
-            if (wholly_removed(*begin, end->second)) {
-                (void)keep_span(event.id, *begin, end->second, "BGA event");
-                continue;
-            }
-            const auto resource = std::ranges::find(context.source.resources, event.resource, &resource_entry_t::id);
-            const auto asset = resource == context.source.resources.end() ? context.source.visual_assets.end()
-                : std::ranges::find(context.source.visual_assets, resource->asset, &visual_asset_t::id);
-            if (asset != context.source.visual_assets.end() && asset->kind == asset_kind_t::video && intersects(*begin, end->second)) {
-                context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
-                    "Export cuts require a proven video playback extent before crossing this BGA event.", event.id);
-                continue;
-            }
-            if (!keep_span(event.id, *begin, end->second, "BGA event")) continue;
+            if (!keep_span(event.id, *begin, end->second)) continue;
             const auto position = map(event.position);
             if (!position) continue;
             event.position = *position;
@@ -784,13 +786,10 @@ auto storyboard_omissions(const storyboard_preview_index_t& index,
         const auto end = context.timeline.collapsed_milliseconds(sprite.end_time_ms);
         if (begin == end && (sprite.begin_time_ms < sprite.end_time_ms || context.timeline.contains(sprite.begin_time_ms))) {
             omitted.insert(sprite.stable_id);
-            context.report(diagnostic_severity_t::info, diagnostic_code_t::dropped_feature,
-                "A storyboard sprite lies wholly inside an export cut and is omitted.", object_id_t{storyboard.id.value});
+            context.report_cut_omission(object_id_t{storyboard.id.value}, false);
         } else if (context.timeline.intersects({sprite.begin_time_ms, sprite.end_time_ms})) {
-            context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
-                "A storyboard sprite crosses an export-cut boundary; move the cut or sprite before exporting.",
-                object_id_t{storyboard.id.value});
-            return {};
+            omitted.insert(sprite.stable_id);
+            context.report_cut_omission(object_id_t{storyboard.id.value}, true);
         }
     }
     return omitted;

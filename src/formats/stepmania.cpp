@@ -1941,6 +1941,7 @@ struct note_map_builder_t {
     const keysound_table_t& keysounds;
     std::set<std::tuple<std::size_t, std::uint64_t, std::uint32_t>> occupied;
     std::size_t dropped_autokeysounds{};
+    bool reported_note_metadata{};
 
     void report(stepmania_write_diagnostic_code_t code, std::string message) {
         diagnostics.push_back({diagnostic_severity_t::error, code, std::move(message), "NOTES"});
@@ -2004,11 +2005,13 @@ struct note_map_builder_t {
                    "Hold tail does not reference a StepMania chart measure or lane");
             return false;
         }
-        if (!note.semantic_layers.empty() || note.label)
+        if ((!note.semantic_layers.empty() || note.label) && !reported_note_metadata) {
+            reported_note_metadata = true;
             diagnostics.push_back({diagnostic_severity_t::warning,
                 stepmania_write_diagnostic_code_t::unsupported_feature,
                 "Note labels and semantic layers are editor metadata and are not emitted to StepMania",
                 "NOTES"});
+        }
         return true;
     }
     auto required_rows(const std::vector<cell_event_t>& events) -> std::optional<std::uint64_t> {

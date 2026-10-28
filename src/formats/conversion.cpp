@@ -1150,7 +1150,9 @@ auto prepare_export_cuts(conversion_context_t& context, song_document_t& prepare
     if (prepared.export_cuts.empty()) return true;
     auto transformed = export_cut_transform_t::from(prepared, charts, context.request.export_cut_sources, context.request.audio);
     for (const auto& diagnostic : transformed.diagnostics) {
-        add_diagnostic(context.result, diagnostic.severity, conversion_diagnostic_code_t::transform_failed,
+        add_diagnostic(context.result, diagnostic.severity,
+            diagnostic.code == diagnostic_code_t::dropped_feature
+                ? conversion_diagnostic_code_t::target_diagnostic : conversion_diagnostic_code_t::transform_failed,
             conversion_stage_t::transform, context.request.target, diagnostic.location.chart,
             diagnostic.message);
         context.result.diagnostics.back().object = diagnostic.location.object;

@@ -15,10 +15,12 @@ struct transform_context_t {
     std::optional<chart_id_t> chart;
     std::uint64_t object_ceiling{};
     std::size_t generated_objects{}, work_units{};
+    bool reported_contained_omission{}, reported_crossing_omission{};
     [[nodiscard]] auto reserve_work(std::size_t count = 1) -> bool;
     [[nodiscard]] auto next_object() -> std::optional<object_id_t>;
     void report(diagnostic_severity_t severity, diagnostic_code_t code, std::string message,
                 std::optional<object_id_t> object = {});
+    void report_cut_omission(object_id_t object, bool crosses_boundary);
     [[nodiscard]] auto duration(resource_id_t resource) const -> std::optional<signed_rational_t>;
     [[nodiscard]] auto asset_duration(asset_id_t asset) const -> std::optional<signed_rational_t>;
     [[nodiscard]] auto is_sampled(resource_id_t resource) const -> bool;

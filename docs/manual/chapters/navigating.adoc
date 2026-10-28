@@ -112,8 +112,10 @@ snapped edge; kbd:[Escape] cancels. Inverted or empty intervals are rejected.
 
 Exports remove the union of overlapping or adjacent cuts once, splice the exported song audio,
 and rebase every chart to the same clock. Separate cuts remain independently editable.
-Objects entirely inside a cut are dropped with diagnostics. A hold, authored keysound/BGM or
-BGA crossing a cut boundary blocks export; adjust the cut or the object first. Timing state
+Objects entirely inside a cut are dropped. Holds crossing a cut keep their visible portion,
+with endpoints rebased to the cut seams as in Compose. Authored keysounds/BGM, BGA events and
+storyboard sprites crossing a cut boundary are omitted, with one grouped warning.
+These diagnostics stay grouped in conversion previews. Timing state
 at the end of the cut carries into the retained part. The saved project and source media keep
 their original content.
 

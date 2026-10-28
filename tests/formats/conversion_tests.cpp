@@ -1023,6 +1023,17 @@ void check_sparse_cut_song(const wormedit::chart_document_t& output, wormedit::s
     CHECK(std::abs(to_double(times->front()) - to_double(expected)) < 0.006);
     CHECK(output.warps.empty());
 }
+void check_exported_cut_hold(const wormedit::chart_document_t& output) {
+    using namespace wormedit;
+    const auto& notes = output.measures.front().notes;
+    REQUIRE(notes.size() == 1);
+    REQUIRE(notes.front().end);
+    const auto timing = timing_index_t::from(output);
+    const auto measures = measure_index_t::from(output);
+    REQUIRE((timing.value && measures));
+    CHECK(timing.value->query_seconds(*measures, notes.front().position)->value == signed_rational_t{1, 4});
+    CHECK(timing.value->query_seconds(*measures, *notes.front().end)->value == signed_rational_t{3, 4});
+}
 }
 TEST_CASE("Rational export cuts preserve sparse SSC note rows and osu timestamps", "[formats][conversion][export-cut]") {
     using namespace wormedit;
@@ -1042,4 +1053,54 @@ TEST_CASE("Rational export cuts preserve sparse SSC note rows and osu timestamps
     const auto parsed = reimport_linked_output(converted.value.outputs.front().bytes, target, stepmania_profile_t::ssc);
     REQUIRE(parsed);
     check_sparse_cut_song(*parsed->read_charts().front(), expected);
+}
+TEST_CASE("Exported holds retain Compose's collapsed duration in osu and SSC", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    const auto target = GENERATE(format_family_t::osu_mania, format_family_t::stepmania);
+    auto fixture = linked_export_fixture(target);
+    auto& song = fixture.history.document;
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    const auto lane = chart.input_profile.bindings.front().lane;
+    const auto measure = chart.measures.front().id;
+    chart.measures.front().notes = {{.id = object_id_t{900001}, .position = {measure, 120},
+        .lane = lane, .kind = note_kind_t::hold, .end = local_position_t{measure, 600}}};
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    conversion_request_t request{.target = target, .chart = fixture.source_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::stepmania) request.stepmania = stepmania_export_policy_t{};
+    const auto converted = conversion_result_t::from(song, request);
+    for (const auto& diagnostic : converted.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    const auto parsed = reimport_linked_output(converted.value.outputs.front().bytes, target, stepmania_profile_t::ssc);
+    REQUIRE(parsed);
+    check_exported_cut_hold(*parsed->read_charts().front());
+    CHECK(chart.measures.front().notes.front().end->row == 600);
+}
+TEST_CASE("Conversion preview groups cut omissions without blocking export", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    auto fixture = linked_export_fixture(format_family_t::osu_mania);
+    auto& song = fixture.history.document;
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    chart.timing_links = {};
+    const auto lane = chart.input_profile.bindings.front().lane;
+    const auto measure = chart.measures.front().id;
+    chart.measures.front().notes.clear();
+    for (std::uint64_t id = 900010; id < 900013; ++id)
+        chart.measures.front().notes.push_back({.id = object_id_t{id}, .position = {measure, 120 + (id - 900010) * 10},
+            .lane = lane, .sound = resource_id_t{900004}});
+    song.audio_assets.push_back({.id = asset_id_t{900003}, .source_path = "sample.wav",
+        .stream = {.sample_rate = 1000, .channels = 1, .frame_count = 1000}});
+    song.resources.push_back({.id = resource_id_t{900004}, .name = "sample.wav", .asset = asset_id_t{900003}});
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    const conversion_request_t request{.target = format_family_t::native_project};
+    const auto diagnostics = diagnose_conversion_preparation(song, request);
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(diagnostics.front().code == conversion_diagnostic_code_t::target_diagnostic);
+    const auto converted = conversion_result_t::from(song, request);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    CHECK(converted.diagnostics.size() == 1);
 }

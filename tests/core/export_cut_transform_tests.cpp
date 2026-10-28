@@ -1,4 +1,5 @@
 #include <wormedit/core/export_cut_transform.h>
+#include <wormedit/core/export_cut_axis.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/measure_editor.h>
 #include <catch2/catch_test_macros.hpp>
@@ -45,6 +46,23 @@ void check_rational_cut_chart(const chart_document_t& chart, std::optional<signe
     CHECK(chart.divisions_per_standard_measure > 1'000'000'000);
     CHECK(time_of(chart, retained->position) == expected);
     CHECK(chart.warps.empty());
+}
+void check_collapsed_hold(const chart_document_t& chart, long double begin, long double end) {
+    const auto* note = note_with_id(chart, object_id_t{20});
+    REQUIRE((note && note->end));
+    const auto measures = measure_index_t::from(chart);
+    REQUIRE(measures);
+    CHECK(measures->row_of(note->position) == begin);
+    CHECK(measures->row_of(*note->end) == end);
+    CHECK(note->kind == note_kind_t::hold);
+}
+void check_grouped_omission_diagnostics(const export_cut_transform_outcome_t& result) {
+    check_cut_success(result);
+    REQUIRE(result.diagnostics.size() == 2);
+    CHECK(std::ranges::count(result.diagnostics, diagnostic_severity_t::warning,
+        &export_cut_diagnostic_t::severity) == 1);
+    CHECK(std::ranges::count(result.diagnostics, diagnostic_severity_t::info,
+        &export_cut_diagnostic_t::severity) == 1);
 }
 }
 TEST_CASE("Export cuts remove their union from detached charts and retain exact source data", "[core][export-cut][export]") {
@@ -103,24 +121,54 @@ TEST_CASE("Export cuts retain exact rational clocks beyond a billion divisions",
     CHECK(source.divisions_per_standard_measure == 960);
     CHECK(source.warps.empty());
 }
-TEST_CASE("Export cuts reject holds crossing boundaries and unknown sounding extents", "[core][export-cut][export]") {
+TEST_CASE("Export cuts map crossing holds to Compose's collapsed endpoints", "[core][export-cut][export]") {
+    const auto [begin, end] = GENERATE(Catch::Generators::table<std::uint64_t, std::uint64_t>({
+        {120, 360}, {360, 600}, {120, 600}, {120, 240}, {480, 600}}));
     auto song = export_song();
     song.charts.front().measures.front().notes = {{.id = object_id_t{20},
-        .position = {measure_id_t{3}, 120}, .lane = lane_id_t{1}, .kind = note_kind_t::hold,
-        .end = local_position_t{measure_id_t{3}, 600}}};
-    SECTION("hold") {
-        const auto result = export_cut_transform_t::from(song, {});
-        CHECK((!result.ok() && !result.value));
-    }
-    SECTION("unknown audio") {
-        auto& note = song.charts.front().measures.front().notes.front();
-        note.end.reset();
-        note.kind = note_kind_t::tap;
-        note.sound = resource_id_t{40};
-        const auto result = export_cut_transform_t::from(song, {});
-        CHECK_FALSE(result.ok());
-        REQUIRE((!result.diagnostics.empty() && result.diagnostics.front().location.object == note.id));
-    }
+        .position = {measure_id_t{3}, begin}, .lane = lane_id_t{1}, .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{3}, end}}};
+    const auto timing = timing_index_t::from(song.charts.front());
+    REQUIRE(timing.value);
+    const auto timeline = export_cut_timeline_t::from(song.export_cuts);
+    const auto axis = export_cut_axis_t::from(*timing.value, timeline.value);
+    REQUIRE(axis.ok());
+    const auto result = export_cut_transform_t::from(song, {});
+    check_cut_success(result);
+    check_collapsed_hold(result.value->document.charts.front(),
+        axis.value.collapsed_row(begin), axis.value.collapsed_row(end));
+    CHECK(result.diagnostics.empty());
+    CHECK(song.charts.front().measures.front().notes.front().end->row == end);
+}
+TEST_CASE("Export cuts still reject unknown sounding extents", "[core][export-cut][export]") {
+    auto song = export_song();
+    song.charts.front().measures.front().notes = {{.id = object_id_t{20},
+        .position = {measure_id_t{3}, 120}, .lane = lane_id_t{1}, .sound = resource_id_t{40}}};
+    const auto result = export_cut_transform_t::from(song, {});
+    CHECK_FALSE(result.ok());
+    REQUIRE((!result.diagnostics.empty() && result.diagnostics.front().location.object == object_id_t{20}));
+}
+TEST_CASE("Export cuts group omitted sounds and fully removed holds into bounded diagnostics", "[core][export-cut][export]") {
+    auto song = export_song();
+    song.audio_assets = {{.id = asset_id_t{41}, .source_path = "sample.wav",
+        .stream = {.sample_rate = 1000, .channels = 1, .frame_count = 1000}}};
+    song.resources = {{.id = resource_id_t{40}, .name = "sample.wav", .asset = asset_id_t{41}}};
+    auto& measure = song.charts.front().measures.front();
+    measure.notes = {
+        {.id = object_id_t{20}, .position = {measure.id, 120}, .lane = lane_id_t{1}, .sound = resource_id_t{40}},
+        {.id = object_id_t{21}, .position = {measure.id, 360}, .lane = lane_id_t{1}},
+        {.id = object_id_t{22}, .position = {measure.id, 240}, .lane = lane_id_t{2},
+            .kind = note_kind_t::hold, .end = local_position_t{measure.id, 480}},
+        {.id = object_id_t{23}, .position = {measure.id, 720}, .lane = lane_id_t{1}}};
+    measure.bgm_events = {{.id = object_id_t{24}, .position = {measure.id, 120}, .sound = resource_id_t{40}}};
+    const auto result = export_cut_transform_t::from(song, {});
+    check_grouped_omission_diagnostics(result);
+    const auto& output = result.value->document.charts.front().measures.front();
+    REQUIRE(output.notes.size() == 1);
+    CHECK(output.notes.front().id == object_id_t{23});
+    CHECK(output.bgm_events.empty());
+    CHECK(measure.notes.size() == 4);
+    CHECK(measure.bgm_events.size() == 1);
 }
 TEST_CASE("Export cuts carry BPM state and rebase different charts on one audio clock", "[core][export-cut][export]") {
     auto song = export_song();
@@ -248,11 +296,19 @@ TEST_CASE("Storyboard visual envelopes rebase with export cuts", "[core][export-
     const auto& command = result.value->document.storyboards.front().model->sprites.front().nodes.front().command;
     CHECK((command.start_time_ms == 1000 && command.end_time_ms == 1250));
 }
-TEST_CASE("Storyboard visual envelopes crossing export cuts reject", "[core][export-cut][export]") {
+TEST_CASE("Storyboard visual envelopes crossing export cuts are omitted with one warning", "[core][export-cut][export]") {
     auto song = storyboard_cut_song();
     song.storyboards.front().model->sprites.front().nodes.front().command.start_time_ms = 250;
+    auto sprite = song.storyboards.front().model->sprites.front();
+    sprite.stable_id = 2;
+    song.storyboards.front().model->sprites.push_back(sprite);
     const auto result = export_cut_transform_t::from(song, {});
-    CHECK((!result.ok() && !result.value));
+    check_cut_success(result);
+    CHECK(result.value->document.storyboards.front().model->sprites.empty());
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::dropped_feature);
+    CHECK(song.storyboards.front().model->sprites.size() == 2);
 }
 TEST_CASE("Video cues fully bounded by replacement inside an export cut drop with a diagnostic", "[core][export-cut][export]") {
     auto song = export_song();
@@ -270,6 +326,23 @@ TEST_CASE("Video cues fully bounded by replacement inside an export cut drop wit
     CHECK(std::ranges::any_of(result.diagnostics, [](const auto& item) {
         return item.severity == diagnostic_severity_t::info && item.location.object == object_id_t{84};
     }));
+}
+TEST_CASE("BGA cues crossing cuts are omitted for images and video", "[core][export-cut][export]") {
+    auto song = export_song();
+    song.visual_assets = {{.id = asset_id_t{80}, .kind = GENERATE(asset_kind_t::image, asset_kind_t::video),
+        .source_path = "visual"}};
+    song.resources = {{.id = resource_id_t{81}, .name = "visual", .asset = asset_id_t{80},
+        .roles = {resource_role_t::bga}}};
+    song.charts.front().bga_events = {{.id = object_id_t{84}, .position = {measure_id_t{3}, 120}, .resource = resource_id_t{81}},
+        {.id = object_id_t{85}, .position = {measure_id_t{3}, 720}, .resource = resource_id_t{81}}};
+    const auto result = export_cut_transform_t::from(song, {});
+    check_cut_success(result);
+    const auto& events = result.value->document.charts.front().bga_events;
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().id == object_id_t{85});
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::dropped_feature);
 }
 namespace {
 auto warped_cut_song(std::int64_t begin, std::int64_t end) -> song_document_t {

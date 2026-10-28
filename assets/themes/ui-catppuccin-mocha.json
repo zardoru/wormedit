@@ -1,0 +1,28 @@
+{
+  "name": "Catppuccin Mocha",
+  "description": "Soft mocha surfaces with pastel blue selection and green accents.",
+  "source": "https://github.com/catppuccin/palette/blob/07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd/palette.json",
+  "roles": {
+    "background": "#11111b",
+    "surface": "#1e1e2e",
+    "surface_hover": "#313244",
+    "surface_active": "#45475a",
+    "border": "#585b70",
+    "border_hover": "#b4befe",
+    "text": "#cdd6f4",
+    "text_bright": "#f5e0dc",
+    "text_muted": "#a6adc8",
+    "selected": "#89b4fa",
+    "selected_text": "#11111b",
+    "accent": "#a6e3a1",
+    "status": "#a6adc8",
+    "conflict": "#f38ba8",
+    "separator": "#313244",
+    "popup": "#181825",
+    "waveform_background": "#11111b",
+    "waveform_guide": "#45475a",
+    "waveform_rms": "#94e2d5",
+    "waveform_peak": "#74c7ec",
+    "waveform_playhead": "#f9e2af"
+  }
+}

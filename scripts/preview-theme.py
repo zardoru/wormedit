@@ -72,13 +72,92 @@ table{{border-collapse:collapse}}td{{padding:6px 24px 6px 0;border-bottom:1px so
 
 
 def resolve_color(document, token):
+    if not isinstance(token, str):
+        raise ValueError("expected a color string")
     if token.startswith("$"):
         scale, shade = token[1:].split(".", 1)
         token = document["scales"][scale][shade]
     if len(token) not in (7, 9) or token[0] != "#":
-        raise ValueError(f"invalid field color {token}")
+        raise ValueError(f"invalid color {token}")
     int(token[1:], 16)
     return token
+
+
+def interface_roles(document, required):
+    if not isinstance(document.get("name"), str) or not document["name"].strip():
+        raise ValueError("expected an interface theme name")
+    roles = document.get("roles")
+    if not isinstance(roles, dict) or set(roles) != set(required):
+        raise ValueError("expected every interface color role and no unknown roles")
+    return {name: resolve_color(document, token) for name, token in roles.items()}
+
+
+def interface_contrast(name, roles):
+    pairs = [(text, background) for text in ("text", "text_bright", "text_muted")
+             for background in ("background", "surface", "surface_hover", "surface_active", "popup")]
+    pairs += [("selected_text", "selected"), ("status", "background"),
+              ("accent", "surface"), ("conflict", "background"),
+              ("waveform_peak", "waveform_background"),
+              ("waveform_playhead", "waveform_background")]
+    warnings = []
+    for foreground, background in pairs:
+        base = opaque(roles[background], "#ffffff")
+        ratio = contrast(opaque(roles[foreground], base), base)
+        if ratio < 3:
+            warnings.append(f"{name}: {foreground} on {background}: {ratio:.2f}:1")
+    return warnings
+
+
+def render_interface(document, roles):
+    variables = ";".join(f"--{name.replace('_', '-')}:{value}" for name, value in roles.items())
+    swatches = "".join(f'<span title="{html.escape(name)}: {value}" style="background:{value}"></span>'
+                       for name, value in roles.items())
+    return f'''<article style="{variables}"><h2>{html.escape(document['name'])}</h2>
+<nav>File　Edit　View <span>Compose</span></nav>
+<div class="toolbar"><button>Open…</button><button class="primary">Play</button>
+<button class="hover">Hover</button><button class="active">Pressed</button></div>
+<div class="content"><aside><div class="selected">Selected chart</div><div>Sound library</div>
+<small>12 charts · 128 BPM</small></aside><div class="editor">Title <span class="selection">Selected text</span>
+<div class="wave"><svg viewBox="0 0 200 42" role="img" aria-label="Waveform colors">
+<path d="M0 21H200" stroke="var(--waveform-guide)"/>
+<path d="M5 14V28M15 7V35M25 12V30M35 17V25M45 9V33M55 3V39M65 11V31M75 16V26M85 6V36M95 13V29M105 17V25M115 11V31M125 2V40M135 8V34M145 14V28M155 10V32M165 4V38M175 12V30M185 16V26M195 10V32" stroke="var(--waveform-peak)" stroke-width="3"/>
+<path d="M5 18V24M15 15V27M25 17V25M45 16V26M55 12V30M65 17V25M85 13V29M95 17V25M115 16V26M125 11V31M135 14V28M145 17V25M155 16V26M165 13V29M175 17V25M195 16V26" stroke="var(--waveform-rms)" stroke-width="3"/>
+<path d="M117 0V42" stroke="var(--waveform-playhead)" stroke-width="2"/></svg></div></div></div>
+<footer><span class="accent">● Ready</span><span class="conflict">Conflict</span><span>100%</span></footer>
+<div class="swatches">{swatches}</div></article>'''
+
+
+def preview_interfaces(output, default):
+    cards, warnings = [], []
+    paths = sorted((ROOT / "assets/themes").glob("ui-*.json"))
+    for path in paths:
+        document = json.loads(path.read_text())
+        roles = interface_roles(document, default["roles"])
+        cards.append(render_interface(document, roles))
+        warnings.extend(interface_contrast(path.stem, roles))
+    page = '''<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Wormedit interface palettes</title><style>
+*{box-sizing:border-box}body{margin:0;color:var(--foreground,#ced2df);font:13px system-ui,sans-serif}
+.intro{color:var(--muted-foreground,#8b92a9);margin:0 0 16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+article{background:var(--background);color:var(--text);padding:16px;border:1px solid var(--border);border-radius:8px;min-width:0}
+h2{color:var(--text-bright);font-size:16px;margin:0 0 14px}nav{border-bottom:1px solid var(--separator);padding-bottom:10px}
+nav span{float:right;color:var(--text-muted)}.toolbar{display:flex;gap:7px;padding:12px 0;flex-wrap:wrap}
+button{font:inherit;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 10px}
+.primary,.selected,.selection{background:var(--selected);color:var(--selected-text)}.primary{border-color:var(--border-hover)}
+.hover{background:var(--surface-hover);color:var(--text-bright)}.active{background:var(--surface-active);color:var(--text-bright)}
+.content{display:grid;grid-template-columns:1fr 1fr;gap:10px}.content>aside,.editor{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;min-width:0}
+aside>div{padding:6px}.selected{border-radius:3px}small{display:block;color:var(--text-muted);padding:8px 6px;font-size:11px}
+.selection{padding:2px;display:block;margin:6px 0}.wave{background:var(--waveform-background);padding:6px;margin-top:10px}svg{display:block;width:100%;height:42px}
+footer{display:flex;justify-content:space-between;color:var(--status);font-size:11px;margin-top:12px}.accent{color:var(--accent)}.conflict{color:var(--conflict)}
+.swatches{display:flex;margin-top:12px;height:8px;overflow:hidden;border-radius:3px}.swatches span{flex:1}
+</style><body><p class="intro">Palette study using Wormedit’s theme roles. Existing Nuklear geometry is retained.</p><div class="grid">'''
+    page += "".join(cards) + "</div></body></html>"
+    target = output.parent / (output.stem + "-interfaces.html")
+    target.write_text(page)
+    for warning in warnings:
+        print("CONTRAST " + warning)
+    print(f"Validated {len(paths)} interface themes; {len(warnings)} contrast warnings; comparison: {target}")
+    return warnings
 
 
 def validate_field(document):
@@ -206,6 +285,7 @@ def main():
     validate(palette)
     args.output.write_text(render(palette))
     print(args.output)
+    preview_interfaces(args.output, palette)
     preview_fields(args.output)
 
 

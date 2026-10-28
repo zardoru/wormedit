@@ -1,6 +1,25 @@
 # Theme files
 
-`ui-dark.json` defines application chrome. The field picker never changes it.
+`ui-*.json` files define application chrome and Nuklear controls. Select one in
+Options → Appearance → Interface theme, then Apply. “Bundled default” uses
+`ui-dark.json`; the field picker remains independent.
+
+Bundled choices include Windows 98, Classic Mac (platinum era), Modern Mac Light
+and Dark, osu! stable, osu!lazer, Nord, Solarized Light and Dark, and Catppuccin
+Mocha. The OS inspired palettes are original color adaptations using the existing Wormedit controls,
+fonts and geometry. They do not include native widgets, bevels or translucency.
+See [interface provenance](INTERFACE-PROVENANCE.md) for the upstream MIT licenses,
+source revisions and role adaptations.
+
+The osu! stable palette pairs neutral charcoal surfaces with candy pink selection
+and orange accents. The osu!lazer palette uses violet surfaces, deeper rose
+selection and cyan waveform peaks. Both color the interface independently of
+the existing osu!mania field skin.
+
+Each interface file has a `name` and a `roles` object. Colors accept the same hex
+and scale references described below. Define all roles (including waveform roles)
+for a complete light or dark theme; omitted roles use the built-in dark defaults.
+Malformed colors reject the selection and retain the previous palette.
 
 `field/wormedit.json` is the default Compose field scheme. All `field/*.json`
 files appear in Options → Appearance → Default field skin. The current layout
@@ -51,12 +70,13 @@ the default automatic contrast behavior. `bgm` has one lane entry; `timing` has
 entries keyed by `bpm`, `scroll`, `speed`, `stop`, `delay`, `warp`, `kiai`, `anchor`.
 Semantic-layer and snap color views retain their established color meanings.
 
-Build after editing files to copy them into `build/assets/themes`. Alternatively,
+Build after editing files to copy them into the build directory's `assets/themes`. Alternatively,
 set `WORMEDIT_THEME_DIR` to a directory containing `ui-dark.json` and `field/`
 before starting. Files are read at startup; picker changes use the loaded schemes.
 
-`python3 scripts/preview-theme.py` validates chrome and all field schemes, writes
-HTML swatch sheets under `/tmp/wormedit-theme-preview-fields`, and reports
-composited label contrast below 3:1. Warnings do not modify colors.
+`python3 scripts/preview-theme.py` validates every interface and field scheme,
+writes an interface comparison to `/tmp/wormedit-theme-preview-interfaces.html`
+and field swatch sheets under `/tmp/wormedit-theme-preview-fields`, and reports
+text contrast below 3:1. Warnings do not modify colors.
 See [iBMSC provenance](field/IBMSC-PROVENANCE.md) for the eight imported schemes
 and `python3 scripts/import-ibmsc-theme.py --check` for deterministic verification.

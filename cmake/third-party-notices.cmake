@@ -130,6 +130,11 @@ wormedit_install_notices(fonts "${CMAKE_SOURCE_DIR}/assets/fonts/LICENSE"
 wormedit_install_notices(lucide "${CMAKE_SOURCE_DIR}/assets/icons/lucide/LICENSE")
 wormedit_install_notices(hitsounds "${CMAKE_SOURCE_DIR}/assets/hitsounds/LICENSE.md")
 wormedit_install_notices(field-themes "${CMAKE_SOURCE_DIR}/assets/themes/field/IBMSC-PROVENANCE.md")
+wormedit_install_notices(interface-themes "${CMAKE_SOURCE_DIR}/assets/themes/licenses/NORD-LICENSE.txt"
+    "${CMAKE_SOURCE_DIR}/assets/themes/licenses/CATPPUCCIN-LICENSE.txt"
+    "${CMAKE_SOURCE_DIR}/assets/themes/licenses/SOLARIZED-LICENSE.txt"
+    "${CMAKE_SOURCE_DIR}/assets/themes/licenses/OSU-LICENSE.txt"
+    "${CMAKE_SOURCE_DIR}/assets/themes/INTERFACE-PROVENANCE.md")
 # Embedded dependencies retain their notices in these source files. Copy the
 # complete files to preserve the text without a second license parser.
 wormedit_install_notices(libotoworm/minizip

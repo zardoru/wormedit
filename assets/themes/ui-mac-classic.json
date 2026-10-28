@@ -1,0 +1,27 @@
+{
+  "name": "Classic Mac",
+  "description": "Original platinum-era Mac inspired warm grays, charcoal text and purple selection.",
+  "roles": {
+    "background": "#dddddd",
+    "surface": "#eeeeee",
+    "surface_hover": "#ffffff",
+    "surface_active": "#cccccc",
+    "border": "#888888",
+    "border_hover": "#555599",
+    "text": "#222222",
+    "text_bright": "#000000",
+    "text_muted": "#555555",
+    "selected": "#555599",
+    "selected_text": "#ffffff",
+    "accent": "#444477",
+    "status": "#555555",
+    "conflict": "#aa2222",
+    "separator": "#aaaaaa",
+    "popup": "#eeeeee",
+    "waveform_background": "#ffffff",
+    "waveform_guide": "#cccccc",
+    "waveform_rms": "#777799",
+    "waveform_peak": "#444477",
+    "waveform_playhead": "#aa2222"
+  }
+}

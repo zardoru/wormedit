@@ -679,8 +679,12 @@ if(WORMEDIT_BUILD_APP)
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/LICENSE"
                    "${CMAKE_BINARY_DIR}/assets/fonts/LICENSE" COPYONLY)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes")
-    configure_file("${CMAKE_SOURCE_DIR}/assets/themes/ui-dark.json"
-                   "${CMAKE_BINARY_DIR}/assets/themes/ui-dark.json" COPYONLY)
+    file(GLOB WORMEDIT_INTERFACE_THEMES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/themes/ui-*.json")
+    foreach(theme IN LISTS WORMEDIT_INTERFACE_THEMES)
+        get_filename_component(theme_name "${theme}" NAME)
+        configure_file("${theme}" "${CMAKE_BINARY_DIR}/assets/themes/${theme_name}" COPYONLY)
+    endforeach()
+    file(COPY "${CMAKE_SOURCE_DIR}/assets/themes/licenses" DESTINATION "${CMAKE_BINARY_DIR}/assets/themes")
     file(GLOB WORMEDIT_FIELD_SCHEMES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/themes/field/*.json")
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes/field")
     foreach(scheme IN LISTS WORMEDIT_FIELD_SCHEMES)
@@ -735,7 +739,7 @@ if(WORMEDIT_BUILD_APP)
     install(FILES assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/LICENSE
         assets/fonts/NotoSansCJKjp-Regular.otf assets/fonts/NotoSansCJK-LICENSE assets/fonts/README.md
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/fonts")
-    install(FILES assets/themes/ui-dark.json DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
+    install(FILES ${WORMEDIT_INTERFACE_THEMES} DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
     install(DIRECTORY assets/hitsounds DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets")
     install(DIRECTORY assets/themes/field DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes"
         FILES_MATCHING PATTERN "*.json")

@@ -1,0 +1,27 @@
+{
+  "name": "Modern Mac Light",
+  "description": "Original modern macOS inspired pale grouped surfaces, graphite text and blue selection.",
+  "roles": {
+    "background": "#f2f2f7",
+    "surface": "#ffffff",
+    "surface_hover": "#e5e5ea",
+    "surface_active": "#d1d1d6",
+    "border": "#aeaeb2",
+    "border_hover": "#0062cc",
+    "text": "#1c1c1e",
+    "text_bright": "#000000",
+    "text_muted": "#636366",
+    "selected": "#0062cc",
+    "selected_text": "#ffffff",
+    "accent": "#0062cc",
+    "status": "#636366",
+    "conflict": "#b42318",
+    "separator": "#c7c7cc",
+    "popup": "#ffffff",
+    "waveform_background": "#ffffff",
+    "waveform_guide": "#d1d1d6",
+    "waveform_rms": "#4b91c8",
+    "waveform_peak": "#0062cc",
+    "waveform_playhead": "#b42318"
+  }
+}

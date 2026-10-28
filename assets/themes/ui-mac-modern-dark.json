@@ -1,0 +1,27 @@
+{
+  "name": "Modern Mac Dark",
+  "description": "Original modern macOS inspired graphite surfaces, cool white text and vivid blue selection.",
+  "roles": {
+    "background": "#1c1c1e",
+    "surface": "#2c2c2e",
+    "surface_hover": "#3a3a3c",
+    "surface_active": "#48484a",
+    "border": "#636366",
+    "border_hover": "#64aaff",
+    "text": "#f2f2f7",
+    "text_bright": "#ffffff",
+    "text_muted": "#aeaeb2",
+    "selected": "#0062cc",
+    "selected_text": "#ffffff",
+    "accent": "#64aaff",
+    "status": "#aeaeb2",
+    "conflict": "#ff6961",
+    "separator": "#48484a",
+    "popup": "#2c2c2e",
+    "waveform_background": "#1c1c1e",
+    "waveform_guide": "#48484a",
+    "waveform_rms": "#4587aa",
+    "waveform_peak": "#64d2ff",
+    "waveform_playhead": "#ffd60a"
+  }
+}

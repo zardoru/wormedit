@@ -1,0 +1,28 @@
+{
+  "name": "Solarized Light",
+  "description": "Solarized warm paper surfaces with cyan selection and blue accents.",
+  "source": "https://github.com/altercation/solarized/blob/62f656a02f93c5190a8753159e34b385588d5ff3/README.md",
+  "roles": {
+    "background": "#fdf6e3",
+    "surface": "#eee8d5",
+    "surface_hover": "#fdf6e3",
+    "surface_active": "#ddd6c1",
+    "border": "#93a1a1",
+    "border_hover": "#268bd2",
+    "text": "#586e75",
+    "text_bright": "#073642",
+    "text_muted": "#586e75",
+    "selected": "#2aa198",
+    "selected_text": "#002b36",
+    "accent": "#007e9e",
+    "status": "#586e75",
+    "conflict": "#cb4b16",
+    "separator": "#93a1a1",
+    "popup": "#eee8d5",
+    "waveform_background": "#fdf6e3",
+    "waveform_guide": "#93a1a1",
+    "waveform_rms": "#2aa198",
+    "waveform_peak": "#007e9e",
+    "waveform_playhead": "#cb4b16"
+  }
+}

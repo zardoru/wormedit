@@ -1,0 +1,28 @@
+{
+  "name": "Solarized Dark",
+  "description": "Solarized dark base tones with cyan selection and green accents.",
+  "source": "https://github.com/altercation/solarized/blob/62f656a02f93c5190a8753159e34b385588d5ff3/README.md",
+  "roles": {
+    "background": "#002b36",
+    "surface": "#073642",
+    "surface_hover": "#073642",
+    "surface_active": "#0b4350",
+    "border": "#586e75",
+    "border_hover": "#2aa198",
+    "text": "#93a1a1",
+    "text_bright": "#fdf6e3",
+    "text_muted": "#839496",
+    "selected": "#2aa198",
+    "selected_text": "#002b36",
+    "accent": "#859900",
+    "status": "#839496",
+    "conflict": "#dc322f",
+    "separator": "#586e75",
+    "popup": "#073642",
+    "waveform_background": "#002b36",
+    "waveform_guide": "#586e75",
+    "waveform_rms": "#268bd2",
+    "waveform_peak": "#2aa198",
+    "waveform_playhead": "#b58900"
+  }
+}

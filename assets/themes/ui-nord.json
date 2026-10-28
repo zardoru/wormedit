@@ -1,0 +1,28 @@
+{
+  "name": "Nord",
+  "description": "Polar night surfaces with frost selection and aurora feedback.",
+  "source": "https://github.com/nordtheme/nord/blob/1cef71605416a222e57225b544540ce0fcec18d4/src/nord.css",
+  "roles": {
+    "background": "#2e3440",
+    "surface": "#3b4252",
+    "surface_hover": "#434c5e",
+    "surface_active": "#4c566a",
+    "border": "#4c566a",
+    "border_hover": "#88c0d0",
+    "text": "#e5e9f0",
+    "text_bright": "#eceff4",
+    "text_muted": "#d8dee9",
+    "selected": "#88c0d0",
+    "selected_text": "#2e3440",
+    "accent": "#8fbcbb",
+    "status": "#d8dee9",
+    "conflict": "#bf616a",
+    "separator": "#4c566a",
+    "popup": "#3b4252",
+    "waveform_background": "#2e3440",
+    "waveform_guide": "#4c566a",
+    "waveform_rms": "#5e81ac",
+    "waveform_peak": "#88c0d0",
+    "waveform_playhead": "#ebcb8b"
+  }
+}

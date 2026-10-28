@@ -1,0 +1,27 @@
+{
+  "name": "Windows 98",
+  "description": "Original Windows 98 inspired silver chrome, navy selection and teal accents.",
+  "roles": {
+    "background": "#c0c0c0",
+    "surface": "#dfdfdf",
+    "surface_hover": "#efefef",
+    "surface_active": "#b0b0b0",
+    "border": "#808080",
+    "border_hover": "#000080",
+    "text": "#000000",
+    "text_bright": "#000000",
+    "text_muted": "#484848",
+    "selected": "#000080",
+    "selected_text": "#ffffff",
+    "accent": "#006060",
+    "status": "#484848",
+    "conflict": "#a00000",
+    "separator": "#808080",
+    "popup": "#dfdfdf",
+    "waveform_background": "#ffffff",
+    "waveform_guide": "#c0c0c0",
+    "waveform_rms": "#008080",
+    "waveform_peak": "#006060",
+    "waveform_playhead": "#800000"
+  }
+}

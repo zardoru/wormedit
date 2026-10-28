@@ -1,0 +1,28 @@
+{
+  "name": "osu!lazer",
+  "description": "Lazer inspired violet surfaces, rose selection, pastel pink highlights and cyan waveform peaks.",
+  "source": "https://github.com/ppy/osu/blob/3e7f0f4c619adfc5133dc443df14a1b7574223db/osu.Game/Graphics/OsuColour.cs",
+  "roles": {
+    "background": "#201823",
+    "surface": "#2c2230",
+    "surface_hover": "#46334d",
+    "surface_active": "#563c60",
+    "border": "#685370",
+    "border_hover": "#ff99c7",
+    "text": "#eee8f2",
+    "text_bright": "#ffffff",
+    "text_muted": "#cbb8d2",
+    "selected": "#cc3378",
+    "selected_text": "#ffffff",
+    "accent": "#ff66ab",
+    "status": "#cbb8d2",
+    "conflict": "#ff8b91",
+    "separator": "#46334d",
+    "popup": "#2c2230",
+    "waveform_background": "#201823",
+    "waveform_guide": "#46334d",
+    "waveform_rms": "#8c66ff",
+    "waveform_peak": "#66ccff",
+    "waveform_playhead": "#ffcc22"
+  }
+}

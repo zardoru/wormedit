@@ -1,0 +1,28 @@
+{
+  "name": "osu! stable",
+  "description": "Original stable-era inspired charcoal chrome, candy pink selection and warm orange accents.",
+  "source": "https://osu.ppy.sh/wiki/en/Client/Interface",
+  "roles": {
+    "background": "#181818",
+    "surface": "#242424",
+    "surface_hover": "#333333",
+    "surface_active": "#424242",
+    "border": "#595959",
+    "border_hover": "#ff99cc",
+    "text": "#eeeeee",
+    "text_bright": "#ffffff",
+    "text_muted": "#bbbbbb",
+    "selected": "#ff66aa",
+    "selected_text": "#24151d",
+    "accent": "#ffb347",
+    "status": "#bbbbbb",
+    "conflict": "#ff7777",
+    "separator": "#3b3b3b",
+    "popup": "#202020",
+    "waveform_background": "#141414",
+    "waveform_guide": "#424242",
+    "waveform_rms": "#cc5288",
+    "waveform_peak": "#ff99cc",
+    "waveform_playhead": "#ffcc66"
+  }
+}

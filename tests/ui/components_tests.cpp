@@ -123,7 +123,39 @@ void check_content_height(float actual, float expected) {
     CHECK(actual == expected);
 }
 
+void check_editor_selection(const nk_style_edit& edit) {
+    const auto selected_text = nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::selected_text));
+    CHECK(nk_color_u32(edit.selected_text_normal) == selected_text);
+    CHECK(nk_color_u32(edit.selected_text_hover) == selected_text);
+}
+
+void check_editor_cursor(const nk_style_edit& edit) {
+    CHECK(nk_color_u32(edit.cursor_text_normal) ==
+          nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::surface)));
+    CHECK(nk_color_u32(edit.cursor_text_hover) ==
+          nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::surface_hover)));
+}
+
 } // namespace
+
+TEST_CASE("Interface palettes keep selected text and block cursors legible in shared editors",
+          "[components][theme]") {
+    namespace theme = wormedit::ui::theme;
+    const auto directory = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path()
+        / "assets/themes";
+    theme::load(directory);
+    const auto generation = theme::field_generation();
+    for (const auto& palette : theme::interface_themes()) {
+        CAPTURE(palette.id);
+        CHECK(theme::reload_interface_theme(palette.id).empty());
+        fixture_t fixture;
+        check_editor_selection(fixture.context.style.edit);
+        check_editor_selection(fixture.context.style.property.edit);
+        check_editor_cursor(fixture.context.style.edit);
+        CHECK(theme::field_generation() == generation);
+    }
+    CHECK(theme::reload_interface_theme("").empty());
+}
 
 TEST_CASE("Numeric property values fit their scissor without an inset border",
           "[components][property-field]") {

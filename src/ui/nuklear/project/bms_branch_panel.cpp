@@ -279,20 +279,26 @@ void render_scope_row(nk_context* context, const scope_view_t& view,
 
 // Both choosers and the tree sit in the same inset: no border and no group padding of their own,
 // so every control in the panel shares the dock's left and right edge.
-auto inset_group_begin(nk_context* context, const char* name, float height) -> bool {
-    nk_layout_row_dynamic(context, height, 1);
+struct inset_size_t {
+    float height;
+    nk_flags flags;
+};
+// Nuklear reserves the scroll bar's width in every group that may scroll, even when nothing does,
+// which narrows the card against the dock's header. Groups that fit therefore drop the scroll bar.
+auto inset_size(nk_context* context, std::size_t rows, float row_extent, float limit) -> inset_size_t {
+    const auto content = static_cast<float>(rows) * (row_extent + context->style.window.spacing.y) + metrics::gap_small;
+    return {.height = std::min(content, limit), .flags = content > limit ? 0 : NK_WINDOW_NO_SCROLLBAR};
+}
+auto inset_group_begin(nk_context* context, const char* name, inset_size_t size) -> bool {
+    nk_layout_row_dynamic(context, size.height, 1);
     const auto area = nk_widget_bounds(context);
     nk_fill_rect(nk_window_get_canvas(context), area, metrics::radius_bar, chrome::section_card_color());
     nk_style_push_vec2(context, &context->style.window.group_padding, nk_vec2(0, metrics::gap_small * 0.5f));
     nk_style_push_style_item(context, &context->style.window.fixed_background, nk_style_item_color(nk_rgba(0, 0, 0, 0)));
-    const auto open = nk_group_begin(context, name, 0) != 0;
+    const auto open = nk_group_begin(context, name, size.flags) != 0;
     nk_style_pop_style_item(context);
     nk_style_pop_vec2(context);
     return open;
-}
-auto inset_height(nk_context* context, std::size_t rows, float row_extent, float limit) -> float {
-    const auto content = static_cast<float>(rows) * (row_extent + context->style.window.spacing.y) + metrics::gap_medium;
-    return std::clamp(content, std::min(96.0f, limit), std::max(96.0f, limit));
 }
 auto has_visible_children(const scope_view_t& view, std::size_t index) -> bool {
     return index + 1 < view.rows.size() && view.rows[index + 1].depth > view.rows[index].depth;
@@ -308,7 +314,7 @@ void render_scope_tree(nk_context* context, const scope_view_t& view, wormedit::
         visible.push_back(index);
     }
     const auto limit = nk_window_get_content_region(context).h * 0.5f;
-    if (!inset_group_begin(context, "Scope tree", inset_height(context, visible.size(), row_height, limit))) return;
+    if (!inset_group_begin(context, "Scope tree", inset_size(context, visible.size(), row_height, limit))) return;
     for (const auto index : visible) {
         const auto& row = view.rows[index];
         const auto target = view.content_chart && *view.content_chart == row.node;
@@ -357,7 +363,7 @@ void render_scope_add(nk_context* context, const scope_view_t& view, wormedit::u
 void render_scope_move(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (tree_state.popup != popup_t::move) return;
     const auto candidates = view.rows.size() - 1;
-    if (!inset_group_begin(context, "Move targets", inset_height(context, candidates, row_height,
+    if (!inset_group_begin(context, "Move targets", inset_size(context, candidates, row_height,
             nk_window_get_content_region(context).h * 0.4f))) return;
     for (const auto& row : view.rows) {
         if (row.node == view.selected) continue;

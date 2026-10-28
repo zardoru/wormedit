@@ -558,9 +558,12 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
     const bool text_pushed = !level_one && nk_style_push_color(context, &context->style.tab.text,
                                                                  color(UiColor::text));
     // Cards get taller headers so the title has room inside its fill.
-    const bool padding_pushed = !level_one && nk_style_push_vec2(context, &context->style.tab.padding,
+    const bool padding_pushed = nk_style_push_vec2(context, &context->style.tab.padding,
         nk_vec2(context->style.tab.padding.x, context->style.tab.padding.y + metrics::gap_small));
+    const bool indent_pushed = !level_one && nk_style_push_float(context, &context->style.tab.indent,
+                                                                 metrics::card_indent);
     const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (indent_pushed) nk_style_pop_float(context);
     if (padding_pushed) nk_style_pop_vec2(context);
     if (text_pushed) nk_style_pop_color(context);
 
@@ -569,8 +572,9 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
     // at_y is in layout space; widget bounds subtract the scroll offset, so a drawn fill must too.
     const float scroll_y = static_cast<float>(*layout->offset_y);
     // A card extends past the content edges, so its header and body keep inner padding.
-    const float pad = level_one ? 0.0f : metrics::gap_medium;
-    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + 2.0f * pad, fill.second, level_one};
+    // On the right it ends flush with the content edge, which the scroll bar bounds.
+    const float pad = level_one ? 0.0f : metrics::card_overhang;
+    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + pad, fill.second, level_one};
     const float header_height = layout->row.height - context->style.window.spacing.y;
     if (!open) {
         // A closed level-one bar draws its own fill; a closed card wraps just its header.
@@ -582,10 +586,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
         nk_fill_rect(nk_window_get_canvas(context),
                      nk_rect(section.x, section.top + header_height + context->style.window.spacing.y * 0.5f,
                              section.width, 1.0f), 0.0f, color(UiColor::border));
-    if (!level_one) {  // Room between a card's rule and its first row.
-        nk_layout_row_dynamic(context, metrics::gap_small, 1);
-        nk_spacing(context, 1);
-    }
+    // Room between the header (or a card's rule) and the first row; a card also keeps a right margin.
+    nk_layout_row_dynamic(context, metrics::gap_small, 1);
+    nk_spacing(context, 1);
+    if (!level_one) context->current->layout->bounds.w -= metrics::card_indent;
     if (open_section_count < max_section_depth) {
         open_sections[open_section_count] = section;
     }
@@ -596,7 +600,7 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
 void section_pop(nk_context* context) {
     if (open_section_count > 0) {
         --open_section_count;
-        if (open_section_count < max_section_depth && !open_sections[open_section_count].level_one) {
+        if (open_section_count < max_section_depth) {
             nk_layout_row_dynamic(context, metrics::gap_small, 1);
             nk_spacing(context, 1);
         }
@@ -607,7 +611,12 @@ void section_pop(nk_context* context) {
             patch_fill(context, section, nk_rect(section.x, section.top, section.width, bottom - section.top));
         }
     }
+    // The pop undoes the indent the push applied, so the same indent must be in force.
+    const bool card = open_section_count < max_section_depth && !open_sections[open_section_count].level_one;
+    if (card) context->current->layout->bounds.w += metrics::card_indent;
+    const bool indent_pushed = card && nk_style_push_float(context, &context->style.tab.indent, metrics::card_indent);
     nk_tree_pop(context);
+    if (indent_pushed) nk_style_pop_float(context);
 }
 
 } // namespace wormedit::ui::chrome

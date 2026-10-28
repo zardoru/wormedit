@@ -35,6 +35,9 @@ inline constexpr float checkbox_box = 16.0f;
 
 // Left indent of an accordion section's body.
 inline constexpr float section_indent = 14.0f;
+// Level-two cards: body indent (also the right margin) and how far the card extends left of the content.
+inline constexpr float card_indent = 8.0f;
+inline constexpr float card_overhang = 4.0f;
 
 // Shadow of one elevation level: `steps` stacked rounded rects, each one pixel larger, all
 // shifted `offset_y` pixels down.

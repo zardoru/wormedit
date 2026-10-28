@@ -1576,7 +1576,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     const auto palette_drawn =
         wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
         compose_note_palette_has_buttons(*view);
-    constexpr float palette_width = 36.0f;
+    const auto palette_width = compose_note_palette_button_size +
+        2.0f * context->style.window.group_padding.x;
     const auto branch_left = palette_drawn ? palette_width : 0.0f;
     const auto editor_left = branch_left + (branch_drawn ? branch_width + 8.0f : 0.0f);
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,

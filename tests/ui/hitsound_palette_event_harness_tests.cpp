@@ -1,8 +1,12 @@
 #include "ui/nuklear/compose/compose_panel.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose/compose_state.h"
+#include "ui/nuklear/chrome/chrome.h"
+#include "wormedit/nuklear_config.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <array>
+#include <memory>
 
 namespace {
 auto click_hitsound(nuklear_event_harness_t& harness, int x, int y) -> wormedit::hitsound_change_t {
@@ -44,6 +48,66 @@ TEST_CASE("Hitsound palette emits mixed toggles and sample set cycling without n
     const auto change = click_hitsound(harness, target.first, target.second);
     CHECK(change.field == field);
     CHECK_FALSE(change.value);
+}
+
+TEST_CASE("Icon recording distinguishes a complete button from its visible intersection",
+          "[frontend-state][palette-layout]") {
+    wormedit::ui::testing::icon_widget_snapshot_t widgets;
+    widgets.append("right clipped", {8, 8, 30, 30}, {8, 8, 28, 30});
+    widgets.append("bottom clipped", {8, 8, 30, 30}, {8, 8, 30, 29});
+    widgets.append("complete", {8, 8, 30, 30}, {8, 8, 30, 30});
+    CHECK_FALSE(widgets.is_fully_visible("right clipped"));
+    CHECK_FALSE(widgets.is_fully_visible("bottom clipped"));
+    CHECK(widgets.is_fully_visible("complete"));
+    CHECK(widgets.center_of("right clipped").first == 22);
+}
+
+TEST_CASE("Compose palette contains complete note-kind and hitsound buttons at different paddings",
+          "[frontend-state][event-harness][hitsound][palette-layout]") {
+    const auto padding = GENERATE(0.0f, 3.0f, 4.0f, 8.0f);
+    const auto hitsounds = GENERATE(false, true);
+    CAPTURE(padding, hitsounds);
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.note_kind_palette_visible = true;
+    view.allowed_note_kind_mask = 0x7f;
+    const std::array samples{wormedit::osu_hitsample_t{}};
+    view.hitsounds = wormedit::ui::hitsound_palette_view_t::from(hitsounds, samples);
+
+    // Render the production Compose panel with a local style so the test can vary
+    // group padding without changing the frontend's global context.
+    nk_user_font font{};
+    font.height = 15;
+    font.width = [](nk_handle, float, const char*, int length) { return length * 8.0f; };
+    nk_context context{};
+    REQUIRE(nk_init_default(&context, &font));
+    const std::unique_ptr<nk_context, decltype(&nk_free)> cleanup{&context, nk_free};
+    wormedit::ui::chrome::apply_theme(&context);
+    context.style.window.group_padding = nk_vec2(padding, 4);
+    wormedit::ui::testing::icon_widget_snapshot_t widgets;
+    const wormedit::ui::testing::icon_widget_recording_scope_t recording{widgets};
+    wormedit::ui::workspace_action_t action{};
+    nk_input_begin(&context);
+    nk_input_end(&context);
+    if (nk_begin(&context, "Palette layout", nk_rect(0, 0, 1280, 900), NK_WINDOW_NO_SCROLLBAR)) {
+        worm_ui_nuklear_render_compose_panel(&context, &view, &harness.view().timing,
+            &action, true, false, nullptr, 0, 0);
+    }
+    nk_end(&context);
+
+    for (const auto& descriptor : view.note_palette.entries) {
+        CAPTURE(descriptor.label);
+        CHECK(widgets.is_fully_visible(descriptor.label));
+    }
+    if (hitsounds) {
+        for (const auto* tooltip : {"Whistle (W): off; click toggles", "Finish (E): off; click toggles",
+                "Clap (R): off; click toggles", "Normal sample set: Auto; click cycles, right-click chooses",
+                "Addition sample set: Auto; click cycles, right-click chooses"}) {
+            CAPTURE(tooltip);
+            CHECK(widgets.is_fully_visible(tooltip));
+        }
+    }
 }
 
 TEST_CASE("Hitsound icons expose addition toggle states and both sample-set selectors",

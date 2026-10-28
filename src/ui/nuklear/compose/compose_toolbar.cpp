@@ -568,7 +568,7 @@ void render_hitsound_toggle(const ComposeToolbarContext& toolbar, std::size_t in
     const auto value = toolbar.view->hitsounds.values.fields[index];
     const auto tooltip = std::string{names[index]} + ": " +
         (!value ? "mixed" : *value == 1 ? "on" : "off") + "; click toggles";
-    nk_layout_row_static(toolbar.context, 30, 30, 1);
+    nk_layout_row_static(toolbar.context, compose_note_palette_button_size, compose_note_palette_button_size, 1);
     const chrome::NativeIconCell cell{toolbar.context, value == 1, true, tooltip.c_str()};
     icons[index](nk_window_get_canvas(toolbar.context), cell.bounds(), cell.tint());
     draw_hitsound_check(toolbar.context, cell.bounds(), value, cell.tint());
@@ -608,7 +608,7 @@ void render_hitsound_set(const ComposeToolbarContext& toolbar, std::size_t index
         "; click cycles, right-click chooses" +
         (index == 3 && toolbar.view->note_paint_mode_active
             ? "; SET draws use this bank (Auto uses beatmap default)" : "");
-    nk_layout_row_static(context, 30, 30, 1);
+    nk_layout_row_static(context, compose_note_palette_button_size, compose_note_palette_button_size, 1);
     const chrome::NativeIconCell cell{context, false, true, tooltip.c_str()};
     draw_hitsound_set(context, cell.bounds(), index == 4, value, cell.tint());
     if (cell.is_clicked()) emit_hitsound(toolbar, field);
@@ -646,7 +646,7 @@ void render_compose_hitsound_menu(const ComposeToolbarContext& toolbar) {
 
 void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     // Select tool: the pointer selects instead of painting notes.
-    nk_layout_row_static(toolbar.context, 30, 30, 1);
+    nk_layout_row_static(toolbar.context, compose_note_palette_button_size, compose_note_palette_button_size, 1);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
             "Select (Alt+1)", !toolbar.view->note_paint_mode_active &&
                 !toolbar.view->semantic_layer_paint_mode_active && !toolbar.view->resource_paint_mode_active}
@@ -658,7 +658,7 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
         const auto& descriptor = toolbar.view->note_palette.entries[index];
         const auto kind = static_cast<std::uint32_t>(descriptor.id);
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
-        nk_layout_row_static(toolbar.context, 30, 30, 1);
+        nk_layout_row_static(toolbar.context, compose_note_palette_button_size, compose_note_palette_button_size, 1);
         if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label.data(),
                 toolbar.view->note_paint_mode_active &&
                     toolbar.view->armed_note_kind == static_cast<wormedit::note_kind_t>(kind)}.render(toolbar.context) &&

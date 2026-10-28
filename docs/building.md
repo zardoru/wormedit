@@ -5,16 +5,18 @@ The headless core and its tests build without a window or GPU; the application i
 ## Release versions
 
 The numeric CMake `PROJECT_VERSION` is `1.0.0`. `WORMEDIT_VERSION_SUFFIX` defaults
-to `-rc1`; the normal CMake variable `WORMEDIT_VERSION_FULL` joins them as
-`1.0.0-rc1`. The configured `config.h` exposes that full `WORMEDIT_VERSION` and
+to `-rc2`; the normal CMake variable `WORMEDIT_VERSION_FULL` joins them as
+`1.0.0-rc2`. The configured `config.h` exposes that full `WORMEDIT_VERSION` and
 separate numeric `WORMEDIT_VERSION_MAJOR`, `MINOR` and `PATCH` macros. About and
 Windows archive names use the full version. Suffix characters are limited to
-`[-.0-9A-Za-z]`.
+`[-.0-9A-Za-z]`. The suffix is a cache variable, so an existing build directory keeps
+the suffix it was first configured with after the default changes; pass
+`-DWORMEDIT_VERSION_SUFFIX=<suffix>` again when reusing one for a new release.
 
 For a final release, configure with `cmake -S . -B build -DWORMEDIT_VERSION_SUFFIX=`.
 For the Windows package, pass `CMAKE_ARGS=-DWORMEDIT_VERSION_SUFFIX=` to the
-package script. This produces `wormedit-1.0.0-windows-x64.zip`; RC1 produces
-`wormedit-1.0.0-rc1-windows-x64.zip`.
+package script. This produces `wormedit-1.0.0-windows-x64.zip`; RC2 produces
+`wormedit-1.0.0-rc2-windows-x64.zip`.
 
 ## Native headless build
 
@@ -181,7 +183,7 @@ WORMEDIT_BUILD_JOBS=3 scripts/windows-cross-package.sh
 
 The SDK is installed into `build/windows-ffmpeg/prefix`. The package script configures
 and builds `build/windows-cross-release`, stages into `build/windows-cross-stage`,
-and writes `build/dist/wormedit-1.0.0-rc1-windows-x64.zip` and its SHA-256 sidecar.
+and writes `build/dist/wormedit-1.0.0-rc2-windows-x64.zip` and its SHA-256 sidecar.
 Pass an output directory as the package script's first argument to change `build/dist`.
 The explicit three-job limit is suitable when sharing the machine with other release lanes.
 The package command reconfigures an existing build too; confirm
@@ -226,8 +228,8 @@ Wine's helper windows on the isolated display:
 
 ```sh
 wine_work=$(mktemp -d /tmp/wormedit-wine-release.XXXXXX)
-unzip -q build/dist/wormedit-1.0.0-rc1-windows-x64.zip -d "$wine_work"
-package="$wine_work/wormedit-1.0.0-rc1-windows-x64"
+unzip -q build/dist/wormedit-1.0.0-rc2-windows-x64.zip -d "$wine_work"
+package="$wine_work/wormedit-1.0.0-rc2-windows-x64"
 cp -R "$package/manual/fixtures/tutorial" "$wine_work/ascii"
 cp -R "$wine_work/ascii" "$wine_work/曲"
 xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' \
@@ -285,7 +287,7 @@ brew install cmake ninja pkgconf asciidoctor python ffmpeg
 git submodule update --init --recursive
 scripts/macos-package.sh
 # Optional output directory and version override (empty suffix for a final release):
-# scripts/macos-package.sh build/dist -DWORMEDIT_VERSION_SUFFIX=-rc1
+# scripts/macos-package.sh build/dist -DWORMEDIT_VERSION_SUFFIX=-rc2
 ```
 
 CMake must be at least 4.2 (libotoworm's requirement). The script probes the
@@ -309,7 +311,7 @@ separate verification on that OS. This is a single-architecture build, with no
 claim of compatibility with older Macs or macOS versions.
 
 Output is `build/dist/Wormedit-<full-version>-macos-<arch>.zip` and a SHA-256
-sidecar. The full version is `WORMEDIT_VERSION_FULL` (`1.0.0-rc1`); both plist version fields stay
+sidecar. The full version is `WORMEDIT_VERSION_FULL` (`1.0.0-rc2`); both plist version fields stay
 numeric (`1.0.0`). The archive contains `Wormedit.app`; it has an ad-hoc signature, with no
 Developer ID, notarization, hardened runtime or entitlements. The script signs
 nested libraries after rewriting paths and verifies the complete signature.

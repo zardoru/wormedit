@@ -2,10 +2,10 @@
 
 **A rhythm chart editor for BMS, BMSON, StepMania and osu!mania, built for charting fast.**
 
-![Compose with a keysounded BME chart: timing lanes, eight playable lanes, a BGM column and the Sounds dock](docs/manual/images/compose-overview.png)
+![Compose on a new BME project: timing lanes, eight playable lanes and the Sounds dock](docs/manual/images/compose-overview.png)
 
-> **Status: release candidate (1.0.0-rc1).** Wormedit is used to make real charts; 1.0.0 follows
-> once this candidate has been tried widely. See the [release notes](docs/release-notes/1.0.0-rc1.md)
+> **Status: release candidate (1.0.0-rc2).** Wormedit is used to make real charts; 1.0.0 follows
+> once this candidate has been tried widely. See the [release notes](docs/release-notes/1.0.0-rc2.md)
 > for downloads and known limitations. Storyboards and Quaver support are planned but not
 > shipped. Work is tracked as task cards in [`docs/chart-editor-plan/`](docs/chart-editor-plan.md).
 
@@ -57,9 +57,11 @@ teaches this loop first.
   StepMania speeds and osu!mania kiai in timing lanes beside the notes; bar lines you split, merge
   and move like notes (`Ctrl+M` toggles one at the cursor); tap tempo, waveform beat fitting, a
   metronome, timing lock and SV recipes.
-- **Audio.** Streaming playback with waveforms, per-note audition, BGM lane mute and solo,
-  playback from 0.1× to 1×, with or without pitch change; BPM-grid slicing of long sounds into
-  keysounds, and preview-audio export with trimming and fade-out.
+- **Audio.** Streaming playback with waveforms, per-note audition, BGM lane mute and solo, a
+  Mixer with Music, BGM, Keysounds and Hitsounds levels, playback from 0.1× to 1×, with or
+  without pitch change; osu!mania hitsounds with per-note volume and sample sets and per-map
+  sample overrides; BPM-grid slicing of long sounds into keysounds, and preview-audio export
+  with trimming and fade-out.
 - **BMS depth.** Legacy Shift-JIS and other encodings, `#RANDOM`/`#IF`/`#SWITCH` branches, BGM
   columns, numbered `#WAV` slot import, and paste from **iBMSC and BMSE** (and tools that write
   their clipboard format).
@@ -84,7 +86,7 @@ explicit choice; `target_profile` controls the output profile separately.
 ## Getting wormedit
 
 Release candidates ship a Windows ZIP and a Linux AppImage; see the
-[release notes](docs/release-notes/1.0.0-rc1.md). macOS users build the app bundle with
+[release notes](docs/release-notes/1.0.0-rc2.md). macOS users build the app bundle with
 `scripts/macos-package.sh`. Wormedit is developed on Linux. Windows builds are cross-compiled
 with MinGW-w64 and packaged as a ZIP by `scripts/windows-cross-package.sh`; the AppImage is
 built by `scripts/linux-appimage.sh`. CI builds and tests the headless core on Linux (GCC and Clang)
@@ -141,7 +143,7 @@ Start with [`docs/architecture.md`](docs/architecture.md) (the edit pipeline) an
 | `tests/` | Catch2 tests and the windowless [frontend event harness](docs/frontend-event-harness.md) |
 | `docs/` | Manual, plan and task cards, building guide, format references |
 
-`scripts/gate.sh` builds, runs the whole suite (over 4,000 tests), and checks function complexity
+`scripts/gate.sh` builds, runs the whole suite (over 5,500 tests), and checks function complexity
 and whitespace; run it before sending a change.
 
 ## AI-assisted development

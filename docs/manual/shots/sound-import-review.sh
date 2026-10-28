@@ -15,7 +15,11 @@ done
 xdotool windowfocus --sync "$picker"
 sleep 1
 xdotool key ctrl+l
+sleep 0.5
 xdotool type --clearmodifiers --delay 10 "$root_dir/docs/manual/fixtures/tutorial/chord.ogg"
+# GTK's location bar can leave inline completion text after the cursor; drop it.
+sleep 0.3
+xdotool key shift+End Delete
 xdotool key Return
 sleep 0.8
 if xdotool search --onlyvisible --class zenity 2>/dev/null | rg -q "^$picker$"; then

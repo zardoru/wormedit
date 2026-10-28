@@ -409,13 +409,22 @@ struct DrawnIconButton {
     }
 };
 
+// Tabs and mode switches: the chosen one takes the selection fill, the others sit on a faint
+// raised fill so the row reads as a bar of tabs. Unavailable tabs fade through the theme's
+// disabled colors instead of Nuklear's alpha, which vanishes on light themes.
 inline auto mode_button(nk_context* context, const char* label, const char* tooltip,
-                        bool selected) -> bool {
+                        bool selected, bool enabled = true) -> bool {
     const auto bounds = nk_widget_bounds(context);
-    const auto style = button_style(context, selected);
+    auto style = button_style(context, selected);
+    if (!enabled) {
+        style.normal = style.hover = style.active = nk_style_item_color(disabled_fill());
+        style.text_normal = style.text_hover = style.text_active = text_faint();
+    } else if (!selected) {
+        style.normal = nk_style_item_color(mix_color(color(UiColor::background), color(UiColor::text), 9));
+    }
     const bool clicked = nk_button_label_styled(context, &style, label) != 0;
     button_feedback(context, bounds, selected, tooltip);
-    return clicked;
+    return clicked && enabled;
 }
 
 inline constexpr float menu_padding = metrics::gap_medium;

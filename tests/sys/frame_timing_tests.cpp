@@ -2060,7 +2060,7 @@ auto compose_narrow_layout_is_ordered() -> bool {
            narrow.field_left_pixels + narrow.playable_field_width_pixels ==
                narrow.bgm_pane_left_pixels &&
            narrow.bgm_pane_left_pixels + narrow.bgm_pane_width_pixels == 280.0 &&
-           narrow.bgm_pane_width_pixels > 0.0;
+           narrow.playable_field_width_pixels >= compose_minimum_playable_field_width_pixels;
 }
 
 auto compose_hidden_lane_layout_is_ordered() -> bool {

@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/resources/sound_import_runtime.h"
 #include "ui/nuklear/resources/sound_import_dialog.h"
@@ -118,7 +119,7 @@ void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const wormedit::ui::w
                                      view.document_revision, picker.generation, kind};
         picker.target = *target;
     }
-    SDL_ShowOpenFileDialog(picker_callback, target, window, nullptr, 0, nullptr, true);
+    wormedit::platform::show_open_file_dialog(picker_callback, target, window, nullptr, 0, nullptr, true);
 }
 
 void worm_ui_nuklear_consume_sound_picker(const wormedit::ui::workspace_view_t& view,

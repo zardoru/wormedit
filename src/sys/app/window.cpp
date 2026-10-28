@@ -11,7 +11,7 @@
 
 namespace {
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 SDL_HitTestResult SDLCALL window_hit_test(SDL_Window* window, const SDL_Point* point, void*) {
     int width{};
     int height{};
@@ -67,7 +67,7 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
     }
     SDL_SetWindowMinimumSize(window->handle, 800, 560);
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
     if (SDL_SetWindowHitTest(window->handle, window_hit_test, nullptr) &&
         !SDL_SetWindowBordered(window->handle, false)) {
         SDL_SetWindowHitTest(window->handle, nullptr, nullptr);
@@ -76,14 +76,19 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
 
     // Request SDL's renderer backed by the SDL_GPU API. Using an explicit
     // driver name prevents a silent fallback to another rendering API.
+#ifdef __EMSCRIPTEN__
+    window->renderer = SDL_CreateRenderer(window->handle, "opengles2");
+#else
     window->renderer = SDL_CreateRenderer(window->handle, "gpu");
+#endif
     if (!window->renderer) {
-        fprintf(stderr, "SDL GPU renderer creation failed: %s\n", SDL_GetError());
+        fprintf(stderr, "SDL renderer creation failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window->handle);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         *window = WormWindow{};
         return false;
     }
+#ifndef __EMSCRIPTEN__
     if (!SDL_GetGPURendererDevice(window->renderer)) {
         fprintf(stderr, "SDL renderer did not expose a GPU device: %s\n", SDL_GetError());
         SDL_DestroyRenderer(window->renderer);
@@ -92,6 +97,7 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
         *window = WormWindow{};
         return false;
     }
+#endif
     if (!SDL_SetRenderVSync(window->renderer, 1)) {
         fprintf(stderr, "SDL GPU renderer VSync setup failed: %s\n", SDL_GetError());
     }

@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Browser publication regression</title>
+<script src="wormedit-wasm-storage.js"></script>
+<script>
+createWormeditStorage({print: console.log, printErr: console.error}).then(module => {
+  window.storageModule = module;
+});
+</script>

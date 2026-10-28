@@ -69,9 +69,20 @@ if(WORMEDIT_BUILD_WASM_SMOKE)
        WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_ENABLE_FFMPEG)
         message(FATAL_ERROR "The WASM smoke lane supports the core codec only; use the wasm-smoke preset")
     endif()
+endif()
+if(EMSCRIPTEN)
+    if(WORMEDIT_ENABLE_FFMPEG OR WORMEDIT_ENABLE_VIDEO_DECODER)
+        message(FATAL_ERROR "The browser target does not support host FFmpeg; disable FFmpeg/video decoding")
+    endif()
     # The native codec catches parse/allocation failures. Retain those catches in WASM too.
     add_compile_options(-fwasm-exceptions -pthread)
     add_link_options(-fwasm-exceptions -pthread)
+    # EM_ASM's documented $0 placeholders are valid SDK syntax in these units.
+    set_source_files_properties(src/core/atomic_file_storage.cpp src/core/resource_file_copy.cpp
+        src/formats/native_project_storage.cpp src/formats/slice_span_render.cpp
+        src/formats/conversion_publication_storage.cpp
+        src/common/browser_files.cpp src/sys/app/main.cpp tests/wasm/storage.cpp
+        PROPERTIES COMPILE_OPTIONS "-Wno-dollar-in-identifier-extension")
     include(CheckCXXSourceCompiles)
     include(CMakePushCheckState)
     cmake_push_check_state(RESET)
@@ -285,7 +296,15 @@ add_custom_target(manual-reference
 find_package(Iconv QUIET)
 if(Iconv_FOUND)
     target_link_libraries(wormedit_core PRIVATE Iconv::Iconv)
-    target_compile_definitions(wormedit_core PRIVATE WORMEDIT_HAS_ICONV=1)
+    if(EMSCRIPTEN)
+        if(NOT Iconv_IS_BUILT_IN)
+            message(FATAL_ERROR "The browser lane requires target-libc iconv, not a host iconv library")
+        endif()
+        set_property(SOURCE src/formats/bms.cpp src/formats/bms_writer.cpp APPEND PROPERTY
+            COMPILE_DEFINITIONS WORMEDIT_HAS_ICONV=1)
+    else()
+        target_compile_definitions(wormedit_core PRIVATE WORMEDIT_HAS_ICONV=1)
+    endif()
 endif()
 
 wormedit_enable_warnings(wormedit_core)
@@ -327,6 +346,11 @@ endif()
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
+    if(EMSCRIPTEN)
+        # Emscripten's C EM_ASM macro requires GNU variadic-macro extensions.
+        set_target_properties(wormedit_audio_decoder PROPERTIES C_EXTENSIONS ON)
+        target_compile_definitions(wormedit_audio_decoder PRIVATE MA_NO_DEVICE_IO)
+    endif()
     include(cmake/dependencies/vorbis.cmake)
     target_sources(wormedit_audio_decoder PRIVATE
         src/formats/slice_span_render.cpp
@@ -441,35 +465,40 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     endif()
 
     FetchContent_MakeAvailable(SDL3 nuklear)
+    if(EMSCRIPTEN)
+        set_target_properties(SDL3-static PROPERTIES C_EXTENSIONS ON)
+    endif()
     include(cmake/sdl/bounded-presentation.cmake)
     wormedit_enable_bounded_sdl_presentation("${sdl3_SOURCE_DIR}")
 
-    set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libotoworm" CACHE PATH
-        "libotoworm source directory (the third_party submodule by default)")
-    if(NOT EXISTS "${WORMEDIT_OTOWORM_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR "libotoworm not found at ${WORMEDIT_OTOWORM_SOURCE_DIR}; "
-            "run: git submodule update --init")
-    endif()
-    if(WIN32)
-        include(cmake/dependencies/zlib.cmake)
-    endif()
-    if(NOT TARGET otoworm::otoworm)
-        add_subdirectory("${WORMEDIT_OTOWORM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
-    endif()
+    if(NOT EMSCRIPTEN)
+        set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libotoworm" CACHE PATH
+            "libotoworm source directory (the third_party submodule by default)")
+        if(NOT EXISTS "${WORMEDIT_OTOWORM_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR "libotoworm not found at ${WORMEDIT_OTOWORM_SOURCE_DIR}; "
+                "run: git submodule update --init")
+        endif()
+        if(WIN32)
+            include(cmake/dependencies/zlib.cmake)
+        endif()
+        if(NOT TARGET otoworm::otoworm)
+            add_subdirectory("${WORMEDIT_OTOWORM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
+        endif()
 
-    # libotoworm is a separate project that builds as C++20; keep its own sources
-    # there while wormedit uses C++23 (D14). Its C++23 fixes are kept for upstream.
-    set_target_properties(otoworm PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+        # libotoworm is a separate project that builds as C++20; keep its own sources
+        # there while wormedit uses C++23 (D14). Its C++23 fixes are kept for upstream.
+        set_target_properties(otoworm PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
-    # libotoworm's conversion bridge selects iconv through its legacy LINUX
-    # preprocessor symbol.  Define it at the dependency boundary on Linux so
-    # its already-required Iconv target and its headers agree.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_compile_definitions(otoworm PRIVATE LINUX)
-    endif()
-    # libotoworm tests the legacy WIN32 symbol, which only MSVC defines on its own.
-    if(WIN32 AND NOT MSVC)
-        target_compile_definitions(otoworm PRIVATE WIN32 MINGW)
+        # libotoworm's conversion bridge selects iconv through its legacy LINUX
+        # preprocessor symbol.  Define it at the dependency boundary on Linux so
+        # its already-required Iconv target and its headers agree.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_compile_definitions(otoworm PRIVATE LINUX)
+        endif()
+        # libotoworm tests the legacy WIN32 symbol, which only MSVC defines on its own.
+        if(WIN32 AND NOT MSVC)
+            target_compile_definitions(otoworm PRIVATE WIN32 MINGW)
+        endif()
     endif()
 
     configure_file("${CMAKE_BINARY_DIR}/config.h"
@@ -763,14 +792,45 @@ if(WORMEDIT_BUILD_APP)
             wormedit::core
             wormedit::ui_frontend
             SDL3::SDL3
-            otoworm::otoworm
             nlohmann_json::nlohmann_json
     )
+    if(NOT EMSCRIPTEN)
+        target_link_libraries(wormedit PRIVATE otoworm::otoworm)
+    endif()
+    if(EMSCRIPTEN)
+        target_sources(wormedit PRIVATE src/common/browser_files.cpp)
+        set_target_properties(wormedit PROPERTIES SUFFIX ".js")
+        target_link_options(wormedit PRIVATE
+            -sMODULARIZE=1 -sEXPORT_NAME=createWormedit -sENVIRONMENT=web,worker
+            -sPTHREAD_POOL_SIZE=16 -sDEFAULT_PTHREAD_STACK_SIZE=2097152
+            -sPROXY_TO_PTHREAD=1 -sOFFSCREEN_FRAMEBUFFER=1 -sOFFSCREENCANVAS_SUPPORT=1
+            -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sMAXIMUM_MEMORY=1073741824
+            -sSTACK_SIZE=5242880 -sFORCE_FILESYSTEM=1 -sMAX_WEBGL_VERSION=2
+            "-sEXPORTED_RUNTIME_METHODS=['FS','ccall']"
+            "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_wormedit_browser_dialog_complete']"
+            "--preload-file=${CMAKE_SOURCE_DIR}/assets@/assets"
+        )
+        configure_file(packaging/wasm/editor.html "${CMAKE_BINARY_DIR}/index.html" COPYONLY)
+        configure_file(packaging/wasm/editor-files.js "${CMAKE_BINARY_DIR}/editor-files.js" COPYONLY)
+        include(cmake/dependencies/fflate.cmake)
+        file(GLOB_RECURSE WORMEDIT_BROWSER_ASSETS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/*")
+        set_property(TARGET wormedit APPEND PROPERTY LINK_DEPENDS ${WORMEDIT_BROWSER_ASSETS})
+        add_executable(wormedit-wasm-storage EXCLUDE_FROM_ALL tests/wasm/storage.cpp)
+        target_include_directories(wormedit-wasm-storage PRIVATE "${CMAKE_SOURCE_DIR}/src")
+        target_link_libraries(wormedit-wasm-storage PRIVATE wormedit::core)
+        wormedit_enable_warnings(wormedit-wasm-storage)
+        set_target_properties(wormedit-wasm-storage PROPERTIES SUFFIX ".js")
+        target_link_options(wormedit-wasm-storage PRIVATE
+            -sMODULARIZE=1 -sEXPORT_NAME=createWormeditStorage -sENVIRONMENT=web,worker
+            -sPROXY_TO_PTHREAD=1 -sPTHREAD_POOL_SIZE=4 -sDEFAULT_PTHREAD_STACK_SIZE=1048576
+            -sINITIAL_MEMORY=33554432 -sFORCE_FILESYSTEM=1)
+        configure_file(tests/wasm/storage.html "${CMAKE_BINARY_DIR}/storage.html" COPYONLY)
+    endif()
 
     target_compile_definitions(wormedit PRIVATE
         $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
 
-    if(UNIX)
+    if(UNIX AND NOT EMSCRIPTEN)
         set_target_properties(wormedit PROPERTIES ENABLE_EXPORTS ON)
     endif()
 

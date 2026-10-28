@@ -179,8 +179,10 @@ void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) 
     const auto inactive = presentation.is_inactive();
     if (inactive) {
         worm_ui_frontend_discard_frame();
+#ifndef __EMSCRIPTEN__
         const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), true);
         if (remainder) SDL_WaitEventTimeout(nullptr, static_cast<int>(remainder / 1'000'000));
+#endif
         return;
     }
     int width = 0;
@@ -190,8 +192,12 @@ void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) 
     if (pending) worm_ui_frontend_discard_frame();
     else worm_ui_frontend_render(width, height);
     worm_window_swap(&window);
+#ifndef __EMSCRIPTEN__
     const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), inactive);
     if (remainder != 0) SDL_DelayPrecise(remainder);
+#else
+    (void)frame_start_ns;
+#endif
 }
 
 } // namespace wormedit::sys

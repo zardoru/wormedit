@@ -1419,7 +1419,7 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
     const std::array available{
         wormedit::ui::compose_inspector_available(compose_mode_of(*view)),
         notes && view->keysounds_available, view->scene_available, notes, notes, view->scene_available,
-        view->preview_mix_available};
+        view->preview_mix_available, notes && view->scene_available};
     const auto branch = state.dock_layout.branch_panel_visible &&
         worm_ui_nuklear_bms_branch_panel_visible(view) &&
         bounds.w >= (view->bms_program.available ? 600.0f : 900.0f);
@@ -1448,7 +1448,6 @@ static void render_compose_inspector_contents(nk_context* context,
 
     render_compose_timing_inspector(inspector);
     render_compose_label_search(inspector);
-    render_compose_generator_form(inspector);
 }
 
 template <typename Render>
@@ -1490,6 +1489,10 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
 void render_dock_mixer(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, panel.action);
 }
+void render_dock_generator(const ComposePanelRenderContext& panel) {
+    const ComposeInspectorContext inspector{panel.context, panel.view, panel.timing_view, panel.action};
+    render_compose_generator_form(inspector);
+}
 struct dock_panel_renderer_t {
     wormedit::dock_panel_t id;
     wormedit::ui::nuklear::sdl_region_t region;
@@ -1504,7 +1507,8 @@ constexpr std::array dock_panel_renderers{
     dock_panel_renderer_t{wormedit::dock_panel_t::measures, wormedit::ui::nuklear::sdl_region_t::measures, "Compose measures", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_measures},
     dock_panel_renderer_t{wormedit::dock_panel_t::layers, wormedit::ui::nuklear::sdl_region_t::layers, "Compose layers", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_layers},
     dock_panel_renderer_t{wormedit::dock_panel_t::markers, wormedit::ui::nuklear::sdl_region_t::markers, "Compose markers", NK_WINDOW_BORDER, render_dock_markers},
-    dock_panel_renderer_t{wormedit::dock_panel_t::mixer, wormedit::ui::nuklear::sdl_region_t::mixer, "Compose mixer", NK_WINDOW_BORDER, render_dock_mixer}};
+    dock_panel_renderer_t{wormedit::dock_panel_t::mixer, wormedit::ui::nuklear::sdl_region_t::mixer, "Compose mixer", NK_WINDOW_BORDER, render_dock_mixer},
+    dock_panel_renderer_t{wormedit::dock_panel_t::generator, wormedit::ui::nuklear::sdl_region_t::generator, "Compose generator", NK_WINDOW_BORDER, render_dock_generator}};
 }
 static void render_compose_side_docks(const ComposePanelRenderContext& panel,
                                        const ComposeDockLayout& layout) {

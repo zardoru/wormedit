@@ -19,19 +19,19 @@ the tutorial project so you can run it before changing it.
 
 |Add notes to the chart you are on
 |A *note generator*: any `.lua` file that returns notes
-|Inspector → *Lua note generator*
+|Generator dock → *Lua note generator*
 
 |Keep several generators for one song together
 |A `project.lua` file that includes the others
-|Inspector → *Lua note generator*
+|Generator dock → *Lua note generator*
 
 |Create a whole new difficulty from a description
 |A `.chart.lua` file
-|Inspector → *Lua note generator*
+|Generator dock → *Lua note generator*
 
 |Generate SV spans or explicit points on the selected chart
 |A `.lua` file returning `sv_spans` or `sv_points`
-|Inspector → *Lua note generator*
+|Generator dock → *Lua note generator*
 
 |Shape osu!mania SV or StepMania scrolls with a formula
 |An *SV curve*: a file returning `function(p, ctx)`
@@ -103,7 +103,7 @@ include::../fixtures/tutorial/scripts/first-note.lua[]
 `wormedit` is a read-only snapshot of the chart the script was started from, and arrays in Lua
 count from 1. `wormedit.measures[1]` is the first measure. `wormedit.lane_profile[1].lanes[1]` is the first
 lane of the chart's layout, which here is the BMS scratch lane.
-. In the inspector, expand *Lua note generator*. Leave the drop-down at the top on
+. Open the *Generator* dock (*Lua note generator*). Leave the drop-down at the top on
   *New generator*.
 . Press *Choose script…* and pick `scripts/first-note.lua`. The *Script file* field now shows the
   path. You can also type a path there yourself, relative to the project folder.

@@ -11,7 +11,7 @@ inline constexpr float dock_minimum_width = 240.0f;
 inline constexpr float dock_maximum_width = 520.0f;
 inline constexpr double dock_minimum_split = 0.2;
 inline constexpr double dock_maximum_split = 0.8;
-enum class dock_panel_t { inspector, sounds, images, measures, layers, markers, mixer };
+enum class dock_panel_t { inspector, sounds, images, measures, layers, markers, mixer, generator };
 struct dock_panel_definition_t {
     dock_panel_t id;
     std::string_view key;
@@ -24,7 +24,8 @@ inline constexpr std::array dock_panel_catalog{
     dock_panel_definition_t{dock_panel_t::measures, "measures", "Measures"},
     dock_panel_definition_t{dock_panel_t::layers, "layers", "Layers"},
     dock_panel_definition_t{dock_panel_t::markers, "markers", "Markers"},
-    dock_panel_definition_t{dock_panel_t::mixer, "mixer", "Mixer"}};
+    dock_panel_definition_t{dock_panel_t::mixer, "mixer", "Mixer"},
+    dock_panel_definition_t{dock_panel_t::generator, "generator", "Generator"}};
 inline constexpr std::size_t dock_panel_count = dock_panel_catalog.size();
 
 // Application preferences; the order also determines the order of the two visible panes.
@@ -50,8 +51,8 @@ class ui_layout_preferences_t {
   private:
     std::array<dock_panel_t, dock_panel_count> order_{dock_panel_t::inspector, dock_panel_t::sounds,
         dock_panel_t::images, dock_panel_t::measures, dock_panel_t::layers, dock_panel_t::markers,
-        dock_panel_t::mixer};
-    std::array<bool, dock_panel_count> visible_{true, true, false, false, false, false, false};
+        dock_panel_t::mixer, dock_panel_t::generator};
+    std::array<bool, dock_panel_count> visible_{true, true, false, false, false, false, false, false};
     float width_{320.0f};
     float split_{0.5f};
     bool side_by_side_{};

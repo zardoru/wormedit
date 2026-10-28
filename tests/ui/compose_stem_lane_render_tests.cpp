@@ -1115,6 +1115,62 @@ TEST_CASE("Export cut edge grips paint visible labels outside their hatched band
     }
 }
 
+TEST_CASE("Play lane decorations and titles continue beyond document edges",
+          "[ui][field][pixel][lane][isolated-software-render]") {
+    field_submission_fixture_t fixture;
+    REQUIRE(fixture.context);
+    worm_ui_nuklear_reset_compose_state();
+    wormedit::ui::compose_view_t view;
+    view.scene_available = view.lane_key_legend_visible = true;
+    view.viewport_width_pixels = view.viewport_height_pixels = 128;
+    view.playable_field_left_pixels = 42;
+    view.playable_field_right_pixels = 122;
+    view.lanes = {{.bounds = {42, 0, 82, 128}, .lane_id = wormedit::lane_id_t{1}},
+                  {.bounds = {82, 0, 122, 128}, .lane_id = wormedit::lane_id_t{2}, .display_order = 1}};
+    const auto expected = render_static_pixels(fixture, view);
+    for (const auto bounds : {std::pair{40.0, 80.0}, std::pair{110.0, 128.0},
+                              std::pair{0.0, 18.0}, std::pair{-80.0, -40.0},
+                              std::pair{160.0, 200.0}}) {
+        CAPTURE(bounds.first, bounds.second);
+        for (auto& lane : view.lanes) {
+            lane.bounds.top = bounds.first;
+            lane.bounds.bottom = bounds.second;
+            lane.extends_top = lane.extends_bottom = true;
+        }
+        ++view.document_revision;
+        CHECK(render_static_pixels(fixture, view) == expected);
+    }
+}
+
+TEST_CASE("Lane decoration extensions follow scroll direction across layout changes",
+          "[ui][field][lane][export-cut][isolated-software-render]") {
+    using namespace wormedit;
+    for (const bool downscroll : {false, true}) {
+        auto song = make_cut_timing_raster_song();
+        auto layout = song.charts.front().lane_layouts.front();
+        layout.id = object_id_t{8000};
+        layout.position = {measure_id_t{11}, 0};
+        song.charts.front().lane_layouts.push_back(std::move(layout));
+        auto history = document_history_t::from(std::move(song));
+        auto binding = workspace_controller_t::from(history);
+        REQUIRE(binding.value);
+        auto& workspace = *binding.value;
+        workspace.active_tab = workspace_tab_t::compose;
+        workspace.selected_chart = chart_id_t{1};
+        timing_raster_projection_t projection;
+        projection.application.preferences.editor_preferences.scroll_directions[
+            static_cast<std::size_t>(editor_mode_family_t::other)] = downscroll ? 2 : 1;
+        projection.refill(history, workspace, 0);
+        projection.refill(history, workspace, 250);
+        std::vector<std::pair<bool, bool>> extensions;
+        for (const auto& lane : projection.flattened.view.compose.lanes)
+            extensions.emplace_back(lane.extends_top, lane.extends_bottom);
+        const std::vector<std::pair<bool, bool>> expected{
+            {!downscroll, downscroll}, {downscroll, !downscroll}};
+        CHECK(extensions == expected);
+    }
+}
+
 namespace {
 void draw_compare_work_frame(field_submission_fixture_t& fixture,const wormedit::ui::compose_view_t& pane) {
     nk_sdl_begin_frame(fixture.context);

@@ -116,6 +116,9 @@ struct editor_field_lane_geometry_t {
     std::uint32_t display_order{};
     lane_key_color_t key_color{lane_key_color_t::generic};
     editor_field_rect_t bounds;
+    // Decoration continues beyond the outer layout boundaries; hit bounds stay finite.
+    bool extends_before{};
+    bool extends_after{};
 };
 
 struct editor_field_grid_geometry_t {

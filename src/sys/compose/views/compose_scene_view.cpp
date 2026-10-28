@@ -297,7 +297,11 @@ void build_compose_layout_and_notes_view(const compose_scene_projection_context_
                                      .role = lane.role,
                                      .stage = lane.stage,
                                      .glyph = lane.glyph,
-                                     .key_color = lane.key_color},
+                                     .key_color = lane.key_color,
+                                     .extends_top = projection.inputs.scope.downscroll
+                                         ? lane.extends_after : lane.extends_before,
+                                     .extends_bottom = projection.inputs.scope.downscroll
+                                         ? lane.extends_before : lane.extends_after},
                                     view.truncated);
     }
     build_compose_grid_lines_view(projection);

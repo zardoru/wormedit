@@ -260,6 +260,14 @@ add_executable(wormedit_command_journal_benchmarks core/command_journal_benchmar
 target_link_libraries(wormedit_command_journal_benchmarks
     PRIVATE wormedit::core Catch2::Catch2WithMain nlohmann_json::nlohmann_json)
 
+
+# Manual filesystem-backed Release benchmark; accepts a disposable imported BMS copy.
+add_executable(wormedit_bms_edit_benchmark EXCLUDE_FROM_ALL
+    core/bms_edit_benchmark.cpp
+    ../src/sys/project/project_open.cpp)
+target_include_directories(wormedit_bms_edit_benchmark PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit_bms_edit_benchmark PRIVATE wormedit::core)
+
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     # Intentionally not discovered by CTest: opt in with [.performance] in Release.
     add_executable(wormedit_performance_tests core/performance_budget_tests.cpp)

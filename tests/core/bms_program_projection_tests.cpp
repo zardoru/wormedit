@@ -2,6 +2,10 @@
 #include "formats/bms_program_import_internal.h"
 #include "../support/bms_program_fixture.h"
 #include <wormedit/core/rational.h>
+#include <wormedit/core/bms_program_edit.h>
+#include <future>
+#include <map>
+#include <unordered_set>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
@@ -252,4 +256,104 @@ TEST_CASE("Ambiguous catalog identities and missing or wrong assets refuse proje
     const auto result = bms_program_projection_t::from(input);
     CHECK_FALSE(result.value);
     CHECK(result.diagnostics.front().code == failure_code_t::invalid_data);
+}
+
+namespace {
+struct projection_evidence_t {
+    std::vector<std::string> notes, events, bgm;
+    std::vector<resource_entry_t> resources;
+    std::vector<rational_t> lengths;
+    std::optional<branch_id_t> authoring;
+    std::unordered_set<std::uint64_t> read_only;
+    std::vector<branch_id_t> charts;
+    std::vector<branch_selection_t> selections;
+    std::map<std::uint64_t, std::vector<bms_program_owner_t>> owners;
+    auto operator==(const projection_evidence_t&) const -> bool = default;
+
+    static auto from(const bms_program_projection_t& projection) -> projection_evidence_t {
+        const auto& chart = projection.song().charts.front();
+        projection_evidence_t result{.notes = note_keys(projection.song()),
+            .events = event_keys(projection.song()), .bgm = bgm_keys(projection.song()),
+            .resources = projection.song().resources, .lengths = length_keys(chart),
+            .authoring = chart.bms_authoring_chart, .read_only = chart.bms_authoring_read_only,
+            .charts = {projection.active_charts().begin(), projection.active_charts().end()},
+            .selections = {projection.selections().begin(), projection.selections().end()}};
+        for (const auto& measure : chart.measures) {
+            for (const auto& note : measure.notes) {
+                const auto owners = projection.owners(note.id.value);
+                result.owners.emplace(note.id.value, std::vector<bms_program_owner_t>{owners.begin(), owners.end()});
+            }
+        }
+        return result;
+    }
+};
+
+auto cache_owner(bms_prepared_program_t input, bms_program_evaluation_t evaluation = {})
+    -> std::shared_ptr<const bms_program_document_t> {
+    auto result = bms_program_document_t::from(chart_id_t{9000}, std::move(input), std::move(evaluation));
+    REQUIRE(result.value);
+    return std::move(*result.value);
+}
+
+void check_cached_projection(
+    const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>& cached,
+    const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>& cold) {
+    CHECK(cached.diagnostics == cold.diagnostics);
+    REQUIRE(cached.value.has_value() == cold.value.has_value());
+    if (cached.value)
+        CHECK(projection_evidence_t::from(*cached.value) == projection_evidence_t::from(*cold.value));
+}
+}
+
+TEST_CASE("Immutable owner projection cache separates evaluation and authoring targets", "[bms-program-projection][cache]") {
+    auto input = prepared(scoped_source);
+    const auto selector = selectors(input.program).front();
+    const auto owned = cache_owner(std::move(input), {.selections = {{selector, 1}}});
+    const auto& owner = *owned;
+    const auto original = owner.read_projection(owner.evaluation());
+    const auto common = owner.prepared().program.target_chart(owner.prepared().program.root());
+    REQUIRE(common);
+    const auto choice = GENERATE(1, 2, 3);
+    const auto target = GENERATE(0, 1, 2);
+    const auto chart = target == 0 ? std::optional<branch_id_t>{} :
+        std::optional{target == 1 ? *common : branch_id_t{UINT64_MAX}};
+    const bms_program_evaluation_t evaluation{.selections = {{selector, choice}}};
+    const auto cold = chart ? bms_program_projection_t::for_authoring(owner.prepared(), *chart, evaluation) :
+        bms_program_projection_t::from(owner.prepared(), evaluation);
+    for (int repeat = 0; repeat < 2; ++repeat) {
+        const auto cached = owner.read_projection(evaluation, chart);
+        CHECK(cached == owner.read_projection(evaluation, chart));
+        check_cached_projection(*cached, cold);
+    }
+    // A retained result survives eviction by authoring, alternative and failed queries.
+    check_cached_projection(*original, *owner.read_projection(owner.evaluation()));
+}
+
+TEST_CASE("Concurrent projection readers share one immutable result", "[bms-program-projection][cache]") {
+    auto input = prepared(scoped_source);
+    const auto selector = selectors(input.program).front();
+    const bms_program_evaluation_t evaluation{.selections = {{selector, 2}}};
+    const auto owner = cache_owner(std::move(input), {.selections = {{selector, 1}}});
+    const auto read = [&] { return owner->read_projection(evaluation); };
+    auto first = std::async(std::launch::async, read);
+    auto second = std::async(std::launch::async, read);
+    const auto result = read();
+    CHECK(first.get() == result);
+    CHECK(second.get() == result);
+    REQUIRE(result->value);
+    CHECK(std::ranges::equal(result->value->selections(), evaluation.selections));
+}
+
+TEST_CASE("A replacement owner cannot reuse projection settings from its predecessor", "[bms-program-projection][cache]") {
+    auto input = prepared("#TITLE Initial\n#BPM 120\n#WAV01 a.wav\n#00011:01\n");
+    const auto before = cache_owner(input);
+    const auto original = before->read_projection({});
+    input.settings.name = "Changed";
+    const auto after = cache_owner(std::move(input));
+    const auto updated = after->read_projection({});
+    REQUIRE(original->value);
+    REQUIRE(updated->value);
+    CHECK(original != updated);
+    CHECK(original->value->song().charts.front().metadata.name == "Initial");
+    CHECK(updated->value->song().charts.front().metadata.name == "Changed");
 }

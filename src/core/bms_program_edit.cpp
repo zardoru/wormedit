@@ -31,7 +31,8 @@ auto resolve_target(const song_document_t& document, chart_id_t difficulty,
             "Selected scope or Chart is unavailable."});
     const auto scope = program.parent(*chart);
     if (!authoring) {
-        const auto projection = owner->build_projection();
+        const auto cached = owner->read_projection(owner->evaluation());
+        const auto& projection = *cached;
         if (!projection.value || !projection.ok())
             return std::unexpected(error_t<failure_code_t>{failure_code_t::materialize_failed,
                 "Scoped difficulty cannot be evaluated."});
@@ -575,7 +576,8 @@ auto evaluation_candidates(const bms_program_document_t& owner, std::size_t maxi
 // interpretation for content and structural authoring edits.
 auto reachable_evaluation(const bms_program_document_t& owner, bms_program_evaluation_t evaluation)
     -> bms_program_evaluation_t {
-    const auto projection = bms_program_projection_t::from(owner.prepared(), evaluation);
+    const auto cached = owner.read_projection(evaluation);
+    const auto& projection = *cached;
     for (const auto& diagnostic : projection.diagnostics) {
         if (diagnostic.code != failure_code_t::unavailable) continue;
         std::erase_if(evaluation.selections,
@@ -668,14 +670,16 @@ auto validate_evaluation(const bms_program_document_t* previous,
     const bms_program_document_t& owner, bms_program_evaluation_t evaluation,
     const hold_pairing_guard_t& pairing) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
-    const auto projection = bms_program_projection_t::from(owner.prepared(), evaluation);
+    const auto cached = owner.read_projection(evaluation);
+    const auto& projection = *cached;
     if (!projection.value) {
         for (const auto& diagnostic : projection.diagnostics)
             diagnostics.push_back(error(diagnostic_code_t::invalid_binding, diagnostic.message, diagnostic.item));
         return diagnostics;
     }
-    const auto old = previous ? bms_program_projection_t::from(previous->prepared(), evaluation) :
-        attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>{};
+    const auto old_cache = previous ? previous->read_projection(evaluation) : nullptr;
+    const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> empty;
+    const auto& old = old_cache ? *old_cache : empty;
     const auto* before = old.value ? &*old.value : nullptr;
     if (before && pairing.has_changed(*before, *projection.value))
         diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
@@ -709,7 +713,8 @@ auto bms_program_document_t::bounded_evaluations(std::size_t maximum) const
 
 auto bms_program_document_t::read_chart() const -> const chart_document_t* {
     std::call_once(playback_once_, [this] {
-        const auto projection = build_projection();
+        const auto cached = read_projection(evaluation_);
+        const auto& projection = *cached;
         if (!projection.value || !projection.ok()) return;
         view_ = projection.value->song();
         view_->charts.front().id = difficulty_;
@@ -720,7 +725,8 @@ auto bms_program_document_t::read_chart() const -> const chart_document_t* {
 
 auto bms_program_document_t::read_authoring_chart(branch_id_t chart) const -> const chart_document_t* {
     if (!authoring_view_ || authoring_view_->first != chart) {
-        auto projection = build_projection(chart);
+        const auto cached = read_projection(evaluation_, chart);
+        const auto& projection = *cached;
         if (!projection.value || !projection.ok()) return nullptr;
         auto song = projection.value->song();
         song.charts.front().id = difficulty_;
@@ -753,8 +759,21 @@ auto bms_program_document_t::read_resource(resource_id_t id) const -> const reso
 
 auto bms_program_document_t::build_projection(std::optional<branch_id_t> authoring_chart) const
     -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t> {
-    return authoring_chart ? bms_program_projection_t::for_authoring(prepared_, *authoring_chart, evaluation_)
-        : bms_program_projection_t::from(prepared_, evaluation_);
+    return *read_projection(evaluation_, authoring_chart);
+}
+
+auto bms_program_document_t::read_projection(const bms_program_evaluation_t& evaluation,
+    std::optional<branch_id_t> authoring_chart) const
+    -> std::shared_ptr<const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>> {
+    std::lock_guard lock(projection_mutex_);
+    if (!projection_cache_ || projection_cache_->evaluation != evaluation ||
+        projection_cache_->authoring_chart != authoring_chart) {
+        projection_cache_ = projection_cache_t{.evaluation = evaluation, .authoring_chart = authoring_chart,
+            .projection = std::make_shared<const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>>(
+                authoring_chart ? bms_program_projection_t::for_authoring(prepared_, *authoring_chart, evaluation)
+                    : bms_program_projection_t::from(prepared_, evaluation))};
+    }
+    return projection_cache_->projection;
 }
 
 auto bms_program_document_t::from(chart_id_t difficulty, bms_prepared_program_t prepared,
@@ -764,9 +783,10 @@ auto bms_program_document_t::from(chart_id_t difficulty, bms_prepared_program_t 
         .message = "Prepared difficulty requires a stable identity."}}};
     auto candidate = std::shared_ptr<const bms_program_document_t>(
         new bms_program_document_t(difficulty, std::move(prepared), std::move(evaluation)));
-    auto projection = candidate->build_projection();
-    if (!projection.value || !projection.ok()) return {.diagnostics = std::move(projection.diagnostics)};
-    return {.value = std::move(candidate), .diagnostics = std::move(projection.diagnostics)};
+    const auto cached = candidate->read_projection(candidate->evaluation());
+    const auto& projection = *cached;
+    if (!projection.value || !projection.ok()) return {.diagnostics = projection.diagnostics};
+    return {.value = std::move(candidate), .diagnostics = projection.diagnostics};
 }
 
 namespace {
@@ -1046,7 +1066,8 @@ auto validate_prepared_bms_programs(const song_document_t& document) -> diagnost
                 "Prepared difficulty must have one semantic owner and no writable chart mirror."));
             continue;
         }
-        const auto projection = owner->build_projection();
+        const auto cached = owner->read_projection(owner->evaluation());
+        const auto& projection = *cached;
         for (const auto& diagnostic : projection.diagnostics)
             diagnostics.push_back({.severity = diagnostic.severity,
                 .code = diagnostic_code_t::invalid_binding, .message = diagnostic.message,

@@ -33,6 +33,11 @@ class bms_program_document_t {
     [[nodiscard]] auto evaluation() const -> const bms_program_evaluation_t& { return evaluation_; }
     [[nodiscard]] auto build_projection(std::optional<branch_id_t> authoring_chart = {}) const
         -> attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>;
+    // One cached result per immutable owner, keyed by exact evaluation and authoring target.
+    // Readers retain immutable results across cache replacement.
+    [[nodiscard]] auto read_projection(const bms_program_evaluation_t& evaluation,
+        std::optional<branch_id_t> authoring_chart = {}) const
+        -> std::shared_ptr<const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>>;
     [[nodiscard]] auto build_rebased_program(const chart_document_t& before,
         const chart_document_t& after, object_id_t first_id) const
         -> result_t<bms_prepared_program_t, diagnostic_list_t>;
@@ -47,6 +52,13 @@ class bms_program_document_t {
     chart_id_t difficulty_;
     bms_prepared_program_t prepared_;
     bms_program_evaluation_t evaluation_;
+    struct projection_cache_t {
+        bms_program_evaluation_t evaluation;
+        std::optional<branch_id_t> authoring_chart;
+        std::shared_ptr<const attempt_t<bms_program_projection_t, bms_program_projection_diagnostics_t>> projection;
+    };
+    mutable std::mutex projection_mutex_;
+    mutable std::optional<projection_cache_t> projection_cache_;
     mutable std::once_flag playback_once_;
     mutable std::optional<song_document_t> view_;
     mutable document_id_index_t<resource_entry_t> playback_resources_;

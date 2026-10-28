@@ -79,8 +79,14 @@ Authoring-origin and read-only markers are derived metadata, never serialized or
 retaining recorded owners for updates/deletions. Cross-scope hold edits require a separate
 explicit operation. The shared publication boundary checks bounded alternative evaluations,
 new collisions and unresolved references before validation and the existing Undo publication.
-Exhausting the evaluation budget rejects the entire edit. Projections remain detached values;
-the prepared difficulty cannot also have an independently writable chart-vector counterpart.
+Exhausting the evaluation budget rejects the entire edit. Each immutable owner retains at
+most one projection result, keyed by exact evaluation choices and optional authoring Chart,
+including its diagnostics. Reachability, publication, validation and read views reuse it.
+Cache replacement is synchronized; readers retain immutable results and builders return
+detached copies. New owners start cold, so content, settings, catalog and retained-source
+changes cannot reuse stale evidence. Alternative evaluations still run all publication checks.
+Projections remain detached values; the prepared difficulty cannot also have an independently
+writable chart-vector counterpart.
 Runtime event precedence follows program order; original source offsets remain provenance.
 Prepared editor commands share the same typed-operation runner. It validates a detached
 command proposal and extracts the explicitly named event or object IDs into a semantic

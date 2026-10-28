@@ -54,11 +54,11 @@ void project_section_heading(nk_context* context, const char* text) {
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     auto* canvas = nk_window_get_canvas(context);
     const auto& style = context->style;
-    nk_fill_rect(canvas, bounds, 0.0f, style.tab.border_color);
+    nk_fill_rect(canvas, bounds, style.tab.rounding, wormedit::ui::chrome::section_header_color());
     const float inset = wormedit::ui::metrics::gap_medium + wormedit::ui::metrics::gap_small;
     const float height = style.font->height;
     nk_draw_text(canvas, nk_rect(bounds.x + inset, bounds.y + (bounds.h - height) * 0.5f, bounds.w - inset, height),
-                 text, static_cast<int>(std::strlen(text)), style.font, style.tab.border_color, style.tab.text);
+                 text, static_cast<int>(std::strlen(text)), style.font, wormedit::ui::chrome::section_header_color(), style.tab.text);
 }
 
 struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {

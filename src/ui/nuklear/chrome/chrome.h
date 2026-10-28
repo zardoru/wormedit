@@ -742,24 +742,29 @@ inline void apply_tooltip_theme(nk_context* context) {
 
 // Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
 // menus. Node and tab buttons are the chevrons that open and close the section.
-// Level-one section bars step from the panel background toward the text color, so they read
-// as the parent of everything indented under them in dark and light schemes alike.
-inline auto section_header_color() -> nk_color {
+// Section fills step from the panel background toward the text color: a body panel, a
+// level-two card, and the level-one bar. They read as nested layers in dark and light schemes.
+inline auto section_fill(int percent) -> nk_color {
     const auto base = color(UiColor::background);
     const auto text = color(UiColor::text);
-    const auto mix = [](nk_byte a, nk_byte b) {
-        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * 14 / 100);
+    const auto mix = [percent](nk_byte a, nk_byte b) {
+        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * percent / 100);
     };
     return nk_rgba(mix(base.r, text.r), mix(base.g, text.g), mix(base.b, text.b), 255);
 }
+inline auto section_header_color() -> nk_color { return section_fill(14); }
+inline auto section_body_color() -> nk_color { return section_fill(5); }
+inline auto section_card_color() -> nk_color { return section_fill(9); }
 
 inline void apply_header_theme(nk_context* context) {
     auto& style = context->style;
     const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     const auto hover = nk_style_item_color(color(UiColor::surface_hover));
     const auto active = nk_style_item_color(color(UiColor::surface_active));
-    style.tab.background = clear;
-    style.tab.border_color = section_header_color();
+    // Tree headers fill with the background item; the border rectangle is square, so it stays off.
+    style.tab.background = nk_style_item_color(section_header_color());
+    style.tab.border_color = nk_rgba(0, 0, 0, 0);
+    style.tab.border = 0.0f;
     style.tab.text = color(UiColor::text_bright);
     style.tab.indent = metrics::section_indent;
     style.tab.rounding = metrics::radius_control;
@@ -778,10 +783,10 @@ inline void apply_header_theme(nk_context* context) {
 }
 
 // Accordion sections with a visible hierarchy. NK_TREE_TAB is a level-one section: a filled
-// bar in bright text. NK_TREE_NODE is a level-two subsection: unfilled, in the normal text
-// color. Both indent their body and draw a thin rule down its left edge, in the bar's color
-// for level one and in the border color for level two. Every push that returns true needs a
-// matching section_pop; an open section's rule is painted there, once its height is known.
+// bar in bright text over a panel that holds the body. NK_TREE_NODE is a level-two
+// subsection: a card that wraps its header and body, in the normal text color. Both indent
+// their body. Every push that returns true needs a matching section_pop; the panel or card is
+// reserved behind the header and sized there, once the body's height is known.
 auto section_push(nk_context* context, nk_tree_type type, const char* title,
                   nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool;
 inline auto section_push(nk_context* context, nk_tree_type type, const char* title,

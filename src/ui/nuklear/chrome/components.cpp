@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace wormedit::ui::chrome {
 namespace {
@@ -510,29 +511,67 @@ auto SelectionBar::render(nk_context* context) const -> int {
 namespace {
 
 struct open_section_t {
-    float body_top{};
-    bool level_one{};
+    std::size_t fill_offset{};
+    float top{};
+    float x{};
+    float width{};
+    bool tracked{};
 };
 
-// Sections nest only a couple of levels; a push beyond this still works, it just paints no rule.
+// Sections nest only a couple of levels; a push beyond this still works, it just paints no fill.
 constexpr std::size_t max_section_depth = 8;
 open_section_t open_sections[max_section_depth];
 std::size_t open_section_count = 0;
+
+// The filled rectangle reserved behind a section is a command in the window's draw list; its
+// geometry is patched once the section's height is known. The offset, not a pointer, is kept
+// because the command buffer can grow.
+auto reserve_fill(nk_context* context, nk_color fill, float rounding) -> std::pair<std::size_t, bool> {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto before = canvas->last;
+    nk_fill_rect(canvas, canvas->clip, rounding, fill);
+    return {canvas->last, canvas->last != before};
+}
+
+void patch_fill(nk_context* context, const open_section_t& section, struct nk_rect bounds) {
+    if (!section.tracked) return;
+    auto* canvas = nk_window_get_canvas(context);
+    auto* command = reinterpret_cast<nk_command_rect_filled*>(
+        static_cast<nk_byte*>(canvas->base->memory.ptr) + section.fill_offset);
+    command->x = static_cast<short>(bounds.x);
+    command->y = static_cast<short>(bounds.y);
+    command->w = static_cast<unsigned short>(std::max(bounds.w, 0.0f));
+    command->h = static_cast<unsigned short>(std::max(bounds.h, 0.0f));
+}
 
 } // namespace
 
 auto section_push(nk_context* context, nk_tree_type type, const char* title,
                   nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool {
     const bool level_one = type == NK_TREE_TAB;
+    // An empty row reports the width and left edge the header row will get.
+    nk_layout_row_dynamic(context, 0, 1);
+    const auto row = nk_widget_bounds(context);
+    const auto fill = reserve_fill(context, level_one ? section_body_color() : section_card_color(),
+                                   metrics::radius_bar);
     const bool text_pushed = !level_one && nk_style_push_color(context, &context->style.tab.text,
                                                                  color(UiColor::text));
     const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
     if (text_pushed) nk_style_pop_color(context);
-    if (!open) return false;
-    // The header row is the last one laid out; the body starts after its height.
+
+    // The header is the last row laid out, so its top and height are known here.
     const auto* layout = context->current->layout;
-    if (open_section_count < max_section_depth)
-        open_sections[open_section_count] = {layout->at_y + layout->row.height, level_one};
+    open_section_t section{fill.first, layout->at_y, row.x, row.w, fill.second};
+    const float header_height = layout->row.height - context->style.window.spacing.y;
+    if (!open) {
+        // A closed level-one bar draws its own fill; a closed card wraps just its header.
+        patch_fill(context, section, level_one ? nk_rect(row.x, section.top, 0, 0)
+                                               : nk_rect(row.x, section.top, row.w, header_height));
+        return false;
+    }
+    if (open_section_count < max_section_depth) {
+        open_sections[open_section_count] = section;
+    }
     ++open_section_count;
     return true;
 }
@@ -544,11 +583,7 @@ void section_pop(nk_context* context) {
             const auto& section = open_sections[open_section_count];
             const auto* layout = context->current->layout;
             const float bottom = layout->at_y + layout->row.height;
-            const float x = layout->at_x - metrics::section_indent * 0.5f - metrics::section_rule_width * 0.5f;
-            if (bottom > section.body_top)
-                nk_fill_rect(nk_window_get_canvas(context),
-                             nk_rect(x, section.body_top, metrics::section_rule_width, bottom - section.body_top),
-                             0.0f, section.level_one ? section_header_color() : color(UiColor::border));
+            patch_fill(context, section, nk_rect(section.x, section.top, section.width, bottom - section.top));
         }
     }
     nk_tree_pop(context);

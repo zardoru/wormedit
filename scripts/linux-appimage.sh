@@ -14,10 +14,6 @@ if [[ $(uname -m) != x86_64 ]]; then
     echo 'The pinned AppImage toolchain currently requires an x86_64 Linux host.' >&2
     exit 1
 fi
-if [[ ! -f third_party/libotoworm/CMakeLists.txt ]]; then
-    echo 'Initialize the libotoworm submodule first: git submodule update --init' >&2
-    exit 1
-fi
 mkdir -p "$out" "$work"
 docker build --platform linux/amd64 --tag wormedit-appimage:jammy --file packaging/linux/Dockerfile packaging
 # Run as the caller so repeated builds and artifacts remain user-owned.

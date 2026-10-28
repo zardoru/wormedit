@@ -34,7 +34,7 @@ Metadata coverage is symmetric and exhaustive within each advertised profile. Ma
 
 ## Initial scaffold (historical)
 
-The following describes the original scaffold, not the current application. T-678 (2026-10-18) removed the unused legacy Chart and Field files. The current document/import pipeline is described in [the architecture](../architecture.md); `libotoworm` remains a dependency.
+The following describes the original scaffold, not the current application. T-678 (2026-10-18) removed the unused legacy Chart and Field files. The current document/import pipeline is described in [the architecture](../architecture.md). `libotoworm` has since been removed from the build; see the [removal audit](../audits/otoworm-removal-2026-10-28.md).
 
 `src/common/Chart.h` contains a small normalized chart model. `src/common/chart.cpp` currently imports through `libotoworm`, converts charts to seconds, and copies notes, BPM, warps, stops, and interpolated speed multipliers. BMSON loading is routed through `libotoworm`, but its slice data, sound list, BGM events, measure lengths, source metadata, and most format-specific information are discarded during conversion. This dependency is temporary scaffold code. Wormedit will own its format codecs, timing model, and conversion pipeline; `libotoworm` is source and behavior reference only and should leave the application link once the replacement fixture coverage is in place.
 

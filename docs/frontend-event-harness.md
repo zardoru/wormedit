@@ -146,10 +146,9 @@ Add new files to the `wormedit_frontend_event_harness_tests` target in
 ## Running
 
 The existing `headless` preset still has no SDL/frontend dependency. Opt in
-without building the app using the dedicated preset. It needs CMake 4.2+, a
-compiler, Ninja, zlib development headers, and the `third_party/libotoworm` submodule (or
-`-DWORMEDIT_OTOWORM_SOURCE_DIR=/path/to/libotoworm`). CMake resolves pinned SDL3
-and Nuklear sources:
+without building the app using the dedicated preset. It needs CMake 3.25+, a
+C++23 compiler and Ninja. CMake resolves pinned SDL3 and Nuklear sources; no Git
+submodules are required:
 
 ```sh
 cmake --preset headless-events

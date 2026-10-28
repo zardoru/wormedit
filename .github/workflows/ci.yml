@@ -38,13 +38,11 @@ jobs:
             preset: headless
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: ${{ matrix.name == 'linux-gcc' }}
 
       - name: Install frontend build tools
         if: matrix.name == 'linux-gcc'
         run: |
-          sudo apt-get update && sudo apt-get install -y zlib1g-dev python3-venv
+          sudo apt-get update && sudo apt-get install -y python3-venv
           python3 -m venv "$RUNNER_TEMP/frontend-tools"
           "$RUNNER_TEMP/frontend-tools/bin/pip" install cmake==4.2.3
           echo "$RUNNER_TEMP/frontend-tools/bin" >> "$GITHUB_PATH"

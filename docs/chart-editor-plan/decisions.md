@@ -41,7 +41,7 @@
 - Maintain one stable resource catalog with Samples, BGM, and BGA list views. Preserve unused BMS WAV/BMP and osu! sample/event resources, and keep placed note/BGM/BGA events separate from the assets they reference. Offer armable create-only auto-increment in the compact placement toolbar, advancing in stable eligible order only after successful note/BGM/BGA insertions.
 - Treat stops and delays as required distinct timing events regardless of target support, with explicit loss diagnostics and well-defined discontinuity ordering.
 - Store warps canonically as exact musical intervals. Normalize StepMania 3.9 negative BPM and negative-stop warps on import while retaining provenance, then choose native-warp or legacy encoding through a target-profile export strategy.
-- Treat `libotoworm` only as readable reference code and fixture evidence. Wormedit owns and tests every production parser, writer, timing evaluator, and converter and removes the `otoworm::otoworm` link after replacement coverage lands.
+- Treat `libotoworm` only as readable reference code and fixture evidence. Wormedit owns and tests every production parser, writer, timing evaluator, and converter and no longer links `otoworm::otoworm`; see the [removal audit](../audits/otoworm-removal-2026-10-28.md).
 - Preserve BMS random/IF/ELSE/switch programs as editable trees; render root content plus the currently selected active leaves and never collapse the source to one hidden random evaluation on import.
 - Detect BMS text encoding before parsing, normalize to UTF-8 internally, retain byte/encoding provenance, and evaluate iconv-compatible cross-platform conversion.
 - Treat finite, seekable MP3 and Ogg files of variable length as the required streamed-audio case.

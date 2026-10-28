@@ -68,16 +68,14 @@ if(WORMEDIT_INSTALL_MANUAL AND WORMEDIT_ASCIIDOCTOR)
     wormedit_install_notices(LuaFileSystem "${wormedit_lfs_SOURCE_DIR}/LICENSE")
 endif()
 
-# Windows builds pinned zlib; Linux normally links the distribution's zlib.
-# An explicit file also supports other SDKs without borrowing a host notice in
-# a cross-build. A missing notice fails installation instead of being omitted.
+# zlib can still arrive through FFmpeg or packaged runtimes. Preserve an
+# available system/SDK notice; require one only for a direct zlib target.
+# FFmpeg SDKs and the AppImage runtime also retain their own dependency notices.
 set(WORMEDIT_ZLIB_NOTICE_FILE "" CACHE FILEPATH "License/copyright notice for system zlib")
-if(wormedit_zlib_SOURCE_DIR)
-    set(wormedit_zlib_notice "${wormedit_zlib_SOURCE_DIR}/LICENSE")
-elseif(WORMEDIT_ZLIB_NOTICE_FILE)
+if(WORMEDIT_ZLIB_NOTICE_FILE)
     set(wormedit_zlib_notice "${WORMEDIT_ZLIB_NOTICE_FILE}")
 elseif(APPLE)
-    # macOS links the operating system's /usr/lib/libz.dylib; it is not bundled.
+    # The operating system's zlib is not bundled.
     set(wormedit_zlib_system_library ON)
 elseif(NOT CMAKE_CROSSCOMPILING)
     find_file(wormedit_zlib_notice NAMES LICENSE copyright
@@ -85,7 +83,7 @@ elseif(NOT CMAKE_CROSSCOMPILING)
 endif()
 if(wormedit_zlib_notice)
     wormedit_install_notices(zlib "${wormedit_zlib_notice}")
-elseif(NOT wormedit_zlib_system_library)
+elseif(TARGET ZLIB::ZLIB AND NOT wormedit_zlib_system_library)
     install(CODE "message(FATAL_ERROR \"Set WORMEDIT_ZLIB_NOTICE_FILE for this zlib SDK.\")")
 endif()
 
@@ -135,19 +133,6 @@ wormedit_install_notices(interface-themes "${CMAKE_SOURCE_DIR}/assets/themes/lic
     "${CMAKE_SOURCE_DIR}/assets/themes/licenses/SOLARIZED-LICENSE.txt"
     "${CMAKE_SOURCE_DIR}/assets/themes/licenses/OSU-LICENSE.txt"
     "${CMAKE_SOURCE_DIR}/assets/themes/INTERFACE-PROVENANCE.md")
-# Embedded dependencies retain their notices in these source files. Copy the
-# complete files to preserve the text without a second license parser.
-wormedit_install_notices(libotoworm/minizip
-    "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/minizip/unzip.h"
-    "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/minizip/ioapi.h")
-wormedit_install_notices(libotoworm/utf8 "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/utf8.h")
-wormedit_install_notices(libotoworm/json "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/json.hpp")
-wormedit_install_notices(libotoworm/sha256
-    "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/sha256/sha256.h"
-    "${WORMEDIT_OTOWORM_SOURCE_DIR}/src-thirdparty/sha256/sha256.cpp")
-wormedit_install_notices(libotoworm/sha256 "${CMAKE_CURRENT_LIST_DIR}/notices/sha256.txt")
-wormedit_install_notices(libotoworm "${CMAKE_CURRENT_LIST_DIR}/notices/libotoworm-MIT.txt")
-
 if(WIN32 AND MINGW)
     # The Windows toolchain links libgcc/libstdc++ statically. Their exception
     # permits this distribution; retain it together with the underlying GPL.

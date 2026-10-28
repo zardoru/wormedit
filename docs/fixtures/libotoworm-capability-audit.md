@@ -1,6 +1,10 @@
 # `libotoworm` capability audit (Stage 0)
 
-Status: source audit of the sibling `../libotoworm` checkout and wormedit's current `src/common/chart.cpp` bridge. This is an implementation observation, not a format-conformance claim. Paths and line numbers refer to the checkout inspected for this audit; `libotoworm` is reference evidence, not the planned production codec.
+Status: historical Stage 0 source audit of the sibling `../libotoworm` checkout and wormedit's former `src/common/chart.cpp` bridge. This is an implementation observation, not a format-conformance claim. Paths and line numbers refer to the checkout inspected for this audit; `libotoworm` is reference evidence, not the planned production codec.
+
+The legacy bridge was removed by T-678. Current builds no longer depend on
+`libotoworm`; see the [removal audit](../audits/otoworm-removal-2026-10-28.md).
+Descriptions of the “current” bridge below refer to the original audit snapshot.
 
 ## Boundary and verdict
 

@@ -91,15 +91,15 @@ built by `scripts/linux-appimage.sh`. CI builds and tests the headless core on L
 and macOS.
 
 ```sh
-git clone --recurse-submodules https://github.com/zardoru/wormedit.git
+git clone https://github.com/zardoru/wormedit.git
 cd wormedit
 cmake -S . -B build -G Ninja
 cmake --build build
 ./build/wormedit
 ```
 
-The application needs CMake 4.2 or newer (for the [`libotoworm`](https://github.com/zardoru/libotoworm)
-submodule), a C++23 compiler and zlib (and iconv outside Windows). SDL3, Nuklear and the other
+The application needs CMake 3.25 or newer and a C++23 compiler. iconv enables legacy
+text encodings outside Windows; Windows uses the system code-page API. SDL3, Nuklear and the other
 libraries are fetched by CMake. FFmpeg development libraries, if present, add video previews and
 audio metadata. [Asciidoctor](https://asciidoctor.org) builds the HTML manual that `cmake --install`
 ships; configure with `-DWORMEDIT_INSTALL_MANUAL=OFF` to skip it.
@@ -158,5 +158,6 @@ enabled, FFmpeg (LGPL).
 
 - The Nuklear SDL3 backend in `src/ui/nuklear/app/sdl_backend.cpp` is adapted from Nuklear's
   `demo/sdl3_renderer` and keeps its MIT notice.
-- [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project, included as
-  the `third_party/libotoworm` submodule under its own license.
+- [`libotoworm`](https://github.com/zardoru/libotoworm) informed the historical scaffold and
+  format research. Current imports and exports use wormedit's own codecs; see the
+  [dependency removal audit](docs/audits/otoworm-removal-2026-10-28.md).

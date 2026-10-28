@@ -24,7 +24,7 @@ if __name__ == "__main__":
         parser.error("build the wasm or wasm-smoke preset first (index.html is missing)")
     handler = partial(IsolatedHandler, directory=str(directory))
     with ThreadingHTTPServer(("127.0.0.1", arguments.port), handler) as server:
-        print(f"Serving WASM smoke on loopback port {server.server_port}", flush=True)
+        print(f"Serving Wormedit WASM on loopback port {server.server_port}", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

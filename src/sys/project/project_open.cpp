@@ -10,6 +10,7 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/quaver.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <algorithm>
@@ -367,17 +368,28 @@ void retain_bms_asset_resolutions(project_open_result_t& result) {
     }
 }
 
+auto parse_native_or_quaver(std::string_view extension, const std::string& source,
+                            project_open_result_t& result) -> bool {
+    if (extension != ".wormedit" && extension != ".qua") return false;
+    if (extension == ".wormedit") {
+        auto parsed = parse_native_project(source);
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "Native project", result);
+    } else {
+        const auto bytes = std::as_bytes(std::span(source.data(), source.size()));
+        auto parsed = parse_quaver_bytes(bytes, {.asset_base_directory = result.asset_base});
+        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "Experimental Quaver chart",
+                             result, import_warning_policy_t::retain);
+    }
+    result.native_project = extension == ".wormedit" && result.document.has_value();
+    if (result.document) mark_audio_availability(*result.document, result.asset_base);
+    return true;
+}
+
 void parse_selected_file(std::string_view extension, const std::string& source,
                          std::optional<text_encoding_t> encoding_override,
                          project_open_result_t& result,
                          const std::optional<std::string>& lane_profile_id) {
-    if (extension == ".wormedit") {
-        auto parsed = parse_native_project(source);
-        take_parsed_document(std::move(parsed.value), parsed.diagnostics, "Native project", result);
-        result.native_project = result.document.has_value();
-        if (result.document) mark_audio_availability(*result.document, result.asset_base);
-        return;
-    }
+    if (parse_native_or_quaver(extension, source, result)) return;
     const auto bytes = std::as_bytes(std::span{source.data(), source.size()});
     if (extension == ".bms" || extension == ".bme" || extension == ".bml" ||
         extension == ".pms") {

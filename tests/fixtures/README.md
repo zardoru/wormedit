@@ -84,8 +84,9 @@ file was copied. Every file uses CRLF, including its final newline. Resource
 names are intentional placeholders, not bundled audio. Default-valued fields
 are omitted except for deliberately invalid sample indices. Times below are in
 milliseconds. The inventory tests check presence, documentation and byte
-preservation only; semantic acceptance/rejection awaits the T-174 reader.
-T-175 owns serialization and round-trip checks.
+preservation only. The experimental T-174/T-175 adapter now exercises semantic
+acceptance/rejection, CRLF round trips and native persistence in
+`tests/formats/quaver_tests.cpp`; this does not establish Quaver.API conformance.
 
 | Fixture | Expected semantic result / purpose | Current implementation/reference note |
 | --- | --- | --- |

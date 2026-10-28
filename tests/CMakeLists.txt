@@ -240,6 +240,12 @@ target_compile_definitions(wormedit_core_tests
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)
 endif()
+add_library(wormedit_quaver_tests OBJECT formats/quaver_tests.cpp)
+target_link_libraries(wormedit_quaver_tests PRIVATE wormedit::core Catch2::Catch2 yaml-cpp::yaml-cpp)
+target_compile_definitions(wormedit_quaver_tests PRIVATE
+    WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+target_sources(wormedit_core_tests PRIVATE $<TARGET_OBJECTS:wormedit_quaver_tests>)
+
 target_link_libraries(wormedit_core_tests
     PRIVATE
         wormedit::core

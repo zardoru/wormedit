@@ -2,7 +2,7 @@
 
 [Back to the task-card index](../tasks.md).
 
-> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Cards still marked `deferred` require explicit selection by ID. T-173 was selected by the owner on 2026-10-28.
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Cards still marked `deferred` require explicit selection by ID. T-173 was selected by the owner on 2026-10-28. The owner then requested the paired Quaver reader/writer for a post-1.0 PR and explicitly authorized yaml-cpp; T-174/T-175 track that work.
 
 Stage 8 from [later work](../stages/later.md). The `.qua` format is documented in the [Quaver format reference](../../references/quaver-qua-format.md). The document model already has a
 `roll` note kind and the SM/SSC codec reads and writes rolls; authoring and
@@ -62,28 +62,32 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-174 Read `.qua` files
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-173)
+- **Status:** partial (owner-selected post-1.0 work, 2026-10-28; depends on PR #56)
 - **Outcome:** a bounded, transactional `.qua` reader imports every construct in the reference into the song document, retaining unmodeled data (timing groups, `LegacyLNRendering`, map IDs) as format fields for round trips.
 - **Read first:** `docs/references/quaver-qua-format.md`, `src/formats/osu_mania.cpp` (millisecond-to-measure rewiring), `include/wormedit/formats/osu_mania.h`.
-- **Files owned:** new `include/wormedit/formats/quaver.h`, new `src/formats/quaver.cpp`, new `tests/formats/quaver_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/formats/quaver.h`, new `src/formats/quaver.cpp`, new `tests/formats/quaver_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/formats/quaver_yaml.cpp`, `src/formats/quaver_internal.h`, `cmake/dependencies/yaml_cpp.cmake`, `cmake/third-party-notices.cmake`, `src/sys/project/project_open.cpp`, `src/sys/project/project_file_types.h`, `tests/sys/project_open_tests.cpp`, `src/ui/nuklear/app/frontend.cpp`, `docs/references/quaver-qua-format.md`, `tests/fixtures/README.md`, this card.
 - **Steps:**
-  1. YAML: parse with a bounded subset parser (block mappings, block sequences, scalars, the `!ScrollGroup` tag) or add a pinned YAML dependency; STOP and ask before adding a dependency.
+  1. YAML: pinned yaml-cpp 0.8.0, explicitly authorized by the owner on 2026-10-28 after the required dependency consultation; bounded event preflight rejects aliases and excess structure.
   2. Apply the reference's load rules (defaults, validation, version gate, stable sort).
   3. Rebuild measures from timing points with the osu!mania approach; convert denormalized SV explicitly.
   4. One test per fixture from T-173.
 - **Invariants:** exact millisecond times retained as source spellings.
 - **Reject/failure behavior:** any validation error publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver'`.
+- **Done so far:** bounded YAML reader, load rules, timeline/lane/resource/marker mappings, retained Quaver-only fields, experimental project import. Supporting-file ownership expanded by the coordinator to wire admission, the file filter, dependency/license and regression coverage.
+- **Remaining:** complete paired fixture, native persistence and integration validation before marking done.
 - **Out of scope:** writer (T-175), per-note timing groups in the editor.
 
 ## T-175 Write `.qua` files
 
-- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-174)
+- **Status:** partial (owner-selected post-1.0 work, 2026-10-28; paired with T-174)
 - **Outcome:** a deterministic writer emits CRLF YAML with default-valued fields omitted, `QuaVersion` computed, and semantic re-import equality for every positive fixture; the format is added to the conversion pipeline.
 - **Read first:** `docs/references/quaver-qua-format.md` (write rules), `include/wormedit/formats/conversion.h`, `src/formats/conversion.cpp`.
-- **Files owned:** `src/formats/quaver.cpp`, `include/wormedit/formats/quaver.h`, `tests/formats/quaver_tests.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`.
+- **Files owned:** `src/formats/quaver.cpp`, `include/wormedit/formats/quaver.h`, `tests/formats/quaver_tests.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`, `src/formats/quaver_writer.cpp`, `src/formats/quaver_internal.h`, `src/tools/wormedit_convert.cpp`, `docs/references/quaver-qua-format.md`, this card.
 - **Steps:** 1. Writer. 2. Round-trip tests. 3. Loss diagnostics for BMS/SM-only features (stops, warps, BGA).
 - **Invariants:** unedited imports re-export semantically equal.
 - **Reject/failure behavior:** unrepresentable content rejects with a classified loss.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver|conversion|loss'`.
+- **Done so far:** CRLF writer, stable output ordering, retained-data re-export, classified refusals and paired conversion/reimport; shared per-chart serialization and reimport acceptance remove duplicate pipeline plumbing. Supporting-file ownership expanded by the coordinator for the CLI and contract documentation.
+- **Remaining:** complete round-trip and loss/integration validation before marking done. Keep the PR draft and post-1.0; do not enable the stable output catalog.
 - **Out of scope:** Quaver online metadata.

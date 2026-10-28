@@ -1278,3 +1278,16 @@ TEST_CASE("BMS resolution provenance preserves authored names until an asset rel
     require_open_audio(relinked.value.has_value());
     check_open_audio(relinked.value->find("#WAV01 new.ogg") != std::string::npos);
 }
+
+TEST_CASE("project_open imports experimental Quaver and retains warnings", "[quaver][project-open]") {
+    const auto path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "quaver" / "scroll-groups-unsorted.qua";
+    const auto opened = wormedit::sys::open_project_file(path);
+    require_opened_project(opened);
+    REQUIRE(opened.document->charts.size() == 1);
+    CHECK(opened.document->charts.front().source_family == wormedit::format_family_t::quaver);
+    CHECK_FALSE(opened.warnings.empty());
+    CHECK_FALSE(opened.native_project);
+    const auto negative = wormedit::sys::open_project_file(path.parent_path() / "negative-hold-equal.qua");
+    CHECK_FALSE(negative.is_success());
+    CHECK_FALSE(negative.document);
+}

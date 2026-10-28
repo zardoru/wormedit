@@ -363,6 +363,7 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
     g_project_dialog_error.clear();
     static constexpr SDL_DialogFileFilter open_filters[] = {
         {"Chart or project", "wormedit;bms;bme;bml;pms;bmson;sm;ssc;osu"},
+        {"Quaver (experimental, post-1.0)", "qua"},
     };
     static constexpr SDL_DialogFileFilter save_filters[] = {
         {"wormedit project", "wormedit"},

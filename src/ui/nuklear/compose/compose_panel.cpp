@@ -1419,13 +1419,23 @@ static auto compose_dock_layout(nk_context* context, const wormedit::ui::compose
     const std::array available{
         wormedit::ui::compose_inspector_available(compose_mode_of(*view)),
         notes && view->keysounds_available, view->scene_available, notes, notes, view->scene_available,
-        view->preview_mix_available};
-    const auto branch = state.dock_layout.branch_panel_visible &&
+        view->preview_mix_available, notes && view->scene_available};
+    auto branch = state.dock_layout.branch_panel_visible &&
         worm_ui_nuklear_bms_branch_panel_visible(view) &&
         bounds.w >= (view->bms_program.available ? 600.0f : 900.0f);
-    const auto branch_width = branch ? std::clamp(bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
-    const auto right = wormedit::ui::dock_geometry_t::from(bounds.w, height, state.dock_layout.layout, available,
+    auto branch_width = branch ? std::clamp(bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
+    auto right = wormedit::ui::dock_geometry_t::from(bounds.w, height, state.dock_layout.layout, available,
         branch ? branch_width + 8.0f : 0.0f);
+    // The dock shrinks first; when even its minimum no longer fits beside the field, the branch panel yields.
+    if (branch && !right.panes[0]) {
+        const auto without_branch = wormedit::ui::dock_geometry_t::from(bounds.w, height,
+            state.dock_layout.layout, available);
+        if (without_branch.panes[0]) {
+            branch = false;
+            branch_width = 0.0f;
+            right = without_branch;
+        }
+    }
     const auto inspector = right.is_visible(wormedit::dock_panel_t::inspector);
     close_hidden_layer_actions(right.is_visible(wormedit::dock_panel_t::layers));
     worm_ui_nuklear_dismiss_layer_popup(context);
@@ -1448,7 +1458,6 @@ static void render_compose_inspector_contents(nk_context* context,
 
     render_compose_timing_inspector(inspector);
     render_compose_label_search(inspector);
-    render_compose_generator_form(inspector);
 }
 
 template <typename Render>
@@ -1490,6 +1499,10 @@ void render_dock_markers(const ComposePanelRenderContext& panel) {
 void render_dock_mixer(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_render_compose_mixer(panel.context, panel.view, panel.action);
 }
+void render_dock_generator(const ComposePanelRenderContext& panel) {
+    const ComposeInspectorContext inspector{panel.context, panel.view, panel.timing_view, panel.action};
+    render_compose_generator_form(inspector);
+}
 struct dock_panel_renderer_t {
     wormedit::dock_panel_t id;
     wormedit::ui::nuklear::sdl_region_t region;
@@ -1504,7 +1517,8 @@ constexpr std::array dock_panel_renderers{
     dock_panel_renderer_t{wormedit::dock_panel_t::measures, wormedit::ui::nuklear::sdl_region_t::measures, "Compose measures", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_measures},
     dock_panel_renderer_t{wormedit::dock_panel_t::layers, wormedit::ui::nuklear::sdl_region_t::layers, "Compose layers", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, render_dock_layers},
     dock_panel_renderer_t{wormedit::dock_panel_t::markers, wormedit::ui::nuklear::sdl_region_t::markers, "Compose markers", NK_WINDOW_BORDER, render_dock_markers},
-    dock_panel_renderer_t{wormedit::dock_panel_t::mixer, wormedit::ui::nuklear::sdl_region_t::mixer, "Compose mixer", NK_WINDOW_BORDER, render_dock_mixer}};
+    dock_panel_renderer_t{wormedit::dock_panel_t::mixer, wormedit::ui::nuklear::sdl_region_t::mixer, "Compose mixer", NK_WINDOW_BORDER, render_dock_mixer},
+    dock_panel_renderer_t{wormedit::dock_panel_t::generator, wormedit::ui::nuklear::sdl_region_t::generator, "Compose generator", NK_WINDOW_BORDER, render_dock_generator}};
 }
 static void render_compose_side_docks(const ComposePanelRenderContext& panel,
                                        const ComposeDockLayout& layout) {

@@ -10,6 +10,8 @@
 namespace wormedit::ui {
 namespace {
 constexpr float dock_button_height = 30.0f;
+// Includes the ~45 px tool strip that sits left of the field, so the drawn field is about 360 px.
+constexpr float minimum_field_width = 400.0f;
 auto rect(const compose_rect_t& r) -> struct nk_rect {
     return nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
                    static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top));
@@ -24,6 +26,7 @@ auto glyph(dock_panel_t panel) -> lucide::Glyph {
     case dock_panel_t::layers: return Glyph::layers;
     case dock_panel_t::markers: return Glyph::anchor;
     case dock_panel_t::mixer: return Glyph::gauge;
+    case dock_panel_t::generator: return Glyph::flame;
     }
     return Glyph::panel_right_open;
 }
@@ -152,7 +155,9 @@ auto dock_geometry_t::from(float width, float height, const ui_layout_preference
     for (const auto panel : layout.order())
         if (layout.is_visible(panel) && available[static_cast<std::size_t>(panel)]) visible[count++] = panel;
     // Preserve a useful field at larger UI scales without changing the saved layout.
-    const auto canvas_width = width < 700.0f && count != 1 ? std::max(250.0f, width * 0.55f) : 250.0f;
+    // The field keeps priority: panels shrink toward dock_minimum_width before they are dropped.
+    const auto canvas_width = width < 700.0f ? (count != 1 ? std::max(250.0f, width * 0.55f) : 250.0f)
+                                             : minimum_field_width;
     const auto column_space = width - canvas_width - reserved_left_width - 50.0f;
     const auto columns = count == 2 && layout.is_side_by_side() && column_space >= 2 * dock_minimum_width + 6;
     const auto desired_width = columns ? 2 * layout.width() + 6 : layout.width();

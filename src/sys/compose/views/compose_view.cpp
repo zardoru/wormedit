@@ -818,30 +818,21 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
     const auto desired_timing_right = compose_measure_rail_width_pixels +
         wormedit::ui::compose_timing_width(timing_lane_mask);
     const auto reserved_bga = bga_pane_width * std::min<std::size_t>(bga_lane_count, 4);
-    const auto bga_left = std::clamp(
-        viewport_width_pixels - compose_minimum_playable_field_width_pixels - reserved_bga,
-        compose_measure_rail_width_pixels, desired_timing_right);
+    // Lanes keep their natural width; the timing rail and BGM pane are what gets cropped.
+    const auto natural = std::clamp(static_cast<double>(std::max<std::size_t>(lane_count, 1)) *
+                                        compose_playable_lane_width_pixels,
+                                    compose_minimum_playable_field_width_pixels,
+                                    compose_maximum_playable_field_width_pixels);
+    const auto bga_left = std::clamp(viewport_width_pixels - natural - reserved_bga,
+                                     compose_measure_rail_width_pixels, desired_timing_right);
     const auto field_left = bga_left + reserved_bga;
     const auto available = std::max(1.0, viewport_width_pixels - field_left);
-    auto playable = std::clamp(static_cast<double>(std::max<std::size_t>(lane_count, 1)) *
-                                   compose_playable_lane_width_pixels,
-                               compose_minimum_playable_field_width_pixels,
-                               compose_maximum_playable_field_width_pixels);
-    playable = std::min(playable, available);
-    if (!has_bgm_lanes) {
-        playable = std::min(playable, available);
-        return {.bga_pane_left_pixels = bga_left,
-                .field_left_pixels = field_left, .playable_field_width_pixels = playable,
-                .bgm_pane_left_pixels = field_left + playable,
-                .bga_pane_width_pixels = reserved_bga};
-    }
-    if (available > compose_minimum_bgm_pane_width_pixels)
-        playable = std::min(playable, available - compose_minimum_bgm_pane_width_pixels);
+    const auto playable = std::max(1.0, std::min(natural, available));
     return {.bga_pane_left_pixels = bga_left,
             .field_left_pixels = field_left,
-            .playable_field_width_pixels = std::max(1.0, playable),
-            .bgm_pane_left_pixels = field_left + std::max(1.0, playable),
-            .bgm_pane_width_pixels = std::max(0.0, available - playable),
+            .playable_field_width_pixels = playable,
+            .bgm_pane_left_pixels = field_left + playable,
+            .bgm_pane_width_pixels = has_bgm_lanes ? std::max(0.0, available - playable) : 0.0,
             .bga_pane_width_pixels = reserved_bga};
 }
 

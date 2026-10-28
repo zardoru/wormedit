@@ -1,6 +1,7 @@
 #include "../core/chart_object_ids.h"
 #include <wormedit/core/bms_program_edit.h>
 #include <wormedit/core/metadata_inheritance.h>
+#include "../core/osu_line_fields.h"
 #include "../core/text_util.h"
 #include <wormedit/formats/osu_mania.h>
 
@@ -158,7 +159,6 @@ auto valid_utf8(std::string_view source) -> std::optional<std::size_t>;
 template <typename value_t> auto parse_integer(std::string_view text, value_t& value) -> bool;
 auto parse_number(std::string_view text, long double& value) -> bool;
 auto split(std::string_view text, char delimiter) -> std::vector<std::string_view>;
-auto split_csv(std::string_view line) -> std::optional<std::vector<std::string>>;
 
 auto find_osu_value(const std::vector<field_t>& fields, std::string_view section,
                     std::string_view key) -> std::optional<std::string_view> {
@@ -524,24 +524,24 @@ void parse_hold_fields(const std::vector<std::string>& parts, hit_object_t& obje
 template <typename fail_t>
 auto parse_hit_object_line(const source_line_t& line, std::uint32_t version, fail_t&& fail)
     -> hit_object_t {
-    const auto parts = split_csv(line.text);
+    const auto parts = osu_line::split_fields(line.text);
     hit_object_t object;
-    if (!parts || parts->size() < 5 || !parse_integer((*parts)[0], object.x) ||
-        !parse_osu_object_time((*parts)[2], version, object.time) ||
-        !parse_integer((*parts)[3], object.type) || !parse_integer((*parts)[4], object.hit_sound) ||
+    if (parts.size() < 5 || !parse_integer(parts[0], object.x) ||
+        !parse_osu_object_time(parts[2], version, object.time) ||
+        !parse_integer(parts[3], object.type) || !parse_integer(parts[4], object.hit_sound) ||
         object.x < 0 || object.x > 512 || object.time < -86'400'000.0L ||
         object.time > 604'800'000.0L || object.type == 0)
         fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
              "malformed osu! hit object or out-of-range lane/time", line.order, line.byte_offset);
-    object.time_spelling = (*parts)[2];
+    object.time_spelling = parts[2];
     const bool hold = (object.type & 128U) != 0;
     const bool circle = (object.type & 1U) != 0;
     if ((!hold && !circle) || (object.type & (2U | 8U)) != 0)
         fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
              "osu!mania supports tap and hold objects; sliders and spinners are not supported",
              line.order, line.byte_offset);
-    if (hold) parse_hold_fields(*parts, object, version, line, fail);
-    else if (parts->size() >= 6) object.hit_sample = (*parts)[5];
+    if (hold) parse_hold_fields(parts, object, version, line, fail);
+    else if (parts.size() >= 6) object.hit_sample = parts[5];
     object.order = line.order;
     object.raw_line = std::string(line.text);
     return object;
@@ -559,37 +559,34 @@ template <typename fail_t>
 auto parse_event_line(const source_line_t& line, fail_t&& fail)
     -> parsed_event_lines_t {
     parsed_event_lines_t result;
-    const auto parts = split_csv(line.text);
-    if (!parts || parts->empty())
-        fail(osu_mania_parse_diagnostic_code_t::malformed_field,
-             "malformed comma-separated osu! event", line.order, line.byte_offset);
-    const auto& kind = parts->front();
+    const auto parts = osu_line::split_fields(line.text);
+    const auto& kind = parts.front();
     const auto indentation = line.raw_text.find_first_not_of(" \t");
     const bool indented = indentation != std::string_view::npos && indentation != 0;
     const bool background = kind == "0" || kind == "Background";
     const bool video = kind == "Video" || kind == "1";
-    if (!indented && (background || video) && parts->size() >= 3) {
+    if (!indented && (background || video) && parts.size() >= 3) {
         long double event_time{};
-        if (!parse_number((*parts)[1], event_time))
+        if (!parse_number(parts[1], event_time))
             fail(osu_mania_parse_diagnostic_code_t::malformed_field,
                  "background/video event time must be finite", line.order, line.byte_offset);
         result.visuals.push_back(
-            {event_time, (*parts)[2], video ? asset_kind_t::video : asset_kind_t::image,
+            {event_time, osu_line::clean_filename(parts[2]), video ? asset_kind_t::video : asset_kind_t::image,
              video ? visual_event_kind_t::video : visual_event_kind_t::background, line.order,
-             event_offsets(*parts)});
-    } else if (!indented && (kind == "Sprite" || kind == "Animation") && parts->size() >= 4) {
-        result.resources.push_back({.path = (*parts)[3], .kind = asset_kind_t::image,
+             event_offsets(parts)});
+    } else if (!indented && (kind == "Sprite" || kind == "Animation") && parts.size() >= 4) {
+        result.resources.push_back({.path = osu_line::clean_filename(parts[3]), .kind = asset_kind_t::image,
                                     .role = resource_role_t::bga, .order = line.order,
                                     .time = std::nullopt, .sample_event = false});
         result.storyboard_lines.push_back(line);
-    } else if (!indented && kind == "Sample" && parts->size() >= 4) {
+    } else if (!indented && kind == "Sample" && parts.size() >= 4) {
         long double sample_time{};
-        if (!parse_number((*parts)[1], sample_time))
+        if (!parse_number(parts[1], sample_time))
             fail(osu_mania_parse_diagnostic_code_t::malformed_field,
                  "sample event time must be finite", line.order, line.byte_offset);
         result.resources.push_back(
-            {(*parts)[3], asset_kind_t::audio, resource_role_t::sample, line.order, sample_time,
-             true, sample_event_fields(*parts)});
+            {osu_line::clean_filename(parts[3]), asset_kind_t::audio, resource_role_t::sample, line.order, sample_time,
+             true, sample_event_fields(parts)});
     } else {
         result.storyboard_lines.push_back(line);
     }
@@ -744,32 +741,6 @@ auto split(std::string_view text, char delimiter) -> std::vector<std::string_vie
         fields.push_back(text.substr(0, position));
         text.remove_prefix(position + 1);
     }
-}
-
-auto split_csv(std::string_view line) -> std::optional<std::vector<std::string>> {
-    std::vector<std::string> fields;
-    std::string current;
-    bool quoted{};
-    for (std::size_t index = 0; index < line.size(); ++index) {
-        const auto character = line[index];
-        if (character == '"') {
-            if (quoted && index + 1 < line.size() && line[index + 1] == '"') {
-                current.push_back('"');
-                ++index;
-            } else {
-                quoted = !quoted;
-            }
-        } else if (character == ',' && !quoted) {
-            fields.push_back(std::string(trim(current)));
-            current.clear();
-        } else {
-            current.push_back(character);
-        }
-    }
-    if (quoted)
-        return std::nullopt;
-    fields.push_back(std::string(trim(current)));
-    return fields;
 }
 
 using text_util::path_from_utf8;
@@ -1994,19 +1965,6 @@ auto is_writer_safe_key(std::string_view value) -> bool {
     });
 }
 
-auto quote_csv(std::string_view value) -> std::string {
-    std::string result;
-    result.reserve(value.size() + 2);
-    result.push_back('"');
-    for (const auto character : value) {
-        if (character == '"')
-            result.push_back('"');
-        result.push_back(character);
-    }
-    result.push_back('"');
-    return result;
-}
-
 auto writer_round_ms(long double value) -> std::optional<std::int64_t> {
     if (!std::isfinite(value) ||
         value < static_cast<long double>(std::numeric_limits<std::int64_t>::min()) + 1.0L ||
@@ -2379,9 +2337,9 @@ void validate_storyboard_retained_line(std::string_view text, fail_t&& fail) {
     if (trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']')
         fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
              "storyboard retained lines cannot inject osu! section headers", "storyboards");
-    const auto fields = split_csv(text);
-    if (fields && fields->size() >= 4 && fields->front() == "Animation" &&
-        !safe_relative_path((*fields)[3]))
+    const auto fields = osu_line::split_fields(text);
+    if (fields.size() >= 4 && fields.front() == "Animation" &&
+        !safe_relative_path(osu_line::clean_filename(fields[3])))
         fail(osu_mania_write_diagnostic_code_t::invalid_resource,
              "retained Animation event has an unsafe storyboard asset path", "storyboards");
 }
@@ -3220,11 +3178,11 @@ auto serialize_osu_note_time(std::uint64_t row,
 
 auto retained_osu_note_sample(const note_t& note, bool hold) -> osu_note_sample_t {
     osu_note_sample_t sample;
-    if (const auto raw = split_csv(note.provenance.source_spelling); raw && raw->size() >= 5) {
+    if (const auto raw = osu_line::split_fields(note.provenance.source_spelling); raw.size() >= 5) {
         std::int64_t parsed{};
-        if (parse_integer((*raw)[4], parsed)) sample.hit_sound = parsed;
-        if (raw->size() >= 6) {
-            const auto original = split((*raw)[5], ':');
+        if (parse_integer(raw[4], parsed)) sample.hit_sound = parsed;
+        if (raw.size() >= 6) {
+            const auto original = split(raw[5], ':');
             const auto offset = hold ? std::size_t{1} : std::size_t{0};
             for (std::size_t index = 0; index < sample.values.size(); ++index) {
                 if (offset + index >= original.size()) break;
@@ -3263,10 +3221,10 @@ auto build_osu_note_sample(const note_t& note, const song_document_t& song, bool
     }
     if (note.sound) {
         const auto name = osu_resource_path(song, *note.sound, true);
-        if (!name || name->find(':') != std::string::npos)
+        if (!name || name->find_first_of(":,") != std::string::npos)
             fail(osu_mania_write_diagnostic_code_t::invalid_resource,
                  "note sample must refer to a safe relative audio asset whose path contains no "
-                 "colon",
+                 "colon or comma",
                  "HitObjects.hitSample");
         filename = *name;
     }
@@ -3324,9 +3282,9 @@ auto serialize_osu_note(const note_t& note, std::uint64_t begin_row, std::size_t
                        std::to_string(hold ? 128 : 1) + "," +
                        std::to_string(sample.hit_sound) + ",";
     if (tail)
-        line += quote_csv(tail->text + ":" + sample.field);
-    else if (!sample.field.empty())
-        line += quote_csv(sample.field);
+        line += tail->text + ":" + sample.field;
+    else
+        line += sample.field;
     account_event();
     return {head.value, begin_row, serial, serial, std::move(line)};
 }
@@ -3361,12 +3319,14 @@ void append_osu_sample_event(std::vector<osu_output_event_t>& output, std::size_
         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
              "sample event lies outside chart geometry", "Events.Sample");
     const auto name = osu_resource_path(song, resource, true);
-    if (!name || name->find(':') != std::string::npos)
+    if (!name || name->find(':') != std::string::npos || !osu_line::is_writable_filename(*name))
         fail(osu_mania_write_diagnostic_code_t::invalid_resource,
-             "sample event requires a safe relative audio resource without colons", "Events.Sample");
+             "sample event requires a safe relative audio resource without colons, commas or "
+             "quotes",
+             "Events.Sample");
     const auto time = osu_event_time(*row, "Events.Sample", lazer_profile, timestamp_at_row, fail);
     const auto line = "Sample," + time.text + "," + std::to_string(layer) + "," +
-                      quote_csv(*name) + "," + std::to_string(volume);
+                      osu_line::quote_filename(*name) + "," + std::to_string(volume);
     output.push_back({time.value, *row, order, serial++, line});
     account_event();
 }
@@ -3461,12 +3421,14 @@ void append_osu_bga_events(std::vector<osu_output_event_t>& output, std::size_t&
             fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
                  "osu! event export supports background images and videos only", "Events");
         const auto name = osu_resource_path(song, event.resource, false);
-        if (!name)
+        if (!name || !osu_line::is_writable_filename(*name))
             fail(osu_mania_write_diagnostic_code_t::invalid_resource,
-                 "visual event refers to an unsafe or missing visual asset", "Events");
+                 "visual event refers to an unsafe or missing visual asset, or its path contains a "
+                 "comma or quote",
+                 "Events");
         const auto time = osu_event_time(*row, "Events", lazer_profile, timestamp_at_row, fail);
         const auto line = (event.kind == visual_event_kind_t::video ? "Video," : "0,") +
-                          time.text + "," + quote_csv(*name) + "," +
+                          time.text + "," + osu_line::quote_filename(*name) + "," +
                           retained_event_offsets(retained, event.id.value);
         output.push_back({time.value, *row, event.provenance.source_order, serial++, line});
         account_event();

@@ -743,9 +743,53 @@ TEST_CASE("osu!mania rejects malformed typed hitsample settings",
     SECTION("index") { sample = "0:0:-1:0:"; }
     SECTION("volume") { sample = "0:0:0:101:"; }
     SECTION("numeric") { sample = "0:0:no:0:"; }
+    SECTION("quoted field") { sample = "\"0:0:0:0:tap,custom.wav\""; }
     const auto parsed = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n",
         "64,192,1000,1,0," + sample + "\n"));
     CHECK_FALSE(parsed.value);
+}
+
+namespace {
+auto parse_comma_split_fixture() -> wormedit::osu_mania_parse_outcome_t {
+    return parse_inline(
+        "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[Events]\n"
+        "0,0,\"bg,one.jpg\",0,0\nSample,500,0,\"tap.wav\",80\n[TimingPoints]\n"
+        "0,500,4,0,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\"quoted\".wav\n");
+}
+
+auto has_resource(const wormedit::song_document_t& song, std::string_view name) -> bool {
+    return std::ranges::find(song.resources, name, &wormedit::resource_entry_t::name) !=
+           song.resources.end();
+}
+}
+
+TEST_CASE("osu!mania splits lines on every comma and only trims quotes from event filenames",
+          "[unit][format][osu-mania][events]") {
+    const auto parsed = parse_comma_split_fixture();
+    REQUIRE(parsed.value);
+    CHECK(has_resource(*parsed.value, "bg"));
+    CHECK(has_resource(*parsed.value, "tap.wav"));
+    const auto* note = source_note(parsed.value->charts.front(), "64,");
+    REQUIRE(note);
+    REQUIRE(note->osu_hitsample);
+    CHECK(note->osu_hitsample->filename == "\"quoted\".wav");
+}
+
+TEST_CASE("osu!mania writer rejects event filenames osu! would split at a comma",
+          "[unit][format][osu-mania][events]") {
+    auto song = parse_comma_split_fixture().value;
+    REQUIRE(song);
+    const auto background = std::ranges::find(song->resources, "bg", &wormedit::resource_entry_t::name);
+    REQUIRE(background != song->resources.end());
+    const auto asset = std::ranges::find(song->visual_assets, background->asset,
+                                         &wormedit::visual_asset_t::id);
+    REQUIRE(asset != song->visual_assets.end());
+    asset->source_path = "bg,one.jpg";
+    const auto rejected = write_inline(*song);
+    CHECK_FALSE(rejected.value.has_value());
+    CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_resource;
+    }));
 }
 
 TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time semantics",
@@ -813,7 +857,7 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     REQUIRE(lazer_written.value.has_value());
     CHECK(lazer_written.value->starts_with("osu file format v128\n"));
     CHECK(lazer_written.value->find(",192,1000.5,1,") != std::string::npos);
-    CHECK(lazer_written.value->find(",192,1200.5,128,0,\"1400.5:") != std::string::npos);
+    CHECK(lazer_written.value->find(",192,1200.5,128,0,1400.5:") != std::string::npos);
     CHECK(lazer_written.value->find("VelocityPresets:0.5,1,2") != std::string::npos);
     CHECK(lazer_written.value->find("SamplesMatchPlaybackRate:1") != std::string::npos);
     CHECK_FALSE(std::ranges::any_of(lazer_written.diagnostics, [](const auto& diagnostic) {
@@ -845,7 +889,7 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     REQUIRE(stable_conversion.value.has_value());
     CHECK(stable_conversion.value->starts_with("osu file format v14\n"));
     CHECK(stable_conversion.value->find(",192,1001,1,") != std::string::npos);
-    CHECK(stable_conversion.value->find(",192,1201,128,0,\"1401:") != std::string::npos);
+    CHECK(stable_conversion.value->find(",192,1201,128,0,1401:") != std::string::npos);
     CHECK(std::ranges::any_of(stable_conversion.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
@@ -1263,7 +1307,7 @@ BeatmapID:57
 CircleSize:4
 OverallDifficulty:8
 [Events]
-0,2000,"background,one.jpg",0,0
+0,2000,"background one.jpg",0,0
 Video,3000,"preview.mp4",0,0
 Sample,2300,0,"clap.wav",100
 [TimingPoints]
@@ -1271,7 +1315,7 @@ Sample,2300,0,"clap.wav",100
 1000,-50,4,3,2,80,0,9
 1500,400,3,2,1,70,1,0
 [HitObjects]
-64,192,0,1,2,"0:0:0:0:tap,custom.wav"
+64,192,0,1,2,0:0:0:0:tap custom.wav
 384,192,1000,128,0,4500:0:0:0:0:hold.wav
 512,192,2500,1,0,
 )osu";
@@ -1321,8 +1365,8 @@ Sample,2300,0,"clap.wav",100
     CHECK(written.value->find(",3,2,1,70,1,1") != std::string::npos);
     CHECK(written.value->find("4500:0:0:0:0:hold.wav") != std::string::npos);
     CHECK(written.value->find("Sample,1000,1,\"hold.wav\",100") != std::string::npos);
-    CHECK(written.value->find("\"0:0:0:0:tap,custom.wav\"") != std::string::npos);
-    CHECK(written.value->find("\"background,one.jpg\"") != std::string::npos);
+    CHECK(written.value->find(",0:0:0:0:tap custom.wav\n") != std::string::npos);
+    CHECK(written.value->find("0,2000,\"background one.jpg\",0,0") != std::string::npos);
 
     const auto reimported = parse_inline(*written.value);
     REQUIRE(reimported.value.has_value());
@@ -1357,7 +1401,7 @@ Sample,2300,0,"clap.wav",100
         return event.kind == wormedit::visual_event_kind_t::video;
     }));
     CHECK(std::ranges::any_of(
-        song.resources, [](const auto& resource) { return resource.name == "tap,custom.wav"; }));
+        song.resources, [](const auto& resource) { return resource.name == "tap custom.wav"; }));
     CHECK(std::ranges::any_of(song.resources,
                               [](const auto& resource) { return resource.name == "hold.wav"; }));
     CHECK(std::ranges::any_of(song.resources,
@@ -2109,9 +2153,9 @@ TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an 
 
     SECTION("hit samples and the edited note") {
         CHECK(has_line(lines, "448,192,2000,1,0,"));
-        CHECK(has_line(lines, "192,192,2500,1,2,\"1:2:3:40:chime.wav\""));
-        CHECK(has_line(lines, "320,192,3000,128,4,\"5000:2:0:0:55:slider.wav\""));
-        CHECK(has_line(lines, "448,192,5500,1,8,\"3:3:2:100:\""));
+        CHECK(has_line(lines, "192,192,2500,1,2,1:2:3:40:chime.wav"));
+        CHECK(has_line(lines, "320,192,3000,128,4,5000:2:0:0:55:slider.wav"));
+        CHECK(has_line(lines, "448,192,5500,1,8,3:3:2:100:"));
     }
 
     SECTION("the exported file re-imports and re-exports byte for byte") {

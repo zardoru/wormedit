@@ -87,6 +87,29 @@ inline constexpr float property_label_ratio = 0.5f;
 using theme::UiColor;
 inline auto color(UiColor role) -> nk_color { return theme::ui(role); }
 
+// Moves `from` toward `to` by `percent`. Derived colors keep every theme coherent.
+inline auto mix_color(nk_color from, nk_color to, int percent) -> nk_color {
+    const auto mix = [percent](nk_byte a, nk_byte b) {
+        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * percent / 100);
+    };
+    return nk_rgba(mix(from.r, to.r), mix(from.g, to.g), mix(from.b, to.b), 255);
+}
+
+// Disabled controls: text fades toward the panel and the fill drops to a flat tone between the
+// panel and the surface, so they read as inactive in light and dark themes alike.
+inline auto text_faint() -> nk_color {
+    return mix_color(color(UiColor::text), color(UiColor::background), 55);
+}
+// Destructive text: the light coral reads on dark panels; light themes need a darker red.
+inline auto destructive_text() -> nk_color {
+    const auto panel = color(UiColor::background);
+    const auto luma = (panel.r * 299 + panel.g * 587 + panel.b * 114) / 1000;
+    return luma > 128 ? nk_rgb(168, 44, 24) : metrics::destructive_text;
+}
+inline auto disabled_fill() -> nk_color {
+    return mix_color(color(UiColor::surface), color(UiColor::background), 70);
+}
+
 inline auto button_style(nk_context* context, bool selected) -> nk_style_button {
     auto style = context->style.button;
     style.normal = nk_style_item_color(selected ? color(UiColor::selected)
@@ -392,13 +415,22 @@ struct DrawnIconButton {
     }
 };
 
+// Tabs and mode switches: the chosen one takes the selection fill, the others sit on a faint
+// raised fill so the row reads as a bar of tabs. Unavailable tabs fade through the theme's
+// disabled colors instead of Nuklear's alpha, which vanishes on light themes.
 inline auto mode_button(nk_context* context, const char* label, const char* tooltip,
-                        bool selected) -> bool {
+                        bool selected, bool enabled = true) -> bool {
     const auto bounds = nk_widget_bounds(context);
-    const auto style = button_style(context, selected);
+    auto style = button_style(context, selected);
+    if (!enabled) {
+        style.normal = style.hover = style.active = nk_style_item_color(disabled_fill());
+        style.text_normal = style.text_hover = style.text_active = text_faint();
+    } else if (!selected) {
+        style.normal = nk_style_item_color(mix_color(color(UiColor::background), color(UiColor::text), 9));
+    }
     const bool clicked = nk_button_label_styled(context, &style, label) != 0;
     button_feedback(context, bounds, selected, tooltip);
-    return clicked;
+    return clicked && enabled;
 }
 
 inline constexpr float menu_padding = metrics::gap_medium;
@@ -665,6 +697,19 @@ inline void apply_field_theme(nk_context* context) {
     property.label_active = text_bright;
     property.rounding = metrics::radius_control;
     property.edit = edit;
+    // The stepper arrows are buttons of their own; Nuklear's defaults are near-black.
+    for (auto* arrow : {&property.inc_button, &property.dec_button}) {
+        arrow->normal = surface;
+        arrow->hover = hover;
+        arrow->active = active;
+        arrow->border_color = nk_rgba(0, 0, 0, 0);
+        arrow->border = 0.0f;
+        arrow->text_background = nk_rgba(0, 0, 0, 0);
+        arrow->text_normal = color(UiColor::text_muted);
+        arrow->text_hover = text_bright;
+        arrow->text_active = text_bright;
+        arrow->rounding = metrics::radius_control;
+    }
     // Property values are already inside a control. Nuklear sizes their editor
     // from the measured number, so standalone-field insets would clip its text.
     property.edit.padding = nk_vec2(0, 0);
@@ -742,14 +787,26 @@ inline void apply_tooltip_theme(nk_context* context) {
 
 // Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
 // menus. Node and tab buttons are the chevrons that open and close the section.
+// Section fills step from the panel background toward the text color: a body panel, a
+// level-two card, and the level-one bar. They read as nested layers in dark and light schemes.
+inline auto section_fill(int percent) -> nk_color {
+    return mix_color(color(UiColor::background), color(UiColor::text), percent);
+}
+inline auto section_header_color() -> nk_color { return section_fill(14); }
+inline auto section_body_color() -> nk_color { return section_fill(5); }
+inline auto section_card_color() -> nk_color { return section_fill(9); }
+
 inline void apply_header_theme(nk_context* context) {
     auto& style = context->style;
     const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     const auto hover = nk_style_item_color(color(UiColor::surface_hover));
     const auto active = nk_style_item_color(color(UiColor::surface_active));
-    style.tab.background = clear;
-    style.tab.border_color = color(UiColor::border);
-    style.tab.text = color(UiColor::text);
+    // Tree headers fill with the background item; the border rectangle is square, so it stays off.
+    style.tab.background = nk_style_item_color(section_header_color());
+    style.tab.border_color = nk_rgba(0, 0, 0, 0);
+    style.tab.border = 0.0f;
+    style.tab.text = color(UiColor::text_bright);
+    style.tab.indent = metrics::section_indent;
     style.tab.rounding = metrics::radius_control;
     for (auto* button : {&style.tab.tab_maximize_button, &style.tab.tab_minimize_button,
                          &style.tab.node_maximize_button, &style.tab.node_minimize_button}) {
@@ -763,6 +820,116 @@ inline void apply_header_theme(nk_context* context) {
         button->text_active = color(UiColor::text_bright);
         button->rounding = metrics::radius_control;
     }
+}
+
+// Accordion sections with a visible hierarchy. NK_TREE_TAB is a level-one section: a filled
+// bar in bright text over a panel that holds the body. NK_TREE_NODE is a level-two
+// subsection: a card that wraps its header and body, in the normal text color. Both indent
+// their body. Every push that returns true needs a matching section_pop; the panel or card is
+// reserved behind the header and sized there, once the body's height is known.
+// `tight` drops the empty measuring row's minimum height (about one text line), for a card that
+// directly follows a control row and should sit close to it.
+auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed,
+                  bool tight = false) -> bool;
+inline auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                         nk_collapse_states initial, bool tight = false) -> bool {
+    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0, tight);
+}
+void section_pop(nk_context* context);
+
+// An empty row that separates groups inside one section. Rows already sit `window.spacing`
+// apart, so the visible gap is the height plus that spacing on both sides.
+inline void group_gap(nk_context* context, float height = metrics::gap_small) {
+    nk_layout_row_dynamic(context, height, 1);
+    nk_spacing(context, 1);
+}
+
+// Property box and edit field looks for a disabled setting. Nuklear's own disable scales colors
+// down, which turns light fills into mid gray with dark text; this keeps the flat faded look
+// of disabled buttons. Restore the saved styles when the control has been drawn.
+struct DisabledFieldStyle {
+    nk_style_property property;
+    nk_style_edit edit;
+    nk_context* context;
+    explicit DisabledFieldStyle(nk_context* target)
+        : property(target->style.property), edit(target->style.edit), context(target) {
+        const auto fill = nk_style_item_color(disabled_fill());
+        for (auto* box : {&context->style.property.normal, &context->style.property.hover,
+                          &context->style.property.active, &context->style.edit.normal,
+                          &context->style.edit.hover, &context->style.edit.active})
+            *box = fill;
+        context->style.property.border_color = context->style.edit.border_color = color(UiColor::separator);
+        context->style.property.label_normal = context->style.property.label_hover =
+            context->style.property.label_active = text_faint();
+        context->style.edit.text_normal = context->style.edit.text_hover = context->style.edit.text_active =
+            text_faint();
+        for (auto* arrow : {&context->style.property.inc_button, &context->style.property.dec_button}) {
+            arrow->normal = arrow->hover = arrow->active = fill;
+            arrow->text_normal = arrow->text_hover = arrow->text_active = text_faint();
+        }
+        context->style.property.edit = context->style.edit;
+        context->style.property.edit.padding = nk_vec2(0, 0);
+        context->style.property.edit.border = 0.0f;
+    }
+    ~DisabledFieldStyle() {
+        context->style.property = property;
+        context->style.edit = edit;
+    }
+    DisabledFieldStyle(const DisabledFieldStyle&) = delete;
+    auto operator=(const DisabledFieldStyle&) -> DisabledFieldStyle& = delete;
+};
+
+// Title bar of a dock panel: the same filled bar as a level-one section header, so panels
+// open with a header that is recognisable as one. The cell form fits a template row.
+inline void panel_header_cell(nk_context* context, const char* title) {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    auto* canvas = nk_window_get_canvas(context);
+    nk_fill_rect(canvas, bounds, metrics::radius_control, section_header_color());
+    const auto* font = context->style.font;
+    const auto text = nk_rect(bounds.x + metrics::gap_medium, bounds.y + (bounds.h - font->height) * 0.5f,
+                              std::max(0.0f, bounds.w - metrics::gap_medium), font->height);
+    nk_draw_text(canvas, text, title, static_cast<int>(std::strlen(title)), font, nk_rgba(0, 0, 0, 0),
+                 color(UiColor::text_bright));
+}
+inline void panel_header(nk_context* context, const char* title) {
+    nk_layout_row_dynamic(context, metrics::control_default, 1);
+    panel_header_cell(context, title);
+}
+
+// Nuklear disables a widget by scaling its colors down. Half brightness suits dark themes, but on
+// a light fill it yields mid gray with dark text. Light themes get a milder scale: the control
+// still reads as inactive and its text stays legible. Fields missing in a Nuklear version are skipped.
+template <class Style>
+void set_disabled_factor(Style& style, float factor) {
+    if constexpr (requires { style.disabled_factor = factor; }) style.disabled_factor = factor;
+}
+
+inline auto is_light_theme() -> bool {
+    const auto background = color(UiColor::background);
+    return 299 * background.r + 587 * background.g + 114 * background.b > 140 * 1000;
+}
+
+inline void apply_disabled_factors(nk_context* context) {
+    if (!is_light_theme()) return;
+    constexpr float factor = 0.8f;
+    auto& style = context->style;
+    for (auto* widget : {&style.button, &style.contextual_button, &style.menu_button,
+                         &style.combo.button, &style.property.inc_button, &style.property.dec_button})
+        set_disabled_factor(*widget, factor);
+    set_disabled_factor(style.text, factor);
+    set_disabled_factor(style.checkbox, factor);
+    set_disabled_factor(style.option, factor);
+    set_disabled_factor(style.selectable, factor);
+    set_disabled_factor(style.slider, factor);
+    set_disabled_factor(style.progress, factor);
+    set_disabled_factor(style.property, factor);
+    set_disabled_factor(style.edit, factor);
+    set_disabled_factor(style.combo, factor);
+    set_disabled_factor(style.scrollh, factor);
+    set_disabled_factor(style.scrollv, factor);
+    set_disabled_factor(style.tab, factor);
 }
 
 inline void apply_theme(nk_context* context) {
@@ -788,6 +955,7 @@ inline void apply_theme(nk_context* context) {
     apply_toggle_theme(context);
     apply_tooltip_theme(context);
     apply_header_theme(context);
+    apply_disabled_factors(context);
 }
 
 } // namespace wormedit::ui::chrome

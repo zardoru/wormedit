@@ -11,6 +11,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <array>
+#include <optional>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -54,11 +55,11 @@ void project_section_heading(nk_context* context, const char* text) {
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     auto* canvas = nk_window_get_canvas(context);
     const auto& style = context->style;
-    nk_fill_rect(canvas, bounds, 0.0f, style.tab.border_color);
+    nk_fill_rect(canvas, bounds, style.tab.rounding, wormedit::ui::chrome::section_header_color());
     const float inset = wormedit::ui::metrics::gap_medium + wormedit::ui::metrics::gap_small;
     const float height = style.font->height;
     nk_draw_text(canvas, nk_rect(bounds.x + inset, bounds.y + (bounds.h - height) * 0.5f, bounds.w - inset, height),
-                 text, static_cast<int>(std::strlen(text)), style.font, style.tab.border_color, style.tab.text);
+                 text, static_cast<int>(std::strlen(text)), style.font, wormedit::ui::chrome::section_header_color(), style.tab.text);
 }
 
 struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
@@ -1455,6 +1456,7 @@ void emit_project_setting(const wormedit::ui::setup_view_t& view,
         .field = field, .use_program_default = use_default, .integer = integer, .text = std::string{text}};
 }
 auto project_default_toggle(nk_context* context, const char* label, bool overridden) -> bool {
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium); // Separates each setting from the previous one.
     nk_layout_row_dynamic(context, 25, 1);
     nk_bool use_default = !overridden;
     return nk_checkbox_label(context, label, &use_default) != 0;
@@ -1465,13 +1467,17 @@ void render_project_snap(nk_context* context, const wormedit::ui::setup_view_t& 
     if (project_default_toggle(context, "Use program default for new-chart snap", settings.snap_overridden))
         emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap,
             settings.snap_overridden, settings.default_snap);
-    if (!settings.snap_overridden) nk_widget_disable_begin(context);
     int snap = static_cast<int>(settings.default_snap);
     nk_layout_row_dynamic(context, 28, 1);
-    nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
-    if (settings.snap_overridden && snap != static_cast<int>(settings.default_snap))
-        emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap, false, static_cast<std::uint32_t>(snap));
-    if (!settings.snap_overridden) nk_widget_disable_end(context);
+    if (settings.snap_overridden) {
+        nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
+        if (snap != static_cast<int>(settings.default_snap))
+            emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap, false, static_cast<std::uint32_t>(snap));
+    } else {
+        // Drawn with the disabled look; edits are discarded with the local copy.
+        const wormedit::ui::chrome::DisabledFieldStyle disabled{context};
+        nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
+    }
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Program default: 1/%u", settings.program_default_snap);
 }
@@ -1483,18 +1489,24 @@ void render_project_directory(nk_context* context, const wormedit::ui::setup_vie
     auto& buffer = visual ? project_state.visual_directory : project_state.audio_directory;
     if (project_default_toggle(context, visual ? "Use program default for visual assets" : "Use program default for audio assets", overridden))
         emit_project_setting(view, action, field, overridden, 0, buffer.data());
-    if (!overridden) nk_widget_disable_begin(context);
     constexpr float ratios[]{0.8f, 0.2f};
     nk_layout_row(context, NK_DYNAMIC, 28, 2, ratios);
-    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-        buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
-    if (nk_button_label(context, visual ? "Set visual folder" : "Set audio folder") && overridden)
+    {
+        // Disabled: read-only field in the disabled look (not Nuklear's color scaling).
+        std::optional<wormedit::ui::chrome::DisabledFieldStyle> disabled;
+        if (!overridden) disabled.emplace(context);
+        wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
+            overridden ? static_cast<nk_flags>(NK_EDIT_FIELD)
+                        : static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
+            buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
+    }
+    if (wormedit::ui::chrome::Button{.label = visual ? "Set visual folder" : "Set audio folder",
+                                     .enabled = overridden}.render(context))
         emit_project_setting(view, action, field, false, 0, buffer.data());
-    if (!overridden) nk_widget_disable_end(context);
 }
 void render_project_settings(nk_context* context, const wormedit::ui::setup_view_t& view,
                              wormedit::ui::workspace_action_t& action) {
-    if (!nk_tree_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
     if (project_state.settings_revision != view.document_revision) {
         std::snprintf(project_state.audio_directory.data(), project_state.audio_directory.size(), "%.*s",
             static_cast<int>(view.settings.audio_directory.size()), view.settings.audio_directory.empty() ? "" : view.settings.audio_directory.data());
@@ -1507,7 +1519,7 @@ void render_project_settings(nk_context* context, const wormedit::ui::setup_view
     render_project_snap(context, view, action);
     render_project_directory(context, view, action, false);
     render_project_directory(context, view, action, true);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 }
 

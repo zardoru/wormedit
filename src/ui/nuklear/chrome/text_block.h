@@ -22,17 +22,22 @@ struct text_block_t {
         }
     }
   private:
+    // Lines break after the last space or hyphen that fits; a word wider than the row still
+    // splits where it overflows. A trailing space stays on its line, so the next one starts clean.
     static auto line_length(const nk_user_font& font, std::string_view text, float available) -> int {
         int length = 0;
+        int last_break = 0;
         float width = 0;
         while (length < static_cast<int>(text.size()) && text[length] != '\n') {
             nk_rune rune{};
             const int bytes = std::max(1, nk_utf_decode(text.data() + length, &rune,
                 static_cast<int>(text.size()) - length));
             const float next = font.width(font.userdata, font.height, text.data() + length, bytes);
-            if (length && width + next > available) break;
+            if (length && width + next > available && text[length] != ' ')
+                return last_break > 0 ? last_break : length;
             width += next;
             length += bytes;
+            if (text[length - 1] == ' ' || text[length - 1] == '-') last_break = length;
         }
         return length;
     }

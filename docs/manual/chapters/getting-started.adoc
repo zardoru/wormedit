@@ -137,7 +137,7 @@ For BMS charts you can also put sounds into exact `#WAV` slots; see <<bms-slots>
 === Compose dock
 
 The narrow strip at the right of Compose opens Inspector, Sounds, Images, Measures, Layers,
-Markers and Mixer. Click a panel button to show it alone; click the sole active panel again to hide it.
+Markers, Mixer and Generator. Click a panel button to show it alone; click the sole active panel again to hide it.
 Hold kbd:[Shift] while clicking to add or remove a second panel. Adding a third replaces the second
 pane. Each pane scrolls independently. Drag buttons along the strip to reorder them and the
 visible panes. The *Side-by-side panels* button below the panel buttons switches between two

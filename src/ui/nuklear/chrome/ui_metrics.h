@@ -33,6 +33,12 @@ inline constexpr float font_display = 28.0f;
 
 inline constexpr float checkbox_box = 16.0f;
 
+// Left indent of an accordion section's body.
+inline constexpr float section_indent = 14.0f;
+// Level-two cards: body indent (also the right margin) and how far the card extends left of the content.
+inline constexpr float card_indent = 8.0f;
+inline constexpr float card_overhang = 4.0f;
+
 // Shadow of one elevation level: `steps` stacked rounded rects, each one pixel larger, all
 // shifted `offset_y` pixels down.
 //   0 flat (inspector groups, bars)
@@ -65,9 +71,9 @@ constexpr auto shadow_reach(int level) -> shadow_reach_t {
     return {steps, up > 0.0f ? up : 0.0f, steps, steps + shadow.offset_y};
 }
 
-// Colors the theme files do not carry yet (T-270 moves them there).
+// Colors the theme files do not carry yet (T-270 moves them there). Disabled colors derive
+// from the theme instead: chrome::text_faint and chrome::disabled_fill.
 inline constexpr nk_color destructive{223, 86, 59, 255};      // coral: destructive or conflict
 inline constexpr nk_color destructive_text{255, 158, 134, 255};
-inline constexpr nk_color text_faint{113, 112, 119, 255};     // disabled text
 
 } // namespace wormedit::ui::metrics

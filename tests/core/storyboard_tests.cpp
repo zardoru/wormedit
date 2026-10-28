@@ -76,7 +76,7 @@ TEST_CASE("storyboard arena rejects byte exhaustion without partial allocation",
 
 TEST_CASE("OSB parser and emitter preserve nested loop semantics deterministically",
           "[unit][storyboard][osb][loops]") {
-    constexpr std::string_view source = "Sprite,Foreground,Centre,\"images/a,b.png\",320,240\n"
+    constexpr std::string_view source = "Sprite,Foreground,Centre,\"images/a b.png\",320,240\n"
                                         " L,100,2\n"
                                         "  F,5,0,100,0,1\n"
                                         "  L,25,3\n"
@@ -105,6 +105,20 @@ TEST_CASE("OSB parser and emitter preserve nested loop semantics deterministical
     const auto reparsed = parse_osb(*emitted.value);
     REQUIRE(reparsed.value);
     CHECK(storyboard_semantically_equal(*parsed.value, *reparsed.value));
+}
+
+TEST_CASE("OSB sprite paths follow osu! comma splitting and quote trimming",
+          "[unit][storyboard][osb]") {
+    CHECK_FALSE(parse_osb("Sprite,Foreground,Centre,\"images/a,b.png\",320,240\n").value);
+    const auto parsed = parse_osb("Sprite,Foreground,Centre,\"images/a.png\",320,240\n F,0,0,1,0,1\n");
+    REQUIRE(parsed.value);
+    REQUIRE(parsed.value->sprites.size() == 1);
+    CHECK(parsed.value->sprites.front().path == "images/a.png");
+    for (const auto* path : {"images/a,b.png", "images/\"a\".png"}) {
+        auto invalid = *parsed.value;
+        invalid.sprites.front().path = path;
+        CHECK_FALSE(emit_osb(invalid).value);
+    }
 }
 
 TEST_CASE("OSB shorthand canonicalizes timestamps and sequential endpoint groups",

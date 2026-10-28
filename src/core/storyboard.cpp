@@ -1,4 +1,5 @@
 #include "checked_math.h"
+#include "osu_line_fields.h"
 #include "text_util.h"
 #include "wormedit/core/numeric_text.h"
 #include <wormedit/core/storyboard.h>
@@ -141,32 +142,6 @@ auto parse_opcode(std::string_view name) noexcept -> std::optional<storyboard_op
 
 auto trim(std::string_view text) noexcept -> std::string_view {
     return text_util::trim(text, " \t");
-}
-
-auto split_csv(std::string_view line) -> std::vector<std::string> {
-    std::vector<std::string> fields;
-    std::string field;
-    bool quoted = false;
-    for (std::size_t index = 0; index < line.size(); ++index) {
-        const auto value = line[index];
-        if (value == '"') {
-            if (quoted && index + 1 < line.size() && line[index + 1] == '"') {
-                field.push_back('"');
-                ++index;
-            } else {
-                quoted = !quoted;
-            }
-        } else if (value == ',' && !quoted) {
-            const auto cleaned = trim(field);
-            fields.emplace_back(cleaned);
-            field.clear();
-        } else {
-            field.push_back(value);
-        }
-    }
-    const auto cleaned = trim(field);
-    fields.emplace_back(cleaned);
-    return fields;
 }
 
 template <class Integer>
@@ -834,7 +809,7 @@ class osb_parser_t {
         if (content.empty()) {
             return retain_blank_line(line);
         }
-        const auto fields = split_csv(content);
+        const auto fields = osu_line::split_fields(content);
         if (indentation == 0 && fields.front() == "Sprite") {
             return parse_sprite(fields);
         }
@@ -879,7 +854,7 @@ class osb_parser_t {
         sprite.source_order = source_order_;
         sprite.layer = fields[1];
         sprite.origin = fields[2];
-        sprite.path = fields[3];
+        sprite.path = osu_line::clean_filename(fields[3]);
         if (!parse_double(fields[4], sprite.x) || !parse_double(fields[5], sprite.y)) {
             fail(storyboard_diagnostic_code_t::invalid_number,
                  "OSB Sprite position is not a finite number");
@@ -1165,7 +1140,7 @@ auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sp
     if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
         sprite.path.size() > storyboard_default_maximum_path_bytes ||
         !is_valid_header_token(sprite.layer) || !is_valid_header_token(sprite.origin) ||
-        !is_valid_single_line(sprite.path) || !std::isfinite(sprite.x) || !std::isfinite(sprite.y)) {
+        !osu_line::is_writable_filename(sprite.path) || !std::isfinite(sprite.x) || !std::isfinite(sprite.y)) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
                                       "OSB sprite has an invalid header"});
         return false;
@@ -1174,17 +1149,11 @@ auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sp
         !append_bounded(output, sprite.layer, maximum_bytes) ||
         !append_bounded(output, ",", maximum_bytes) ||
         !append_bounded(output, sprite.origin, maximum_bytes) ||
-        !append_bounded(output, ",\"", maximum_bytes)) {
+        !append_bounded(output, ",", maximum_bytes) ||
+        !append_bounded(output, osu_line::quote_filename(sprite.path), maximum_bytes)) {
         return false;
     }
-    for (const auto character : sprite.path) {
-        const auto piece = character == '"' ? std::string_view{"\"\""}
-                                             : std::string_view{&character, 1};
-        if (!append_bounded(output, piece, maximum_bytes)) {
-            return false;
-        }
-    }
-    return append_bounded(output, "\",", maximum_bytes) && append_double(output, sprite.x) &&
+    return append_bounded(output, ",", maximum_bytes) && append_double(output, sprite.x) &&
            append_bounded(output, ",", maximum_bytes) && append_double(output, sprite.y) &&
            append_bounded(output, "\n", maximum_bytes);
 }

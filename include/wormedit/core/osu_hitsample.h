@@ -52,7 +52,7 @@ struct osu_hitsample_t {
         };
         return valid_set(normal_set) && valid_set(addition_set) && custom_index >= 0 &&
                custom_index <= INT32_MAX && volume >= 0 && volume <= 100 && filename.size() <= 4096 &&
-               std::ranges::none_of(filename, [](unsigned char c) { return c < 32 || c == ':'; });
+               std::ranges::none_of(filename, [](unsigned char c) { return c < 32 || c == ':' || c == ','; });
     }
     [[nodiscard]] auto additions() const -> std::int64_t {
         return (whistle ? 2 : 0) | (finish ? 4 : 0) | (clap ? 8 : 0);

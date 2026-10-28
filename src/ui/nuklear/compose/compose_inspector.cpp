@@ -157,9 +157,6 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         if (chrome::section_push(inspector.context, NK_TREE_NODE, "Tempo", NK_MAXIMIZED, true)) {
             render_initial_bpm_control(inspector);
             render_compose_inspector_snap_control(toolbar);
-            nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
-            if (chrome::Button{"Timing settings…"}.render(inspector.context))
-                inspector.action->timing_settings.toggle = true;
             chrome::section_pop(inspector.context);
         }
         // The event being edited is a card beside Tempo, not a third level inside it.
@@ -176,6 +173,12 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
             worm_ui_nuklear_cancel_inline_offset(state);
             nk_edit_unfocus(inspector.context);
+        }
+        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Settings", NK_MAXIMIZED, true)) {
+            nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
+            if (chrome::Button{"Timing settings…"}.render(inspector.context))
+                inspector.action->timing_settings.toggle = true;
+            chrome::section_pop(inspector.context);
         }
         wormedit::ui::chrome::section_pop(inspector.context);
     } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {

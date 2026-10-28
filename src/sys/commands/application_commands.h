@@ -14,6 +14,7 @@ enum class application_command_kind_t {
     document_new_project,
     document_save_project,
     document_open,
+    document_open_project_folder,
     document_save_as,
     document_close,
     app_quit,

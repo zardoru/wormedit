@@ -36,6 +36,10 @@ struct project_identity_t {
     std::filesystem::path asset_base;
     std::optional<native_project_document_version_t> scanned_primary_version;
     std::filesystem::path external_player_source_path;
+
+    [[nodiscard]] auto has_project_folder() const -> bool {
+        return session_loaded && !asset_base.empty();
+    }
 };
 
 // Generation changes before any project state, so captured work is stale first.

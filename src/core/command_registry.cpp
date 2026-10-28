@@ -784,6 +784,8 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 command_category_t::document, global, {chord(shortcut_key_t::n, primary())}, true);
     add_builtin(registry, invoker, "document.open", "Open chart or project…",
                 command_category_t::document, global, {chord(shortcut_key_t::o, primary())}, true);
+    add_builtin(registry, invoker, "document.open_project_folder", "Open project folder",
+                command_category_t::document, global, {});
     add_builtin(registry, invoker, "document.save_as", "Save project as…",
                 command_category_t::document, global,
                 {chord(shortcut_key_t::s, modified(shortcut_modifier_t::shift))}, true);

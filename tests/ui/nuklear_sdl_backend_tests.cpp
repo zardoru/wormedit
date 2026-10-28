@@ -125,6 +125,24 @@ TEST_CASE("Installed manual location rejects missing files and escapes local URL
     expect_backend(with_slash->url() == manual->url());
 }
 
+TEST_CASE("Local folder locations escape paths and reject missing or non-directory targets",
+          "[ui][project-folder]") {
+    auto directory = wormedit::test::temporary_directory_t::from();
+    expect_backend(directory);
+    const auto folder = directory->path() / "project # % ? café";
+    expect_backend(!wormedit::local_file_location_t::from(folder, SDL_PATHTYPE_DIRECTORY));
+    expect_backend(std::filesystem::create_directory(folder));
+    const auto location = wormedit::local_file_location_t::from(folder, SDL_PATHTYPE_DIRECTORY);
+    expect_backend(location);
+    expect_backend(location->url().starts_with("file:///"));
+    expect_backend(location->url().ends_with("project%20%23%20%25%20%3F%20caf%C3%A9"));
+    const auto file = folder / "project.wormedit";
+    std::ofstream(file) << "{}";
+    expect_backend(!wormedit::local_file_location_t::from(file, SDL_PATHTYPE_DIRECTORY));
+    expect_backend(!wormedit::local_file_location_t::from({}, SDL_PATHTYPE_DIRECTORY));
+    expect_backend(!wormedit::local_file_location_t::from(std::string{"bad\0path", 8}, SDL_PATHTYPE_DIRECTORY));
+}
+
 TEST_CASE("SDL ordinary letters never press their inactive editing shortcuts", "[ui][sdl-keyboard]") {
     backend_fixture_t backend;
     constexpr std::array<std::pair<SDL_Keycode, nk_keys>, 8> mappings{{

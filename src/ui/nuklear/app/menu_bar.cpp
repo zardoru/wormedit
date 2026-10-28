@@ -13,6 +13,8 @@ void append_file(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& v
     menu.push_back({"File", "Open chart or project…", Action::open, "document.open", !blocked});
     menu.push_back({"File", "Save project", Action::save, "document.save_project", !blocked && view.project_loaded});
     menu.push_back({"File", "Save project as…", Action::save_as, "document.save_as", !blocked && view.project_loaded});
+    menu.push_back({"File", "Open project folder", Action::open_project_folder,
+                    "document.open_project_folder", !blocked && view.project_loaded});
     menu.push_back({"File", "Close project", Action::close, "document.close", !blocked && view.project_loaded});
     menu.push_back({"File", "Export…", Action::export_output_group, "document.export_output_group",
                     !blocked && view.project_loaded && view.selected_chart_id.value != 0});

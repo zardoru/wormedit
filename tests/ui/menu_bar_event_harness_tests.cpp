@@ -153,7 +153,7 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
     wormedit::sys::command_shortcut_text_t menu_shortcuts_3;
     sys::build_menu_commands_view(command_registry_t::from({}), harness.view(), menu_shortcuts_3);
     const auto model = ui::build_workspace_menu(harness.view(), false, false, true);
-    for (const auto action : {Action::open, Action::save_as, Action::close, Action::options,
+    for (const auto action : {Action::open, Action::open_project_folder, Action::save_as, Action::close, Action::options,
         Action::copy, Action::cut, Action::paste, Action::select_same_sound, Action::move_to_bgm,
         Action::reset_view, Action::tap_timing, Action::timing_settings, Action::notifications,
         Action::preview, Action::external_preferences, Action::external_start, Action::external_here,
@@ -504,9 +504,26 @@ TEST_CASE("File lifecycle menu items dispatch their registered commands", "[even
     struct command_t { const char* label; const char* id; };
     constexpr command_t commands[]{
         {"Open chart or project…", "document.open"},
+        {"Open project folder", "document.open_project_folder"},
         {"Save project as…", "document.save_as"},
         {"Close project", "document.close"},
         {"Quit", "app.quit"},
     };
     for (const auto& command : commands) check_dispatch("File", command.label, command.id);
+}
+
+TEST_CASE("Open project folder menu follows project and registry availability",
+          "[event-harness][menu-bar][project-folder]") {
+    using namespace wormedit;
+    using Action = ui::workspace_menu_action_t;
+    ui::workspace_view_t view{};
+    auto registry = command_registry_t::from({});
+    sys::command_shortcut_text_t shortcuts;
+    sys::build_menu_commands_view(registry, view, shortcuts);
+    check_menu(!item(ui::build_workspace_menu(view, false, false, false), Action::open_project_folder).enabled);
+    view.project_loaded = true;
+    check_menu(item(ui::build_workspace_menu(view, false, false, false), Action::open_project_folder).enabled);
+    (void)update_command_state(registry, {"document.open_project_folder"}, false, std::nullopt);
+    sys::build_menu_commands_view(registry, view, shortcuts);
+    check_menu(!item(ui::build_workspace_menu(view, false, false, false), Action::open_project_folder).enabled);
 }

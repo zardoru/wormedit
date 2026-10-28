@@ -35,6 +35,7 @@
 #endif
 #include <wormedit/core/keyed_cache.h>
 #include "ui/frontend.h"
+#include "ui/nuklear/chrome/text_input.h"
 #include "ui/nuklear/render/image_quad.h"
 #include "ui/nuklear/render/sdl_region_scope.h"
 #include "ui/nuklear/render/sdl_region_frame.h"
@@ -401,15 +402,7 @@ NK_API void nk_sdl_update_TextInput(struct nk_context* ctx) {
     sdl = (struct nk_sdl*)ctx->userdata.ptr;
     NK_ASSERT(sdl);
 
-    /* Determine if Nuklear is using any top-level "edit" widget.
-     * Popups take higher priority because they block any incomming input.
-     * This will not work, if the widget is not updating context state properly. */
-    if (!ctx->active)
-        active = false;
-    else if (ctx->active->popup.win)
-        active = ctx->active->popup.win->edit.active;
-    else
-        active = ctx->active->edit.active;
+    active = wormedit::ui::chrome::has_active_text_edit(ctx);
 
     /* decide, if TextInputActive should be unchanged/stoped/started
      * and change its state accordingly for owned SDL Window */

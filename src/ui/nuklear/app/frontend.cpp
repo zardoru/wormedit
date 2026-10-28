@@ -6,6 +6,7 @@
 #include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
 #include "ui/nuklear/chrome/modal_input.h"
+#include "ui/nuklear/chrome/text_input.h"
 #include "ui/nuklear/chrome/text_fit.h"
 #include "wormedit/config.h"
 #include "ui/nuklear/chrome/catalog_confirmation.h"
@@ -533,14 +534,7 @@ static bool nuklear_text_entry_active(void) {
     if (worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned) {
         return true;
     }
-    if (!g_context || !g_context->active) {
-        return false;
-    }
-    const auto* active_window = g_context->active;
-    if (active_window->popup.win) {
-        return active_window->popup.win->edit.active != 0;
-    }
-    return active_window->edit.active != 0;
+    return wormedit::ui::chrome::has_active_text_edit(g_context);
 }
 
 static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool compose_lane_focused = false,

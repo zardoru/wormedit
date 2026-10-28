@@ -7,6 +7,7 @@
 #include "ui/nuklear/compose/compose_canvas.h"
 #include "ui/nuklear/compose/compose_toolbar.h"
 #include "ui/nuklear/compose/compose_recipe_menu.h"
+#include "ui/nuklear/chrome/text_input.h"
 #include "ui/nuklear/compose/compose_inspector.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/compose/compose_resources.h"
@@ -415,9 +416,7 @@ static bool process_go_to_measure_keys(nk_context* context, const wormedit::ui::
 
 bool compose_text_owned(const nk_context* context) {
     if (state.inline_offset.bgm_column_count_edit.input_owned) return true;
-    if (!context || !context->active) return false;
-    const auto* active = context->active;
-    return active->popup.win ? active->popup.win->edit.active != 0 : active->edit.active != 0;
+    return wormedit::ui::chrome::has_active_text_edit(context);
 }
 
 static void release_discarded_compose_keys(wormedit::ui::workspace_action_t* action) {

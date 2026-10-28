@@ -573,6 +573,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
                                                : nk_rect(section.x, section.top, section.width, header_height));
         return false;
     }
+    if (!level_one)  // The rule between a card's header and its body.
+        nk_fill_rect(nk_window_get_canvas(context),
+                     nk_rect(section.x, section.top + header_height + context->style.window.spacing.y * 0.5f,
+                             section.width, 1.0f), 0.0f, color(UiColor::border));
     if (open_section_count < max_section_depth) {
         open_sections[open_section_count] = section;
     }

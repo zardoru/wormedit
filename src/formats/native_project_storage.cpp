@@ -1345,6 +1345,8 @@ auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
         // Bound matching names before inspecting their type or retaining candidates.
         const auto filename = path_to_utf8(iterator->path().filename());
         if (!filename.starts_with(filename_prefix)) continue;
+        // Older builds wrote display diagnostics alongside recovery snapshots.
+        if (filename == "display-stalls.log") continue;
         if (++examined > state.maximum_directory_entries) {
             state.inputs_within_limit = false;
             discovered.clear();

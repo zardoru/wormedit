@@ -3975,7 +3975,9 @@ struct application_t::implementation_t {
     }
 
     void start_display_watchdog() {
-        auto log = platform.recovery_directory ? *platform.recovery_directory / "display-stalls.log" : std::filesystem::path{};
+        auto log = platform.recovery_directory
+            ? platform.recovery_directory->parent_path() / "display-stalls.log"
+            : std::filesystem::path{};
         const auto* actual = SDL_GetCurrentVideoDriver();
         platform.display_watchdog.emplace(frame_timing(), platform.notification_sink,
             actual ? actual : "unknown", std::move(log));

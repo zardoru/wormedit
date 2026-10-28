@@ -727,6 +727,27 @@ TEST_CASE("platform recovery directories are scanned deterministically for an em
     }));
 }
 
+TEST_CASE("recovery directory scans ignore legacy display logs but retain corrupt snapshots",
+          "[unit][format][native-project][recovery][scan][directories]") {
+    temporary_directory_t directory;
+    const auto log = directory.path / "display-stalls.log";
+    write_text(log, "wormedit: display stalled: 5.000 s; phase=render present\n");
+    const wormedit::native_project_recovery_scan_request_t request{
+        .caller_supplied_directories = {directory.path}, .discover_stale_temporaries = false};
+    const auto log_only = wormedit::scan_native_project_recovery_candidates(request);
+    CHECK(log_only.value.candidates.empty());
+    CHECK(log_only.diagnostics.empty());
+
+    const auto corrupt = directory.path / "project.wormedit.bak";
+    write_text(corrupt, "invalid snapshot");
+    const auto scan = wormedit::scan_native_project_recovery_candidates(request);
+    REQUIRE(scan.value.candidates.size() == 1);
+    CHECK(scan.value.candidates.front().path == corrupt);
+    CHECK(scan.value.candidates.front().status ==
+          wormedit::native_project_recovery_candidate_status_t::invalid);
+    CHECK(read_text(log) == "wormedit: display stalled: 5.000 s; phase=render present\n");
+}
+
 TEST_CASE("recovery actions reject changed artifacts and quarantine by recoverable move",
           "[unit][format][native-project][recovery][actions][faults]") {
     using action_t = wormedit::native_project_recovery_action_t;

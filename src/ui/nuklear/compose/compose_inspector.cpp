@@ -210,9 +210,6 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     auto* action = inspector.action;
     if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Find note label", NK_MINIMIZED)) return;
-    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
-    nk_label_colored(context, "Find note label", NK_TEXT_LEFT,
-                     wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.label_search.data(),
                                          state.note_label.label_search.size(), nk_filter_default);

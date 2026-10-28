@@ -129,6 +129,27 @@
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-stdlib=libc++"
       }
+    },
+    {
+      "name": "wasm-smoke",
+      "displayName": "Post-1.0 experimental browser codec smoke",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wasm-smoke",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/wasm.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "OFF",
+        "WORMEDIT_BUILD_WASM_SMOKE": "ON",
+        "WORMEDIT_BUILD_APP": "OFF",
+        "WORMEDIT_BUILD_EVENT_HARNESS": "OFF",
+        "WORMEDIT_ENABLE_LUA": "OFF",
+        "WORMEDIT_ENABLE_AUDIO_DECODER": "OFF",
+        "WORMEDIT_ENABLE_IMAGE_DECODER": "OFF",
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "OFF",
+        "WORMEDIT_ENABLE_FFMPEG": "OFF",
+        "CMAKE_DISABLE_FIND_PACKAGE_Iconv": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -170,6 +191,14 @@
     {
       "name": "linux-clang-libcxx",
       "configurePreset": "linux-clang-libcxx",
+      "jobs": 4
+    },
+    {
+      "name": "wasm-smoke",
+      "configurePreset": "wasm-smoke",
+      "targets": [
+        "wormedit-wasm-smoke"
+      ],
       "jobs": 4
     }
   ],

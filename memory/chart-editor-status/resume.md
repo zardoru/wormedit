@@ -6,7 +6,7 @@
 Since then, main merged the panel redesigns #66–#70, #71 (palette clipping) and #72 (BMSON
 opening errors), and `c564202` updated 12 event-harness tests the redesigns had broken and `25128d1` brought three functions back under the complexity threshold; gate 5,571/5,571 with clang-tidy 23.1.3 against `v1.0.0-rc1`. Notes:
 [`docs/release-notes/1.0.0-rc2.md`](../../docs/release-notes/1.0.0-rc2.md); README and all manual
-screenshots refreshed. The GitHub draft release `v1.0.0-rc2` tracks these notes. Pending (owner):
+screenshots refreshed. The GitHub draft release `v1.0.0-rc2` tracks these notes. SDL pinned to `cc2713c0` (`fef679a`) for the macOS lid-close exit crash. Pending (owner):
 AppImage, Windows zip and Wine checks, macOS check, tag and publish. GitHub CI has been red on
 main for weeks (runner GCC lacks `std::bind_back`, runner Clang rejects
 `-Wno-missing-designated-field-initializers`, MSVC C4458 at `document.h:919`); local gates pass.

@@ -3,6 +3,7 @@
 #include <wormedit/audio/block_cache.h>
 #include <wormedit/audio/resident_samples.h>
 #include <wormedit/core/operation_state.h>
+#include <wormedit/core/preview_mix.h>
 
 #include <array>
 #include <atomic>
@@ -84,6 +85,8 @@ class transport_t {
     [[nodiscard]] auto is_hitsounds_enabled() const noexcept -> bool {
         return hitsounds_enabled_.load(std::memory_order_acquire);
     }
+    // Control thread; applies to sounding voices from the next callback. Invalid mixes are refused.
+    [[nodiscard]] auto set_preview_mix(const preview_mix_t& mix) -> bool;
     // Control thread: retire one preview family without restarting the transport.
     void clear_voices(voice_kind_t kind);
     [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
@@ -143,6 +146,8 @@ class transport_t {
     // control thread reuses their storage without growing the vector.
     std::vector<scheduled_voice_entry_t> scheduled_voices_;
     std::unordered_set<std::uint64_t> muted_mix_groups_;
+    std::array<float, mix_bus_count> bus_gains_{};
+    float master_gain_{1.0F};
     std::size_t active_scheduled_voices_{};
     std::atomic<bool> clicks_enabled_{true};
     std::atomic<bool> hitsounds_enabled_{true};

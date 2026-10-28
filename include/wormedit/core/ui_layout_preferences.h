@@ -11,7 +11,7 @@ inline constexpr float dock_minimum_width = 240.0f;
 inline constexpr float dock_maximum_width = 520.0f;
 inline constexpr double dock_minimum_split = 0.2;
 inline constexpr double dock_maximum_split = 0.8;
-enum class dock_panel_t { inspector, sounds, images, measures, layers, markers };
+enum class dock_panel_t { inspector, sounds, images, measures, layers, markers, mixer };
 struct dock_panel_definition_t {
     dock_panel_t id;
     std::string_view key;
@@ -23,7 +23,9 @@ inline constexpr std::array dock_panel_catalog{
     dock_panel_definition_t{dock_panel_t::images, "images", "Images"},
     dock_panel_definition_t{dock_panel_t::measures, "measures", "Measures"},
     dock_panel_definition_t{dock_panel_t::layers, "layers", "Layers"},
-    dock_panel_definition_t{dock_panel_t::markers, "markers", "Markers"}};
+    dock_panel_definition_t{dock_panel_t::markers, "markers", "Markers"},
+    dock_panel_definition_t{dock_panel_t::mixer, "mixer", "Mixer"}};
+inline constexpr std::size_t dock_panel_count = dock_panel_catalog.size();
 
 // Application preferences; the order also determines the order of the two visible panes.
 class ui_layout_preferences_t {
@@ -34,7 +36,7 @@ class ui_layout_preferences_t {
     [[nodiscard]] auto serialized() const -> std::string;
     [[nodiscard]] auto is_visible(dock_panel_t panel) const -> bool;
     [[nodiscard]] auto visible_panels() const -> std::array<std::optional<dock_panel_t>, 2>;
-    [[nodiscard]] auto order() const -> const std::array<dock_panel_t, 6>& { return order_; }
+    [[nodiscard]] auto order() const -> const std::array<dock_panel_t, dock_panel_count>& { return order_; }
     [[nodiscard]] auto width() const -> float { return width_; }
     [[nodiscard]] auto split() const -> float { return split_; }
     [[nodiscard]] auto is_side_by_side() const -> bool { return side_by_side_; }
@@ -46,9 +48,10 @@ class ui_layout_preferences_t {
     void set_split(float split);
     auto operator==(const ui_layout_preferences_t&) const -> bool = default;
   private:
-    std::array<dock_panel_t, 6> order_{dock_panel_t::inspector, dock_panel_t::sounds,
-        dock_panel_t::images, dock_panel_t::measures, dock_panel_t::layers, dock_panel_t::markers};
-    std::array<bool, 6> visible_{true, true, false, false, false, false};
+    std::array<dock_panel_t, dock_panel_count> order_{dock_panel_t::inspector, dock_panel_t::sounds,
+        dock_panel_t::images, dock_panel_t::measures, dock_panel_t::layers, dock_panel_t::markers,
+        dock_panel_t::mixer};
+    std::array<bool, dock_panel_count> visible_{true, true, false, false, false, false, false};
     float width_{320.0f};
     float split_{0.5f};
     bool side_by_side_{};

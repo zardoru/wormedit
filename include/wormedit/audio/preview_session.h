@@ -102,6 +102,9 @@ class preview_session_t {
     void set_metronome_enabled(bool enabled);
     void set_muted_mix_groups(std::span<const std::uint64_t> groups);
     void set_hitsounds_enabled(bool enabled) noexcept;
+    [[nodiscard]] auto set_preview_mix(const preview_mix_t& mix) -> bool {
+        return transport_.set_preview_mix(mix);
+    }
     [[nodiscard]] auto is_hitsounds_enabled() const noexcept -> bool {
         return transport_.is_hitsounds_enabled();
     }

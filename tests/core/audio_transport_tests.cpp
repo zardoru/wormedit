@@ -357,6 +357,9 @@ TEST_CASE("transport publishes layered voice batches atomically",
 
 namespace {
 void check_bgm_mix(bool condition) { CHECK(condition); }
+// Amplitude of a level 6 dB below full scale.
+const float minus_six_decibels = std::pow(10.0F, -6.0F / 20.0F);
+auto is_near(float actual, float expected) -> bool { return std::abs(actual - expected) < 1e-5F; }
 }
 
 TEST_CASE("BGM mix groups silence active and future voices without losing their source position",
@@ -427,6 +430,64 @@ TEST_CASE("Live hitsound monitoring preserves music keysounds and independent BG
     check_bgm_mix(transport.mix_frames(*token, 24, output).voices_mixed == 3);
     check_bgm_mix(output.front() == 0.375F);
     check_bgm_mix(transport.is_current(*token));
+}
+
+TEST_CASE("Preview mix buses scale their category and the master scales every voice",
+          "[unit][audio][transport][preview-mix]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    require_transport(token.has_value());
+    const auto shared = source("preview-mix");
+    const std::vector<float> pcm(64 * output_channel_count, 0.125F);
+    require_transport(cache.store({.source = shared, .block_index = 0}, 64, pcm).has_value());
+    const std::array voices{
+        transport_voice_t{.id = 1, .kind = voice_kind_t::music, .source = shared, .frame_count = 64},
+        transport_voice_t{.id = 2, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64},
+        transport_voice_t{.id = 3, .source = shared, .frame_count = 64},
+        transport_voice_t{.id = 4, .source = shared, .frame_count = 64, .is_hitsound = true}};
+    require_transport(transport.schedule_voices(*token, voices) == std::monostate{});
+    std::array<float, 16> output{};
+    wormedit::preview_mix_t mix;
+    mix.bus(wormedit::mix_bus_t::music).level = 0;
+    mix.bus(wormedit::mix_bus_t::bgm).muted = true;
+    mix.bus(wormedit::mix_bus_t::keysounds).level = 90;
+    check_bgm_mix(transport.set_preview_mix(mix));
+    check_bgm_mix(transport.mix_frames(*token, 0, output).voices_mixed == 4);
+    check_bgm_mix(is_near(output.front(), 0.125F * (minus_six_decibels + 1.0F)));
+    mix.bus(wormedit::mix_bus_t::hitsounds).solo = true;
+    mix.master = 90;
+    check_bgm_mix(transport.set_preview_mix(mix));
+    check_bgm_mix(transport.mix_frames(*token, 8, output).voices_mixed == 4);
+    check_bgm_mix(is_near(output.front(), 0.125F * minus_six_decibels));
+    mix.master = 101;
+    check_bgm_mix(!transport.set_preview_mix(mix));
+    check_bgm_mix(transport.set_preview_mix({}));
+    check_bgm_mix(transport.mix_frames(*token, 16, output).voices_mixed == 4);
+    check_bgm_mix(output.front() == 0.5F);
+}
+
+TEST_CASE("Preview mix solo is additive and mute wins over solo", "[unit][core][preview-mix]") {
+    wormedit::preview_mix_t mix;
+    check_bgm_mix(mix.is_default() && mix.gain(wormedit::mix_bus_t::music) == 1.0F);
+    mix.bus(wormedit::mix_bus_t::bgm).solo = true;
+    mix.bus(wormedit::mix_bus_t::keysounds).solo = true;
+    mix.bus(wormedit::mix_bus_t::keysounds).muted = true;
+    check_bgm_mix(mix.is_silenced(wormedit::mix_bus_t::music));
+    check_bgm_mix(!mix.is_silenced(wormedit::mix_bus_t::bgm));
+    check_bgm_mix(mix.is_silenced(wormedit::mix_bus_t::keysounds));
+    mix.bus(wormedit::mix_bus_t::bgm).level = 90;
+    mix.master = 90;
+    check_bgm_mix(is_near(mix.gain(wormedit::mix_bus_t::bgm), minus_six_decibels * minus_six_decibels));
+}
+
+TEST_CASE("Preview mix levels follow a decibel taper", "[unit][core][preview-mix]") {
+    check_bgm_mix(wormedit::mix_level_decibels(100) == 0.0F && wormedit::mix_level_gain(100) == 1.0F);
+    check_bgm_mix(is_near(*wormedit::mix_level_decibels(50), -30.0F));
+    check_bgm_mix(is_near(*wormedit::mix_level_decibels(1), -59.4F));
+    check_bgm_mix(is_near(wormedit::mix_level_gain(90), minus_six_decibels));
+    check_bgm_mix(!wormedit::mix_level_decibels(0) && wormedit::mix_level_gain(0) == 0.0F);
 }
 
 namespace {

@@ -5,6 +5,7 @@
 #include "compose_measure_lane.h"
 #include <wormedit/core/shortcut_vocabulary.h>
 #include <wormedit/core/resource_vocabulary.h>
+#include <wormedit/core/preview_mix.h>
 #include "metadata_audio.h"
 #include "hitsounds.h"
 #include "preview_audio.h"
@@ -1428,6 +1429,9 @@ struct compose_view_t {
     std::string keysound_filter_selected_layer_name;
     bool keysound_filter_selected_layer_valid{};
     bool keysounds_available{};
+    // Session playback mix; the dock is unavailable without a live preview output.
+    wormedit::preview_mix_t preview_mix;
+    bool preview_mix_available{};
     size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
     bool keysound_ids_available{};
     std::vector<wormedit::ui::compose_sound_slot_row_view_t> sound_slots;

@@ -100,3 +100,12 @@ TEST_CASE("Dock arrangement rejects an invalid preference without changing other
     record["side_by_side"] = "columns";
     CHECK_FALSE(ui_layout_preferences_t::from(record.dump()));
 }
+TEST_CASE("Dock records saved before the mixer panel keep their order and gain it last", "[core][dock-layout]") {
+    auto record = nlohmann::json::parse(ui_layout_preferences_t{}.serialized());
+    record["order"] = {"markers", "inspector", "sounds", "images", "measures", "layers"};
+    const auto parsed = ui_layout_preferences_t::from(record.dump());
+    REQUIRE(parsed);
+    CHECK(parsed->order().front() == dock_panel_t::markers);
+    CHECK(parsed->order().back() == dock_panel_t::mixer);
+    CHECK_FALSE(parsed->is_visible(dock_panel_t::mixer));
+}

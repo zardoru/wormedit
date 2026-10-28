@@ -5,6 +5,7 @@
 
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/player_preview.h>
 #include <wormedit/core/workspace.h>
 
@@ -28,6 +29,11 @@ struct workspace_frame_transport_t {
     std::uint64_t frame{};
     std::uint64_t end_frame{};
     std::uint32_t sample_rate{44'100};
+    const export_cut_frame_timeline_t* cut_frames{};
+
+    [[nodiscard]] auto source_frame() const -> std::uint64_t {
+        return cut_frames ? cut_frames->source_frame(frame) : frame;
+    }
 };
 
 struct workspace_frame_view_args_t {

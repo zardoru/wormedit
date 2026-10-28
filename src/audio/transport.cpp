@@ -37,6 +37,8 @@ struct transport_mix_context_t {
     transport_mix_result_t& result;
     float click_preview_gain{1.0F};
     float accent_gain{1.0F};
+    const std::array<float, mix_bus_count>* bus_gains{};
+    float master_gain{1.0F};
 };
 
 struct transport_block_window_t {
@@ -46,10 +48,27 @@ struct transport_block_window_t {
     float gain;
 };
 
+// Clicks and assist ticks sit outside the category buses; the master level still applies.
+auto mix_bus_of(const transport_voice_t& voice) -> std::optional<mix_bus_t> {
+    if (voice.is_hitsound) return mix_bus_t::hitsounds;
+    switch (voice.kind) {
+    case voice_kind_t::music: return mix_bus_t::music;
+    case voice_kind_t::bgm: return mix_bus_t::bgm;
+    case voice_kind_t::playable_note: return mix_bus_t::keysounds;
+    default: return std::nullopt;
+    }
+}
+
+auto transport_bus_gain(const transport_mix_context_t& context, const transport_voice_t& voice) -> float {
+    const auto bus = mix_bus_of(voice);
+    if (!bus) return context.master_gain;
+    return context.bus_gains ? (*context.bus_gains)[static_cast<std::size_t>(*bus)] : 1.0F;
+}
+
 auto transport_voice_gain(const transport_mix_context_t& context, const transport_voice_t& voice) -> float {
     const auto click = voice.kind == voice_kind_t::click_preview || voice.kind == voice_kind_t::layer_assist;
     return voice.gain * (click ? context.click_preview_gain : 1.0F) *
-        (voice.is_metronome_accent ? context.accent_gain : 1.0F);
+        (voice.is_metronome_accent ? context.accent_gain : 1.0F) * transport_bus_gain(context, voice);
 }
 
 auto mix_pcm_samples(std::span<float> output, std::span<const float> pcm,
@@ -167,6 +186,8 @@ struct transport_t::mix_operation_t {
         const auto clicks_enabled = owner.clicks_enabled_.load(std::memory_order_acquire);
         context.accent_gain = static_cast<float>(owner.accent_volume_percent_.load(std::memory_order_acquire)) / 100.0F;
         const auto hitsounds_enabled = owner.hitsounds_enabled_.load(std::memory_order_acquire);
+        context.bus_gains = &owner.bus_gains_;
+        context.master_gain = owner.master_gain_;
         for (auto& entry : owner.scheduled_voices_) {
             if (entry.active && owner.is_voice_audible(entry.voice, clicks_enabled, hitsounds_enabled)) {
                 if (mix_voice(context, entry.voice)) {
@@ -212,6 +233,7 @@ transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum
       decode_session_(std::max<std::size_t>(maximum_scheduled_voices, 1)),
       maximum_scheduled_voices_(maximum_scheduled_voices) {
     scheduled_voices_.reserve(maximum_scheduled_voices_);
+    bus_gains_.fill(1.0F);
 }
 
 auto transport_t::is_voice_audible(const transport_voice_t& voice,
@@ -228,6 +250,15 @@ void transport_t::set_muted_mix_groups(std::span<const std::uint64_t> groups) {
         const std::scoped_lock lock(mutex_);
         muted_mix_groups_.swap(next);
     }
+}
+auto transport_t::set_preview_mix(const preview_mix_t& mix) -> bool {
+    if (!mix.is_valid()) return false;
+    std::array<float, mix_bus_count> gains{};
+    for (const auto& bus : mix_bus_catalog) gains[static_cast<std::size_t>(bus.id)] = mix.gain(bus.id);
+    const std::scoped_lock lock(mutex_);
+    bus_gains_ = gains;
+    master_gain_ = mix_level_gain(mix.master);
+    return true;
 }
 void transport_t::set_hitsounds_enabled(bool enabled) noexcept {
     hitsounds_enabled_.store(enabled, std::memory_order_release);

@@ -86,7 +86,7 @@ TEST_CASE("Dock split captures cancel on focus loss without a late panel action"
 }
 TEST_CASE("Dock panes share one horizontal footprint and retain a usable narrow canvas", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
-    const std::array available{true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true};
     const auto wide = ui::dock_geometry_t::from(1280, 700, layout, available);
     REQUIRE(wide.panes[0]);
     REQUIRE(wide.panes[1]);
@@ -141,7 +141,7 @@ TEST_CASE("Right dock strip switches a pair to full-height side-by-side columns"
     dock_fixture_t f;
     f.click(sounds_tip, SDL_KMOD_SHIFT);
     f.click("Side-by-side panels");
-    const auto geometry = ui::dock_geometry_t::from(1280, 700, f.layout(), {true, true, true, true, true, true});
+    const auto geometry = ui::dock_geometry_t::from(1280, 700, f.layout(), {true, true, true, true, true, true, true});
     REQUIRE(geometry.is_side_by_side());
     CHECK(f.layout().is_side_by_side());
     CHECK(geometry.panes[0]->bounds.top == geometry.panes[1]->bounds.top);
@@ -154,7 +154,7 @@ TEST_CASE("Side-by-side dock geometry preserves minimum column widths", "[event-
     layout.set_side_by_side(true);
     layout.set_split(0.2f);
     const auto width = GENERATE(800.0f, 1280.0f);
-    const auto geometry = ui::dock_geometry_t::from(width, 700, layout, {true, true, true, true, true, true});
+    const auto geometry = ui::dock_geometry_t::from(width, 700, layout, {true, true, true, true, true, true, true});
     REQUIRE(geometry.is_side_by_side());
     CHECK(geometry.panes[0]->bounds.right - geometry.panes[0]->bounds.left >= dock_minimum_width);
     CHECK(geometry.panes[1]->bounds.right - geometry.panes[1]->bounds.left >= dock_minimum_width);
@@ -163,7 +163,7 @@ TEST_CASE("Side-by-side dock geometry preserves minimum column widths", "[event-
 TEST_CASE("Narrow windows temporarily stack columns and restore them when widened", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     layout.set_side_by_side(true);
-    const std::array available{true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true};
     const auto narrow = ui::dock_geometry_t::from(700, 700, layout, available);
     REQUIRE(narrow.panes[1]);
     CHECK_FALSE(narrow.is_side_by_side());
@@ -195,7 +195,7 @@ TEST_CASE("Close confirmation blocks the dock arrangement toggle", "[event-harne
 TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     layout.set_side_by_side(true);
-    const std::array available{true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true};
     const auto narrow = ui::dock_geometry_t::from(800, 700, layout, available, 268);
     CHECK_FALSE(narrow.is_side_by_side());
     const auto wide = ui::dock_geometry_t::from(1280, 700, layout, available, 328);
@@ -207,7 +207,7 @@ TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harn
 TEST_CASE("Compact docks preserve the field without overwriting preferred panels", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     const auto saved = layout;
-    const std::array available{true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true};
     const auto compact = ui::dock_geometry_t::from(640, 240, layout, available);
     CHECK_FALSE(compact.panes[0]);
     CHECK_FALSE(compact.panes[1]);
@@ -221,7 +221,7 @@ TEST_CASE("Compact docks preserve the field without overwriting preferred panels
 TEST_CASE("Compact dock can show an explicitly selected sole panel", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     layout.activate(dock_panel_t::sounds, false);
-    const auto geometry = ui::dock_geometry_t::from(640, 120, layout, {true, true, true, true, true, true});
+    const auto geometry = ui::dock_geometry_t::from(640, 120, layout, {true, true, true, true, true, true, true});
     CHECK(geometry.is_visible(dock_panel_t::sounds));
     CHECK_FALSE(geometry.panes[1]);
 }
@@ -244,4 +244,56 @@ TEST_CASE("Compact toolbar leaves useful chart height at the maximum UI scale", 
     wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     CHECK(viewport.height >= 100);
+}
+namespace {
+constexpr auto mixer_tip = "Mixer panel (Shift-click to add; drag to reorder)";
+auto requested_mix(const auto& frames) -> std::optional<preview_mix_t> {
+    for (const auto& frame : frames)
+        if (frame.get().preview_mix) return frame.get().preview_mix;
+    return std::nullopt;
+}
+struct mixer_fixture_t : dock_fixture_t {
+    mixer_fixture_t() {
+        harness.view().compose.preview_mix_available = true;
+        (void)harness.frame();
+        click(mixer_tip);
+    }
+    // Clicks one control and publishes the requested mix back as the next view, like the app.
+    auto toggle(std::string_view tip) -> std::optional<preview_mix_t> {
+        const auto mix = requested_mix(harness.click_widget(tip));
+        if (mix) harness.view().compose.preview_mix = *mix;
+        (void)harness.frame();
+        return mix;
+    }
+    auto reset_is_whole_default_mix() -> bool {
+        const auto point = harness.drawn_text_center("Reset");
+        if (!point) return false;
+        const auto [x, y] = *point;
+        const std::array frames{
+            harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(true, x, y)}),
+            harness.frame(std::array{test::mouse_motion(x, y), test::mouse_button(false, x, y)})};
+        const auto mix = requested_mix(frames);
+        return mix && mix->is_default() && std::ranges::all_of(frames, [](const auto& frame) {
+            return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE;
+        });
+    }
+};
+}
+TEST_CASE("Mixer dock requests category mute, additive solo and reset as whole mixes", "[event-harness][dock-layout][preview-mix]") {
+    mixer_fixture_t f;
+    REQUIRE(f.layout().is_visible(dock_panel_t::mixer));
+    CHECK(f.harness.drawn_text().find("Playback only") != std::string::npos);
+    preview_mix_t expected;
+    expected.bus(mix_bus_t::bgm).muted = true;
+    CHECK(f.toggle("Mute BGM") == expected);
+    expected.bus(mix_bus_t::keysounds).solo = true;
+    CHECK(f.toggle("Solo Keysounds (additive)") == expected);
+    CHECK(f.reset_is_whole_default_mix());
+}
+TEST_CASE("Mixer dock button stays unavailable without live preview output", "[event-harness][dock-layout][preview-mix]") {
+    dock_fixture_t f;
+    f.harness.view().compose.preview_mix_available = false;
+    (void)f.harness.frame();
+    f.click(mixer_tip);
+    CHECK_FALSE(f.layout().is_visible(dock_panel_t::mixer));
 }

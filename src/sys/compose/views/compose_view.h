@@ -3,6 +3,7 @@
 #include "sys/bms_program_runtime.h"
 #include "sys/compose/compose_source_key.h"
 #include <wormedit/core/lane_keys.h>
+#include <wormedit/core/preview_mix.h>
 #include "sys/bookmarks/bookmark_navigation.h"
 #include "sys/compose/actions/compose_audition_requests.h"
 #include "sys/compose/actions/compose_action_outcome.h"
@@ -536,6 +537,7 @@ struct application_command_services_t {
         transport_set_loop_selection;
     std::function<bool()> transport_loop_selection_active;
     std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
+    std::function<bool(const wormedit::preview_mix_t&)> transport_set_preview_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     // Current system clipboard text, or empty when unavailable.
@@ -681,6 +683,8 @@ struct application_command_state_t {
         static const metronome_settings_t defaults;
         return metronome ? metronome->settings : defaults;
     }
+    // Session-only playback mix, like the BGM lane mix; never saved with the project.
+    wormedit::preview_mix_t preview_mix;
     struct preferences_t {
         wormedit::lane_key_preferences_t lane_keys;
         wormedit::default_lane_keys_t default_lane_keys;
@@ -853,6 +857,12 @@ inline void apply_timing_settings_action(application_command_state_t& state,
     if (action.change_enable) static_cast<void>(state.metronome->set_enabled(action.enabled));
     if (action.change_volume) static_cast<void>(state.metronome->set_volume(action.volume));
     if (action.change_count_in) static_cast<void>(state.metronome->set_count_in(action.count_in));
+}
+
+inline void apply_preview_mix_action(application_command_state_t& state,
+                                     const std::optional<wormedit::preview_mix_t>& requested) {
+    if (!requested || *requested == state.preview_mix || !state.services.transport_set_preview_mix) return;
+    if (state.services.transport_set_preview_mix(*requested)) state.preview_mix = *requested;
 }
 
 struct compose_horizontal_layout_t {

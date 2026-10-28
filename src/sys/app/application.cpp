@@ -4177,6 +4177,10 @@ struct application_t::implementation_t {
         return true;
     }
 
+    auto on_transport_set_preview_mix(const wormedit::preview_mix_t& mix) -> bool {
+        return audio_runtime.preview_session.set_preview_mix(mix);
+    }
+
     auto on_transport_set_layer_assist(wormedit::chart_id_t chart,
                                        std::span<const wormedit::layer_id_t> layers) -> bool {
         return session.workspace.selected_chart == chart &&
@@ -4295,6 +4299,9 @@ struct application_t::implementation_t {
         commands.services.transport_set_bgm_mix = [this](wormedit::chart_id_t chart,
                                                          std::span<const std::uint64_t> muted) {
             return on_transport_set_bgm_mix(chart, muted);
+        };
+        commands.services.transport_set_preview_mix = [this](const wormedit::preview_mix_t& mix) {
+            return on_transport_set_preview_mix(mix);
         };
     }
 
@@ -4663,6 +4670,9 @@ struct application_t::implementation_t {
         attach_bgm_shortcut(flattened.view.compose, command_registry);
         flattened.view.timing_settings_visible = commands.preferences.timing_settings_visible;
         flattened.view.metronome_volume = commands.metronome_settings().volume;
+        flattened.view.compose.preview_mix = commands.preview_mix;
+        flattened.view.compose.preview_mix_available =
+            static_cast<bool>(commands.services.transport_set_preview_mix);
         flattened.view.metronome_count_in = commands.metronome_settings().count_in;
         flattened.view.chart_import.refill(views.chart_import, session.history.document.revision);
         flattened.view.close_confirmation = close_confirmation_view(
@@ -4746,6 +4756,7 @@ struct application_t::implementation_t {
                                       views.tap_clock(), commands.audio_offset_edits_locked());
         post_tap_apply_feedback(tap_applied, platform.notification_sink);
         wormedit::sys::apply_timing_settings_action(commands, action.timing_settings);
+        wormedit::sys::apply_preview_mix_action(commands, action.preview_mix);
         publish_tap_assist();
         consume_shortcut_capture(preferences.shortcut_editor, action, command_registry,
                                  preferences.program_preferences, platform.notification_sink);

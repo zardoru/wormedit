@@ -420,6 +420,36 @@ auto Chip::render(nk_context* context) const -> bool {
     return enabled && hit.clicked;
 }
 
+auto mix_toggle_fill(MixToggleKind kind, bool active) -> nk_color {
+    if (!active) return nk_rgb(36, 39, 48);
+    return kind == MixToggleKind::solo ? nk_rgb(144, 106, 28) : nk_rgb(145, 51, 60);
+}
+
+auto MixToggle::render(nk_context* context) const -> bool {
+    struct nk_rect bounds{};
+    const auto cell = nk_widget(&bounds, context);
+    if (cell == NK_WIDGET_INVALID) return false;
+    const auto side = std::min({bounds.w, bounds.h, metrics::control_compact});
+    const auto box = nk_rect(bounds.x + (bounds.w - side) * 0.5f, bounds.y + (bounds.h - side) * 0.5f, side, side);
+    const auto hit = hit_test(context, cell, box, enabled);
+#if defined(WORMEDIT_TEST_ICON_WIDGETS)
+    if (testing::icon_widget_target && tooltip && context->current && context->current->layout) {
+        const auto clip = context->current->layout->clip;
+        testing::icon_widget_target->append(tooltip, {.x = box.x, .y = box.y, .w = box.w, .h = box.h},
+            {.x = clip.x, .y = clip.y, .w = clip.w, .h = clip.h});
+    }
+#endif
+    const auto state = state_of(hit, enabled);
+    const auto fill = mix_toggle_fill(kind, active);
+    const auto stroke = state == ControlState::hover || state == ControlState::active
+        ? color(UiColor::border_hover) : transparent;
+    paint_look(context, box, metrics::radius_control, {fill, stroke, {}});
+    const auto text = !enabled ? metrics::text_faint : color(active ? UiColor::text_bright : UiColor::text);
+    draw_centered_text(context, box, kind == MixToggleKind::solo ? "S" : "M", text);
+    tooltip_if_hovered(context, hit, tooltip);
+    return enabled && hit.clicked;
+}
+
 auto ChipGrid::render(nk_context* context) const -> Result {
     Result result;
     const int slots = count + (add_label ? 1 : 0);

@@ -19,20 +19,21 @@ namespace wormedit::sys {
 namespace {
 
 void build_transport_position_view(frontend_workspace_view_t& flattened,
-                                   const application_frame_projection_context_t& context) {
+                                   const application_frame_projection_context_t& context,
+                                   std::uint64_t source_frame) {
     auto& view = flattened.view;
     view.transport_position.reset();
     const auto& cache = context.compose_scene_cache;
     if (!context.workspace.selected_chart || !cache.scene.cached_measure_index ||
         !cache.timing.marker_timing_index || view.transport_sample_rate == 0 ||
-        view.transport_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+        source_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
         !cache.stamp().is_current(context.history.document, *context.workspace.selected_chart))
         return;
     const auto chart = context.history.read_chart(*context.workspace.selected_chart);
     const auto& measures = *cache.scene.cached_measure_index;
     if (!chart || measures.entries.empty()) return;
     auto row = cache.timing.marker_timing_index->row_at(
-        {static_cast<std::int64_t>(view.transport_frame), view.transport_sample_rate},
+        {static_cast<std::int64_t>(source_frame), view.transport_sample_rate},
         chart_end_policy_t::extrapolate_tail, {.extrapolate_before_chart = true}).absolute_row;
     const auto& state = context.compose_interaction_state;
     if (!view.transport_playing && !view.transport_paused && state && state->chart == chart->id) {
@@ -119,6 +120,32 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
     return stopped_playhead_t{*frame, std::max(*end_frame, *frame)};
 }
 
+auto make_workspace_frame_transport(const application_frame_projection_context_t& context)
+    -> workspace_frame_transport_t {
+    const auto& preview = context.preview_state;
+    const auto chart_playing = preview.playing(context.preview_session);
+    workspace_frame_transport_t transport{
+        .available = context.workspace.selected_chart.has_value() && context.preview_output_available,
+        .playing = chart_playing || context.audition_session.is_active(),
+        .paused = preview.paused,
+        .frame = chart_playing ? preview.display_frame(context.preview_session)
+            : context.audition_session.is_active() ? context.audition_session.timeline_frame()
+                                                 : preview.resume_frame,
+        .end_frame = preview.compiled.value().end_frame,
+        .sample_rate = audio::output_sample_rate};
+    // Only chart playback uses the collapsed cut clock. Audition and the
+    // stopped Compose cursor already report source frames.
+    if ((chart_playing || (!transport.playing && transport.paused)) && preview.compiled.value().cut_frames)
+        transport.cut_frames = &*preview.compiled.value().cut_frames;
+    if (!transport.playing && !transport.paused) {
+        if (const auto stopped = stopped_playhead(context)) {
+            transport.frame = stopped->frame;
+            transport.end_frame = std::max(transport.end_frame, stopped->end_frame);
+        }
+    }
+    return transport;
+}
+
 auto prepare_frame_stems(const application_frame_projection_context_t& context,
                          const frontend_workspace_view_t& flattened)
     -> std::span<const sound_channel_t* const> {
@@ -184,27 +211,11 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
 
     context.application_command_state.project.bms_program.refill(flattened.view.compose.bms_program, context.history);
 
+    workspace_frame_transport_t frame_transport;
     {
         frame_phase_scope_t frame_view(frame_phase_t::workspace_frame_view);
-        workspace_frame_transport_t frame_transport;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        frame_transport.available =
-            context.workspace.selected_chart.has_value() && context.preview_output_available;
-        frame_transport.playing =
-            context.preview_state.playing(context.preview_session) || context.audition_session.is_active();
-        frame_transport.paused = context.preview_state.paused;
-        frame_transport.frame =
-            context.preview_state.playing(context.preview_session) ? context.preview_state.display_frame(context.preview_session)
-            : context.audition_session.is_active() ? context.audition_session.timeline_frame()
-                                                : context.preview_state.resume_frame;
-        frame_transport.end_frame = context.preview_state.compiled.value().end_frame;
-        frame_transport.sample_rate = audio::output_sample_rate;
-        if (!frame_transport.playing && !frame_transport.paused) {
-            if (const auto stopped = stopped_playhead(context)) {
-                frame_transport.frame = stopped->frame;
-                frame_transport.end_frame = std::max(frame_transport.end_frame, stopped->end_frame);
-            }
-        }
+        frame_transport = make_workspace_frame_transport(context);
 #endif
         populate_workspace_frame_view(
             flattened,
@@ -363,7 +374,7 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
             flattened.view.compose.bgm_bar_rows.size() != 0 ||
             flattened.view.compose.waveform_overview_rows.size() != 0;
     }
-    build_transport_position_view(flattened, context);
+    build_transport_position_view(flattened, context, frame_transport.source_frame());
     build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);
 }

@@ -1,0 +1,21 @@
+osu file format v14
+[General]
+AudioFilename: assets/tagged-project.ogg
+Mode: 3
+[Editor]
+[Metadata]
+Title:Walkthrough
+Artist:Author
+Creator:
+Version:New Difficulty (copy)
+[Difficulty]
+CircleSize:7
+[Events]
+[TimingPoints]
+0,500,4,0,0,100,1,0
+2000,500,4,0,0,100,1,0
+4000,500,4,0,0,100,1,0
+6000,500,4,0,0,100,1,0
+8000,500,4,0,0,100,1,0
+[HitObjects]
+36,192,0,1,0,

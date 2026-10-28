@@ -350,7 +350,15 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const auto row = interaction_detail::kept_cursor_row(chart, index, state, *snapped, *rows, true);
     const auto position = index.position_at(row);
     const auto from = state.cursor;
-    place_cursor_on_canvas_row(state, position, row, state.cut_axis && state.cut_axis->contains_row(bounded) ? 0.0 : static_cast<double>(bounded - row));
+    // Pixel coordinates are doubles, even when row arithmetic uses long double.
+    // A round-trip residual at a snap line must not consume the next arrow press.
+    const auto scale = std::max(1.0L,
+        (std::abs(state.viewport_scroll_pixels) + std::abs(source)) *
+            static_cast<long double>(chart.divisions_per_standard_measure) / state.pixels_per_standard_measure);
+    const auto rounding_error = 4 * std::numeric_limits<double>::epsilon() * scale;
+    const auto subrow = std::abs(bounded - row) <= rounding_error ? 0.0 : static_cast<double>(bounded - row);
+    place_cursor_on_canvas_row(state, position, row,
+        state.cut_axis && state.cut_axis->contains_row(bounded) ? 0.0 : subrow);
     if (position) {
         const auto lane = interaction_detail::cursor_transition_lane(chart, index, from, *position, state.active_lane, state.scratch_on_right);
         if (lane) state.active_lane = *lane;

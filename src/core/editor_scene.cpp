@@ -852,7 +852,8 @@ auto append_placed_hold(scene_geometry_context_t& context, hold_proposals_t& hol
 template <typename Operate>
 auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& holds,
                          const pending_hold_t& pending, Operate&& operate) -> bool {
-    if (pending.anchor_canvas_row || pending.preview_canvas_row) {
+    if (pending.anchor_canvas_row || pending.preview_canvas_row ||
+        (pending.requires_span && !pending.preview_end)) {
         return true;
     }
     const auto anchor = context.index.measures.row_of(pending.position);

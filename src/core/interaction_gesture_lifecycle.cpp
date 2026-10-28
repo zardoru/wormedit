@@ -744,7 +744,7 @@ auto validate_scoped_hold_sound(const editor_edit_context_t& context, const hold
     return start.validate_sound(projection.value->song());
 }
 
-auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& start)
+auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& start, bool requires_span)
     -> diagnosed_t<std::optional<pending_hold_t>> {
     if (start.source || start.canvas_row) {
         auto diagnostics = validate_scoped_hold_sound(context, start);
@@ -752,14 +752,14 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
     }
     const auto canvas_row = start.canvas_row ? start.canvas_row :
         (start.source == hold_gesture_source_t::keyboard_lane ? context.state.virtual_bms_cursor_row : std::nullopt);
-    if (canvas_row)
-        return {.value = pending_hold_t{.position = context.state.cursor, .lane = start.lane,
+    pending_hold_t pending{.position = context.state.cursor, .lane = start.lane,
             .anchor_canvas_row = canvas_row,
             .preview_canvas_row = canvas_row,
             .gesture_source = start.source, .sound = start.sound,
             .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
             .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr,
-            .hitsample = context.state.armed_hitsample}};
+            .hitsample = context.state.armed_hitsample, .requires_span = requires_span};
+    if (canvas_row) return {.value = std::move(pending)};
     const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
         context.state, start.lane, start.position);
     const auto* position = std::get_if<local_position_t>(&resolved);
@@ -768,16 +768,14 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
         auto diagnostics = validate_scoped_hold_sound(context, start);
         if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     }
+    pending.position = *position;
+    if (requires_span) return {.value = std::move(pending)};
     const auto plan = plan_hold_placement<hold_preview_removals_t>(context.scope.chart,
         context.scope.measures, start.lane, *position, *position);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return {.diagnostics = *diagnostics};
-    return {.value = pending_hold_t{.position = *position, .lane = start.lane,
-        .placement_preview = std::get<pending_hold_placement_preview_t>(plan),
-        .gesture_source = start.source, .sound = start.sound,
-        .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
-        .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr,
-        .hitsample = context.state.armed_hitsample}};
+    pending.placement_preview = std::get<pending_hold_placement_preview_t>(plan);
+    return {.value = std::move(pending)};
 }
 
 auto pending_hold_t::validate_start(const editor_edit_context_t& context) const -> diagnostic_list_t {
@@ -809,7 +807,17 @@ auto hold_gesture_t::begin(editor_edit_context_t& context, const hold_start_t& s
     if (start.source == hold_gesture_source_t::keyboard_lane && !context.state.virtual_bms_cursor_row) {
         auto entry = keyboard_entry_plan_t::from(context, start);
         if (!entry.ok()) return {.diagnostics = std::move(entry.diagnostics)};
-        if (entry.value) return {.value = hold_gesture_t{std::move(*entry.value)}};
+        if (entry.value) {
+            hold_gesture_t gesture{std::move(*entry.value)};
+            const auto& immediate = *gesture.immediate_;
+            if (immediate.occupant && (!immediate.sound ||
+                context.scope.chart.find_note(*immediate.occupant)->sound == immediate.sound)) {
+                auto pending = pending_hold_t::from(context, start, true);
+                if (!pending.ok() || !pending.value) return {.diagnostics = std::move(pending.diagnostics)};
+                gesture.primary_ = std::move(pending.value);
+            }
+            return {.value = std::move(gesture)};
+        }
     }
     auto planned = pending_hold_t::from(context, start);
     if (!planned.ok() || !planned.value) return {.diagnostics = std::move(planned.diagnostics)};
@@ -834,7 +842,8 @@ auto hold_gesture_t::revise(editor_edit_context_t& context, const begin_lane_key
     auto next = std::move(*planned.value);
     if (next.immediate_) {
         immediate_ = std::move(next.immediate_);
-    } else {
+    }
+    if (next.primary_) {
         if (primary_) additional_.push_back(std::move(*primary_));
         primary_ = std::move(next.primary_);
     }
@@ -964,6 +973,12 @@ auto hold_gesture_t::apply(editor_edit_context_t& context) -> editor_interaction
     const auto* selected = selected_hold(release->lane);
     if (!selected) return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")}};
     const auto pending = *selected;
+    if (pending.requires_span && (release->canvas_rows
+        ? release->canvas_rows->front() == release->canvas_rows->back()
+        : release->position == pending.position)) {
+        remove_hold(release->lane);
+        return editor_interaction_result_t::from(context.history, context.state);
+    }
     editor_interaction_result_t result;
     if (release->canvas_rows) {
         const place_virtual_bms_hold_action_t action{release->canvas_rows->front(),

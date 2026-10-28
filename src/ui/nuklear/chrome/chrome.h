@@ -889,6 +889,40 @@ inline void panel_header(nk_context* context, const char* title) {
     panel_header_cell(context, title);
 }
 
+// Nuklear disables a widget by scaling its colors down. Half brightness suits dark themes, but on
+// a light fill it yields mid gray with dark text. Light themes get a milder scale: the control
+// still reads as inactive and its text stays legible. Fields missing in a Nuklear version are skipped.
+template <class Style>
+void set_disabled_factor(Style& style, float factor) {
+    if constexpr (requires { style.disabled_factor = factor; }) style.disabled_factor = factor;
+}
+
+inline auto is_light_theme() -> bool {
+    const auto background = color(UiColor::background);
+    return 299 * background.r + 587 * background.g + 114 * background.b > 140 * 1000;
+}
+
+inline void apply_disabled_factors(nk_context* context) {
+    if (!is_light_theme()) return;
+    constexpr float factor = 0.8f;
+    auto& style = context->style;
+    for (auto* widget : {&style.button, &style.contextual_button, &style.menu_button,
+                         &style.combo.button, &style.property.inc_button, &style.property.dec_button})
+        set_disabled_factor(*widget, factor);
+    set_disabled_factor(style.text, factor);
+    set_disabled_factor(style.checkbox, factor);
+    set_disabled_factor(style.option, factor);
+    set_disabled_factor(style.selectable, factor);
+    set_disabled_factor(style.slider, factor);
+    set_disabled_factor(style.progress, factor);
+    set_disabled_factor(style.property, factor);
+    set_disabled_factor(style.edit, factor);
+    set_disabled_factor(style.combo, factor);
+    set_disabled_factor(style.scrollh, factor);
+    set_disabled_factor(style.scrollv, factor);
+    set_disabled_factor(style.tab, factor);
+}
+
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);
     context->style.window.spacing = nk_vec2(metrics::gap_small, metrics::gap_small);
@@ -912,6 +946,7 @@ inline void apply_theme(nk_context* context) {
     apply_toggle_theme(context);
     apply_tooltip_theme(context);
     apply_header_theme(context);
+    apply_disabled_factors(context);
 }
 
 } // namespace wormedit::ui::chrome

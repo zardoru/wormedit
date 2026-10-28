@@ -128,7 +128,7 @@ auto button_look(ButtonKind kind, ControlState state) -> ControlLook {
     const bool active = state == ControlState::active;
     switch (kind) {
     case ButtonKind::primary:
-        return {active ? nk_rgb(16, 72, 178) : color(UiColor::selected),
+        return {color(UiColor::selected),
                 hover || active ? color(UiColor::border_hover) : color(UiColor::selected),
                 color(UiColor::selected_text)};
     case ButtonKind::ghost:
@@ -168,7 +168,7 @@ NativeIconCell::NativeIconCell(nk_context* context, bool selected, bool enabled,
     auto style = button_style(context, selected);
     if (!enabled && !was_disabled_) {
         style.color_factor_text = style.disabled_factor;
-        style.color_factor_background = style.disabled_factor;
+        if (!selected) style.color_factor_background = style.disabled_factor;
     }
     clicked_ = nk_button_label_styled(context, &style, "") != 0 && enabled;
 #if defined(WORMEDIT_TEST_ICON_WIDGETS)
@@ -179,9 +179,7 @@ NativeIconCell::NativeIconCell(nk_context* context, bool selected, bool enabled,
             {.x = clip.x, .y = clip.y, .w = clip.w, .h = clip.h});
     }
 #endif
-    tint_ = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
-        ? color(UiColor::text_bright)
-        : selected ? color(UiColor::selected_text) : color(UiColor::text);
+    tint_ = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0 ? style.text_hover : style.text_normal;
 }
 
 NativeIconCell::~NativeIconCell() {
@@ -421,7 +419,7 @@ auto Chip::render(nk_context* context) const -> bool {
 }
 
 auto mix_toggle_fill(MixToggleKind kind, bool active) -> nk_color {
-    if (!active) return nk_rgb(36, 39, 48);
+    if (!active) return color(UiColor::surface);
     return kind == MixToggleKind::solo ? nk_rgb(144, 106, 28) : nk_rgb(145, 51, 60);
 }
 
@@ -444,7 +442,7 @@ auto MixToggle::render(nk_context* context) const -> bool {
     const auto stroke = state == ControlState::hover || state == ControlState::active
         ? color(UiColor::border_hover) : transparent;
     paint_look(context, box, metrics::radius_control, {fill, stroke, {}});
-    const auto text = !enabled ? metrics::text_faint : color(active ? UiColor::text_bright : UiColor::text);
+    const auto text = !enabled ? metrics::text_faint : active ? nk_rgb(255, 255, 255) : color(UiColor::text);
     draw_centered_text(context, box, kind == MixToggleKind::solo ? "S" : "M", text);
     tooltip_if_hovered(context, hit, tooltip);
     return enabled && hit.clicked;

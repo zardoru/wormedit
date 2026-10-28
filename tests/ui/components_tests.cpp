@@ -66,6 +66,36 @@ struct fixture_t {
     }
 };
 
+struct interface_theme_fixture_t {
+    std::filesystem::path directory = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+        "assets/themes";
+
+    interface_theme_fixture_t() { wormedit::ui::theme::load(directory); }
+    ~interface_theme_fixture_t() { wormedit::ui::theme::load(directory); }
+};
+
+void check_control_color(nk_color actual, nk_color expected) {
+    CHECK(nk_color_u32(actual) == nk_color_u32(expected));
+}
+
+void check_mixer_toggle_label(fixture_t& fixture, chrome::MixToggleKind kind, bool active) {
+    bool drew_label = false;
+    fixture.frame({}, [&] {
+        nk_layout_row_dynamic(&fixture.context, metrics::control_compact, 1);
+        chrome::MixToggle{.kind = kind, .active = active}.render(&fixture.context);
+        const nk_command* command{};
+        nk_foreach(command, &fixture.context) {
+            if (command->type != NK_COMMAND_TEXT) continue;
+            const auto* text = reinterpret_cast<const nk_command_text*>(command);
+            const auto expected = active ? nk_rgb(255, 255, 255)
+                : chrome::color(wormedit::ui::theme::UiColor::text);
+            check_control_color(text->foreground, expected);
+            drew_label = true;
+        }
+    });
+    CHECK(drew_label);
+}
+
 void verify_inside(struct nk_rect inner, struct nk_rect outer) {
     CHECK(inner.x >= outer.x);
     CHECK(inner.y >= outer.y);
@@ -315,6 +345,48 @@ TEST_CASE("components button states", "[components]") {
     CHECK(chrome::button_look(ButtonKind::ghost, ControlState::hover).fill.a != 0);
     CHECK(chrome::button_look(ButtonKind::destructive, ControlState::normal).stroke.r ==
           metrics::destructive.r);
+}
+
+TEST_CASE("Mixer toggle labels use contrasting text in bundled interface themes", "[components][theme][mixer]") {
+    interface_theme_fixture_t themes;
+    const auto kind = GENERATE(chrome::MixToggleKind::mute, chrome::MixToggleKind::solo);
+    const auto active = GENERATE(false, true);
+    for (const auto& theme : wormedit::ui::theme::interface_themes()) {
+        CAPTURE(theme.id, active);
+        REQUIRE(wormedit::ui::theme::reload_interface_theme(theme.id).empty());
+        fixture_t fixture;
+        check_mixer_toggle_label(fixture, kind, active);
+        if (!active)
+            check_control_color(chrome::mix_toggle_fill(kind, active),
+                                chrome::color(wormedit::ui::theme::UiColor::surface));
+    }
+}
+
+TEST_CASE("Selected controls retain the theme highlight across interaction states", "[components][theme]") {
+    interface_theme_fixture_t themes;
+    const auto disabled = GENERATE(false, true);
+    for (const auto& theme : wormedit::ui::theme::interface_themes()) {
+        CAPTURE(theme.id, disabled);
+        REQUIRE(wormedit::ui::theme::reload_interface_theme(theme.id).empty());
+        fixture_t fixture;
+        fixture.frame({}, [&] {
+            if (disabled) nk_widget_disable_begin(&fixture.context);
+            const auto style = chrome::button_style(&fixture.context, true);
+            const auto fill = chrome::color(wormedit::ui::theme::UiColor::selected);
+            const auto text = chrome::color(wormedit::ui::theme::UiColor::selected_text);
+            for (const auto& background : {style.normal, style.hover, style.active})
+                check_control_color(nk_rgb_factor(background.data.color, style.color_factor_background), fill);
+            for (const auto foreground : {style.text_normal, style.text_hover, style.text_active})
+                check_control_color(foreground, text);
+            if (disabled) nk_widget_disable_end(&fixture.context);
+            for (const auto state : {chrome::ControlState::normal, chrome::ControlState::hover,
+                                     chrome::ControlState::active}) {
+                const auto look = chrome::button_look(chrome::ButtonKind::primary, state);
+                check_control_color(look.fill, fill);
+                check_control_color(look.text, text);
+            }
+        });
+    }
 }
 
 TEST_CASE("components button click and disabled non-activation", "[components]") {
@@ -678,6 +750,16 @@ void native_test_glyph(nk_command_buffer* canvas, struct nk_rect bounds, nk_colo
     nk_fill_circle(canvas, bounds, tint);
 }
 
+auto native_icon_fill(nk_context* context) -> nk_color {
+    const nk_command* command{};
+    nk_foreach(command, context) {
+        if (command->type != NK_COMMAND_RECT_FILLED) continue;
+        const auto* rect = reinterpret_cast<const nk_command_rect_filled*>(command);
+        if (rect->h == metrics::control_default) return rect->color;
+    }
+    return {};
+}
+
 struct native_icon_options_t {
     bool selected{};
     bool disabled{};
@@ -694,6 +776,7 @@ struct native_icon_probe_t {
     bool parent_still_disabled{};
     bool style_preserved{};
     bool hovered{};
+    nk_color fill{};
     nk_color tint{};
     nk_color tooltip_tint{};
     std::string text;
@@ -724,6 +807,7 @@ struct native_icon_probe_t {
             style_preserved = before == context->style.button.color_factor_background &&
                 text_before == context->style.text.color_factor;
             if (options.parent_disabled) nk_widget_disable_end(context);
+            fill = native_icon_fill(context);
             const nk_command* command{};
             nk_foreach(command, context) {
                 if (command->type == NK_COMMAND_CIRCLE_FILLED)
@@ -805,8 +889,25 @@ TEST_CASE("Native icon glyph tint keeps selected and hover precedence",
                                                : wormedit::ui::theme::UiColor::text);
     check_native_icon(nk_color_u32(probe.tint) == nk_color_u32(normal));
     probe.frame({100, 18, 0, -1, -1}, {.selected = selected});
-    check_native_icon(nk_color_u32(probe.tint) ==
-                      nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::text_bright)));
+    check_native_icon(nk_color_u32(probe.tint) == nk_color_u32(chrome::color(selected
+        ? wormedit::ui::theme::UiColor::selected_text : wormedit::ui::theme::UiColor::text_bright)));
+}
+
+TEST_CASE("Classic Mac selected icons keep their highlight when input is unavailable",
+          "[components][native-icon][theme]") {
+    interface_theme_fixture_t themes;
+    REQUIRE(wormedit::ui::theme::reload_interface_theme("ui-mac-classic").empty());
+    native_icon_probe_t probe;
+    probe.drawn = GENERATE(false, true);
+    const auto options = GENERATE(native_icon_options_t{.selected = true},
+        native_icon_options_t{.selected = true, .parent_disabled = true},
+        native_icon_options_t{.selected = true, .enabled = false});
+    probe.frame({-1, -1, 0, -1, -1}, options);
+    check_control_color(probe.fill, chrome::color(wormedit::ui::theme::UiColor::selected));
+    probe.frame({100, 18, 0, -1, -1}, options);
+    check_control_color(probe.fill, chrome::color(wormedit::ui::theme::UiColor::selected));
+    probe.frame({100, 18, 1, -1, -1}, options);
+    check_control_color(probe.fill, chrome::color(wormedit::ui::theme::UiColor::selected));
 }
 
 TEST_CASE("Native icon invalid cells never activate",

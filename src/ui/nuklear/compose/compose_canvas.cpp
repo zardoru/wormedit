@@ -3205,7 +3205,8 @@ static void draw_compose_bgm_mix_controls(const ComposePaintContext& paint,
         const auto fill = wormedit::ui::chrome::mix_toggle_fill(
             solo ? wormedit::ui::chrome::MixToggleKind::solo : wormedit::ui::chrome::MixToggleKind::mute, active);
         const auto text = !paint.view->bgm_mix_available ? nk_rgb(90, 94, 105)
-            : lane.mix_silent && !active ? nk_rgb(126, 130, 143) : nk_rgb(225, 227, 235);
+            : lane.mix_silent && !active ? wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted)
+            : active ? nk_rgb(255, 255, 255) : wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
         field_rect(paint, rect, 2, fill, 5);
         field_text(paint, rect, solo ? "S" : "M", 1, paint.context->style.font, fill, text, 5);
         if (wormedit::ui::nuklear::tooltip::hovered(paint.context, rect))

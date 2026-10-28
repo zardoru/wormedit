@@ -91,13 +91,15 @@ inline auto button_style(nk_context* context, bool selected) -> nk_style_button 
     auto style = context->style.button;
     style.normal = nk_style_item_color(selected ? color(UiColor::selected)
                                                  : nk_rgba(0, 0, 0, 0));
-    style.hover = nk_style_item_color(color(UiColor::surface_hover));
-    style.active = nk_style_item_color(color(UiColor::surface_active));
+    style.hover = nk_style_item_color(color(selected ? UiColor::selected : UiColor::surface_hover));
+    style.active = nk_style_item_color(color(selected ? UiColor::selected : UiColor::surface_active));
     style.border = 0.0f;
     style.rounding = metrics::radius_control;
     style.text_normal = selected ? color(UiColor::selected_text) : color(UiColor::text);
-    style.text_hover = color(UiColor::text_bright);
-    style.text_active = color(UiColor::text_bright);
+    style.text_hover = color(selected ? UiColor::selected_text : UiColor::text_bright);
+    style.text_active = color(selected ? UiColor::selected_text : UiColor::text_bright);
+    // Availability blocks input; the selected panel keeps the same theme highlight.
+    if (selected) style.color_factor_background = 1.0f;
     return style;
 }
 

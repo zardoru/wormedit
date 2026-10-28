@@ -1313,3 +1313,137 @@ TEST_CASE("Scoped bookmark order stays outside semantic content and survives nat
     CHECK(history.document.charts.empty());
     check_bookmark_order_roundtrip(history);
 }
+
+namespace {
+void check_bms_lane_assignment(bool condition) { CHECK(condition); }
+void require_bms_lane_assignment(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("Imported BMS lane keys move taps and both hold endpoints in one history step",
+          "[bms-program-edit][bms-lane-assignment]") {
+    const auto successive = GENERATE(false, true);
+    auto history = history_from("#BPM 120\n#WAV01 a.wav\n#00011:01000100\n#00151:01000100\n");
+    auto state = scoped_state(history);
+    const auto* chart = history.read_chart(difficulty);
+    std::vector<note_t> notes;
+    for (const auto& measure : chart->measures)
+        for (const auto& note : measure.notes) notes.push_back(note);
+    require_bms_lane_assignment(notes.size() == 3);
+    require_bms_lane_assignment(notes.back().end.has_value());
+    for (auto note = notes.rbegin(); note != notes.rend(); ++note) state.selected_notes.push_back(note->id);
+    const auto lane = owner(history).prepared().lane_profile->layout.lanes.back().id;
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto original_items = content(history, target(history).chart);
+    const auto result = dispatch_editor_action(history, state,
+        assign_selected_objects_to_lane_action_t{.lane = lane, .successive = successive});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_bms_lane_assignment(result.accepted);
+    check_bms_lane_assignment(result.document_changed);
+    check_bms_lane_assignment(history.document.charts.empty());
+    require_bms_lane_assignment(history.undo.size() == 1);
+    check_bms_lane_assignment(state.selected_notes.size() == (successive ? 2 : 3));
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        auto expected = notes[i];
+        if (!successive || i == 0) expected.lane = lane;
+        require_bms_lane_assignment(history.read_chart(difficulty)->find_note(expected.id));
+        check_bms_lane_assignment(*history.read_chart(difficulty)->find_note(expected.id) == expected);
+    }
+    const auto& items = content(history, target(history).chart);
+    require_bms_lane_assignment(items.size() == original_items.size());
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        check_bms_lane_assignment(items[i].id == original_items[i].id);
+        check_bms_lane_assignment(items[i].resource_identifier() == original_items[i].resource_identifier());
+        if (const auto* endpoint = std::get_if<bms_hold_endpoint_t>(&items[i].value))
+            check_bms_lane_assignment(endpoint->lane == (successive ? notes.back().lane : lane));
+    }
+    const auto after = history.document.prepared_bms_programs.front();
+    require_bms_lane_assignment(undo_document_command(history));
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
+    require_bms_lane_assignment(redo_document_command(history));
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == after);
+}
+
+TEST_CASE("Imported BMS lane assignment rejects collisions and mixed semantic owners atomically",
+          "[bms-program-edit][bms-lane-assignment]") {
+    const auto mixed_owners = GENERATE(false, true);
+    auto history = history_from(mixed_owners ?
+        "#BPM 120\n#WAV01 a.wav\n#00011:01\n#RANDOM 1\n#IF 1\n#00112:01\n#ENDIF\n#ENDRANDOM\n" :
+        "#BPM 120\n#WAV01 a.wav\n#00011:01\n#00019:01\n");
+    auto state = scoped_state(history);
+    const auto* chart = history.read_chart(difficulty);
+    state.selected_notes = {chart->measures.front().notes.front().id};
+    if (mixed_owners) state.selected_notes.push_back(chart->measures[1].notes.front().id);
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto lane = owner(history).prepared().lane_profile->layout.lanes.back().id;
+    const auto result = dispatch_editor_action(history, state,
+        assign_selected_objects_to_lane_action_t{.lane = lane});
+    check_bms_lane_assignment(!result.accepted);
+    require_bms_lane_assignment(!result.diagnostics.empty());
+    check_bms_lane_assignment(result.diagnostics.front().code ==
+          (mixed_owners ? diagnostic_code_t::invalid_id : diagnostic_code_t::collision));
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
+    check_bms_lane_assignment(history.document.revision == revision);
+    check_bms_lane_assignment(history.undo.empty());
+    check_bms_lane_assignment(history.redo.empty());
+}
+
+TEST_CASE("Imported BMS mixed note and BGM lane assignment publishes or rejects the complete batch",
+          "[bms-program-edit][bms-lane-assignment]") {
+    const auto collision = GENERATE(false, true);
+    auto history = history_from(collision ?
+        "#BPM 120\n#WAV01 a.wav\n#00011:01\n#00101:01\n#00119:01\n" :
+        "#BPM 120\n#WAV01 a.wav\n#00011:01\n#00101:01\n");
+    auto state = scoped_state(history);
+    const auto* chart = history.read_chart(difficulty);
+    const auto note = chart->measures.front().notes.front();
+    const auto event = chart->measures[1].bgm_events.front();
+    state.selected_objects = {{.kind = editor_selection_object_kind_t::note, .id = note.id},
+                              {.kind = editor_selection_object_kind_t::bgm_event, .id = event.id}};
+    const auto lane = owner(history).prepared().lane_profile->layout.lanes.back().id;
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto result = dispatch_editor_action(history, state,
+        assign_selected_objects_to_lane_action_t{.lane = lane});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    if (collision) {
+        check_bms_lane_assignment(!result.accepted);
+        require_bms_lane_assignment(!result.diagnostics.empty());
+        check_bms_lane_assignment(result.diagnostics.front().code == diagnostic_code_t::collision);
+        check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
+        check_bms_lane_assignment(history.document.revision == revision);
+        check_bms_lane_assignment(history.undo.empty());
+        return;
+    }
+    require_bms_lane_assignment(result.accepted);
+    require_bms_lane_assignment(history.undo.size() == 1);
+    const auto* edited = history.read_chart(difficulty);
+    check_bms_lane_assignment(edited->find_note(note.id)->lane == lane);
+    require_bms_lane_assignment(edited->find_note(event.id));
+    check_bms_lane_assignment(edited->find_note(event.id)->lane == lane);
+    check_bms_lane_assignment(edited->find_note(event.id)->position == event.position);
+    check_bms_lane_assignment(edited->find_note(event.id)->sound == event.sound);
+    check_bms_lane_assignment(!edited->find_bgm_event(event.id));
+    const auto after = history.document.prepared_bms_programs.front();
+    require_bms_lane_assignment(undo_document_command(history));
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
+    require_bms_lane_assignment(redo_document_command(history));
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == after);
+}
+
+TEST_CASE("Imported BMS same-lane assignment leaves semantic history untouched",
+          "[bms-program-edit][bms-lane-assignment]") {
+    auto history = history_from("#BPM 120\n#WAV01 a.wav\n#00011:01\n");
+    auto state = scoped_state(history);
+    const auto note = history.read_chart(difficulty)->measures.front().notes.front();
+    state.selected_notes = {note.id};
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto result = dispatch_editor_action(history, state,
+        assign_selected_objects_to_lane_action_t{.lane = note.lane});
+    require_bms_lane_assignment(result.accepted);
+    check_bms_lane_assignment(!result.document_changed);
+    check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
+    check_bms_lane_assignment(history.document.revision == revision);
+    check_bms_lane_assignment(history.undo.empty());
+}

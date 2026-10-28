@@ -1129,30 +1129,35 @@ auto validate_assignment_intervals(std::span<const assignment_interval_t> interv
     return std::nullopt;
 }
 
+auto apply_note_lane_assignment(chart_document_t& chart, const song_document_t& source,
+                                std::span<const assignment_candidate_t> candidates, lane_id_t lane,
+                                std::string label) -> attempt_t<document_edit_effect_t> {
+    note_move_plan_t plan;
+    plan.moved.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        auto* note = chart.find_note(candidate.note->id);
+        if (!note)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                          "lane assignment target disappeared")}};
+        plan.moved.push_back({.id = note->id,
+                              .lane = lane,
+                              .position = note->position,
+                              .end_position = note->end});
+        note->lane = lane;
+    }
+    if (const auto failure =
+            sync_linked_sound_events(chart, plan, source))
+        return {.diagnostics = {*failure}};
+    return {.value =
+                document_edit_effect_t{.changed = true, .command_label = std::move(label)}};
+}
+
 auto stage_note_lane_assignment(document_command_transaction_t& transaction, chart_id_t chart_id,
                                 std::span<const assignment_candidate_t> candidates, lane_id_t lane,
                                 std::string label) -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(
-        chart_id, "lane assignment chart is unavailable",
-        [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
-            note_move_plan_t plan;
-            plan.moved.reserve(candidates.size());
-            for (const auto& candidate : candidates) {
-                auto* note = chart.find_note(candidate.note->id);
-                if (!note)
-                    return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                                  "lane assignment target disappeared")}};
-                plan.moved.push_back({.id = note->id,
-                                      .lane = lane,
-                                      .position = note->position,
-                                      .end_position = note->end});
-                note->lane = lane;
-            }
-            if (const auto failure =
-                    sync_linked_sound_events(chart, plan, transaction.source_document()))
-                return {.diagnostics = {*failure}};
-            return {.value =
-                        document_edit_effect_t{.changed = true, .command_label = std::move(label)}};
+    return transaction.stage(chart_id, "lane assignment chart is unavailable",
+        [&](chart_document_t& chart, song_document_t&) {
+            return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane, label);
         });
 }
 
@@ -2431,30 +2436,33 @@ namespace wormedit {
 auto stage_assign_note_lanes(document_command_transaction_t& transaction,
                              const editor_interaction_state_t& state, lane_id_t lane)
     -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(
-        state.chart, "lane assignment chart is unavailable",
-        [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
-            auto index = measure_index_t::from(chart);
-            if (!index)
-                return {.diagnostics = index.error()};
-            const chart_scope_t scope{.chart = chart, .measures = *index};
-            auto collected = collect_assignment_candidates(scope, state);
-            if (const auto* failure = std::get_if<diagnostic_list_t>(&collected))
-                return {.diagnostics = *failure};
-            const auto& candidates = std::get<std::vector<assignment_candidate_t>>(collected);
-            auto intervals = build_assignment_intervals(scope, candidates, lane);
-            if (const auto* failure = std::get_if<diagnostic_list_t>(&intervals))
-                return {.diagnostics = *failure};
-            if (const auto failure = validate_assignment_intervals(
-                    std::get<std::vector<assignment_interval_t>>(intervals)))
-                return {.diagnostics = {*failure}};
-            if (std::ranges::all_of(candidates, [lane](const auto& candidate) {
-                    return candidate.note->lane == lane;
-                }))
-                return {.value = document_edit_effect_t{}};
-            return stage_note_lane_assignment(transaction, state.chart, candidates, lane,
-                                              "Assign selected notes to lane");
-        });
+    const auto apply = [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
+        auto index = measure_index_t::from(chart);
+        if (!index)
+            return {.diagnostics = index.error()};
+        const chart_scope_t scope{.chart = chart, .measures = *index};
+        auto collected = collect_assignment_candidates(scope, state);
+        if (const auto* failure = std::get_if<diagnostic_list_t>(&collected))
+            return {.diagnostics = *failure};
+        const auto& candidates = std::get<std::vector<assignment_candidate_t>>(collected);
+        auto intervals = build_assignment_intervals(scope, candidates, lane);
+        if (const auto* failure = std::get_if<diagnostic_list_t>(&intervals))
+            return {.diagnostics = *failure};
+        if (const auto failure = validate_assignment_intervals(
+                std::get<std::vector<assignment_interval_t>>(intervals)))
+            return {.diagnostics = {*failure}};
+        if (std::ranges::all_of(candidates, [lane](const auto& candidate) {
+                return candidate.note->lane == lane;
+            }))
+            return {.value = document_edit_effect_t{}};
+        return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane,
+                                          "Assign selected notes to lane");
+    };
+    if (transaction.has_bms_program(state.chart))
+        return transaction.stage_bms_native_objects(state.chart, state.selected_notes,
+                                                   bms_existing_edit_kind_t::update, apply);
+    return transaction.stage(state.chart, "lane assignment chart is unavailable",
+        [&](chart_document_t& chart, song_document_t&) { return apply(chart); });
 }
 
 auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,

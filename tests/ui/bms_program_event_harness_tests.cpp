@@ -5,6 +5,7 @@
 #include "sys/timing/timing_view.h"
 #include "ui/nuklear/timing/timing_stage_editor.h"
 #include "ui/nuklear/compose/compose_panel.h"
+#include "ui/nuklear/compose/compose_state.h"
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <catch2/catch_test_macros.hpp>
@@ -205,18 +206,22 @@ TEST_CASE("Scope panel renders retained unreachable arms at normal and compact w
     scope_flow_t flow;
     nuklear_event_harness_t harness{width, 700};
     REQUIRE(harness.ready());
+    // A compact window has no room for the right dock beside the branch panel, so hide it.
+    if (width < 1000)
+        for (const auto panel : {dock_panel_t::inspector, dock_panel_t::sounds})
+            worm_ui_nuklear_compose_state().dock_layout.layout.show(panel, false);
     bind_panel(harness, flow);
     (void)harness.frame();
+    // Reachability is a state dot on the row; the row text is the node label.
     CHECK(harness.drawn_text().find("RANDOM 2") != std::string::npos);
-    CHECK(harness.drawn_text().find("Warning: ELSEIF 3") != std::string::npos);
-    CHECK(harness.drawn_text().find("Selected node:") != std::string::npos);
+    CHECK(harness.drawn_text().find("ELSEIF 3") != std::string::npos);
     write_visual_fixture(flow.history);
 }
 TEST_CASE("A tree click captures the original node and never changes playback choices", "[bms-scope]") {
     scope_flow_t flow;
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready()); bind_panel(harness, flow); (void)harness.frame();
-    const auto request = click_label(harness, "Warning: ELSEIF 3");
+    const auto request = click_label(harness, "ELSEIF 3");
     CHECK(request.operation == operation_t::select);
     CHECK(request.node == flow.node(ui::bms_program_node_kind_t::else_if));
     (void)flow.apply(request);

@@ -17,6 +17,7 @@
 #include "sys/compose/views/compose_view.h"
 #include "sys/metadata/metadata_actions.h"
 #include "sys/resources/resource_drop_router.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
 #include "ui/nuklear/audio/audio_state.h"
 #include "ui/nuklear/compose/compose_area_menu.h"
 #include "ui/nuklear/compose/compose_canvas.h"
@@ -3067,19 +3068,33 @@ void t422_suppress_note_actions() {
         fixture, fixture.harness.frame(std::span{&shifted, 1}, SDL_KMOD_SHIFT), bytes);
 }
 
+// Scrolls the Inspector to Find note label, opens it and clicks its text field.
+void t422_focus_label_search_field(nuklear_event_harness_t& harness) {
+    // The section sits below the Inspector's Quantize and Timing sections.
+    const auto quantize = harness.drawn_text_center("1/16");
+    REQUIRE(quantize.has_value());
+    const auto scroll_to = [&](std::string_view text) {
+        REQUIRE(wormedit::test::scroll_to_text(harness, text, quantize->first, quantize->second, -1.0f, 120));
+    };
+    scroll_to("Find note label");
+    const auto header = harness.drawn_text_center("Find note label");
+    (void)click_at(harness, header->first, header->second);
+    (void)harness.frame();
+    // The section's text field is the full-width row directly above its Previous/Next buttons.
+    scroll_to("Previous");
+    for (int tick = 0; tick < 2; ++tick)
+        wormedit::test::scroll_at(harness, quantize->first, quantize->second, -1.0f);
+    const auto previous = harness.drawn_text_center("Previous");
+    REQUIRE(previous.has_value());
+    (void)click_at(harness, previous->first, previous->second - wormedit::ui::metrics::control_default);
+}
+
 void t422_suppress_actual_text_editor() {
     t422_fixture_t fixture{t422_song()};
     const auto bytes = t422_native_bytes(fixture.history.document);
     worm_ui_nuklear_compose_state().dock_layout.layout.show(wormedit::dock_panel_t::inspector, true);
     (void)fixture.harness.frame();
-    const auto header = fixture.harness.drawn_text_center("Find note label");
-    REQUIRE(header.has_value());
-    (void)click_at(fixture.harness, header->first, header->second);
-    (void)fixture.harness.frame();
-    // The section title is the only caption; its text field follows the header and body padding.
-    const auto label = fixture.harness.drawn_text_center("Find note label");
-    REQUIRE(label.has_value());
-    (void)click_at(fixture.harness, label->first, label->second + 62);
+    t422_focus_label_search_field(fixture.harness);
     CHECK(fixture.harness.frame().get().shortcut_text_entry_active);
     CHECK_FALSE(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
     const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
@@ -3122,12 +3137,15 @@ auto click_button(nuklear_event_harness_t& harness, const char* label)
 
 
 namespace {
-auto scope_dock_field_left(int width, bool with_branches) -> std::pair<float, int> {
+auto scope_dock_field_left(int width, bool with_branches, bool right_dock = true) -> std::pair<float, int> {
     nuklear_event_harness_t harness{width, 900};
     REQUIRE(harness.ready());
     auto& view = harness.view().compose;
     view.bms_program.available = with_branches;
-    worm_ui_nuklear_compose_state().dock_layout.branch_panel_visible = true;
+    auto& docks = worm_ui_nuklear_compose_state().dock_layout;
+    docks.branch_panel_visible = true;
+    docks.layout.show(wormedit::dock_panel_t::inspector, right_dock);
+    docks.layout.show(wormedit::dock_panel_t::sounds, right_dock);
     (void)harness.frame();
     wormedit::ui::testing_rect_view_t rect{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&rect));
@@ -3142,8 +3160,9 @@ TEST_CASE("BMS branch dock keeps scope authoring available on a narrow window",
     CHECK(plain.second == 0);
     CHECK(docked.second > 0);
     CHECK(docked.first >= plain.first + static_cast<float>(docked.second) - 1.0f);
-    const auto narrow = scope_dock_field_left(800, true);
-    CHECK(narrow.second > 0);
+    // On a narrow window the branch panel yields to the right dock and returns once the dock is hidden.
+    CHECK(scope_dock_field_left(800, true).second == 0);
+    CHECK(scope_dock_field_left(800, true, false).second > 0);
 }
 
 namespace {
@@ -6365,10 +6384,9 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     const std::array<wormedit::ui::audio_waveform_column_view_t, 2> columns{};
     metadata.audio_waveform_columns.assign(columns.data(), columns.data() + columns.size());
     (void)harness.frame();
-    for (const auto heading : {"Song"}) {
-        if (const auto center = harness.drawn_text_center(heading))
-            (void)click_at(harness, center->first, center->second);
-    }
+    // Collapse Song so the waveform overview fits; its header also carries a summary.
+    if (const auto center = harness.drawn_text_center("Song · "))
+        (void)click_at(harness, center->first, center->second);
     (void)harness.frame();
     auto& audio = worm_ui_nuklear_audio_state();
     const auto before = audio.waveform_viewport.frames_per_pixel;
@@ -8903,6 +8921,11 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     metadata.chart_divisions_per_standard_measure = 960;
     const std::array choices{wormedit::ui::metadata_lane_profile_choice_view_t{"1 key", true, ""}};
     metadata.lane_profile_choices.assign(choices.data(), choices.data() + choices.size());
+    (void)harness.frame();
+    // Key count is a collapsed card inside Difficulty.
+    const auto card = harness.drawn_text_center("Key count");
+    expect_t422(card.has_value());
+    (void)click_at(harness, card->first, card->second);
     (void)harness.frame();
     const auto button = harness.drawn_text_center("Preview key count");
     expect_t422(button.has_value());

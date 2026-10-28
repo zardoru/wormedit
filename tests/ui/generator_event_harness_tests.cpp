@@ -58,8 +58,9 @@ struct generator_ui_fixture_t {
     }
     void reveal(std::string_view label) {
         if (harness.drawn_text_center(label)) return;
-        require_generator_ui(test::scroll_to_text(harness, label, 1500, 600, -1, 120) ||
-                             test::scroll_to_text(harness, label, 1500, 600, 1, 120));
+        // The Generator dock is the lower pane, below the Inspector.
+        require_generator_ui(test::scroll_to_text(harness, label, 1500, 1000, -1, 120) ||
+                             test::scroll_to_text(harness, label, 1500, 1000, 1, 120));
     }
     void open() {
         if (generator_open) return;

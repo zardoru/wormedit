@@ -14,6 +14,15 @@ void seed_selection(wormedit::ui::compose_view_t& view) {
     view.selected_note_count = 1;
 }
 
+// The report sits at the bottom of the quantize section; scroll the inspector to it.
+void scroll_inspector_to_report(nuklear_event_harness_t& harness) {
+    const auto grid = harness.drawn_text_center("1/16");
+    REQUIRE(grid.has_value());
+    CHECK(wormedit::test::scroll_to_text(harness, "Last applied report", grid->first, grid->second, -1.0f, 40));
+    for (int count = 0; count < 2; ++count)
+        wormedit::test::scroll_at(harness, grid->first, grid->second, -1.0f);
+}
+
 } // namespace
 
 TEST_CASE("the inspector hides the quantize Last applied report until an apply recorded rows",
@@ -39,20 +48,7 @@ TEST_CASE("the quantize Last applied report opens with its moved rows",
     view.quantize_applied_rows.assign(rows.begin(), rows.end());
     view.quantize_applied_rows.resize(view.quantize_applied_total_rows = rows.size());
     (void)harness.frame();
-    // The report sits at the bottom of the quantize section; scroll the inspector to it.
-    SDL_Event motion{};
-    motion.type = SDL_EVENT_MOUSE_MOTION;
-    motion.motion.type = SDL_EVENT_MOUSE_MOTION;
-    motion.motion.x = 1500.0f;
-    motion.motion.y = 800.0f;
-    (void)harness.frame(std::array{motion});
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.mouse_x = 1500.0f;
-    wheel.wheel.mouse_y = 800.0f;
-    wheel.wheel.y = -1.0f;
-    for (int count = 0; count < 12; ++count) (void)harness.frame(std::array{wheel});
+    scroll_inspector_to_report(harness);
     CHECK(harness.drawn_text().find("Last applied report") != std::string::npos);
     CHECK(harness.drawn_text().find(bgm ? "BGM 77" : "Note 77") != std::string::npos);
 }

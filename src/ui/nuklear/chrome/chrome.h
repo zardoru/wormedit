@@ -836,6 +836,41 @@ inline void group_gap(nk_context* context, float height = metrics::gap_small) {
     nk_spacing(context, 1);
 }
 
+// Property box and edit field looks for a disabled setting. Nuklear's own disable scales colors
+// down, which turns light fills into mid gray with dark text; this keeps the flat faded look
+// of disabled buttons. Restore the saved styles when the control has been drawn.
+struct DisabledFieldStyle {
+    nk_style_property property;
+    nk_style_edit edit;
+    nk_context* context;
+    explicit DisabledFieldStyle(nk_context* target)
+        : property(target->style.property), edit(target->style.edit), context(target) {
+        const auto fill = nk_style_item_color(disabled_fill());
+        for (auto* box : {&context->style.property.normal, &context->style.property.hover,
+                          &context->style.property.active, &context->style.edit.normal,
+                          &context->style.edit.hover, &context->style.edit.active})
+            *box = fill;
+        context->style.property.border_color = context->style.edit.border_color = color(UiColor::separator);
+        context->style.property.label_normal = context->style.property.label_hover =
+            context->style.property.label_active = text_faint();
+        context->style.edit.text_normal = context->style.edit.text_hover = context->style.edit.text_active =
+            text_faint();
+        for (auto* arrow : {&context->style.property.inc_button, &context->style.property.dec_button}) {
+            arrow->normal = arrow->hover = arrow->active = fill;
+            arrow->text_normal = arrow->text_hover = arrow->text_active = text_faint();
+        }
+        context->style.property.edit = context->style.edit;
+        context->style.property.edit.padding = nk_vec2(0, 0);
+        context->style.property.edit.border = 0.0f;
+    }
+    ~DisabledFieldStyle() {
+        context->style.property = property;
+        context->style.edit = edit;
+    }
+    DisabledFieldStyle(const DisabledFieldStyle&) = delete;
+    auto operator=(const DisabledFieldStyle&) -> DisabledFieldStyle& = delete;
+};
+
 // Title bar of a dock panel: the same filled bar as a level-one section header, so panels
 // open with a header that is recognisable as one. The cell form fits a template row.
 inline void panel_header_cell(nk_context* context, const char* title) {

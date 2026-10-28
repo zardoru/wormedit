@@ -83,6 +83,11 @@ folder. Save it with kbd:[Ctrl+S] to get a `.wormedit` project; exporting needs 
 
 Starting Wormedit with a chart path uses the same importer as *Open chart or project…*.
 
+Choose *File → Open project folder* to open the project's directory in Finder or your system
+file manager. Imported charts use their source folder until you save the project elsewhere.
+A new project without a folder must be saved first. You can also find *Open project folder*
+in the command menu.
+
 === Autosave and recovery
 
 Wormedit keeps a periodic native backup and a checksummed edit journal, including for

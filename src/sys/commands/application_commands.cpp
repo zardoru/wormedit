@@ -19,6 +19,7 @@ constexpr command_name_t command_names[]{
     {"document.new_project", application_command_kind_t::document_new_project},
     {"document.save_project", application_command_kind_t::document_save_project},
     {"document.open", application_command_kind_t::document_open},
+    {"document.open_project_folder", application_command_kind_t::document_open_project_folder},
     {"document.save_as", application_command_kind_t::document_save_as},
     {"document.close", application_command_kind_t::document_close},
     {"app.quit", application_command_kind_t::app_quit},

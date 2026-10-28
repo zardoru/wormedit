@@ -1,4 +1,5 @@
 #include "common/window_presentation.h"
+#include "common/local_file_location.h"
 #include "sys/compose/generator_runtime.h"
 #include "sys/compose/compose_clipboard_selection.h"
 #include "core/text_util.h"
@@ -765,7 +766,8 @@ void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    application_command_state_t& application_state) {
+    application_command_state_t& application_state,
+    const wormedit::sys::project_identity_t& project) {
     using namespace wormedit;
     const auto* chart = selected_chart(history, workspace);
     const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
@@ -777,6 +779,7 @@ void refresh_application_command_states(
     };
     set("document.new_project", true);
     set("document.open", true);
+    set("document.open_project_folder", project.has_project_folder());
     set("document.save_as", !history.document.read_charts().empty());
     set("document.close", !history.document.read_charts().empty());
     set("app.quit", true);
@@ -2641,7 +2644,8 @@ struct application_t::implementation_t {
         bool handled{};
         for (std::size_t index = 0; index < action.shortcut_events.size(); ++index) {
             refresh_application_command_states(command_registry, session.history, session.workspace,
-                                               views.compose_interaction_state, commands);
+                                               views.compose_interaction_state, commands,
+                                               session.project_identity);
             const auto& input = action.shortcut_events[index];
             tap_event_ns = input.timestamp_ns;
             const auto dispatched =
@@ -2856,7 +2860,8 @@ struct application_t::implementation_t {
                                                                     : "edit.paste";
         auto& registry = command_registry;
         refresh_application_command_states(registry, session.history, session.workspace,
-                                           views.compose_interaction_state, commands);
+                                           views.compose_interaction_state, commands,
+                                           session.project_identity);
         const auto result = wormedit::invoke_command(
             registry, {id}, application_command_focus(action, session.workspace));
         if (!result.diagnostics.empty())
@@ -3049,7 +3054,7 @@ struct application_t::implementation_t {
                     : "navigation.next_marker"};
             refresh_application_command_states(command_registry, history, workspace,
                                                compose_interaction_state,
-                                               application_command_state);
+                                               application_command_state, session.project_identity);
             const auto dispatched = wormedit::invoke_command(
                 command_registry, command, application_command_focus(action, workspace));
             if (dispatched.value.status == wormedit::command_dispatch_status_t::disabled) {
@@ -3613,7 +3618,8 @@ struct application_t::implementation_t {
         if (!action.command_menu_invoked)
             consume_menu_shortcut(action, command_registry);
         refresh_application_command_states(command_registry, session.history, session.workspace,
-                                           views.compose_interaction_state, commands);
+                                           views.compose_interaction_state, commands,
+                                           session.project_identity);
         auto focus = application_command_focus(action, session.workspace);
         // Activation closes the palette; its own search field must not consume the command.
         if (action.command_menu_invoked || action.compose_menu_command)
@@ -3623,11 +3629,30 @@ struct application_t::implementation_t {
             post_shortcut_rejection(platform.notification_sink, command_registry, result);
     }
 
+    auto open_project_folder() -> dispatch_outcome_t {
+        const auto& project = session.project_identity;
+        if (!project.has_project_folder())
+            return reject_application_command(platform.notification_sink,
+                "Save the project first to give it a folder.", notification_severity_t::warning,
+                notification_source_t::document);
+        const auto folder = local_file_location_t::from(project.asset_base, SDL_PATHTYPE_DIRECTORY);
+        if (!folder)
+            return reject_application_command(platform.notification_sink,
+                "Project folder is unavailable: " + project.asset_base.string(),
+                notification_severity_t::error, notification_source_t::document);
+        if (!folder->open())
+            return reject_application_command(platform.notification_sink,
+                std::string{"Could not open project folder: "} + SDL_GetError(),
+                notification_severity_t::error, notification_source_t::document);
+        return dispatch_outcome_t{.value = true};
+    }
+
     auto dispatch_file_command(application_command_kind_t command)
         -> std::optional<dispatch_outcome_t> {
         WormUiWorkspaceActionKind action;
         bool save_as = false;
         switch (command) {
+        case application_command_kind_t::document_open_project_folder: return open_project_folder();
         case application_command_kind_t::document_open: action = WORM_UI_WORKSPACE_ACTION_OPEN_FILE; break;
         case application_command_kind_t::document_save_project: action = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT; break;
         case application_command_kind_t::document_save_as:
@@ -4813,7 +4838,8 @@ struct application_t::implementation_t {
         const auto frame_nuklear_previous =
             wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
         refresh_application_command_states(command_registry, session.history, session.workspace,
-                                           views.compose_interaction_state, commands);
+                                           views.compose_interaction_state, commands,
+                                           session.project_identity);
         wormedit::sys::build_menu_commands_view(command_registry, flattened.view, command_menu_shortcuts);
         build_command_menu_view(command_registry, command_menu_shortcuts, flattened.view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)

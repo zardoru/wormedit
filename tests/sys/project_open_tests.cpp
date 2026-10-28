@@ -256,6 +256,20 @@ template <typename T>
 void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
 } // namespace
 
+TEST_CASE("Project folder availability follows the loaded session directory", "[sys][project-folder]") {
+    wormedit::sys::project_identity_t project;
+    CHECK_FALSE(project.has_project_folder());
+    project.session_loaded = true;
+    CHECK_FALSE(project.has_project_folder());
+    project.asset_base = std::filesystem::temp_directory_path();
+    CHECK(project.has_project_folder());
+    project.native_project_loaded = true;
+    project.active_project_path = project.asset_base / "saved.wormedit";
+    CHECK(project.has_project_folder());
+    project.session_loaded = false;
+    CHECK_FALSE(project.has_project_folder());
+}
+
 TEST_CASE("BMSON import creates channel layers and native open preserves authored layer state",
           "[integration][sys][project-open][bmson-layer]") {
     temporary_project_file_t source{".bmson"};

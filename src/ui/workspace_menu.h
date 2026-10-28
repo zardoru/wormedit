@@ -6,7 +6,7 @@
 namespace wormedit::ui {
 
 enum class workspace_menu_action_t {
-    none, new_project, open, save, save_as, close, options, quit,
+    none, new_project, open, open_project_folder, save, save_as, close, options, quit,
     copy, cut, paste, select_same_sound, move_to_bgm, reset_view, frame_timing, tap_timing, timing_settings,
     notifications, preview, external_preferences, external_start, external_here, external_stop,
     undo, redo, delete_selection, select_all, select_all_objects, select_all_after_cursor,
@@ -42,7 +42,7 @@ inline constexpr std::array workspace_menu_titles{"File", "Edit", "View", "Chart
 
 // Commands exposed by the shared menu model and Help shortcut sheet.
 inline constexpr std::array workspace_menu_command_ids{
-    "document.new_project", "document.open", "document.save_project", "document.save_as",
+    "document.new_project", "document.open", "document.open_project_folder", "document.save_project", "document.save_as",
     "document.close", "app.quit", "document.export_output_group", "workspace.options",
     "history.undo", "history.redo", "edit.copy", "edit.cut", "edit.paste", "edit.delete",
     "edit.move_to_bgm", "selection.select_all", "selection.select_all_objects",

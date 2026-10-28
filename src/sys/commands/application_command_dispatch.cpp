@@ -1327,6 +1327,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::document_new_project:
     case command_kind_t::document_save_project:
     case command_kind_t::document_open:
+    case command_kind_t::document_open_project_folder:
     case command_kind_t::document_save_as:
     case command_kind_t::document_close:
     case command_kind_t::app_quit:

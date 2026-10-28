@@ -7,6 +7,7 @@
 |Command |Default keys
 |New Project |`+Ctrl+N+`
 |Open chart or project… |`+Ctrl+O+`
+|Open project folder |unbound
 |Save project as… |`+Ctrl+Shift+S+`
 |Close project |`+Ctrl+W+`
 |Save Project |`+Ctrl+S+`

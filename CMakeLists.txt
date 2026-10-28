@@ -139,6 +139,7 @@ add_library(wormedit_core
     src/core/lane_transform.cpp
     src/core/note_label_editor.cpp
     src/core/hitsound_editor.cpp
+    src/core/osu_hitsample.cpp
     src/core/pause_warp_editor.cpp
     src/core/player_preview.cpp
     src/core/quantize.cpp

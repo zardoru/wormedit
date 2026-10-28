@@ -244,7 +244,8 @@ auto publish_prepared_output(const output_group_export_request_t& input,
     publication.progress = input.progress.get();
     publication.pending_assets = prepared.pending_assets;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    if (is_conversion_needs_slice_spans(input.document, prepared.request) || !prepared.converted.cut_audio_plans.empty()) {
+    if (is_conversion_needs_slice_spans(input.document, prepared.request) || !prepared.converted.cut_audio_plans.empty() ||
+        !prepared.converted.asset_copies.empty()) {
         publication.stage_generated_files = [&](const auto& staging) {
             return render_conversion_slice_plans(input.document, prepared.converted,
                                                  {input.asset_base, staging, stop});

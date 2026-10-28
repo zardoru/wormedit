@@ -6,6 +6,7 @@
 #include <wormedit/core/lane_profile_switch.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include "../support/temporary_directory.h"
 
 #include <algorithm>
 #include <array>
@@ -696,6 +697,42 @@ TEST_CASE("osu!mania typed hitsamples survive native storage and drive edited ex
     note->osu_hitsample->normal_set = wormedit::osu_sample_set_t::drum;
     note->osu_hitsample->volume = 70;
     check_edited_hitsample_export(reopened, *note);
+}
+
+TEST_CASE("osu!mania timing sample index 0 stays the skin-only index",
+          "[unit][format][osu-mania][hitsound]") {
+    const auto parsed = parse_inline(timing_fixture("0,500,4,2,0,80,1,0\n1000,500,4,2,3,80,1,0\n",
+        "64,192,500,1,0,0:0:0:0:\n64,192,1500,1,0,0:0:0:0:\n"));
+    REQUIRE(parsed.value);
+    const auto& chart = parsed.value->charts.front();
+    const auto context = wormedit::osu_sample_context_index_t::from(chart);
+    REQUIRE(context);
+    const auto* first = source_note(chart, "64,192,500,");
+    const auto* second = source_note(chart, "64,192,1500,");
+    REQUIRE(first);
+    REQUIRE(second);
+    CHECK(context->at(first->position).custom_index == 0);
+    CHECK(context->at(second->position).custom_index == 3);
+}
+
+TEST_CASE("osu!mania import adds beatmap-folder skin samples as Sounds",
+          "[unit][format][osu-mania][hitsound]") {
+    auto directory = wormedit::test::temporary_directory_t::from();
+    REQUIRE(directory);
+    for (const auto* name : {"soft-hitwhistle2.wav", "Normal-HitNormal.ogg", "tone.wav", "soft-hitnormal1.wav"})
+        std::ofstream(directory->path() / name) << "audio";
+    std::filesystem::create_directory(directory->path() / "drum-hitclap.wav");
+    const auto source = timing_fixture("0,500,4,0,0,100,1,0\n", "64,192,500,1,2,0:0:0:0:soft-hitwhistle2.wav\n");
+    const auto parsed = wormedit::parse_osu_mania_bytes(bytes(source), {.asset_base_directory = directory->path()});
+    REQUIRE(parsed.value);
+    const auto& resources = parsed.value->resources;
+    std::vector<std::string> names;
+    std::ranges::transform(resources, std::back_inserter(names), &wormedit::resource_entry_t::name);
+    CHECK(names == std::vector<std::string>{"soft-hitwhistle2.wav", "Normal-HitNormal.ogg"});
+    CHECK(std::ranges::all_of(resources, [](const auto& resource) {
+        return resource.has_role(wormedit::resource_role_t::sample) && !resource.missing;
+    }));
+    CHECK(resources.back().provenance.source_field == "osu.skin_sample");
 }
 
 TEST_CASE("osu!mania rejects malformed typed hitsample settings",

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -11,6 +12,23 @@ namespace wormedit {
 
 enum class osu_sample_set_t { automatic, normal, soft, drum };
 inline constexpr std::array osu_sample_set_names{"Auto", "Normal", "Soft", "Drum"};
+
+enum class osu_sample_kind_t { hitnormal, hitwhistle, hitfinish, hitclap };
+
+// A sample osu! finds by name in the beatmap folder or skin (`soft-hitwhistle2.wav`).
+// Beatmap files override the skin; index 0 uses the skin only.
+struct osu_skin_sample_t {
+    osu_sample_set_t set{osu_sample_set_t::normal};
+    osu_sample_kind_t kind{};
+    // Index 1 has no suffix; osu! numbers custom sets from 2.
+    std::int64_t index{1};
+    // Accepts .wav, .ogg and .mp3 names in any ASCII case.
+    [[nodiscard]] static auto from(const std::filesystem::path& filename) -> std::optional<osu_skin_sample_t>;
+    // Lowercase name without extension: `soft-hitwhistle2`.
+    [[nodiscard]] auto stem() const -> std::string;
+    auto operator==(const osu_skin_sample_t&) const -> bool = default;
+};
+inline constexpr std::array osu_skin_sample_extensions{".wav", ".ogg", ".mp3"};
 
 struct osu_sample_context_t {
     osu_sample_set_t normal_set{osu_sample_set_t::normal};

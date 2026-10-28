@@ -135,4 +135,18 @@ struct osu_sample_context_index_t {
 // Lift retained timing-line sample fields into editable, unique row points on import or migration.
 [[nodiscard]] auto materialize_osu_sample_controls(chart_document_t& chart) -> bool;
 
+// A Sounds asset osu! looks up by name beside the chart (`soft-hitclap.wav`).
+struct osu_skin_sample_asset_t {
+    asset_id_t asset;
+    std::filesystem::path source_path;
+    osu_skin_sample_t sample;
+    // Every resource using the asset is marked missing.
+    bool missing{};
+    // Lowercase filename the osu! export writes beside the chart.
+    [[nodiscard]] auto export_filename() const -> std::string;
+    auto operator==(const osu_skin_sample_asset_t&) const -> bool = default;
+};
+// Audio assets used by a resource and named like osu! skin samples, in asset order.
+[[nodiscard]] auto build_osu_skin_sample_assets(const song_document_t& song) -> std::vector<osu_skin_sample_asset_t>;
+
 } // namespace wormedit

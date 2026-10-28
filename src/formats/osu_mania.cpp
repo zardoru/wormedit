@@ -1439,6 +1439,29 @@ class osu_resource_catalog_t {
         return resource;
     }
 
+    // osu! plays beatmap-folder files named like skin samples in place of the skin's,
+    // so they become Sounds that later exports copy beside the chart.
+    void add_skin_samples() {
+        if (!options.asset_base_directory) return;
+        constexpr std::size_t maximum_entries = 65'536;
+        constexpr std::size_t maximum_samples = 1'024;
+        std::vector<std::string> names;
+        std::error_code error;
+        std::size_t examined{};
+        for (std::filesystem::directory_iterator entries{*options.asset_base_directory, error}, end;
+             !error && entries != end && examined < maximum_entries; entries.increment(error), ++examined) {
+            std::error_code status_error;
+            if (!entries->is_regular_file(status_error) || status_error) continue;
+            // A recognized name is plain ASCII, so it is a safe resource path.
+            if (osu_skin_sample_t::from(entries->path().filename()))
+                names.push_back(entries->path().filename().generic_string());
+        }
+        std::ranges::sort(names);
+        if (names.size() > maximum_samples) names.resize(maximum_samples);
+        for (const auto& name : names)
+            add_audio(name, resource_role_t::sample, "osu.skin_sample", 0);
+    }
+
     auto add_visual(std::string_view name, asset_kind_t kind, resource_role_t role,
                     std::string source_field, std::size_t source_order)
         -> std::optional<resource_id_t> {
@@ -1808,6 +1831,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
             chart, event_resources, resource_catalog, position_at, take_object_id, source_group,
             fail);
         (void)sample_source_lane;
+        resource_catalog.add_skin_samples();
 
         append_osu_hit_notes(chart, hit_objects, hit_samples, keys, position_at,
                              take_object_id, source_group, timing_quantized, fail);
@@ -3685,6 +3709,28 @@ auto osu_sample_context_index_t::from(const chart_document_t& chart)
     return result;
 }
 
+auto osu_skin_sample_asset_t::export_filename() const -> std::string {
+    return sample.stem() + text_util::ascii_lowercase(source_path.extension().generic_string());
+}
+
+auto build_osu_skin_sample_assets(const song_document_t& song) -> std::vector<osu_skin_sample_asset_t> {
+    std::vector<osu_skin_sample_asset_t> result;
+    for (const auto& asset : song.audio_assets) {
+        const auto sample = osu_skin_sample_t::from(asset.source_path.filename());
+        if (!sample) continue;
+        bool used{};
+        bool missing{true};
+        for (const auto& resource : song.resources) {
+            if (resource.asset != asset.id) continue;
+            used = true;
+            missing = missing && resource.missing;
+        }
+        if (used)
+            result.push_back({.asset = asset.id, .source_path = asset.source_path, .sample = *sample, .missing = missing});
+    }
+    return result;
+}
+
 auto osu_sample_context_index_t::fields_at(local_position_t position) const -> std::array<std::int64_t, 3> {
     const auto row = measures.row_of(position);
     if (!row) return {0, 0, 100};
@@ -3699,8 +3745,11 @@ auto osu_sample_context_index_t::fields_at(local_position_t position) const -> s
 
 auto osu_sample_context_index_t::at(local_position_t position) const -> osu_sample_context_t {
     const auto fields = fields_at(position);
+    // A timing point's index 0 asks osu! for skin samples; before any timing point the map's apply.
+    const auto row = measures.row_of(position);
+    const bool timed = row && std::ranges::upper_bound(entries, *row, {}, &entry_t::row) != entries.begin();
     return {.normal_set = fields[0] == 0 ? initial.normal_set : static_cast<osu_sample_set_t>(fields[0]),
-        .custom_index = std::max<std::int64_t>(1, fields[1]), .volume = fields[2]};
+        .custom_index = timed ? fields[1] : std::max<std::int64_t>(1, fields[1]), .volume = fields[2]};
 }
 
 namespace {

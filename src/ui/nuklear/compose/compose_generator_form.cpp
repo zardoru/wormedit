@@ -38,12 +38,6 @@ using wormedit::ui::theme::UiColor;
 void muted_label(nk_context* context, const char* text, nk_text_alignment alignment = NK_TEXT_LEFT) {
     nk_label_colored(context, text, alignment, chrome::color(UiColor::text_muted));
 }
-// A label row above a full-width field.
-void field(nk_context* context, const char* name, char* buffer, std::size_t bytes, nk_plugin_filter filter = nk_filter_default) {
-    nk_layout_row_dynamic(context, metrics::control_compact, 1); muted_label(context, name);
-    nk_layout_row_dynamic(context, metrics::control_default, 1);
-    (void)chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, buffer, static_cast<int>(bytes), filter);
-}
 void sync(const wormedit::ui::compose_view_t& view) {
     const bool has_recipe = view.generator.has_selection;
     const auto selected = has_recipe ? view.generator.selected_form.recipe : wormedit::recipe_id_t{};

@@ -776,9 +776,10 @@ auto select_bmson_mode_lanes(std::string mode_hint, std::uint32_t max_x,
 
 auto validate_bmson_resource_path(std::string_view name, std::string path)
     -> std::filesystem::path {
+            const auto context = " (" + path + ": " + nlohmann::json(name).dump() + ")";
             if (name.find('\0') != std::string_view::npos) {
                 fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path may not contain a NUL character", std::move(path));
+                     "resource path may not contain a NUL character" + context, std::move(path));
             }
             std::string normalized_name(name);
             std::ranges::replace(normalized_name, '\\', '/');
@@ -787,18 +788,18 @@ auto validate_bmson_resource_path(std::string_view name, std::string path)
                  std::isalpha(static_cast<unsigned char>(normalized_name[0])) &&
                  normalized_name[1] == ':')) {
                 fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path must be a non-empty relative path", std::move(path));
+                     "resource path must be a non-empty relative path" + context, std::move(path));
             }
             auto source_path = path_from_utf8(normalized_name);
             if (source_path.empty() || source_path.is_absolute() || source_path.has_root_name() ||
                 source_path.has_root_directory()) {
                 fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path must be a non-empty relative path", std::move(path));
+                     "resource path must be a non-empty relative path" + context, std::move(path));
             }
             for (const auto& component : source_path) {
                 if (component == "..") {
                     fail(bmson_parse_diagnostic_code_t::invalid_value,
-                         "resource path may not escape its asset directory", std::move(path));
+                         "resource path may not escape its asset directory" + context, std::move(path));
                 }
             }
             return source_path.lexically_normal();

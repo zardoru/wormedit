@@ -761,6 +761,29 @@ TEST_CASE("BMSON x null is BGM and resource paths normalize both separators safe
     CHECK(has_error_code(traversal, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 }
 
+TEST_CASE("BMSON invalid resource paths identify the authored value and JSON field",
+          "[unit][format][bmson]") {
+    const std::array names{std::string{"../outside.wav"}, std::string{R"(sub\..\tone.wav)"},
+                           std::string{"/absolute.wav"}, std::string{R"(C:\tone.wav)"},
+                           std::string{"tone\0.wav", 9}, std::string{""},
+                           std::string{"../音\"sample.wav"}};
+    for (const auto& name : names) {
+        DYNAMIC_SECTION(nlohmann::json(name).dump()) {
+            const nlohmann::json source = {
+                {"version", "1.0.0"}, {"info", {{"init_bpm", 120}}},
+                {"sound_channels", {{{"name", name}, {"notes", nlohmann::json::array()}}}}};
+            const auto parsed = parse_text(source.dump());
+            REQUIRE_FALSE(parsed.value);
+            REQUIRE_FALSE(parsed.diagnostics.empty());
+            const auto& error = parsed.diagnostics.back();
+            CHECK(error.code == wormedit::bmson_parse_diagnostic_code_t::invalid_value);
+            CHECK(error.location.json_path == "$.sound_channels[0].name");
+            CHECK(error.message.find("$.sound_channels[0].name") != std::string::npos);
+            CHECK(error.message.find(nlohmann::json(name).dump()) != std::string::npos);
+        }
+    }
+}
+
 TEST_CASE("unknown BMSON modes retain generic piano colors", "[unit][format][bmson][layout]") {
     const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120,
         "mode_hint":"unknown"},"sound_channels":[{"name":"a.wav","notes":[{"x":3,"y":0}]}]})");

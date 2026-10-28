@@ -516,6 +516,7 @@ struct open_section_t {
     float x{};
     float width{};
     bool tracked{};
+    bool level_one{};
 };
 
 // Sections nest only a couple of levels; a push beyond this still works, it just paints no fill.
@@ -569,7 +570,7 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
     const float scroll_y = static_cast<float>(*layout->offset_y);
     // A card extends past the content edges, so its header and body keep inner padding.
     const float pad = level_one ? 0.0f : metrics::gap_medium;
-    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + 2.0f * pad, fill.second};
+    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + 2.0f * pad, fill.second, level_one};
     const float header_height = layout->row.height - context->style.window.spacing.y;
     if (!open) {
         // A closed level-one bar draws its own fill; a closed card wraps just its header.
@@ -581,6 +582,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
         nk_fill_rect(nk_window_get_canvas(context),
                      nk_rect(section.x, section.top + header_height + context->style.window.spacing.y * 0.5f,
                              section.width, 1.0f), 0.0f, color(UiColor::border));
+    if (!level_one) {  // Room between a card's rule and its first row.
+        nk_layout_row_dynamic(context, metrics::gap_small, 1);
+        nk_spacing(context, 1);
+    }
     if (open_section_count < max_section_depth) {
         open_sections[open_section_count] = section;
     }
@@ -591,6 +596,10 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
 void section_pop(nk_context* context) {
     if (open_section_count > 0) {
         --open_section_count;
+        if (open_section_count < max_section_depth && !open_sections[open_section_count].level_one) {
+            nk_layout_row_dynamic(context, metrics::gap_small, 1);
+            nk_spacing(context, 1);
+        }
         if (open_section_count < max_section_depth) {
             const auto& section = open_sections[open_section_count];
             const auto* layout = context->current->layout;

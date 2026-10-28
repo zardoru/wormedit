@@ -3,6 +3,8 @@
 struct ComposeToolbarContext;
 namespace wormedit::ui { struct compose_view_t; }
 
+inline constexpr float compose_note_palette_button_size = 30.0f;
+
 void render_compose_toolbar(const ComposeToolbarContext& toolbar);
 // True when the palette is enabled and at least one note kind is allowed for the chart.
 bool compose_note_palette_has_buttons(const wormedit::ui::compose_view_t& view);

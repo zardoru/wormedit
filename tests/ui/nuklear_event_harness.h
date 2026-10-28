@@ -54,6 +54,8 @@ class nuklear_event_harness_t {
     // Last frame's visible native icon cells, keyed by their complete tooltip.
     // Missing/ambiguous matches throw; disabled icons remain addressable.
     [[nodiscard]] auto widget_center(std::string_view tooltip) const -> std::pair<float, float>;
+    // True when the icon cell was drawn without any part clipped away.
+    [[nodiscard]] auto is_widget_fully_visible(std::string_view tooltip) const -> bool;
     [[nodiscard]] auto hover_widget(std::string_view tooltip) -> workspace_action_snapshot_t;
     [[nodiscard]] auto click_widget(std::string_view tooltip)
         -> std::vector<workspace_action_snapshot_t>;

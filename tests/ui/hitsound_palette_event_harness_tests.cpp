@@ -2,6 +2,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose/compose_state.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <array>
 
 namespace {
@@ -44,6 +45,45 @@ TEST_CASE("Hitsound palette emits mixed toggles and sample set cycling without n
     const auto change = click_hitsound(harness, target.first, target.second);
     CHECK(change.field == field);
     CHECK_FALSE(change.value);
+}
+
+TEST_CASE("Icon recording distinguishes a complete button from its visible intersection",
+          "[frontend-state][palette-layout]") {
+    wormedit::ui::testing::icon_widget_snapshot_t widgets;
+    widgets.append("right clipped", {8, 8, 30, 30}, {8, 8, 28, 30});
+    widgets.append("bottom clipped", {8, 8, 30, 30}, {8, 8, 30, 29});
+    widgets.append("complete", {8, 8, 30, 30}, {8, 8, 30, 30});
+    CHECK_FALSE(widgets.is_fully_visible("right clipped"));
+    CHECK_FALSE(widgets.is_fully_visible("bottom clipped"));
+    CHECK(widgets.is_fully_visible("complete"));
+    CHECK(widgets.center_of("right clipped").first == 22);
+}
+
+TEST_CASE("Compose palette contains complete note-kind and hitsound buttons",
+          "[frontend-state][event-harness][hitsound][palette-layout]") {
+    const auto hitsounds = GENERATE(false, true);
+    CAPTURE(hitsounds);
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.note_kind_palette_visible = true;
+    view.allowed_note_kind_mask = 0x7f;
+    const std::array samples{wormedit::osu_hitsample_t{}};
+    view.hitsounds = wormedit::ui::hitsound_palette_view_t::from(hitsounds, samples);
+    (void)harness.frame();
+
+    for (const auto& descriptor : view.note_palette.entries) {
+        CAPTURE(descriptor.label);
+        CHECK(harness.is_widget_fully_visible(descriptor.label));
+    }
+    if (hitsounds) {
+        for (const auto* tooltip : {"Whistle (W): off; click toggles", "Finish (E): off; click toggles",
+                "Clap (R): off; click toggles", "Normal sample set: Auto; click cycles, right-click chooses",
+                "Addition sample set: Auto; click cycles, right-click chooses"}) {
+            CAPTURE(tooltip);
+            CHECK(harness.is_widget_fully_visible(tooltip));
+        }
+    }
 }
 
 TEST_CASE("Hitsound icons expose addition toggle states and both sample-set selectors",

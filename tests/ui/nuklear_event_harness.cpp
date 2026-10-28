@@ -219,6 +219,10 @@ auto nuklear_event_harness_t::widget_center(std::string_view tooltip) const
     return icon_widgets_.center_of(tooltip);
 }
 
+auto nuklear_event_harness_t::is_widget_fully_visible(std::string_view tooltip) const -> bool {
+    return icon_widgets_.is_fully_visible(tooltip);
+}
+
 auto nuklear_event_harness_t::hover_widget(std::string_view tooltip)
     -> workspace_action_snapshot_t {
     const auto [x, y] = widget_center(tooltip);

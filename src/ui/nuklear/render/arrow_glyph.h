@@ -14,6 +14,7 @@ struct arrow_point_t {
 };
 
 inline constexpr std::uint8_t last_arrow_glyph = 10;
+inline constexpr std::array<std::uint8_t, 8> snap_classes{4, 8, 12, 16, 24, 32, 48, 64};
 
 [[nodiscard]] constexpr auto is_arrow_glyph(std::uint8_t glyph) -> bool {
     return glyph >= 2 && glyph <= last_arrow_glyph;
@@ -45,7 +46,5 @@ inline auto note_snap_class(wormedit::grid_phase_t phase, std::uint64_t numerato
                             std::uint64_t denominator) -> std::uint8_t {
     return note_snap_class(phase.row, numerator, denominator, phase.period);
 }
-
-auto arrow_snap_color(std::uint8_t snap_class) -> color_t;
 
 } // namespace wormedit::ui

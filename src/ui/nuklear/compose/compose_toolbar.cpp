@@ -8,6 +8,8 @@
 #include "ui/nuklear/render/vector_icons.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/ui_metrics.h"
+#include "ui/nuklear/render/theme.h"
 #include "ui/nuklear/chrome/text_layout.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
 
@@ -479,24 +481,27 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     render_compose_audio_offset(toolbar, show_offset);
 }
 
-void render_compose_inspector_timing_controls(const ComposeToolbarContext& toolbar) {
+void render_compose_inspector_offset_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Audio offset · seconds", NK_TEXT_LEFT);
-    nk_layout_row_template_begin(context, 27);
+    nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);
     nk_layout_row_template_push_dynamic(context);
     nk_layout_row_template_end(context);
     render_offset_padlock(toolbar);
     render_inline_offset(toolbar, true);
-    nk_layout_row_dynamic(context, 27, 4);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 4);
     render_compose_audio_offset(toolbar, false, true);
-    nk_layout_row_template_begin(context, 27);
+}
+
+void render_compose_inspector_snap_control(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     nk_layout_row_template_push_dynamic(context);
     wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);
     nk_layout_row_template_push_static(context, 75.0f);
     nk_layout_row_template_end(context);
-    nk_label(context, "BPM snap", NK_TEXT_LEFT);
+    nk_label_colored(context, "BPM snap", NK_TEXT_LEFT,
+                     wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
     render_compose_snap_controls(context);
 }
 

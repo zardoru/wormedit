@@ -86,7 +86,7 @@ TEST_CASE("Dock split captures cancel on focus loss without a late panel action"
 }
 TEST_CASE("Dock panes share one horizontal footprint and retain a usable narrow canvas", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
-    const std::array available{true, true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true, true};
     const auto wide = ui::dock_geometry_t::from(1280, 700, layout, available);
     REQUIRE(wide.panes[0]);
     REQUIRE(wide.panes[1]);
@@ -163,7 +163,7 @@ TEST_CASE("Side-by-side dock geometry preserves minimum column widths", "[event-
 TEST_CASE("Narrow windows temporarily stack columns and restore them when widened", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     layout.set_side_by_side(true);
-    const std::array available{true, true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true, true};
     const auto narrow = ui::dock_geometry_t::from(700, 700, layout, available);
     REQUIRE(narrow.panes[1]);
     CHECK_FALSE(narrow.is_side_by_side());
@@ -195,7 +195,7 @@ TEST_CASE("Close confirmation blocks the dock arrangement toggle", "[event-harne
 TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     layout.set_side_by_side(true);
-    const std::array available{true, true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true, true};
     const auto narrow = ui::dock_geometry_t::from(800, 700, layout, available, 268);
     CHECK_FALSE(narrow.is_side_by_side());
     const auto wide = ui::dock_geometry_t::from(1280, 700, layout, available, 328);
@@ -207,7 +207,7 @@ TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harn
 TEST_CASE("Compact docks preserve the field without overwriting preferred panels", "[event-harness][dock-layout]") {
     ui_layout_preferences_t layout;
     const auto saved = layout;
-    const std::array available{true, true, true, true, true, true, true};
+    const std::array available{true, true, true, true, true, true, true, true};
     const auto compact = ui::dock_geometry_t::from(640, 240, layout, available);
     CHECK_FALSE(compact.panes[0]);
     CHECK_FALSE(compact.panes[1]);

@@ -3076,9 +3076,10 @@ void t422_suppress_actual_text_editor() {
     REQUIRE(header.has_value());
     (void)click_at(fixture.harness, header->first, header->second);
     (void)fixture.harness.frame();
+    // The section title is the only caption; its text field follows the header and body padding.
     const auto label = fixture.harness.drawn_text_center("Find note label");
     REQUIRE(label.has_value());
-    (void)click_at(fixture.harness, label->first, label->second + 27);
+    (void)click_at(fixture.harness, label->first, label->second + 62);
     CHECK(fixture.harness.frame().get().shortcut_text_entry_active);
     CHECK_FALSE(worm_ui_nuklear_compose_state().dialogs.go_to_measure_open);
     const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);

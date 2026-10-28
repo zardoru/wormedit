@@ -46,7 +46,7 @@ struct generator_ui_fixture_t {
         require_generator_ui(harness.ready());
         workspace.active_tab = workspace_tab_t::compose; workspace.selected_chart = chart_id_t{1};
         auto& layout = worm_ui_nuklear_compose_state().dock_layout.layout;
-        layout.show(dock_panel_t::inspector, true);
+        layout.show(dock_panel_t::generator, true);
         layout.show(dock_panel_t::sounds, false); layout.show(dock_panel_t::layers, false);
         project();
     }
@@ -63,11 +63,9 @@ struct generator_ui_fixture_t {
     }
     void open() {
         if (generator_open) return;
+        // The generator has its own dock, so its sections are open as soon as the dock shows.
         reveal("Lua note generator");
-        const auto label = harness.drawn_text_center("Lua note generator");
-        require_generator_ui(label.has_value());
-        (void)test::click_at(harness, label->first, label->second);
-        (void)harness.frame();
+        require_generator_ui(harness.drawn_text_center("Lua note generator").has_value());
         generator_open = true;
     }
     void type_path() {
@@ -75,7 +73,7 @@ struct generator_ui_fixture_t {
         reveal("Choose script…");
         const auto label = harness.drawn_text_center("Script file (inside project)");
         require_generator_ui(label.has_value());
-        // The editor's 20px label row is followed by a 24px text field.
+        // The caption row is followed by the path field.
         (void)test::click_at(harness, label->first, label->second + 24);
         const char* path = "pattern.lua";
         SDL_Event text{}; text.type = text.text.type = SDL_EVENT_TEXT_INPUT; text.text.text = path;

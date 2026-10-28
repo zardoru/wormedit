@@ -100,6 +100,12 @@ inline auto mix_color(nk_color from, nk_color to, int percent) -> nk_color {
 inline auto text_faint() -> nk_color {
     return mix_color(color(UiColor::text), color(UiColor::background), 55);
 }
+// Destructive text: the light coral reads on dark panels; light themes need a darker red.
+inline auto destructive_text() -> nk_color {
+    const auto panel = color(UiColor::background);
+    const auto luma = (panel.r * 299 + panel.g * 587 + panel.b * 114) / 1000;
+    return luma > 128 ? nk_rgb(168, 44, 24) : metrics::destructive_text;
+}
 inline auto disabled_fill() -> nk_color {
     return mix_color(color(UiColor::surface), color(UiColor::background), 70);
 }
@@ -821,11 +827,14 @@ inline void apply_header_theme(nk_context* context) {
 // subsection: a card that wraps its header and body, in the normal text color. Both indent
 // their body. Every push that returns true needs a matching section_pop; the panel or card is
 // reserved behind the header and sized there, once the body's height is known.
+// `tight` drops the empty measuring row's minimum height (about one text line), for a card that
+// directly follows a control row and should sit close to it.
 auto section_push(nk_context* context, nk_tree_type type, const char* title,
-                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool;
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed,
+                  bool tight = false) -> bool;
 inline auto section_push(nk_context* context, nk_tree_type type, const char* title,
-                         nk_collapse_states initial) -> bool {
-    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0);
+                         nk_collapse_states initial, bool tight = false) -> bool {
+    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0, tight);
 }
 void section_pop(nk_context* context);
 

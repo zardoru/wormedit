@@ -1496,7 +1496,8 @@ void render_project_directory(nk_context* context, const wormedit::ui::setup_vie
         std::optional<wormedit::ui::chrome::DisabledFieldStyle> disabled;
         if (!overridden) disabled.emplace(context);
         wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
-            overridden ? NK_EDIT_FIELD : NK_EDIT_FIELD | NK_EDIT_READ_ONLY,
+            overridden ? static_cast<nk_flags>(NK_EDIT_FIELD)
+                        : static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
             buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
     }
     if (wormedit::ui::chrome::Button{.label = visual ? "Set visual folder" : "Set audio folder",

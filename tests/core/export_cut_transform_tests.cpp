@@ -39,6 +39,13 @@ auto note_with_id(const chart_document_t& chart, object_id_t id) -> const note_t
             if (note.id == id) return &note;
     return nullptr;
 }
+void check_rational_cut_chart(const chart_document_t& chart, std::optional<signed_rational_t> expected) {
+    const auto* retained = note_with_id(chart, object_id_t{20});
+    REQUIRE(retained);
+    CHECK(chart.divisions_per_standard_measure > 1'000'000'000);
+    CHECK(time_of(chart, retained->position) == expected);
+    CHECK(chart.warps.empty());
+}
 }
 TEST_CASE("Export cuts remove their union from detached charts and retain exact source data", "[core][export-cut][export]") {
     auto song = export_song();
@@ -75,6 +82,26 @@ TEST_CASE("Export cuts refine fractional cut rows without rounding", "[core][exp
     REQUIRE(retained);
     CHECK(chart.divisions_per_standard_measure > 960);
     CHECK(time_of(chart, retained->position) == signed_rational_t{499, 1000});
+}
+TEST_CASE("Export cuts retain exact rational clocks beyond a billion divisions", "[core][export-cut][export]") {
+    auto song = export_song();
+    auto& source = song.charts.front();
+    source.bpms.front().beats_per_minute = {381024000, 2880079};
+    source.beat_zero_audio_offset_seconds = {5539, 44100};
+    for (std::uint64_t id = 6; id < 15; ++id)
+        source.measures.push_back({.id = measure_id_t{id}});
+    const local_position_t position{source.measures.back().id, 10};
+    source.measures.back().notes = {{.id = object_id_t{20}, .position = position, .lane = lane_id_t{1}}};
+    song.export_cuts.front().begin_milliseconds = 7382;
+    song.export_cuts.front().end_milliseconds = 14638;
+    const auto timeline = export_cut_timeline_t::from(song.export_cuts);
+    const auto expected = timeline.value.collapsed_seconds(time_of(source, position));
+    const auto result = export_cut_transform_t::from(song, {});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    check_cut_success(result);
+    check_rational_cut_chart(result.value->document.charts.front(), expected);
+    CHECK(source.divisions_per_standard_measure == 960);
+    CHECK(source.warps.empty());
 }
 TEST_CASE("Export cuts reject holds crossing boundaries and unknown sounding extents", "[core][export-cut][export]") {
     auto song = export_song();
@@ -315,16 +342,31 @@ TEST_CASE("Constant SPEED transitions remain representable at a retained warp se
 
 TEST_CASE("Generated cut music reserves authored and planned asset basenames", "[core][export-cut][export]") {
     auto song = export_song();
-    song.audio_assets = {{.id = asset_id_t{60}, .source_path = "export-cut-music-60.wav",
+    song.audio_assets = {{.id = asset_id_t{60}, .source_path = "export-cut-music-60.mp3",
         .stream = {.sample_rate = 48000, .channels = 2, .frame_count = 192000, .seekable = true}}};
-    song.visual_assets = {{.id = asset_id_t{62}, .source_path = "export-cut-music-60-1.wav"}};
-    song.resources = {{.id = resource_id_t{61}, .name = "export-cut-music-60.wav", .asset = asset_id_t{60},
+    song.visual_assets = {{.id = asset_id_t{62}, .source_path = "export-cut-music-60-1.mp3"}};
+    song.resources = {{.id = resource_id_t{61}, .name = "export-cut-music-60.mp3", .asset = asset_id_t{60},
         .roles = {resource_role_t::music}}};
     const auto result = export_cut_transform_t::from(song, {});
     check_cut_success(result);
     REQUIRE(result.value->audio_plans.size() == 1);
-    CHECK(result.value->audio_plans.front().filename == "export-cut-music-60-2.wav");
-    CHECK(song.audio_assets.front().source_path == "export-cut-music-60.wav");
+    CHECK(result.value->audio_plans.front().filename == "export-cut-music-60-2.mp3");
+    CHECK(song.audio_assets.front().source_path == "export-cut-music-60.mp3");
+}
+TEST_CASE("Export audio defaults cap source bitrate and retain explicit encoding choices", "[core][export-cut][export]") {
+    const auto [source, expected] = GENERATE(Catch::Generators::table<std::uint32_t, std::uint32_t>({
+        {128'000, 128}, {320'000, 192}, {0, 192}}));
+    export_audio_settings_t settings;
+    CHECK(settings.codec == export_audio_codec_t::mp3);
+    CHECK(settings.bitrate_for(source) == expected);
+    settings.mp3_bitrate_kbps = 320;
+    CHECK(settings.is_valid());
+    CHECK(settings.bitrate_for(128'000) == 320);
+}
+TEST_CASE("Export audio rejects unsupported bitrate choices", "[core][export-cut][export]") {
+    export_audio_settings_t settings;
+    settings.mp3_bitrate_kbps = 321;
+    CHECK_FALSE(settings.is_valid());
 }
 TEST_CASE("Standard export bars preserve exact object rows across a long measure", "[core][export-cut][export]") {
     auto song = export_song();

@@ -1872,6 +1872,8 @@ auto validate_song_output_groups(document_validation_work_t& work) -> void {
     for (const auto& owner : work.song.prepared_bms_programs)
         if (owner && owner->difficulty()) chart_ids.insert(owner->difficulty().value);
     for (const auto& group : work.song.output_groups) {
+        if (!group.audio.is_valid())
+            add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_rational, "output group has invalid audio encoding settings");
         for (const auto chart : group.charts) {
             if (!chart || !chart_ids.contains(chart.value)) {
                 add_diagnostic(work.diagnostics, diagnostic_code_t::invalid_id,

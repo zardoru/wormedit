@@ -2369,5 +2369,5 @@ TEST_CASE("Native schema 26 migration lifts retained osu sample fields with fres
     CHECK(validate_document(*migrated.value).empty());
     check_sample_control_context(loaded, loaded.measures.front().notes.front().position,
         osu_sample_set_t::drum, 25);
-    CHECK(migrated.value->schema_version == 27);
+    CHECK(migrated.value->schema_version == current_document_schema_version);
 }

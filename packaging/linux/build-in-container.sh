@@ -43,6 +43,7 @@ find "$appdir/usr/lib" -type f \( -name '*.a' -o -name '*.cmake' -o -name '*.pc'
 find "$appdir/usr/lib" -depth -type d -empty -delete
 notices="$appdir/usr/bin/third-party"
 cp /source/packaging/linux/Dockerfile "$notices/ffmpeg/build.Dockerfile"
+cp /source/packaging/build-lame-sdk.sh "$notices/ffmpeg/"
 printf '%s\n' "$WORMEDIT_BUILD_REVISION" > "$appdir/usr/bin/BUILD-REVISION.txt"
 # Reject a GPL/nonfree FFmpeg, including changes accidentally made to its build.
 for feature in GPL NONFREE VERSION3; do

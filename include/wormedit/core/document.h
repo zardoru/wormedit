@@ -11,6 +11,7 @@
 #include <wormedit/core/osu_hitsample.h>
 #include <wormedit/core/song_preview.h>
 #include <wormedit/core/export_cut.h>
+#include <wormedit/core/export_audio.h>
 
 #include <algorithm>
 #include <span>
@@ -1076,6 +1077,7 @@ struct output_group_t {
     existing_files_policy_t existing_files{existing_files_policy_t::ask};
     std::optional<stepmania_export_policy_t> stepmania;
     bool flatten_bms_branches{};
+    export_audio_settings_t audio;
 };
 
 struct song_metadata_t {
@@ -1134,7 +1136,7 @@ struct bookmark_list_order_t {
     auto operator==(const bookmark_list_order_t&) const -> bool = default;
 };
 
-inline constexpr std::uint32_t current_document_schema_version = 27;
+inline constexpr std::uint32_t current_document_schema_version = 28;
 struct song_document_t {
     std::uint32_t schema_version{current_document_schema_version};
     song_id_t id;

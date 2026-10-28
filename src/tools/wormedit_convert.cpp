@@ -170,6 +170,15 @@ auto parse_request(const json& object) -> cli_request_t {
     request.conversion.target_profile = string_field(object, "target_profile");
     request.chart_indices = parse_chart_indices(object);
     parse_policies(object, request.conversion);
+    if (const auto audio = object.find("audio"); audio != object.end()) {
+        if (!audio->is_object()) throw request_error_t{"audio must be an object"};
+        const auto codec = string_field(*audio, "codec");
+        if (codec == "ogg") request.conversion.audio.codec = export_audio_codec_t::ogg;
+        else if (!codec.empty() && codec != "mp3") throw request_error_t{"audio codec must be mp3 or ogg"};
+        request.conversion.audio.mp3_bitrate_kbps = audio->value("mp3_bitrate_kbps", 0U);
+        request.conversion.audio.ogg_quality = audio->value("ogg_quality", 0.4F);
+        if (!request.conversion.audio.is_valid()) throw request_error_t{"invalid audio encoding settings"};
+    }
     return request;
 }
 

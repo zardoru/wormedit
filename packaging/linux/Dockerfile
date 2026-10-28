@@ -27,21 +27,25 @@ RUN curl -fL --retry 3 https://github.com/AppImage/appimagetool/releases/downloa
     && mv squashfs-root appimagetool && rm appimagetool.AppImage
 RUN curl -fL --retry 3 https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 -o runtime-x86_64 \
     && echo '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64' | sha256sum -c -
-# A small LGPL FFmpeg, without distro FFmpeg's GPL codecs or external dependencies.
+COPY build-lame-sdk.sh /opt/tools/build-lame-sdk.sh
+RUN bash /opt/tools/build-lame-sdk.sh /opt/lame-build /opt/ffmpeg 3
+# A small LGPL FFmpeg with the shared LGPL LAME MP3 encoder.
 RUN curl -fL --retry 3 https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz -o ffmpeg-9.0.2.tar.xz \
     && echo '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e  ffmpeg-9.0.2.tar.xz' | sha256sum -c - \
     && tar -xf ffmpeg-9.0.2.tar.xz \
     && cd ffmpeg-9.0.2 \
+    && export LD_LIBRARY_PATH=/opt/ffmpeg/lib \
     && ./configure --prefix=/opt/ffmpeg --enable-shared --disable-static \
        --disable-programs --disable-doc --disable-debug --disable-autodetect \
        --disable-network --disable-avdevice --disable-avfilter --disable-encoders \
-       --disable-muxers --disable-x86asm \
+       --enable-libmp3lame --enable-encoder=libmp3lame --disable-muxers --enable-muxer=mp3 \
+       --extra-cflags=-I/opt/ffmpeg/include --extra-ldflags=-L/opt/ffmpeg/lib --disable-x86asm \
     && make -j3 && make install \
     && mkdir -p /opt/ffmpeg/share/wormedit-ffmpeg \
     && cp COPYING.LGPLv2.1 LICENSE.md config.h ffbuild/config.log /opt/ffmpeg/share/wormedit-ffmpeg/ \
     && cp ../ffmpeg-9.0.2.tar.xz /opt/ffmpeg/share/wormedit-ffmpeg/ \
     && cd .. && rm -rf ffmpeg-9.0.2 ffmpeg-9.0.2.tar.xz
-COPY runtime-downloads.txt fetch-runtime-notices.sh /opt/tools/
+COPY linux/runtime-downloads.txt linux/fetch-runtime-notices.sh /opt/tools/
 RUN bash /opt/tools/fetch-runtime-notices.sh
 # std::bind_back needs GCC 14; keep FFmpeg's cached GCC 13 build above.
 RUN apt-get update && apt-get install -y --no-install-recommends g++-14 \

@@ -932,6 +932,7 @@ auto write_stepmania_output(conversion_context_t& context, const song_document_t
     }
     auto options = resolved->value();
     options.chart = context.request.chart;
+    options.allow_timing_approximation = true;
     const auto written = write_stepmania(prepared, std::move(options));
     append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                               context.request.chart, context.request.loss_policy);
@@ -968,7 +969,8 @@ void write_osu_outputs(conversion_context_t& context, const song_document_t& pre
     }
     for (const auto chart_id : charts) {
         if (!context.can_continue()) return;
-        const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id});
+        const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id,
+            .max_rows_per_measure = std::numeric_limits<std::size_t>::max()});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
         append_conversion_output(context, prepared, chart_id, ".osu", written.value,
@@ -1094,11 +1096,26 @@ auto is_conversion_needs_slice_spans(const song_document_t& song, const conversi
 }
 
 namespace {
+auto quantize_cut_chart(conversion_context_t& context, chart_document_t& chart) -> bool {
+    // 192 rows per 4/4 measure is the traditional StepMania compatibility grid.
+    // Reuse quantization's collision and hold validation on the detached export.
+    auto quantized = quantization_plan_t::from(chart, {.divisions = 192, .allow_resolution_promotion = true});
+    for (const auto& diagnostic : quantized.diagnostics)
+        add_diagnostic(context.result, diagnostic.severity, conversion_diagnostic_code_t::transform_failed,
+            conversion_stage_t::transform, context.request.target, chart.id, diagnostic.message);
+    if (!quantized.value.chart) return false;
+    if (!quantized.value.quantized_moves.empty())
+        add_diagnostic(context.result, diagnostic_severity_t::warning, conversion_diagnostic_code_t::target_diagnostic,
+            conversion_stage_t::transform, context.request.target, chart.id,
+            "Export-cut positions were rounded to the StepMania grid (192 rows per measure)", {}, true);
+    chart = std::move(*quantized.value.chart);
+    return true;
+}
 auto standardize_cut_chart(conversion_context_t& context, song_document_t& song, chart_document_t& chart) -> bool {
     std::set<measure_id_t> existing;
     for (const auto& measure : chart.measures) existing.insert(measure.id);
     const auto diagnostics = rebar_standard_measures(chart,
-        {.maximum_measures = 65'536, .maximum_rows_per_measure = 1'000'000'000});
+        {.maximum_measures = 65'536, .maximum_rows_per_measure = std::numeric_limits<std::uint64_t>::max()});
     for (const auto& diagnostic : diagnostics)
         add_diagnostic(context.result, diagnostic.severity, conversion_diagnostic_code_t::transform_failed,
             conversion_stage_t::transform, context.request.target, chart.id, diagnostic.message);
@@ -1117,7 +1134,7 @@ auto standardize_cut_chart(conversion_context_t& context, song_document_t& song,
         const auto replacement = replacements.find(position.measure);
         if (replacement != replacements.end()) position.measure = replacement->second;
     });
-    return true;
+    return quantize_cut_chart(context, chart);
 }
 auto standardize_cut_bars(conversion_context_t& context, song_document_t& song,
                           const std::vector<chart_id_t>& charts) -> bool {
@@ -1131,7 +1148,7 @@ auto standardize_cut_bars(conversion_context_t& context, song_document_t& song,
 auto prepare_export_cuts(conversion_context_t& context, song_document_t& prepared,
                          const std::vector<chart_id_t>& charts) -> bool {
     if (prepared.export_cuts.empty()) return true;
-    auto transformed = export_cut_transform_t::from(prepared, charts, context.request.export_cut_sources);
+    auto transformed = export_cut_transform_t::from(prepared, charts, context.request.export_cut_sources, context.request.audio);
     for (const auto& diagnostic : transformed.diagnostics) {
         add_diagnostic(context.result, diagnostic.severity, conversion_diagnostic_code_t::transform_failed,
             conversion_stage_t::transform, context.request.target, diagnostic.location.chart,

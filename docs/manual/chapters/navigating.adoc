@@ -117,8 +117,12 @@ BGA crossing a cut boundary blocks export; adjust the cut or the object first. T
 at the end of the cut carries into the retained part. The saved project and source media keep
 their original content.
 
-SM/SSC exports arrange the retained content into standard four-beat note-map bars without
-moving its times. Export also refuses timing combinations that the target model cannot express
+In an export target's editor, *Cut audio* chooses MP3 or Ogg Vorbis for the physically shortened
+song. MP3 defaults to the source bitrate capped at 192 kbps; explicit choices extend to 320 kbps.
+Ogg Vorbis has a quality control. Each exported chart references its target's encoded audio.
+
+SM/SSC exports arrange retained content into standard four-beat bars on a bounded 192-row
+grid, reporting any rounding as a conversion loss. Cuts do not add warps. Export also refuses timing combinations that the target model cannot express
 exactly, such as a required SPEED jump inside a stop or at a suppressed warp position; the
 diagnostic identifies the timing event to adjust.
 

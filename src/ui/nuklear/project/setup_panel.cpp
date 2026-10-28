@@ -99,6 +99,7 @@ struct project_panel_state_t {
     int group_family{4};
     int group_existing_files{};
     nk_bool group_flatten_bms_branches{};
+    wormedit::export_audio_settings_t group_audio;
     int group_stepmania_file{WORM_UI_STEPMANIA_FILE_SSC};
     int group_stepmania_timing{WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS};
     int group_stepmania_implementation{WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
@@ -719,6 +720,7 @@ void load_output_group_draft(const wormedit::ui::setup_view_t& view, const worme
                                                ? static_cast<int>(group->stepmania->implementation_profile)
                                                : WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
     state.group_flatten_bms_branches = group && group->flatten_bms_branches;
+    state.group_audio = group ? group->audio : wormedit::export_audio_settings_t{};
     state.group_editor_dialog = {};
     std::snprintf(state.group_name, sizeof(state.group_name), "%s",
                   group ? group->name.data() : "New export target");
@@ -783,6 +785,7 @@ void publish_output_group_action(const wormedit::ui::setup_view_t& view, wormedi
         ? wormedit::output_destination_kind_t::file : wormedit::output_destination_kind_t::directory;
     output.existing_files = static_cast<wormedit::existing_files_policy_t>(project_state.group_existing_files);
     output.flatten_bms_branches = project_state.group_flatten_bms_branches;
+    output.audio = project_state.group_audio;
     output.stepmania.reset();
     if (project_state.group_family == 2)
         output.stepmania = wormedit::stepmania_export_policy_t{
@@ -990,6 +993,33 @@ void render_output_destination(nk_context* context) {
     dialog_text(state.group_editor_dialog, context, resolved.c_str(), color(UiColor::text_muted));
 }
 
+void render_export_audio_settings(nk_context* context) {
+    using namespace wormedit;
+    using namespace wormedit::ui::chrome;
+    auto& audio = project_state.group_audio;
+    constexpr std::array labels{"MP3", "Ogg Vorbis"};
+    constexpr float fields[]{0.22f, 0.78f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Cut audio", NK_TEXT_LEFT);
+    audio.codec = static_cast<export_audio_codec_t>(safe_combo(context, labels.data(), labels.size(),
+        static_cast<int>(audio.codec), 24, nk_vec2(280, 100)));
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    if (audio.codec == export_audio_codec_t::ogg) {
+        nk_label(context, "Vorbis quality", NK_TEXT_LEFT);
+        nk_property_float(context, "Quality", -0.1F, &audio.ogg_quality, 1.0F, 0.1F, 0.01F);
+        return;
+    }
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "MP3 bitrate", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 24, 5);
+    if (nk_option_label(context, "Auto", audio.mp3_bitrate_kbps == 0)) audio.mp3_bitrate_kbps = 0;
+    for (const auto bitrate : mp3_bitrates_kbps)
+        if (nk_option_label(context, (std::to_string(bitrate) + " kbps").c_str(), audio.mp3_bitrate_kbps == bitrate))
+            audio.mp3_bitrate_kbps = bitrate;
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Auto uses source bitrate, up to 192 kbps", NK_TEXT_LEFT);
+}
+
 void render_output_group_form(nk_context* context, const wormedit::ui::setup_view_t& view) {
     using namespace wormedit::ui::chrome;
     auto& state = project_state;
@@ -1016,6 +1046,7 @@ void render_output_group_form(nk_context* context, const wormedit::ui::setup_vie
     nk_label(context, "Existing files", NK_TEXT_LEFT);
     state.group_existing_files = render_existing_files_picker(context, state.group_existing_files);
     if (state.group_family == 2) render_stepmania_policy(context);
+    if (state.group_family != 0) render_export_audio_settings(context);
     if (state.group_family >= 2) {
         nk_layout_row_dynamic(context, 28, 1);
         nk_checkbox_label(context, "Flatten BMS branches to the active outcome",

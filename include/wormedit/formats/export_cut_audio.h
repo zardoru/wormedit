@@ -10,7 +10,7 @@ namespace wormedit {
     const std::filesystem::path& source_directory, std::stop_token stop = {})
     -> diagnosed_t<std::vector<export_cut_source_t>>;
 
-// Writes generated float32 stereo WAVs to the caller's private transaction
+// Writes generated MP3/OGG (or explicitly requested float32 WAV) to the caller's private transaction
 // staging directory. Failure removes files created by this call only.
 [[nodiscard]] auto render_export_cut_audio_plans(const song_document_t& song,
     std::span<const export_cut_audio_plan_t> plans, const export_cut_timeline_t& timeline,

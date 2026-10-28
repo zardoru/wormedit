@@ -289,6 +289,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         src/audio/metronome.cpp
         src/audio/hitsound_resolver.cpp
         src/audio/ogg_encoder.cpp
+        src/audio/stream_encoder.cpp
     )
     target_link_libraries(wormedit_audio_decoder PRIVATE vorbisenc Ogg::ogg)
     target_link_libraries(wormedit-convert PRIVATE wormedit::audio_decoder)
@@ -331,6 +332,11 @@ if(WORMEDIT_ENABLE_FFMPEG OR WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_REQUIRE_F
             libswscale
         )
     endif()
+endif()
+
+if(WORMEDIT_ENABLE_AUDIO_DECODER AND TARGET PkgConfig::WORMEDIT_FFMPEG)
+    target_link_libraries(wormedit_audio_decoder PRIVATE PkgConfig::WORMEDIT_FFMPEG)
+    set_source_files_properties(src/audio/stream_encoder.cpp PROPERTIES COMPILE_DEFINITIONS WORMEDIT_HAS_FFMPEG=1)
 endif()
 
 if(WORMEDIT_ENABLE_VIDEO_DECODER)

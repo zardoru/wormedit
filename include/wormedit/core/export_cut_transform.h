@@ -15,6 +15,7 @@ struct export_cut_source_t {
     std::uint64_t native_frame_count{};
     std::uint64_t output_frame_count{};
     std::filesystem::path source_path;
+    std::uint32_t bitrate_bits_per_second{};
     auto operator==(const export_cut_source_t&) const -> bool = default;
 };
 struct export_cut_audio_plan_t {
@@ -22,6 +23,7 @@ struct export_cut_audio_plan_t {
     std::string filename;
     export_cut_source_t source;
     std::uint64_t output_frames{};
+    export_audio_settings_t encoding;
     auto operator==(const export_cut_audio_plan_t&) const -> bool = default;
 };
 struct export_cut_location_t {
@@ -33,7 +35,8 @@ using export_cut_diagnostic_t = format_diagnostic_t<diagnostic_code_t, export_cu
 // A detached export document and its generated audio. Source cuts and authored data are untouched.
 struct export_cut_transform_t {
     [[nodiscard]] static auto from(const song_document_t& source, std::span<const chart_id_t> charts,
-                                   std::span<const export_cut_source_t> sources = {})
+                                   std::span<const export_cut_source_t> sources = {},
+                                   export_audio_settings_t audio = {})
         -> diagnosed_t<std::optional<export_cut_transform_t>, std::vector<export_cut_diagnostic_t>>;
     song_document_t document;
     std::vector<export_cut_audio_plan_t> audio_plans;

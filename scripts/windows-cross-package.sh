@@ -51,7 +51,7 @@ for component in Wormedit Manual; do
     cmake --install build/windows-cross-release --prefix "$stage/$name" --strip --component "$component"
 done
 # The shared notices installer supplies the SDK's FFmpeg sources and licenses.
-cp scripts/windows-ffmpeg.sh scripts/env-mingw.sh "$stage/$name/third-party/ffmpeg/"
+cp scripts/windows-ffmpeg.sh packaging/build-lame-sdk.sh scripts/env-mingw.sh "$stage/$name/third-party/ffmpeg/"
 cat > "$stage/$name/START-HERE.txt" <<'EOF'
 Wormedit Windows preview (64-bit)
 

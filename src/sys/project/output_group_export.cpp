@@ -172,7 +172,12 @@ auto generated_file_bytes(const output_group_export_request_t& input,
                           const std::filesystem::path& relative) -> std::uintmax_t {
     const auto name = relative.filename();
     for (const auto& plan : converted.cut_audio_plans)
-        if (plan.filename == name) return 56 + plan.output_frames * 2 * sizeof(float);
+        if (plan.filename == name) {
+            if (plan.encoding.codec == export_audio_codec_t::wav) return 56 + plan.output_frames * 2 * sizeof(float);
+            const auto bits = plan.encoding.codec == export_audio_codec_t::mp3
+                ? plan.encoding.mp3_bitrate_kbps * 1000 : 192'000U;
+            return plan.output_frames * bits / export_cut_render_sample_rate / 8;
+        }
     for (const auto& plan : converted.slice_plans)
         for (const auto& span : plan.value.spans)
             if (span.filename == name)

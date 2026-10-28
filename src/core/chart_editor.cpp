@@ -319,6 +319,20 @@ auto output_destination_error(const output_group_t& group) -> std::string {
         return "Output file destination needs a filename.";
     return {};
 }
+auto output_policy_error(const output_group_t& group) -> std::string {
+    if (group.family < format_family_t::native_project || group.family > format_family_t::bmson) return "Output format is not supported.";
+    if (group.existing_files < existing_files_policy_t::ask ||
+        group.existing_files > existing_files_policy_t::keep)
+        return "Existing-files policy is not supported.";
+    if (!group.audio.is_valid()) return "Export audio settings are invalid.";
+    if (group.family == format_family_t::stepmania) {
+        if (!group.stepmania)
+            return "StepMania export policy is required.";
+        if (const auto policy = stepmania_write_options_t::from(*group.stepmania); !policy)
+            return policy.error().message;
+    }
+    return {};
+}
 auto output_group_error(const song_document_t& doc, std::optional<std::size_t> index,
     const output_group_t& group) -> std::string {
     if (index && *index >= doc.output_groups.size()) return "Output group is no longer available.";
@@ -326,17 +340,8 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
         return "Output group needs a name.";
     for (std::size_t i = 0; i < doc.output_groups.size(); ++i)
         if (i != index && doc.output_groups[i].name == group.name) return "Output group name is already used.";
-    if (group.family < format_family_t::native_project || group.family > format_family_t::bmson) return "Output format is not supported.";
-    if (group.existing_files < existing_files_policy_t::ask ||
-        group.existing_files > existing_files_policy_t::keep)
-        return "Existing-files policy is not supported.";
+    if (const auto error = output_policy_error(group); !error.empty()) return error;
     if (const auto error = output_destination_error(group); !error.empty()) return error;
-    if (group.family == format_family_t::stepmania) {
-        if (!group.stepmania)
-            return "StepMania export policy is required.";
-        if (const auto policy = stepmania_write_options_t::from(*group.stepmania); !policy)
-            return policy.error().message;
-    }
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
         const auto* member = doc.read_chart(chart);

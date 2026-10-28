@@ -110,10 +110,15 @@ auto position_row(signed_rational_t beat, std::uint64_t divisions, std::size_t o
              "Beat denominator exceeds the exact position range", order, offset);
     const auto rows = multiply_divide_exact(static_cast<std::uint64_t>(beat.numerator), divisions,
                                             beat.denominator * 4U);
-    if (!rows)
-        fail(stepmania_parse_diagnostic_code_t::position_not_representable,
-             "Beat position does not land on the selected exact editor grid", order, offset);
-    return *rows;
+    if (rows) return *rows;
+    // Decimal spellings of thirds cannot be exact. Accept only the sub-microbeat
+    // formatting error around an otherwise representable editor row.
+    const auto rounded = timing_arithmetic::rounded_factor_ratio(
+        {static_cast<std::uint64_t>(beat.numerator), divisions, 1, 1}, {beat.denominator, 4, 1});
+    if (rounded && std::abs(to_long_double(beat) - static_cast<long double>(*rounded) * 4 / divisions) <= 0.000001L)
+        return *rounded;
+    fail(stepmania_parse_diagnostic_code_t::position_not_representable,
+         "Beat position does not land on the selected exact editor grid", order, offset);
 }
 
 auto fields_for_key(const std::vector<field_t>& fields, std::string_view key)
@@ -1436,7 +1441,7 @@ auto signed_decimal(std::uint64_t magnitude, bool negative, std::uint64_t scale,
     return result;
 }
 
-auto rational_decimal(signed_rational_t value) -> std::optional<std::string> {
+auto rational_decimal(signed_rational_t value, bool allow_rounding = false) -> std::optional<std::string> {
     if (value.denominator == 0) return std::nullopt;
     const auto magnitude = value.numerator < 0
                                ? static_cast<std::uint64_t>(-(value.numerator + 1)) + 1
@@ -1448,7 +1453,11 @@ auto rational_decimal(signed_rational_t value) -> std::optional<std::string> {
         if (digits < 18 && scale <= std::numeric_limits<std::uint64_t>::max() / 10)
             scale *= 10;
     }
-    return std::nullopt;
+    if (!allow_rounding) return std::nullopt;
+    constexpr std::uint64_t decimal_scale = 1'000'000;
+    const auto rounded = timing_arithmetic::rounded_factor_ratio(
+        {magnitude, decimal_scale, 1, 1}, {value.denominator, 1, 1});
+    return rounded ? signed_decimal(*rounded, value.numerator < 0, decimal_scale, 6) : std::nullopt;
 }
 
 auto beat_at_row(std::uint64_t row, std::uint64_t divisions) -> std::optional<signed_rational_t> {
@@ -1562,6 +1571,7 @@ struct timing_fields_builder_t {
     std::vector<stepmania_write_diagnostic_t>& diagnostics;
     warp_encoding_t encoding;
     bool reported_legacy_conversion{};
+    std::set<std::string> approximated_fields;
     std::vector<event_t> bpm_events, stop_events, delay_events;
     std::vector<std::pair<std::uint64_t, std::uint64_t>> warps;
     std::vector<field_t_pair> result;
@@ -1592,19 +1602,23 @@ struct timing_fields_builder_t {
         }
         diagnostics.push_back({severity, code, std::move(message), std::move(field)});
     }
-    auto beat_text(std::uint64_t row, std::string_view field) -> std::optional<std::string> {
-        const auto beat = beat_at_row(row, chart.divisions_per_standard_measure);
-        const auto text = beat ? rational_decimal(*beat) : std::nullopt;
-        if (!text) report(stepmania_write_diagnostic_code_t::unrepresentable_position,
-            "Timing beat cannot be written as an exact StepMania decimal", std::string(field));
-        return text;
-    }
     auto value_text(signed_rational_t value, std::string_view field)
         -> std::optional<std::string> {
-        const auto text = rational_decimal(value);
+        auto text = rational_decimal(value);
+        if (!text && options.allow_timing_approximation) {
+            text = rational_decimal(value, true);
+            if (text && approximated_fields.emplace(field).second)
+                report(stepmania_write_diagnostic_code_t::unrepresentable_position,
+                    "Timing values were rounded to six decimal places for StepMania export",
+                    std::string(field), diagnostic_severity_t::warning);
+        }
         if (!text) report(stepmania_write_diagnostic_code_t::unrepresentable_position,
             "Timing value cannot be written as an exact StepMania decimal", std::string(field));
         return text;
+    }
+    auto beat_text(std::uint64_t row, std::string_view field) -> std::optional<std::string> {
+        const auto beat = beat_at_row(row, chart.divisions_per_standard_measure);
+        return beat ? value_text(*beat, field) : std::nullopt;
     }
     auto position_for(local_position_t position, std::string_view field)
         -> std::optional<std::uint64_t> {
@@ -1810,7 +1824,7 @@ struct timing_fields_builder_t {
             const auto [begin, end] = warp;
             const auto start = beat_text(begin, "WARPS");
             const auto length = beat_at_row(end - begin, chart.divisions_per_standard_measure);
-            const auto duration = length ? rational_decimal(*length) : std::nullopt;
+            const auto duration = length ? value_text(*length, "WARPS") : std::nullopt;
             if (start && duration) events.emplace_back(begin, 0, *start + "=" + *duration);
         }
         serialize_events(events, "WARPS");
@@ -1838,9 +1852,9 @@ struct timing_fields_builder_t {
                     "SPEEDS duration exceeds the supported signed rational range", "SPEEDS");
                 continue;
             }
-            const auto duration = rational_decimal({
+            const auto duration = value_text({
                 static_cast<std::int64_t>(event.transition_beats.numerator),
-                event.transition_beats.denominator});
+                event.transition_beats.denominator}, "SPEEDS");
             if (!duration) report(stepmania_write_diagnostic_code_t::unrepresentable_position,
                 "SPEEDS duration cannot be written as an exact decimal", "SPEEDS");
             if (row && beat && multiplier && duration)

@@ -11,6 +11,7 @@ struct transform_context_t {
     const export_cut_timeline_t& timeline;
     std::span<const export_cut_source_t> sources;
     std::vector<export_cut_diagnostic_t>& diagnostics;
+    export_audio_settings_t audio;
     std::optional<chart_id_t> chart;
     std::uint64_t object_ceiling{};
     std::size_t generated_objects{}, work_units{};

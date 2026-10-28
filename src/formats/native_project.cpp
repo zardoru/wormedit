@@ -828,6 +828,21 @@ void from_json(const json& value, stepmania_export_policy_t& policy) {
     value.at("implementation_profile").get_to(policy.implementation_profile);
 }
 
+void to_json(json& value, const export_audio_settings_t& audio) {
+    value = json{{"codec", audio.codec}, {"mp3_bitrate_kbps", audio.mp3_bitrate_kbps}, {"ogg_quality", audio.ogg_quality}};
+}
+void from_json(const json& value, export_audio_settings_t& audio) {
+    if (!value.at("codec").is_number_integer() || !value.at("mp3_bitrate_kbps").is_number_integer())
+        throw std::invalid_argument("Export audio codec and bitrate must be integers.");
+    const auto codec = value.at("codec").get<std::int64_t>();
+    const auto bitrate = value.at("mp3_bitrate_kbps").get<std::int64_t>();
+    if (codec < 0 || codec > 2 || bitrate < 0 || bitrate > 320)
+        throw std::invalid_argument("Export audio codec or bitrate is out of range.");
+    value.at("codec").get_to(audio.codec);
+    value.at("mp3_bitrate_kbps").get_to(audio.mp3_bitrate_kbps);
+    value.at("ogg_quality").get_to(audio.ogg_quality);
+    if (!audio.is_valid()) throw std::invalid_argument("Invalid export audio settings.");
+}
 void to_json(json& value, const output_group_t& group) {
     value = json{{"name", group.name},
                  {"family", group.family},
@@ -836,7 +851,7 @@ void to_json(json& value, const output_group_t& group) {
                  {"relative_output_path", path_to_utf8(group.relative_output_path)},
                  {"existing_files", group.existing_files},
                  {"stepmania", group.stepmania},
-                 {"flatten_bms_branches", group.flatten_bms_branches}};
+                 {"flatten_bms_branches", group.flatten_bms_branches}, {"audio", group.audio}};
 }
 
 void from_json(const json& value, output_group_t& group) {
@@ -849,6 +864,7 @@ void from_json(const json& value, output_group_t& group) {
     value.at("existing_files").get_to(group.existing_files);
     value.at("stepmania").get_to(group.stepmania);
     group.flatten_bms_branches = value.value("flatten_bms_branches", false);
+    value.at("audio").get_to(group.audio);
 }
 
 template<class Id>
@@ -1508,7 +1524,7 @@ auto is_uint32_schema_field(std::string_view key) -> bool {
         std::string_view{"stage_count"}, std::string_view{"retained_effect_bits"},
         std::string_view{"schema_version"}, std::string_view{"fixed_point_count"},
         std::string_view{"max_points"}, std::string_view{"api_version"},
-        std::string_view{"emission_count"},
+        std::string_view{"emission_count"}, std::string_view{"mp3_bitrate_kbps"},
     };
     return std::ranges::find(fields, key) != fields.end();
 }
@@ -1528,7 +1544,7 @@ auto is_unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t
 
 auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)
     -> bool {
-    if (key == "x" || key == "y") {
+    if (key == "x" || key == "y" || key == "ogg_quality") {
         return value.is_number_float() && std::isfinite(value.get<double>());
     }
     if (key == "from" || key == "to") {

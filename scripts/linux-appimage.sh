@@ -19,7 +19,7 @@ if [[ ! -f third_party/libotoworm/CMakeLists.txt ]]; then
     exit 1
 fi
 mkdir -p "$out" "$work"
-docker build --platform linux/amd64 --tag wormedit-appimage:jammy packaging/linux
+docker build --platform linux/amd64 --tag wormedit-appimage:jammy --file packaging/linux/Dockerfile packaging
 # Run as the caller so repeated builds and artifacts remain user-owned.
 docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
     --env HOME=/work --env WORMEDIT_BUILD_JOBS="$jobs" \

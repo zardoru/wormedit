@@ -1,5 +1,6 @@
 #include <wormedit/formats/export_cut_audio.h>
 #include <wormedit/audio/slice_render.h>
+#include <wormedit/audio/stream_encoder.h>
 #include <wormedit/core/atomic_file_storage.h>
 #include <wormedit/core/export_cut_frames.h>
 #include <wormedit/core/timing.h>
@@ -42,7 +43,8 @@ auto source_evidence(const song_document_t& song, asset_id_t id, const std::file
         return std::unexpected("Export cut audio has unknown or empty decoded geometry");
     return export_cut_source_t{.asset = id, .native_sample_rate = info->source_sample_rate,
         .native_frame_count = info->source_frame_count, .output_frame_count = info->output_frame_count,
-        .source_path = asset->source_path};
+        .source_path = asset->source_path,
+        .bitrate_bits_per_second = audio::stream_encoder_t::source_bitrate(source_path(*asset, root))};
 }
 
 void include_custom_note_assets(const song_document_t& song, const chart_document_t& chart,
@@ -115,7 +117,8 @@ auto write_bytes(std::FILE* file, const std::string& bytes) -> bool {
     return !bytes.empty() && std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
 }
 
-auto write_interval(source_reader_t& reader, std::FILE* file, const export_cut_frame_interval_t& interval)
+auto write_interval(source_reader_t& reader, std::FILE* file, audio::stream_encoder_t* encoder,
+    const export_cut_frame_interval_t& interval)
     -> render_step_t {
     std::array<float, audio::maximum_read_frames * 2> output{};
     auto cursor = interval.begin_frame;
@@ -126,8 +129,10 @@ auto write_interval(source_reader_t& reader, std::FILE* file, const export_cut_f
             if (!frame) return std::unexpected(slice_span_render_payload_t::from(frame.error()));
             std::copy(frame->begin(), frame->end(), output.begin() + static_cast<std::ptrdiff_t>(index * 2));
         }
-        const auto bytes = audio::encode_wav_float32_data(std::span{output}.first(count * 2));
-        if (!write_bytes(file, bytes)) return std::unexpected(slice_span_render_payload_t::from("Cannot write finite export cut PCM"));
+        const auto pcm = std::span{output}.first(count * 2);
+        const auto written = encoder ? encoder->write(pcm, reader.stop)
+            : write_bytes(file, audio::encode_wav_float32_data(pcm));
+        if (!written) return std::unexpected(slice_span_render_payload_t::from("Cannot encode export cut audio"));
         cursor += count;
     }
     return {};
@@ -192,15 +197,22 @@ auto render_plan(const song_document_t& song, const export_cut_audio_plan_t& pla
     auto file = open_exclusive_file(path);
     if (!file) return std::unexpected(slice_span_render_payload_t::from("Cannot exclusively create cut audio: " + path.string(), plan.asset));
     files.paths.push_back(path);
-    if (!write_bytes(file.get(), header)) return std::unexpected(slice_span_render_payload_t::from("Cannot write cut WAV header", plan.asset));
+    audio::stream_encoder_t encoder;
+    const auto compressed = plan.encoding.codec != export_audio_codec_t::wav;
+    if (compressed) {
+        file.reset();
+        if (!encoder.open(path, plan.encoding, export_cut_render_sample_rate))
+            return std::unexpected(slice_span_render_payload_t::from("Cannot initialize cut audio encoder (MP3 requires FFmpeg with libmp3lame)", plan.asset));
+    } else if (!write_bytes(file.get(), header))
+        return std::unexpected(slice_span_render_payload_t::from("Cannot write cut WAV header", plan.asset));
     source_reader_t reader{.decoder = decoder, .frame_count = plan.source.output_frame_count, .stop = options.stop};
     for (const auto& interval : frames.value.kept_intervals(0, *length)) {
-        auto written = write_interval(reader, file.get(), interval);
+        auto written = write_interval(reader, file.get(), compressed ? &encoder : nullptr, interval);
         if (!written) return written;
     }
     const auto tail = reader.frame(plan.source.output_frame_count - 1);
     if (!tail) return std::unexpected(slice_span_render_payload_t::from(tail.error(), plan.asset));
-    if (std::fclose(file.release()) != 0)
+    if (compressed ? !encoder.finish() : std::fclose(file.release()) != 0)
         return std::unexpected(slice_span_render_payload_t::from("Cannot finish cut audio file", plan.asset));
     return {};
 }
@@ -236,7 +248,8 @@ auto render_export_cut_audio_plans(const song_document_t& song, std::span<const 
     rendered_files_t files;
     for (const auto& plan : plans) {
         if (options.stop.stop_requested()) return slice_span_render_payload_t::from("Export cut rendering cancelled");
-        if (!plain_filename(plan.filename) || !names.insert(plan.filename).second)
+        if (!plan.encoding.is_valid() || !plain_filename(plan.filename) || !names.insert(plan.filename).second ||
+            std::filesystem::path{plan.filename}.extension() != plan.encoding.extension())
             return slice_span_render_payload_t::from("Invalid or duplicate cut audio filename", plan.asset);
         auto rendered = render_plan(song, plan, timeline, options, files);
         if (!rendered) return std::move(rendered.error());

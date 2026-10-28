@@ -44,6 +44,7 @@ struct conversion_request_t {
     std::string bms_output_extension;
     // Independent of target_profile's existing BMS lane-map selection.
     std::optional<bms_export_profile_t> bms_profile;
+    export_audio_settings_t audio;
 };
 
 enum class conversion_stage_t {

@@ -3,6 +3,7 @@
 #include "common.h"
 #include "catalog.h"
 #include <wormedit/core/vocabulary.h>
+#include <wormedit/core/export_audio.h>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -276,6 +277,7 @@ struct project_output_group_view_t {
     wormedit::existing_files_policy_t existing_files{};
     std::optional<wormedit::stepmania_export_policy_t> stepmania;
     bool flatten_bms_branches{};
+    wormedit::export_audio_settings_t audio;
     std::vector<output_plan_row_view_t> plan_rows;
     bool plan_rows_truncated{};
     std::vector<output_diagnostic_row_view_t> diagnostics;
@@ -316,6 +318,7 @@ struct project_output_group_action_t {
     wormedit::existing_files_policy_t existing_files{};
     std::optional<wormedit::stepmania_export_policy_t> stepmania;
     bool flatten_bms_branches{};
+    wormedit::export_audio_settings_t audio;
     std::vector<wormedit::chart_id_t> chart_ids;
     auto operator==(const project_output_group_action_t&) const -> bool = default;
 };

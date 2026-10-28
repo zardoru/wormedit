@@ -632,7 +632,7 @@ auto cut_grid(const chart_document_t& chart, const timing_index_t& timing, trans
         if (!begin || !end) return {};
         const auto first = checked_math::checked_lcm(factor, begin->denominator);
         const auto next = first ? checked_math::checked_lcm(*first, end->denominator) : std::nullopt;
-        if (!next || *next > 1'000'000'000 / chart.divisions_per_standard_measure) {
+        if (!next || !checked_math::checked_multiply(chart.divisions_per_standard_measure, *next)) {
             context.report(diagnostic_severity_t::error, diagnostic_code_t::invalid_resolution,
                 "Export cuts exceed the chart's bounded exact row-grid resolution.");
             return {};
@@ -917,7 +917,7 @@ auto cut_music_filename(const export_cut_transform_t& result, asset_id_t id,
     const auto stem = "export-cut-music-" + std::to_string(id.value);
     std::size_t suffix{};
     return names.allocate([&] {
-        const auto filename = stem + (suffix ? "-" + std::to_string(suffix) : "") + ".wav";
+        const auto filename = stem + (suffix ? "-" + std::to_string(suffix) : "") + std::string{context.audio.extension()};
         ++suffix;
         return filename;
     }).generic_string();
@@ -962,45 +962,59 @@ auto append_cut_music(export_cut_transform_t& result, asset_id_t id,
             override = filename;
     }
     if (!refresh_scoped_music(result, original->source_path, filename, context)) return false;
-    result.audio_plans.push_back({.asset = id, .filename = filename, .source = *geometry, .output_frames = count});
+    auto encoding = context.audio;
+    encoding.mp3_bitrate_kbps = encoding.bitrate_for(geometry->bitrate_bits_per_second);
+    result.audio_plans.push_back({.asset = id, .filename = filename, .source = *geometry,
+        .output_frames = count, .encoding = encoding});
     return true;
 }
+auto transform_selected_charts(song_document_t& document, std::span<const chart_id_t> charts,
+    export_cut_detail::transform_context_t& context) -> bool {
+    for (auto& chart : document.charts) {
+        if (!is_selected(chart.id, charts)) continue;
+        context.chart = chart.id;
+        auto transformed = export_cut_detail::transform_chart(chart, context);
+        if (!transformed) {
+            if (!diagnostic_queries::has_errors(context.diagnostics)) context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
+                "This chart cannot be represented exactly after applying export cuts.");
+            return false;
+        }
+        chart = std::move(*transformed);
+    }
+    for (auto& owner : document.prepared_bms_programs) {
+        if (!owner || !is_selected(owner->difficulty(), charts)) continue;
+        context.chart = owner->difficulty();
+        auto transformed = export_cut_detail::transform_scoped(*owner, context);
+        if (!transformed) {
+            if (!diagnostic_queries::has_errors(context.diagnostics)) context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
+                "This chart cannot be represented exactly after applying export cuts.");
+            return false;
+        }
+        owner = std::move(transformed);
+    }
+    return true;
+}
+
 }
 auto export_cut_transform_t::from(const song_document_t& source, std::span<const chart_id_t> charts,
-                                   std::span<const export_cut_source_t> sources)
+                                   std::span<const export_cut_source_t> sources, export_audio_settings_t audio)
     -> export_cut_transform_outcome_t {
     export_cut_transform_outcome_t outcome{};
+    if (!audio.is_valid()) {
+        outcome.diagnostics.push_back({.severity = diagnostic_severity_t::error,
+            .code = diagnostic_code_t::invalid_rational, .message = "Invalid export audio encoding settings."});
+        return outcome;
+    }
     const auto built = export_cut_timeline_t::from(source.export_cuts);
     for (const auto& diagnostic : built.diagnostics)
         outcome.diagnostics.push_back({.severity = diagnostic.severity, .code = diagnostic.code,
             .message = diagnostic.message, .location = {.object = diagnostic.object}});
     if (!built.ok()) return outcome;
     export_cut_detail::transform_context_t context{.source = source, .timeline = built.value,
-        .sources = sources, .diagnostics = outcome.diagnostics};
+        .sources = sources, .diagnostics = outcome.diagnostics, .audio = audio};
     export_cut_transform_t prepared{.document = source};
     if (source.export_cuts.empty()) { outcome.value = std::move(prepared); return outcome; }
-    for (auto& chart : prepared.document.charts) {
-        if (!is_selected(chart.id, charts)) continue;
-        context.chart = chart.id;
-        auto transformed = export_cut_detail::transform_chart(chart, context);
-        if (!transformed) {
-            if (outcome.ok()) context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
-                "This chart cannot be represented exactly after applying export cuts.");
-            return outcome;
-        }
-        chart = std::move(*transformed);
-    }
-    for (auto& owner : prepared.document.prepared_bms_programs) {
-        if (!owner || !is_selected(owner->difficulty(), charts)) continue;
-        context.chart = owner->difficulty();
-        auto transformed = export_cut_detail::transform_scoped(*owner, context);
-        if (!transformed) {
-            if (outcome.ok()) context.report(diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
-                "This chart cannot be represented exactly after applying export cuts.");
-            return outcome;
-        }
-        owner = std::move(transformed);
-    }
+    if (!transform_selected_charts(prepared.document, charts, context)) return outcome;
     context.chart.reset();
     for (const auto asset : music_assets(source, charts, context)) if (!append_cut_music(prepared, asset, context)) return outcome;
     export_cut_detail::rewrite_preview(prepared.document.metadata.preview, built.value);

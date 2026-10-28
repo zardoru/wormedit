@@ -97,6 +97,8 @@ enum class editor_inline_editor_kind_t {
     bookmark,
     section,
     bar_line,
+    volume_event,
+    sample_set_event,
 };
 
 struct editor_hover_index_entry_t {

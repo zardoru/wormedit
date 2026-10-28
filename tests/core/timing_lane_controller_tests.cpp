@@ -1,9 +1,11 @@
+#include <wormedit/core/chart_clipboard.h>
 #include "../support/stale_action_assertions.h"
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/scroll_speed_editor.h>
 #include <wormedit/core/timing_lane_controller.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <tuple>
 
 #include <algorithm>
 #include <array>
@@ -1257,4 +1259,84 @@ TEST_CASE("Malformed non-stop pauses keep the group-move occupancy policy",
     CHECK_FALSE(result);
     CHECK(has_code(result, diagnostic_code_t::collision));
     CHECK(history.undo.empty());
+}
+
+namespace {
+auto sample_control_history() -> document_history_t {
+    auto history = document_history_t::from(timing_song());
+    auto volume = begin(history, timing_lane_kind_t::volume, 120,
+        timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = 35});
+    REQUIRE(apply_proposal(history, volume, false));
+    auto set = begin(history, timing_lane_kind_t::sample_set, 120,
+        timing_sample_control_value_t<timing_lane_kind_t::sample_set>{.value = 2});
+    REQUIRE(apply_proposal(history, set, false));
+    return history;
+}
+void check_sample_control_pair(const chart_document_t& chart, std::size_t count, std::uint64_t row) {
+    REQUIRE(chart.volumes.size() == count);
+    REQUIRE(chart.sample_sets.size() == count);
+    CHECK(std::tuple{chart.volumes.back().position, chart.volumes.back().value,
+                     chart.sample_sets.back().position, chart.sample_sets.back().value} ==
+          std::tuple{pos(row), 35, pos(row), 2});
+}
+void check_sample_control_paste_collision(document_history_t& history, const chart_clipboard_t& clipboard) {
+    const auto volumes = history.document.charts.front().volumes;
+    const auto sets = history.document.charts.front().sample_sets;
+    const auto revision = history.document.revision;
+    CHECK_FALSE(paste_chart_clipboard(history, chart_id_t{2}, clipboard, pos(480)));
+    CHECK(history.document.charts.front().volumes == volumes);
+    CHECK(history.document.charts.front().sample_sets == sets);
+    CHECK(history.document.revision == revision);
+}
+void check_sample_control_delete_undo(document_history_t& history,
+                                     std::span<const timing_lane_event_ref_t> selection) {
+    REQUIRE(delete_timing_lane_event_group(history, chart_id_t{2}, selection, false));
+    CHECK(history.document.charts.front().volumes.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().volumes.size() == 2);
+}
+void check_invalid_sample_control_values(document_history_t& history) {
+    CHECK_FALSE(begin(history, timing_lane_kind_t::volume, 240,
+        timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = 101}).value);
+    CHECK_FALSE(begin(history, timing_lane_kind_t::sample_set, 240,
+        timing_sample_control_value_t<timing_lane_kind_t::sample_set>{.value = 4}).value);
+}
+}
+
+TEST_CASE("osu sample controls share timing selection moves clipboard and deletion",
+          "[core][sample-controls][timing-lane-controller]") {
+    auto history = sample_control_history();
+    const auto volume_id = history.document.charts.front().volumes.front().id;
+    const auto set_id = history.document.charts.front().sample_sets.front().id;
+    const std::array selection{timing_lane_event_ref_t{timing_lane_kind_t::volume, volume_id},
+        timing_lane_event_ref_t{timing_lane_kind_t::sample_set, set_id}};
+    REQUIRE(move_timing_lane_event_group(history, chart_id_t{2}, selection, 120, false));
+    check_sample_control_pair(history.document.charts.front(), 1, 240);
+    editor_interaction_state_t state{.chart = chart_id_t{2},
+        .selected_objects = {{editor_selection_object_kind_t::volume_event, volume_id},
+                             {editor_selection_object_kind_t::sample_set_event, set_id}}};
+    const auto copied = chart_clipboard_t::from(history.document, state, history.document.revision);
+    REQUIRE(copied);
+    REQUIRE(copied->objects.size() == 2);
+    REQUIRE(paste_chart_clipboard(history, chart_id_t{2}, *copied, pos(480)));
+    check_sample_control_pair(history.document.charts.front(), 2, 480);
+    CHECK(history.document.charts.front().volumes.back().id != volume_id);
+    check_sample_control_paste_collision(history, *copied);
+    check_sample_control_delete_undo(history, selection);
+}
+
+TEST_CASE("osu sample-control values and per-lane row uniqueness are document invariants",
+          "[core][sample-controls]") {
+    auto history = document_history_t::from(timing_song());
+    auto valid = begin(history, timing_lane_kind_t::volume, 120,
+        timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = 0});
+    REQUIRE(apply_proposal(history, valid, false));
+    CHECK_FALSE(begin(history, timing_lane_kind_t::volume, 120,
+        timing_sample_control_value_t<timing_lane_kind_t::volume>{.value = 50}).value);
+    check_invalid_sample_control_values(history);
+    auto chart = history.document.charts.front();
+    chart.volumes.push_back({.id = {99}, .position = pos(120), .value = 70});
+    CHECK(std::ranges::any_of(validate_sample_controls(chart), [](const auto& diagnostic) {
+        return diagnostic.code == diagnostic_code_t::collision;
+    }));
 }

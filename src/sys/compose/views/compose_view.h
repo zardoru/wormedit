@@ -93,7 +93,7 @@ struct compose_bga_move_preview_input_t {
     wormedit::snap_grid_t snap = {}) -> std::optional<std::uint64_t>;
 
 inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
-inline constexpr std::size_t compose_timing_lane_count{8};
+inline constexpr std::size_t compose_timing_lane_count{wormedit::timing_lane_kind_count};
 // Core scene construction work budget, independent of frontend list storage.
 inline constexpr std::size_t compose_scene_grid_work_limit{16384};
 inline constexpr double compose_bgm_lane_width_pixels{36.0};
@@ -181,7 +181,8 @@ struct compose_static_layout_key_t {
     std::uint64_t project{}, chart{}, revision{};
     double viewport_width{}, zoom{}, field_left{}, field_right{}, bgm_scroll{};
     bool bga_visible{};
-    std::uint8_t bga_mask{}, timing_mask{};
+    std::uint8_t bga_mask{};
+    std::uint16_t timing_mask{};
     bool timing_focus{}, downscroll{}, lane_legend{};
     auto operator==(const compose_static_layout_key_t&) const -> bool = default;
     static auto from(const wormedit::ui::compose_view_t& view) -> compose_static_layout_key_t {
@@ -774,7 +775,7 @@ struct application_command_state_t {
             double compose_editor_right_pixels{};
             std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
             std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
-            std::uint8_t compose_timing_lane_visibility_mask{0xff};
+            std::uint16_t compose_timing_lane_visibility_mask{wormedit::default_timing_lane_mask};
             bool compose_timing_focus{};
             bool edit_snap_enabled{true};
             // Shared by the edit grid and Quantize (see wormedit::snap_grid_t).
@@ -836,7 +837,7 @@ struct application_command_state_t {
 
 // Timing lane mask in force for drawing, hit testing, and geometry.
 [[nodiscard]] inline auto effective_compose_timing_lane_mask(
-    const application_command_state_t& state) -> std::uint8_t {
+    const application_command_state_t& state) -> std::uint16_t {
     return wormedit::ui::compose_effective_timing_lane_mask(
         compose_mode_of(state), state.project.compose_view.compose_timing_lane_visibility_mask);
 }
@@ -874,7 +875,7 @@ auto compose_project_y(long double row, double pixels_per_row, double scroll,
 auto compose_editor_layout_width(double viewport_width, double editor_right) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::uint8_t timing_lane_mask)
+                               std::uint16_t timing_lane_mask)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t;

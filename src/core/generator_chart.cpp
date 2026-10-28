@@ -179,6 +179,7 @@ auto check_materialization_ids(document_command_transaction_t& transaction,
 }
 auto can_remove_chart(const chart_document_t& chart, bool owns_sv) -> bool {
     return chart.semantic_layers.empty() && chart.sound_layer_defaults.empty() &&
+           chart.volumes.empty() && chart.sample_sets.empty() &&
            chart.speeds.empty() && (owns_sv || chart.sv_recipes.empty()) && chart.kiai.empty() &&
            chart.timing_anchors.empty() && chart.bookmarks.empty() && chart.sections.empty() &&
            chart.bga_events.empty() && chart.sound_channels.empty() &&

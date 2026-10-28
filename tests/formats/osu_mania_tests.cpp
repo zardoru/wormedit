@@ -1,3 +1,5 @@
+#include <nlohmann/json.hpp>
+#include <tuple>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/core/timing.h>
@@ -2253,4 +2255,82 @@ TEST_CASE("osu!mania import aligns a millisecond-rounded red line with its notes
         CAPTURE(times[index]);
         CHECK(written.value->find(line) != std::string::npos);
     }
+}
+
+namespace {
+void check_sample_control_context(const wormedit::chart_document_t& chart, wormedit::local_position_t position,
+                                  wormedit::osu_sample_set_t bank, std::int64_t volume) {
+    const auto context = wormedit::osu_sample_context_index_t::from(chart);
+    REQUIRE(context);
+    const auto value = context->at(position);
+    CHECK(std::tuple{value.normal_set, value.volume} == std::tuple{bank, volume});
+}
+void check_native_sample_controls(const wormedit::song_document_t& song) {
+    const auto loaded = native_reopen(song);
+    const auto& expected = song.charts.front();
+    CHECK(loaded.charts.front().volumes == expected.volumes);
+    CHECK(loaded.charts.front().sample_sets == expected.sample_sets);
+}
+}
+
+TEST_CASE("osu sample-control lanes import unique rows and export inherited sample-only changes",
+          "[formats][osu][sample-controls]") {
+    using namespace wormedit;
+    auto imported = parse_inline(timing_fixture(
+        "0,500,4,1,2,60,1,0\n500,-50,4,2,3,80,0,1\n500,-25,4,3,4,70,0,1\n",
+        "64,192,1000,1,2,0:0:0:0:\n"));
+    REQUIRE(imported.value);
+    auto& chart = imported.value->charts.front();
+    CHECK(std::pair{chart.volumes.size(), chart.sample_sets.size()} == std::pair{2U, 2U});
+    const auto note_position = chart.measures.front().notes.front().position;
+    check_sample_control_context(chart, note_position, osu_sample_set_t::drum, 70);
+    chart.volumes.push_back({.id = {900}, .position = note_position, .value = 0});
+    chart.sample_sets.push_back({.id = {901}, .position = note_position, .value = 2});
+    const auto written = write_osu_mania(*imported.value);
+    REQUIRE(written.value);
+    // One green line combines volume + set, preserving active 4x SV, index and kiai.
+    CHECK(written.value->find("1000,-25,4,2,4,0,0,1") != std::string::npos);
+    check_native_sample_controls(*imported.value);
+}
+
+TEST_CASE("Deleting every sample-control point does not revive retained import values",
+          "[formats][osu][sample-controls]") {
+    using namespace wormedit;
+    auto imported = parse_inline(timing_fixture("0,500,4,3,4,20,1,0\n", "64,192,500,1,0\n"));
+    REQUIRE(imported.value);
+    auto& chart = imported.value->charts.front();
+    chart.volumes.clear();
+    chart.sample_sets.clear();
+    const auto loaded = native_reopen(*imported.value);
+    const auto position = chart.measures.front().notes.front().position;
+    check_sample_control_context(loaded.charts.front(), position, osu_sample_set_t::normal, 100);
+    const auto context = osu_sample_context_index_t::from(loaded.charts.front());
+    REQUIRE(context);
+    CHECK(context->at(position).custom_index == 4);
+    const auto written = write_osu_mania(loaded);
+    REQUIRE(written.value);
+    CHECK(written.value->find("0,500,4,0,4,100,1,0") != std::string::npos);
+}
+
+TEST_CASE("Native schema 26 migration lifts retained osu sample fields with fresh point identities",
+          "[formats][osu][sample-controls][migration]") {
+    using namespace wormedit;
+    const auto imported = parse_inline(timing_fixture(
+        "0,500,4,2,3,60,1,0\n500,-50,4,3,4,25,0,1\n", "64,192,1000,1,0\n"));
+    REQUIRE(imported.value);
+    const auto written = write_native_project(*imported.value);
+    REQUIRE(written.value);
+    auto legacy = nlohmann::json::parse(*written.value);
+    legacy["document"]["schema_version"] = 26U;
+    auto& chart = legacy["document"]["charts"][0];
+    chart.erase("volumes");
+    chart.erase("sample_sets");
+    const auto migrated = parse_native_project(legacy.dump());
+    REQUIRE(migrated.value);
+    const auto& loaded = migrated.value->charts.front();
+    CHECK(std::pair{loaded.volumes.size(), loaded.sample_sets.size()} == std::pair{2U, 2U});
+    CHECK(validate_document(*migrated.value).empty());
+    check_sample_control_context(loaded, loaded.measures.front().notes.front().position,
+        osu_sample_set_t::drum, 25);
+    CHECK(migrated.value->schema_version == 27);
 }

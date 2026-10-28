@@ -812,7 +812,7 @@ auto compose_editor_layout_width(double viewport_width, double editor_right) -> 
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::uint8_t timing_lane_mask)
+                               std::uint16_t timing_lane_mask)
     -> compose_horizontal_layout_t {
     constexpr double bga_pane_width = 48.0;
     const auto desired_timing_right = compose_measure_rail_width_pixels +
@@ -1955,7 +1955,7 @@ auto selected_hitsound(const wormedit::chart_document_t& chart,
 void populate_compose_hitsounds(const wormedit::chart_document_t& chart,
     const wormedit::editor_interaction_state_t& state, wormedit::ui::compose_view_t& view,
     compose_scene_cache_t& cache) {
-    const auto selected = view.resource_paint_mode_active ? std::vector<wormedit::object_id_t>{}
+    const auto selected = view.resource_paint_mode_active || view.note_paint_mode_active ? std::vector<wormedit::object_id_t>{}
         : wormedit::editor_quantize_selection(state).notes;
     if (selected.empty()) {
         const std::array samples{state.armed_hitsample.value_or(wormedit::osu_hitsample_t{})};

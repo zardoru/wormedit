@@ -1417,7 +1417,8 @@ constexpr std::array<wormedit::ui::lucide::Glyph, wormedit::timing_lane_kind_cou
     wormedit::ui::lucide::Glyph::metronome, wormedit::ui::lucide::Glyph::waves_horizontal,
     wormedit::ui::lucide::Glyph::gauge, wormedit::ui::lucide::Glyph::pause,
     wormedit::ui::lucide::Glyph::hourglass, wormedit::ui::lucide::Glyph::fast_forward,
-    wormedit::ui::lucide::Glyph::flame, wormedit::ui::lucide::Glyph::anchor};
+    wormedit::ui::lucide::Glyph::flame, wormedit::ui::lucide::Glyph::anchor,
+    wormedit::ui::lucide::Glyph::audio_lines, wormedit::ui::lucide::Glyph::music_2};
 
 static void draw_compose_timing_header(const ComposePaintContext& paint, std::size_t index,
                                         struct nk_rect lane, nk_color tint) {
@@ -2109,6 +2110,33 @@ static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& pa
     }
 }
 
+namespace {
+struct field_hitsound_stroke_t {
+    const ComposePaintContext& paint;
+    struct nk_rect bounds;
+    nk_color tint;
+    wormedit::ui::field::layer_t layer{2};
+    void line(float x0, float y0, float x1, float y1) {
+        field_line(paint, bounds.x + x0*bounds.w/24, bounds.y + y0*bounds.h/24,
+            bounds.x + x1*bounds.w/24, bounds.y + y1*bounds.h/24, std::max(1.0f, bounds.h/14), tint, layer);
+    }
+    void path(std::span<const wormedit::ui::hitsound_icons::point_t> points) {
+        for (std::size_t index = 1; index < points.size(); ++index)
+            line(points[index-1][0], points[index-1][1], points[index][0], points[index][1]);
+    }
+    void circle(float x, float y, float radius) {
+        for (int index = 0; index < 12; ++index) {
+            const auto a = static_cast<float>(index)*6.2831853f/12;
+            const auto b = static_cast<float>(index+1)*6.2831853f/12;
+            line(x+radius*std::cos(a), y+radius*std::sin(a), x+radius*std::cos(b), y+radius*std::sin(b));
+        }
+    }
+};
+
+
+
+}
+
 static void draw_compose_timing_markers(const ComposePaintContext& paint,
                                         const ComposeTimingLaneLayout& layout) {
     const auto* hovered = tile_renderer_override ? nullptr : compose_hovered_timing_marker(paint);
@@ -2129,6 +2157,14 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
                                         : compose(ComposeColor::timing_border);
         field_stroke_rect(paint, bounds, 1.0f, hovered == &marker ? 2.0f : 1.5f,
                        outline, 4);
+        if (marker.sample_set) {
+            const auto side = std::min(bounds.h - 2, bounds.w - 4);
+            field_hitsound_stroke_t stroke{.paint = paint,
+                .bounds = nk_rect(bounds.x + (bounds.w-side)*.5f, bounds.y + (bounds.h-side)*.5f, side, side),
+                .tint = layout.colors[marker_lane_ordinal], .layer = 4};
+            wormedit::ui::hitsound_icons::draw(stroke, wormedit::ui::hitsound_icons::sample_set_shape(*marker.sample_set));
+            continue;
+        }
         if (marker.short_label.empty()) continue;
         const auto* font = paint.context->style.font;
         const auto length = static_cast<int>(marker.short_label.size());
@@ -2725,37 +2761,6 @@ static void draw_compose_note_sound_dot(const ComposePaintContext& paint, struct
 }
 
 namespace {
-struct field_hitsound_stroke_t {
-    const ComposePaintContext& paint;
-    struct nk_rect bounds;
-    nk_color tint;
-    void line(float x0, float y0, float x1, float y1) {
-        field_line(paint, bounds.x + x0*bounds.w/24, bounds.y + y0*bounds.h/24,
-            bounds.x + x1*bounds.w/24, bounds.y + y1*bounds.h/24, std::max(1.0f, bounds.h/14), tint, 2);
-    }
-    void path(std::span<const wormedit::ui::hitsound_icons::point_t> points) {
-        for (std::size_t index = 1; index < points.size(); ++index)
-            line(points[index-1][0], points[index-1][1], points[index][0], points[index][1]);
-    }
-    void circle(float x, float y, float radius) {
-        for (int index = 0; index < 12; ++index) {
-            const auto a = static_cast<float>(index)*6.2831853f/12;
-            const auto b = static_cast<float>(index+1)*6.2831853f/12;
-            line(x+radius*std::cos(a), y+radius*std::sin(a), x+radius*std::cos(b), y+radius*std::sin(b));
-        }
-    }
-};
-
-auto sample_set_icon(wormedit::osu_sample_set_t set) -> wormedit::ui::hitsound_icons::shape_t {
-    using enum wormedit::ui::hitsound_icons::shape_t;
-    switch (set) {
-    case wormedit::osu_sample_set_t::automatic:
-    case wormedit::osu_sample_set_t::normal: return normal;
-    case wormedit::osu_sample_set_t::soft: return soft;
-    case wormedit::osu_sample_set_t::drum: return drum;
-    }
-    return normal;
-}
 
 void draw_compose_note_hitsound(const ComposePaintContext& paint, const wormedit::ui::compose_note_view_t& note,
                                 struct nk_rect tile, struct nk_color fill) {
@@ -2764,9 +2769,9 @@ void draw_compose_note_hitsound(const ComposePaintContext& paint, const wormedit
     const auto& sample = *note.hitsound;
     std::array<shape_t, 5> icons{};
     std::size_t count{};
-    icons[count++] = sample_set_icon(sample.resolved_normal_set);
+    icons[count++] = wormedit::ui::hitsound_icons::sample_set_shape(sample.resolved_normal_set);
     if (sample.additions != 0 && sample.resolved_addition_set != sample.resolved_normal_set)
-        icons[count++] = sample_set_icon(sample.resolved_addition_set);
+        icons[count++] = wormedit::ui::hitsound_icons::sample_set_shape(sample.resolved_addition_set);
     if (sample.additions & 2) icons[count++] = shape_t::whistle;
     if (sample.additions & 4) icons[count++] = shape_t::cymbal;
     if (sample.additions & 8) icons[count++] = shape_t::clap;
@@ -2775,7 +2780,8 @@ void draw_compose_note_hitsound(const ComposePaintContext& paint, const wormedit
     const auto tint = note_label_is_light(fill) ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255);
     auto x = tile.x + (tile.w-side*static_cast<float>(count))*.5f;
     for (std::size_t index = 0; index < count; ++index) {
-        field_hitsound_stroke_t stroke{paint, nk_rect(x, tile.y+(tile.h-side)*.5f, side, side), tint};
+        field_hitsound_stroke_t stroke{.paint = paint,
+            .bounds = nk_rect(x, tile.y+(tile.h-side)*.5f, side, side), .tint = tint};
         wormedit::ui::hitsound_icons::draw(stroke, icons[index]);
         x += side;
     }

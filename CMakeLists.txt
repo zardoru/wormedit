@@ -154,6 +154,7 @@ add_library(wormedit_core
     src/core/resource_assignment.cpp
     src/core/resource_file_copy.cpp
     src/core/scroll_speed_editor.cpp
+    src/core/sample_control_editor.cpp
     src/core/semantic_layer_editor.cpp
     src/core/shortcut_profile_storage.cpp
     src/core/atomic_file_storage.cpp

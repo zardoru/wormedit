@@ -717,6 +717,8 @@ auto transform_chart(const chart_document_t& original, transform_context_t& cont
     if (!edit.prepare_measures() || !edit.rewrite_objects()) return {};
     edit.rewrite_states(edit.result.bpms);
     edit.rewrite_states(edit.result.scrolls);
+    edit.rewrite_states(edit.result.volumes);
+    edit.rewrite_states(edit.result.sample_sets);
     edit.rewrite_states(edit.result.kiai);
     edit.rewrite_states(edit.result.lane_layouts);
     edit.rewrite_pauses();

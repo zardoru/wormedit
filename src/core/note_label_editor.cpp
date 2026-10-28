@@ -90,6 +90,7 @@ auto index_requested_notes(chart_document_t& chart,
         scan.scan_values(chart.bgm_source_lanes) && scan.scan_values(chart.lane_layouts) &&
         scan.scan_values(chart.bpms) && scan.scan_values(chart.pauses) &&
         scan.scan_values(chart.warps) && scan.scan_values(chart.scrolls) &&
+        scan.scan_values(chart.volumes) && scan.scan_values(chart.sample_sets) &&
         scan.scan_values(chart.speeds) && scan.scan_values(chart.kiai) &&
         scan.scan_values(chart.timing_anchors) && scan.scan_values(chart.bookmarks) &&
         scan.scan_values(chart.sections) && scan.scan_values(chart.bga_events) &&

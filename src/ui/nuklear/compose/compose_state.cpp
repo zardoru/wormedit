@@ -232,6 +232,8 @@ auto inline_timing_number_allowed(wormedit::timing_lane_kind_t lane, inline_timi
     case wormedit::timing_lane_kind_t::delay: return value.numerator >= 0;
     case wormedit::timing_lane_kind_t::warp: return value.numerator > 0 && value.denominator == 1;
     case wormedit::timing_lane_kind_t::anchor: return value.numerator >= 0 && value.denominator == 1;
+    case wormedit::timing_lane_kind_t::volume: return value.numerator >= 0 && value.numerator <= 100 && value.denominator == 1;
+    case wormedit::timing_lane_kind_t::sample_set: return value.numerator >= 0 && value.numerator <= 3 && value.denominator == 1;
     case wormedit::timing_lane_kind_t::scroll: return true;
     case wormedit::timing_lane_kind_t::kiai: return false;
     }

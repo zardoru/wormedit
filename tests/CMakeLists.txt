@@ -941,6 +941,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         sys/timing_lane_ui_tests.cpp
+        ../src/sys/app/application_timing_stage.cpp
         ../src/sys/compose/views/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
         sys/presentation_latency_tests.cpp
@@ -1143,7 +1144,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 endif()
 
 add_executable(wormedit_compose_mode_tests ui/compose_mode_tests.cpp)
-target_include_directories(wormedit_compose_mode_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_include_directories(wormedit_compose_mode_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
 target_link_libraries(wormedit_compose_mode_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(wormedit_compose_mode_tests
     TEST_PREFIX "frontend-state."

@@ -207,7 +207,7 @@ TEST_CASE("Schema 25 upgrades preserve explicitly authored flat Chart boundaries
     encoded["document"]["schema_version"] = 25;
     const auto parsed = parse_native_project(encoded.dump());
     REQUIRE(parsed.value);
-    CHECK(parsed.value->schema_version == 26);
+    CHECK(parsed.value->schema_version == wormedit::current_document_schema_version);
     CHECK(parsed.value->prepared_bms_programs.front()->prepared().program == song.prepared_bms_programs.front()->prepared().program);
 }
 TEST_CASE("Opaque scoped Text retains non UTF8 bytes and its encoding", "[bms-program-migration]") {

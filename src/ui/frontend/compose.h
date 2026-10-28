@@ -747,6 +747,7 @@ struct compose_timing_marker_view_t {
     bool fixed_initial{};
     bool selected{};
     auto operator==(const compose_timing_marker_view_t&) const -> bool = default;
+    std::optional<osu_sample_set_t> sample_set;
 };
 } // namespace wormedit::ui
 
@@ -1387,7 +1388,7 @@ struct compose_view_t {
     /* Interpolated speed curve; same format as the SV graph, drawn in the speed lane. */
     std::vector<wormedit::ui::compose_sv_graph_point_view_t> speed_graph_points;
     double speed_graph_one_fraction{};
-    uint8_t timing_lane_visibility_mask{};
+    uint16_t timing_lane_visibility_mask{};
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.
     bool timing_focus{};

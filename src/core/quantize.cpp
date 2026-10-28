@@ -402,6 +402,8 @@ auto transform_chart_positions(chart_document_t& chart, const quantize_request_t
     transform_positioned(chart.bpms);
     transform_positioned(chart.pauses);
     transform_positioned(chart.scrolls);
+    transform_positioned(chart.volumes);
+    transform_positioned(chart.sample_sets);
     transform_positioned(chart.speeds);
     transform_positioned(chart.kiai);
     transform_positioned(chart.timing_anchors);

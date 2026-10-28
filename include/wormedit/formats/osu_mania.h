@@ -120,13 +120,19 @@ struct osu_sample_context_index_t {
     struct entry_t {
         std::uint64_t row{};
         std::size_t source_order{};
-        osu_sample_context_t sample;
+        std::int64_t custom_index{};
     };
     measure_index_t measures;
     osu_sample_context_t initial;
     std::vector<entry_t> entries;
+    std::vector<std::pair<std::uint64_t, std::int64_t>> volumes;
+    std::vector<std::pair<std::uint64_t, std::int64_t>> sample_sets;
+    [[nodiscard]] auto fields_at(local_position_t position) const -> std::array<std::int64_t, 3>;
     [[nodiscard]] static auto from(const chart_document_t& chart) -> std::optional<osu_sample_context_index_t>;
     [[nodiscard]] auto at(local_position_t position) const -> osu_sample_context_t;
 };
+
+// Lift retained timing-line sample fields into editable, unique row points on import or migration.
+[[nodiscard]] auto materialize_osu_sample_controls(chart_document_t& chart) -> bool;
 
 } // namespace wormedit

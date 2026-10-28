@@ -69,6 +69,8 @@ template <class Chart, class Visit> void visit_timing(Chart& chart, Visit& visit
     visit_point_events(chart.bpms, visit);
     visit_point_events(chart.pauses, visit);
     visit_point_events(chart.scrolls, visit);
+    visit_point_events(chart.volumes, visit);
+    visit_point_events(chart.sample_sets, visit);
     visit_point_events(chart.speeds, visit);
     visit_point_events(chart.kiai, visit);
     visit_point_events(chart.timing_anchors, visit);

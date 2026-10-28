@@ -22,6 +22,8 @@ inline constexpr std::array timing_lanes{
     timing_lane_descriptor_t{timing_lane_kind_t::warp, "WRP", "Warp · skip chart rows", editor_selection_object_kind_t::warp_event},
     timing_lane_descriptor_t{timing_lane_kind_t::kiai, "KIA", "Kiai · highlight sections", editor_selection_object_kind_t::kiai_event},
     timing_lane_descriptor_t{timing_lane_kind_t::anchor, "ANC", "Anchor · timing references", editor_selection_object_kind_t::timing_anchor},
+    timing_lane_descriptor_t{timing_lane_kind_t::volume, "VOL", "Volume · osu! hitsound volume", editor_selection_object_kind_t::volume_event},
+    timing_lane_descriptor_t{timing_lane_kind_t::sample_set, "SET", "Sample set · osu! timing samples", editor_selection_object_kind_t::sample_set_event},
 };
 static_assert(is_catalog_exhaustive(timing_lanes, timing_lane_kind_count));
 static_assert(editor_selection_object_kind_count == timing_lane_kind_count + 6);
@@ -43,6 +45,8 @@ constexpr auto timing_lane_for_selection(editor_selection_object_kind_t kind) ->
     case selection_t::delay_event:
     case selection_t::warp_event:
     case selection_t::kiai_event:
+    case selection_t::volume_event:
+    case selection_t::sample_set_event:
     case selection_t::timing_anchor:
         for (const auto& lane : timing_lanes)
             if (lane.selection_kind == kind) return lane.kind;
@@ -59,6 +63,8 @@ constexpr auto selection_kind_for_timing_lane(timing_lane_kind_t kind) -> std::o
     case timing_lane_kind_t::delay:
     case timing_lane_kind_t::warp:
     case timing_lane_kind_t::kiai:
+    case timing_lane_kind_t::volume:
+    case timing_lane_kind_t::sample_set:
     case timing_lane_kind_t::anchor:
         return timing_lanes[static_cast<std::size_t>(kind)].selection_kind;
     }

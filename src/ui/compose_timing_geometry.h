@@ -15,7 +15,7 @@ inline constexpr double compose_measure_rail_width = 42.0;
 // Numeric lanes fit a sign, five significant digits and a decimal at the
 // normal field font. Boolean Kiai and Anchor lanes keep their compact width.
 inline constexpr std::array<double, wormedit::timing_lane_kind_count> compose_timing_lane_widths{
-    64, 64, 64, 48, 48, 48, 24, 24};
+    64, 64, 64, 48, 48, 48, 24, 24, 48, 36};
 
 // Pointer targets and slice-point tiles use the head; area selection keeps the full tail.
 inline auto compose_bgm_head_bounds(const wormedit::ui::compose_bgm_event_view_t& event) -> wormedit::ui::compose_rect_t {
@@ -27,7 +27,7 @@ inline auto compose_bgm_head_bounds(const wormedit::ui::compose_bgm_event_view_t
     return bounds;
 }
 
-inline auto compose_timing_width(std::uint8_t mask) -> double {
+inline auto compose_timing_width(std::uint16_t mask) -> double {
     double width{};
     for (std::size_t index = 0; index < compose_timing_lane_widths.size(); ++index)
         if (mask & (1U << index)) width += compose_timing_lane_widths[index];

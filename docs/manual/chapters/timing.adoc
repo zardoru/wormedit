@@ -40,13 +40,22 @@ song; the notes follow it.
 |osu!mania kiai time on or off.
 |osu!mania.
 
+|VOL
+|Hitsound volume (0–100%). Zero silences inherited hitsounds.
+|osu!mania.
+
+|SET
+|Sample bank: beatmap default, Normal, Soft or Drum. Points show each bank's glyph.
+|osu!mania.
+
 |Anchor
 |Pins a beat to an exact moment of the song audio; beat fitting pivots on anchors.
 |Wormedit only.
 |===
 
 *Timing Settings* (in the command menu, kbd:[Ctrl+Shift+P]) chooses which timing lanes are shown.
-Hiding a lane only hides it: its events keep working in playback and export.
+Volume and Sample set are hidden by default and can be enabled independently here. Timing focus
+respects these two choices. Hiding a lane only hides it: its events keep working in playback and export.
 
 [#editing-timing-events]
 == Adding and editing timing events
@@ -65,6 +74,18 @@ take a multiplier; *SPD* also takes a transition length.
 tempo, and kbd:[Alt]-click the Anchor lane to add an anchor.
 * *Insert BPM Change* and *Insert Scroll Velocity* in the command menu add an event at the cursor.
 * Select events like notes and press kbd:[Delete] to remove them.
+
+The *VOL* and *SET* lanes hold their value until the next point. Each lane allows one point per
+row. Select, drag, copy, paste and delete their points like other timing markers. Double-click a
+point to change its value; SET uses `0` for the beatmap default, `1` for Normal, `2` for Soft and
+`3` for Drum. Per-note hitsample overrides take precedence over timing-point defaults.
+
+In Draw mode, click SET to place the normal sample set armed in the left hitsound toolbar.
+Changing the toolbar in Draw mode changes the armed value even when notes remain selected.
+Click VOL to add the volume currently in force at that row, then double-click to change it.
+Sample-only changes export as inherited timing lines carrying the current SV and effects;
+changes coincident with BPM/SV points share their sample fields. Addition sample sets remain
+per-note overrides in the hitsound toolbar.
 
 For BPM, stop, delay and warp edits, musical positions stay fixed by default.
 *Keep audio time of notes* instead repositions playable notes, both hold ends,

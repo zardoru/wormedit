@@ -1,3 +1,4 @@
+#include <wormedit/core/sample_control_editor.h>
 #include <wormedit/core/timing_links.h>
 #include "text_util.h"
 #include "chart_object_ids.h"
@@ -1061,6 +1062,8 @@ auto validate_positioned_chart_events(chart_object_validation_t& context) -> voi
     validate_positioned(context.chart.bpms, "BPM event");
     validate_positioned(context.chart.pauses, "pause event");
     validate_positioned(context.chart.scrolls, "scroll event");
+    validate_positioned(context.chart.volumes, "volume event");
+    validate_positioned(context.chart.sample_sets, "sample set event");
     validate_positioned(context.chart.speeds, "speed event");
     validate_positioned(context.chart.kiai, "kiai event");
     validate_positioned(context.chart.timing_anchors, "timing anchor");
@@ -1360,6 +1363,8 @@ auto validate_chart(const chart_document_t& chart,
                                              object_ids, layer_ids, bgm_lane_ids, sound_links};
     validate_chart_notes_and_bgm(objects);
 
+    const auto samples = validate_sample_controls(chart);
+    diagnostics.insert(diagnostics.end(), samples.begin(), samples.end());
     validate_positioned_chart_events(objects);
     validate_bpm_pause_rationals(objects);
     validate_bms_timing_projections(objects);
@@ -1920,6 +1925,8 @@ auto diagnostic_locations(const chart_document_t& chart) -> diagnostic_locations
     collect_diagnostic_locations(locations, chart.pauses);
     collect_diagnostic_locations(locations, chart.warps);
     collect_diagnostic_locations(locations, chart.scrolls);
+    collect_diagnostic_locations(locations, chart.volumes);
+    collect_diagnostic_locations(locations, chart.sample_sets);
     collect_diagnostic_locations(locations, chart.speeds);
     collect_diagnostic_locations(locations, chart.kiai);
     collect_diagnostic_locations(locations, chart.timing_anchors);
@@ -2090,6 +2097,8 @@ auto redivide_chart_positions(chart_document_t& chart, redivision_context_t& con
     transform_positioned(chart.bpms);
     transform_positioned(chart.pauses);
     transform_positioned(chart.scrolls);
+    transform_positioned(chart.volumes);
+    transform_positioned(chart.sample_sets);
     transform_positioned(chart.speeds);
     transform_positioned(chart.kiai);
     transform_positioned(chart.timing_anchors);

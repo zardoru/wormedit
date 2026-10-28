@@ -473,6 +473,7 @@ void populate_compose_timing_markers(
     view.timing_markers.clear();
     view.timing_document_rows = cache.scene.index.value()->measures.total_rows;
     const auto marker_total = chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
+                              chart.volumes.size() + chart.sample_sets.size() +
                               chart.pauses.size() + chart.warps.size() + chart.kiai.size() +
                               chart.timing_anchors.size() + 1;
     flattened.compose.timing_marker_labels.resize(marker_total);
@@ -514,6 +515,8 @@ void populate_compose_timing_markers(
             .detail = labels.second,
             .fixed_initial = fixed_initial,
             .selected = compose_timing_marker_selected(interaction_view, lane, id),
+            .sample_set = lane == wormedit::timing_lane_kind_t::sample_set && storage_order < chart.sample_sets.size()
+                ? std::optional{static_cast<wormedit::osu_sample_set_t>(chart.sample_sets[storage_order].value)} : std::nullopt,
         });
     };
     if (cache.timing_payload_cache_enabled) {

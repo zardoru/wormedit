@@ -156,6 +156,7 @@ auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_o
                               record_range(chart.lane_layouts) && record_range(chart.bpms) &&
                               record_range(chart.pauses) && record_range(chart.warps) &&
                               record_range(chart.scrolls) && record_range(chart.speeds) &&
+                              record_range(chart.volumes) && record_range(chart.sample_sets) &&
                               record_range(chart.kiai) && record_range(chart.timing_anchors) &&
                               record_range(chart.bookmarks) && record_range(chart.sections) &&
                               record_range(chart.bga_events) && record_range(chart.sound_channels);

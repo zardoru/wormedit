@@ -236,7 +236,7 @@ struct field_palette_t {
                     nk_rgb(255, 245, 255),
                     {},
                     {}};
-    std::array<key_color_t, 8> timing{};
+    std::array<key_color_t, wormedit::timing_lane_kind_count> timing{};
 };
 const auto builtin_roles = compose_colors;
 const auto builtin_keys = key_colors;
@@ -253,8 +253,8 @@ std::uint64_t generation{};
 bool colored_grid{true};
 std::uint32_t grid_opacity_percent{35};
 std::uint32_t waveform_opacity_percent{75};
-constexpr std::array<std::string_view, 8> timing_names{"bpm",   "scroll", "speed", "stop",
-                                                       "delay", "warp",   "kiai",  "anchor"};
+constexpr std::array<std::string_view, wormedit::timing_lane_kind_count> timing_names{
+    "bpm", "scroll", "speed", "stop", "delay", "warp", "kiai", "anchor", "volume", "sample_set"};
 
 auto hex_digit(char ch) -> int {
     if (ch >= '0' && ch <= '9')
@@ -535,11 +535,11 @@ auto create_default_palette() -> field_palette_t {
     for (std::size_t i = 0; i < result.timing.size(); ++i)
         result.timing[i] = {true,
                             i % 2 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42),
-                            builtin_accents[i],
+                            builtin_accents[i % builtin_accents.size()],
                             nk_rgb(55, 64, 79),
                             nk_rgb(18, 22, 31),
                             i % 2 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42),
-                            builtin_accents[i],
+                            builtin_accents[i % builtin_accents.size()],
                             {},
                             {}};
     return result;

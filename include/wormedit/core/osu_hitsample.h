@@ -10,6 +10,7 @@
 namespace wormedit {
 
 enum class osu_sample_set_t { automatic, normal, soft, drum };
+inline constexpr std::array osu_sample_set_names{"Auto", "Normal", "Soft", "Drum"};
 
 struct osu_sample_context_t {
     osu_sample_set_t normal_set{osu_sample_set_t::normal};

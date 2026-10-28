@@ -1848,8 +1848,8 @@ void compare_follow_step(document_history_t& history, const measure_index_t& ind
     const auto& chart = history.document.charts.front();
     const auto bounded = std::min(static_cast<long double>(row),
                                    static_cast<long double>(index.total_rows - 1));
-    const auto step = chart.divisions_per_standard_measure / expected.active_snap_denominator;
-    const auto snapped_row = static_cast<std::uint64_t>(std::floor(bounded / step)) * step;
+    const auto snapped_row = snap_canvas_row(chart, index, bounded,
+        active_snap_grid(expected), index.total_rows).value();
     const auto after = std::ranges::upper_bound(index.entries, snapped_row, {},
         &measure_index_entry_t::absolute_begin_row);
     const auto measure = std::prev(after);

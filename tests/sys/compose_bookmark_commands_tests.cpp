@@ -472,7 +472,7 @@ TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
           local_position_t{measure_id_t{4}, 240});
 }
 
-TEST_CASE("Following playhead cursor floors on the current measure grid",
+TEST_CASE("Following playhead cursor rounds on the current measure grid",
           "[unit][sys][bookmark-commands]") {
     fixture_t fixture{{measure_id_t{3}, 0}};
     auto& chart = fixture.history.document.charts.front();
@@ -480,7 +480,7 @@ TEST_CASE("Following playhead cursor floors on the current measure grid",
     chart.measures.front().definition.meter.reset();
     chart.sections.clear();
     REQUIRE(follow_compose_playhead(fixture.history, fixture.state, 550, true));
-    CHECK(fixture.state.cursor == local_position_t{measure_id_t{4}, 0});
+    CHECK(fixture.state.cursor == local_position_t{measure_id_t{4}, 240});
     REQUIRE(follow_compose_playhead(fixture.history, fixture.state, 560, true));
     CHECK(fixture.state.cursor == local_position_t{measure_id_t{4}, 240});
 }

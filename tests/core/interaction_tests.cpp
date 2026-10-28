@@ -3648,6 +3648,47 @@ TEST_CASE("Keyboard hold merging protects hidden and locked unsounded holds",
     CHECK(history.undo.empty());
 }
 
+namespace {
+void check_fractional_lane_toggle(document_history_t& history, editor_interaction_state_t& state,
+                                  local_position_t position, bool present) {
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    const auto expected_count = present ? 1u : 0u;
+    REQUIRE(note_count(history) == expected_count);
+    const auto* note = history.document.charts.front().find_measure(position.measure);
+    REQUIRE(note);
+    if (present) {
+        REQUIRE(note->notes.size() == 1);
+        CHECK(note->notes.front().position == position);
+    }
+}
+} // namespace
+
+TEST_CASE("Repeated lane-key entry toggles the same nearest snap after playback",
+          "[unit][core][interaction][transport][fractional-lane-toggle]") {
+    const auto [row, expected] = GENERATE(std::pair{599.5, 480u}, std::pair{600.0, 480u},
+        std::pair{600.5, 720u}, std::pair{719.5, 720u}, std::pair{959.5, 960u});
+    const auto downscroll = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    configure_cursor_viewport(state, 400, downscroll ? editor_field_scroll_direction_t::down
+                                                    : editor_field_scroll_direction_t::up);
+    expect_cursor_gesture(sys::follow_compose_playhead(history, state, row, true));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
+    const auto position = index.position_at(expected).value();
+    const auto scroll = state.viewport_scroll_pixels;
+    CHECK(state.cursor == position);
+    check_fractional_lane_toggle(history, state, position, true);
+    // A viewport refresh must preserve the row used by the first insertion.
+    expect_cursor_gesture(synchronize_editor_cursor_to_viewport(
+        history.document.charts.front(), index, state));
+    check_fractional_lane_toggle(history, state, position, false);
+    CHECK(state.viewport_scroll_pixels == scroll);
+    CHECK(state.cursor_subrow == Catch::Approx(row - expected));
+}
+
 TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atomically",
           "[unit][core][interaction][gesture][hold]") {
     auto history = document_history_t::from(make_song());
@@ -3799,7 +3840,7 @@ TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edit
         CHECK(cursor_row * pixels_per_row - view.viewport_scroll_pixels ==
               Catch::Approx(200.0).margin(0.01));
     }
-    CHECK(state.cursor_subrow > 0.0);
+    CHECK(state.cursor_subrow != 0.0);
     REQUIRE(dispatch_editor_action(history, state, move_edit_cursor_action_t{}));
     CHECK(state.cursor_subrow == 0.0);
 }

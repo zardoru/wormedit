@@ -6485,6 +6485,30 @@ TEST_CASE("Project empty-state suggestion opens a normal draft and waits for Sav
     require_project_access(std::string_view{found->get().project_output_group.path} == "exports/osu");
 }
 
+TEST_CASE("Export target audio controls save OGG quality and explicit MP3 bitrate", "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{false};
+    (void)f.click("+ New");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Cut audio").has_value());
+    (void)f.click("Auto");
+    (void)f.harness.frame();
+    (void)f.click("320 kbps");
+    (void)f.harness.frame();
+    (void)f.click("MP3");
+    (void)f.harness.frame();
+    (void)f.click("Ogg Vorbis");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Vorbis quality").has_value());
+    const auto saved = f.click("Save");
+    const auto found = std::ranges::find_if(saved, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    });
+    require_project_access(found != saved.end());
+    CHECK(found->get().project_output_group.audio.codec == wormedit::export_audio_codec_t::ogg);
+    CHECK(found->get().project_output_group.audio.mp3_bitrate_kbps == 320);
+    CHECK(found->get().project_output_group.audio.ogg_quality == 0.4F);
+}
+
 TEST_CASE("Project target chips remove membership with one complete update",
           "[frontend-state][event-harness][output-groups][output-compatibility]") {
     output_group_fixture_t f{true};

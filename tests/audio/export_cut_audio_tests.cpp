@@ -4,6 +4,8 @@
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/export_cut_frames.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <wormedit/audio/stream_encoder.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -65,7 +67,7 @@ struct cut_audio_fixture_t {
         require_cut_audio(sources.ok() && sources.value.size() == 1);
         const auto frames = export_cut_frame_timeline_t::from(timeline(), 48'000, 48'000);
         return {.asset = asset_id_t{1}, .filename = "cut.wav", .source = sources.value.front(),
-            .output_frames = frames.value.kept_frame_count(0, 48'000)};
+            .output_frames = frames.value.kept_frame_count(0, 48'000), .encoding = {.codec = export_audio_codec_t::wav}};
     }
     auto render(std::span<const export_cut_audio_plan_t> plans, std::stop_token stop = {}) const
         -> slice_span_render_payload_t {
@@ -96,7 +98,9 @@ TEST_CASE("Export cut source preparation refreshes evidence and skips I/O withou
     fixture.song.audio_assets.front().stream = {.sample_rate = 8'000, .channels = 1, .frame_count = 12};
     const auto prepared = prepare_export_cut_sources(fixture.song, fixture.directory);
     require_cut_audio(prepared.ok() && prepared.value.size() == 1);
-    check_cut_audio(prepared.value.front() == export_cut_source_t{.asset = asset_id_t{1}, .native_sample_rate = 44'100,
+    auto evidence = prepared.value.front();
+    evidence.bitrate_bits_per_second = 0;
+    check_cut_audio(evidence == export_cut_source_t{.asset = asset_id_t{1}, .native_sample_rate = 44'100,
         .native_frame_count = 44'100, .output_frame_count = 44'100, .source_path = "source.wav"});
     fixture.song.export_cuts.clear();
     std::filesystem::remove(fixture.directory / "source.wav");
@@ -123,6 +127,29 @@ TEST_CASE("Streamed export cut WAV has exact canonical seams and preserves float
     audio::decoder_t decoded;
     require_cut_audio(decoded.open(rendered.files.front()));
     check_cut_audio(decoded.info()->source_sample_rate == 48'000 && decoded.info()->source_frame_count == 40'752);
+}
+TEST_CASE("Encoded export cuts retain their shortened clock in OGG and MP3", "[audio][export-cut]") {
+    const auto codec = GENERATE(export_audio_codec_t::ogg, export_audio_codec_t::mp3);
+    if (!audio::stream_encoder_t::can_encode(codec)) SKIP("MP3 encoder unavailable in this build");
+    cut_audio_fixture_t fixture;
+    auto plan = fixture.plan();
+    plan.encoding = {.codec = codec, .mp3_bitrate_kbps = 192};
+    plan.filename = "cut" + std::string{plan.encoding.extension()};
+    const auto original = read_cut_bytes(fixture.directory / "source.wav");
+    const std::array plans{plan};
+    const auto rendered = fixture.render(plans);
+    UNSCOPED_INFO(rendered.error);
+    require_cut_audio(rendered.is_success());
+    require_cut_audio(rendered.files.size() == 1);
+    audio::decoder_t decoder;
+    require_cut_audio(decoder.open(rendered.files.front()));
+    require_cut_audio(decoder.info().has_value());
+    check_cut_audio(decoder.info()->source_sample_rate == export_cut_render_sample_rate);
+    check_cut_audio(decoder.info()->source_frame_count == plan.output_frames);
+    check_cut_audio(std::filesystem::file_size(rendered.files.front()) < 56 + plan.output_frames * 8);
+    check_cut_audio(read_cut_bytes(fixture.directory / "source.wav") == original);
+    if (codec == export_audio_codec_t::mp3)
+        check_cut_audio(audio::stream_encoder_t::source_bitrate(rendered.files.front()) == 192'000);
 }
 TEST_CASE("Cut audio failure rolls back staged files without overwriting existing output", "[audio][export-cut]") {
     cut_audio_fixture_t fixture;
@@ -213,7 +240,7 @@ TEST_CASE("Canonical cut rendering rounds native EOF once before clipping cut ed
     require_cut_audio(prepared.ok());
     // 100 native frames at44100 round to109 at48000; [48,96) is removed.
     const std::array plans{export_cut_audio_plan_t{.asset = asset_id_t{1}, .filename = "short.wav",
-        .source = prepared.value.front(), .output_frames = 61}};
+        .source = prepared.value.front(), .output_frames = 61, .encoding = {.codec = export_audio_codec_t::wav}}};
     const auto rendered = fixture.render(plans);
     require_cut_audio(rendered.is_success() && rendered.files.size() == 1);
     audio::decoder_t decoded;

@@ -6,6 +6,7 @@
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/rational.h>
 #include <wormedit/core/sv_recipe.h>
 #include "../support/timing_links_fixture.h"
 
@@ -980,4 +981,126 @@ TEST_CASE("Export cuts reimport one shared clock in BMS osu and StepMania target
     REQUIRE(parsed);
     check_cut_roundtrip_clock(*parsed);
     CHECK(write_native_project(song).value == before);
+}
+
+namespace {
+auto rational_cut_fixture(wormedit::format_family_t target) -> wormedit::test::timing_links_fixture_t {
+    using namespace wormedit;
+    auto fixture = linked_export_fixture(target);
+    auto& song = fixture.history.document;
+    song.find_chart(fixture.target_id)->timing_links = {};
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {381024000, 2880079};
+    chart.beat_zero_audio_offset_seconds = {5539, 44100};
+    while (chart.measures.size() < 12)
+        chart.measures.push_back({.id = measure_id_t{900010 + chart.measures.size()}});
+    const auto lane = chart.input_profile.bindings.front().lane;
+    chart.measures.back().notes = {{.id = object_id_t{900001},
+        .position = {chart.measures.back().id, chart.divisions_per_standard_measure / 96}, .lane = lane}};
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 7382, .end_milliseconds = 14638}};
+    return fixture;
+}
+auto collapsed_note_time(const wormedit::song_document_t& song, const wormedit::chart_document_t& chart) -> wormedit::signed_rational_t {
+    using namespace wormedit;
+    const auto timing = timing_index_t::from(chart);
+    const auto measures = measure_index_t::from(chart);
+    REQUIRE((timing.value && measures));
+    const auto original = timing.value->query_seconds(*measures, chart.measures.back().notes.front().position);
+    REQUIRE(original);
+    const auto timeline = export_cut_timeline_t::from(song.export_cuts);
+    const auto expected = timeline.value.collapsed_seconds(original->value);
+    REQUIRE(expected);
+    return *expected;
+}
+void check_sparse_cut_song(const wormedit::chart_document_t& output, wormedit::signed_rational_t expected) {
+    using namespace wormedit;
+    const auto output_timing = timing_index_t::from(output, {.allow_bounded_clock = true});
+    const auto output_measures = measure_index_t::from(output);
+    REQUIRE((output_timing.value && output_measures));
+    const auto times = cut_roundtrip_note_times(output, *output_timing.value, *output_measures);
+    REQUIRE(times);
+    REQUIRE(times->size() == 1);
+    CHECK(std::abs(to_double(times->front()) - to_double(expected)) < 0.006);
+    CHECK(output.warps.empty());
+}
+void check_exported_cut_hold(const wormedit::chart_document_t& output) {
+    using namespace wormedit;
+    const auto& notes = output.measures.front().notes;
+    REQUIRE(notes.size() == 1);
+    REQUIRE(notes.front().end);
+    const auto timing = timing_index_t::from(output);
+    const auto measures = measure_index_t::from(output);
+    REQUIRE((timing.value && measures));
+    CHECK(timing.value->query_seconds(*measures, notes.front().position)->value == signed_rational_t{1, 4});
+    CHECK(timing.value->query_seconds(*measures, *notes.front().end)->value == signed_rational_t{3, 4});
+}
+}
+TEST_CASE("Rational export cuts preserve sparse SSC note rows and osu timestamps", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    const auto target = GENERATE(format_family_t::osu_mania, format_family_t::stepmania);
+    auto fixture = rational_cut_fixture(target);
+    const auto& song = fixture.history.document;
+    const auto expected = collapsed_note_time(song, *song.read_chart(fixture.source_id));
+    conversion_request_t request{.target = target, .chart = fixture.source_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::stepmania)
+        request.stepmania = stepmania_export_policy_t{.file_profile = stepmania_profile_t::ssc,
+            .timing_syntax = stepmania_timing_syntax_t::native_warps};
+    const auto converted = conversion_result_t::from(song, request);
+    for (const auto& diagnostic : converted.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    CHECK(converted.value.outputs.front().bytes.size() < 20'000);
+    const auto parsed = reimport_linked_output(converted.value.outputs.front().bytes, target, stepmania_profile_t::ssc);
+    REQUIRE(parsed);
+    check_sparse_cut_song(*parsed->read_charts().front(), expected);
+}
+TEST_CASE("Exported holds retain Compose's collapsed duration in osu and SSC", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    const auto target = GENERATE(format_family_t::osu_mania, format_family_t::stepmania);
+    auto fixture = linked_export_fixture(target);
+    auto& song = fixture.history.document;
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    const auto lane = chart.input_profile.bindings.front().lane;
+    const auto measure = chart.measures.front().id;
+    chart.measures.front().notes = {{.id = object_id_t{900001}, .position = {measure, 120},
+        .lane = lane, .kind = note_kind_t::hold, .end = local_position_t{measure, 600}}};
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    conversion_request_t request{.target = target, .chart = fixture.source_id, .loss_policy = loss_policy_t::warn};
+    if (target == format_family_t::stepmania) request.stepmania = stepmania_export_policy_t{};
+    const auto converted = conversion_result_t::from(song, request);
+    for (const auto& diagnostic : converted.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    const auto parsed = reimport_linked_output(converted.value.outputs.front().bytes, target, stepmania_profile_t::ssc);
+    REQUIRE(parsed);
+    check_exported_cut_hold(*parsed->read_charts().front());
+    CHECK(chart.measures.front().notes.front().end->row == 600);
+}
+TEST_CASE("Conversion preview groups cut omissions without blocking export", "[formats][conversion][export-cut]") {
+    using namespace wormedit;
+    auto fixture = linked_export_fixture(format_family_t::osu_mania);
+    auto& song = fixture.history.document;
+    auto& chart = *song.find_chart(fixture.source_id);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    chart.timing_links = {};
+    const auto lane = chart.input_profile.bindings.front().lane;
+    const auto measure = chart.measures.front().id;
+    chart.measures.front().notes.clear();
+    for (std::uint64_t id = 900010; id < 900013; ++id)
+        chart.measures.front().notes.push_back({.id = object_id_t{id}, .position = {measure, 120 + (id - 900010) * 10},
+            .lane = lane, .sound = resource_id_t{900004}});
+    song.audio_assets.push_back({.id = asset_id_t{900003}, .source_path = "sample.wav",
+        .stream = {.sample_rate = 1000, .channels = 1, .frame_count = 1000}});
+    song.resources.push_back({.id = resource_id_t{900004}, .name = "sample.wav", .asset = asset_id_t{900003}});
+    song.export_cuts = {{.id = object_id_t{900002}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    const conversion_request_t request{.target = format_family_t::native_project};
+    const auto diagnostics = diagnose_conversion_preparation(song, request);
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(diagnostics.front().code == conversion_diagnostic_code_t::target_diagnostic);
+    const auto converted = conversion_result_t::from(song, request);
+    REQUIRE(converted.ok());
+    REQUIRE(converted.value.outputs.size() == 1);
+    CHECK(converted.diagnostics.size() == 1);
 }

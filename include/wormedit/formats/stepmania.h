@@ -91,6 +91,8 @@ struct stepmania_write_options_t {
     std::optional<chart_id_t> chart;
     warp_encoding_t warp_encoding{warp_encoding_t::native};
     bool preserve_unknown_fields{true};
+    // Reports a loss warning when nonterminating timing values need decimal rounding.
+    bool allow_timing_approximation{false};
     std::size_t max_output_bytes{64U * 1024U * 1024U};
     std::size_t max_charts{4096};
     std::size_t max_rows_per_measure{65'536};

@@ -727,6 +727,20 @@ TEST_CASE("SM writer rejects timing it cannot faithfully represent", "[unit][for
     CHECK(legacy.value->find("4=-1") != std::string::npos);
 }
 
+TEST_CASE("StepMania groups repeated note metadata warnings", "[unit][format][stepmania]") {
+    auto parsed = parse_ssc("#BPMS:0=120;#NOTEDATA:;#STEPSTYPE:dance-single;#DIFFICULTY:Easy;"
+                            "#NOTES:\n1000\n0100\n0010\n0001\n;");
+    REQUIRE(parsed.value);
+    for (auto& note : parsed.value->charts.front().measures.front().notes) note.label = "label";
+    const auto written = wormedit::write_stepmania(*parsed.value, {.profile = wormedit::stepmania_profile_t::ssc});
+    REQUIRE(written.ok());
+    REQUIRE(written.value);
+    CHECK(std::ranges::count_if(written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::stepmania_write_diagnostic_code_t::unsupported_feature &&
+            diagnostic.location == "NOTES";
+    }) == 1);
+}
+
 TEST_CASE("StepMania writer rejects unsafe metadata and invisible notes",
           "[unit][format][stepmania]") {
     auto parsed = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);

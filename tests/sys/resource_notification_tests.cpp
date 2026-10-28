@@ -687,7 +687,7 @@ TEST_CASE("Inactive export confirmation safely populates Compose text views",
     check_resource_notification(view.export_confirmation_detail.empty());
 }
 
-TEST_CASE("A crossing export object remains the background error Go to target", "[sys][export-cut][resource-notification]") {
+TEST_CASE("A crossing hold exports successfully without a background error", "[sys][export-cut][resource-notification]") {
     resource_notification_fixture_t fixture;
     const std::string source = "osu file format v14\n[General]\nMode:3\n"
         "[Metadata]\nTitle:Cut target\nArtist:Test\nVersion:Normal\n"
@@ -696,22 +696,67 @@ TEST_CASE("A crossing export object remains the background error Go to target", 
     auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}));
     require_resource_notification(parsed.ok() && parsed.value.has_value());
     fixture.history = document_history_t::from(std::move(*parsed.value));
-    const auto object = fixture.history.document.charts.front().measures.front().notes.front().id;
     fixture.history.document.export_cuts = {{.id = object_id_t{900000},
         .begin_milliseconds = 500, .end_milliseconds = 1000}};
     auto plan = output_group_export_plan_t::from(fixture.history.document,
         {.family = format_family_t::native_project,
-         .charts = {fixture.history.document.charts.front().id}, .relative_output_path = "exports/song.wormedit"});
+         .charts = {fixture.history.document.charts.front().id}, .destination_kind = output_destination_kind_t::file,
+         .relative_output_path = "exports/song.wormedit"});
     runtime::output_group_export_t exports{fixture.sink};
     require_resource_notification(static_cast<bool>(exports.start(fixture.history.document, std::move(plan), fixture.project)));
     require_resource_notification(wait_for_export_result(exports, fixture.history).has_value());
     const auto entries = fixture.entries();
     require_resource_notification(!entries.empty());
     INFO(entries.front().message);
-    CAPTURE(entries.front().target.index(), object.value);
-    check_resource_notification(entries.front().target == notification_target_t{object});
-    check_resource_notification(!std::filesystem::exists(fixture.project / "exports"));
+    check_resource_notification(entries.front().severity == notification_severity_t::success);
+    check_resource_notification(entries.front().target == notification_target_t{});
+    check_resource_notification(std::filesystem::is_regular_file(fixture.project / "exports/song.wormedit"));
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("Cut output groups copy only source assets still referenced after conversion", "[sys][export-cut][resource-notification]") {
+    const auto target = GENERATE(format_family_t::osu_mania, format_family_t::stepmania);
+    const auto mode = GENERATE(0, 1, 2); // uncut, cut music, cut music also used as a keysound
+    resource_notification_fixture_t fixture;
+    const auto source = std::filesystem::path{__FILE__}.parent_path().parent_path() /
+        "fixtures/audio/tagged-project.ogg";
+    std::filesystem::copy_file(source, fixture.root / "music.ogg");
+    std::filesystem::copy_file(source, fixture.root / "sample.ogg");
+    const std::string chart_text = "osu file format v14\n[General]\nMode:3\nAudioFilename:music.ogg\n"
+        "[Metadata]\nTitle:Cut asset copies\nArtist:Test\nVersion:Normal\n"
+        "[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n"
+        "[HitObjects]\n64,192,1500,1,0,0:0:0:0:sample.ogg\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{chart_text.data(), chart_text.size()}),
+        {.asset_base_directory = fixture.root});
+    require_resource_notification(parsed.ok() && parsed.value.has_value());
+    auto& song = *parsed.value;
+    const auto music = std::ranges::find_if(song.resources, [](const auto& resource) {
+        return resource.has_role(resource_role_t::music);
+    });
+    require_resource_notification(music != song.resources.end());
+    if (mode != 0) song.export_cuts = {{.id = object_id_t{900000}, .begin_milliseconds = 500, .end_milliseconds = 1000}};
+    if (mode == 2) song.charts.front().measures.front().notes.front().sound = music->id;
+    output_group_t group{.family = target, .charts = {song.charts.front().id}, .relative_output_path = "exports",
+        .audio = {.codec = export_audio_codec_t::ogg}};
+    if (target == format_family_t::stepmania) group.stepmania = stepmania_export_policy_t{};
+    const output_group_export_request_t request{.document = song,
+        .plan = output_group_export_plan_t::from(song, group), .asset_base = fixture.root};
+    const auto prepared = output_group_export_preparation_t::from(request);
+    require_resource_notification(prepared.has_value());
+    INFO((prepared->blocking_error));
+    require_resource_notification(prepared->blocking_error.empty());
+    const bool keep_original = mode != 1;
+    check_resource_notification(std::ranges::contains(prepared->publication.assets, music->asset,
+        &conversion_publication_asset_t::asset) == keep_original);
+    const auto published = run_output_group_export(request, {});
+    INFO(published.message);
+    require_resource_notification(published.published);
+    check_resource_notification(std::filesystem::exists(fixture.root / "exports/assets/music.ogg") == keep_original);
+    check_resource_notification(std::filesystem::exists(fixture.root / "music.ogg"));
+    if (mode != 0) check_resource_notification(std::filesystem::exists(
+        fixture.root / "exports" / prepared->converted.cut_audio_plans.front().filename));
+}
+#endif
 
 TEST_CASE("output groups opt into active BMS projection only for flattened target families",
           "[unit][sys][resource-notification][bms-flatten]") {

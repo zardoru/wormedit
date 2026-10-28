@@ -356,6 +356,7 @@ TEST_CASE("Project output group actions project complete editable membership and
                                           .existing_files = existing_files_policy_t::replace,
 };
     action.chart_ids = {history.document.charts[0].id};
+    action.audio = {.codec = export_audio_codec_t::ogg, .ogg_quality = 0.7F};
     ++action.session_generation;
     const auto wrong_session = apply_project_output_group_ui_action(runtime, history, action, scheduler);
     expect_project(!wrong_session.applied);
@@ -366,6 +367,8 @@ TEST_CASE("Project output group actions project complete editable membership and
     require_project(view.output_groups.size() == 2);
     expect_project(std::string_view{view.output_groups[1].path} == "exports/chart.bmson");
     expect_project(view.output_groups[1].family == format_family_t::bmson);
+    CHECK(view.output_groups[1].audio == action.audio);
+    CHECK(history.document.output_groups[1].audio == action.audio);
     expect_project(history.document.output_groups[1].existing_files ==
                    existing_files_policy_t::replace);
     expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);

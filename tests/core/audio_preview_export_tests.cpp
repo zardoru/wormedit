@@ -75,6 +75,14 @@ void check_original_output(const std::filesystem::path& directory, const std::fi
     CHECK(std::filesystem::file_size(path) == 4);
     CHECK(std::distance(std::filesystem::directory_iterator{directory}, std::filesystem::directory_iterator{}) == 1);
 }
+void publish_verified_cut_preview(const sys::preview_audio_export_job_t::work_outcome_t& prepared,
+    const std::filesystem::path& path, std::uint64_t frames) {
+    INFO((prepared ? "prepared" : prepared.error().message));
+    REQUIRE(prepared);
+    CHECK_FALSE(std::filesystem::exists(path));
+    REQUIRE(prepared->file->publish(false));
+    CHECK(audio::verify_ogg_vorbis(path, frames));
+}
 }
 
 TEST_CASE("Preview export mixes and verifies twenty seconds before publishing the selected output", "[unit][audio][preview-export]") {
@@ -133,7 +141,7 @@ TEST_CASE("Preview runtime discards stale and cancelled prepared exports at publ
     check_original_output(directory->path(), path);
 }
 
-TEST_CASE("Preview export rejects an authored keysound crossing an export cut before publication", "[unit][audio][preview-export][export-cut]") {
+TEST_CASE("Preview export permits an authored keysound crossing an export cut", "[unit][audio][preview-export][export-cut]") {
     auto directory = test::temporary_directory_t::from();
     REQUIRE(directory);
     const auto path = directory->path() / "crossing.ogg";
@@ -147,9 +155,7 @@ TEST_CASE("Preview export rejects an authored keysound crossing an export cut be
     REQUIRE(music != request.document.resources.end());
     notes.front().sound = music->id;
     const auto prepared = sys::prepare_preview_audio_export(request, {});
-    REQUIRE_FALSE(prepared);
-    CHECK(prepared.error().message.find("crosses an export-cut boundary") != std::string::npos);
-    CHECK_FALSE(std::filesystem::exists(path));
+    publish_verified_cut_preview(prepared, path, 77'175);
 }
 
 TEST_CASE("Preview export verifies its actual frame count after removing source cuts", "[unit][audio][preview-export][export-cut]") {
@@ -181,16 +187,14 @@ TEST_CASE("Preview cut preflight materializes BMSON continuations through shared
     CHECK_FALSE(request.document.charts.front().sound_channels.empty());
 }
 
-TEST_CASE("Preview cut preflight rejects a BMSON source slice crossing a cut", "[unit][audio][preview-export][export-cut]") {
+TEST_CASE("Preview cut preflight permits a BMSON source slice crossing a cut", "[unit][audio][preview-export][export-cut]") {
     auto directory = test::temporary_directory_t::from();
     REQUIRE(directory);
     const auto path = directory->path() / "crossing-continuation.ogg";
     auto request = continuation_preview_request(path);
     request.document.export_cuts = {{.id = object_id_t{900001}, .begin_milliseconds = 250, .end_milliseconds = 375}};
     const auto prepared = sys::prepare_preview_audio_export(request, {});
-    REQUIRE_FALSE(prepared);
-    CHECK(prepared.error().message.find("crosses an export-cut boundary") != std::string::npos);
-    CHECK_FALSE(std::filesystem::exists(path));
+    publish_verified_cut_preview(prepared, path, 82'687);
 }
 
 TEST_CASE("Cut preview audio renders effective chart Music instead of a different global source", "[unit][audio][preview-export][export-cut]") {

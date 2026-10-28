@@ -290,7 +290,11 @@ TEST_CASE("Open compose dialogs cancel on context changes and external modals",
         if (cause == 1) ++harness.view().compose.chart_id.value;
         if (cause == 2) ++harness.view().compose.project_id.value;
         if (cause == 3) harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
-        if (cause == 4) harness.view().close_confirmation.visible = true;
+        if (cause == 4) {
+            harness.view().close_confirmation.visible = true;
+            // Enter exercises close confirmation without opening an OS Save As dialog.
+            harness.view().close_confirmation.has_native_path = true;
+        }
         if (cause == 5) harness.view().compose.input_occluded = true;
         if (cause == 6) harness.view().options.visible = true;
         const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);

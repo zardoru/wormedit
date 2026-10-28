@@ -76,3 +76,22 @@ TEST_CASE("Authoring cuts leaves serialized chart content and timing unchanged",
     CHECK(after["document"]["charts"] == before["document"]["charts"]);
     CHECK(after["document"]["export_cuts"].size() == 3);
 }
+
+TEST_CASE("Native schema28 preserves output audio choices and migrates automatic MP3 defaults", "[format][native-project][export-cut][migration]") {
+    auto song = export_cut_song();
+    song.output_groups = {{.name = "osu", .family = format_family_t::osu_mania,
+        .charts = {chart_id_t{2}}, .relative_output_path = "exports/osu",
+        .audio = {.codec = export_audio_codec_t::ogg, .mp3_bitrate_kbps = 320, .ogg_quality = 0.7F}}};
+    const auto written = write_native_project(song);
+    REQUIRE(written.value);
+    const auto parsed = parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->output_groups.front().audio == song.output_groups.front().audio);
+    auto legacy = json::parse(*written.value);
+    legacy["document"]["schema_version"] = 27;
+    legacy["document"]["output_groups"][0].erase("audio");
+    const auto migrated = parse_native_project(legacy.dump());
+    REQUIRE(migrated.value);
+    CHECK(migrated.value->output_groups.front().audio == export_audio_settings_t{});
+    CHECK(migrated.value->schema_version == current_document_schema_version);
+}

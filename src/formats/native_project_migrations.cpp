@@ -494,7 +494,16 @@ auto migrate_v25_to_v26(nlohmann::json&) -> std::string {
 // timing-line fields when the two collections are absent.
 auto migrate_v26_to_v27(nlohmann::json&) -> std::string { return {}; }
 
-constexpr std::array<migration_t, 26> released_migrations{{
+auto migrate_v27_to_v28(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups")) return {};
+    if (!document.at("output_groups").is_array()) return "document output_groups must be an array";
+    for (auto& group : document.at("output_groups"))
+        if (!group.contains("audio")) group["audio"] = {
+            {"codec", std::uint64_t{0}}, {"mp3_bitrate_kbps", std::uint64_t{0}}, {"ogg_quality", 0.4F}};
+    return {};
+}
+
+constexpr std::array<migration_t, 27> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -521,6 +530,7 @@ constexpr std::array<migration_t, 26> released_migrations{{
     {24, &migrate_v24_to_v25},
     {25, &migrate_v25_to_v26},
     {26, &migrate_v26_to_v27},
+    {27, &migrate_v27_to_v28},
 }};
 
 } // namespace

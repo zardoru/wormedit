@@ -116,6 +116,8 @@ charts.
 . In each StepMania target's editor, choose its *File profile* (SM or SSC), target implementation
   (StepMania 5.1 or Etterna 0.75.1) and *Timing syntax*. Preview and Export use that target's saved
   choices. Duplicate the target to keep separate SM and SSC policies.
+. Under *Cut audio*, choose MP3 or Ogg Vorbis for songs with export cuts. MP3's automatic bitrate
+  uses the source bitrate up to 192 kbps; manual choices reach 320 kbps. Vorbis exposes a quality control.
 . When exporting a BMS difficulty, enable *Flatten BMS branches to the active outcome* in the
   osu!mania or StepMania target editor and click *Save*. This saved choice defaults off. Preview
   and Export use the branch panel's active playback outcome and warn that branches are flattened.

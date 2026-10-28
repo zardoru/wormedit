@@ -172,7 +172,12 @@ auto generated_file_bytes(const output_group_export_request_t& input,
                           const std::filesystem::path& relative) -> std::uintmax_t {
     const auto name = relative.filename();
     for (const auto& plan : converted.cut_audio_plans)
-        if (plan.filename == name) return 56 + plan.output_frames * 2 * sizeof(float);
+        if (plan.filename == name) {
+            if (plan.encoding.codec == export_audio_codec_t::wav) return 56 + plan.output_frames * 2 * sizeof(float);
+            const auto bits = plan.encoding.codec == export_audio_codec_t::mp3
+                ? plan.encoding.mp3_bitrate_kbps * 1000 : 192'000U;
+            return plan.output_frames * bits / export_cut_render_sample_rate / 8;
+        }
     for (const auto& plan : converted.slice_plans)
         for (const auto& span : plan.value.spans)
             if (span.filename == name)
@@ -326,6 +331,18 @@ void output_group_export_plan_t::replace_asked_files() {
     }
 }
 
+void output_group_export_preparation_t::discard_replaced_music_sources() {
+    const auto replaced = [&](asset_id_t asset) {
+        return std::ranges::any_of(converted.cut_audio_plans, [&](const export_cut_audio_plan_t& plan) {
+            return plan.asset == asset && !plan.retain_source;
+        });
+    };
+    std::erase_if(pending_assets, [&](const project_asset_copy_request_t& copy) { return replaced(copy.asset); });
+    std::erase_if(request.staged_assets, [&](const conversion_request_t::staged_asset_t& staged) {
+        return replaced(staged.asset);
+    });
+}
+
 auto output_group_export_preparation_t::from(const output_group_export_request_t& input,
                                              std::stop_token stop)
     -> result_t<output_group_export_preparation_t, std::string> {
@@ -370,6 +387,7 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
             prepared.blocking_target = *error->object;
         return prepared;
     }
+    prepared.discard_replaced_music_sources();
     if (stop.stop_requested()) return std::unexpected("Export cancelled before publication.");
     if (auto error = validate_generated_asset_sources(input, prepared.converted))
         return std::unexpected(*error);

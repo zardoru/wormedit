@@ -9,6 +9,7 @@ version=9.0.2
 archive="ffmpeg-$version.tar.xz"
 checksum=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
 jobs=${WORMEDIT_BUILD_JOBS:-$(scripts/gate.sh --print-jobs | cut -d' ' -f1)}
+CC="$WORMEDIT_WINDOWS_C_COMPILER" bash packaging/build-lame-sdk.sh "$root/lame" "$root/prefix" "$jobs" "$prefix"
 mkdir -p "$root/source" "$root/build"
 if [[ ! -f "$root/source/$archive" ]]; then
     curl --fail --location --retry 2 "https://ffmpeg.org/releases/$archive" \
@@ -24,8 +25,10 @@ cd "$root/build"
     --enable-cross-compile --cross-prefix="$prefix-" \
     --enable-shared --disable-static --disable-programs --disable-doc \
     --disable-debug --disable-autodetect --disable-network \
-    --disable-avdevice --disable-avfilter --disable-encoders --disable-muxers \
-    --disable-x86asm --extra-ldflags=-static-libgcc
+    --disable-avdevice --disable-avfilter --disable-encoders --enable-libmp3lame \
+    --enable-encoder=libmp3lame --disable-muxers --enable-muxer=mp3 \
+    --extra-cflags="-I$root/prefix/include" --extra-ldflags="-L$root/prefix/lib -static-libgcc" \
+    --disable-x86asm
 make -j"$jobs"
 make install
 mkdir -p "$root/prefix/share/wormedit-ffmpeg"

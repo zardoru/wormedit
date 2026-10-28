@@ -45,6 +45,7 @@ inline auto output_group_export_plan_t::from(const song_document_t&, output_grou
         request.charts = group.charts;
     request.overwrite = existing_files == existing_files_policy_t::replace;
     request.loss_policy = loss_policy_t::warn;
+    request.audio = group.audio;
     if (group.family != format_family_t::bms &&
         group.family != format_family_t::native_project && group.flatten_bms_branches)
         request.branches = branch_projection_t::active_projection;
@@ -81,6 +82,7 @@ struct output_group_export_preparation_t {
     [[nodiscard]] static auto from(const output_group_export_request_t& input,
                                    std::stop_token stop = {})
         -> result_t<output_group_export_preparation_t, std::string>;
+    void discard_replaced_music_sources();
     conversion_request_t request;
     conversion_result_t converted;
     std::vector<project_asset_copy_request_t> pending_assets;

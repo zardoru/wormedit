@@ -6,8 +6,12 @@ changes. Apple platforms receive only a native Metal timeout/nil-drawable guard;
 Windows keeps its native SDL GPU backend. No Vulkan extension requirement is
 added on Apple or Windows.
 
-The audited SDL input is commit `e0b12bbcea659c5f60d7b1e7797902600b5a8a52`
-(2026-06-29). `patch_bounded_presentation.py` checks both original translation
+The audited SDL input is commit `cc2713c0477118d3074b625abe8df7de7118fe2e`
+(2026-07-22). It moved from `e0b12bb` (2026-06-29) to pick up the audio fixes for a
+device that disconnects before shutdown (`774728b6f`, the macOS lid-close crash on
+exit) and for logical devices moving to a new default device (`5ff9c119f`). The
+three audited files are byte-identical between the two commits; the next upstream
+change to them (`23b6410`, HDR10 output) needs a new audit. `patch_bounded_presentation.py` checks both original translation
 units by SHA-256 and requires each replacement anchor exactly once. CMake writes
 private translation units under `build/wormedit-sdl-override/`, replaces only
 those SDL target source entries, and retains the original include directories.

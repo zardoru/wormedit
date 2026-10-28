@@ -377,7 +377,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         FetchContent_Declare(
             SDL3
             GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-            GIT_TAG e0b12bbcea659c5f60d7b1e7797902600b5a8a52
+            GIT_TAG cc2713c0477118d3074b625abe8df7de7118fe2e
         )
     endif()
 

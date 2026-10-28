@@ -19,7 +19,10 @@ namespace {
 using scope_operation_t = wormedit::ui::bms_program_operation_t;
 using scope_kind_t = wormedit::ui::bms_program_node_kind_t;
 using scope_view_t = wormedit::ui::bms_program_view_t;
-constexpr nk_color scope_warning_color{252, 221, 128, 255};
+// Warnings use the theme's conflict role so they stay legible on light and dark panels.
+auto scope_warning_color() -> nk_color {
+    return wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::conflict);
+}
 
 void emit_scope_action(wormedit::ui::workspace_action_t& action, const scope_view_t& view,
     scope_operation_t operation, wormedit::branch_id_t node = {}, std::string text = {}) {
@@ -39,7 +42,7 @@ void scope_warning_icon(nk_context* context, nk_color color) {
     nk_fill_circle(canvas, nk_rect(x - 1, y + 10, 2, 2), color);
 }
 void scope_message(nk_context* context, const char* text, bool warning, bool error = false) {
-    const auto color = error ? nk_rgb(255, 130, 130) : warning ? scope_warning_color : context->style.text.color;
+    const auto color = error ? nk_rgb(255, 130, 130) : warning ? scope_warning_color() : context->style.text.color;
     nk_style_push_color(context, &context->style.text.color, color);
     if (warning) {
         nk_layout_row_begin(context, NK_DYNAMIC, 20.0f, 2);
@@ -52,10 +55,8 @@ void scope_message(nk_context* context, const char* text, bool warning, bool err
 }
 void scope_button(nk_context* context, const char* label, const scope_view_t& view,
     wormedit::ui::workspace_action_t& action, scope_operation_t operation, bool enabled = true) {
-    if (!enabled) nk_widget_disable_begin(context);
-    const auto clicked = nk_button_label(context, label) != 0;
-    if (!enabled) nk_widget_disable_end(context);
-    if (clicked && enabled) { nk_edit_unfocus(context); emit_scope_action(action, view, operation); }
+    const auto clicked = wormedit::ui::chrome::Button{.label = label, .enabled = enabled}.render(context);
+    if (clicked) { nk_edit_unfocus(context); emit_scope_action(action, view, operation); }
 }
 void scope_text_input(nk_context* context, const scope_view_t& view, wormedit::ui::workspace_action_t& action,
     const std::string& value, scope_operation_t operation, bool multiline = false) {
@@ -77,11 +78,14 @@ void render_scope_row(nk_context* context, const scope_view_t& view,
     if (row.kind != scope_kind_t::text && row.kind != scope_kind_t::set_random && row.kind != scope_kind_t::set_switch)
         text += row.unreachable ? "Warning: " : row.playback_active ? "Playing: " : "Inactive: ";
     text += row.label;
-    const auto color = row.unreachable ? scope_warning_color : context->style.text.color;
+    const auto color = row.unreachable ? scope_warning_color() : context->style.text.color;
     const std::array text_colors{&context->style.selectable.text_normal, &context->style.selectable.text_hover,
         &context->style.selectable.text_pressed, &context->style.selectable.text_normal_active,
         &context->style.selectable.text_hover_active, &context->style.selectable.text_pressed_active};
-    for (auto* text_color : text_colors) nk_style_push_color(context, text_color, color);
+    // A selected row sits on the theme's selection fill and takes its text color.
+    const auto selected_color = wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::selected_text);
+    for (std::size_t index = 0; index < text_colors.size(); ++index)
+        nk_style_push_color(context, text_colors[index], index < 3 ? color : selected_color);
     nk_layout_row_begin(context, NK_DYNAMIC, 23.0f, row.unreachable ? 2 : 1);
     if (row.unreachable) { nk_layout_row_push(context, 0.09f); scope_warning_icon(context, color); }
     nk_layout_row_push(context, row.unreachable ? 0.91f : 1.0f);

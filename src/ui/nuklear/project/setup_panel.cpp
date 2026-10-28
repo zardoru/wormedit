@@ -11,6 +11,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <array>
+#include <optional>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -1455,6 +1456,7 @@ void emit_project_setting(const wormedit::ui::setup_view_t& view,
         .field = field, .use_program_default = use_default, .integer = integer, .text = std::string{text}};
 }
 auto project_default_toggle(nk_context* context, const char* label, bool overridden) -> bool {
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium); // Separates each setting from the previous one.
     nk_layout_row_dynamic(context, 25, 1);
     nk_bool use_default = !overridden;
     return nk_checkbox_label(context, label, &use_default) != 0;
@@ -1465,13 +1467,17 @@ void render_project_snap(nk_context* context, const wormedit::ui::setup_view_t& 
     if (project_default_toggle(context, "Use program default for new-chart snap", settings.snap_overridden))
         emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap,
             settings.snap_overridden, settings.default_snap);
-    if (!settings.snap_overridden) nk_widget_disable_begin(context);
     int snap = static_cast<int>(settings.default_snap);
     nk_layout_row_dynamic(context, 28, 1);
-    nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
-    if (settings.snap_overridden && snap != static_cast<int>(settings.default_snap))
-        emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap, false, static_cast<std::uint32_t>(snap));
-    if (!settings.snap_overridden) nk_widget_disable_end(context);
+    if (settings.snap_overridden) {
+        nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
+        if (snap != static_cast<int>(settings.default_snap))
+            emit_project_setting(view, action, wormedit::project_setting_field_t::default_snap, false, static_cast<std::uint32_t>(snap));
+    } else {
+        // Drawn with the disabled look; edits are discarded with the local copy.
+        const wormedit::ui::chrome::DisabledFieldStyle disabled{context};
+        nk_property_int(context, "New-chart snap denominator", 1, &snap, 1920, 1, 1);
+    }
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Program default: 1/%u", settings.program_default_snap);
 }
@@ -1483,14 +1489,19 @@ void render_project_directory(nk_context* context, const wormedit::ui::setup_vie
     auto& buffer = visual ? project_state.visual_directory : project_state.audio_directory;
     if (project_default_toggle(context, visual ? "Use program default for visual assets" : "Use program default for audio assets", overridden))
         emit_project_setting(view, action, field, overridden, 0, buffer.data());
-    if (!overridden) nk_widget_disable_begin(context);
     constexpr float ratios[]{0.8f, 0.2f};
     nk_layout_row(context, NK_DYNAMIC, 28, 2, ratios);
-    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
-        buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
-    if (nk_button_label(context, visual ? "Set visual folder" : "Set audio folder") && overridden)
+    {
+        // Disabled: read-only field in the disabled look (not Nuklear's color scaling).
+        std::optional<wormedit::ui::chrome::DisabledFieldStyle> disabled;
+        if (!overridden) disabled.emplace(context);
+        wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
+            overridden ? NK_EDIT_FIELD : NK_EDIT_FIELD | NK_EDIT_READ_ONLY,
+            buffer.data(), static_cast<int>(buffer.size()), nk_filter_default);
+    }
+    if (wormedit::ui::chrome::Button{.label = visual ? "Set visual folder" : "Set audio folder",
+                                     .enabled = overridden}.render(context))
         emit_project_setting(view, action, field, false, 0, buffer.data());
-    if (!overridden) nk_widget_disable_end(context);
 }
 void render_project_settings(nk_context* context, const wormedit::ui::setup_view_t& view,
                              wormedit::ui::workspace_action_t& action) {

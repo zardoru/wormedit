@@ -160,7 +160,7 @@ void count_row(nk_context* context, const char* name, const wormedit::generator_
     for (int i = 0; i < 3; ++i) {
         std::snprintf(text, sizeof(text), "%c%zu", marks[i], values[i]);
         nk_label_colored(context, text, NK_TEXT_RIGHT,
-                         values[i] ? chrome::color(UiColor::text) : metrics::text_faint);
+                         values[i] ? chrome::color(UiColor::text) : chrome::text_faint());
     }
 }
 void count_header(nk_context* context) {

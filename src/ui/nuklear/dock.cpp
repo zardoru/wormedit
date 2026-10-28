@@ -23,7 +23,7 @@ auto glyph(dock_panel_t panel) -> lucide::Glyph {
     case dock_panel_t::measures: return Glyph::grip_vertical;
     case dock_panel_t::layers: return Glyph::layers;
     case dock_panel_t::markers: return Glyph::anchor;
-    case dock_panel_t::mixer: return Glyph::audio_lines;
+    case dock_panel_t::mixer: return Glyph::gauge;
     case dock_panel_t::generator: return Glyph::flame;
     }
     return Glyph::panel_right_open;

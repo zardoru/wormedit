@@ -763,7 +763,7 @@ void render_status(const ComposeInspectorContext& inspector) {
                          chrome::color(chrome::UiColor::text_muted));
     } else if (rejected && editor.recipe_edit_dirty) {
         nk_layout_row_dynamic(context, 36, 1);
-        nk_label_colored_wrap(context, view.recipe_form.status_text.data(), metrics::destructive_text);
+        nk_label_colored_wrap(context, view.recipe_form.status_text.data(), wormedit::ui::chrome::destructive_text());
         nk_layout_row_dynamic(context, row_height, 2);
         nk_spacing(context, 1);
         if (chrome::Button{.label = "Revert", .tooltip = "Go back to the stored values"}.render(context))

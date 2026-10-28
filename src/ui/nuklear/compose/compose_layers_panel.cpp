@@ -346,7 +346,7 @@ void render_row(const LayersPanel& panel, const wormedit::ui::compose_semantic_l
                                    layer_menu_blocks_row_input(panel);
     if (row_input_blocked) nk_widget_disable_begin(context);
     if (!panel.view->semantic_layer_assist_available) nk_widget_disable_begin(context);
-    if (IconButton{Glyph::audio_lines, layer.assist_tick_enabled ? "Disable layer assist ticks"
+    if (IconButton{Glyph::metronome, layer.assist_tick_enabled ? "Disable layer assist ticks"
                        : "Enable layer assist ticks", layer.assist_tick_enabled}.render(context))
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK, layer.layer_id.value);
     if (!panel.view->semantic_layer_assist_available) nk_widget_disable_end(context);

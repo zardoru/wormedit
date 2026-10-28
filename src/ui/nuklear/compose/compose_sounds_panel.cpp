@@ -1493,11 +1493,10 @@ void render_title(const SoundsPanel& panel) {
     auto* context = panel.context;
     const auto& view = *panel.view;
     const auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 20, 1);
     char text[96];
     std::snprintf(text, sizeof(text), "Sounds  %zu%s  ·  %zu selected", view.keysound_total_count,
                   view.keysounds_truncated ? "+" : "", state.keysound_catalog.keysound_selection.selected.size());
-    nk_label(context, text, NK_TEXT_LEFT);
+    wormedit::ui::chrome::panel_header(context, text);
 }
 
 void publish_drop_bounds(const SoundsPanel& panel) {

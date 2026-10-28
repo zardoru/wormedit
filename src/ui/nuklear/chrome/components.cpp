@@ -88,7 +88,7 @@ void tooltip_if_hovered(nk_context* context, const hit_t& hit, const char* toolt
 
 
 auto disabled_look() -> ControlLook {
-    return {color(UiColor::surface), color(UiColor::border), metrics::text_faint};
+    return {disabled_fill(), color(UiColor::separator), text_faint()};
 }
 
 } // namespace
@@ -142,7 +142,7 @@ auto button_look(ButtonKind kind, ControlState state) -> ControlLook {
         return {active  ? with_alpha(metrics::destructive, 90)
                 : hover ? with_alpha(metrics::destructive, 48)
                         : transparent,
-                metrics::destructive, metrics::destructive_text};
+                metrics::destructive, destructive_text()};
     case ButtonKind::secondary:
         break;
     }
@@ -240,7 +240,7 @@ auto Checkbox::render(nk_context* context) const -> bool {
     draw_centered_text(context, nk_rect(label_area.x - metrics::gap_medium, label_area.y,
                                         label_area.w + metrics::gap_medium, label_area.h),
                        label,
-                       !enabled ? metrics::text_faint
+                       !enabled ? chrome::text_faint()
                                 : lit ? color(UiColor::text_bright) : color(UiColor::text),
                        NK_TEXT_LEFT);
     tooltip_if_hovered(context, hit, tooltip);
@@ -292,7 +292,7 @@ void draw_segment(nk_context* context, const chrome::Segmented& control, struct 
     if (index > 0 && !chosen && index - 1 != chosen_index)
         nk_stroke_line(canvas, segment.x, segment.y + 5.0f, segment.x, segment.y + segment.h - 5.0f,
                        1.0f, color(UiColor::border));
-    const auto text = !control.enabled ? metrics::text_faint
+    const auto text = !control.enabled ? chrome::text_faint()
                       : chosen         ? color(UiColor::selected_text)
                       : lit            ? color(UiColor::text_bright)
                                        : color(UiColor::text);
@@ -444,7 +444,7 @@ auto MixToggle::render(nk_context* context) const -> bool {
     const auto stroke = state == ControlState::hover || state == ControlState::active
         ? color(UiColor::border_hover) : transparent;
     paint_look(context, box, metrics::radius_control, {fill, stroke, {}});
-    const auto text = !enabled ? metrics::text_faint : active ? nk_rgb(255, 255, 255) : color(UiColor::text);
+    const auto text = !enabled ? chrome::text_faint() : active ? nk_rgb(255, 255, 255) : color(UiColor::text);
     draw_centered_text(context, box, kind == MixToggleKind::solo ? "S" : "M", text);
     tooltip_if_hovered(context, hit, tooltip);
     return enabled && hit.clicked;

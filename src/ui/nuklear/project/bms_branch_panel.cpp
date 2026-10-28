@@ -234,7 +234,7 @@ void draw_row_state(nk_context* context, const row_geometry_t& geometry, const w
     }
 }
 auto row_tint(const wormedit::ui::bms_program_row_t& row) -> nk_color {
-    if (row.unreachable) return scope_warning_color;
+    if (row.unreachable) return scope_warning_color();
     return chrome::color(row.selected ? UiColor::selected_text : UiColor::text);
 }
 void paint_row_background(nk_context* context, const row_geometry_t& geometry,

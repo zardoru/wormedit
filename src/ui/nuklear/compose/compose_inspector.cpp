@@ -152,6 +152,9 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
 static auto render_card_wide_button(nk_context* context, const char* label) -> bool {
     namespace metrics = wormedit::ui::metrics;
     const float width = context->current->layout->bounds.w;
+    // The same 1px measuring row a tight card pushes, so the gap above equals the gap between cards.
+    nk_layout_row_dynamic(context, 1.0f, 1);
+    nk_spacing(context, 1);
     nk_layout_space_begin(context, NK_STATIC, metrics::control_default, 1);
     nk_layout_space_push(context, nk_rect(-metrics::card_overhang, 0.0f,
                                           width + metrics::card_overhang, metrics::control_default));

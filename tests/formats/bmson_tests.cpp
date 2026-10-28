@@ -218,6 +218,19 @@ template <typename T>
 void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
 template <typename T>
 void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+// A rejected sound channel name reports its JSON field and the authored value.
+void check_invalid_resource_name(const std::string& name) {
+    const nlohmann::json source = {
+        {"version", "1.0.0"}, {"info", {{"init_bpm", 120}}},
+        {"sound_channels", {{{"name", name}, {"notes", nlohmann::json::array()}}}}};
+    const auto parsed = parse_text(source.dump());
+    require_bmson_condition(!parsed.value && !parsed.diagnostics.empty());
+    const auto& error = parsed.diagnostics.back();
+    check_bmson_condition(error.code == wormedit::bmson_parse_diagnostic_code_t::invalid_value);
+    check_bmson_condition(error.location.json_path == "$.sound_channels[0].name");
+    check_bmson_condition(error.message.find("$.sound_channels[0].name") != std::string::npos);
+    check_bmson_condition(error.message.find(nlohmann::json(name).dump()) != std::string::npos);
+}
 } // namespace
 
 TEST_CASE("BGM column packing prefers established groups deterministically",
@@ -768,19 +781,7 @@ TEST_CASE("BMSON invalid resource paths identify the authored value and JSON fie
                            std::string{"tone\0.wav", 9}, std::string{""},
                            std::string{"../音\"sample.wav"}};
     for (const auto& name : names) {
-        DYNAMIC_SECTION(nlohmann::json(name).dump()) {
-            const nlohmann::json source = {
-                {"version", "1.0.0"}, {"info", {{"init_bpm", 120}}},
-                {"sound_channels", {{{"name", name}, {"notes", nlohmann::json::array()}}}}};
-            const auto parsed = parse_text(source.dump());
-            REQUIRE_FALSE(parsed.value);
-            REQUIRE_FALSE(parsed.diagnostics.empty());
-            const auto& error = parsed.diagnostics.back();
-            CHECK(error.code == wormedit::bmson_parse_diagnostic_code_t::invalid_value);
-            CHECK(error.location.json_path == "$.sound_channels[0].name");
-            CHECK(error.message.find("$.sound_channels[0].name") != std::string::npos);
-            CHECK(error.message.find(nlohmann::json(name).dump()) != std::string::npos);
-        }
+        DYNAMIC_SECTION(nlohmann::json(name).dump()) { check_invalid_resource_name(name); }
     }
 }
 

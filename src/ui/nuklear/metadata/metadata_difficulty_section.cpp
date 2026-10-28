@@ -222,6 +222,19 @@ static void set_lane_profile_action(wormedit::ui::workspace_action_t* action, co
 
 // Key-count selector over the chart's family plus Custom. Preview and Apply go through the sealed
 // key-count proposal; Custom stays disabled with its reason.
+// The key-count preview result; a preview that cannot be applied reads as a conflict.
+static void render_lane_profile_preview_message(nk_context* context,
+                                                const wormedit::ui::metadata_view_t& metadata) {
+    if (!metadata.lane_profile_preview_present) return;
+    nk_layout_row_dynamic(context, 19, 1);
+    const auto* message = metadata.lane_profile_preview_message.c_str() ? metadata.lane_profile_preview_message.c_str() : "";
+    if (metadata.lane_profile_apply_enabled)
+        nk_label(context, message, NK_TEXT_LEFT);
+    else
+        nk_label_colored(context, message, NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
+}
+
 static void render_lane_profile_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
@@ -262,15 +275,7 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
     const auto apply = nk_button_label(context, "Apply key count") != 0 && apply_enabled;
     if (!apply_enabled) nk_widget_disable_end(context);
     nk_layout_row_end(context);
-    if (metadata.lane_profile_preview_present) {
-        nk_layout_row_dynamic(context, 19, 1);
-        const auto* message = metadata.lane_profile_preview_message.c_str() ? metadata.lane_profile_preview_message.c_str() : "";
-        if (metadata.lane_profile_apply_enabled)
-            nk_label(context, message, NK_TEXT_LEFT);
-        else
-            nk_label_colored(context, message, NK_TEXT_LEFT,
-                             wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
-    }
+    render_lane_profile_preview_message(context, metadata);
     if (preview) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
                                          state.lane_profile_selected);
     if (apply) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,

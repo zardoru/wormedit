@@ -254,6 +254,29 @@ template <typename T>
 void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
 template <typename T>
 void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+
+constexpr std::array bmson_resource_fields{"$.sound_channels[0].name", "$.bga.bga_header[0].name",
+                                           "$.info.preview_music"};
+
+// Opens a BMSON chart whose resource at `field` escapes its folder and checks the error names
+// the chart, the field and the authored value.
+void check_bmson_resource_opening_error(std::string_view field) {
+    const std::string resource = "../音 sample.wav";
+    nlohmann::json source = {{"version", "1.0.0"}, {"info", {{"init_bpm", 120}}}};
+    if (field == bmson_resource_fields[0])
+        source["sound_channels"] = {{{"name", resource}, {"notes", nlohmann::json::array()}}};
+    else if (field == bmson_resource_fields[1])
+        source["bga"]["bga_header"] = {{{"id", 1}, {"name", resource}}};
+    else
+        source["info"]["preview_music"] = resource;
+    temporary_project_file_t chart{"-音 chart.bmson"};
+    chart.write(source.dump());
+    const auto opened = wormedit::sys::open_project_file(chart.path);
+    require_bmson_condition(!opened.is_success());
+    for (const auto& expected : {chart.path.generic_string(), resource, std::string{field},
+                                 std::string{"resource path may not escape its asset directory"}})
+        check_bmson_condition(opened.error.find(expected) != std::string::npos);
+}
 } // namespace
 
 TEST_CASE("Project folder availability follows the loaded session directory", "[sys][project-folder]") {
@@ -694,27 +717,8 @@ TEST_CASE("project opening rejects malformed native files", "[unit][sys][project
 
 TEST_CASE("BMSON opening errors identify the chart and offending resource",
           "[unit][sys][project-open]") {
-    const std::array fields{"$.sound_channels[0].name", "$.bga.bga_header[0].name",
-                            "$.info.preview_music"};
-    for (const auto* field : fields) {
-        DYNAMIC_SECTION(field) {
-            const std::string resource = "../音 sample.wav";
-            nlohmann::json source = {{"version", "1.0.0"}, {"info", {{"init_bpm", 120}}}};
-            if (std::string_view{field} == fields[0])
-                source["sound_channels"] = {{{"name", resource}, {"notes", nlohmann::json::array()}}};
-            else if (std::string_view{field} == fields[1])
-                source["bga"]["bga_header"] = {{{"id", 1}, {"name", resource}}};
-            else
-                source["info"]["preview_music"] = resource;
-            temporary_project_file_t chart{"-音 chart.bmson"};
-            chart.write(source.dump());
-            const auto opened = wormedit::sys::open_project_file(chart.path);
-            REQUIRE_FALSE(opened.is_success());
-            CHECK(opened.error.find(chart.path.generic_string()) != std::string::npos);
-            CHECK(opened.error.find(resource) != std::string::npos);
-            CHECK(opened.error.find(field) != std::string::npos);
-            CHECK(opened.error.find("resource path may not escape its asset directory") != std::string::npos);
-        }
+    for (const auto* field : bmson_resource_fields) {
+        DYNAMIC_SECTION(field) { check_bmson_resource_opening_error(field); }
     }
 }
 

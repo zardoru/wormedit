@@ -50,5 +50,5 @@ void render_metadata_inheritance_section(const MetadataPanel& panel) {
     render_footer_buttons(context, changed, changed, "Revert fields", "Apply fields", revert, apply);
     if (revert) state.inheritance.reset(metadata);
     if (apply) apply_inheritance(panel);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

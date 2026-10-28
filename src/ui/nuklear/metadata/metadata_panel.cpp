@@ -52,10 +52,10 @@ metadata_tree_identity_t metadata_tree_identity(int original_line) {
 int metadata_tree_push(nk_context* context, int tree_type, const char* title, int initial_state,
                       int original_line) {
     const auto identity = metadata_tree_identity(original_line);
-    return nk_tree_push_hashed(context, static_cast<enum nk_tree_type>(tree_type), title,
-                               static_cast<enum nk_collapse_states>(initial_state),
-                               identity.hash, static_cast<int>(strlen(identity.hash)),
-                               identity.seed);
+    return wormedit::ui::chrome::section_push(
+        context, static_cast<enum nk_tree_type>(tree_type), title,
+        static_cast<enum nk_collapse_states>(initial_state), identity.hash,
+        static_cast<int>(strlen(identity.hash)), identity.seed);
 }
 
 void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented) {

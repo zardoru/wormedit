@@ -1494,7 +1494,7 @@ void render_project_directory(nk_context* context, const wormedit::ui::setup_vie
 }
 void render_project_settings(nk_context* context, const wormedit::ui::setup_view_t& view,
                              wormedit::ui::workspace_action_t& action) {
-    if (!nk_tree_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
     if (project_state.settings_revision != view.document_revision) {
         std::snprintf(project_state.audio_directory.data(), project_state.audio_directory.size(), "%.*s",
             static_cast<int>(view.settings.audio_directory.size()), view.settings.audio_directory.empty() ? "" : view.settings.audio_directory.data());
@@ -1507,7 +1507,7 @@ void render_project_settings(nk_context* context, const wormedit::ui::setup_view
     render_project_snap(context, view, action);
     render_project_directory(context, view, action, false);
     render_project_directory(context, view, action, true);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 }
 

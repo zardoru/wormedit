@@ -742,14 +742,26 @@ inline void apply_tooltip_theme(nk_context* context) {
 
 // Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
 // menus. Node and tab buttons are the chevrons that open and close the section.
+// Level-one section bars are a notch lighter than the buttons, so a header reads as the
+// parent of everything indented under it.
+inline auto section_header_color() -> nk_color {
+    const auto base = color(UiColor::surface_hover);
+    const auto text = color(UiColor::text);
+    const auto mix = [](nk_byte a, nk_byte b) {
+        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * 10 / 100);
+    };
+    return nk_rgba(mix(base.r, text.r), mix(base.g, text.g), mix(base.b, text.b), 255);
+}
+
 inline void apply_header_theme(nk_context* context) {
     auto& style = context->style;
     const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     const auto hover = nk_style_item_color(color(UiColor::surface_hover));
     const auto active = nk_style_item_color(color(UiColor::surface_active));
     style.tab.background = clear;
-    style.tab.border_color = color(UiColor::border);
-    style.tab.text = color(UiColor::text);
+    style.tab.border_color = section_header_color();
+    style.tab.text = color(UiColor::text_bright);
+    style.tab.indent = metrics::section_indent;
     style.tab.rounding = metrics::radius_control;
     for (auto* button : {&style.tab.tab_maximize_button, &style.tab.tab_minimize_button,
                          &style.tab.node_maximize_button, &style.tab.node_minimize_button}) {
@@ -764,6 +776,19 @@ inline void apply_header_theme(nk_context* context) {
         button->rounding = metrics::radius_control;
     }
 }
+
+// Accordion sections with a visible hierarchy. NK_TREE_TAB is a level-one section: a filled
+// bar in bright text. NK_TREE_NODE is a level-two subsection: unfilled, in the normal text
+// color. Both indent their body and draw a thin rule down its left edge, in the bar's color
+// for level one and in the border color for level two. Every push that returns true needs a
+// matching section_pop; an open section's rule is painted there, once its height is known.
+auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool;
+inline auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                         nk_collapse_states initial) -> bool {
+    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0);
+}
+void section_pop(nk_context* context);
 
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);

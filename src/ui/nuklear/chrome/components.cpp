@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <string>
 
@@ -503,6 +504,54 @@ auto SelectionBar::render(nk_context* context) const -> int {
         right = area.x - metrics::gap_small;
     }
     return clicked;
+}
+
+
+namespace {
+
+struct open_section_t {
+    float body_top{};
+    bool level_one{};
+};
+
+// Sections nest only a couple of levels; a push beyond this still works, it just paints no rule.
+constexpr std::size_t max_section_depth = 8;
+open_section_t open_sections[max_section_depth];
+std::size_t open_section_count = 0;
+
+} // namespace
+
+auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool {
+    const bool level_one = type == NK_TREE_TAB;
+    const bool text_pushed = !level_one && nk_style_push_color(context, &context->style.tab.text,
+                                                                 color(UiColor::text));
+    const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (text_pushed) nk_style_pop_color(context);
+    if (!open) return false;
+    // The header row is the last one laid out; the body starts after its height.
+    const auto* layout = context->current->layout;
+    if (open_section_count < max_section_depth)
+        open_sections[open_section_count] = {layout->at_y + layout->row.height, level_one};
+    ++open_section_count;
+    return true;
+}
+
+void section_pop(nk_context* context) {
+    if (open_section_count > 0) {
+        --open_section_count;
+        if (open_section_count < max_section_depth) {
+            const auto& section = open_sections[open_section_count];
+            const auto* layout = context->current->layout;
+            const float bottom = layout->at_y + layout->row.height;
+            const float x = layout->at_x - metrics::section_indent * 0.5f - metrics::section_rule_width * 0.5f;
+            if (bottom > section.body_top)
+                nk_fill_rect(nk_window_get_canvas(context),
+                             nk_rect(x, section.body_top, metrics::section_rule_width, bottom - section.body_top),
+                             0.0f, section.level_one ? section_header_color() : color(UiColor::border));
+        }
+    }
+    nk_tree_pop(context);
 }
 
 } // namespace wormedit::ui::chrome

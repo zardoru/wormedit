@@ -235,8 +235,7 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
     for (std::size_t index = 0; index < count; ++index)
         state.lane_profile_labels.push_back(metadata.lane_profile_choices[index].label.c_str());
     if (state.lane_profile_selected >= count) state.lane_profile_selected = metadata.lane_profile_current;
-    nk_layout_row_dynamic(context, 19, 1);
-    muted_label(context, "Key count (this chart's family)");
+    if (!metadata_tree_push(context, NK_TREE_NODE, "Key count", NK_MINIMIZED, 3101)) return;
     nk_layout_row_dynamic(context, 26, 1);
     const auto chosen = wormedit::ui::chrome::safe_combo(context, state.lane_profile_labels.data(),
                                                          static_cast<int>(count),
@@ -275,6 +274,7 @@ static void render_lane_profile_section(const MetadataPanel& panel) {
                                          state.lane_profile_selected);
     if (apply) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
                                        state.lane_profile_selected);
+    wormedit::ui::chrome::section_pop(context);
 }
 
 // Lane table with Preview and Apply. Apply carries no payload: it applies the sealed preview.
@@ -284,8 +284,8 @@ static void render_channel_map_section(const MetadataPanel& panel) {
     if (metadata.channel_map_lanes.empty()) return;
     sync_channel_map_buffers(metadata);
     const auto editable = metadata.chart_fields_editable && metadata.channel_map_editable && state.channel_map_buffers_valid;
-    nk_layout_row_dynamic(context, 19, 1);
-    muted_label(context, "Channel maps (layout segment lanes)");
+    if (!metadata_tree_push(context, NK_TREE_NODE, "Channel maps", NK_MINIMIZED, 3102)) return;
+    muted_label(context, "Layout segment lanes");
     for (std::size_t lane = 0; lane < metadata.channel_map_lanes.size(); ++lane)
         render_channel_map_lane_row(context, metadata.channel_map_lanes[lane], lane, editable);
     if (!metadata.channel_map_editable) {
@@ -318,6 +318,7 @@ static void render_channel_map_section(const MetadataPanel& panel) {
         panel.action->metadata_document_revision = metadata.document_revision;
         panel.action->metadata_chart_id = metadata.chart_id;
     }
+    wormedit::ui::chrome::section_pop(context);
 }
 
 static auto batch_chart_selected(std::uint64_t id) -> bool {
@@ -367,8 +368,7 @@ static void render_batch_section(const MetadataPanel& panel, bool editable) {
     const auto& metadata = *panel.metadata;
     if (metadata.chart_choices.size() < 2) return;
     prune_batch_selection(metadata);
-    nk_layout_row_dynamic(context, 19, 1);
-    muted_label(context, "Apply Mapper or Rating to several difficulties");
+    if (!metadata_tree_push(context, NK_TREE_NODE, "Apply to several difficulties", NK_MINIMIZED, 3103)) return;
     for (std::size_t index = 0; index < metadata.chart_choices.size(); ++index) {
         const auto& choice = metadata.chart_choices[index];
         const auto selected = batch_chart_selected(choice.chart_id.value);
@@ -386,6 +386,7 @@ static void render_batch_section(const MetadataPanel& panel, bool editable) {
     if (!enabled) nk_widget_disable_end(context);
     if (author) set_batch_chart_action(panel, false);
     if (rating) set_batch_chart_action(panel, true);
+    wormedit::ui::chrome::section_pop(context);
 }
 
 void render_difficulty_section(const MetadataPanel& panel) {
@@ -393,14 +394,14 @@ void render_difficulty_section(const MetadataPanel& panel) {
     const auto& metadata = *panel.metadata;
     char heading[256];
     if (metadata.has_chart)
-        std::snprintf(heading, sizeof(heading), "Difficulty - %s",
+        std::snprintf(heading, sizeof(heading), "Difficulty · %s",
                       metadata.chart_name.c_str() ? metadata.chart_name.c_str() : "");
     else
         std::snprintf(heading, sizeof(heading), "Difficulty");
     if (!metadata_tree_push(context, NK_TREE_TAB, heading, NK_MAXIMIZED, 1589)) return;
     if (!metadata.has_chart) {
         muted_label(context, "Select a difficulty to edit it.");
-        nk_tree_pop(context);
+        wormedit::ui::chrome::section_pop(context);
         return;
     }
     const auto editable = metadata.chart_fields_editable && state.chart_buffers_valid;
@@ -445,5 +446,5 @@ void render_difficulty_section(const MetadataPanel& panel) {
     render_lane_profile_section(panel);
     render_channel_map_section(panel);
     render_metadata_inheritance_section(panel);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

@@ -33,6 +33,10 @@ inline constexpr float font_display = 28.0f;
 
 inline constexpr float checkbox_box = 16.0f;
 
+// Left indent of an accordion section's body, and the width of the rule drawn in it.
+inline constexpr float section_indent = 14.0f;
+inline constexpr float section_rule_width = 2.0f;
+
 // Shadow of one elevation level: `steps` stacked rounded rects, each one pixel larger, all
 // shifted `offset_y` pixels down.
 //   0 flat (inspector groups, bars)

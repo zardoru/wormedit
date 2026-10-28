@@ -400,7 +400,7 @@ static void render_bms_fields(struct nk_context* context, const wormedit::ui::me
         }
         render_bms_field(panel, *target, typed);
     }
-    if (additional_open) nk_tree_pop(context);
+    if (additional_open) wormedit::ui::chrome::section_pop(context);
 }
 
 static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, bool editable) {
@@ -822,5 +822,5 @@ void render_format_section(const MetadataPanel& panel) {
     render_format_field_rows(panel);
     render_format_target_selector(panel);
     render_format_editor(panel);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

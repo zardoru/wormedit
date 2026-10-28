@@ -1806,7 +1806,9 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                        .glyph = lanes[lane_index]->glyph,
                                        .display_order = lanes[lane_index]->display_order,
                                        .key_color = lanes[lane_index]->key_color,
-                                       .bounds = {left, band_top, right, band_bottom}});
+                                       .bounds = {left, band_top, right, band_bottom},
+                                       .extends_before = &source == &context.index.layouts.front(),
+                                       .extends_after = &source == &context.index.layouts.back()});
     }
     visible_bands.push_back(std::move(band));
     return true;

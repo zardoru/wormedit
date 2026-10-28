@@ -151,6 +151,23 @@ TEST_CASE("Field scene index binding rejects captured chart and view revision ex
     wormedit::test::check_stale_action_message(result.diagnostics, "Field scene index");
 }
 
+TEST_CASE("Only the outer layouts continue lane decoration beyond the document",
+          "[unit][core][editor-scene][lane-decoration]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto result = wormedit::editor_field_scene_view_t::from(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        {.field_left_pixels = 10, .field_width_pixels = 200});
+    REQUIRE(result);
+    std::vector<std::pair<bool, bool>> extensions;
+    for (const auto& lane : result.scene->lanes)
+        extensions.emplace_back(lane.extends_before, lane.extends_after);
+    const std::vector<std::pair<bool, bool>> expected{
+        {true, false}, {true, false}, {false, true}, {false, true}};
+    CHECK(extensions == expected);
+}
+
 TEST_CASE("Field scene preview expiry keeps hold duration move and paint guards",
           "[unit][core][editor-scene][captured-preview-stamp]") {
     const auto kind = GENERATE(0, 1, 2, 3, 4);

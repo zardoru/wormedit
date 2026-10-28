@@ -367,13 +367,12 @@ TEST_CASE("osu imports surface bounded timing quantization warnings",
 TEST_CASE("dropped project extension filter matches every supported opener",
           "[unit][sys][project-open]") {
     constexpr std::array accepted{".wormedit", ".bms", ".bme", ".bml", ".pms",
-                                  ".bmson", ".sm", ".ssc", ".osu"};
+                                  ".bmson", ".sm", ".ssc", ".osu", ".qua"};
     for (const auto* extension : accepted)
         CHECK(wormedit::sys::is_supported_project_file_extension(
             std::filesystem::path{"chart" + std::string{extension}}));
     CHECK(wormedit::sys::is_supported_project_file_extension("UPPER.SSC"));
     CHECK_FALSE(wormedit::sys::is_supported_project_file_extension("song.mp3"));
-    CHECK_FALSE(wormedit::sys::is_supported_project_file_extension("chart.qua"));
 }
 
 TEST_CASE("opened chart resolves audio beside its source before a native project exists",

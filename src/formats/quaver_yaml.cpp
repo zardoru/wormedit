@@ -180,6 +180,14 @@ void normalize_note(YAML::Node node, const YAML::Node& root, std::size_t& budget
     for (auto sample : records(node, "KeySounds", budget))
         normalize_sample(sample, root["CustomAudioSamples"].size(), false);
 }
+void validate_root_scalars(const YAML::Node& root) {
+    for (const auto* key : {"Title", "Artist", "Source", "Tags", "Creator", "DifficultyName", "Description", "Genre"})
+        (void)field<std::string>(root, key);
+    for (const auto* key : {"LegacyLNRendering", "BPMDoesNotAffectScrollVelocity", "HasScratchKey"})
+        (void)field<bool>(root, key);
+    for (const auto* key : {"SongPreviewTime", "MapId", "MapSetId"})
+        (void)field<std::int32_t>(root, key);
+}
 void normalize_groups(YAML::Node root, std::size_t& budget) {
     if (!root["TimingGroups"] || root["TimingGroups"].IsNull()) root["TimingGroups"] = YAML::Node(YAML::NodeType::Map);
     auto groups = root["TimingGroups"];
@@ -189,6 +197,7 @@ void normalize_groups(YAML::Node root, std::size_t& budget) {
         auto group = entry.second;
         if (!group.IsMap() || entry.first.as<std::string>() == "$Default")
             fail(code_t::invalid_value, "Invalid timing group");
+        (void)field<bool>(group, "Hidden");
         group["InitialScrollVelocity"] = number(group, "InitialScrollVelocity", 1);
         (void)color(field<std::string>(group, "ColorRgb", "255,255,255"));
         normalize_track(group, "ScrollVelocities", budget);
@@ -259,6 +268,7 @@ auto dump(const YAML::Node& node) -> std::string {
 }
 auto normalize(YAML::Node root, std::size_t budget) -> YAML::Node {
     sanitize(root);
+    validate_root_scalars(root);
     const auto version = field<int>(root, "QuaVersion");
     if (version < 0 || version > 1) fail(code_t::invalid_version, "Unsupported QuaVersion");
     (void)key_count(root);
@@ -267,6 +277,7 @@ auto normalize(YAML::Node root, std::size_t budget) -> YAML::Node {
         const auto path = field<std::string>(node, "Path");
         if (path.empty()) fail(code_t::invalid_path, "Sample Path cannot be empty");
         validate_path(path);
+        (void)field<bool>(node, "UnaffectedByRate");
     }
     for (auto node : records(root, "EditorLayers", budget))
         (void)color(field<std::string>(node, "ColorRgb", "255,255,255"));
@@ -277,6 +288,7 @@ auto normalize(YAML::Node root, std::size_t budget) -> YAML::Node {
     sort_records(root, "Bookmarks");
     for (auto node : records(root, "TimingPoints", budget)) {
         node["StartTime"] = number(node, "StartTime");
+        (void)field<bool>(node, "Hidden");
         if (number(node, "Bpm") <= 0) fail(code_t::invalid_value, "Bpm must be positive");
         const auto signature = field<std::string>(node, "Signature", "Quadruple");
         if (signature != "Quadruple" && signature != "Triple" && signature != "0" && signature != "4" && signature != "3")

@@ -5,9 +5,8 @@
 #include <map>
 #include <sstream>
 
-namespace wormedit {
+namespace wormedit::quaver_detail {
 namespace {
-using namespace quaver_detail;
 struct measure_time_t {
     double begin{};
     double end{};
@@ -295,11 +294,13 @@ struct quaver_reader_t {
     }
 };
 }
+} // namespace wormedit::quaver_detail
+namespace wormedit {
 auto parse_quaver_bytes(std::span<const std::byte> bytes, quaver_parse_options_t options) -> quaver_parse_outcome_t {
     try {
         const auto text = std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
         auto root = quaver_detail::normalize(quaver_detail::load(text, options), options.max_events);
-        return quaver_reader_t{.root = std::move(root), .options = options}.run();
+        return quaver_detail::quaver_reader_t{.root = std::move(root), .options = options}.run();
     } catch (const quaver_detail::failure_t& error) {
         return {.diagnostics = {error.diagnostic}};
     } catch (const YAML::Exception& error) {

@@ -62,7 +62,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-174 Read `.qua` files
 
-- **Status:** partial (owner-selected post-1.0 work, 2026-10-28; depends on PR #56)
+- **Status:** done (post-1.0 draft PR #63, 2026-10-28; depends on fixture PR #56)
 - **Outcome:** a bounded, transactional `.qua` reader imports every construct in the reference into the song document, retaining unmodeled data (timing groups, `LegacyLNRendering`, map IDs) as format fields for round trips.
 - **Read first:** `docs/references/quaver-qua-format.md`, `src/formats/osu_mania.cpp` (millisecond-to-measure rewiring), `include/wormedit/formats/osu_mania.h`.
 - **Files owned:** new `include/wormedit/formats/quaver.h`, new `src/formats/quaver.cpp`, new `tests/formats/quaver_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/formats/quaver_yaml.cpp`, `src/formats/quaver_internal.h`, `cmake/dependencies/yaml_cpp.cmake`, `cmake/third-party-notices.cmake`, `src/sys/project/project_open.cpp`, `src/sys/project/project_file_types.h`, `tests/sys/project_open_tests.cpp`, `src/ui/nuklear/app/frontend.cpp`, `docs/references/quaver-qua-format.md`, `tests/fixtures/README.md`, this card.
@@ -74,20 +74,20 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 - **Invariants:** exact millisecond times retained as source spellings.
 - **Reject/failure behavior:** any validation error publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver'`.
-- **Done so far:** bounded YAML reader, load rules, timeline/lane/resource/marker mappings, retained Quaver-only fields, experimental project import. Supporting-file ownership expanded by the coordinator to wire admission, the file filter, dependency/license and regression coverage.
-- **Remaining:** complete paired fixture, native persistence and integration validation before marking done.
+- **Validation:** all 14 fixtures, native persistence and Quaver/conversion/loss tests pass (64 cases, 3,872 assertions); CLI accepts a valid `.qua` and rejects an invalid hold without publishing. The whole-project GATE builds and passes complexity/whitespace but has six reproducible failures outside these owned files (four clipboard cases, two render segfaults).
+- **Implementation:** bounded YAML reader, load rules, timeline/lane/resource/marker mappings, retained Quaver-only fields, experimental project import. Supporting-file ownership expanded by the coordinator to wire admission, the file filter, dependency/license and regression coverage.
 - **Out of scope:** writer (T-175), per-note timing groups in the editor.
 
 ## T-175 Write `.qua` files
 
-- **Status:** partial (owner-selected post-1.0 work, 2026-10-28; paired with T-174)
+- **Status:** done (post-1.0 draft PR #63, 2026-10-28; paired with T-174)
 - **Outcome:** a deterministic writer emits CRLF YAML with default-valued fields omitted, `QuaVersion` computed, and semantic re-import equality for every positive fixture; the format is added to the conversion pipeline.
 - **Read first:** `docs/references/quaver-qua-format.md` (write rules), `include/wormedit/formats/conversion.h`, `src/formats/conversion.cpp`.
-- **Files owned:** `src/formats/quaver.cpp`, `include/wormedit/formats/quaver.h`, `tests/formats/quaver_tests.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`, `src/formats/quaver_writer.cpp`, `src/formats/quaver_internal.h`, `src/tools/wormedit_convert.cpp`, `docs/references/quaver-qua-format.md`, this card.
+- **Files owned:** `src/formats/quaver.cpp`, `include/wormedit/formats/quaver.h`, `tests/formats/quaver_tests.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`, `src/formats/quaver_writer.cpp`, `src/formats/quaver_internal.h`, `src/tools/wormedit_convert.cpp`, `src/formats/conversion_publication.cpp`, `tests/formats/conversion_publication_tests.cpp`, `docs/references/quaver-qua-format.md`, this card.
 - **Steps:** 1. Writer. 2. Round-trip tests. 3. Loss diagnostics for BMS/SM-only features (stops, warps, BGA).
 - **Invariants:** unedited imports re-export semantically equal.
 - **Reject/failure behavior:** unrepresentable content rejects with a classified loss.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver|conversion|loss'`.
-- **Done so far:** CRLF writer, stable output ordering, retained-data re-export, classified refusals and paired conversion/reimport; shared per-chart serialization and reimport acceptance remove duplicate pipeline plumbing. Supporting-file ownership expanded by the coordinator for the CLI and contract documentation.
-- **Remaining:** complete round-trip and loss/integration validation before marking done. Keep the PR draft and post-1.0; do not enable the stable output catalog.
+- **Validation:** all 14 fixtures and the 64 Quaver/conversion/loss cases pass (3,872 assertions), including deterministic round trips, asset discovery, classified refusals and CLI reimport. The whole-project GATE has six reproducible failures outside these owned files, recorded under T-174.
+- **Implementation:** CRLF writer, stable output ordering, retained-data re-export, classified refusals and paired conversion/reimport; shared per-chart serialization and reimport acceptance remove duplicate pipeline plumbing. Supporting-file ownership expanded by the coordinator for publication, CLI and contract documentation. The PR remains a post-1.0 draft and the stable output catalog stays disabled.
 - **Out of scope:** Quaver online metadata.

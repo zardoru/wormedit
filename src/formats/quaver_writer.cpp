@@ -7,9 +7,8 @@
 #include <map>
 #include <numeric>
 
-namespace wormedit {
+namespace wormedit::quaver_detail {
 namespace {
-using namespace quaver_detail;
 auto root_for(const chart_document_t& chart) -> YAML::Node {
     for (const auto& group : chart.metadata.format_groups) {
         if (group.family != format_family_t::quaver) continue;
@@ -415,23 +414,25 @@ struct quaver_writer_t {
     }
 };
 }
+} // namespace wormedit::quaver_detail
+namespace wormedit {
 auto write_quaver(const song_document_t& song, quaver_write_options_t options) -> quaver_write_outcome_t {
     try {
         const auto charts = song.read_charts();
         const auto* chart = options.chart ? song.read_chart(*options.chart) : (charts.size() == 1 ? charts.front() : nullptr);
-        if (!chart || chart->measures.empty()) fail(code_t::missing_chart, "Select one nonempty chart for Quaver export");
-        if (diagnostic_queries::has_errors(validate_document(song))) fail(code_t::invalid_document, "Invalid source document");
+        if (!chart || chart->measures.empty()) quaver_detail::fail(quaver_detail::code_t::missing_chart, "Select one nonempty chart for Quaver export");
+        if (diagnostic_queries::has_errors(validate_document(song))) quaver_detail::fail(quaver_detail::code_t::invalid_document, "Invalid source document");
         const auto index = timing_index_t::from(*chart);
-        if (!index.value || !index.ok()) fail(code_t::invalid_document, "Invalid chart timing");
+        if (!index.value || !index.ok()) quaver_detail::fail(quaver_detail::code_t::invalid_document, "Invalid chart timing");
         auto measures = measure_index_t::from(*chart);
-        if (!measures) fail(code_t::invalid_document, "Invalid measure geometry");
-        quaver_writer_t writer{.song = song, .chart = *chart, .options = options,
-            .root = root_for(*chart), .measures = std::move(*measures), .timing = *index.value};
+        if (!measures) quaver_detail::fail(quaver_detail::code_t::invalid_document, "Invalid measure geometry");
+        quaver_detail::quaver_writer_t writer{.song = song, .chart = *chart, .options = options,
+            .root = quaver_detail::root_for(*chart), .measures = std::move(*measures), .timing = *index.value};
         return {.value = writer.run()};
-    } catch (const failure_t& error) {
+    } catch (const quaver_detail::failure_t& error) {
         return {.diagnostics = {error.diagnostic}};
     } catch (const YAML::Exception& error) {
-        return {.diagnostics = {{.code = code_t::invalid_yaml, .message = error.what()}}};
+        return {.diagnostics = {{.code = quaver_detail::code_t::invalid_yaml, .message = error.what()}}};
     }
 }
 }

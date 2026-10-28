@@ -229,3 +229,13 @@ TEST_CASE("Quaver writer emits signature-only timing anchors", "[quaver]") {
     CHECK(node["TimingPoints"][2]["StartTime"].as<double>() == 3000);
     CHECK_FALSE(node["TimingPoints"][2]["Signature"]);
 }
+TEST_CASE("Quaver validates retained scalar types before publishing", "[quaver]") {
+    constexpr auto base = "Mode: Keys4\nTimingPoints: [{Bpm: 120}]\nHitObjects: [{StartTime: 500, Lane: 1}]\n";
+    const auto* invalid = GENERATE("LegacyLNRendering: invalid\n",
+        "CustomAudioSamples: [{Path: sample.wav, UnaffectedByRate: invalid}]\n",
+        "TimingGroups: {accent: {Hidden: invalid}}\n");
+    const auto parsed = wormedit::parse_quaver_bytes(bytes(std::string(base) + invalid));
+    CHECK_FALSE(parsed.value);
+    REQUIRE_FALSE(parsed.diagnostics.empty());
+    CHECK(parsed.diagnostics.front().code == wormedit::quaver_diagnostic_code_t::invalid_yaml);
+}

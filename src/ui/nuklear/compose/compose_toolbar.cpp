@@ -480,7 +480,7 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     render_compose_audio_offset(toolbar, show_offset);
 }
 
-void render_compose_inspector_timing_controls(const ComposeToolbarContext& toolbar) {
+void render_compose_inspector_offset_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     nk_label_colored(context, "Audio offset · seconds", NK_TEXT_LEFT,
@@ -493,6 +493,10 @@ void render_compose_inspector_timing_controls(const ComposeToolbarContext& toolb
     render_inline_offset(toolbar, true);
     nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 4);
     render_compose_audio_offset(toolbar, false, true);
+}
+
+void render_compose_inspector_snap_control(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
     nk_layout_row_template_begin(context, wormedit::ui::metrics::control_default);
     nk_layout_row_template_push_dynamic(context);
     wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);

@@ -1,4 +1,5 @@
 #include <wormedit/formats/conversion_publication.h>
+#include "../core/browser_file_publication.h"
 
 #include <algorithm>
 #include <array>
@@ -362,7 +363,9 @@ auto exchange_directories_windows(const fs::path& staging, const fs::path& desti
 #endif
 
 auto exchange_directories(const fs::path& staging, const fs::path& destination) -> bool {
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    return platform::browser_exchange_directories(staging, destination);
+#elif defined(_WIN32)
     return exchange_directories_windows(staging, destination);
 #elif defined(__APPLE__)
 #ifndef RENAME_SWAP
@@ -384,7 +387,9 @@ auto exchange_directories(const fs::path& staging, const fs::path& destination) 
 }
 
 auto install_new_directory(const fs::path& staging, const fs::path& destination) -> bool {
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    return platform::browser_move_no_replace(staging, destination) == 0;
+#elif defined(_WIN32)
     return MoveFileExW(staging.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
 #elif defined(__APPLE__)
 #ifndef RENAME_EXCL

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Wormedit — browser editor (experimental)</title>
+<style>
+body {margin:0;background:#171b24;color:#e8ecf3;font:14px/1.4 system-ui,sans-serif;user-select:none}
+header, #browser-picker, #browser-status {padding:8px 14px} header {background:#252d3b;display:flex;gap:16px;align-items:center}
+button,input,select {font:inherit} input,select {user-select:text} button {padding:5px 12px} a {color:#9fc8ff}
+#browser-picker {background:#31405b} [hidden] {display:none!important}
+canvas {display:block;margin:0 auto;max-width:100%;outline:none}
+#browser-status {margin:0;min-height:20px} #browser-status[data-state=failed] {color:#ffb3aa}
+</style>
+<header><strong>Wormedit · experimental browser editor</strong>
+<span>Temporary workspace. File → Save project downloads current edits as a ZIP. Confirm it in your browser. Reload discards this session.</span>
+<button id="download-workspace" disabled>Download workspace files</button></header>
+<p id="browser-status" role="status" data-state="loading">Loading editor…</p>
+<section id="browser-picker" hidden aria-label="Browser file operation">
+<strong id="picker-title"></strong>
+<label id="upload-label">Choose files (include referenced audio/images, or a project ZIP)
+<input id="browser-upload" type="file" multiple></label>
+<label id="folder-label"><input id="browser-folder" type="checkbox">Upload a folder instead</label>
+<label id="destination-label" hidden>Name in the temporary workspace <input id="browser-destination" maxlength="128"></label>
+<select id="browser-entry" hidden aria-label="Project or chart to open"></select>
+<button id="browser-confirm" hidden>Continue</button><button id="browser-cancel">Cancel</button>
+</section>
+<canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Wormedit main editor"></canvas>
+<script src="fflate.js"></script>
+<script src="editor-files.js"></script>
+<script src="wormedit.js"></script>
+<script>
+'use strict';
+const browserStatus = document.getElementById('browser-status');
+function editorStatus(message, state) { browserStatus.textContent = message; browserStatus.dataset.state = state; }
+(async () => {
+  try {
+    if (typeof WebAssembly !== 'object' || !crossOriginIsolated || typeof SharedArrayBuffer !== 'function')
+      throw new Error('WebAssembly threads require cross-origin isolation. Serve with COOP/COEP headers.');
+    if (typeof OffscreenCanvas !== 'function' || !HTMLCanvasElement.prototype.transferControlToOffscreen)
+      throw new Error('This editor requires OffscreenCanvas support for its worker renderer.');
+    const module = await createWormedit({
+      canvas: document.getElementById('canvas'),
+      editorStatus,
+      print: text => console.log(text), printErr: text => console.error(text),
+      onAbort: message => editorStatus('Editor stopped: ' + message, 'failed'),
+      preRun: [module => installWormeditBrowserFiles(module, editorStatus)]
+    });
+    window.wormedit = module;
+    document.getElementById('canvas').focus();
+    document.getElementById('download-workspace').disabled = false;
+  } catch (error) { editorStatus('Startup failed: ' + String(error), 'failed'); }
+})();
+</script>
+</html>

@@ -619,6 +619,7 @@ static void render_output_path_editor(const MetadataPanel& panel,
     const auto changed = state.output_path_buffer_valid &&
         std::strcmp(state.output_path.data(), selected.relative_output_path.c_str()) != 0;
     const auto apply_enabled = changed && state.output_path[0] != '\0';
+    wormedit::ui::chrome::group_gap(context);
     nk_layout_row_template_begin(context, 23);
     nk_layout_row_template_push_dynamic(context);
     nk_layout_row_template_push_static(context, 96);

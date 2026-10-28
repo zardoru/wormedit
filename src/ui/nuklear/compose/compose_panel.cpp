@@ -1463,8 +1463,8 @@ static void render_compose_dock(nk_context* context, struct nk_rect bounds, cons
 
 namespace {
 void render_dock_inspector(const ComposePanelRenderContext& panel) {
-    nk_layout_row_dynamic(panel.context, 20, 1);
-    nk_label(panel.context, wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::inspector)].title.data(), NK_TEXT_LEFT);
+    wormedit::ui::chrome::panel_header(panel.context,
+        wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::inspector)].title.data());
     render_compose_inspector_contents(panel.context, panel.view, panel.timing_view, panel.action);
 }
 void render_dock_sounds(const ComposePanelRenderContext& panel) {
@@ -1576,8 +1576,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const worm
     }
     if (branch_drawn)
         render_compose_dock(context, nk_rect(branch_left, 0.0f, branch_width, compose_body_height),
-            "BMS branches", NK_WINDOW_BORDER | NK_WINDOW_TITLE,
-            [&] { worm_ui_nuklear_render_bms_branch_panel(context, view, action); });
+            "BMS branches", NK_WINDOW_BORDER,
+            [&] {
+                wormedit::ui::chrome::panel_header(context, "BMS branches");
+                worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+            });
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {

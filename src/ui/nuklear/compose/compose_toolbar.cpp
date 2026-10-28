@@ -8,6 +8,7 @@
 #include "ui/nuklear/render/vector_icons.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/text_layout.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
 
 #include <algorithm>
@@ -60,7 +61,7 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     const bool clicked = wormedit::ui::chrome::IconButton{
-        .glyph = Glyph::audio_lines,
+        .glyph = Glyph::waves_horizontal,
         .tooltip = !view->bgm_bar_available ? "Song audio is unavailable"
             : view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
         .selected = view->bgm_bar_reserved,
@@ -167,7 +168,7 @@ static void render_resource_brush_tool(const ComposeToolbarContext& toolbar) {
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     if (!view->resource_paint_available) nk_widget_disable_begin(context);
-    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines,
+    if (wormedit::ui::chrome::IconButton{Glyph::music_2,
             "Paint keysounds / osu! hitsounds", view->resource_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;
@@ -704,7 +705,10 @@ static void layout_compose_toolbar(nk_context* context, int tool_icons, int pane
     layout_toolbar_icons(context, 1); // BGM scroll back.
     nk_layout_row_template_push_dynamic(context);
     layout_toolbar_icons(context, 1); // BGM scroll forward.
-    if (width >= 900.0f) nk_layout_row_template_push_static(context, 85);
+    if (width >= 900.0f) // Sized to the label, so the colon is never clipped.
+        nk_layout_row_template_push_static(context, std::ceil(
+            wormedit::ui::chrome::text_width(context->style.font, "BGM columns:") +
+            2.0f * context->style.text.padding.x + wormedit::ui::metrics::gap_medium));
     layout_toolbar_icons(context, 1);
     nk_layout_row_template_push_static(context, 42);
     layout_toolbar_icons(context, 1);

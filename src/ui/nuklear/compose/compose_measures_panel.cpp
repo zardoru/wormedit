@@ -112,10 +112,9 @@ void length_controls(nk_context* context, const wormedit::ui::compose_view_t& vi
 
 void worm_ui_nuklear_render_compose_measures(nk_context* context, const wormedit::ui::compose_view_t* view,
     wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
-    nk_layout_row_dynamic(context, 20, 1);
     char title[64];
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());
-    nk_label(context, title, NK_TEXT_LEFT);
+    wormedit::ui::chrome::panel_header(context, title);
     nk_layout_row_dynamic(context, 27, 2);
     if (nk_button_label(context, "Select all")) worm_ui_keysound_select_all(state->measures_dock.measure_selection, ids_of(*view));
     if (nk_button_label(context, "Clear")) worm_ui_keysound_clear(state->measures_dock.measure_selection);

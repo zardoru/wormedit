@@ -3995,7 +3995,7 @@ void draw_compose_tool_chip(nk_context* context, const wormedit::ui::compose_vie
     const auto text = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
     wormedit::ui::lucide::draw(context, nk_rect(chip.bounds.x + 4, chip.bounds.y + 3, 24, 24),
         chip.layer ? wormedit::ui::lucide::Glyph::layers
-                   : view.resource_paint_mode_active ? wormedit::ui::lucide::Glyph::audio_lines
+                   : view.resource_paint_mode_active ? wormedit::ui::lucide::Glyph::music_2
                                                      : wormedit::ui::lucide::Glyph::paintbrush, text);
     auto bounds = nk_rect(chip.bounds.x + 32, chip.bounds.y + 7, chip.bounds.w - 36, 16);
     nk_draw_text(canvas, bounds, chip.prefix, static_cast<int>(std::strlen(chip.prefix)),

@@ -338,8 +338,8 @@ TEST_CASE("components button states", "[components]") {
     const auto primary = chrome::button_look(ButtonKind::primary, ControlState::normal);
     CHECK(primary.fill.b == chrome::color(wormedit::ui::theme::UiColor::selected).b);
     const auto disabled = chrome::button_look(ButtonKind::primary, ControlState::disabled);
-    CHECK(disabled.fill.r == chrome::color(wormedit::ui::theme::UiColor::surface).r);
-    CHECK(disabled.text.r == metrics::text_faint.r);
+    CHECK(disabled.fill.r == chrome::disabled_fill().r);
+    CHECK(disabled.text.r == chrome::text_faint().r);
     const auto ghost = chrome::button_look(ButtonKind::ghost, ControlState::normal);
     CHECK(ghost.fill.a == 0);
     CHECK(chrome::button_look(ButtonKind::ghost, ControlState::hover).fill.a != 0);

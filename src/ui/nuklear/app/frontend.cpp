@@ -2041,15 +2041,13 @@ static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         const auto& item = view->tabs[tab];
         if (item.label.empty()) continue;
-        if (!item.enabled) nk_widget_disable_begin(g_context);
         const bool selected = tab == static_cast<int>(view->active_tab);
         const auto* font = g_context->style.font;
         const auto label_width = font->width(font->userdata, font->height, item.label.data(),
                                              static_cast<int>(item.label.size()));
         const auto* tooltip = label_width > nk_widget_bounds(g_context).w - 20.0f ? item.label.data() : nullptr;
         const bool clicked = wormedit::ui::chrome::mode_button(
-            g_context, item.label.data(), tooltip, selected);
-        if (!item.enabled) nk_widget_disable_end(g_context);
+            g_context, item.label.data(), tooltip, selected, item.enabled);
         if (clicked && item.enabled && !selected &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;

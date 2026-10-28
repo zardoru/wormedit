@@ -20,7 +20,7 @@ void row_label(nk_context* context, const char* text) {
 }
 
 void note(nk_context* context, const char* text) {
-    nk_label_colored(context, text, NK_TEXT_LEFT, metrics::text_faint);
+    nk_label_colored(context, text, NK_TEXT_LEFT, chrome::text_faint());
 }
 
 void section_row(nk_context* context, const char* label, float height, int controls,
@@ -218,7 +218,7 @@ void level_one_menu(nk_context* context, int width, int height) {
     nk_draw_text(canvas, nk_rect(bounds.x + 12.0f, bounds.y + 12.0f, 150.0f, 15.0f), "Menu surface", 12,
                  context->style.font, nk_rgba(0, 0, 0, 0), chrome::color(UiColor::text));
     nk_draw_text(canvas, nk_rect(bounds.x + 12.0f, bounds.y + 34.0f, 160.0f, 15.0f), "elevation 1", 11,
-                 context->style.font, nk_rgba(0, 0, 0, 0), metrics::text_faint);
+                 context->style.font, nk_rgba(0, 0, 0, 0), chrome::text_faint());
     // Menus separate their groups with the separator role, the same rule menu_separator() draws.
     const auto rule_y = bounds.y + 58.0f;
     nk_stroke_line(canvas, bounds.x + 8.0f, rule_y, bounds.x + bounds.w - 8.0f, rule_y, 1.0f,

@@ -287,7 +287,7 @@ struct inset_size_t {
 // which narrows the card against the dock's header. Groups that fit therefore drop the scroll bar.
 auto inset_size(nk_context* context, std::size_t rows, float row_extent, float limit) -> inset_size_t {
     const auto content = static_cast<float>(rows) * (row_extent + context->style.window.spacing.y) + metrics::gap_small;
-    return {.height = std::min(content, limit), .flags = content > limit ? 0 : NK_WINDOW_NO_SCROLLBAR};
+    return {.height = std::min(content, limit), .flags = content > limit ? nk_flags{0} : static_cast<nk_flags>(NK_WINDOW_NO_SCROLLBAR)};
 }
 auto inset_group_begin(nk_context* context, const char* name, inset_size_t size) -> bool {
     nk_layout_row_dynamic(context, size.height, 1);

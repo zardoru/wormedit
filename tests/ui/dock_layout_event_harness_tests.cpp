@@ -208,14 +208,14 @@ TEST_CASE("Docks shrink before the field drops below its minimum width", "[event
     ui_layout_preferences_t layout;
     layout.set_width(400);
     const std::array available{true, true, true, true, true, true, true};
-    const auto geometry = ui::dock_geometry_t::from(944, 700, layout, available, 268);
+    const auto geometry = ui::dock_geometry_t::from(1000, 700, layout, available, 268);
     REQUIRE(geometry.panes[0]);
-    const auto field = 944 - 268 - geometry.reserved_width;
-    CHECK(field >= 360);
+    const auto field = 1000 - 268 - geometry.reserved_width;
+    CHECK(field >= 400);
     CHECK(geometry.panes[0]->bounds.right - geometry.panes[0]->bounds.left >= dock_minimum_width);
     // Too narrow for the dock beside the left panel: the dock reports no panes so the caller can drop the branch panel.
-    CHECK_FALSE(ui::dock_geometry_t::from(860, 700, layout, available, 268).panes[0]);
-    CHECK(ui::dock_geometry_t::from(860, 700, layout, available).panes[0]);
+    CHECK_FALSE(ui::dock_geometry_t::from(900, 700, layout, available, 268).panes[0]);
+    CHECK(ui::dock_geometry_t::from(900, 700, layout, available).panes[0]);
 }
 
 TEST_CASE("Compact docks preserve the field without overwriting preferred panels", "[event-harness][dock-layout]") {

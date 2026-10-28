@@ -10,7 +10,8 @@
 namespace wormedit::ui {
 namespace {
 constexpr float dock_button_height = 30.0f;
-constexpr float minimum_field_width = 360.0f;
+// Includes the ~45 px tool strip that sits left of the field, so the drawn field is about 360 px.
+constexpr float minimum_field_width = 400.0f;
 auto rect(const compose_rect_t& r) -> struct nk_rect {
     return nk_rect(static_cast<float>(r.left), static_cast<float>(r.top),
                    static_cast<float>(r.right - r.left), static_cast<float>(r.bottom - r.top));

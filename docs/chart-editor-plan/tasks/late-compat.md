@@ -74,7 +74,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 - **Invariants:** exact millisecond times retained as source spellings.
 - **Reject/failure behavior:** any validation error publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver'`.
-- **Validation:** all 14 fixtures, native persistence and Quaver/conversion/loss tests pass (64 cases, 3,872 assertions); CLI accepts a valid `.qua` and rejects an invalid hold without publishing. The whole-project GATE builds and passes complexity/whitespace but has six reproducible failures outside these owned files (four clipboard cases, two render segfaults).
+- **Validation:** all 14 fixtures, native persistence and Quaver/conversion/loss tests pass (64 cases, 3,872 assertions); CLI accepts a valid `.qua` and rejects an invalid hold without publishing. The whole-project GATE builds and passes complexity/whitespace but has seven reproducible failures outside these owned files (four clipboard cases, one semantic-layer performance case, two render segfaults).
 - **Implementation:** bounded YAML reader, load rules, timeline/lane/resource/marker mappings, retained Quaver-only fields, experimental project import. Supporting-file ownership expanded by the coordinator to wire admission, the file filter, dependency/license and regression coverage.
 - **Out of scope:** writer (T-175), per-note timing groups in the editor.
 
@@ -88,6 +88,6 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 - **Invariants:** unedited imports re-export semantically equal.
 - **Reject/failure behavior:** unrepresentable content rejects with a classified loss.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'quaver|conversion|loss'`.
-- **Validation:** all 14 fixtures and the 64 Quaver/conversion/loss cases pass (3,872 assertions), including deterministic round trips, asset discovery, classified refusals and CLI reimport. The whole-project GATE has six reproducible failures outside these owned files, recorded under T-174.
+- **Validation:** all 14 fixtures and the 64 Quaver/conversion/loss cases pass (3,872 assertions), including deterministic round trips, asset discovery, classified refusals and CLI reimport. The whole-project GATE has seven reproducible failures outside these owned files, recorded under T-174.
 - **Implementation:** CRLF writer, stable output ordering, retained-data re-export, classified refusals and paired conversion/reimport; shared per-chart serialization and reimport acceptance remove duplicate pipeline plumbing. Supporting-file ownership expanded by the coordinator for publication, CLI and contract documentation. The PR remains a post-1.0 draft and the stable output catalog stays disabled.
 - **Out of scope:** Quaver online metadata.

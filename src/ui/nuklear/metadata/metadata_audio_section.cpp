@@ -85,7 +85,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
     if (!metadata_tree_push(context, NK_TREE_TAB, "Audio sync", NK_MAXIMIZED, 1672)) return;
     if (!metadata.has_chart) {
         muted_label(context, "Select a difficulty to edit it.");
-        nk_tree_pop(context);
+        wormedit::ui::chrome::section_pop(context);
         return;
     }
     const auto editable = metadata.audio_offset_editable && !metadata.timing_locked;
@@ -127,7 +127,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
     }
     if (apply) set_metadata_audio_offset_action(panel.action, &metadata);
     render_audio_waveform(panel);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 
 namespace {
@@ -764,5 +764,5 @@ void render_metadata_paths(const MetadataPanel& panel) {
     if (selected) render_output_path_editor(panel, *selected);
     render_dropped_output_path(panel);
     render_project_and_export_copies(panel, selected);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

@@ -98,7 +98,7 @@ void render_metadata_timing_links_section(const MetadataPanel& panel) {
     if (!editable) nk_widget_disable_begin(panel.context);
     for (const auto& row : view.timing_links) render_link_row(panel, row);
     if (!editable) nk_widget_disable_end(panel.context);
-    nk_tree_pop(panel.context);
+    wormedit::ui::chrome::section_pop(panel.context);
 }
 void synchronize_metadata_timing_links(nk_context* context, const ui::metadata_view_t& view) {
     auto& draft = worm_ui_nuklear_metadata_state().timing_links;

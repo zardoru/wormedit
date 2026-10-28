@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace wormedit::ui::chrome {
 namespace {
@@ -503,6 +505,118 @@ auto SelectionBar::render(nk_context* context) const -> int {
         right = area.x - metrics::gap_small;
     }
     return clicked;
+}
+
+
+namespace {
+
+struct open_section_t {
+    std::size_t fill_offset{};
+    float top{};
+    float x{};
+    float width{};
+    bool tracked{};
+    bool level_one{};
+};
+
+// Sections nest only a couple of levels; a push beyond this still works, it just paints no fill.
+constexpr std::size_t max_section_depth = 8;
+open_section_t open_sections[max_section_depth];
+std::size_t open_section_count = 0;
+
+// The filled rectangle reserved behind a section is a command in the window's draw list; its
+// geometry is patched once the section's height is known. The offset, not a pointer, is kept
+// because the command buffer can grow.
+auto reserve_fill(nk_context* context, nk_color fill, float rounding) -> std::pair<std::size_t, bool> {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto before = canvas->last;
+    nk_fill_rect(canvas, canvas->clip, rounding, fill);
+    return {canvas->last, canvas->last != before};
+}
+
+void patch_fill(nk_context* context, const open_section_t& section, struct nk_rect bounds) {
+    if (!section.tracked) return;
+    auto* canvas = nk_window_get_canvas(context);
+    auto* command = reinterpret_cast<nk_command_rect_filled*>(
+        static_cast<nk_byte*>(canvas->base->memory.ptr) + section.fill_offset);
+    command->x = static_cast<short>(bounds.x);
+    command->y = static_cast<short>(bounds.y);
+    command->w = static_cast<unsigned short>(std::max(bounds.w, 0.0f));
+    command->h = static_cast<unsigned short>(std::max(bounds.h, 0.0f));
+}
+
+} // namespace
+
+auto section_push(nk_context* context, nk_tree_type type, const char* title,
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool {
+    const bool level_one = type == NK_TREE_TAB;
+    // An empty row reports the width and left edge the header row will get.
+    nk_layout_row_dynamic(context, 0, 1);
+    const auto row = nk_widget_bounds(context);
+    const auto fill = reserve_fill(context, level_one ? section_body_color() : section_card_color(),
+                                   metrics::radius_bar);
+    const bool text_pushed = !level_one && nk_style_push_color(context, &context->style.tab.text,
+                                                                 color(UiColor::text));
+    // Cards get taller headers so the title has room inside its fill.
+    const bool padding_pushed = nk_style_push_vec2(context, &context->style.tab.padding,
+        nk_vec2(context->style.tab.padding.x, context->style.tab.padding.y + metrics::gap_small));
+    const bool indent_pushed = !level_one && nk_style_push_float(context, &context->style.tab.indent,
+                                                                 metrics::card_indent);
+    const bool open = nk_tree_push_hashed(context, type, title, initial, hash, hash_length, seed) != 0;
+    if (indent_pushed) nk_style_pop_float(context);
+    if (padding_pushed) nk_style_pop_vec2(context);
+    if (text_pushed) nk_style_pop_color(context);
+
+    // The header is the last row laid out, so its top and height are known here.
+    const auto* layout = context->current->layout;
+    // at_y is in layout space; widget bounds subtract the scroll offset, so a drawn fill must too.
+    const float scroll_y = static_cast<float>(*layout->offset_y);
+    // A card extends past the content edges, so its header and body keep inner padding.
+    // On the right it ends flush with the content edge, which the scroll bar bounds.
+    const float pad = level_one ? 0.0f : metrics::card_overhang;
+    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + pad, fill.second, level_one};
+    const float header_height = layout->row.height - context->style.window.spacing.y;
+    if (!open) {
+        // A closed level-one bar draws its own fill; a closed card wraps just its header.
+        patch_fill(context, section, level_one ? nk_rect(section.x, section.top, 0, 0)
+                                               : nk_rect(section.x, section.top, section.width, header_height));
+        return false;
+    }
+    if (!level_one)  // The rule between a card's header and its body.
+        nk_fill_rect(nk_window_get_canvas(context),
+                     nk_rect(section.x, section.top + header_height + context->style.window.spacing.y * 0.5f,
+                             section.width, 1.0f), 0.0f, color(UiColor::border));
+    // Room between the header (or a card's rule) and the first row; a card also keeps a right margin.
+    nk_layout_row_dynamic(context, metrics::gap_small, 1);
+    nk_spacing(context, 1);
+    if (!level_one) context->current->layout->bounds.w -= metrics::card_indent;
+    if (open_section_count < max_section_depth) {
+        open_sections[open_section_count] = section;
+    }
+    ++open_section_count;
+    return true;
+}
+
+void section_pop(nk_context* context) {
+    if (open_section_count > 0) {
+        --open_section_count;
+        if (open_section_count < max_section_depth) {
+            nk_layout_row_dynamic(context, metrics::gap_small, 1);
+            nk_spacing(context, 1);
+        }
+        if (open_section_count < max_section_depth) {
+            const auto& section = open_sections[open_section_count];
+            const auto* layout = context->current->layout;
+            const float bottom = layout->at_y + layout->row.height - static_cast<float>(*layout->offset_y);
+            patch_fill(context, section, nk_rect(section.x, section.top, section.width, bottom - section.top));
+        }
+    }
+    // The pop undoes the indent the push applied, so the same indent must be in force.
+    const bool card = open_section_count < max_section_depth && !open_sections[open_section_count].level_one;
+    if (card) context->current->layout->bounds.w += metrics::card_indent;
+    const bool indent_pushed = card && nk_style_push_float(context, &context->style.tab.indent, metrics::card_indent);
+    nk_tree_pop(context);
+    if (indent_pushed) nk_style_pop_float(context);
 }
 
 } // namespace wormedit::ui::chrome

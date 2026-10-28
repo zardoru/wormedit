@@ -2697,7 +2697,7 @@ static void render_workspace_content(wormedit::ui::workspace_view_t& view,
                            nk_vec2(margin, wormedit::ui::layout::vertical_margin));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
-                                     workspace_content_flags(view.compose.visible, view.metadata.visible)) != 0;
+                                     workspace_content_flags(view.compose.visible, padded)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
     retire_sound_picker(view, action);

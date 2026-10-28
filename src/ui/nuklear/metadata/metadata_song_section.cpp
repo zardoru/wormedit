@@ -182,7 +182,9 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
 void render_song_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
-    if (!metadata_tree_push(context, NK_TREE_TAB, "Song", NK_MAXIMIZED, 1532)) {
+    char heading[256];
+    std::snprintf(heading, sizeof(heading), "Song · %s", metadata.title.c_str() ? metadata.title.c_str() : "");
+    if (!metadata_tree_push(context, NK_TREE_TAB, heading, NK_MAXIMIZED, 1532)) {
         worm_ui_nuklear_cancel_metadata_tag_drag();
         return;
     }
@@ -197,5 +199,5 @@ void render_song_section(const MetadataPanel& panel) {
                           revert, apply);
     if (revert) reset_song_draft(metadata);
     if (apply) set_metadata_song_action(panel.action, &metadata);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }

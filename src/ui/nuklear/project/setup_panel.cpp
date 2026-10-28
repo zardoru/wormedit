@@ -54,11 +54,11 @@ void project_section_heading(nk_context* context, const char* text) {
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     auto* canvas = nk_window_get_canvas(context);
     const auto& style = context->style;
-    nk_fill_rect(canvas, bounds, 0.0f, style.tab.border_color);
+    nk_fill_rect(canvas, bounds, style.tab.rounding, wormedit::ui::chrome::section_header_color());
     const float inset = wormedit::ui::metrics::gap_medium + wormedit::ui::metrics::gap_small;
     const float height = style.font->height;
     nk_draw_text(canvas, nk_rect(bounds.x + inset, bounds.y + (bounds.h - height) * 0.5f, bounds.w - inset, height),
-                 text, static_cast<int>(std::strlen(text)), style.font, style.tab.border_color, style.tab.text);
+                 text, static_cast<int>(std::strlen(text)), style.font, wormedit::ui::chrome::section_header_color(), style.tab.text);
 }
 
 struct project_metadata_popup_t : wormedit::ui::chrome::retained_popup_t {
@@ -1494,7 +1494,7 @@ void render_project_directory(nk_context* context, const wormedit::ui::setup_vie
 }
 void render_project_settings(nk_context* context, const wormedit::ui::setup_view_t& view,
                              wormedit::ui::workspace_action_t& action) {
-    if (!nk_tree_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
+    if (!wormedit::ui::chrome::section_push(context, NK_TREE_TAB, "Project settings", NK_MINIMIZED)) return;
     if (project_state.settings_revision != view.document_revision) {
         std::snprintf(project_state.audio_directory.data(), project_state.audio_directory.size(), "%.*s",
             static_cast<int>(view.settings.audio_directory.size()), view.settings.audio_directory.empty() ? "" : view.settings.audio_directory.data());
@@ -1507,7 +1507,7 @@ void render_project_settings(nk_context* context, const wormedit::ui::setup_view
     render_project_snap(context, view, action);
     render_project_directory(context, view, action, false);
     render_project_directory(context, view, action, true);
-    nk_tree_pop(context);
+    wormedit::ui::chrome::section_pop(context);
 }
 }
 

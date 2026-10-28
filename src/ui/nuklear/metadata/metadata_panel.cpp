@@ -2,7 +2,6 @@
 #include "ui/nuklear/audio/audio_panel.h"
 #include "ui/nuklear/chrome/chrome.h"
 #include "ui/nuklear/metadata/metadata_panel_internal.h"
-#include "ui/nuklear/metadata/metadata_timing_links_section.h"
 #include "ui/nuklear/metadata/metadata_audio_section.h"
 #include "ui/nuklear/metadata/metadata_difficulty_section.h"
 #include "ui/nuklear/metadata/metadata_format_fields.h"
@@ -52,10 +51,10 @@ metadata_tree_identity_t metadata_tree_identity(int original_line) {
 int metadata_tree_push(nk_context* context, int tree_type, const char* title, int initial_state,
                       int original_line) {
     const auto identity = metadata_tree_identity(original_line);
-    return nk_tree_push_hashed(context, static_cast<enum nk_tree_type>(tree_type), title,
-                               static_cast<enum nk_collapse_states>(initial_state),
-                               identity.hash, static_cast<int>(strlen(identity.hash)),
-                               identity.seed);
+    return wormedit::ui::chrome::section_push(
+        context, static_cast<enum nk_tree_type>(tree_type), title,
+        static_cast<enum nk_collapse_states>(initial_state), identity.hash,
+        static_cast<int>(strlen(identity.hash)), identity.seed);
 }
 
 void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented) {
@@ -224,7 +223,6 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
     render_song_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
     render_difficulty_section(panel);
-    render_metadata_timing_links_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
     render_audio_sync_section(panel);
     nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);

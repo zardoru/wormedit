@@ -563,12 +563,14 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
     const auto* layout = context->current->layout;
     // at_y is in layout space; widget bounds subtract the scroll offset, so a drawn fill must too.
     const float scroll_y = static_cast<float>(*layout->offset_y);
-    open_section_t section{fill.first, layout->at_y - scroll_y, row.x, row.w, fill.second};
+    // A card extends past the content edges, so its header and body keep inner padding.
+    const float pad = level_one ? 0.0f : metrics::gap_medium;
+    open_section_t section{fill.first, layout->at_y - scroll_y, row.x - pad, row.w + 2.0f * pad, fill.second};
     const float header_height = layout->row.height - context->style.window.spacing.y;
     if (!open) {
         // A closed level-one bar draws its own fill; a closed card wraps just its header.
-        patch_fill(context, section, level_one ? nk_rect(row.x, section.top, 0, 0)
-                                               : nk_rect(row.x, section.top, row.w, header_height));
+        patch_fill(context, section, level_one ? nk_rect(section.x, section.top, 0, 0)
+                                               : nk_rect(section.x, section.top, section.width, header_height));
         return false;
     }
     if (open_section_count < max_section_depth) {

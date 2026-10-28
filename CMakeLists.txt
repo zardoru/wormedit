@@ -10,7 +10,7 @@ project(wormedit
     LANGUAGES C CXX
 )
 
-set(WORMEDIT_VERSION_SUFFIX "-rc1" CACHE STRING "Release suffix (empty for a final release)")
+set(WORMEDIT_VERSION_SUFFIX "-rc2" CACHE STRING "Release suffix (empty for a final release)")
 if(NOT WORMEDIT_VERSION_SUFFIX MATCHES "^[-.0-9A-Za-z]*$")
     message(FATAL_ERROR "WORMEDIT_VERSION_SUFFIX may contain only [-.0-9A-Za-z]")
 endif()

@@ -1028,7 +1028,7 @@ auto write_sound_layer_membership(chart_document_t& chart,
 namespace {
 auto paint_sound_layer_notes(chart_document_t& chart,
                             const sound_layer_membership_action_t& action,
-                            document_command_result_t& result) -> std::optional<bool> {
+                            document_command_result_t& result, std::vector<object_id_t>& objects) -> std::optional<bool> {
     std::unordered_map<std::uint64_t, std::vector<layer_id_t>> defaults;
     for (const auto resource : action.resources)
         defaults.emplace(resource.value, sound_default_layers_for_placement(chart, resource));
@@ -1042,6 +1042,7 @@ auto paint_sound_layer_notes(chart_document_t& chart,
             if (!note.semantic_layers.empty() && !action.overwrite_note_layers) continue;
             if (!validate_clear_note_layers(layers, note, result)) return std::nullopt;
             note.semantic_layers = desired->second;
+            objects.push_back(note.id);
             changed = true;
         }
     }
@@ -1051,7 +1052,7 @@ auto paint_sound_layer_notes(chart_document_t& chart,
 
 namespace {
 auto paint_unassigned_sound_layer_bgm(chart_document_t& chart,
-    const sound_layer_membership_action_t& action) -> bool {
+    const sound_layer_membership_action_t& action, std::vector<object_id_t>& objects) -> bool {
     std::unordered_set<std::uint64_t> sounds;
     for (const auto resource : action.resources) sounds.insert(resource.value);
     bool changed{};
@@ -1059,6 +1060,7 @@ auto paint_unassigned_sound_layer_bgm(chart_document_t& chart,
         for (auto& event : measure.bgm_events) {
             if (!event.sound || !sounds.contains(event.sound->value) || !event.semantic_layers.empty()) continue;
             event.semantic_layers = {action.layer};
+            objects.push_back(event.id);
             changed = true;
         }
     }
@@ -1066,40 +1068,69 @@ auto paint_unassigned_sound_layer_bgm(chart_document_t& chart,
 }
 } // namespace
 
-auto apply_sound_layer_membership(document_history_t& history,
-                                  const sound_layer_membership_action_t& action)
-    -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    const auto chart = proposed.find_chart(action.chart);
-    if (!action.chart || chart == nullptr) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "sound layer membership refers to an unknown chart");
-        return result;
-    }
-    // Reuse the batch validation: one layer, or none when removing from locked layers.
+namespace {
+auto edit_sound_layer_membership(const song_document_t& document, chart_document_t& chart,
+    const sound_layer_membership_action_t& action, std::vector<object_id_t>& objects)
+    -> attempt_t<document_edit_effect_t> {
+    document_command_result_t result;
     const sound_layer_defaults_action_t shape{
         .chart = action.chart, .resources = action.resources,
         .layers = action.member ? std::vector<layer_id_t>{action.layer} : std::vector<layer_id_t>{}};
-    if (!validate_sound_layer_defaults_request(proposed, *chart, shape, result)) return result;
+    if (!validate_sound_layer_defaults_request(document, chart, shape, result))
+        return {.diagnostics = std::move(result.diagnostics)};
     if (!action.member &&
-        std::ranges::find(chart->semantic_layers, action.layer, &semantic_layer_t::id) ==
-            chart->semantic_layers.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "sound layer membership refers to an unknown layer");
-        return result;
-    }
-    auto changed = write_sound_layer_membership(*chart, action);
+        std::ranges::find(chart.semantic_layers, action.layer, &semantic_layer_t::id) == chart.semantic_layers.end())
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "sound layer membership refers to an unknown layer")}};
+    auto changed = write_sound_layer_membership(chart, action);
     if (action.member) {
-        const auto painted = paint_sound_layer_notes(*chart, action, result);
-        if (!painted) return result;
+        const auto painted = paint_sound_layer_notes(chart, action, result, objects);
+        if (!painted) return {.diagnostics = std::move(result.diagnostics)};
         changed = changed || *painted;
     }
     if (action.member && action.assign_unlayered_bgm)
-        changed = paint_unassigned_sound_layer_bgm(*chart, action) || changed;
-    if (!changed) return result;
-    return transaction.commit(action.member ? "Add layer to sounds" : "Remove layer from sounds");
+        changed = paint_unassigned_sound_layer_bgm(chart, action, objects) || changed;
+    return {.value = document_edit_effect_t{.changed = changed,
+        .command_label = action.member ? "Add layer to sounds" : "Remove layer from sounds"}};
+}
+
+auto stage_scoped_sound_layer_membership(document_command_transaction_t& transaction,
+    const sound_layer_membership_action_t& action) -> attempt_t<document_edit_effect_t> {
+    const auto target = transaction.bms_target(action.chart);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    const auto* owner = transaction.current_document().find_bms_program(action.chart);
+    const auto projection = owner->build_projection(target->authoring ? std::optional{target->chart} : std::nullopt);
+    if (!projection.value) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "Scoped sound layers have no source catalog.")}};
+    std::vector<object_id_t> objects;
+    auto settings = transaction.stage_bms_layer_settings(action.chart,
+        [&](chart_document_t& chart) {
+            return edit_sound_layer_membership(projection.value->song(), chart, action, objects);
+        });
+    if (!settings.value || !settings.ok() || objects.empty()) return settings;
+    // Settings and authored memberships share one snapshot and one Undo publication.
+    auto content = transaction.stage_bms_native_objects(action.chart, objects, bms_existing_edit_kind_t::update,
+        [&](chart_document_t& chart) {
+            std::vector<object_id_t> changed_objects;
+            return edit_sound_layer_membership(projection.value->song(), chart, action, changed_objects);
+        });
+    if (content.value) content.value->changed = content.value->changed || settings.value->changed;
+    return content;
+}
+} // namespace
+
+auto apply_sound_layer_membership(document_history_t& history,
+                                  const sound_layer_membership_action_t& action)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    if (transaction.has_bms_program(action.chart))
+        return transaction.finish_execution(stage_scoped_sound_layer_membership(transaction, action));
+    return transaction.finish_execution(transaction.stage(action.chart,
+        "sound layer membership refers to an unknown chart",
+        [&](chart_document_t& chart, song_document_t& document) {
+            std::vector<object_id_t> objects;
+            return edit_sound_layer_membership(document, chart, action, objects);
+        }));
 }
 
 namespace {

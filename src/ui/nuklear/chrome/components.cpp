@@ -561,7 +561,9 @@ auto section_push(nk_context* context, nk_tree_type type, const char* title,
 
     // The header is the last row laid out, so its top and height are known here.
     const auto* layout = context->current->layout;
-    open_section_t section{fill.first, layout->at_y, row.x, row.w, fill.second};
+    // at_y is in layout space; widget bounds subtract the scroll offset, so a drawn fill must too.
+    const float scroll_y = static_cast<float>(*layout->offset_y);
+    open_section_t section{fill.first, layout->at_y - scroll_y, row.x, row.w, fill.second};
     const float header_height = layout->row.height - context->style.window.spacing.y;
     if (!open) {
         // A closed level-one bar draws its own fill; a closed card wraps just its header.
@@ -582,7 +584,7 @@ void section_pop(nk_context* context) {
         if (open_section_count < max_section_depth) {
             const auto& section = open_sections[open_section_count];
             const auto* layout = context->current->layout;
-            const float bottom = layout->at_y + layout->row.height;
+            const float bottom = layout->at_y + layout->row.height - static_cast<float>(*layout->offset_y);
             patch_fill(context, section, nk_rect(section.x, section.top, section.width, bottom - section.top));
         }
     }

@@ -147,6 +147,19 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
     wormedit::ui::chrome::section_pop(context);
 }
 
+// A button outside any card, spanning exactly the edges the cards around it use: they extend
+// card_overhang past the content on the left and end flush with it on the right.
+static auto render_card_wide_button(nk_context* context, const char* label) -> bool {
+    namespace metrics = wormedit::ui::metrics;
+    const float width = context->current->layout->bounds.w;
+    nk_layout_space_begin(context, NK_STATIC, metrics::control_default, 1);
+    nk_layout_space_push(context, nk_rect(-metrics::card_overhang, 0.0f,
+                                          width + metrics::card_overhang, metrics::control_default));
+    const auto clicked = wormedit::ui::chrome::Button{label}.render(context);
+    nk_layout_space_end(context);
+    return clicked;
+}
+
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_layout_editor(inspector);
     render_lane_profile_section(inspector);
@@ -174,12 +187,8 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
             worm_ui_nuklear_cancel_inline_offset(state);
             nk_edit_unfocus(inspector.context);
         }
-        if (chrome::section_push(inspector.context, NK_TREE_NODE, "Settings", NK_MAXIMIZED, true)) {
-            nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
-            if (chrome::Button{"Timing settings…"}.render(inspector.context))
-                inspector.action->timing_settings.toggle = true;
-            chrome::section_pop(inspector.context);
-        }
+        if (render_card_wide_button(inspector.context, "Timing settings…"))
+            inspector.action->timing_settings.toggle = true;
         wormedit::ui::chrome::section_pop(inspector.context);
     } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
         worm_ui_nuklear_cancel_inline_offset(state);

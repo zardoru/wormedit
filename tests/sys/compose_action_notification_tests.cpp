@@ -4,6 +4,7 @@
 #include "sys/compose/actions/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/timing_links_fixture.h"
+#include "../support/temporary_directory.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
 #include "sys/compose/actions/compose_actions.h"
@@ -1162,6 +1163,38 @@ TEST_CASE("Export replacement choices reach the pending job from every workspace
         check_action(wait_for_slice_export(fixture) == "Replacement published.");
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.output_groups.empty());
+}
+
+TEST_CASE("Export all publishes every target from the Project tab without Compose state",
+          "[unit][sys][conversion][publication]") {
+    action_notification_fixture_t fixture;
+    auto directory = test::temporary_directory_t::from();
+    require_action(directory.has_value());
+    fixture.asset_base = directory->path();
+    fixture.workspace.active_tab = workspace_tab_t::setup;
+    auto& document = fixture.history.document;
+    document.output_groups = {
+        {.name = "First", .family = format_family_t::native_project,
+         .charts = {fixture.state.chart}, .destination_kind = output_destination_kind_t::file,
+         .relative_output_path = "exports/first.wormedit"},
+        {.name = "Second", .family = format_family_t::native_project,
+         .charts = {fixture.state.chart}, .destination_kind = output_destination_kind_t::file,
+         .relative_output_path = "exports/second.wormedit"}};
+    const auto before = write_native_project(document).value;
+    std::optional<editor_interaction_state_t> retained;
+
+    require_action(fixture.dispatch_workspace(
+        fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS), retained));
+    require_action(fixture.export_runtime.is_busy());
+    const auto completed = wait_for_slice_export(fixture);
+    require_action(completed.has_value());
+    INFO(*completed);
+    check_action(*completed == "2 output targets published.");
+    for (const auto& group : document.output_groups)
+        check_action(std::filesystem::file_size(fixture.asset_base / group.relative_output_path) > 0);
+    check_action(!retained);
+    check_action(fixture.history.undo.empty());
+    check_action(write_native_project(document).value == before);
 }
 
 TEST_CASE("BMSON output export rejects missing stem before writing music or destination",
@@ -2326,12 +2359,14 @@ auto configure_linked_project_export(action_notification_fixture_t& fixture) -> 
 }
 TEST_CASE("Project export rejects stale stamps and reports missing paths without Compose state",
           "[unit][sys][project-access][timing-links]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP,
+                               WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS);
     const bool stale = GENERATE(false, true);
     action_notification_fixture_t fixture;
     const auto source = configure_linked_project_export(fixture);
     fixture.workspace.active_tab = workspace_tab_t::setup;
     std::optional<editor_interaction_state_t> state;
-    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+    auto action = fixture.action(kind);
     if (stale) {
         const auto& event = fixture.history.document.find_chart(source)->bpms.front();
         require_action(apply_bpm_edit(fixture.history, update_edit_t<bpm_edit_value_t>{.chart = source, .id = event.id,

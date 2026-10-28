@@ -6477,6 +6477,21 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     require_project_access(action.existing_files == wormedit::existing_files_policy_t::ask);
 }
 
+TEST_CASE("Project Export all button emits a stamped batch export action",
+          "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{true};
+    const auto frames = f.click("Export all");
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS;
+    });
+    require_project_access(found != frames.end());
+    const auto& action = found->get();
+    const auto& view = f.harness.view().setup;
+    require_project_access(action.compose_input_project_id == view.song_id);
+    require_project_access(action.compose_input_chart_id == view.selected_chart_id);
+    require_project_access(action.compose_input_document_revision == view.document_revision);
+}
+
 TEST_CASE("Project empty-state suggestion opens a normal draft and waits for Save",
           "[frontend-state][event-harness][output-groups][output-compatibility]") {
     output_group_fixture_t f{false};

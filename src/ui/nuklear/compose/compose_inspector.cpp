@@ -152,6 +152,14 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_profile_section(inspector);
     if (wormedit::ui::chrome::section_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED)) {
         render_initial_bpm_control(inspector);
+        // The event being edited is a child of Timing, so it is a card inside this section.
+        if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
+            inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
+            wormedit::ui::chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED)) {
+            worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
+                                                       inspector.action);
+            wormedit::ui::chrome::section_pop(inspector.context);
+        }
         render_compose_inspector_timing_controls({inspector.context, inspector.view, inspector.action});
         nk_layout_row_dynamic(inspector.context, wormedit::ui::metrics::control_default, 1);
         if (wormedit::ui::chrome::Button{"Timing settings…"}.render(inspector.context))
@@ -160,13 +168,6 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     } else if (state.inline_offset.inline_offset_open && state.inline_offset.inline_offset_in_inspector) {
         worm_ui_nuklear_cancel_inline_offset(state);
         nk_edit_unfocus(inspector.context);
-    }
-    if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
-        inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
-        nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
-        worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
-                                                   inspector.action);
-        nk_tree_pop(inspector.context);
     }
     worm_ui_nuklear_render_compose_resources(inspector.context, inspector.view,
                                              inspector.action, &state);

@@ -413,3 +413,82 @@ For disconnected builds, provide checkouts at the revisions in
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_PENLIGHT`, and
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_LFS`, plus `WORMEDIT_LUA_SOURCE_DIR` as above.
 Cross-builds may select a native C compiler with `WORMEDIT_HOST_C_COMPILER`.
+
+## Experimental browser codec smoke (post-1.0, T-557)
+
+This is a separate browser feasibility target, not a 1.0 deliverable or the SDL
+editor. It compiles the existing `wormedit_core` for wasm32 and links the native
+project codec and BMSON reader into a small browser shell. Native options and
+release presets retain their defaults. Keep the post-1.0 draft separate from the
+release branch; do not ship the smoke artifacts as an editor package.
+
+Activate a recent Emscripten SDK with C++23 libc++ support (verified with 6.0.5),
+then use CMake 3.25+ and Ninja:
+
+```sh
+# With emsdk: source /path/to/emsdk/emsdk_env.sh
+cmake --preset wasm-smoke
+cmake --build --preset wasm-smoke
+python3 scripts/serve-wasm.py build/wasm-smoke --port 8000
+```
+
+Open loopback port 8000 in a browser on the same machine. Use HTTP through the
+provided server, not `file://`; it supplies the COOP/COEP headers required by the
+pthread ABI. Output is `index.html`, `wormedit-wasm-smoke.js`, `.wasm`, `.data`
+and any generated worker JS. Keep these files together. The preloaded `.data`
+contains only the original BMSON sample, not its media. The page round-trips that
+sample through the production native codec at startup. **Open** accepts native
+project JSON; **Download** requests a new `.wormedit` download. Re-upload the
+result to exercise the real browser file boundary. No disk file is overwritten,
+no browser persistence is enabled, and a page reload restores the bundled sample.
+
+Only files up to the codec's existing 64 MiB source limit are admitted. The codec
+also retains its node/depth/document validation; browser upload rejects invalid UTF-8. Invalid JSON, unsupported
+versions and invalid documents leave the previous complete document available
+for download. Missing WebAssembly/cross-origin isolation and startup failures are
+shown explicitly with controls disabled. A download request is never reported as
+a completed external save. Browser failure/cancellation remains visible in the
+browser's downloads UI. Media references remain references, without asset copying.
+
+The isolated browser regression uses Playwright and an existing Chromium binary;
+it does not install or open a desktop browser profile:
+
+```sh
+npm install --prefix build/wasm-browser-tools playwright@1.56.1
+NODE_PATH="$PWD/build/wasm-browser-tools/node_modules" \
+  CHROMIUM=/usr/bin/chromium node tests/wasm/smoke.cjs build/wasm-smoke
+```
+
+It starts ephemeral loopback servers, verifies startup, downloads actual bytes,
+re-uploads them, checks exact canonical bytes and Unicode, rejects malformed,
+invalid-UTF-8, future-version, invalid-identity and oversized files without replacing the current
+document, verifies reload has no persistence, and rejects a server without
+isolation headers. This is a codec/file smoke, not a rendering or playback test.
+
+### Capability audit and next browser implementation
+
+| Area | Existing native dependency/API | Smoke support and later work |
+| --- | --- | --- |
+| SDL/rendering | `src/sys/app/main.cpp` blocks in a frame loop; `src/sys/app/window.cpp` explicitly requires SDL's `gpu` renderer/device; `cmake/sdl/bounded-presentation.cmake` patches native backends. | SDL and Nuklear are disabled. A full editor needs a browser main-loop adapter and an explicitly supported rendering backend, with real canvas/input verification. SDL's Emscripten support alone does not establish support for this GPU path. |
+| Audio | miniaudio plus pinned Ogg/Vorbis source builds; SDL audio output and worker-backed preview. | Decoder/audio output targets are disabled. Later cross-build the decoders and test browser user-gesture unlock, AudioContext suspension and bounded callback/refill behavior before enabling playback. |
+| Video/images | FFmpeg discovered through host `pkg-config`; stb static-image decoder. | Both are disabled. Never link host FFmpeg into WASM. A later port must choose a target-built bounded decoder or asynchronous browser media API, then verify seeking/cancellation and codec availability. |
+| Native files | Native storage uses POSIX/Win32 publication, temporary files, rename, fsync and recovery journals; SDL file dialogs and preferences assume paths. | Only the production in-memory codec is exposed. JavaScript File/Blob transfer is explicit. MEMFS holds the bundled sample and is volatile. Browser directory access, asset trees, durable storage/recovery, quotas and transactional publication require a separate design and tests; MEMFS fsync cannot promise external durability. |
+| Threads | `task_graph.cpp` uses `std::jthread` and `stop_token`; shared core headers require these types. | Compile/link with pthreads and Wasm exceptions; require SharedArrayBuffer plus cross-origin isolation. This smoke invokes no task scheduler and claims no worker/audio scheduling verification. A full editor must move blocking work off the main browser thread and establish pool size/cancellation behavior. |
+| Lua/legacy encoding | Optional pinned Lua; native iconv/Win32 code-page conversion for BMS. | Lua and iconv discovery are disabled. This target accepts UTF-8 native JSON and the bundled UTF-8 BMSON sample, not legacy BMS files or project scripts. Native encoding support is unchanged. |
+| External tools/OS | `external_player.cpp` creates OS processes; native dialogs, crash handlers and menus assume the host OS. | No system/frontend services are linked into the shell. External preview processes cannot be offered as browser capabilities. |
+| Hosting/deployment | Native installers and release packages. | Local smoke only. Future hosting needs HTTPS, correct Wasm MIME type, same-origin assets/workers, COOP `same-origin` and COEP `require-corp` (or a reviewed alternative), caching/versioning and offline/quota policy. Public hosting and browser distribution packaging are outside T-557. |
+
+The toolchain wrapper resolves `emcc` from an activated emsdk or an installed
+Emscripten, then uses Emscripten's own CMake toolchain. Use a fresh build directory
+when switching SDKs. Configuration probes C++23 `expected`/`bind_back` and
+`stop_token`/`jthread`; older SDKs fail with an actionable diagnostic. Debian
+3.1.69 lacks the required standard-library surface. Emscripten 6.0.5 warns about
+shared libraries with CMake 4.2.3; this lane builds static libraries only. The preset disables host
+iconv and optional native targets. C++ exception handling remains enabled because
+the native parser catches malformed/bounded input failures. The current 256 MiB
+Wasm memory cap can reject projects well below the byte limit after parsing;
+that is not a claim that all native-size projects fit browser memory.
+
+References: [SDL Emscripten main-loop and platform guide](https://wiki.libsdl.org/SDL3/README-emscripten),
+[Emscripten filesystem semantics](https://emscripten.org/docs/porting/files/file_systems_overview.html),
+[Emscripten pthread requirements](https://emscripten.org/docs/porting/pthreads.html).

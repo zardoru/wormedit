@@ -51,7 +51,7 @@ auto file_stem(std::string_view path) -> std::optional<std::string> {
 
 auto build_channel_layers(const chart_document_t& chart, std::vector<semantic_layer_t>& layers,
                           event_layer_map_t& event_layers, std::string& error) -> bool {
-    if (chart.sound_channels.size() > std::numeric_limits<std::uint64_t>::max()) {
+    if (std::cmp_greater(chart.sound_channels.size(), std::numeric_limits<std::uint64_t>::max())) {
         error = "BMSON sound-channel count exceeds the semantic layer ID range.";
         return false;
     }

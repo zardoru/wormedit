@@ -59,6 +59,39 @@ option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image de
 option(WORMEDIT_WINDOWS_CONSOLE "Keep a console window attached to the Windows executable" OFF)
 option(WORMEDIT_ENABLE_VIDEO_DECODER "Build the optional bounded FFmpeg video-frame decoder" ON)
 option(WORMEDIT_ENABLE_FFMPEG "Enable optional FFmpeg audio metadata prefill" ON)
+option(WORMEDIT_BUILD_WASM_SMOKE "Build the post-1.0 browser codec smoke target" OFF)
+if(WORMEDIT_BUILD_WASM_SMOKE)
+    if(NOT EMSCRIPTEN)
+        message(FATAL_ERROR "WORMEDIT_BUILD_WASM_SMOKE requires the wasm-smoke preset and Emscripten")
+    endif()
+    if(WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS OR BUILD_TESTING OR
+       WORMEDIT_ENABLE_LUA OR WORMEDIT_ENABLE_AUDIO_DECODER OR WORMEDIT_ENABLE_IMAGE_DECODER OR
+       WORMEDIT_ENABLE_VIDEO_DECODER OR WORMEDIT_ENABLE_FFMPEG)
+        message(FATAL_ERROR "The WASM smoke lane supports the core codec only; use the wasm-smoke preset")
+    endif()
+    # The native codec catches parse/allocation failures. Retain those catches in WASM too.
+    add_compile_options(-fwasm-exceptions -pthread)
+    add_link_options(-fwasm-exceptions -pthread)
+    include(CheckCXXSourceCompiles)
+    include(CMakePushCheckState)
+    cmake_push_check_state(RESET)
+    set(CMAKE_REQUIRED_FLAGS "-std=c++23 -fwasm-exceptions -pthread")
+    check_cxx_source_compiles("
+        #include <expected>
+        #include <functional>
+        #include <stop_token>
+        #include <thread>
+        int main() {
+            std::stop_source source;
+            std::jthread thread;
+            std::expected<int, int> value{std::bind_back(std::plus<int>{}, 2)(1)};
+            return source.stop_requested() || thread.joinable() || *value != 3;
+        }" WORMEDIT_WASM_HAS_CXX23)
+    cmake_pop_check_state()
+    if(NOT WORMEDIT_WASM_HAS_CXX23)
+        message(FATAL_ERROR "The WASM core requires C++23 libc++ with expected, bind_back, stop_token and jthread; use a recent Emscripten SDK (verified: 6.0.5)")
+    endif()
+endif()
 option(WORMEDIT_REQUIRE_FFMPEG "Require FFmpeg development libraries for shipped builds" OFF)
 set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
 set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
@@ -256,6 +289,22 @@ if(Iconv_FOUND)
 endif()
 
 wormedit_enable_warnings(wormedit_core)
+
+if(WORMEDIT_BUILD_WASM_SMOKE)
+    add_executable(wormedit-wasm-smoke src/tools/wasm_smoke.cpp)
+    target_link_libraries(wormedit-wasm-smoke PRIVATE wormedit::core)
+    wormedit_enable_warnings(wormedit-wasm-smoke)
+    set_target_properties(wormedit-wasm-smoke PROPERTIES SUFFIX ".js")
+    target_link_options(wormedit-wasm-smoke PRIVATE
+        --bind --no-entry
+        -sMODULARIZE=1 -sEXPORT_NAME=createWormeditSmoke -sENVIRONMENT=web
+        -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=268435456 -sSTACK_SIZE=5242880
+        "--preload-file=${CMAKE_SOURCE_DIR}/tests/fixtures/bmson/slicing-and-mixed-sounds.bmson@/sample.bmson"
+    )
+    set_property(TARGET wormedit-wasm-smoke APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_SOURCE_DIR}/tests/fixtures/bmson/slicing-and-mixed-sounds.bmson")
+    configure_file(packaging/wasm/index.html "${CMAKE_BINARY_DIR}/index.html" COPYONLY)
+endif()
 
 if(WORMEDIT_ENABLE_LUA)
     include(cmake/dependencies/lua.cmake)

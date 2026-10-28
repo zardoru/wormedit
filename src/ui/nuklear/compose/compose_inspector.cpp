@@ -155,7 +155,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         // The event being edited is a child of Timing, so it is a card inside this section.
         if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
             inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
-            wormedit::ui::chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED)) {
+            wormedit::ui::chrome::section_push(inspector.context, NK_TREE_NODE, "Timing event", NK_MAXIMIZED, true)) {
             worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
                                                        inspector.action);
             wormedit::ui::chrome::section_pop(inspector.context);

@@ -787,11 +787,14 @@ inline void apply_header_theme(nk_context* context) {
 // subsection: a card that wraps its header and body, in the normal text color. Both indent
 // their body. Every push that returns true needs a matching section_pop; the panel or card is
 // reserved behind the header and sized there, once the body's height is known.
+// `tight` drops the empty measuring row's minimum height (about one text line), for a card that
+// directly follows a control row and should sit close to it.
 auto section_push(nk_context* context, nk_tree_type type, const char* title,
-                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool;
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed,
+                  bool tight = false) -> bool;
 inline auto section_push(nk_context* context, nk_tree_type type, const char* title,
-                         nk_collapse_states initial) -> bool {
-    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0);
+                         nk_collapse_states initial, bool tight = false) -> bool {
+    return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0, tight);
 }
 void section_pop(nk_context* context);
 

@@ -548,10 +548,12 @@ void patch_fill(nk_context* context, const open_section_t& section, struct nk_re
 } // namespace
 
 auto section_push(nk_context* context, nk_tree_type type, const char* title,
-                  nk_collapse_states initial, const char* hash, int hash_length, int seed) -> bool {
+                  nk_collapse_states initial, const char* hash, int hash_length, int seed,
+                  bool tight) -> bool {
     const bool level_one = type == NK_TREE_TAB;
-    // An empty row reports the width and left edge the header row will get.
-    nk_layout_row_dynamic(context, 0, 1);
+    // An empty row reports the width and left edge the header row will get. Height 0 makes Nuklear
+    // use its minimum row height, a full text line; a tight section asks for one pixel instead.
+    nk_layout_row_dynamic(context, tight ? 1.0f : 0.0f, 1);
     const auto row = nk_widget_bounds(context);
     const auto fill = reserve_fill(context, level_one ? section_body_color() : section_card_color(),
                                    metrics::radius_bar);

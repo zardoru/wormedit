@@ -52,13 +52,16 @@ auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row, std:
     const auto end = std::min(last_row, area.end_row);
     if (!area.evaluable || area.points.empty() || end <= begin) return;
     auto& kept = graph.kept;
-    recipe_area_detail::keep_window_points(area, begin, end, kept);
+    // Normalize against the whole recipe, using the same endpoint policy as its drawing.
+    // Clipping to the viewport must not stretch the remaining curve across the lane.
+    recipe_area_detail::keep_window_points(area, area.begin_row, area.end_row, kept);
     graph.minimum = graph.maximum = kept.front().second;
     for (const auto& [row, value] : kept) {
         graph.minimum = std::min(graph.minimum, value);
         graph.maximum = std::max(graph.maximum, value);
     }
     const auto span = graph.maximum - graph.minimum;
+    recipe_area_detail::keep_window_points(area, begin, end, kept);
     for (const auto& [row, value] : kept)
         graph.points.push_back({span > 0.0 ? (value - graph.minimum) / span : 0.5, row_to_y(row)});
 }

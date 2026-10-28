@@ -2,6 +2,7 @@
 
 #include <array>
 #include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace wormedit;
@@ -98,11 +99,11 @@ TEST_CASE("SV recipe graphs hold each value until the next point",
     // The change at row 480 is a vertical edge from the held 1 to 2.
     CHECK(full.points[1].y == full.points[2].y);
     CHECK((std::array{full.points[1].x, full.points[2].x, full.points[3].x} == std::array{0.0, 1.0, 1.0}));
-    // A window inside one step is flat.
-    CHECK(build_recipe_graph(area, 500, 900, y_of).points.front().x == 0.5);
+    // A window inside one step stays at that step's position on the whole recipe's axis.
+    CHECK(build_recipe_graph(area, 500, 900, y_of).points.front().x == full.points.back().x);
 }
 
-TEST_CASE("SPEEDS recipe graphs are continuous lines normalized to the visible window",
+TEST_CASE("SPEEDS recipe graphs are continuous lines normalized to the whole recipe",
           "[unit][sys][recipe-areas]") {
     auto chart = base_chart();
     chart.sv_recipes.push_back(linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1}));
@@ -110,30 +111,49 @@ TEST_CASE("SPEEDS recipe graphs are continuous lines normalized to the visible w
     area.output = sv_recipe_output_t::speeds;
 
     const auto full = build_recipe_graph(area, 0, 960, y_of);
-    CHECK(full.minimum == Catch::Approx(1.0));
-    CHECK(full.maximum == Catch::Approx(3.0));
     REQUIRE(full.points.size() == 3);
-    CHECK(full.points[0].x == Catch::Approx(0.0));
-    CHECK(full.points[1].x == Catch::Approx(0.5));
-    CHECK(full.points[2].x == Catch::Approx(1.0));
-    CHECK(full.points[1].y == 480.0);
+    CHECK((std::array{full.minimum, full.maximum, full.points[0].x, full.points[1].x,
+                      full.points[2].x, full.points[1].y} ==
+           std::array{1.0, 3.0, 0.0, 0.5, 1.0, 480.0}));
 
-    // A window onto the second half interpolates at its edge and renormalizes to what is visible.
+    // A window onto the second half interpolates at its edge without changing the value axis.
     const auto half = build_recipe_graph(area, 480, 960, y_of);
-    CHECK(half.minimum == Catch::Approx(2.0));
-    CHECK(half.maximum == Catch::Approx(3.0));
     REQUIRE(half.points.size() == 2);
-    CHECK(half.points.front().x == Catch::Approx(0.0));
-    CHECK(half.points.back().x == Catch::Approx(1.0));
+    CHECK((std::array{half.minimum, half.maximum, half.points.front().x, half.points.back().x} ==
+           std::array{full.minimum, full.maximum, full.points[1].x, full.points[2].x}));
 
-    CHECK(build_recipe_graph(area, 2000, 3000, y_of).points.empty());
     auto flat = area;
     for (auto& point : flat.points) point.value = 2.0;
     const auto centered = build_recipe_graph(flat, 0, 960, y_of);
-    CHECK(centered.points.front().x == 0.5);
     auto unevaluable = area;
     unevaluable.evaluable = false;
-    CHECK(build_recipe_graph(unevaluable, 0, 960, y_of).points.empty());
+    CHECK((std::array{build_recipe_graph(area, 2000, 3000, y_of).points.empty(),
+                      centered.points.front().x == 0.5,
+                      build_recipe_graph(unevaluable, 0, 960, y_of).points.empty()} ==
+           std::array{true, true, true}));
+}
+
+TEST_CASE("recipe graph value axes keep offscreen extrema while clipping both edges",
+          "[unit][sys][recipe-areas]") {
+    const auto output = GENERATE(sv_recipe_output_t::sv, sv_recipe_output_t::speeds);
+    const auto downscroll = GENERATE(false, true);
+    const recipe_area_t area{.output = output, .evaluable = true,
+        .begin_row = 100, .end_row = 900,
+        .points = {{100, -2.0}, {300, 1.0}, {500, 1.0}, {700, 4.0}, {900, 100.0}}};
+    const auto full = build_recipe_graph(area, 0, 1000, y_of);
+    // Reuse the frame workspace while scrolling into a constant section. Neither extreme
+    // is visible, but its held value must stay in the same place across scroll directions.
+    auto window = full;
+    build_recipe_graph(area, 350, 450, [downscroll](std::uint64_t row) {
+        return downscroll ? 450.0 - static_cast<double>(row) : static_cast<double>(row) - 350.0;
+    }, window);
+    const auto held_x = output == sv_recipe_output_t::speeds
+        ? full.points.at(1).x : full.points.at(2).x;
+    REQUIRE(window.points.size() == 2);
+    CHECK((std::array{window.minimum, window.maximum, window.points.front().x,
+                      window.points.back().x, window.points.front().y, window.points.back().y} ==
+           std::array{full.minimum, full.maximum, held_x, held_x,
+                      downscroll ? 100.0 : 0.0, downscroll ? 0.0 : 100.0}));
 }
 
 TEST_CASE("recipe area projection uses postprocessed values", "[unit][sys][recipe-areas][postprocess]") {

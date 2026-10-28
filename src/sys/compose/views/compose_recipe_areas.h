@@ -48,7 +48,7 @@ struct recipe_areas_view_t {
         -> recipe_areas_view_t;
 };
 
-// A vertex of an area's graph: `x` is the value normalized to the visible range in [0, 1] and
+// A vertex of an area's graph: `x` is the value normalized to the whole area's range in [0, 1] and
 // `y` the viewport pixel row.
 struct recipe_graph_point_t {
     double x{};
@@ -63,7 +63,7 @@ struct recipe_graph_t {
 };
 
 // The part of `area` between first_row and last_row (clipped at the window edges), normalized
-// to the values that remain visible; a single value centers at 0.5.
+// to the whole area's values so scrolling preserves the x axis; a constant area centers at 0.5.
 // `row_to_y` maps an absolute row to viewport pixels in drawn orientation.
 template <typename RowToY>
 [[nodiscard]] auto build_recipe_graph(const recipe_area_t& area, std::uint64_t first_row,

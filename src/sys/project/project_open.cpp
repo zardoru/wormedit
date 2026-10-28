@@ -351,7 +351,8 @@ void take_parsed_document(std::optional<song_document_t>&& document,
                             ? error->message
                             : diagnostics.empty() ? "No document was produced."
                                                   : diagnostics.front().message;
-    result.error = std::string(format) + " could not be opened: " + detail;
+    result.error = std::string(format) + " could not be opened: " +
+                   utf8_path(result.source_path) + ": " + detail;
 }
 
 void retain_bms_asset_resolutions(project_open_result_t& result) {

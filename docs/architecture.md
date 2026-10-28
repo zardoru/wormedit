@@ -262,9 +262,9 @@ also selects that event before publication. No document command is involved.
 
 Compose input batches retain the admitted geometry revision. Lane-key events additionally carry
 a chart stamp advanced only by their own accepted synchronous edits, before feedback callbacks.
-This permits chord releases in one frame without treating the first note's commit as an external
-edit; pointer/viewport inputs still require the original geometry stamp. External changes and
-failed rebinding stop continuation.
+Keyboard navigation in that batch uses the same stamp, so a chord release or snap move can follow
+the note's commit in one frame. Pointer/viewport inputs still require the original geometry stamp.
+External changes and failed rebinding stop continuation.
 
 Selection commits share Undo/Redo chronology with document commands through the history owner's
 monotonic event sequence. Selection snapshots live only in its bounded transient selection

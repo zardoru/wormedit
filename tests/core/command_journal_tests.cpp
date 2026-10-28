@@ -229,7 +229,7 @@ TEST_CASE("Journal append retains the accepted immutable state and matches fresh
     entry.snapshot.metadata.original_source_path = "source/import.osu";
     entry.snapshot.metadata.intended_project_path = "projects/native.wormedit";
     entry.snapshot.metadata.last_explicit_save_revision = 1;
-    entry.snapshot.metadata.utc_write_time += std::chrono::nanoseconds{123};
+    entry.snapshot.metadata.utc_write_time += std::chrono::system_clock::duration{123};
     entry.snapshot.metadata.journal_position = native_project_journal_position_t{.path = "journal", .sequence = 999};
     append_entry(journal, entry);
     REQUIRE(journal.accepted_state());

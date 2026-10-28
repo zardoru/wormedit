@@ -2221,6 +2221,18 @@ auto is_lane_key_input(const wormedit::ui::compose_input_action_t& input) -> boo
            input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
 }
 
+auto is_lane_key_continuation_input(const wormedit::ui::compose_input_action_t& input) -> bool {
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP:
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS:
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL:
+        return true;
+    default:
+        return is_lane_key_input(input);
+    }
+}
+
 auto dispatch_compose_input_step(const wormedit::ui::compose_input_action_t& input,
     compose_input_context_t& context, wormedit::chart_stamp_t& lane_stamp) -> compose_input_step_t {
     wormedit::editor_interaction_result_t result;
@@ -2245,7 +2257,8 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
     for (std::size_t index = 0; index < context.ui_action.compose_inputs.size(); ++index) {
         const auto& input = context.ui_action.compose_inputs[index];
         // The entry boundary covers item zero; layout/hover setup cannot mutate the document.
-        const auto current = is_lane_key_input(input) ? context.is_input_current(lane_stamp) : context.is_input_current();
+        const auto current = is_lane_key_continuation_input(input)
+            ? context.is_input_current(lane_stamp) : context.is_input_current();
         if (index != 0 && !current) {
             context.environment.commands.project.compose_gesture.bga_draw_stroke.reset();
             (void)dispatch_editor_action(context.environment.document.history, context.state,

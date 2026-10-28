@@ -26,6 +26,7 @@
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/workspace.h>
 #include <chrono>
 #include <bit>
@@ -1593,6 +1594,81 @@ TEST_CASE("Snap badge refuses active gestures and paste previews", "[unit][sys][
         check_action(fixture.application.project.compose_view.requested_snap_denominators.empty());
         check_action(fixture.history.undo.empty());
     }
+}
+
+TEST_CASE("Lane-key placement and the first snap move survive sharing an input batch",
+          "[compose-input][lane-keys][batch-stamp][regression]") {
+    const auto shared_frame = GENERATE(false, true);
+    const auto forward = GENERATE(false, true);
+    bga_input_fixture_t f;
+    f.state.cursor = {measure_id_t{1}, 240};
+    f.application.project.compose_gesture.note_paint_mode_active = true;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0);
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+                                .lane_id = {1}};
+    const auto begun = f.dispatch_input(action);
+    INFO(begun);
+    require_action(f.state.hold());
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
+    if (!shared_frame) {
+        const auto released = f.dispatch_input(action);
+        INFO(released);
+        action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
+        action.compose_inputs.clear();
+    }
+    action.compose_inputs.push_back({.kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS,
+        .navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
+                                     : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD});
+    const auto status = f.dispatch_input(action);
+    INFO(status);
+    check_action(f.state.cursor == local_position_t{measure_id_t{1}, forward ? 480U : 0U});
+    check_action_false(f.state.is_pending());
+    require_action(f.history.document.charts.front().measures.front().notes.size() == 1);
+    const auto& note = f.history.document.charts.front().measures.front().notes.front();
+    check_action(note.position == local_position_t{measure_id_t{1}, 240});
+    check_action(!note.end);
+    check_action(f.history.undo.size() == 1);
+    action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
+    action.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
+                                                        : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
+    (void)f.dispatch_input(action);
+    check_action_false(f.navigation.is_active());
+}
+
+TEST_CASE("Lane-key placement does not consume the first snap move after a viewport round trip",
+          "[compose-input][lane-keys][fractional-cursor][regression]") {
+    const auto forward = GENERATE(false, true);
+    const auto height = GENERATE(900.0, 1440.0);
+    bga_input_fixture_t f;
+    f.state.active_snap_denominator = 8;
+    f.state.supported_snap_denominators = {4, 8};
+    place_cursor_on_picked_row(f.state, {measure_id_t{1}, 120});
+    set_cursor_scale(f.state, default_pixels_per_standard_measure * 1.1);
+    configure_cursor_viewport(f.state, height, editor_field_scroll_direction_t::up);
+    const auto& chart = f.history.document.charts.front();
+    const auto index = measure_index_t::from(chart).value();
+    set_viewport_scroll_pixels(f.state,
+        120 * (f.state.pixels_per_standard_measure / chart.divisions_per_standard_measure)
+            - *f.state.fixed_cursor_screen_y_pixels);
+    require_action(synchronize_editor_cursor_to_viewport(chart, index, f.state));
+    require_action(f.state.cursor == local_position_t{measure_id_t{1}, 120});
+    check_action(f.state.cursor_subrow == 0.0);
+    f.application.project.compose_gesture.note_paint_mode_active = true;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0);
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = {1}};
+    (void)f.dispatch_input(action);
+    action = f.input(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0);
+    action.compose_inputs[0].lane_id = {1};
+    (void)f.dispatch_input(action);
+    require_action(f.history.undo.size() == 1);
+    action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
+    action.compose_inputs[0].navigation_action = forward ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD
+                                                        : WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
+    const auto status = f.dispatch_input(action);
+    INFO(status);
+    check_action(f.state.cursor == local_position_t{measure_id_t{1}, forward ? 240U : 0U});
+    check_action(f.state.cursor_subrow == 0.0);
+    check_action(f.history.undo.size() == 1);
 }
 
 TEST_CASE("Playing Compose navigation uses beats while stopped editing retains its snap",

@@ -2703,6 +2703,7 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
         .lane = lane_id_t{1},
         .kind = note_kind_t::hold,
         .end = local_position_t{measure_id_t{1}, 720},
+        .label = "protected",
     });
     REQUIRE(validate_document(colliding_song).empty());
     auto colliding_history = document_history_t::from(std::move(colliding_song));
@@ -2849,6 +2850,7 @@ TEST_CASE("interaction rejects invalid targets and occupied non-tap notes atomic
         .lane = lane_id_t{1},
         .kind = note_kind_t::hold,
         .end = local_position_t{measure_id_t{1}, 720},
+        .label = "protected",
     });
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(std::move(song));
@@ -3499,6 +3501,151 @@ TEST_CASE("Hold union preserves a consumed keysounded hold and its end in BGM",
           local_position_t{measure_id_t{2}, 0});
     check_consumed_keysound(history, original.back(), 1);
     check_hold_consumption_history(history, original);
+}
+
+namespace {
+auto enter_hold_body(document_history_t& history, editor_interaction_state_t& state,
+                     local_position_t position, int entry) -> editor_interaction_result_t {
+    if (entry == 0)
+        return dispatch_editor_action(history, state, place_tap_action_t{position});
+    if (entry == 1) {
+        REQUIRE(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{
+            .lane = lane_id_t{1}, .position = position, .pointer_captured = true,
+            .intent = note_paint_intent_t::draw}));
+        return dispatch_editor_action(history, state, end_note_paint_gesture_action_t{
+            .lane = lane_id_t{1}, .position = {measure_id_t{2}, 0}, .pointer_captured = true});
+    }
+    place_cursor_at(state, position);
+    REQUIRE(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    return dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+}
+
+void check_hold_body_result(const document_history_t& history,
+                           const editor_interaction_result_t& result,
+                           const note_t& original, int sound_mode) {
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    CHECK(result.document_changed);
+    CHECK_FALSE(result.created_note);
+    CHECK(note_count(history) == 0);
+    check_consumed_keysound(history, original, sound_mode);
+}
+
+void check_hold_body_history(document_history_t& history, const note_t& original, int sound_mode) {
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().notes == std::vector{original});
+    CHECK(history.document.charts.front().measures.front().bgm_events.empty());
+    REQUIRE(redo_document_command(history));
+    CHECK(note_count(history) == 0);
+    check_consumed_keysound(history, original, sound_mode);
+}
+} // namespace
+
+TEST_CASE("Entering a hold body clears the hold and preserves only keysounds in BGM",
+          "[unit][core][interaction][hold][consumption][hold-body-entry]") {
+    const auto entry = GENERATE(0, 1, 2);
+    const auto sound_mode = GENERATE(0, 1, 2, 3);
+    const auto next_measure = GENERATE(false, true);
+    const auto layered = GENERATE(false, true);
+    auto song = make_hold_consumption_song(sound_mode, false);
+    auto& notes = song.charts.front().measures.front().notes;
+    notes.erase(notes.begin());
+    notes.front().kind = note_kind_t::hold;
+    notes.front().end = local_position_t{measure_id_t{2}, 240};
+    if (layered) notes.front().semantic_layers = {layer_id_t{3}};
+    const auto original = notes.front();
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    const local_position_t position = next_measure ? local_position_t{measure_id_t{2}, 0}
+                                                   : local_position_t{measure_id_t{1}, 720};
+    const auto result = enter_hold_body(history, state, position, entry);
+    check_hold_body_result(history, result, original, sound_mode);
+    check_hold_body_history(history, original, sound_mode);
+}
+
+namespace {
+auto make_layered_hold_song(int sound_mode) -> song_document_t {
+    auto song = make_hold_consumption_song(sound_mode, false);
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::stepmania;
+    chart.measures.front().notes.erase(chart.measures.front().notes.begin());
+    auto& hold = chart.measures.front().notes.front();
+    hold.kind = note_kind_t::hold;
+    hold.end = local_position_t{measure_id_t{2}, 240};
+    hold.semantic_layers = {layer_id_t{3}};
+    return song;
+}
+
+void require_hold_merge_action(const editor_interaction_result_t& result) {
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+}
+
+void preview_layered_hold_merge(document_history_t& history, editor_interaction_state_t& state,
+                               bool backward) {
+    state.armed_note_layers = std::vector{layer_id_t{3}};
+    place_cursor_at(state, backward ? local_position_t{measure_id_t{2}, 720}
+                                   : local_position_t{measure_id_t{1}, 0});
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    const auto direction = backward ? interaction_direction_t::backward : interaction_direction_t::forward;
+    for (int step = 0; step < 6; ++step)
+        require_hold_merge_action(dispatch_editor_action(history, state, move_edit_cursor_action_t{direction}));
+    CHECK(history.undo.empty());
+}
+
+void check_layered_hold_merge(const document_history_t& history,
+                             const editor_interaction_result_t& result, bool backward) {
+    require_hold_merge_action(result);
+    REQUIRE(result.created_note);
+    REQUIRE(note_count(history) == 1);
+    const auto& hold = *find_note(history, *result.created_note);
+    const local_position_t head{measure_id_t{1}, backward ? 240u : 0u};
+    const local_position_t tail{measure_id_t{2}, backward ? 720u : 480u};
+    CHECK(hold.position == head);
+    CHECK(hold.end == tail);
+    CHECK(hold.semantic_layers == std::vector{layer_id_t{3}});
+}
+} // namespace
+
+TEST_CASE("Keyboard hold spans merge layered holds in either direction",
+          "[unit][core][interaction][hold][consumption][hold-merge-entry]") {
+    const auto backward = GENERATE(false, true);
+    const auto sound_mode = GENERATE(0, 1);
+    auto history = document_history_t::from(make_layered_hold_song(sound_mode));
+    const auto original = history.document.charts.front().measures.front().notes;
+    auto state = make_state(history);
+    preview_layered_hold_merge(history, state, backward);
+    CHECK(history.document.charts.front().measures.front().notes == original);
+    const auto result = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    check_layered_hold_merge(history, result, backward);
+    check_consumed_keysound(history, original.front(), sound_mode);
+    check_hold_consumption_history(history, original);
+    check_layered_hold_merge(history, result, backward);
+}
+
+TEST_CASE("Keyboard hold merging protects hidden and locked unsounded holds",
+          "[unit][core][interaction][hold][hold-merge-entry]") {
+    const auto locked = GENERATE(false, true);
+    auto song = make_layered_hold_song(0);
+    auto& layer = song.charts.front().semantic_layers.front();
+    layer.locked = locked;
+    layer.visible = locked;
+    auto history = document_history_t::from(std::move(song));
+    const auto original = history.document.charts.front().measures.front().notes;
+    auto state = make_state(history);
+    place_cursor_at(state, {measure_id_t{1}, 240});
+    require_hold_merge_action(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    const auto rejected = dispatch_editor_action(history, state, move_edit_cursor_action_t{});
+    CHECK_FALSE(rejected);
+    CHECK(has_code(rejected.diagnostics, diagnostic_code_t::collision));
+    CHECK(history.document.charts.front().measures.front().notes == original);
+    CHECK(history.undo.empty());
 }
 
 TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atomically",
@@ -5386,7 +5533,8 @@ TEST_CASE("explicit draw still rejects an incompatible hold overlap atomically",
     auto song = make_song();
     song.charts.front().measures.front().notes.push_back({
         .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
-        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 480}});
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 480},
+        .label = "protected"});
     auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto result = note_paint_intent_stroke(history, state, 240, 240,

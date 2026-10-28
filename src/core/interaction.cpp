@@ -1406,9 +1406,9 @@ auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_
             const auto begin = index.row_of(note.position);
             const auto end = note.end ? index.row_of(*note.end) : begin;
             if (!row || !begin || !end || *row < *begin || *row > *end) continue;
-            if (note.position != target || found)
+            if (found)
                 return diagnostic_list_t{error(diagnostic_code_t::collision,
-                    "Lane-key entry overlaps a hold body or multiple note heads", note.id)};
+                    "Lane-key entry overlaps multiple notes", note.id)};
             found = &note;
         }
     if (found && !is_keyboard_entry_editable(chart, *found))
@@ -1507,6 +1507,9 @@ auto keyboard_entry_plan_t::from(editor_edit_context_t& context, const hold_star
     const auto linked = entry_stem_channel(context.history.document, context.scope.chart, start.sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&linked)) return {.diagnostics = *failure};
     const auto* occupant = std::get<const note_t*>(occupied);
+    // Body entry uses the hold planner: a single row consumes the whole hold,
+    // while a dragged entry still merges the requested span.
+    if (occupant && occupant->position != *target) return {};
     const auto stem = std::get<std::optional<object_id_t>>(linked);
     if (!occupant && !stem) return {};
     return {.value = keyboard_entry_plan_t{.lane = start.lane, .position = *target,

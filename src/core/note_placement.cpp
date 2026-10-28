@@ -6,22 +6,18 @@
 #include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/measure_editor.h>
 namespace wormedit::interaction_detail {
-auto is_plain_editable_note(const note_t& note) -> bool {
+auto is_plain_editable_note(const chart_document_t& chart, const note_t& note) -> bool {
     const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
                             (note.kind == note_kind_t::hold && note.end.has_value());
-    return plain_kind && !note.sound.has_value() && !note.sound_channel_event && note.semantic_layers.empty() &&
-           !note.label.has_value() && !note.branch.has_value();
+    return plain_kind && !note.sound && !note.sound_channel_event && !note.label &&
+           is_keyboard_entry_editable(chart, note);
 }
 
 auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) -> bool {
     const auto ordinary = (note.kind == note_kind_t::tap && !note.end) ||
                           (note.kind == note_kind_t::hold && note.end);
-    if (!ordinary || !note.sound || note.sound_channel_event || note.label || note.branch)
-        return false;
-    return std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
-        const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
-        return layer != chart.semantic_layers.end() && layer->visible && !layer->locked;
-    });
+    return ordinary && note.sound && !note.sound_channel_event && !note.label &&
+           is_keyboard_entry_editable(chart, note);
 }
 
 auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index, lane_id_t lane,
@@ -200,10 +196,28 @@ auto process_draw_paint_row(const paint_row_t& row, note_paint_plan_t& plan,
                      "paint gesture overlaps multiple same-lane notes",
                      active.begin()->second.note);
     const auto& note = active.begin()->second;
+    if (note.kind == note_kind_t::hold && note.has_end) {
+        plan.removals.push_back(note.note);
+        return std::nullopt;
+    }
     if (note.kind == kind && !note.has_end && note.begin == row.row && note.end == row.row)
         return std::nullopt;
     return error(diagnostic_code_t::collision, "paint gesture overlaps a non-tap note",
                  active.begin()->second.note);
+}
+
+auto note_paint_plan_t::plan_hold_consumption(const chart_document_t& chart) -> diagnostic_list_t {
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.kind != note_kind_t::hold || !note.end ||
+                !std::ranges::binary_search(removals, note.id)) continue;
+            if (!is_plain_editable_note(chart, note) && !is_removable_sound_note(chart, note))
+                return {error(diagnostic_code_t::collision,
+                    "note placement overlaps a non-editable hold", note.id)};
+            consumed_holds.push_back(note.id);
+        }
+    }
+    return {};
 }
 
 auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index,
@@ -234,6 +248,13 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
         if (row && is_head_blocked_by_warp(chart, index, *row, kind))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "playable note heads cannot sit inside a warp")};
+    }
+    std::ranges::sort(plan.removals);
+    const auto duplicates = std::ranges::unique(plan.removals);
+    plan.removals.erase(duplicates.begin(), duplicates.end());
+    if (intent != note_paint_intent_t::erase) {
+        auto diagnostics = plan.plan_hold_consumption(chart);
+        if (!diagnostics.empty()) return diagnostics;
     }
     return plan;
 }
@@ -284,6 +305,8 @@ auto materialize_note_paint_targets(chart_document_t& chart, std::span<const not
 
 auto stage_scoped_note_paint(document_command_transaction_t& transaction, chart_id_t chart,
     const note_paint_plan_t& plan, const note_t& defaults) -> attempt_t<std::vector<object_id_t>> {
+    auto diagnostics = stage_hold_note_consumption(transaction, chart, plan.consumed_holds);
+    if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     const auto* source = transaction.read_chart(chart);
     const auto built = source ? build_virtual_canvas(*source) : std::variant<virtual_canvas_t, diagnostic_list_t>{diagnostic_list_t{}};
     const auto* canvas = std::get_if<virtual_canvas_t>(&built);
@@ -308,7 +331,10 @@ auto stage_scoped_note_paint(document_command_transaction_t& transaction, chart_
         note.lane = addition.lane;
         additions.push_back(std::move(note));
     }
-    return transaction.stage_bms_native_events(chart, plan.removals, additions,
+    auto removals = plan.removals;
+    const auto* remaining = transaction.read_chart(chart);
+    std::erase_if(removals, [&](object_id_t id) { return !remaining->find_note(id); });
+    return transaction.stage_bms_native_events(chart, removals, additions,
         additions.empty() ? "Remove notes" : "Paint notes");
 }
 

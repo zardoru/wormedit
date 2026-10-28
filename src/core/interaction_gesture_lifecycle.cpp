@@ -554,12 +554,12 @@ auto entry_stem_channel(const song_document_t& document, const chart_document_t&
     return std::optional<object_id_t>{};
 }
 
-auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
+auto prepare_stem_note_paint(const song_document_t& document, chart_id_t chart_id,
                              const note_paint_plan_t& plan, object_id_t channel,
                              const std::optional<std::vector<layer_id_t>>& armed_layers,
                              std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
-    auto scratch = document_history_t::from(history.document);
+    auto scratch = document_history_t::from(document);
     if (!plan.removals.empty()) {
         editor_interaction_state_t selection;
         selection.chart = chart_id;
@@ -582,7 +582,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
             for (auto& note : measure.notes) {
                 if (note.position != target.position || note.lane != target.lane)
                     continue;
-                if (!(*history.read_chart(chart_id)).find_note(note.id))
+                if (!document.read_chart(chart_id)->find_note(note.id))
                     note.semantic_layers =
                         resolve_placement_layers(*chart, armed_layers, note.sound);
                 notes.push_back(note.id);
@@ -597,7 +597,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     return prepared_note_paint_t{std::move(scratch.document), std::move(notes)};
 }
 
-auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
+auto prepare_note_paint_document(document_history_t& history, chart_id_t chart_id,
                                  const note_paint_plan_t& plan, note_kind_t kind,
                                  std::optional<resource_id_t> sound,
                                  const std::optional<std::vector<layer_id_t>>& armed_layers,
@@ -607,17 +607,25 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
         entry_stem_channel(history.document, *history.read_chart(chart_id), sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&stem))
         return *failure;
-    if (const auto channel = std::get<std::optional<object_id_t>>(stem))
-        return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers, geometry);
+    auto transaction = document_command_transaction_t(history);
+    auto diagnostics = stage_hold_note_consumption(transaction, chart_id, plan.consumed_holds);
+    if (!diagnostics.empty()) return diagnostics;
+    if (const auto channel = std::get<std::optional<object_id_t>>(stem)) {
+        auto remaining = plan;
+        const auto* chart = transaction.read_chart(chart_id);
+        std::erase_if(remaining.removals, [&](object_id_t id) { return !chart->find_note(id); });
+        return prepare_stem_note_paint(transaction.current_document(), chart_id, remaining,
+                                       *channel, armed_layers, geometry);
+    }
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
-                              : next_object_id(*history.read_chart(chart_id));
+                              : next_object_id(*transaction.read_chart(chart_id));
     if (!plan.additions.empty() &&
         (!first_id ||
          plan.additions.size() - 1 > std::numeric_limits<std::uint64_t>::max() - first_id->value))
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_id, "chart object ID sequence is exhausted")};
-    auto proposed = history.document;
+    auto proposed = transaction.current_document();
     auto* chart = proposed.find_chart(chart_id);
     auto resolved = materialize_note_paint_targets(*chart, plan.additions);
     if (!resolved.value) return std::move(resolved.diagnostics);
@@ -976,7 +984,7 @@ auto prepare_stem_hold_document(const editor_edit_context_t& context, const pend
     note_paint_plan_t plan{.additions = {}, .removals = placement.removals};
     if (placement.adds_note)
         plan.additions.push_back({.lane = pending.lane, .position = placement.head});
-    auto prepared = prepare_stem_note_paint(context.history, context.state.chart, plan, channel,
+    auto prepared = prepare_stem_note_paint(context.history.document, context.state.chart, plan, channel,
                                             pending.layers, geometry);
     if (std::holds_alternative<diagnostic_list_t>(prepared))
         return prepared;

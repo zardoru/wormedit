@@ -48,5 +48,5 @@ working_document | src/sys/compose/actions/compose_actions.cpp | 3 | Existing do
 scratch_history | src/sys/compose/actions/compose_bga_actions.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 scratch_history | src/sys/compose/input/compose_input.cpp | 1 | Legacy detached edit/preview composition; audited migration debt.
 scratch_history | src/sys/project/recovery_notification_feedback.cpp | 1 | Session creation/replacement boundary; creates a new history, not a nested command.
-detached_document | src/core/interaction_gesture_lifecycle.cpp | 2 | Existing detached proposal/gesture payload; audited publication boundary.
+detached_document | src/core/interaction_gesture_lifecycle.cpp | 1 | Existing detached proposal/gesture payload; note-paint consumption now starts from its transaction.
 detached_document | src/core/time_shift.cpp | 2 | Existing detached proposal/gesture payload; audited publication boundary.

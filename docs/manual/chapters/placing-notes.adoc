@@ -39,6 +39,10 @@ key places the armed note at the cursor; on an occupied cell it removes that not
 hold is removed if the cursor is anywhere on it). With notes selected, the same key moves every
 selected note to that lane and keeps them selected.
 
+Placing a note on a hold clears the whole hold. A keysounded hold moves to BGM, keeping its
+timing and sound; a hold with no keysound is removed. This also applies when drawing with the
+mouse. osu! hitsounds are removed with the hold.
+
 kbd:[Shift] + lane key moves only the _first_ selected note to that lane, then deselects it. Press
 again for the next one. To spread a selected run across lanes, press kbd:[Shift] with the lane
 keys in the order you want, one note at a time.
@@ -56,6 +60,8 @@ started places an ordinary note. Several lane keys can be held at once for chord
 With the mouse::
 kbd:[Alt]-drag on an empty lane, or arm the *Hold* kind and draw. A new hold removes the taps it
 covers and merges with holds it touches, all in one Undo step.
+Keyboard holds merge the same way: keep the lane key held while moving across an existing
+hold to extend the combined span. Notes on visible, unlocked layers participate in the merge.
 
 [#lengthening]
 === Lengthening and shortening notes

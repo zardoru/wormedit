@@ -113,8 +113,8 @@ void render_header(const MixerPanel& panel) {
     nk_layout_row_template_push_dynamic(context);
     nk_layout_row_template_push_static(context, 64.0f);
     nk_layout_row_template_end(context);
-    nk_label(context, wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::mixer)].title.data(),
-             NK_TEXT_LEFT);
+    chrome::panel_header_cell(context,
+        wormedit::dock_panel_catalog[static_cast<std::size_t>(wormedit::dock_panel_t::mixer)].title.data());
     if (chrome::Button{"Reset", chrome::ButtonKind::ghost, "Restore every level and clear mute and solo",
                        panel.available && !panel.current.is_default()}.render(context))
         panel.action.preview_mix = wormedit::preview_mix_t{};
@@ -136,6 +136,7 @@ void worm_ui_nuklear_render_compose_mixer(struct nk_context* context,
     if (!context || !view || !action) return;
     const MixerPanel panel{context, view->preview_mix, *action, view->preview_mix_available};
     render_header(panel);
+    chrome::group_gap(context);
     if (!view->preview_mix_available) nk_widget_disable_begin(context);
     for (const auto& bus : wormedit::mix_bus_catalog) render_bus(panel, bus);
     render_separator(context);

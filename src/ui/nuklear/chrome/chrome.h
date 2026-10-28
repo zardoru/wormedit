@@ -827,6 +827,24 @@ inline void group_gap(nk_context* context, float height = metrics::gap_small) {
     nk_spacing(context, 1);
 }
 
+// Title bar of a dock panel: the same filled bar as a level-one section header, so panels
+// open with a header that is recognisable as one. The cell form fits a template row.
+inline void panel_header_cell(nk_context* context, const char* title) {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    auto* canvas = nk_window_get_canvas(context);
+    nk_fill_rect(canvas, bounds, metrics::radius_control, section_header_color());
+    const auto* font = context->style.font;
+    const auto text = nk_rect(bounds.x + metrics::gap_medium, bounds.y + (bounds.h - font->height) * 0.5f,
+                              std::max(0.0f, bounds.w - metrics::gap_medium), font->height);
+    nk_draw_text(canvas, text, title, static_cast<int>(std::strlen(title)), font, nk_rgba(0, 0, 0, 0),
+                 color(UiColor::text_bright));
+}
+inline void panel_header(nk_context* context, const char* title) {
+    nk_layout_row_dynamic(context, metrics::control_default, 1);
+    panel_header_cell(context, title);
+}
+
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);
     context->style.window.spacing = nk_vec2(metrics::gap_small, metrics::gap_small);

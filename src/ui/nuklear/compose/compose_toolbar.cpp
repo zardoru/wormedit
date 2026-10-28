@@ -8,6 +8,7 @@
 #include "ui/nuklear/render/vector_icons.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
+#include "ui/nuklear/chrome/text_layout.h"
 #include "ui/nuklear/project/bms_branch_panel.h"
 
 #include <algorithm>
@@ -704,7 +705,10 @@ static void layout_compose_toolbar(nk_context* context, int tool_icons, int pane
     layout_toolbar_icons(context, 1); // BGM scroll back.
     nk_layout_row_template_push_dynamic(context);
     layout_toolbar_icons(context, 1); // BGM scroll forward.
-    if (width >= 900.0f) nk_layout_row_template_push_static(context, 85);
+    if (width >= 900.0f) // Sized to the label, so the colon is never clipped.
+        nk_layout_row_template_push_static(context, std::ceil(
+            wormedit::ui::chrome::text_width(context->style.font, "BGM columns:") +
+            2.0f * context->style.text.padding.x + wormedit::ui::metrics::gap_medium));
     layout_toolbar_icons(context, 1);
     nk_layout_row_template_push_static(context, 42);
     layout_toolbar_icons(context, 1);

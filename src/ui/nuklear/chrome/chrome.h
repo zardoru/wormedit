@@ -742,13 +742,13 @@ inline void apply_tooltip_theme(nk_context* context) {
 
 // Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
 // menus. Node and tab buttons are the chevrons that open and close the section.
-// Level-one section bars are a notch lighter than the buttons, so a header reads as the
-// parent of everything indented under it.
+// Level-one section bars step from the panel background toward the text color, so they read
+// as the parent of everything indented under them in dark and light schemes alike.
 inline auto section_header_color() -> nk_color {
-    const auto base = color(UiColor::surface_hover);
+    const auto base = color(UiColor::background);
     const auto text = color(UiColor::text);
     const auto mix = [](nk_byte a, nk_byte b) {
-        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * 10 / 100);
+        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * 14 / 100);
     };
     return nk_rgba(mix(base.r, text.r), mix(base.g, text.g), mix(base.b, text.b), 255);
 }

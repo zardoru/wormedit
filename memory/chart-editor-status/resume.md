@@ -1,5 +1,16 @@
 # Status: resume checklist
 
+## Release 1.0.0-rc2 (owner, 2026-10-28)
+
+`b29bda0` set the suffix to `-rc2` (reconfigure reused build directories: the suffix is cached).
+Since then, main merged the panel redesigns #66–#70, #71 (palette clipping) and #72 (BMSON
+opening errors), and `c564202` updated 12 event-harness tests the redesigns had broken and `25128d1` brought three functions back under the complexity threshold; gate 5,571/5,571 with clang-tidy 23.1.3 against `v1.0.0-rc1`. Notes:
+[`docs/release-notes/1.0.0-rc2.md`](../../docs/release-notes/1.0.0-rc2.md); README and all manual
+screenshots refreshed. The GitHub draft release `v1.0.0-rc2` tracks these notes. Pending (owner):
+AppImage, Windows zip and Wine checks, macOS check, tag and publish. GitHub CI has been red on
+main for weeks (runner GCC lacks `std::bind_back`, runner Clang rejects
+`-Wno-missing-designated-field-initializers`, MSVC C4458 at `document.h:919`); local gates pass.
+
 ## Recovery journal release blocker (owner, 2026-10-27)
 
 The journal writes a complete post-state per commit (24 MB and about 1.4 s for one note move in

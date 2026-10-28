@@ -870,6 +870,190 @@ TEST_CASE("Scoped layer definitions and object membership have separate appropri
     CHECK(owner(history).prepared().semantic_layers.front().id == layer);
 }
 
+namespace {
+void require_sound_layers(bool value) { REQUIRE(value); }
+void check_sound_layers(bool value) { CHECK(value); }
+void check_no_sound_layers(bool value) { CHECK_FALSE(value); }
+constexpr auto sound_layer_source = "#WAV01 a.wav\n#WAV02 b.wav\n#BPM 120\n"
+    "#00011:0102\n#00111:01\n#00001:01\n";
+
+auto add_sound_test_layer(document_history_t& history, std::string name = "waw") -> layer_id_t {
+    require_sound_layers(apply_semantic_layer_edit(history, insert_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+        .value = {.name = std::move(name), .color = {.red = 1.0, .alpha = 1.0}}}).applied);
+    return history.read_chart(difficulty)->semantic_layers.back().id;
+}
+
+auto sound_test_resources(const document_history_t& history) -> std::vector<resource_id_t> {
+    const auto* chart = history.read_chart(difficulty);
+    return {*chart->measures.front().notes[0].sound, *chart->measures.front().notes[1].sound};
+}
+}
+
+TEST_CASE("Scoped sound layer batches update defaults and notes with one Undo", "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from(sound_layer_source);
+    const auto layer = add_sound_test_layer(history);
+    const auto previous = add_sound_test_layer(history, "Existing");
+    const auto resources = sound_test_resources(history);
+    const auto protected_note = history.read_chart(difficulty)->measures.front().notes[0].id;
+    require_sound_layers(apply_semantic_layer_edit(history, semantic_layer_membership_edit_t{.chart = difficulty,
+        .layer = previous, .notes = {protected_note}}).applied);
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto undo_count = history.undo.size();
+    const sound_layer_membership_action_t action{.chart = difficulty, .resources = resources, .layer = layer};
+    const auto added = apply_sound_layer_membership(history, action);
+    for (const auto& diagnostic : added.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_sound_layers(added.applied);
+    check_sound_layers(history.document.revision == revision + 1);
+    check_sound_layers(history.undo.size() == undo_count + 1);
+    check_sound_layers(history.document.charts.empty());
+    const auto* chart = history.read_chart(difficulty);
+    for (const auto resource : resources)
+        check_sound_layers(sound_default_layers_for_placement(*chart, resource) == std::vector{layer});
+    check_sound_layers(chart->find_note(protected_note)->semantic_layers == std::vector{previous});
+    check_sound_layers(chart->measures.front().notes[1].semantic_layers == std::vector{layer});
+    check_sound_layers(chart->measures[1].notes.front().semantic_layers == std::vector{layer});
+    check_sound_layers(chart->measures.front().bgm_events.front().semantic_layers.empty());
+    const auto after = history.document.prepared_bms_programs.front();
+    check_no_sound_layers(apply_sound_layer_membership(history, action).applied);
+    check_sound_layers(history.undo.size() == undo_count + 1);
+    require_sound_layers(undo_document_command(history));
+    check_sound_layers(history.document.prepared_bms_programs.front() == before);
+    require_sound_layers(redo_document_command(history));
+    check_sound_layers(history.document.prepared_bms_programs.front() == after);
+    auto remove = action;
+    remove.member = false;
+    require_sound_layers(apply_sound_layer_membership(history, remove).applied);
+    check_sound_layers(owner(history).prepared().sound_layer_defaults.empty());
+    check_sound_layers(history.read_chart(difficulty)->measures.front().notes[1].semantic_layers == std::vector{layer});
+    require_sound_layers(undo_document_command(history));
+    check_sound_layers(history.document.prepared_bms_programs.front() == after);
+}
+
+TEST_CASE("Scoped sounds repaint existing defaults and retain BGM memberships through native reload",
+          "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from(sound_layer_source);
+    const auto layer = add_sound_test_layer(history);
+    const auto resources = sound_test_resources(history);
+    require_sound_layers(apply_sound_layer_defaults(history, {.chart = difficulty, .resources = resources, .layers = {layer}}).applied);
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto undo_count = history.undo.size();
+    const auto note = history.read_chart(difficulty)->measures.front().notes.front().id;
+    const auto bgm = history.read_chart(difficulty)->measures.front().bgm_events.front().id;
+    require_sound_layers(add_selected_sounds_to_semantic_layer(history,
+        {.chart = difficulty, .layer = layer, .notes = {note}, .bgm_events = {bgm}}).applied);
+    check_sound_layers(history.undo.size() == undo_count + 1);
+    check_sound_layers(history.read_chart(difficulty)->find_note(note)->semantic_layers == std::vector{layer});
+    check_sound_layers(history.read_chart(difficulty)->measures.front().bgm_events.front().semantic_layers == std::vector{layer});
+    check_sound_layers(history.read_chart(difficulty)->measures.front().notes[1].semantic_layers.empty());
+    const auto written = write_native_project(history.document);
+    require_sound_layers(written.value.has_value());
+    const auto loaded = parse_native_project(*written.value);
+    require_sound_layers(loaded.value.has_value());
+    check_sound_layers(loaded.value->prepared_bms_programs.front()->prepared().program == owner(history).prepared().program);
+    check_sound_layers(loaded.value->prepared_bms_programs.front()->prepared().sound_layer_defaults == owner(history).prepared().sound_layer_defaults);
+    require_sound_layers(undo_document_command(history));
+    check_sound_layers(history.document.prepared_bms_programs.front() == before);
+}
+
+TEST_CASE("Scoped sound layer rejection rolls back settings and content together",
+          "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from(sound_layer_source);
+    const auto layer = add_sound_test_layer(history);
+    const auto resources = sound_test_resources(history);
+    const auto kind = GENERATE(0, 1, 2, 3);
+    sound_layer_membership_action_t action{.chart = difficulty, .resources = resources, .layer = layer};
+    if (kind == 0) action.resources.push_back(resource_id_t{999999});
+    if (kind == 1) action.resources.push_back(resources.front());
+    if (kind == 2) action.layer = layer_id_t{999999};
+    if (kind == 3) {
+        require_sound_layers(apply_semantic_layer_edit(history, update_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+            .id = layer, .value = {.name = "waw", .color = {.red = 1.0, .alpha = 1.0}, .locked = true}}).applied);
+    }
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto undo_count = history.undo.size();
+    const auto rejected = apply_sound_layer_membership(history, action);
+    check_no_sound_layers(rejected.applied);
+    check_no_sound_layers(rejected.diagnostics.empty());
+    check_sound_layers(history.document.prepared_bms_programs.front() == before);
+    check_sound_layers(history.document.revision == revision);
+    check_sound_layers(history.undo.size() == undo_count);
+}
+
+TEST_CASE("Scoped sound layer batches reject mixed semantic owners without publishing defaults",
+          "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from("#WAV01 a.wav\n#BPM 120\n#00011:01\n#RANDOM 2\n#IF 1\n#00112:01\n#ENDIF\n#ENDRANDOM\n");
+    const auto layer = add_sound_test_layer(history);
+    const auto resource = *history.read_chart(difficulty)->measures.front().notes.front().sound;
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto undo_count = history.undo.size();
+    const auto rejected = apply_sound_layer_membership(history,
+        {.chart = difficulty, .resources = {resource}, .layer = layer});
+    check_no_sound_layers(rejected.applied);
+    check_no_sound_layers(rejected.diagnostics.empty());
+    check_sound_layers(history.document.prepared_bms_programs.front() == before);
+    check_sound_layers(history.document.revision == revision);
+    check_sound_layers(history.undo.size() == undo_count);
+    check_sound_layers(owner(history).prepared().sound_layer_defaults.empty());
+}
+
+TEST_CASE("Scoped sound layers honor overwrite locks and allow removing locked defaults",
+          "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from(sound_layer_source);
+    const auto layer = add_sound_test_layer(history);
+    const auto previous = add_sound_test_layer(history, "Existing");
+    const auto resource = sound_test_resources(history).front();
+    const auto note = history.read_chart(difficulty)->measures.front().notes.front().id;
+    require_sound_layers(apply_semantic_layer_edit(history, semantic_layer_membership_edit_t{.chart = difficulty,
+        .layer = previous, .notes = {note}}).applied);
+    require_sound_layers(apply_semantic_layer_edit(history, update_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+        .id = previous, .value = {.name = "Existing", .color = {.red = 1.0, .alpha = 1.0}, .locked = true}}).applied);
+    const auto before = history.document.prepared_bms_programs.front();
+    const sound_layer_membership_action_t overwrite{.chart = difficulty, .resources = {resource},
+        .layer = layer, .overwrite_note_layers = true};
+    check_no_sound_layers(apply_sound_layer_membership(history, overwrite).applied);
+    check_sound_layers(history.document.prepared_bms_programs.front() == before);
+    require_sound_layers(apply_semantic_layer_edit(history, update_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+        .id = previous, .value = {.name = "Existing", .color = {.red = 1.0, .alpha = 1.0}}}).applied);
+    require_sound_layers(apply_sound_layer_membership(history, overwrite).applied);
+    check_sound_layers(history.read_chart(difficulty)->find_note(note)->semantic_layers == std::vector{layer});
+    require_sound_layers(apply_semantic_layer_edit(history, update_edit_t<semantic_layer_edit_value_t>{.chart = difficulty,
+        .id = layer, .value = {.name = "waw", .color = {.red = 1.0, .alpha = 1.0}, .locked = true}}).applied);
+    require_sound_layers(apply_sound_layer_membership(history,
+        {.chart = difficulty, .resources = {resource}, .layer = layer, .member = false}).applied);
+    check_sound_layers(owner(history).prepared().sound_layer_defaults.empty());
+    check_sound_layers(history.read_chart(difficulty)->find_note(note)->semantic_layers == std::vector{layer});
+}
+
+TEST_CASE("Scoped sound layers resolve inactive authoring aliases without changing playback",
+          "[bms-program-edit][scoped-sound-layers]") {
+    auto history = history_from("#WAV01 a.wav\n#BPM 120\n#00011:01\n#RANDOM 2\n"
+        "#IF 1\n#00112:01\n#ELSE\n#WAV02 b.wav\n#00113:02\n#ENDIF\n#ENDRANDOM\n");
+    const auto layer = add_sound_test_layer(history);
+    const auto selected = bms_program_edit_target_t::for_authoring(history.document, difficulty,
+        *owner(history).prepared().program.target_chart(node_id<bms_else_scope_t>(history)));
+    require_sound_layers(selected.has_value());
+    history.bms_edit_target = {.difficulty = difficulty, .chart = selected->chart};
+    const auto* chart = history.read_chart(difficulty);
+    const auto found = std::ranges::find_if(chart->measures[1].notes,
+        [&](const auto& note) { return !chart->is_bms_authoring_read_only(note.id); });
+    require_sound_layers(found != chart->measures[1].notes.end());
+    const auto note = *found;
+    require_sound_layers(note.sound.has_value());
+    const auto evaluation = owner(history).evaluation();
+    const auto before = owner(history).prepared().program;
+    const auto added = apply_sound_layer_membership(history,
+        {.chart = difficulty, .resources = {*note.sound}, .layer = layer});
+    for (const auto& diagnostic : added.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_sound_layers(added.applied);
+    check_sound_layers(history.read_chart(difficulty)->find_note(note.id)->semantic_layers == std::vector{layer});
+    check_sound_layers(owner(history).evaluation() == evaluation);
+    for (const auto& node : before.nodes())
+        if (node.id != selected->chart) check_sound_layers(*owner(history).prepared().program.find(node.id) == node);
+}
+
 TEST_CASE("Scoped offset edits create a typed declaration and retain it after selection changes", "[bms-program-edit]") {
     auto history = history_from();
     const auto selected = target(history, node_id<bms_if_scope_t>(history));

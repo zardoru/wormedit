@@ -3215,6 +3215,7 @@ auto dispatch_project_export_action(const wormedit::ui::workspace_action_t& acti
     auto& notifications = environment.document.notifications;
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP &&
+        action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS &&
         action.compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT &&
         action.compose_action != WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT) return false;
     const auto* chart = selected_chart(history, workspace);

@@ -1484,7 +1484,8 @@ static void draw_compose_bands(const ComposePaintContext& paint) {
 static void draw_compose_play_lanes(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->lanes.size(); ++index) {
         const auto& lane = paint.view->lanes[index];
-        const auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
+        const auto bounds = lane.background_bounds(paint.view->viewport_height_pixels);
+        const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
@@ -1500,12 +1501,14 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
 static void draw_compose_play_lane_titles(const ComposePaintContext& paint) {
     for (size_t index=0; index<paint.view->lanes.size(); ++index) {
         const auto& lane=paint.view->lanes[index];
-        const auto rect=compose_screen_rect(&lane.bounds,paint.view,paint.viewport);
-        if (paint.view->lane_key_legend_visible && rect.w >= 28.0f && rect.h >= 18.0f) {
+        const auto bounds = lane.background_bounds(paint.view->viewport_height_pixels);
+        const auto rect=compose_screen_rect(&bounds,paint.view,paint.viewport);
+        if (paint.view->lane_key_legend_visible && rect.w >= 28.0f &&
+            rect.y <= paint.viewport.y && rect.h > 0.0f && paint.viewport.h >= 18.0f) {
             char label[16]{};
             const auto label_length = snprintf(label, sizeof(label), "%u", lane.display_order + 1U);
             if (label_length > 0) {
-                const auto label_bounds = nk_rect(rect.x + 2.0f, rect.y + 2.0f,
+                const auto label_bounds = nk_rect(rect.x + 2.0f, paint.viewport.y + 2.0f,
                                                   std::min(28.0f, rect.w - 4.0f), 15.0f);
                 field_text_outlined(paint, label_bounds, label, static_cast<int>(strlen(label)),
                                     paint.context->style.font, wormedit::ui::theme::compose_key_color(lane.key_color, lane.lane_id).lane_label);
@@ -3205,7 +3208,8 @@ static void draw_compose_bgm_mix_controls(const ComposePaintContext& paint,
         const auto fill = wormedit::ui::chrome::mix_toggle_fill(
             solo ? wormedit::ui::chrome::MixToggleKind::solo : wormedit::ui::chrome::MixToggleKind::mute, active);
         const auto text = !paint.view->bgm_mix_available ? nk_rgb(90, 94, 105)
-            : lane.mix_silent && !active ? nk_rgb(126, 130, 143) : nk_rgb(225, 227, 235);
+            : lane.mix_silent && !active ? wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted)
+            : active ? nk_rgb(255, 255, 255) : wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
         field_rect(paint, rect, 2, fill, 5);
         field_text(paint, rect, solo ? "S" : "M", 1, paint.context->style.font, fill, text, 5);
         if (wormedit::ui::nuklear::tooltip::hovered(paint.context, rect))

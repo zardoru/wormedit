@@ -74,6 +74,14 @@ struct compose_lane_view_t {
     wormedit::stage_group_t stage{};
     wormedit::lane_glyph_t glyph{};
     wormedit::lane_key_color_t key_color{};
+    bool extends_top{};
+    bool extends_bottom{};
+    [[nodiscard]] auto background_bounds(double viewport_height) const -> compose_rect_t {
+        auto result = bounds;
+        if (extends_top) result.top = std::min(0.0, result.top);
+        if (extends_bottom) result.bottom = std::max(viewport_height, result.bottom);
+        return result;
+    }
     auto operator==(const compose_lane_view_t&) const -> bool = default;
 };
 } // namespace wormedit::ui

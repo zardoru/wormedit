@@ -87,6 +87,23 @@ inline constexpr float property_label_ratio = 0.5f;
 using theme::UiColor;
 inline auto color(UiColor role) -> nk_color { return theme::ui(role); }
 
+// Moves `from` toward `to` by `percent`. Derived colors keep every theme coherent.
+inline auto mix_color(nk_color from, nk_color to, int percent) -> nk_color {
+    const auto mix = [percent](nk_byte a, nk_byte b) {
+        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * percent / 100);
+    };
+    return nk_rgba(mix(from.r, to.r), mix(from.g, to.g), mix(from.b, to.b), 255);
+}
+
+// Disabled controls: text fades toward the panel and the fill drops to a flat tone between the
+// panel and the surface, so they read as inactive in light and dark themes alike.
+inline auto text_faint() -> nk_color {
+    return mix_color(color(UiColor::text), color(UiColor::background), 55);
+}
+inline auto disabled_fill() -> nk_color {
+    return mix_color(color(UiColor::surface), color(UiColor::background), 70);
+}
+
 inline auto button_style(nk_context* context, bool selected) -> nk_style_button {
     auto style = context->style.button;
     style.normal = nk_style_item_color(selected ? color(UiColor::selected)
@@ -665,6 +682,19 @@ inline void apply_field_theme(nk_context* context) {
     property.label_active = text_bright;
     property.rounding = metrics::radius_control;
     property.edit = edit;
+    // The stepper arrows are buttons of their own; Nuklear's defaults are near-black.
+    for (auto* arrow : {&property.inc_button, &property.dec_button}) {
+        arrow->normal = surface;
+        arrow->hover = hover;
+        arrow->active = active;
+        arrow->border_color = nk_rgba(0, 0, 0, 0);
+        arrow->border = 0.0f;
+        arrow->text_background = nk_rgba(0, 0, 0, 0);
+        arrow->text_normal = color(UiColor::text_muted);
+        arrow->text_hover = text_bright;
+        arrow->text_active = text_bright;
+        arrow->rounding = metrics::radius_control;
+    }
     // Property values are already inside a control. Nuklear sizes their editor
     // from the measured number, so standalone-field insets would clip its text.
     property.edit.padding = nk_vec2(0, 0);
@@ -745,12 +775,7 @@ inline void apply_tooltip_theme(nk_context* context) {
 // Section fills step from the panel background toward the text color: a body panel, a
 // level-two card, and the level-one bar. They read as nested layers in dark and light schemes.
 inline auto section_fill(int percent) -> nk_color {
-    const auto base = color(UiColor::background);
-    const auto text = color(UiColor::text);
-    const auto mix = [percent](nk_byte a, nk_byte b) {
-        return static_cast<nk_byte>(a + (static_cast<int>(b) - static_cast<int>(a)) * percent / 100);
-    };
-    return nk_rgba(mix(base.r, text.r), mix(base.g, text.g), mix(base.b, text.b), 255);
+    return mix_color(color(UiColor::background), color(UiColor::text), percent);
 }
 inline auto section_header_color() -> nk_color { return section_fill(14); }
 inline auto section_body_color() -> nk_color { return section_fill(5); }
@@ -794,6 +819,13 @@ inline auto section_push(nk_context* context, nk_tree_type type, const char* tit
     return section_push(context, type, title, initial, title, static_cast<int>(std::strlen(title)), 0);
 }
 void section_pop(nk_context* context);
+
+// An empty row that separates groups inside one section. Rows already sit `window.spacing`
+// apart, so the visible gap is the height plus that spacing on both sides.
+inline void group_gap(nk_context* context, float height = metrics::gap_small) {
+    nk_layout_row_dynamic(context, height, 1);
+    nk_spacing(context, 1);
+}
 
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);

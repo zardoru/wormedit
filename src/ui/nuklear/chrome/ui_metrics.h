@@ -71,9 +71,9 @@ constexpr auto shadow_reach(int level) -> shadow_reach_t {
     return {steps, up > 0.0f ? up : 0.0f, steps, steps + shadow.offset_y};
 }
 
-// Colors the theme files do not carry yet (T-270 moves them there).
+// Colors the theme files do not carry yet (T-270 moves them there). Disabled colors derive
+// from the theme instead: chrome::text_faint and chrome::disabled_fill.
 inline constexpr nk_color destructive{223, 86, 59, 255};      // coral: destructive or conflict
 inline constexpr nk_color destructive_text{255, 158, 134, 255};
-inline constexpr nk_color text_faint{113, 112, 119, 255};     // disabled text
 
 } // namespace wormedit::ui::metrics

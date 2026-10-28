@@ -60,7 +60,7 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     const bool clicked = wormedit::ui::chrome::IconButton{
-        .glyph = Glyph::audio_lines,
+        .glyph = Glyph::waves_horizontal,
         .tooltip = !view->bgm_bar_available ? "Song audio is unavailable"
             : view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
         .selected = view->bgm_bar_reserved,
@@ -167,7 +167,7 @@ static void render_resource_brush_tool(const ComposeToolbarContext& toolbar) {
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
     if (!view->resource_paint_available) nk_widget_disable_begin(context);
-    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines,
+    if (wormedit::ui::chrome::IconButton{Glyph::music_2,
             "Paint keysounds / osu! hitsounds", view->resource_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESOURCE_PAINT_TOOL;

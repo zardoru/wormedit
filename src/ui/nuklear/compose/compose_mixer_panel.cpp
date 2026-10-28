@@ -22,7 +22,7 @@ constexpr float level_width = 52.0f;
 
 // A bus that cannot be heard (muted, or outside the solo set) reads like disabled text.
 auto strip_text(bool silenced) -> nk_color {
-    return silenced ? metrics::text_faint : color(UiColor::text);
+    return silenced ? chrome::text_faint() : color(UiColor::text);
 }
 
 struct MixerPanel {

@@ -1455,6 +1455,7 @@ void emit_project_setting(const wormedit::ui::setup_view_t& view,
         .field = field, .use_program_default = use_default, .integer = integer, .text = std::string{text}};
 }
 auto project_default_toggle(nk_context* context, const char* label, bool overridden) -> bool {
+    wormedit::ui::chrome::group_gap(context, wormedit::ui::metrics::gap_medium); // Separates each setting from the previous one.
     nk_layout_row_dynamic(context, 25, 1);
     nk_bool use_default = !overridden;
     return nk_checkbox_label(context, label, &use_default) != 0;

@@ -12,7 +12,8 @@ frontend event-harness CMake links were the remaining consumers. The core,
 `wormedit-convert`, project opening and conversion reimport use wormedit's codecs
 for BMS/BME/BML/PMS, BMSON, SM/SSC, osu!mania and native projects.
 
-The pinned upstream revision was `28c4a64735f539d2b0da11b65d6e869e48615c4b`.
+The pinned upstream revision was
+[`28c4a64735f539d2b0da11b65d6e869e48615c4b`](https://github.com/zardoru/libotoworm/tree/28c4a64735f539d2b0da11b65d6e869e48615c4b).
 Its FTB/OJN loaders, NPS and conversion utilities have no current application
 route to migrate. The old capability audit remains historical fixture research;
 it is not a description of current import behavior or a requirement to reproduce
@@ -50,7 +51,7 @@ compile/link commands. Run `scripts/gate.sh build --jobs 4` and inspect discover
 failures as failures. Relevant existing suites cover format readers/writers,
 encoding, conversion, native migrations and frontend event workflows.
 
-Install the `Wormedit` component to a new staging directory and inspect assets,
+Stage the Linux installation with `DESTDIR` and inspect assets,
 notices and runtime dependencies. Test an explicit zlib SDK notice separately.
 The pinned AppImage tooling and runtime notices remain unchanged; this cleanup
 only removes its submodule preflight. CMake's project minimum remains 3.25;
@@ -89,4 +90,28 @@ those results. No release artifacts are published by this change.
   `tests/fixtures/stepmania/matched-timing.ssc`, writes a native project and
   reports successful reimport validation, with no diagnostics.
 
-Full compilation, full test and installed-application results are pending execution.
+- The full fresh Release build completed all 1,768 Ninja steps, including the
+  application, converter and frontend event-harness targets. A staged Linux
+  install with `DESTDIR` contains the application, assets and independent
+  notices (89 files); no otoworm path or unresolved runtime library appears.
+  The installed app has an SDL/Vulkan source smoke under isolated Xvfb:
+  `tests/fixtures/native/compose-smoke.wormedit` opens in Compose and the
+  rendered window was inspected. The regular native install without `DESTDIR`
+  is unsuitable on this host because upstream libvorbis writes development
+  headers to `/usr/local/include/vorbis`; the Linux package script also uses
+  `DESTDIR` and discards those development files.
+
+- The first full CTest run discovered and executed 5,558 cases. It passed 5,553
+  and failed five: four related bar-line clipboard cases (`core.Chart clipboard
+  copies bar lines and pastes them as measure splits`, `core.Pasting a bar line
+  onto an existing one adds no measure`, `core.A bar-line paste that cannot
+  split rejects without partial splits`, and `core.Cutting bar lines merges
+  their measures with the rest of the cut`) and the timing-sensitive
+  `sdl-audio.SDL dummy audio renders a resumed BMSON slice within ten
+  milliseconds`. After the final rebuild, a focused rerun reproduced all four
+  clipboard failures; the SDL case passed. `scripts/gate.sh build --jobs 4
+  --complexity-base db452876` passed build, whitespace and complexity, but
+  failed CTest on the same four clipboard cases (5,554/5,558 pass). No C++
+  source or clipboard test changed in this removal; the core test target did
+  not link otoworm. The four failures remain unresolved, so the full gate is
+  not passing.

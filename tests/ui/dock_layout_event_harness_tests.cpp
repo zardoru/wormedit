@@ -153,7 +153,7 @@ TEST_CASE("Side-by-side dock geometry preserves minimum column widths", "[event-
     ui_layout_preferences_t layout;
     layout.set_side_by_side(true);
     layout.set_split(0.2f);
-    const auto width = GENERATE(800.0f, 1280.0f);
+    const auto width = GENERATE(1000.0f, 1280.0f);
     const auto geometry = ui::dock_geometry_t::from(width, 700, layout, {true, true, true, true, true, true, true});
     REQUIRE(geometry.is_side_by_side());
     CHECK(geometry.panes[0]->bounds.right - geometry.panes[0]->bounds.left >= dock_minimum_width);
@@ -202,6 +202,20 @@ TEST_CASE("Side-by-side columns leave space for the left BMS dock", "[event-harn
     REQUIRE(wide.is_side_by_side());
     CHECK(wide.panes[0]->bounds.left >= 328 + 200);
     CHECK(layout.is_side_by_side());
+}
+
+TEST_CASE("Docks shrink before the field drops below its minimum width", "[event-harness][dock-layout]") {
+    ui_layout_preferences_t layout;
+    layout.set_width(400);
+    const std::array available{true, true, true, true, true, true, true, true};
+    const auto geometry = ui::dock_geometry_t::from(1000, 700, layout, available, 268);
+    REQUIRE(geometry.panes[0]);
+    const auto field = 1000 - 268 - geometry.reserved_width;
+    CHECK(field >= 400);
+    CHECK(geometry.panes[0]->bounds.right - geometry.panes[0]->bounds.left >= dock_minimum_width);
+    // Too narrow for the dock beside the left panel: the dock reports no panes so the caller can drop the branch panel.
+    CHECK_FALSE(ui::dock_geometry_t::from(900, 700, layout, available, 268).panes[0]);
+    CHECK(ui::dock_geometry_t::from(900, 700, layout, available).panes[0]);
 }
 
 TEST_CASE("Compact docks preserve the field without overwriting preferred panels", "[event-harness][dock-layout]") {

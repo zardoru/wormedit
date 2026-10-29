@@ -453,6 +453,47 @@ TEST_CASE("Pressing outside a selected area keeps it until a replacement gesture
     CHECK(cancelled.get().shortcut_events.size() == 0);
 }
 
+TEST_CASE("Area drag keeps capture through Shift navigation and key release",
+          "[frontend-state][event-harness][selection-navigation]") {
+    const auto page = GENERATE(false, true);
+    lifecycle_fixture_t f{lifecycle_family::area};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    const auto key = page ? SDLK_PAGEDOWN : SDLK_DOWN;
+    const auto scan = page ? SDL_SCANCODE_PAGEDOWN : SDL_SCANCODE_DOWN;
+    const auto press = lifecycle_key(key, scan);
+    const auto moved = f.harness.frame(std::span{&press, 1}, SDL_KMOD_LSHIFT);
+    lifecycle_check(lifecycle_has(moved.get(), page ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
+                                                  : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS));
+    lifecycle_check(!lifecycle_has(moved.get(), WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION));
+    lifecycle_check(!lifecycle_has(moved.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
+    lifecycle_check(f.active());
+    const auto release = lifecycle_key(key, scan, false);
+    (void)f.harness.frame(std::span{&release, 1});
+    lifecycle_check(f.active());
+    const auto mouse_release = lifecycle_button(f.x, f.y + 30, false);
+    const auto finished = f.harness.frame(std::span{&mouse_release, 1});
+    lifecycle_check(lifecycle_has(finished.get(), WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE));
+    lifecycle_check(!f.active());
+}
+
+TEST_CASE("Alt wheel navigates during an area drag without starting a pointer hold",
+          "[frontend-state][event-harness][selection-navigation]") {
+    lifecycle_fixture_t f{lifecycle_family::area};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = 1;
+    wheel.wheel.mouse_x = f.x;
+    wheel.wheel.mouse_y = f.y + 30;
+    const auto moved = f.harness.frame(std::span{&wheel, 1}, SDL_KMOD_LALT);
+    lifecycle_check(lifecycle_has(moved.get(), WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD) ||
+                    lifecycle_has(moved.get(), WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD));
+    lifecycle_check(!lifecycle_has(moved.get(), WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN));
+    lifecycle_check(f.active());
+}
+
 TEST_CASE("Keyboard queue overflow fences held paint until release and permits a fresh stroke",
           "[frontend-state][event-harness][keyboard-overflow]") {
     lifecycle_fixture_t f{lifecycle_family::paint};

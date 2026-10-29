@@ -161,6 +161,7 @@ static void append_measure_navigation_step(wormedit::ui::workspace_action_t* act
                                        std::uint16_t modifiers, const wormedit::ui::compose_view_t& view,
                                        bool pointer_paint_mode_active) {
     if (!view.paste_active && !pointer_paint_mode_active && !view.space_range_preview_visible &&
+        !state.area_selection.area_selection_active && !state.area_selection.area_selection_candidate_active &&
         worm_ui_nuklear_begin_shift_range(state, compose_shift_keys(modifiers)))
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION);
     if (state.keyboard_navigation.navigation_key_active || state.keyboard_navigation.pointer_navigation_active)
@@ -241,6 +242,7 @@ static bool process_compose_navigation_key(const auto& key_event,
         return true;
     }
     if (!view->paste_active && !pointer_paint_mode_active && !view->space_range_preview_visible &&
+        !state.area_selection.area_selection_active && !state.area_selection.area_selection_candidate_active &&
         worm_ui_nuklear_begin_shift_range(
             state, compose_shift_keys(key_event.modifiers))) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION);

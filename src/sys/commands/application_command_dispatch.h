@@ -3,7 +3,7 @@
 #include "sys/app/application_edit_inputs.h"
 
 #include "sys/commands/application_commands.h"
-#include "sys/compose/views/compose_view.h"
+#include "sys/app/application_command_state.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/interaction_types.h>

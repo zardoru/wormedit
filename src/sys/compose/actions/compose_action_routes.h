@@ -123,4 +123,5 @@ extern const std::span<const compose_action_route_t> compose_bga_routes;
 extern const std::span<const compose_action_route_t> compose_sound_routes;
 auto process_compose_area_boundary(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t>;
+extern const std::span<const compose_action_route_t> compose_quantize_routes;
 } // namespace wormedit::sys::compose_action_detail

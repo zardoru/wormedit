@@ -576,6 +576,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/commands/application_command_dispatch.cpp
         src/sys/compose/views/compose_resource_presenter.cpp
         src/sys/compose/views/compose_view.cpp
+        src/sys/compose/compose_clipboard_workflow.cpp
         src/sys/compose/views/compose_scene_view.cpp
         src/sys/compose/views/compose_marker_view.cpp
         src/sys/compose/views/compose_export_cut_view.cpp

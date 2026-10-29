@@ -34,6 +34,7 @@ static_assert(static_cast<std::uint8_t>(kiai_handle_value_t::create) == WORM_UI_
 
 struct admitted_note_paint_t {
     wormedit::note_paint_intent_t intent{};
+    auto operator==(const admitted_note_paint_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw) -> std::optional<admitted_note_paint_t> {
         if (raw > 2) return std::nullopt;
         return admitted_note_paint_t{static_cast<wormedit::note_paint_intent_t>(raw)};
@@ -41,6 +42,7 @@ struct admitted_note_paint_t {
 };
 struct admitted_semantic_layer_paint_t {
     wormedit::semantic_layer_paint_mode_t mode{};
+    auto operator==(const admitted_semantic_layer_paint_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw)
         -> std::optional<admitted_semantic_layer_paint_t> {
         using mode_t = wormedit::semantic_layer_paint_mode_t;
@@ -51,6 +53,7 @@ struct admitted_semantic_layer_paint_t {
 };
 struct admitted_bga_draw_t {
     bool erase{};
+    auto operator==(const admitted_bga_draw_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw) -> std::optional<admitted_bga_draw_t> {
         if (raw != 1 && raw != 2) return std::nullopt;
         return admitted_bga_draw_t{raw == 2};
@@ -59,6 +62,7 @@ struct admitted_bga_draw_t {
 struct admitted_draw_source_t {
     std::optional<wormedit::resource_role_t> role;
     wormedit::resource_id_t resource{};
+    auto operator==(const admitted_draw_source_t&) const -> bool = default;
     [[nodiscard]] static auto from(const wormedit::ui::compose_input_action_t& input)
         -> std::optional<admitted_draw_source_t> {
         using role_t = wormedit::resource_role_t;
@@ -71,6 +75,7 @@ struct admitted_draw_source_t {
 };
 struct admitted_span_handle_t {
     wormedit::span_handle_t handle{};
+    auto operator==(const admitted_span_handle_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw) -> std::optional<admitted_span_handle_t> {
         if (raw > 2) return std::nullopt;
         return admitted_span_handle_t{static_cast<wormedit::span_handle_t>(raw)};
@@ -78,6 +83,7 @@ struct admitted_span_handle_t {
 };
 struct admitted_kiai_handle_t {
     kiai_handle_value_t handle{};
+    auto operator==(const admitted_kiai_handle_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw) -> std::optional<admitted_kiai_handle_t> {
         if (raw > 3) return std::nullopt;
         return admitted_kiai_handle_t{static_cast<kiai_handle_value_t>(raw)};
@@ -85,6 +91,7 @@ struct admitted_kiai_handle_t {
 };
 struct admitted_recipe_range_handle_t {
     wormedit::sv_recipe_range_handle_t handle{};
+    auto operator==(const admitted_recipe_range_handle_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw)
         -> std::optional<admitted_recipe_range_handle_t> {
         if (raw > 2) return std::nullopt;
@@ -93,6 +100,7 @@ struct admitted_recipe_range_handle_t {
 };
 struct admitted_recipe_command_t {
     wormedit::ui::compose_recipe_command_t command{};
+    auto operator==(const admitted_recipe_command_t&) const -> bool = default;
     [[nodiscard]] static auto from(std::uint8_t raw) -> std::optional<admitted_recipe_command_t> {
         using command_t = wormedit::ui::compose_recipe_command_t;
         if (raw > static_cast<std::uint8_t>(command_t::later)) return std::nullopt;

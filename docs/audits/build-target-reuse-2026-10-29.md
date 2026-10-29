@@ -90,3 +90,10 @@ The same isolated `build` directory was reconfigured sequentially for the two ad
 The test-mutated tracked `.agent/osu-stepmania-publication/song.wormedit` was restored only after all runtime consumers exited and is excluded from the change. Final documentation checks and staged whitespace were rerun before commit. Heavy build ownership was released to the coordinator after the cached configuration and smoke checks completed.
 
 The coordinator approved Lane C's separate source registration patch for `compose_clipboard_workflow.cpp` in app/frame-timing/event targets. C owns those exact hunks in its commit; they are absent here because its source is absent. Central index/architecture/resume edits remain coordinator-owned.
+
+Coordinator integration: [PR81](https://github.com/zardoru/wormedit/pull/81) includes all lane
+sources and registrations. The combined database has 1,078 first-party entries/756 unique
+sources, 716 production entries and zero exact duplicate production actions; it is a different
+configuration from A's fixed before/after denominator. Combined Lua-enabled GATE passes
+5,596/5,596 and 45 changed-TU complexity checks. See the
+[integration audit](navigation-modifiability-2026-10-29.md) for combined acceptance and limits.

@@ -172,3 +172,11 @@ Coordinator-confirmed remaining scope (2026-10-29): root owns follow-up review o
 identity/cap scan). These are explicitly deferred outside D. Root will migrate eligible common
 membership or ratchet the retained form with domain-specific exclusions. The seven-consumer
 migration is complete in scope; this is not a whole-core sweep.
+
+Coordinator completion: [PR81](https://github.com/zardoru/wormedit/pull/81) migrates those
+three retained lists through the same typed inventory. Three added regressions cover sample
+control diagnostic positions, resolution conversion and semantic-layer caps; retired list
+forms have zero-growth ceremony rows. This closes ten reviewed structural lists while
+preserving the explicit nested, optional and domain-specific policies. Combined Lua-enabled
+GATE passes 5,596/5,596 and 45 changed-TU complexity checks. See the
+[integration audit](navigation-modifiability-2026-10-29.md) for combined acceptance and limits.

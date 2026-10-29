@@ -86,3 +86,10 @@ The real core binary filter `[bms-program-edit],*sound layer membership*,*lane a
 The first complete gate found one new test with complexity 29, a regression rather than a baseline exception. Extracting its coherent prepared-history invariant assertions retained every assertion and storage variant. The affected check, focused tests and complete gate were rerun successfully. Cold-build missing manual outputs and fixture transitive-include failures were resolved before this final gate; none is waived as a baseline failure. Test-generated `.agent/osu-stepmania-publication/song.wormedit` output was restored and excluded from the commit.
 
 Dedicated documentation checks after the final card/report update passed 6/6 (`/tmp/core-contracts-docs-final.log`); final staged whitespace validation also passed. Review checklist: one definition per concept; no parallel result/effect vocabulary or aliases; existing transaction/gesture runners retained; scoped authority stays in prepared adapters; no hand-rolled parser, schema, frontend or build-registration changes; no complexity allowances raised. The bounded verdict is a smaller public contract surface and explicit storage safety, with modest document dependency savings and neutral command fanout, not evidence of generally faster navigation or builds.
+
+Coordinator integration: [PR81](https://github.com/zardoru/wormedit/pull/81) narrows the new
+composite API to exercised object and combined layer/object modes and documents deterministic
+replay. It also fixes the direct Lua document declaration and fixture include exposed by
+lighter headers. Combined Lua-enabled GATE passes 5,596/5,596, including all 109 Lua tests,
+and 45 changed-TU complexity checks. The standalone measurements above remain scoped to B;
+see the [integration audit](navigation-modifiability-2026-10-29.md) for combined acceptance.

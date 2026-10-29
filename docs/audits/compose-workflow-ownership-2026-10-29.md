@@ -277,3 +277,9 @@ was opened and inspected: real Compose field, lane/timing headers, inspector qua
 controls and toolbar render normally. No test window opened on the user's desktop.
 Walkthrough test output in `.agent/osu-stepmania-publication/song.wormedit` was restored
 after testing. `git diff d154284 --check` passes, including committed changes.
+
+Coordinator integration: [PR81](https://github.com/zardoru/wormedit/pull/81) also removes the
+pure paste revise/apply wrappers, preserving the begin admission adapter. Combined Lua-enabled
+GATE passes 5,596/5,596 and 45 changed-TU complexity checks. The lane's measurements and
+inconclusive navigation verdict above are unchanged; see the
+[integration audit](navigation-modifiability-2026-10-29.md) for combined acceptance.

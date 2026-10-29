@@ -6,7 +6,7 @@ Verification used the unchanged default native Debug/Ninja configuration with Lu
 
 ## T-777 Separate lightweight edit vocabulary from document and command owners
 
-- **Status:** done (2026-10-29; local Lua OFF verification; coordinator Lua ON integration pending)
+- **Status:** done (2026-10-29; local Lua OFF and coordinator combined Lua ON GATE verified)
 - **Completion:** Extracted position and command stamp/result/effect owners; migrated interaction, snap, grid, notification, sound-group, proposal-result and lane-transform consumers with explicit implementation includes. Dependency measurements are recorded in the audit.
 - **Verification evidence:** Full GATE passed build, 5,466/5,466 tests, whitespace and 19 changed-TU complexity checks; two additional header consumers passed. See the audit for commands and logs.
 - **Outcome:** Core consumers of positions, stamps, command results and effects include their light owners without importing full document/history/transaction definitions.
@@ -30,9 +30,9 @@ Verification used the unchanged default native Debug/Ninja configuration with Lu
 
 ## T-778 Declare storage support at the shared chart edit boundary
 
-- **Status:** done (2026-10-29; local Lua OFF verification; coordinator Lua ON integration pending)
+- **Status:** done (2026-10-29; local Lua OFF and coordinator combined Lua ON GATE verified)
 - **Completion:** Added explicit typed storage declarations and composite mutation stage; migrated lane assignment and sound membership; extended existing flat lane and sound fixtures to conditional authoring; added deliberate legacy-only refusal coverage.
-- **Integration review (coordinator-owned, 2026-10-29):** Remove unused standalone layer-settings and geometry modes from the new composite mutation API in its already owned header/runner. Only existing-object updates and the exercised combined layer/object operation require this boundary. Keep the named lower-level adapters for other domains, and explicitly document deterministic combined replay. This narrowing awaits combined Lua-enabled verification; standalone PR evidence remains unchanged.
+- **Integration review (coordinator-owned, 2026-10-29):** Removed unused standalone layer-settings and geometry modes from the new composite mutation API in its already owned header/runner. Only existing-object updates and the exercised combined layer/object operation require this boundary. Kept the named lower-level adapters for other domains and explicitly documented deterministic combined replay. This narrowing passes the combined Lua-enabled GATE; standalone PR evidence remains unchanged.
 - **Verification evidence:** Focused domain/staging suite passed 1,564 assertions in 89 cases; full GATE passed 5,466/5,466 configured tests and matching complexity. Same behavioral coverage retained after cohesive assertion extraction fixed the new test complexity regression.
 - **Outcome:** Lane assignment and sound-layer membership declare storage/mutation support and execute through shared transaction dispatch, preserving prepared-BMS authority and intentional atomic refusal.
 - **Read first:** `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/core/interaction.cpp`, `src/core/semantic_layer_editor.cpp`, `docs/chart-editor-plan/tasks/core-edit-contracts.md`.
@@ -45,4 +45,4 @@ Verification used the unchanged default native Debug/Ninja configuration with Lu
 - **Target shape:** Domain operation declares support and supplies validation/mutation/effect; shared transaction chooses storage adapter. No `has_bms_program` branch at the two migrated domain entry points.
 - **Out of scope:** Generic graph frameworks, broader storage rewrite, build registrations (lane A), workflow (lane C), collections (lane D), central docs/status (coordinator), reopening done/deferred cards.
 
-Dedicated final documentation check: 6/6 passed (`/tmp/core-contracts-docs-final.log`); the final staged diff also passes whitespace validation. No Lua ON run is claimed by this lane.
+Dedicated final documentation check: 6/6 passed (`/tmp/core-contracts-docs-final.log`); the final staged diff also passes whitespace validation. No Lua ON run is claimed by this lane. Coordinator integration separately passes Lua ON GATE 5,596/5,596 and 45 changed-TU complexity checks; see the [integration audit](../../audits/navigation-modifiability-2026-10-29.md).

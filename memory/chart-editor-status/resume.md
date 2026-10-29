@@ -3,15 +3,21 @@
 ## Navigation and modifiability refactors (owner, 2026-10-29)
 
 Integration branch: `refactor/navigation-modifiability`, based on `d154284`.
-All four lane implementations are staged locally; combined Lua-enabled verification is pending.
+All four lane implementations are integrated in [PR #81](https://github.com/zardoru/wormedit/pull/81).
+Combined Lua-enabled GATE passes build, 5,596/5,596 tests, whitespace and 45 changed-TU
+complexity checks against `d154284`. The
+[integration audit](../../docs/audits/navigation-modifiability-2026-10-29.md) records acceptance,
+negative results and the remaining coupling/state/layering priorities.
+Additional matching-toolchain header consumers pass 44/44; pinned PR58 fast/extended property
+exercise passes 193,484 assertions in two cases; isolated Compose smoke passes and is inspected.
 Heavy builds and gates run sequentially because concurrent cold builds exhausted memory.
 
 T-779 is implemented and locally verified in [PR #77](https://github.com/zardoru/wormedit/pull/77),
 source `6f3952c`, staged in the integration branch. The same native configuration needs 139
 fewer compiler actions, has no exact duplicate production compilations, and preserves five
 narrow test-target build closures. Native GATE passes 5,585/5,585; headless 3,572/3,572;
-event-only 4,407/4,407; isolated Compose smoke inspected. Combined integration verification
-remains pending. See [the card](../../docs/chart-editor-plan/tasks/build-target-reuse.md)
+event-only 4,407/4,407; isolated Compose smoke inspected. Combined integration GATE also passes.
+See [the card](../../docs/chart-editor-plan/tasks/build-target-reuse.md)
 and its audit for configuration, measurements and limits; no wall-time improvement is claimed.
 
 T-777/T-778 are implemented and locally verified in
@@ -20,15 +26,16 @@ integration branch. The Lua-disabled native GATE passes 5,466/5,466, including 1
 complexity checks; two extra header consumers and 89 focused storage/staging cases pass.
 Light contracts and explicit storage support preserve the existing publication boundary.
 Include reductions are limited to specific consumers; the audit records unchanged and
-increased dependencies as well. Combined Lua-enabled verification, including scripting and
-Lua tests, remains pending. See [the cards](../../docs/chart-editor-plan/tasks/core-edit-contracts.md).
+increased dependencies as well. Combined Lua-enabled verification includes scripting and
+all 109 Lua tests; direct Lua declarations/fixture includes were corrected at integration.
+See [the cards](../../docs/chart-editor-plan/tasks/core-edit-contracts.md).
 
 T-780 is implemented and locally verified in [PR #79](https://github.com/zardoru/wormedit/pull/79),
 source `f6a87b7`, staged with all three commits in the integration branch. Lua-disabled GATE
 passes 5,465/5,465; preset staging removes three direct working-document accesses and the
 obsolete allowance. The audit records narrower scene-header dependencies, a larger isolated
 settings-edit compile scope and a neutral navigation pilot. Integration also removes two pure
-paste forwarders so callers reach the workflow directly; this cleanup awaits the combined
+paste forwarders so callers reach the workflow directly; this cleanup passes the combined
 Lua-enabled gate. See [the card](../../docs/chart-editor-plan/tasks/compose-workflow-ownership.md).
 
 T-781 is implemented and locally verified in [PR #80](https://github.com/zardoru/wormedit/pull/80),
@@ -36,7 +43,7 @@ source `daa63bd`, staged in the integration branch. Lua-enabled GATE passes 5,59
 55 explicit header-consuming complexity checks pass. D's seven-consumer migration and its
 negative navigation/rebuild evidence are recorded in the audit. Root integration additionally
 migrates the retained diagnostic-location, redivision and semantic-layer declaration lists,
-with sample-control regressions and zero-growth ratchets. Those additions await the combined
+with sample-control regressions and zero-growth ratchets. Those additions pass the combined
 gate. See [the card](../../docs/chart-editor-plan/tasks/chart-collection-traversal.md).
 
 ## Release 1.0.0-rc2 (owner, 2026-10-28)

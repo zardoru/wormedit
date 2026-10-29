@@ -254,7 +254,7 @@ void move_note_and_paste_imported_sound(walkthrough_t& flow, resource_id_t sound
     flow.interaction->cursor = {measure.id, 96};
     std::string status;
     require_step(begin_compose_paste(flow.application, flow.history, *flow.interaction, status));
-    require_step(apply_compose_paste(flow.application, flow.history, *flow.interaction, status));
+    require_step(flow.application.project.clipboard.apply(flow.history, *flow.interaction, status));
     const auto& pasted = flow.chart().measures.front().notes;
     check_step(std::ranges::any_of(pasted, [&](const auto& entry) {
         return entry.position.row == 96 && entry.sound == sound;
@@ -378,7 +378,7 @@ TEST_CASE("BMS walkthrough pastes all four editor formats through preview commit
     check_step(application.project.clipboard.paste_session->clipboard.objects.size() == 9);
     const auto before = history.document;
     INFO(status);
-    require_step(apply_compose_paste(application, history, state, status));
+    require_step(application.project.clipboard.apply(history, state, status));
     check_step(status == "Selection pasted.");
     check_step(history.undo.size() == 1);
     require_step(undo_document_command(history));

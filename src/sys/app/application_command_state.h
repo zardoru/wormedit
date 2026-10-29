@@ -322,12 +322,6 @@ struct application_command_state_t {
 auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;
-auto revise_compose_paste(application_command_state_t& application_state,
-    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
-    wormedit::local_position_t anchor, std::string* failure = nullptr) -> bool;
-auto apply_compose_paste(application_command_state_t& application_state,
-    wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
-    std::string& status, wormedit::notification_severity_t* severity = nullptr) -> bool;
 [[nodiscard]] inline auto compose_mode_of(const application_command_state_t& state)
     -> wormedit::ui::compose_mode_t {
     return state.project.compose_view.compose_timing_focus ? wormedit::ui::compose_mode_t::timing_focus

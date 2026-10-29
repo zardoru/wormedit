@@ -2149,8 +2149,8 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         return;
     const auto anchor =
         paste_anchor(*application.project.clipboard.paste_session, input.frame.retained_state->cursor);
-    if (!revise_compose_paste(application, input.frame.history,
-                              input.scope.chart_scope.chart.id, anchor))
+    if (!application.project.clipboard.revise(
+            input.frame.history, input.scope.chart_scope.chart.id, anchor))
         return;
     auto& session = *application.project.clipboard.paste_session;
     auto& view = input.frame.view();

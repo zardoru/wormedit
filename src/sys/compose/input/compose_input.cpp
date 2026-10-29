@@ -1908,8 +1908,8 @@ auto dispatch_compose_paste_input(const wormedit::ui::compose_input_action_t& in
     if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT) {
         std::string status;
         auto severity = wormedit::notification_severity_t::warning;
-        const auto committed = apply_compose_paste(application, context.environment.document.history,
-                                                    context.state, status, &severity);
+        const auto committed = application.project.clipboard.apply(
+            context.environment.document.history, context.state, status, &severity);
         auto outcome = compose_action_outcome_t::from(
             std::move(status), severity, wormedit::notification_source_t::edit, committed);
         outcome.rebind_failure = "Compose edit applied, but workspace rebinding failed.";
@@ -1939,8 +1939,8 @@ auto dispatch_compose_paste_input(const wormedit::ui::compose_input_action_t& in
     }
     application.project.clipboard.paste_session->anchor_available = true;
     application.project.clipboard.paste_session->pointer_cursor = context.state.cursor;
-    (void)revise_compose_paste(application, context.environment.document.history,
-                               context.state.chart, *position);
+    (void)application.project.clipboard.revise(
+        context.environment.document.history, context.state.chart, *position);
     return compose_input_family_result_t::continue_batch({});
 }
 

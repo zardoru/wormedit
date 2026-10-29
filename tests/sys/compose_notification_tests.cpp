@@ -966,7 +966,7 @@ void check_bgm_paste_commit(bms_editor_paste_fixture_t& fixture,
     const auto original = fixture.history.document.read_charts().front()->bgm_source_lanes;
     const auto maximum = id_ceiling_t<object_id_t>::from(fixture.history.document).maximum;
     std::string status;
-    const auto applied = apply_compose_paste(fixture.application, fixture.history, fixture.state, status);
+    const auto applied = fixture.application.project.clipboard.apply(fixture.history, fixture.state, status);
     INFO(status);
     REQUIRE(applied);
     const auto& after = (*fixture.history.document.read_charts().front());
@@ -1042,7 +1042,7 @@ TEST_CASE("Rejected external paste does not publish proposed BGM columns",
     std::string status;
     REQUIRE(fixture.paste(status));
     REQUIRE_FALSE(fixture.application.project.clipboard.paste_session->proposal.value);
-    CHECK_FALSE(apply_compose_paste(fixture.application, fixture.history, fixture.state, status));
+    CHECK_FALSE(fixture.application.project.clipboard.apply(fixture.history, fixture.state, status));
     CHECK(paste_document_content(fixture.history.document) == before);
     CHECK(fixture.history.undo.empty());
 }

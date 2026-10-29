@@ -384,8 +384,7 @@ auto run_bms_block_command(const wormedit::ui::workspace_action_t& action,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t;
 
-auto quantize_editor_for(compose_action_context_t& context)
-    -> application_command_state_t::quantize_editor_t&;
+
 
 void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint64_t divisions);
 

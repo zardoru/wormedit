@@ -1,6 +1,9 @@
 #pragma once
 
-#include "sys/compose/views/compose_view.h"
+#include <wormedit/core/workspace.h>
+#include <wormedit/core/interaction_state.h>
+#include <wormedit/core/timing_lane_controller.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/formats/conversion.h>
@@ -9,6 +12,8 @@ namespace wormedit {
 class task_scheduler_t;
 }
 namespace wormedit::sys {
+struct application_command_state_t;
+struct compose_scene_cache_t;
 class compose_auditions_t;
 struct metadata_drop_state_t;
 struct project_identity_t;

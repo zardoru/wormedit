@@ -1,8 +1,10 @@
 #pragma once
 
-#include "sys/compose/views/compose_view.h"
+#include "sys/compose/actions/compose_quantize_state.h"
+#include "sys/compose/actions/compose_action_outcome.h"
 
 namespace wormedit::sys {
+struct application_command_state_t;
 
 inline constexpr auto compose_quantize_idle_message =
     "Quantize requires an idle active Compose chart.";
@@ -13,7 +15,7 @@ inline constexpr auto compose_quantize_idle_message =
 auto compose_quantize_editor_for(wormedit::document_history_t& history,
                                  wormedit::editor_interaction_state_t& state,
                                  application_command_state_t& application)
-    -> application_command_state_t::quantize_editor_t&;
+    -> compose_quantize_editor_t&;
 
 auto can_apply_compose_quantize(const application_command_state_t& application,
                                 const wormedit::editor_interaction_state_t& state) -> bool;

@@ -604,6 +604,7 @@ if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
         src/sys/audio/audio.cpp
         src/sys/app/application_defaults.cpp
+        src/sys/app/application_command_state.cpp
         src/sys/commands/application_commands.cpp
         src/sys/compose/input/compose_minimap_navigation.cpp
         src/sys/bookmarks/bookmark_commands.cpp

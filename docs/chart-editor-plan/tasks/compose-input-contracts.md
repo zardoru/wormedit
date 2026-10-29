@@ -37,3 +37,14 @@ T-783 supporting scope approved by owner: `src/sys/compose/input/compose_input_a
 T-782 coordinator-approved extension: `src/sys/compose/compose_sound_selection.h` replaces the third independent solo derivation for same-sound selection with the session query, preserving range/cut-axis and layer filters.
 
 T-783 reuses the already T-782-owned `src/sys/app/application_command_state.h` only for the BGA proposal signature/staged-proposal tuple: it accepts admitted erase intent rather than reading the transport selector.
+
+Root integration extension (approved before edit): `cmake/ceremony_ratchet.txt` freezes
+the five legitimate selector reads in admission and the zero retained solo writes in
+projection. These are bounded lexical guards; they do not detect renamed/aliased copies.
+
+Root supporting extension (approved before edits): `src/sys/app/application_command_state.cpp`,
+`CMakeLists.txt` and `tests/CMakeLists.txt` move the solo query body out of the broad session
+header, registering it in app, event-harness and frame-timing consumers. The query remains a
+member of its existing type. This adds one definition hop/three compilation variants but
+isolates future eligibility-only edits from session-header rebuild fanout. Root owns these
+registration paths; no other lane is active. Measure the matched rebuild plan before acceptance.

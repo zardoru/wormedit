@@ -65,6 +65,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/generator_runtime.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/app/application_defaults.cpp
+    ../src/sys/app/application_command_state.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
     ../src/sys/project/project_open.cpp

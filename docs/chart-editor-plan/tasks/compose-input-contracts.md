@@ -44,7 +44,7 @@ projection. These are bounded lexical guards; they do not detect renamed/aliased
 
 Root supporting extension (approved before edits): `src/sys/app/application_command_state.cpp`,
 `CMakeLists.txt` and `tests/CMakeLists.txt` move the solo query body out of the broad session
-header, registering it in app, event-harness and frame-timing consumers. The query remains a
-member of its existing type. This adds one definition hop/three compilation variants but
+header, registering it in app, event-harness, frame-timing and core same-sound test consumers. The query remains a
+member of its existing type. This adds one definition hop/four compilation variants but
 isolates future eligibility-only edits from session-header rebuild fanout. Root owns these
 registration paths; no other lane is active. Measure the matched rebuild plan before acceptance.

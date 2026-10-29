@@ -1503,6 +1503,19 @@ static bool capture_options_escape(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static void queue_uncaptured_keyboard_event(const SDL_KeyboardEvent& event) {
+    const bool down = event.type == SDL_EVENT_KEY_DOWN;
+    if (down && !event.repeat && event.key == SDLK_ESCAPE)
+        g_audio.offset_escape_pending = true;
+    if (down) worm_ui_nuklear_queue_compose_key(static_cast<std::uint32_t>(event.key),
+                                              static_cast<std::uint32_t>(event.scancode),
+                                              static_cast<std::uint16_t>(event.mod), down,
+                                              event.repeat);
+    const bool tab_horizontal = worm_ui_nuklear_compose_state().keyboard_navigation.raw_tab_down &&
+        (event.key == SDLK_LEFT || event.key == SDLK_RIGHT);
+    if (!tab_horizontal) queue_shortcut_key_event(&event);
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
         if (capture_options_escape(event)) return true;
         if (frontend_event_window_matches(event.windowID) &&
@@ -1534,17 +1547,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
         if (capture_sound_slot_key(event)) return true;
         if (capture_inline_offset_key(event)) return true;
         if (capture_tap_timing_key(event)) return true;
-        const bool down = event.type == SDL_EVENT_KEY_DOWN;
-        if (down && !event.repeat && event.key == SDLK_ESCAPE) {
-            g_audio.offset_escape_pending = true;
-        }
-        worm_ui_nuklear_queue_compose_key(static_cast<std::uint32_t>(event.key),
-                                          static_cast<std::uint32_t>(event.scancode),
-                                          static_cast<std::uint16_t>(event.mod), down,
-                                          event.repeat);
-        const bool tab_horizontal = worm_ui_nuklear_compose_state().keyboard_navigation.raw_tab_down &&
-            (event.key == SDLK_LEFT || event.key == SDLK_RIGHT);
-        if (!tab_horizontal) queue_shortcut_key_event(&event);
+        queue_uncaptured_keyboard_event(event);
         return false;
 }
 
@@ -1710,6 +1713,13 @@ static auto logical_frontend_event(const SDL_Event& native) -> SDL_Event {
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) return false;
     const auto logical = logical_frontend_event(*event);
+    // A capture can consume key up and disappear before Compose renders. Preserve
+    // the release for existing holds; releases never start gestures.
+    if (logical.type == SDL_EVENT_KEY_UP && frontend_event_window_matches(logical.key.windowID))
+        worm_ui_nuklear_queue_compose_key(static_cast<std::uint32_t>(logical.key.key),
+                                          static_cast<std::uint32_t>(logical.key.scancode),
+                                          static_cast<std::uint16_t>(logical.key.mod), false,
+                                          logical.key.repeat);
     if (capture_notification_event(logical)) return true;
     if (capture_notification_history_event(logical)) return true;
     return handle_workspace_frontend_event(&logical);

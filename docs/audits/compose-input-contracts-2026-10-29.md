@@ -38,6 +38,56 @@ fanout; adding the query does not reduce that fanout and requires consumer verif
 The sound-query supporting header extension was approved by the coordinator and recorded
 on T-782 before editing. Shared command, lifecycle, stamp and transaction runners are unchanged.
 
+## T-783: bounded family admission
+
+The frame action bag remains transport and supports simultaneous events. The new internal
+`compose_input_admission.h` constructs bounded payloads using `T::from`; the event boundary
+admits once, then scopes the admitted variant to that event. There is no typed mirror in
+the frontend action bag. The existing shared result/outcome runners finish refusals.
+
+The selected families are complete: note-paint begin (toggle/draw/erase), semantic-layer
+paint begin (add/remove), BGA/BGM paint stroke selectors, Draw source role/resource,
+Kiai handles including create, Speed handles, preview handles, export-cut handles,
+recipe range handles, and recipe commands through `later`. Updates/releases of note and
+semantic paint use their captured gesture intent; their unused raw intent field remains
+ignored. BGA updates/releases validate the wire selector but retain the begin intent,
+including modifier changes. Unsupported selectors stop before handler dispatch.
+
+Reproducible search benchmark against `7863caf`:
+`git grep -n 'input.paint_intent' 7863caf -- src/sys/compose/input` produces five lines
+(six member accesses): three BGA proposal lines, semantic paint begin and note paint begin.
+`git grep -n 'input.span_edge' 7863caf -- src/sys/compose/input` produces nine lines:
+Kiai two, preview one, Speed two, recipe range two, recipe command one, export cut one.
+Those values were also reinterpreted in raw-parameter helpers: Kiai mapping, preview
+mapping, export-cut switch and recipe-command validation/casts.
+Afterward, `rg 'input\.(paint_intent|span_edge)' src/sys/compose/input` has five reads,
+all in admission: one paint read and four span/recipe reads. Selected handlers contain
+zero wire-selector reads; their semantic enum operations remain at their domain owners.
+
+Extension exercise: a new span family previously needed a producer, family route and a
+handler-specific raw mapping/fallback. It now needs a producer, family route and admission
+mapping to a bounded payload, followed by a typed handler. A new recipe operation still
+needs the existing UI enum, recipe producers/menu and typed handler switch; admission's
+upper bound follows `later`. This is a smaller raw-interpretation search scope, not fewer
+feature edits. Producer files are unchanged; no navigation-time or build-time gain was
+measured. The extra internal header and variant/context dependency increase header surface
+and consumer rebuild fanout. BGA's proposal accepts an already admitted erase bool to avoid
+making the widely included session header depend on the admission header.
+
+Precisely outside this selector migration: `selection_mode` (pointer, BGM/BGA/timing,
+bar-line, area/space/latched selections), `navigation_action` (navigation steps),
+`note_kind` (arm-note-kind), `timing_lane` (timing-marker selection/move), and
+`bga_lane_kind`/`bga_lane_kind_valid` (BGA lane reveal/move/place). These retain their existing
+typed vocabulary and route-level checks. Identity fields (`lane_id`, `object_id`, resource
+and timing IDs), coordinate/numeric payloads, viewport inputs and gesture-kind dispatch
+also remain outside family-selector admission. No remaining handler interprets
+`paint_intent` or `span_edge` raw values.
+
+New boundary regressions reject malformed selectors for all selected families without
+revision/history change or paint gesture admission, compare unchanged BGA/note content,
+preserve an active stroke on malformed release, and preserve note-toggle zero. Existing
+valid recipe, span, paint and harness workflows are retained for root execution.
+
 ## Verification checkpoint
 
 Executed with no local build configuration and no root output mutations:
@@ -45,8 +95,10 @@ Executed with no local build configuration and no root output mutations:
 - Bounded syntax-only GCC checks using root compilation flags, remapping first-party
   include/source paths to this checkout and retaining root generated/dependency paths:
   `compose_view.cpp`, `application_command_dispatch.cpp`, `compose_actions.cpp` passed.
-- Initial `frame_timing_tests.cpp` syntax check encountered the concurrent unfinished
-  T-783 admission header; this is not recorded as passing.
+- Final bounded GCC syntax-only checks passed for `compose_input.cpp`,
+  `compose_timing_input.cpp`, `compose_export_cut_input.cpp`, `frame_timing_tests.cpp`
+  and `compose_action_notification_tests.cpp`. Initial test-TU checks encountered the
+  unfinished admission header; final successful checks supersede those failures.
 - `cmake -DWORMEDIT_SOURCE_ROOT=$PWD -P cmake/check_chart_editor_docs.cmake` passed.
 - `git diff --check` passed at this checkpoint.
 - Matching Clang/clang-tidy 23.1.3 complexity comparison passed for the above three
@@ -54,10 +106,30 @@ Executed with no local build configuration and no root output mutations:
   compilation database. Final output: `complexity: checked 3/3` / `complexity: passed
   (3 translation units)`. Earlier attempts failed due an incomplete include-root
   remap and a subsequently fixed in-progress BGA signature; neither is a passing check.
+- Matching Clang 23.1.3 complexity checked all five additional source/test TUs.
+  The first run rejected only the two new solo tests (Catch macros expanded inside
+  loops, scores 80/48). They now use this file's existing assertion helper, with the
+  same checks; the final targeted rerun reports `complexity: checked 1/1` /
+  `complexity: passed (1 translation units)`. No allowance or baseline changed.
+  The four other TUs had no new/increased findings in the five-TU check.
 - Direct documentation checks for ceremony ratchet and architecture names passed
   alongside chart-editor-state. These are script executions, not a local CTest/GATE.
 
 Deferred to root after integration: focused workflows and event harness execution,
-matching Clang 23.1.3 complexity comparison, explicit changed-header consumers, and
+combined matching Clang 23.1.3 complexity comparison, remaining header consumers, and
 combined warm LuaON GATE (`--jobs 2 --complexity-base 23e113b`). No test executable or
 GATE was run in this lane. Both cards remain partial until root supplies that evidence.
+
+## Root integration requests
+
+Cherry-pick this lane's three checkpoints in order. Run the warm LuaON combined GATE
+with `--jobs 2 --complexity-base 23e113b`; do not substitute the lane's partial checks.
+Exercise `[semantic-layer]`, `[select-same-sound]`, `[admission]`, recipe/Kiai/preview/
+Speed/export-cut and valid note/semantic/BGA/BGM paint workflows, plus the event harness.
+Explicit header consumers for combined verification include `compose_input.cpp`,
+`compose_timing_input.cpp`, `compose_export_cut_input.cpp`, `compose_view.cpp`,
+`compose_actions.cpp`, `application_command_dispatch.cpp`, `frame_timing_tests.cpp`
+and `compose_action_notification_tests.cpp`; root's full build covers additional session
+and frontend-action-header consumers. Re-run documentation CTest checks after integration.
+No root build output/source or tracked fixture was changed. All lane compiler processes
+completed before handoff. Root owns final card acceptance and PR81 updates.

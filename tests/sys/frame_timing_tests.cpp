@@ -7507,14 +7507,14 @@ TEST_CASE("Solo toggle and target actions affect the next selection in the same 
         action.compose_semantic_layer_id = layer_id_t{102};
         const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
             f.interaction->viewport_height_pixels, false);
-        INFO(status);
-        REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
-        CHECK(f.interaction->selected_notes.size() == expected[index]);
-        CHECK(f.interaction->solo_semantic_layer == (index == 2 ? std::nullopt
+        expect_compose_test(!status.empty());
+        expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        expect_compose_test(f.interaction->selected_notes.size() == expected[index]);
+        expect_compose_test(f.interaction->solo_semantic_layer == (index == 2 ? std::nullopt
             : std::optional{layer_id_t{index == 0 ? 101u : 102u}}));
     }
-    CHECK(f.history.document.revision == 1);
-    CHECK(f.history.undo.empty());
+    expect_compose_test(f.history.document.revision == 1);
+    expect_compose_test(f.history.undo.empty());
 }
 
 TEST_CASE("Solo selection commands use current target without requiring projection",
@@ -7528,23 +7528,23 @@ TEST_CASE("Solo selection commands use current target without requiring projecti
     for (const auto target : {101u, 102u, 999u}) {
         policy.semantic_layer_target = layer_id_t{target};
         if (project_between) f.project();
-        REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
         const auto& selected = f.interaction->selected_notes;
-        CHECK(selected.size() == (target == 999 ? 8 : 4));
+        expect_compose_test(selected.size() == (target == 999 ? 8 : 4));
         if (target != 999) {
             const auto& notes = f.history.document.charts.front().measures.front().notes;
             for (const auto id : selected) {
                 const auto note = std::ranges::find(notes, id, &note_t::id);
-                REQUIRE(note != notes.end());
-                CHECK(note->semantic_layers == std::vector{layer_id_t{target}});
+                expect_compose_test(note != notes.end());
+                expect_compose_test(note->semantic_layers == std::vector{layer_id_t{target}});
             }
         }
     }
     policy.semantic_layer_target = layer_id_t{101};
     policy.semantic_layer_solo_active = false;
     if (project_between) f.project();
-    REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
-    CHECK(f.interaction->selected_notes.size() == 8);
+    expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    expect_compose_test(f.interaction->selected_notes.size() == 8);
     // Switch to a chart without the old target, with no projection to clear it.
     auto next = f.history.document.charts.front();
     next.id = chart_id_t{2};
@@ -7555,11 +7555,11 @@ TEST_CASE("Solo selection commands use current target without requiring projecti
     f.interaction->chart = chart_id_t{2};
     policy.semantic_layer_solo_active = true;
     if (project_between) f.project();
-    REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
-    CHECK(f.interaction->selected_notes.size() == 8);
-    CHECK_FALSE(f.interaction->solo_semantic_layer);
-    CHECK(f.history.document.revision == revision);
-    CHECK(f.history.undo.empty());
+    expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    expect_compose_test(f.interaction->selected_notes.size() == 8);
+    expect_compose_test(!f.interaction->solo_semantic_layer);
+    expect_compose_test(f.history.document.revision == revision);
+    expect_compose_test(f.history.undo.empty());
 }
 
 TEST_CASE("Registered note selection respects active editable lanes",

@@ -145,7 +145,8 @@ struct application_command_state_t {
 
         [[nodiscard]] static auto propose(const wormedit::ui::compose_input_action_t& input,
             const compose_input_detail::compose_input_context_t& context,
-            const wormedit::chart_document_t& chart) -> bga_draw_stroke_outcome_t;
+            const wormedit::chart_document_t& chart,
+            bool erase) -> bga_draw_stroke_outcome_t;
         [[nodiscard]] static auto is_lane_valid(const wormedit::ui::compose_input_action_t& input) -> bool;
         [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
             const wormedit::ui::compose_input_action_t& input, const wormedit::chart_document_t& chart,
@@ -154,7 +155,7 @@ struct application_command_state_t {
     };
     static_assert(wormedit::staged_proposal<bga_draw_stroke_t,
         std::tuple<const wormedit::ui::compose_input_action_t&,
-            const compose_input_detail::compose_input_context_t&, const wormedit::chart_document_t&>,
+            const compose_input_detail::compose_input_context_t&, const wormedit::chart_document_t&, bool>,
         std::tuple<wormedit::chart_stamp_t, const wormedit::ui::compose_input_action_t&,
             const wormedit::chart_document_t&, const wormedit::editor_interaction_state_t&,
             std::optional<uint64_t>, bool>>);

@@ -137,10 +137,10 @@ auto validate_bmson_marker_draft(
 auto application_command_state_t::bga_draw_stroke_t::propose(
     const wormedit::ui::compose_input_action_t& input,
     const compose_input_detail::compose_input_context_t& context,
-    const wormedit::chart_document_t& chart) -> bga_draw_stroke_outcome_t {
-    if (input.paint_intent != 1 && input.paint_intent != 2) return {};
+    const wormedit::chart_document_t& chart,
+    bool erase) -> bga_draw_stroke_outcome_t {
     const auto bgm = input.resource_role == wormedit::resource_role_t::bgm;
-    if (input.paint_intent != 2 && !bgm) {
+    if (!erase && !bgm) {
         const auto& resources = context.environment.document.history.document.resources;
         const auto resource = std::ranges::find(resources, input.resource_id,
             &wormedit::resource_entry_t::id);
@@ -153,7 +153,7 @@ auto application_command_state_t::bga_draw_stroke_t::propose(
         .stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document, chart.id),
         .payload = {.resource = input.resource_id.value ? std::optional{input.resource_id}
                                                  : std::nullopt,
-                    .erase = input.paint_intent == 2, .geometry = *measures}}};
+                    .erase = erase, .geometry = *measures}}};
 }
 
 auto application_command_state_t::bga_draw_stroke_t::is_lane_valid(const wormedit::ui::compose_input_action_t& input) -> bool {
@@ -917,7 +917,8 @@ auto semantic_layer_paint_target_editable(const application_command_state_t& app
 
 auto apply_semantic_layer_paint_target(const wormedit::ui::compose_input_action_t& input,
     compose_gesture_context_t& context, const semantic_layer_paint_target_t& target,
-    const wormedit::semantic_layer_t* layer) -> compose_input_family_result_t {
+    const wormedit::semantic_layer_t* layer,
+    wormedit::semantic_layer_paint_mode_t mode) -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [environment, state, result, accepted] = context;
     auto& history = environment.document.history;
@@ -927,8 +928,7 @@ auto apply_semantic_layer_paint_target(const wormedit::ui::compose_input_action_
         result = begin_compose_layer_paint(history, state,
             application_state.project.semantic_layer.semantic_layer_target_none,
             layer ? layer->id : layer_id_t{}, target_id, true, target.bgm_event,
-            input.paint_intent == 2 ? semantic_layer_paint_mode_t::remove
-                                    : semantic_layer_paint_mode_t::add);
+            mode);
         accepted = target.bgm_event ? "BGM semantic-layer paint stroke started."
                                     : "Semantic-layer paint stroke started.";
     } else if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
@@ -1552,7 +1552,8 @@ auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t&
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
-        if (const auto error = run_compose_recipe_command(input.object_id.value, input.span_edge, context,
+        if (const auto error = run_compose_recipe_command(
+                input.object_id.value, context.admitted<admitted_recipe_command_t>().command, context,
                                                           result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
@@ -1882,7 +1883,10 @@ auto dispatch_compose_input_families(const wormedit::ui::compose_input_action_t&
         return std::nullopt;
     };
     auto gesture = dispatch_compose_gesture_input(input, context.environment, context.state, result,
-                                                  accepted, hit_target, bgm_event_at, position);
+        accepted, hit_target, bgm_event_at, position,
+        input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN
+            ? context.admitted<admitted_semantic_layer_paint_t>().mode
+            : wormedit::semantic_layer_paint_mode_t::add);
     if (gesture.is_handled())
         return gesture;
     const auto selection_mode = [&context](WormUiComposeSelectionMode mode) {
@@ -1963,7 +1967,8 @@ auto begin_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_i
     const wormedit::chart_document_t& chart) -> bool {
     auto& pending = context.environment.commands.project.compose_gesture.bga_draw_stroke;
     pending.reset();
-    auto proposed = application_command_state_t::bga_draw_stroke_t::propose(input, context, chart);
+    auto proposed = application_command_state_t::bga_draw_stroke_t::propose(
+        input, context, chart, context.admitted<admitted_bga_draw_t>().erase);
     pending = std::move(proposed.value);
     return pending.has_value();
 }
@@ -2086,19 +2091,26 @@ auto dispatch_compose_input_event(const wormedit::ui::compose_input_action_t& in
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> compose_input_family_result_t {
+    const auto selector = admit_compose_input_selector(input);
+    if (!selector)
+        return compose_input_family_result_t::stop_with_feedback(
+            std::string{selector.error()},
+            wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
+    struct selector_scope_t {
+        compose_input_context_t& context;
+        std::optional<admitted_compose_selector_t> previous;
+        ~selector_scope_t() { context.admitted_selector = std::move(previous); }
+    } selector_scope{context, context.admitted_selector};
+    context.admitted_selector = selector.value();
     if (select_lane_key_without_selection(input, context))
         return compose_input_family_result_t::continue_batch({});
     if (auto draw = dispatch_bga_draw_input(input, context, result, accepted))
         return std::move(*draw);
     if (input.kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE) {
-        if ((input.resource_role && input.resource_role != wormedit::resource_role_t::sample &&
-             input.resource_role != wormedit::resource_role_t::bga) ||
-            (!input.resource_role && input.resource_id.value != 0))
-            return compose_input_family_result_t::stop_with_feedback("Unsupported Draw source.",
-                wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
+        const auto& source = context.admitted<admitted_draw_source_t>();
         context.environment.commands.project.compose_gesture.draw_source_kind =
-            !input.resource_role ? 0 : input.resource_role == wormedit::resource_role_t::sample ? 1 : 2;
-        context.environment.commands.project.compose_gesture.draw_source_id = input.resource_id.value;
+            !source.role ? 0 : *source.role == wormedit::resource_role_t::sample ? 1 : 2;
+        context.environment.commands.project.compose_gesture.draw_source_id = source.resource.value;
         result.accepted = true;
         accepted = "Draw source selected.";
         return compose_input_family_result_t::continue_with_result();

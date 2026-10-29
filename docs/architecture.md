@@ -628,11 +628,13 @@ Callbacks must preserve the document/chart storage borrowed by enclosing callbac
 
 Typed `chart_edit_operation` declares `storage_support`: object edits with a native collection
 adapter, or an intentional `legacy_only` refusal. Composite edits pass a `chart_edit_mutation_t`
-scope to `stage`: existing objects, layer settings, combined settings/objects or geometry.
+scope to `stage`: existing-object updates or combined layer-settings/object edits.
 The transaction selects the existing authoritative prepared adapter and retains its exact
 owner catalog through `read_projection`. Combined settings/object callbacks may run twice and
 must be deterministic; content publication uses only the explicitly named object identities.
 Domains still supply validation, mutation and effect, with one lazy copy and outer publication.
+Other domains continue using their named settings or geometry adapters; this composite API does
+not add unused mutation modes.
 
 `document_edit_effect_t` carries a command's changed flag and Undo label;
 `finish_execution` applies the command's explicit no-op policy and commits once. Editor edits

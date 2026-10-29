@@ -9,15 +9,16 @@ namespace wormedit {
 enum class chart_edit_storage_support_t {
     legacy_only,
     objects,
-    layer_settings,
     layer_settings_and_objects,
-    geometry,
 };
 
 struct chart_edit_mutation_t {
     chart_edit_storage_support_t storage{chart_edit_storage_support_t::legacy_only};
-    // Existing identities only. For settings+objects the domain fills these while
-    // planning its settings edit; the runner then replays the edit for those owners.
+    // Existing identities only. Combined layer/object edits must be deterministic:
+    // the first invocation discovers identities while staging settings; the second
+    // replays the same edit to publish only those objects. Each invocation may
+    // change only its supplied chart and identity output, without consuming
+    // captured values or depending on external side effects.
     std::vector<object_id_t> objects;
 };
 } // namespace wormedit

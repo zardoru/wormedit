@@ -58,15 +58,11 @@ auto document_command_transaction_t::stage_prepared_mutation(chart_id_t id,
         const auto objects = mutation.objects;
         return stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update, apply);
     }
-    if (mutation.storage == chart_edit_storage_support_t::geometry)
-        return stage_bms_structure_edit(id, apply);
-    if (mutation.storage != chart_edit_storage_support_t::layer_settings &&
-        mutation.storage != chart_edit_storage_support_t::layer_settings_and_objects)
+    if (mutation.storage != chart_edit_storage_support_t::layer_settings_and_objects)
         return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
             "Prepared chart edit has an unsupported mutation scope.")}};
     auto settings = stage_bms_layer_settings(id, apply);
-    if (mutation.storage == chart_edit_storage_support_t::layer_settings ||
-        !settings.value || !settings.ok() || mutation.objects.empty()) return settings;
+    if (!settings.value || !settings.ok() || mutation.objects.empty()) return settings;
     const auto objects = mutation.objects;
     auto content = stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update,
         [&](chart_document_t& chart) {

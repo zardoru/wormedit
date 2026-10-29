@@ -3,7 +3,7 @@
 // Small types the editor interaction headers share: gesture kinds, viewport limits, selection
 // scope and objects, area geometry and paint cells.
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/position_types.h>
 #include <wormedit/core/vocabulary.h>
 
 #include <compare>
@@ -15,6 +15,8 @@
 
 namespace wormedit {
 
+struct chart_document_t;
+struct measure_index_t;
 struct editor_interaction_setup_t;
 struct editor_edit_context_t;
 struct hold_start_t;
@@ -59,9 +61,7 @@ struct note_paint_target_t {
     std::optional<std::uint64_t> canvas_row;
 
     [[nodiscard]] auto absolute_row(const measure_index_t& index) const
-        -> std::optional<std::uint64_t> {
-        return canvas_row ? canvas_row : index.row_of(position);
-    }
+        -> std::optional<std::uint64_t>;
 
     auto operator==(const note_paint_target_t&) const -> bool = default;
 };

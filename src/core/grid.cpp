@@ -1,3 +1,4 @@
+#include <wormedit/core/document.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/virtual_canvas.h>

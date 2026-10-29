@@ -47,6 +47,7 @@ constexpr target_query_policy_t speed_target_policy{
     .scope = target_uniqueness_scope_t::chart_objects};
 
 struct scroll_speed_edit_context_t : chart_edit_context_t<scroll_speed_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::objects;
     static constexpr std::string_view invalid_limits_message =
         "scroll and speed event caps must be positive";
     static auto has_valid_limits(const scroll_speed_edit_limits_t& limits) -> bool {

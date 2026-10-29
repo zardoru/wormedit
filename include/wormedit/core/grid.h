@@ -2,7 +2,8 @@
 
 #include <wormedit/core/vocabulary.h>
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/position_types.h>
+#include <wormedit/core/measure.h>
 #include <wormedit/core/result.h>
 #include <wormedit/core/snap.h>
 
@@ -12,6 +13,7 @@
 #include <vector>
 
 namespace wormedit {
+struct chart_document_t;
 
 // A chart-row coordinate whose fractional component is canonical and in [0, 1).
 // Keeping whole and fractional parts separate lets grid lines stay exact even

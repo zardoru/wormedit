@@ -58,6 +58,11 @@ use it. This is deliberately not a relocation of all scene declarations to an um
 - Shared input outcome/feedback finishing and document transaction ownership are unchanged.
   No frontend payload, file format, schema or core operation changed.
 
+Code-style checklist reviewed: one concrete storage owner per workflow, existing parser
+and typed query APIs, existing staged transaction/result/feedback owners, one module table
+per route fact, and unchanged lifetime/reset groups. Compatibility aliases denote the
+same underlying state types. No new/increased complexity violation remains.
+
 Existing regressions cover pending/stale/failed/successful paste, detached ghosts,
 quantize settings and presets, invalid stored settings, mutation/report retention,
 feedback severity and rebind failure. Verification results are recorded below, not inferred
@@ -74,6 +79,7 @@ evaluated. Counts are conservative source reach, not compiler dependency counts 
 | Implementation/input owner | Before local-file reach | After local-file reach | Concrete exclusion |
 |---|---:|---:|---|
 | Paste lifecycle | 211 (`compose_view.cpp`) | 43 (`compose_clipboard_workflow.cpp`) | Scene header, recipe form and stem-waveform headers absent |
+| Quantize public contract | 171 | 40 | Scene, recipe form and stem-waveform headers absent |
 | Quantize module | 173 | 160 | Scene and stem-waveform headers absent; application recipe state remains reachable |
 | Borrowed edit-input header | 178 | 52 | Scene, recipe form and stem-waveform headers absent |
 
@@ -87,7 +93,52 @@ Read-only observation of the root `build/compile_commands.json` and its matching
 files at root HEAD `d154284`: `compose_view.h` appears in **190 compile objects / 83 unique
 source files**. Only objects named by that compile database were counted; an earlier
 unrestricted recursive scan mixed nested configurations and is discarded. This is
-observational baseline evidence; local before/after compiled fanout remains pending.
+observational baseline evidence; the same-config comparison below independently verifies it.
+
+A second structural scan uses this worktree's exact compile database as the target
+universe, applies the same literal-include algorithm to base/current source, and weights
+each source by its compile entry count. Scene-header reach falls from **83 sources /
+194 compile entries** to **72 sources / 163 entries**. Eleven consumers leave it: frame
+services, action outcome, area actions, BGA actions, quantize, metadata actions/view,
+notification-history runtime, and quantize-preview/global-drop/notification-history tests.
+No source enters scene-header reach. These conditional-inclusive counts intentionally
+overestimate compiler dependencies and are separate from the compiler observations.
+
+The same-config compiler comparison then confirmed **190 → 159 compile objects**,
+**83 → 72 unique sources**, using normal C++ compiler `-MM` scans with two workers.
+Before used an immutable `git archive d154284 src include tests` snapshot; after used this
+worktree. Both used this worktree's compile commands and generated headers, with identical
+compiler/feature flags; only project source/include roots changed. External dependency
+source overrides stayed fixed. No root generated output was reused. The scans cover the
+union of before/after candidate consumers, and presence of each actual header is counted
+once per compile entry. Script and raw results for inspection: `/tmp/t780-deps.py`,
+`/tmp/t780-compiler-deps/results.json`, `/tmp/t780-compiler-deps.log`.
+
+| Declaration edited | Before compile objects / sources | After compile objects / sources |
+|---|---:|---:|
+| Compose scene cache/header | 190 / 83 | 159 / 72 |
+| Application workflow aggregate | 190 / 83 (embedded in scene header) | 177 / 78 |
+| Clipboard workflow state | 190 / 83 (embedded in scene header) | 180 / 79 |
+| Quantize workflow state | 190 / 83 (embedded in scene header) | 177 / 78 |
+
+Compiler-observed local-file reach for the paste lifecycle is **211 → 43** in each of its
+three compile entries. Quantize implementation reach is **173 → 160** for app/harness/frame
+entries and **152 → 137** for the core-test entry. These are exact dependency inventories,
+not wall-time timings or claims that every edit gets faster.
+New clipboard compilation adds three entries; target duplication is unchanged.
+Application state and the extracted state headers remain broadly consumed, so this is a
+scene-versus-workflow invalidation boundary, not a promise of minimal rebuilds for every
+state field.
+
+Compile-database counts expose a tradeoff: the original settings owner
+`compose_actions.cpp` has three compile entries, while `compose_quantize.cpp` has four
+(the extra consumer is core tests). An isolated settings/preset implementation edit now
+rebuilds **four rather than three** objects. A change spanning settings and typed selection
+previously touched both translation units (**seven** entries), now one (**four**). Paste
+lifecycle edits retain **three** compile entries while narrowing their dependency reach.
+These are structural edit-impact counts, not measured build-time speedups. The extra
+core-test settings compilation is a negative result; lane A's target work may address
+reuse separately, but this PR does not claim that unlanded benefit.
 
 Necessary implementation edit sites for a paste admission-policy change become one
 narrow compiled workflow, replacing one large projection translation unit. That is a
@@ -133,6 +184,10 @@ settings action decoding with the registered command's stored typed request; the
 review confirms the command reads the editor and never re-encodes a frontend action.
 It also did not name the detached geometry helper's projection owner explicitly.
 
+The post reader used `head`/`wc` for display/counts despite the command restriction;
+therefore the pilot also has a tool-use protocol deviation, and is not a strict command-level
+paired experiment. Available tools, model, effort and starting prompt were held fixed.
+
 Verdict: neutral/inconclusive navigation result. Equal total file counts, different
 search choices, incomplete traces and a single sample do not establish improved search
 scope or correctness. The narrower source owner is independently checkable; moved lines
@@ -158,16 +213,67 @@ Likewise `c6eadce` spans 68 sample-control files; `4c5fade` spans ten solo-layer
 `c596924` and `72f342d` concern prepared BMS core edits. This extraction neither removes
 those semantics nor collapses their legitimately separate UI/core/tests.
 
-## Verification status
+## Verification
 
-Registration commit `25ebcfa` uses exactly lane A's approved three CMake additions.
-Direct documentation schema check and `git diff --check` passed during source review.
-Initial isolated configure passed. An early sequential syntax check of `compose_view.cpp`
-passed; clipboard compilation identified two missing direct includes, now supplied.
-These preliminary checks predate later edits and are not a final build result.
+Final isolated configuration: GCC `/usr/bin/c++`, Debug, application ON, Lua OFF,
+audio/image/video decoders and FFmpeg ON. App configuration supplies the frontend event
+harness despite the separate headless-harness option being OFF. The existing compiler
+cache launcher was enabled without changing compiler or feature settings; completed
+objects were retained. The coordinator's combined Lua-ON build covers scripting consumers.
+Source-only FetchContent overrides and `WORMEDIT_OTOWORM_SOURCE_DIR` refer to existing
+read-only dependency sources; all generated outputs and linked artifacts use this worktree.
+Preliminary syntax probes were excluded from final isolation evidence.
 
-Coordinator paused heavy verification because concurrent cold builds exhausted memory
-and swap. No cold build/GATE was started by this lane; configure and early syntax checks
-had already drained when the pause arrived. Full build, GATE, event harness, matching
-clang-tidy/header-consuming complexity, and local compiled fanout are pending the build
-slot. No wall-time benchmarks from the contended environment will be reported.
+The coordinator initially paused heavy verification to avoid concurrent cold-build memory
+and swap pressure. Final verification ran in C's exclusive slot with two jobs, then C
+explicitly released it before documentation/commit/PR completion. No contended wall-time
+benchmark is reported.
+
+Real failures fixed before completion:
+
+- Narrowing includes exposed missing direct state includes in area/outcome consumers and
+  a standalone area test fixture. Each now names its actual state dependency.
+- First GATE passed 5,464/5,465 tests but rejected the relocated three direct working-document
+  accesses for quantize presets. All three operations now use existing `transaction.stage`
+  and `finish_execution`; the old allowance was deleted with explicit coordinator approval
+  and A's overlap clearance. Both old/new files have zero working-document accesses.
+  Validation, default no-op policy, commit labels, diagnostics and post-commit-only editor
+  updates are retained. No new/transferred/increased allowance or complexity limit was used.
+- Documentation checks attempted before build completion found missing generated manuals/tool;
+  the final post-build documentation run passed without source changes for those failures.
+
+Final output tails:
+
+```text
+GATE --jobs 2 --complexity-base d154284
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 5465
+gate: passed
+```
+
+Logs: `/tmp/t780-gate-final.log`, `/tmp/wormedit-gate.bCwARZ`.
+Changed-file complexity: matching Clang/clang-tidy/libclang **23.1.3**, **7/7 units passed**
+(`/tmp/wormedit-complexity.qnehzf7g`). No new or increased cognitive-complexity findings.
+
+```text
+Focused paste/clipboard/quantize: 100% tests passed out of 207
+Event harness:                  100% tests passed out of 718
+Documentation:                  100% tests passed out of 6
+Explicit consuming-header complexity: checked 8/8; passed (8 translation units)
+architecture.edit_execution:   100% tests passed out of 1
+```
+
+Focused tests were repeated after the preset staging change; final GATE re-ran all event
+and documentation cases on that source. Explicit header consumers include application,
+Compose input, frame tests and application-command tests, plus changed clipboard,
+quantize, scene and command modules. The checker invokes `clang-tidy -p build` for each;
+logs `/tmp/t780-complexity-headers.log`, `/tmp/wormedit-complexity.k9d8eef6`.
+
+`scripts/smoke-compose-virtual-x.sh /tmp/t780-compose-smoke.png compose` passed. The PNG
+was opened and inspected: real Compose field, lane/timing headers, inspector quantize
+controls and toolbar render normally. No test window opened on the user's desktop.
+Walkthrough test output in `.agent/osu-stepmania-publication/song.wormedit` was restored
+after testing. `git diff d154284 --check` passes, including committed changes.

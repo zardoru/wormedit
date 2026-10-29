@@ -1,3 +1,4 @@
+#include "sys/app/application_command_state.h"
 #include "sys/compose/actions/compose_action_context.h"
 #include "sys/commands/document_edit_feedback.h"
 #include "sys/compose/actions/compose_audition_requests.h"

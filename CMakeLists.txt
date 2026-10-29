@@ -442,18 +442,88 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         target_include_directories(nuklear_headers INTERFACE "${nuklear_SOURCE_DIR}")
     endif()
 
-    # The application links one private, stable frontend target. Backend types
-    # and dependencies do not enter wormedit_core or its public headers.
+    # Backend headers and compiled support stay at the private frontend boundary.
+    # Toolkit types and dependencies do not enter wormedit_core or its public headers.
     add_library(wormedit_ui_frontend INTERFACE)
     add_library(wormedit::ui_frontend ALIAS wormedit_ui_frontend)
     target_link_libraries(wormedit_ui_frontend INTERFACE nuklear_headers)
 
-    set(WORMEDIT_UI_FRONTEND_SOURCES
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/tooltip.cpp"
+    # Static archives keep narrow test build closures independent of panels/core.
+    # Each source has one compile owner; consumer-specific units stay outside.
+    function(wormedit_add_frontend_library target)
+        add_library(${target} STATIC ${ARGN})
+        target_include_directories(${target} PRIVATE
+            "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src")
+        target_link_libraries(${target} PRIVATE wormedit::ui_frontend SDL3::SDL3)
+        wormedit_enable_warnings(${target})
+    endfunction()
+
+    wormedit_add_frontend_library(wormedit_ui_interval_index
+        src/common/static_interval_index.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_command_mesh
+        src/ui/nuklear/render/sdl_command_mesh.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_field_renderer
+        src/ui/field/field_renderer.cpp
+        src/ui/field/field_tile_cache.cpp
+        src/ui/field/field_glyphs.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_region_cache
+        src/ui/nuklear/render/sdl_region_cache.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_sdl_backend
+        src/ui/nuklear/app/sdl_backend.cpp
+        src/ui/nuklear/render/sdl_region_frame.cpp
+        src/ui/nuklear/render/lucide_icons.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_arrow_glyph
+        src/ui/nuklear/render/arrow_glyph.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_nuklear_theme
+        src/ui/nuklear/render/theme.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_nuklear_tooltip
+        src/ui/nuklear/chrome/tooltip.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_nuklear_state
+        src/ui/nuklear/audio/audio_state.cpp
+        src/ui/nuklear/compose/compose_bookmark_label.cpp
+        src/ui/nuklear/compose/compose_state.cpp
+        src/ui/nuklear/metadata/metadata_state.cpp
+        src/ui/nuklear/project/setup_state.cpp
+        src/ui/nuklear/resources/sound_import_state.cpp
+        src/ui/nuklear/resources/keysound_list_state.cpp
+        src/ui/nuklear/compose/measure_resize.cpp
+        src/ui/nuklear/timing/timing_state.cpp
+        src/ui/nuklear/audio/meter_state.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_player_preview
+        src/ui/nuklear/render/image_quad.cpp
+        src/ui/nuklear/audio/player_preview.cpp
+        src/ui/nuklear/audio/player_preview_texture.cpp
+    )
+    wormedit_add_frontend_library(wormedit_ui_notifications
+        src/ui/nuklear/chrome/notification_toasts.cpp
+        src/ui/nuklear/chrome/notification_panel.cpp
+    )
+    target_link_libraries(wormedit_ui_field_renderer PRIVATE wormedit_ui_interval_index)
+    target_link_libraries(wormedit_ui_region_cache PRIVATE
+        wormedit_ui_command_mesh wormedit_ui_field_renderer)
+    target_link_libraries(wormedit_ui_sdl_backend PRIVATE wormedit_ui_region_cache)
+    target_link_libraries(wormedit_ui_nuklear_theme PRIVATE
+        wormedit::core nlohmann_json::nlohmann_json wormedit_ui_arrow_glyph)
+    target_link_libraries(wormedit_ui_nuklear_state PRIVATE
+        wormedit::core wormedit_ui_nuklear_theme wormedit_ui_arrow_glyph)
+    target_link_libraries(wormedit_ui_player_preview PRIVATE wormedit::core)
+    target_link_libraries(wormedit_ui_nuklear_tooltip PRIVATE wormedit_ui_nuklear_theme)
+    target_link_libraries(wormedit_ui_notifications PRIVATE wormedit_ui_nuklear_tooltip)
+
+    set(WORMEDIT_UI_FRONTEND_COMMON_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_generator_form.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/context_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/chart_import_dialog.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/components.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/ui_gallery.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/audio_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/bmson_lane_mode_ui.cpp"
@@ -461,15 +531,10 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/preferences/options_window.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/preferences/lane_keys_dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/preferences/shortcuts_panel.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/notification_toasts.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/notification_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/tap_timing_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_settings_panel.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/audio_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/bms_branch_panel.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/arrow_glyph.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/font_atlas.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_bookmark_label.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_bookmark_chooser.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_sound_picker.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/command_menu.cpp"
@@ -496,18 +561,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/dock.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/compare_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_resources.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/frontend.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/menu_bar.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/sdl_backend.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/sdl_command_mesh.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/sdl_region_cache.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/sdl_region_frame.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/field/field_renderer.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/field/field_tile_cache.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/field/field_glyphs.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/image_quad.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/lucide_icons.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_audio_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_difficulty_section.cpp"
@@ -515,16 +569,9 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_timing_links_section.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_format_fields.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_song_section.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata/metadata_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/player_preview.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/player_preview_texture.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/setup_panel.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/project/setup_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/resources/sound_import_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/resources/sound_import_dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/resources/sound_import_runtime.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/resources/keysound_list_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/measure_resize.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_measure_resize_input.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_sounds_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/resources/sound_slot_batch.cpp"
@@ -534,16 +581,27 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose/compose_mixer_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_stage_editor.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/text_field.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing/timing_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio/meter_state.cpp"
-        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/render/theme.cpp"
     )
+
+    # These two units depend on consumer-specific icon recording / macOS menus.
+    # Keep them on the executable; common frontend code has no application,
+    # decoder, allocation-hook or test definitions.
+    set(WORMEDIT_UI_FRONTEND_VARIANT_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/chrome/components.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/app/frontend.cpp")
+    wormedit_add_frontend_library(wormedit_ui_frontend_common ${WORMEDIT_UI_FRONTEND_COMMON_SOURCES})
+    target_include_directories(wormedit_ui_frontend_common PRIVATE
+        "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
+    target_link_libraries(wormedit_ui_frontend_common PRIVATE
+        wormedit::core nlohmann_json::nlohmann_json
+        wormedit_ui_sdl_backend wormedit_ui_arrow_glyph wormedit_ui_nuklear_state
+        wormedit_ui_player_preview wormedit_ui_notifications)
 
 endif()
 
 if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
-        src/common/static_interval_index.cpp
         src/sys/audio/audio.cpp
         src/sys/app/application_defaults.cpp
         src/sys/commands/application_commands.cpp
@@ -605,7 +663,6 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose/generator_runtime.cpp
         src/sys/compose/views/generator_view.cpp
         src/sys/compose/actions/compose_generator_actions.cpp
-        src/ui/nuklear/compose/compose_generator_form.cpp
         src/sys/compose/actions/compose_transform_actions.cpp
         src/sys/compose/actions/compose_sound_actions.cpp
         src/sys/resources/sound_import_staging.cpp
@@ -665,7 +722,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/app/platform_recovery.cpp
         src/sys/commands/platform_shortcut_profile.cpp
         src/sys/app/window.cpp
-        ${WORMEDIT_UI_FRONTEND_SOURCES}
+        ${WORMEDIT_UI_FRONTEND_VARIANT_SOURCES}
     )
     if(APPLE)
         target_sources(wormedit PRIVATE src/sys/app/macos_menu.mm)
@@ -713,6 +770,7 @@ if(WORMEDIT_BUILD_APP)
         PRIVATE
             wormedit::core
             wormedit::ui_frontend
+            wormedit_ui_frontend_common
             SDL3::SDL3
             otoworm::otoworm
             nlohmann_json::nlohmann_json

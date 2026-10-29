@@ -415,3 +415,27 @@ For disconnected builds, provide checkouts at the revisions in
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_PENLIGHT`, and
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_LFS`, plus `WORMEDIT_LUA_SOURCE_DIR` as above.
 Cross-builds may select a native C compiler with `WORMEDIT_HOST_C_COMPILER`.
+
+## Compiled frontend reuse
+
+`wormedit_ui_frontend_common` and its lower-level static libraries compile frontend
+implementations once for the application and frontend tests. Add panel implementations to
+`WORMEDIT_UI_FRONTEND_COMMON_SOURCES`; link the compiled target from consumers
+instead of expanding that source list again. Narrow tests link the lower-level
+mesh, renderer, state or other support target directly, keeping their required
+build closure bounded. `wormedit::ui_frontend` remains the
+header/configuration seam.
+
+Keep consumer-specific implementations on their executables: `components.cpp`
+records event-harness icon widgets, `frontend.cpp` has platform menu branches,
+and application `frame_timing.cpp` owns the Debug allocation hook. Decoder,
+audio-output and scripting variants stay on their existing targets. A platform
+port's compiler/link usage requirements must also reach the compiled frontend
+targets; executable-only options do not propagate backwards into libraries.
+
+Measure exact redundant Linux compile commands with
+`python3 cmake/measure_compile_reuse.py build/compile_commands.json` (or pass
+`--root /path/to/checkout` for another checkout's database). Only `-o` and its
+output are normalized; feature definitions and include order remain significant.
+See [the T-779 measurements](audits/build-target-reuse-2026-10-29.md) for the
+baseline, bounded source-edit fanout and verification limits.

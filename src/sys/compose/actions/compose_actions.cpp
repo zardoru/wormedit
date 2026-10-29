@@ -2888,6 +2888,8 @@ auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action
         return message;
     }
     const auto* selected_chart_it = history.read_chart(state.chart);
+    state.solo_semantic_layer = selected_chart_it
+        ? application_state.project.semantic_layer.effective_solo_layer(*selected_chart_it) : std::nullopt;
     const auto scroll_direction =
         selected_chart_it != nullptr &&
                 compose_field_downscroll(*selected_chart_it,

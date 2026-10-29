@@ -1018,15 +1018,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         application_state.project.semantic_layer.required_semantic_layer_filters.clear();
         application_state.project.semantic_layer.excluded_semantic_layer_filters.clear();
     }
-    if (application_state.project.semantic_layer.semantic_layer_target &&
-        std::ranges::find(chart.semantic_layers, *application_state.project.semantic_layer.semantic_layer_target,
-                          &wormedit::semantic_layer_t::id) == chart.semantic_layers.end()) {
-        application_state.project.semantic_layer.semantic_layer_target.reset();
-        application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-        application_state.project.semantic_layer.semantic_layer_solo_active = false;
-    }
     view.semantic_layer_paint_mode_active = application_state.project.compose_gesture.semantic_layer_paint_mode_active;
-    view.semantic_layer_solo_active = application_state.project.semantic_layer.semantic_layer_solo_active;
+    view.semantic_layer_solo_active = application_state.project.semantic_layer.effective_solo_layer(chart).has_value();
     view.project_id.value = history.document.id.value;
     view.chart_id.value = chart.id.value;
     view.document_revision = history.document.revision;
@@ -1216,9 +1209,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     auto& application_state = input.frame.application_state;
     auto& view = input.frame.view();
     auto& interaction_view = input.scope.interaction_view;
-    retained_state->solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
-        ? application_state.project.semantic_layer.semantic_layer_target : std::nullopt;
-    interaction_view.solo_semantic_layer = retained_state->solo_semantic_layer;
+    interaction_view.solo_semantic_layer = application_state.project.semantic_layer.effective_solo_layer(chart);
     const auto downscroll = input.scope.downscroll;
     build_compose_markers_view(input);
     if (application_state.project.transport.preview_playhead_absolute_row) {
@@ -1929,9 +1920,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         .bga_pane_left_pixels = horizontal_layout.bga_pane_left_pixels,
         .bga_pane_width_pixels = bga_pane_width,
         .include_virtual_bms_tail = wormedit::has_chart_virtual_tail(chart),
-        .solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
-                                   ? application_state.project.semantic_layer.semantic_layer_target
-                                   : std::nullopt,
+        .solo_semantic_layer = application_state.project.semantic_layer.effective_solo_layer(chart),
         .required_semantic_layers = application_state.project.semantic_layer.required_semantic_layer_filters,
         .excluded_semantic_layers = application_state.project.semantic_layer.excluded_semantic_layer_filters,
         .maximum_grid_lines = compose_scene_grid_work_limit,

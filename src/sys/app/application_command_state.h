@@ -19,6 +19,7 @@
 #include <wormedit/core/interaction_state.h>
 #include "ui/compose_timing_geometry.h"
 #include "ui/compose_mode.h"
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <set>
@@ -245,6 +246,15 @@ struct application_command_state_t {
             bool semantic_layer_solo_active{};
             std::optional<wormedit::layer_id_t> semantic_layer_target;
             bool semantic_layer_target_none{};
+            [[nodiscard]] auto effective_solo_layer(const wormedit::chart_document_t& chart) const
+                -> std::optional<wormedit::layer_id_t> {
+                if (!semantic_layer_solo_active || semantic_layer_target_none || !semantic_layer_target)
+                    return std::nullopt;
+                const auto found = std::ranges::find(chart.semantic_layers, *semantic_layer_target,
+                                                     &wormedit::semantic_layer_t::id);
+                return found == chart.semantic_layers.end() ? std::nullopt : semantic_layer_target;
+            }
+
             std::optional<wormedit::chart_id_t> layer_assist_chart;
             std::vector<wormedit::layer_id_t> layer_assist_layers;
             // IDs are chart-local, so filters are stamped to their owning chart.

@@ -69,9 +69,7 @@ inline auto compose_same_sound_objects(const wormedit::song_document_t& song,
                               .visible = range,
                               .hidden_layers = application.project.semantic_layer.excluded_semantic_layer_filters,
                               .required_layers = application.project.semantic_layer.required_semantic_layer_filters,
-                              .solo_layer = application.project.semantic_layer.semantic_layer_solo_active
-                                                ? application.project.semantic_layer.semantic_layer_target
-                                                : std::nullopt};
+                              .solo_layer = application.project.semantic_layer.effective_solo_layer(chart)};
     if (!range || !state.cut_axis) return select_same_sound(song, chart, query);
     std::vector<editor_selection_object_t> result;
     for (const auto& kept : state.cut_axis->kept_intervals(range->begin_row, range->end_row)) {

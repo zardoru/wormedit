@@ -1959,7 +1959,7 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     fixture.application.project.semantic_layer.semantic_layer_solo_active=true;
     const auto first=fixture.project();
-    CHECK(fixture.interaction->solo_semantic_layer == layer_id_t{101});
+    CHECK_FALSE(fixture.interaction->solo_semantic_layer); // Projection must not repair retained policy.
     REQUIRE(fixture.cache.frame.interaction_view);
     CHECK(fixture.cache.frame.interaction_view->solo_semantic_layer == layer_id_t{101});
     const auto first_note=fixture.first_note();
@@ -6684,6 +6684,22 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     const auto revision = song.revision;
     expect_compose_test(invoke().value);
     expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
+    // Same-sound dispatch reads the session target even when no projection follows it.
+    auto& policy = application.project.semantic_layer;
+    song.charts[0].semantic_layers = {{.id = layer_id_t{101}, .name = "First"},
+                                     {.id = layer_id_t{102}, .name = "Second"}};
+    notes[0].semantic_layers = {layer_id_t{101}};
+    notes[1].semantic_layers = {layer_id_t{102}};
+    policy.semantic_layer_solo_active = true;
+    for (const auto target : {101u, 102u}) {
+        fixture.interaction->selected_notes.clear();
+        fixture.interaction->selected_objects.clear();
+        policy.semantic_layer_target = layer_id_t{target};
+        expect_compose_test(invoke().value);
+        CHECK(fixture.interaction->selected_notes == std::vector{notes[target - 101].id});
+    }
+    policy.semantic_layer_solo_active = false;
+    expect_compose_test(invoke().value);
     application.project.sound_selection.sound_selection_hover.reset();
     expect_compose_test(invoke().value); // Selection takes precedence over the dock.
     expect_compose_test(fixture.interaction->selected_notes.size() == 2);
@@ -7467,6 +7483,51 @@ TEST_CASE("Registered selection scopes preserve mixed objects and expose Select 
             return object.kind == editor_selection_object_kind_t::bgm_event && object.id == object_id_t{9003};
         }));
     }
+}
+
+TEST_CASE("Solo selection commands use current target without requiring projection",
+          "[frame-timing][selection-consolidation][semantic-layer]") {
+    const auto project_between = GENERATE(false, true);
+    compose_test_fixture_t f{static_style_song()};
+    f.project();
+    auto& policy = f.application.project.semantic_layer;
+    policy.semantic_layer_solo_active = true;
+    const auto revision = f.history.document.revision;
+    for (const auto target : {101u, 102u, 999u}) {
+        policy.semantic_layer_target = layer_id_t{target};
+        if (project_between) f.project();
+        REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        const auto& selected = f.interaction->selected_notes;
+        CHECK(selected.size() == (target == 999 ? 8 : 4));
+        if (target != 999) {
+            const auto& notes = f.history.document.charts.front().measures.front().notes;
+            for (const auto id : selected) {
+                const auto note = std::ranges::find(notes, id, &note_t::id);
+                REQUIRE(note != notes.end());
+                CHECK(note->semantic_layers == std::vector{layer_id_t{target}});
+            }
+        }
+    }
+    policy.semantic_layer_target = layer_id_t{101};
+    policy.semantic_layer_solo_active = false;
+    if (project_between) f.project();
+    REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    CHECK(f.interaction->selected_notes.size() == 8);
+    // Switch to a chart without the old target, with no projection to clear it.
+    auto next = f.history.document.charts.front();
+    next.id = chart_id_t{2};
+    next.semantic_layers.clear();
+    for (auto& note : next.measures.front().notes) note.semantic_layers.clear();
+    f.history.document.charts.push_back(std::move(next));
+    f.binding.value->selected_chart = chart_id_t{2};
+    f.interaction->chart = chart_id_t{2};
+    policy.semantic_layer_solo_active = true;
+    if (project_between) f.project();
+    REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    CHECK(f.interaction->selected_notes.size() == 8);
+    CHECK_FALSE(f.interaction->solo_semantic_layer);
+    CHECK(f.history.document.revision == revision);
+    CHECK(f.history.undo.empty());
 }
 
 TEST_CASE("Registered note selection respects active editable lanes",

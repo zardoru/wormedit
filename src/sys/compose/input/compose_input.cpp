@@ -1001,11 +1001,11 @@ auto focus_compose_note_label(const wormedit::ui::compose_input_action_t& input,
         return "The selected chart field is no longer available.";
     const auto* index = context.environment.controls.cache.hit_test_index_for(
         *chart, context.environment.document.history.document.revision);
-    if (!index || !context.environment.controls.cache.frame.interaction_view)
+    if (!index)
         return "The chart field hover index is unavailable.";
     const auto hover = hover_editor_object(
         *chart, *index,
-        *context.environment.controls.cache.frame.interaction_view,
+        *view,
         {.x_pixels = input.x_pixels,
          .y_pixels = context.input_source_y(input.y_pixels),
          .field_left_pixels = context.field_left_pixels,
@@ -2520,9 +2520,9 @@ auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_act
             .post_feedback(notification_severity_t::warning, notification_source_t::input, message);
         return message;
     }
-    state.solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
-        ? application_state.project.semantic_layer.semantic_layer_target : std::nullopt;
     const auto* input_chart = history.read_chart(state.chart);
+    state.solo_semantic_layer = input_chart
+        ? application_state.project.semantic_layer.effective_solo_layer(*input_chart) : std::nullopt;
     if (input_chart != nullptr)
         arm_compose_note_layers(state, application_state, *input_chart);
     const auto bgm_lane_count =

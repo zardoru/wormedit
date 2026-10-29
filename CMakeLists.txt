@@ -862,6 +862,11 @@ if(BUILD_TESTING)
     )
     set_tests_properties(architecture.ui_frontend_boundary PROPERTIES LABELS "unit;architecture")
     add_test(
+        NAME architecture.ui_frontend_boundary_regressions
+        COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/check_ui_boundary_tests.cmake"
+    )
+    set_tests_properties(architecture.ui_frontend_boundary_regressions PROPERTIES LABELS "unit;architecture")
+    add_test(
         NAME architecture.sdl_gpu_backend
         COMMAND "${CMAKE_COMMAND}"
             -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}

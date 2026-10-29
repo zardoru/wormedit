@@ -141,10 +141,12 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Core edit contracts and storage capabilities (T-777–T-778)](tasks/core-edit-contracts.md)
 - [Compose workflow ownership (T-780)](tasks/compose-workflow-ownership.md)
 - [Typed chart collection traversals (T-781)](tasks/chart-collection-traversal.md)
+- [Compose selection policy and typed input admission (T-782–T-783)](tasks/compose-input-contracts.md)
+- [Frontend dependency boundary coverage (T-784)](tasks/frontend-boundary-guard.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-781. T-777–T-781 are allocated to the owner-requested navigation and
-modifiability refactors; all four lane cards are registered. The
+every number above T-784. T-777–T-784 are allocated to the owner-requested navigation and
+modifiability refactors; all related card groups are registered. The
 [integration audit](../audits/navigation-modifiability-2026-10-29.md) records combined acceptance,
 measured limits and remaining coupling, input-state and layering findings.
 

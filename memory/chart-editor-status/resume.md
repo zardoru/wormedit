@@ -1,5 +1,15 @@
 # Status: resume checklist
 
+## Navigation and modifiability round two (owner, 2026-10-29)
+
+Continue on [PR #81](https://github.com/zardoru/wormedit/pull/81), baseline `23e113b`.
+[T-782–T-783](../../docs/chart-editor-plan/tasks/compose-input-contracts.md) execute in one
+lane because solo policy and input admission share Compose dispatch. Root owns
+[T-784](../../docs/chart-editor-plan/tasks/frontend-boundary-guard.md), central integration
+and combined verification. No additional PR or concurrent cold build is needed.
+Guard and rejection regressions pass; shared frontend target builds with the lighter BGA
+value includes. Policy/admission implementation and combined GATE remain pending.
+
 ## Navigation and modifiability refactors (owner, 2026-10-29)
 
 Integration branch: `refactor/navigation-modifiability`, based on `d154284`.

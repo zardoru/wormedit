@@ -3,6 +3,7 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/bms_program.h>
 #include <wormedit/core/bms_program_edit.h>
+#include "chart_collections.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -95,21 +96,9 @@ template<> struct id_declarations_t<object_id_t> {
     }
     template<class Visitor>
     static auto visit(const chart_document_t& chart, Visitor& visitor) -> bool {
-        if (!visit_declared_id_values(chart.bgm_source_lanes, visitor) ||
-            !visit_declared_id_values(chart.lane_layouts, visitor) ||
-            !visit_declared_id_values(chart.bpms, visitor) ||
-            !visit_declared_id_values(chart.pauses, visitor) ||
-            !visit_declared_id_values(chart.warps, visitor) ||
-            !visit_declared_id_values(chart.scrolls, visitor) ||
-            !visit_declared_id_values(chart.volumes, visitor) ||
-            !visit_declared_id_values(chart.sample_sets, visitor) ||
-            !visit_declared_id_values(chart.speeds, visitor) ||
-            !visit_declared_id_values(chart.kiai, visitor) ||
-            !visit_declared_id_values(chart.timing_anchors, visitor) ||
-            !visit_declared_id_values(chart.bookmarks, visitor) ||
-            !visit_declared_id_values(chart.sections, visitor) ||
-            !visit_declared_id_values(chart.bga_events, visitor) ||
-            !visit_declared_id_values(chart.sound_channels, visitor)) return false;
+        if (!visit_chart_collections(chart, [&](const auto& values, auto) {
+                return visit_declared_id_values(values, visitor);
+            })) return false;
         for (const auto& measure : chart.measures)
             if (!visit_declared_id_values(measure.notes, visitor) ||
                 !visit_declared_id_values(measure.bgm_events, visitor)) return false;

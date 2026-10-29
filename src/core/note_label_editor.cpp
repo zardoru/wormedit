@@ -1,5 +1,6 @@
 #include "../core/text_util.h"
 #include <wormedit/core/note_label_editor.h>
+#include "chart_collections.h"
 
 #include <algorithm>
 #include <ranges>
@@ -86,15 +87,9 @@ auto index_requested_notes(chart_document_t& chart,
     for (const auto id : requested) {
         scan.index.occurrences.emplace(id, 0);
     }
-    auto within_limit =
-        scan.scan_values(chart.bgm_source_lanes) && scan.scan_values(chart.lane_layouts) &&
-        scan.scan_values(chart.bpms) && scan.scan_values(chart.pauses) &&
-        scan.scan_values(chart.warps) && scan.scan_values(chart.scrolls) &&
-        scan.scan_values(chart.volumes) && scan.scan_values(chart.sample_sets) &&
-        scan.scan_values(chart.speeds) && scan.scan_values(chart.kiai) &&
-        scan.scan_values(chart.timing_anchors) && scan.scan_values(chart.bookmarks) &&
-        scan.scan_values(chart.sections) && scan.scan_values(chart.bga_events) &&
-        scan.scan_values(chart.sound_channels);
+    auto within_limit = visit_chart_collections(chart, [&](auto& values, auto) {
+        return scan.scan_values(values);
+    });
     if (within_limit) {
         within_limit = scan.scan_measures(chart);
     }

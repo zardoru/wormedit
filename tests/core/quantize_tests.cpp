@@ -442,3 +442,14 @@ TEST_CASE("quantization body collisions preserve the original-head exemption",
     REQUIRE(result.value.chart.has_value());
     CHECK(find_note(*result.value.chart, object_id_t{3}).position.row == 240);
 }
+
+TEST_CASE("Quantize carries chart-local sample control positions", "[unit][core][quantize]") {
+    auto chart = make_chart();
+    chart.volumes.push_back({.id = object_id_t{20}, .position = {measure_id_t{1}, 130}});
+    chart.sample_sets.push_back({.id = object_id_t{21}, .position = {measure_id_t{1}, 250}});
+    const auto plan = quantization_plan_t::from(chart, {.divisions = 4});
+    REQUIRE(plan.value.chart);
+    CHECK(plan.value.chart->volumes.front().position.row == 240);
+    CHECK(plan.value.chart->sample_sets.front().position.row == 240);
+    CHECK(chart.volumes.front().position.row == 130);
+}

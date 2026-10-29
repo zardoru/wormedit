@@ -3,6 +3,7 @@
 #include <wormedit/core/diagnostic.h>
 #include <wormedit/core/timing_links.h>
 #include "timing_links_internal.h"
+#include "chart_collections.h"
 #include <ranges>
 #include <span>
 #include <unordered_map>
@@ -39,10 +40,11 @@ void for_each_free_position(Chart& chart, Visit&& visit, Include include = {}) {
     };
     for (auto& measure : chart.measures) { ends(measure.notes); ends(measure.bgm_events); }
     for_each_timing_position(chart, visit, include);
-    // Sample defaults are chart-local; timing links do not own these lanes.
-    for (auto& event : chart.volumes) visit(event.position, position_role_t::point);
-    for (auto& event : chart.sample_sets) visit(event.position, position_role_t::point);
-    for (auto& event : chart.bga_events) visit(event.position, position_role_t::point);
+    visit_chart_point_collections(chart, [&](auto& events, auto role) {
+        if constexpr (role != chart_collection_position_t::timing_point)
+            for (auto& event : events) visit(event.position, position_role_t::point);
+        return true;
+    });
     for (auto& bookmark : chart.bookmarks)
         if (bookmark.position) visit(*bookmark.position, position_role_t::point);
     for (auto& section : chart.sections) {

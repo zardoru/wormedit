@@ -308,7 +308,8 @@ void frontend_workspace_view_t::refill(const application_frame_projection_contex
                      context.compose_interaction_state->viewport_scroll_pixels,
                  .viewport_height_pixels = flattened.view.compose.viewport_height_pixels,
                  .pixels_per_standard_measure =
-                     flattened.view.compose.pixels_per_standard_measure});
+                     flattened.view.compose.pixels_per_standard_measure,
+                 .cut_axis = context.compose_interaction_state->cut_axis});
         }
         const auto rate_index = std::min<std::size_t>(
             context.application_command_state.preferences.transport_rate_index,

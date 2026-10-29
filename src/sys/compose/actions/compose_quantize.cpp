@@ -221,13 +221,16 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
     constexpr std::string_view rebind_failure =
         "Quantization preset saved, but workspace rebinding failed.";
     auto transaction = document_command_transaction_t(context.environment.document.history);
-    auto& proposed = transaction.document();
-    proposed.quantization_presets.push_back({
-        .name = context.action.compose_quantize_preset_name,
-        .divisions = request->divisions, .space = request->space,
-        .tie = request->tie, .holds = request->holds});
-    const auto index = proposed.quantization_presets.size() - 1;
-    auto committed = transaction.commit("Save quantization preset");
+    const auto index = transaction.current_document().quantization_presets.size();
+    auto committed = transaction.finish_execution(transaction.stage(
+        [this, &context](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+            proposed.quantization_presets.push_back({
+                .name = context.action.compose_quantize_preset_name,
+                .divisions = request->divisions, .space = request->space,
+                .tie = request->tie, .holds = request->holds});
+            return {.value = document_edit_effect_t{
+                .changed = true, .command_label = "Save quantization preset"}};
+        }));
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be saved.",
@@ -270,10 +273,13 @@ auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     constexpr std::string_view rebind_failure =
         "Quantization preset deleted, but workspace rebinding failed.";
     auto transaction = document_command_transaction_t(context.environment.document.history);
-    auto& proposed = transaction.document();
-    proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
-                                        static_cast<std::ptrdiff_t>(index));
-    auto committed = transaction.commit("Delete quantization preset");
+    auto committed = transaction.finish_execution(transaction.stage(
+        [this](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+            proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
+                                                static_cast<std::ptrdiff_t>(index));
+            return {.value = document_edit_effect_t{
+                .changed = true, .command_label = "Delete quantization preset"}};
+        }));
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be deleted.",
@@ -334,9 +340,12 @@ auto rename_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     constexpr std::string_view rebind_failure =
         "Quantization preset renamed, but workspace rebinding failed.";
     auto transaction = document_command_transaction_t(context.environment.document.history);
-    auto& proposed = transaction.document();
-    proposed.quantization_presets[index].name = name;
-    auto committed = transaction.commit("Rename quantization preset");
+    auto committed = transaction.finish_execution(transaction.stage(
+        [this](song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+            proposed.quantization_presets[index].name = name;
+            return {.value = document_edit_effect_t{
+                .changed = true, .command_label = "Rename quantization preset"}};
+        }));
     if (!committed)
         return committed.diagnostics.empty()
                    ? compose_action_outcome_t::blocked("Quantization preset could not be renamed.",

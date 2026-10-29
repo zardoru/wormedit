@@ -691,6 +691,38 @@ TEST_CASE("inexact redivision rejects atomically", "[unit][core][document][negat
     CHECK(has_code(unknown_measure.diagnostics, diagnostic_code_t::row_out_of_range));
 }
 
+TEST_CASE("sample controls retain identities and values through exact redivision",
+          "[unit][core][document][sample-controls]") {
+    auto song = make_valid_song();
+    auto& chart = song.charts.front();
+    chart.volumes.push_back({.id = object_id_t{10000},
+        .position = {measure_id_t{1}, 240}, .value = 50});
+    chart.sample_sets.push_back({.id = object_id_t{10001},
+        .position = {measure_id_t{1}, 480}, .value = 2});
+    auto expected_volume = chart.volumes.front();
+    auto expected_sample_set = chart.sample_sets.front();
+    expected_volume.position.row = 48;
+    expected_sample_set.position.row = 96;
+    const auto result = redivision_plan_t::from(chart, 192);
+    REQUIRE(result.value.chart.has_value());
+    CHECK(result.value.chart->volumes.front() == expected_volume);
+    CHECK(result.value.chart->sample_sets.front() == expected_sample_set);
+}
+
+TEST_CASE("sample control diagnostics retain their measure and row context",
+          "[unit][core][document][sample-controls][negative]") {
+    auto song = make_valid_song();
+    auto& chart = song.charts.front();
+    chart.volumes.push_back({.id = object_id_t{10000},
+        .position = {measure_id_t{1}, 240}, .value = 101});
+    chart.sample_sets.push_back({.id = object_id_t{10001},
+        .position = {measure_id_t{1}, 480}, .value = 4});
+    const auto diagnostics = validate_document(song);
+    CHECK(has_code(diagnostics, diagnostic_code_t::invalid_resolution));
+    CHECK(has_message(diagnostics, ", measure 1 (id 1), row 240, object 10000:"));
+    CHECK(has_message(diagnostics, ", measure 1 (id 1), row 480, object 10001:"));
+}
+
 TEST_CASE("measure buckets validate and index fifty thousand notes",
           "[unit][core][document][stress]") {
     song_document_t song{.id = song_id_t{1}};

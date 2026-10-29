@@ -140,6 +140,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Compiled frontend and renderer support reuse (T-779)](tasks/build-target-reuse.md)
 - [Core edit contracts and storage capabilities (T-777–T-778)](tasks/core-edit-contracts.md)
 - [Compose workflow ownership (T-780)](tasks/compose-workflow-ownership.md)
+- [Typed chart collection traversals (T-781)](tasks/chart-collection-traversal.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
 every number above T-781. T-777–T-781 are allocated to the owner-requested navigation and

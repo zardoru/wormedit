@@ -3,7 +3,7 @@
 ## Navigation and modifiability refactors (owner, 2026-10-29)
 
 Integration branch: `refactor/navigation-modifiability`, based on `d154284`.
-T-781 (chart collection traversal) remains under verification in an isolated worktree.
+All four lane implementations are staged locally; combined Lua-enabled verification is pending.
 Heavy builds and gates run sequentially because concurrent cold builds exhausted memory.
 
 T-779 is implemented and locally verified in [PR #77](https://github.com/zardoru/wormedit/pull/77),
@@ -30,6 +30,14 @@ obsolete allowance. The audit records narrower scene-header dependencies, a larg
 settings-edit compile scope and a neutral navigation pilot. Integration also removes two pure
 paste forwarders so callers reach the workflow directly; this cleanup awaits the combined
 Lua-enabled gate. See [the card](../../docs/chart-editor-plan/tasks/compose-workflow-ownership.md).
+
+T-781 is implemented and locally verified in [PR #80](https://github.com/zardoru/wormedit/pull/80),
+source `daa63bd`, staged in the integration branch. Lua-enabled GATE passes 5,591/5,591 and
+55 explicit header-consuming complexity checks pass. D's seven-consumer migration and its
+negative navigation/rebuild evidence are recorded in the audit. Root integration additionally
+migrates the retained diagnostic-location, redivision and semantic-layer declaration lists,
+with sample-control regressions and zero-growth ratchets. Those additions await the combined
+gate. See [the card](../../docs/chart-editor-plan/tasks/chart-collection-traversal.md).
 
 ## Release 1.0.0-rc2 (owner, 2026-10-28)
 

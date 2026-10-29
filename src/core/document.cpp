@@ -2,6 +2,7 @@
 #include <wormedit/core/timing_links.h>
 #include "text_util.h"
 #include "chart_object_ids.h"
+#include "chart_collections.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/bms_program_edit.h>
@@ -1922,17 +1923,13 @@ auto diagnostic_locations(const chart_document_t& chart) -> diagnostic_locations
         collect_diagnostic_locations(locations, measure.notes);
         collect_diagnostic_locations(locations, measure.bgm_events);
     }
-    collect_diagnostic_locations(locations, chart.lane_layouts);
-    collect_diagnostic_locations(locations, chart.bpms);
-    collect_diagnostic_locations(locations, chart.pauses);
-    collect_diagnostic_locations(locations, chart.warps);
-    collect_diagnostic_locations(locations, chart.scrolls);
-    collect_diagnostic_locations(locations, chart.volumes);
-    collect_diagnostic_locations(locations, chart.sample_sets);
-    collect_diagnostic_locations(locations, chart.speeds);
-    collect_diagnostic_locations(locations, chart.kiai);
-    collect_diagnostic_locations(locations, chart.timing_anchors);
-    collect_diagnostic_locations(locations, chart.bga_events);
+    (void)visit_chart_collections(chart, [&](const auto& values, auto role) {
+        using enum chart_collection_position_t;
+        if constexpr (role == layout_point || role == timing_point || role == local_point ||
+                      role == visual_point || role == span)
+            collect_diagnostic_locations(locations, values);
+        return true;
+    });
     for (const auto& channel : chart.sound_channels)
         collect_diagnostic_locations(locations, channel.events);
     return locations;
@@ -2096,15 +2093,10 @@ auto redivide_chart_positions(chart_document_t& chart, redivision_context_t& con
             redivide_position(context, value.position, value.id, position_role_t::point);
         }
     };
-    transform_positioned(chart.bpms);
-    transform_positioned(chart.pauses);
-    transform_positioned(chart.scrolls);
-    transform_positioned(chart.volumes);
-    transform_positioned(chart.sample_sets);
-    transform_positioned(chart.speeds);
-    transform_positioned(chart.kiai);
-    transform_positioned(chart.timing_anchors);
-    transform_positioned(chart.bga_events);
+    (void)visit_chart_point_collections(chart, [&](auto& values, auto) {
+        transform_positioned(values);
+        return true;
+    });
     for (auto& warp : chart.warps) {
         redivide_position(context, warp.span.begin, warp.id, position_role_t::span_begin);
         redivide_position(context, warp.span.end, warp.id, position_role_t::span_end);

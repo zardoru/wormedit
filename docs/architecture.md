@@ -348,6 +348,7 @@ every edit gets it.
 | A proposal | `proposal_t<`, `apply_proposal` in `include/wormedit/core/proposal.h`, and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
 | Shared edit values | `include/wormedit/core/document_command_types.h` owns stamps, results and effects; `position_types.h` owns measure-local positions and spans. Include these contracts when document/history/execution definitions are unnecessary. |
+| Structural chart collections | `src/core/chart_collections.h` owns flat object-ID collection membership and structural position roles. Allocation, identity traversal, labels, focus, diagnostics, redivision, quantize and shifts derive applicable traversal from it. References, nested objects, optional positions, endpoint rules, timing-link categories, validation and codec fields retain their domain owners. |
 | A committing note edit’s editor effects | `editor_edit_effect_t`, `prepare_editor_edit`, `run_editor_edit` and `commit_editor_edit` in `src/core/interaction_edit_commit.h`: stage a detached working document, commit once, then apply selection/cursor/lane, update surviving capture stamps and build the result. Internal delete/tap reuse shares action context preparation and staging instead of dispatching on scratch histories. Domain commands that already own a transaction use the same finisher. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
 | Area selection | `cache_area_object_geometry` in `src/sys/compose/views/compose_view.cpp` projects rectangles when a scene snapshot exists. `editor_objects_in_row_range` in `src/core/interaction_selection.cpp` is the row-range fallback; `is_scope_accepted` and `is_editor_selection_scope_accepted` filter both by scope. |
@@ -751,7 +752,8 @@ The single schema22-to-23 migration initializes both this definition pool and em
 generated-chart bindings; both codecs also accept their absent optional additions
 on documents already tagged schema23.
 
-The current native document schema is 27. Schema27 adds typed volume and sample-set control
+The current native document schema is 28. Schema28 adds per-output-group audio encoding
+settings; migration defaults missing settings to Vorbis with quality 0.4. Schema27 adds typed volume and sample-set control
 lanes, migrating legacy osu! timing-line sample fields when the lanes are absent. Schema26 permits ordered opaque Text
 inside Chart content for flat imports. The 25-to-26 migration preserves existing
 authored nodes and identities; fresh flat imports no longer split at Text.
@@ -760,6 +762,6 @@ BMS flattening option; the additive 24-to-25 migration defaults missing choices 
 Schema24 adds optional per-difficulty bookmark
 list order independently of timeline positions and scoped BMS content. The 23-to-24
 migration leaves data unchanged: absent orders keep the default timeline order,
-and orders from the earlier unbumped schema23 build are retained. Writers use schema26;
+and orders from the earlier unbumped schema23 build are retained. Writers use the current schema;
 readers refuse newer schemas before publishing a document. Recovery snapshots and
 command journals use the same native codec and schema limit.

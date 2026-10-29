@@ -305,6 +305,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/build-target-reuse.md
     docs/chart-editor-plan/tasks/core-edit-contracts.md
     docs/chart-editor-plan/tasks/compose-workflow-ownership.md
+    docs/chart-editor-plan/tasks/chart-collection-traversal.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

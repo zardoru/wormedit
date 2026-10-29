@@ -1,4 +1,5 @@
 #include "id_ceiling.h"
+#include "chart_collections.h"
 #include "../core/text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/semantic_layer_editor.h>
@@ -152,14 +153,9 @@ auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_o
         return true;
     };
 
-    const auto within_limit = record_range(chart.bgm_source_lanes) &&
-                              record_range(chart.lane_layouts) && record_range(chart.bpms) &&
-                              record_range(chart.pauses) && record_range(chart.warps) &&
-                              record_range(chart.scrolls) && record_range(chart.speeds) &&
-                              record_range(chart.volumes) && record_range(chart.sample_sets) &&
-                              record_range(chart.kiai) && record_range(chart.timing_anchors) &&
-                              record_range(chart.bookmarks) && record_range(chart.sections) &&
-                              record_range(chart.bga_events) && record_range(chart.sound_channels);
+    const auto within_limit = visit_chart_collections(chart, [&](const auto& values, auto) {
+        return record_range(values);
+    });
     if (!within_limit) {
         return std::nullopt;
     }

@@ -1,3 +1,4 @@
+#include <wormedit/core/command.h>
 #include <wormedit/core/lane_transform.h>
 
 #include <algorithm>

@@ -36,6 +36,11 @@
 #include <utility>
 
 namespace wormedit {
+auto note_paint_target_t::absolute_row(const measure_index_t& index) const
+    -> std::optional<std::uint64_t> {
+    return canvas_row ? canvas_row : index.row_of(position);
+}
+
 using namespace interaction_detail;
 auto editor_interaction_result_t::from(const document_history_t& history,
     const editor_interaction_state_t& state, bool changed) -> editor_interaction_result_t {
@@ -2437,33 +2442,31 @@ namespace wormedit {
 auto stage_assign_note_lanes(document_command_transaction_t& transaction,
                              const editor_interaction_state_t& state, lane_id_t lane)
     -> attempt_t<document_edit_effect_t> {
-    const auto apply = [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
-        auto index = measure_index_t::from(chart);
-        if (!index)
-            return {.diagnostics = index.error()};
-        const chart_scope_t scope{.chart = chart, .measures = *index};
-        auto collected = collect_assignment_candidates(scope, state);
-        if (const auto* failure = std::get_if<diagnostic_list_t>(&collected))
-            return {.diagnostics = *failure};
-        const auto& candidates = std::get<std::vector<assignment_candidate_t>>(collected);
-        auto intervals = build_assignment_intervals(scope, candidates, lane);
-        if (const auto* failure = std::get_if<diagnostic_list_t>(&intervals))
-            return {.diagnostics = *failure};
-        if (const auto failure = validate_assignment_intervals(
-                std::get<std::vector<assignment_interval_t>>(intervals)))
-            return {.diagnostics = {*failure}};
-        if (std::ranges::all_of(candidates, [lane](const auto& candidate) {
-                return candidate.note->lane == lane;
-            }))
-            return {.value = document_edit_effect_t{}};
-        return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane,
-                                          "Assign selected notes to lane");
-    };
-    if (transaction.has_bms_program(state.chart))
-        return transaction.stage_bms_native_objects(state.chart, state.selected_notes,
-                                                   bms_existing_edit_kind_t::update, apply);
     return transaction.stage(state.chart, "lane assignment chart is unavailable",
-        [&](chart_document_t& chart, song_document_t&) { return apply(chart); });
+        {.storage = chart_edit_storage_support_t::objects, .objects = state.selected_notes},
+        [&](chart_document_t& chart, const song_document_t&, std::vector<object_id_t>&)
+            -> attempt_t<document_edit_effect_t> {
+            auto index = measure_index_t::from(chart);
+            if (!index)
+                return {.diagnostics = index.error()};
+            const chart_scope_t scope{.chart = chart, .measures = *index};
+            auto collected = collect_assignment_candidates(scope, state);
+            if (const auto* failure = std::get_if<diagnostic_list_t>(&collected))
+                return {.diagnostics = *failure};
+            const auto& candidates = std::get<std::vector<assignment_candidate_t>>(collected);
+            auto intervals = build_assignment_intervals(scope, candidates, lane);
+            if (const auto* failure = std::get_if<diagnostic_list_t>(&intervals))
+                return {.diagnostics = *failure};
+            if (const auto failure = validate_assignment_intervals(
+                    std::get<std::vector<assignment_interval_t>>(intervals)))
+                return {.diagnostics = {*failure}};
+            if (std::ranges::all_of(candidates, [lane](const auto& candidate) {
+                    return candidate.note->lane == lane;
+                }))
+                return {.value = document_edit_effect_t{}};
+            return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane,
+                                              "Assign selected notes to lane");
+        });
 }
 
 auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,

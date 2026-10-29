@@ -1,12 +1,15 @@
 #pragma once
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/position_types.h>
+#include <wormedit/core/measure.h>
 
 #include <cstdint>
 #include <optional>
 #include <span>
 
 namespace wormedit {
+struct chart_document_t;
+struct measure_index_t;
 
 // The one place pointer and cursor positions are rounded onto the edit grid. Every object class
 // (notes, holds, timing markers, areas, resources, BGM, recipes) goes through these helpers, so

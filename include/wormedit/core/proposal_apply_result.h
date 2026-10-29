@@ -1,5 +1,5 @@
 #pragma once
-#include <wormedit/core/command.h>
+#include <string>
 namespace wormedit {
 template <class Issue> struct proposal_apply_payload_t {
     Issue issue{Issue::none};

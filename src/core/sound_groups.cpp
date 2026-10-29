@@ -1,3 +1,4 @@
+#include <wormedit/core/command.h>
 #include "text_util.h"
 #include <wormedit/core/sound_groups.h>
 #include <wormedit/core/resource_assignment.h>

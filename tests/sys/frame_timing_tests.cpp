@@ -7485,6 +7485,38 @@ TEST_CASE("Registered selection scopes preserve mixed objects and expose Select 
     }
 }
 
+TEST_CASE("Solo toggle and target actions affect the next selection in the same frame",
+          "[frame-timing][selection-consolidation][semantic-layer]") {
+    compose_test_fixture_t f{static_style_song()};
+    f.project();
+    f.application.project.semantic_layer.semantic_layer_target = layer_id_t{101};
+    auto sink = notification_sink_t::muted();
+    const compose_action_inputs_t environment{
+        {f.history, *f.binding.value, sink}, {f.application, f.interaction}, std::nullopt};
+    const std::array actions{
+        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO,
+        WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO};
+    const std::array expected{std::size_t{4}, std::size_t{4}, std::size_t{8}};
+    for (std::size_t index = 0; index < actions.size(); ++index) {
+        wormedit::ui::workspace_action_t action{};
+        action.compose_action = actions[index];
+        action.compose_input_project_id = f.history.document.id;
+        action.compose_input_chart_id = f.interaction->chart;
+        action.compose_input_document_revision = f.history.document.revision;
+        action.compose_semantic_layer_id = layer_id_t{102};
+        const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
+            f.interaction->viewport_height_pixels, false);
+        INFO(status);
+        REQUIRE(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        CHECK(f.interaction->selected_notes.size() == expected[index]);
+        CHECK(f.interaction->solo_semantic_layer == (index == 2 ? std::nullopt
+            : std::optional{layer_id_t{index == 0 ? 101u : 102u}}));
+    }
+    CHECK(f.history.document.revision == 1);
+    CHECK(f.history.undo.empty());
+}
+
 TEST_CASE("Solo selection commands use current target without requiring projection",
           "[frame-timing][selection-consolidation][semantic-layer]") {
     const auto project_between = GENERATE(false, true);

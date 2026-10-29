@@ -25,7 +25,9 @@ derivations and both retained writes; it now changes one query, then checks the 
 installation surfaces. Changing target while solo, disabling solo and entering a chart
 without the target no longer require a projection between action and selection. Tests
 exercise these sequences with and without projection, and same-sound target changes
-without projection. Explicit selection commands retain their own selection semantics.
+without projection. A real Compose toggle → registered selection → target action →
+selection → toggle-off sequence additionally exercises same-frame dispatch wiring.
+Explicit selection commands retain their own selection semantics.
 Chart-local target IDs continue to resolve against the current chart; this does not
 introduce a new persisted or chart-stamped session target model.
 
@@ -47,6 +49,13 @@ Executed with no local build configuration and no root output mutations:
   T-783 admission header; this is not recorded as passing.
 - `cmake -DWORMEDIT_SOURCE_ROOT=$PWD -P cmake/check_chart_editor_docs.cmake` passed.
 - `git diff --check` passed at this checkpoint.
+- Matching Clang/clang-tidy 23.1.3 complexity comparison passed for the above three
+  production TUs with `--jobs 2` and a deduplicated, explicitly remapped temporary
+  compilation database. Final output: `complexity: checked 3/3` / `complexity: passed
+  (3 translation units)`. Earlier attempts failed due an incomplete include-root
+  remap and a subsequently fixed in-progress BGA signature; neither is a passing check.
+- Direct documentation checks for ceremony ratchet and architecture names passed
+  alongside chart-editor-state. These are script executions, not a local CTest/GATE.
 
 Deferred to root after integration: focused workflows and event harness execution,
 matching Clang 23.1.3 complexity comparison, explicit changed-header consumers, and

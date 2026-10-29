@@ -461,6 +461,10 @@ auto clipboard_commands(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             std::move(copied.error()), notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
+    // Menu commands also need to release the selection aid before an immediate paste.
+    if (state->has_latched_range())
+        (void)wormedit::dispatch_editor_action(context.environment.document.history, *state,
+                                              wormedit::cancel_editor_gesture_action_t{});
     if (kind == command_kind_t::edit_cut) {
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
         context.environment.editor.commands.project.timing_recipe.recipe_selected = 0;

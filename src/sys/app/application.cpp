@@ -794,7 +794,7 @@ void refresh_application_command_states(
     const bool clipboard_selection = compose_ready &&
         can_copy_compose_selection(*compose_state, application_state);
     set("edit.copy", clipboard_selection);
-    set("edit.cut", clipboard_selection);
+    set("edit.cut", clipboard_selection && !pending);
     set("edit.paste", paste_target_available(compose_ready, pending, application_state));
     refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending,
                                 application_state);

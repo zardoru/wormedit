@@ -28,6 +28,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/workspace.h>
 #include <chrono>
 #include <bit>
@@ -1762,6 +1763,39 @@ TEST_CASE("Playing Compose navigation uses beats while stopped editing retains i
     f.navigation.cancel();
     (void)f.dispatch_input(action);
     check_action((f.state.cursor == local_position_t{measure_id_t{1}, 60}));
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Compose navigation during area selection moves the stopped cursor or playing head",
+          "[compose-action-notifications][selection-navigation]") {
+    const auto playing = GENERATE(false, true);
+    bga_input_fixture_t f;
+    require_action(dispatch_editor_action(f.history, f.state,
+        begin_editor_area_selection_action_t{.x_pixels = 10, .y_pixels = 1,
+            .field_width_pixels = 100}).accepted);
+    f.application.project.transport.preview_playhead_absolute_row = 240;
+    f.application.services.transport_preview_playing = [=] { return playing; };
+    std::uint64_t sought{};
+    f.application.services.transport_seek = [&](std::uint64_t frame) {
+        sought = frame;
+        return compose_action_outcome_t::from(std::string{}, notification_severity_t::hint,
+                                              notification_source_t::input);
+    };
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
+    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
+    (void)f.dispatch_input(action);
+    if (playing) {
+        check_action(sought > 0);
+        check_action(f.application.project.transport.preview_playhead_absolute_row == 480);
+        check_action((f.state.cursor == local_position_t{measure_id_t{1}, 0}));
+    } else {
+        check_action((f.state.cursor == local_position_t{measure_id_t{1}, 240}));
+    }
+    require_action(f.state.gesture<pending_editor_area_selection_t>() != nullptr);
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
+    (void)f.dispatch_input(action);
+    check_action(!f.navigation.is_active());
+    check_action(f.state.gesture<pending_editor_area_selection_t>() != nullptr);
     f.check_unchanged(1);
 }
 

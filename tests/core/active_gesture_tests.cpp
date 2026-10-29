@@ -198,6 +198,49 @@ TEST_CASE("View-dependent gestures reject a missing dispatch view", "[core][acti
     fixture.check_capture_ended(0);
 }
 
+TEST_CASE("Area capture permits cursor navigation and retains its pointer anchor", "[core][active-gesture][selection-navigation]") {
+    auto fixture = gesture_fixture_t::from();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        begin_editor_area_selection_action_t{.x_pixels = 10, .y_pixels = 0.5,
+            .field_width_pixels = 100}));
+    const auto anchor = fixture.state.gesture<pending_editor_area_selection_t>()->anchor_y_pixels;
+    const std::array<editor_interaction_action_t, 4> actions{
+        move_edit_cursor_action_t{interaction_direction_t::forward},
+        page_edit_cursor_action_t{interaction_direction_t::forward},
+        jump_edit_cursor_action_t{{measure_id_t{1}, 480}, fixture.history.document.revision},
+        scroll_editor_view_action_t{48}};
+    const auto navigation = GENERATE(0, 1, 2, 3);
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state, actions[navigation]));
+    REQUIRE(fixture.state.gesture<pending_editor_area_selection_t>());
+    CHECK(fixture.state.gesture<pending_editor_area_selection_t>()->anchor_y_pixels == anchor);
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        update_editor_area_selection_action_t{.x_pixels = 20, .y_pixels = 0.5,
+            .operation = proposal_operation_t::apply}));
+    fixture.check_capture_ended(0);
+}
+
+TEST_CASE("Area selection retains chart coordinates when navigation scrolls the field",
+          "[core][active-gesture][selection-navigation]") {
+    auto fixture = gesture_fixture_t::from();
+    fixture.state.viewport_height_pixels = 96;
+    fixture.history.document.charts.front().measures.front().notes.front().position.row = 240;
+    const auto geometry = std::make_shared<const editor_area_geometry_snapshot_t>(
+        editor_area_geometry_snapshot_t{.chart = fixture.state.chart,
+            .document_revision = fixture.history.document.revision,
+            .projection = editor_area_geometry_projection_t{
+                .pixels_per_standard_measure = fixture.state.pixels_per_standard_measure,
+                .viewport_height_pixels = fixture.state.viewport_height_pixels}});
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        begin_editor_area_selection_action_t{.x_pixels = 10, .y_pixels = 24,
+            .field_width_pixels = 100, .object_geometry = geometry}));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state, scroll_editor_view_action_t{48}));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        update_editor_area_selection_action_t{.x_pixels = 90, .y_pixels = 1,
+            .operation = proposal_operation_t::apply}));
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    fixture.check_capture_ended(0);
+}
+
 TEST_CASE("Area previews preserve both existing anchor projection policies", "[core][active-gesture]") {
     const auto geometry = std::make_shared<const editor_area_geometry_snapshot_t>(
         editor_area_geometry_snapshot_t{.projection = editor_area_geometry_projection_t{

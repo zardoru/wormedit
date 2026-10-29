@@ -1215,7 +1215,9 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
     case editor_gesture_kind_t::semantic_paint:
         return is_gesture_action<update_semantic_layer_paint_gesture_action_t>(action);
     case editor_gesture_kind_t::area:
-        return is_gesture_action<update_editor_area_selection_action_t>(action);
+        return is_gesture_action<update_editor_area_selection_action_t, move_edit_cursor_action_t,
+                                 page_edit_cursor_action_t, jump_edit_cursor_action_t,
+                                 scroll_editor_view_action_t>(action);
     case editor_gesture_kind_t::range:
         return is_gesture_action<space_range_selection_action_t, move_edit_cursor_action_t,
                                  page_edit_cursor_action_t, jump_edit_cursor_action_t,

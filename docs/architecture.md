@@ -230,7 +230,9 @@ requests. Submission precedes rebinding, preserving an accepted request if rebin
 *(T-652)*.
 
 Not everything reaches the transaction. View-only actions such as zoom, scroll, selection, tool
-switches and filters change interaction or UI state and stop at dispatch. Waveform analysis,
+switches and filters change interaction or UI state and stop at dispatch. Area-selection captures
+permit cursor steps, page moves, position jumps and viewport scrolling while retaining their pointer
+anchor; other gestures and document edits remain exclusive. Waveform analysis,
 visual decoding, resource-copy and inspection requests, and conversion previews run through
 `async_job_t` and publish their results on the UI thread. Autosave, transactional import/export,
 and queue/progress services retain their domain lifecycles and publication rules; see

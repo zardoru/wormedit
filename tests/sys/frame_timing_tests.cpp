@@ -9076,6 +9076,49 @@ TEST_CASE("T275 real application frame BMSON projection benchmark", "[.][applica
     for (unsigned scenario = 0; scenario < 6; ++scenario) t275_measure_application_frame(scenario);
 }
 
+TEST_CASE("Compose zoom requests waveform detail for the visible source after export cuts",
+          "[sys][waveform-projection][export-cut]") {
+    t275_application_frame_fixture_t fixture;
+    auto& document = fixture.channel.history.document;
+    // The short fixture still separates the visible window from the removed intro.
+    document.charts.front().bpms.front().beats_per_minute = {1200, 1};
+    document.export_cuts = {{.id = object_id_t{90000},
+        .begin_milliseconds = 0, .end_milliseconds = 100}};
+    ++document.revision;
+    retained_sources_for(document, fixture.channel.project_sources);
+    wormedit::test::require_workspace_result(rebind_workspace(fixture.channel.workspace,
+        fixture.channel.history));
+    fixture.channel.workspace.transport.audio_asset = asset_id_t{7};
+    expect_compose_test(fixture.interaction.has_value());
+    fixture.interaction->pixels_per_standard_measure = GENERATE(1024.0, 4096.0);
+    fixture.interaction->viewport_scroll_pixels = 0;
+    fixture.prepare();
+    for (unsigned attempt = 0; attempt < 200; ++attempt) {
+        fixture.waveforms.service(document, fixture.channel.workspace, fixture.channel.cache,
+            &*fixture.interaction);
+        fixture.refill();
+        if (fixture.waveforms.detail_analysis()) break;
+        SDL_Delay(5);
+    }
+    const auto detail = fixture.waveforms.detail_analysis();
+    expect_compose_test(static_cast<bool>(detail));
+    expect_compose_test(detail->waveform.has_value());
+    expect_compose_test(static_cast<bool>(fixture.interaction->cut_axis));
+    const auto& view = fixture.channel.flattened.view.compose;
+    const auto expected = audio::aligned_waveform_window(*fixture.waveforms.waveform_analysis()->waveform,
+        *fixture.channel.cache.timing.marker_timing_index,
+        {.viewport_scroll_pixels = fixture.interaction->viewport_scroll_pixels,
+         .viewport_height_pixels = view.viewport_height_pixels,
+         .pixels_per_standard_measure = view.pixels_per_standard_measure,
+         .cut_axis = fixture.interaction->cut_axis});
+    expect_compose_test(expected.has_value());
+    expect_compose_test(detail->waveform->key.begin_frame <= expected->begin_frame);
+    expect_compose_test(detail->waveform->key.end_frame >= expected->end_frame);
+    expect_compose_test(detail->waveform->key.frames_per_bin == 32);
+    expect_compose_test(expected->begin_frame >= audio::output_sample_rate / 10);
+    expect_compose_test(!view.waveform_rows.empty());
+}
+
 TEST_CASE("Player preview and chart readout follow the source frame across audio cuts",
           "[sys][player-preview][export-cut]") {
     t275_application_frame_fixture_t fixture;

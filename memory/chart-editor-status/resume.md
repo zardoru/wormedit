@@ -1,5 +1,20 @@
 # Status: resume checklist
 
+## Navigation and modifiability refactors (owner, 2026-10-29)
+
+Integration branch: `refactor/navigation-modifiability`, based on `d154284`.
+T-777/T-778 (light core contracts and storage support), T-780 (Compose workflow ownership)
+and T-781 (chart collection traversal) remain under verification in isolated worktrees.
+Heavy builds and gates run sequentially because concurrent cold builds exhausted memory.
+
+T-779 is implemented and locally verified in [PR #77](https://github.com/zardoru/wormedit/pull/77),
+source `6f3952c`, staged in the integration branch. The same native configuration needs 139
+fewer compiler actions, has no exact duplicate production compilations, and preserves five
+narrow test-target build closures. Native GATE passes 5,585/5,585; headless 3,572/3,572;
+event-only 4,407/4,407; isolated Compose smoke inspected. Combined integration verification
+remains pending. See [the card](../../docs/chart-editor-plan/tasks/build-target-reuse.md)
+and its audit for configuration, measurements and limits; no wall-time improvement is claimed.
+
 ## Release 1.0.0-rc2 (owner, 2026-10-28)
 
 `b29bda0` set the suffix to `-rc2` (reconfigure reused build directories: the suffix is cached).

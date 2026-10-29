@@ -137,9 +137,11 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Project creation and export-target UX](tasks/project-creation-exports.md)
 - [1.0 release candidate: schema, version, packages, notes](tasks/release-1-0.md)
 - [Recovery journal size and cost: durable flushes, id-keyed deltas, smaller saves](tasks/journal-deltas.md)
+- [Compiled frontend and renderer support reuse (T-779)](tasks/build-target-reuse.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-776.
+every number above T-781. T-777–T-781 are allocated to the owner-requested navigation and
+modifiability refactors; the remaining lane cards are registered when integrated.
 
 ## Rules for whoever executes a card
 

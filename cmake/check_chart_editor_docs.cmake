@@ -302,6 +302,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/manual-feedback.md
     docs/chart-editor-plan/tasks/workflow-blockers.md
     docs/chart-editor-plan/tasks/journal-deltas.md
+    docs/chart-editor-plan/tasks/build-target-reuse.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

@@ -642,6 +642,7 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
         const auto first = std::ranges::lower_bound(bucket, minimum_row, {},
             &editor_hit_test_entry_t::absolute_row);
         for (auto entry = first; entry != bucket.end() && entry->absolute_row <= maximum_row; ++entry) {
+            if (!index.is_note_in_solo_layer(chart, entry->note, view.solo_semantic_layer)) continue;
             if (entry->lane != lane || (view.cut_axis && view.cut_axis->contains_row(entry->absolute_row))) continue;
             const auto y = editor_axis_projection_t::from(view, chart.divisions_per_standard_measure)
                 .y_for_row(entry->absolute_row);
@@ -659,7 +660,8 @@ auto nearby_note_points(const chart_document_t& chart, const editor_hit_test_ind
     return best;
 }
 
-auto first_body_note(const editor_hit_test_index_t& index, lane_id_t lane,
+auto first_body_note(const chart_document_t& chart, const editor_interaction_view_model_t& view,
+                     const editor_hit_test_index_t& index, lane_id_t lane,
                      std::uint64_t pointer_row, std::size_t candidate_count,
                      std::size_t node, std::size_t first, std::size_t last)
     -> const editor_note_span_entry_t* {
@@ -668,20 +670,22 @@ auto first_body_note(const editor_hit_test_index_t& index, lane_id_t lane,
     if (last - first == 1) {
         if (first >= index.note_spans.size()) return nullptr;
         const auto& span = index.note_spans[first];
-        return span.lane == lane && span.begin_row < pointer_row && pointer_row < span.end_row
+        return span.lane == lane && span.begin_row < pointer_row && pointer_row < span.end_row &&
+            index.is_note_in_solo_layer(chart, span.note, view.solo_semantic_layer)
             ? &span : nullptr;
     }
     const auto middle = first + (last - first) / 2;
-    const auto* left = first_body_note(index, lane, pointer_row, candidate_count,
+    const auto* left = first_body_note(chart, view, index, lane, pointer_row, candidate_count,
                                        node * 2, first, middle);
-    const auto* right = first_body_note(index, lane, pointer_row, candidate_count,
+    const auto* right = first_body_note(chart, view, index, lane, pointer_row, candidate_count,
                                         node * 2 + 1, middle, last);
     if (!left) return right;
     if (!right) return left;
     return left->note.value <= right->note.value ? left : right;
 }
 
-auto body_note_at(const editor_hit_test_index_t& index, lane_id_t lane,
+auto body_note_at(const chart_document_t& chart, const editor_interaction_view_model_t& view,
+                  const editor_hit_test_index_t& index, lane_id_t lane,
                   std::uint64_t pointer_row) -> const editor_note_span_entry_t* {
     if (index.note_span_tree_leaf_base == 0 ||
         index.note_span_tree_max_end.size() != index.note_span_tree_leaf_base * 2)
@@ -689,11 +693,25 @@ auto body_note_at(const editor_hit_test_index_t& index, lane_id_t lane,
     const auto after = std::ranges::upper_bound(index.note_spans, pointer_row, {},
         &editor_note_span_entry_t::begin_row);
     const auto count = static_cast<std::size_t>(std::distance(index.note_spans.begin(), after));
-    return count == 0 ? nullptr : first_body_note(index, lane, pointer_row, count, 1, 0,
+    return count == 0 ? nullptr : first_body_note(chart, view, index, lane, pointer_row, count, 1, 0,
                                                   index.note_span_tree_leaf_base);
 }
 
 } // namespace
+
+auto editor_hit_test_index_t::is_note_in_solo_layer(const chart_document_t& source, object_id_t note,
+    std::optional<layer_id_t> solo_layer) const -> bool {
+    if (!solo_layer) return true;
+    const editor_selection_object_t object{editor_selection_object_kind_t::note, note};
+    const auto found = std::ranges::lower_bound(hover_objects_by_id, object, {},
+        &editor_hover_index_entry_t::object);
+    if (found == hover_objects_by_id.end() || found->object != object ||
+        found->source_group >= source.measures.size()) return false;
+    const auto& notes = source.measures[found->source_group].notes;
+    if (found->source_index >= notes.size() || notes[found->source_index].id != note) return false;
+    const auto& layers = notes[found->source_index].semantic_layers;
+    return std::ranges::find(layers, *solo_layer) != layers.end();
+}
 
 auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_t& index,
                      const editor_interaction_view_model_t& view,
@@ -712,7 +730,7 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
     auto best = nearby_note_points(chart, index, view, request, *row, *lane,
                                    snapped.value_or(*position));
     if (best.priority == 0) {
-        if (const auto* body = body_note_at(index, *lane, *row))
+        if (const auto* body = body_note_at(chart, view, index, *lane, *row))
             best.target = {.kind = editor_hit_target_kind_t::note, .lane = body->lane,
                            .note = body->note, .note_kind = body->kind, .position = *position};
     }

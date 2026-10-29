@@ -1372,6 +1372,9 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     auto& application_state = input.frame.application_state;
     auto& view = input.frame.view();
     auto& interaction_view = input.scope.interaction_view;
+    retained_state->solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
+        ? application_state.project.semantic_layer.semantic_layer_target : std::nullopt;
+    interaction_view.solo_semantic_layer = retained_state->solo_semantic_layer;
     const auto downscroll = input.scope.downscroll;
     build_compose_markers_view(input);
     if (application_state.project.transport.preview_playhead_absolute_row) {

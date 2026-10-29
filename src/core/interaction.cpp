@@ -322,10 +322,10 @@ auto resolve_view_geometry(const document_history_t& history,
 
 auto space_range_objects(const chart_document_t& chart, const editor_hit_test_index_t& index,
                          std::uint64_t first, std::uint64_t last,
-                         editor_selection_scope_t scope)
+                         editor_selection_scope_t scope, std::optional<layer_id_t> solo_layer)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t> {
     if (first == last) return std::vector<editor_selection_object_t>{};
-    return editor_objects_in_row_range(chart, index, first, last - 1, scope);
+    return editor_objects_in_row_range(chart, index, first, last - 1, scope, solo_layer);
 }
 
 auto space_range_bounds(const pending_space_range_selection_t& pending,
@@ -358,7 +358,7 @@ auto make_space_range_preview(const document_history_t& history,
                                        "Space range anchor lies outside chart geometry")};
     const auto [first, last] = space_range_bounds(pending, geometry.absolute_row, geometry.canvas_rows);
     auto queried = space_range_objects(*geometry.chart, *pending.hit_index, first, last,
-                                      pending.scope);
+                                      pending.scope, state.solo_semantic_layer);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried)) return *diagnostics;
     auto combined = combine_editor_area_selection(state,
         std::get<std::vector<editor_selection_object_t>>(queried), pending.mode, *pending.hit_index);
@@ -425,6 +425,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .chart = state.chart,
         .active_lane = state.active_lane,
         .scratch_on_right = state.scratch_on_right,
+        .solo_semantic_layer = state.solo_semantic_layer,
         .active_lane_name = geometry.lane->name,
         .cursor = state.cursor,
         .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
@@ -2388,7 +2389,7 @@ static auto select_editor_scope_impl(document_history_t& history, editor_interac
         return editor_interaction_result_t{
             .diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                   "Selection start is outside the chart")}};
-    const auto queried = editor_objects_in_row_range(*chart, index, *first_row, index.measures.total_rows - 1, scope);
+    const auto queried = editor_objects_in_row_range(*chart, index, *first_row, index.measures.total_rows - 1, scope, state.solo_semantic_layer);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     return dispatch_editor_action(history, state, select_editor_objects_action_t{

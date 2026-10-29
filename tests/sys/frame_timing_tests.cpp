@@ -1959,6 +1959,9 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     fixture.application.project.semantic_layer.semantic_layer_solo_active=true;
     const auto first=fixture.project();
+    CHECK(fixture.interaction->solo_semantic_layer == layer_id_t{101});
+    REQUIRE(fixture.cache.frame.interaction_view);
+    CHECK(fixture.cache.frame.interaction_view->solo_semantic_layer == layer_id_t{101});
     const auto first_note=fixture.first_note();
     expect_static_style(first>initial);
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{102};
@@ -1968,6 +1971,7 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     fixture.application.project.semantic_layer.semantic_layer_solo_active=false;
     fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{101}};
     const auto required=fixture.project();
+    CHECK_FALSE(fixture.interaction->solo_semantic_layer);
     expect_static_style(required>second);
     expect_static_style(fixture.first_note()==first_note);
     fixture.application.project.semantic_layer.required_semantic_layer_filters={layer_id_t{102}};

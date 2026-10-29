@@ -1526,6 +1526,132 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
     CHECK(state.selected_notes.empty());
 }
 
+namespace {
+auto solo_selection_song() -> song_document_t {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{1}, .name = "Solo"},
+                             {.id = layer_id_t{2}, .name = "Other"}};
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
+         .semantic_layers = {layer_id_t{1}, layer_id_t{2}}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2},
+         .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 720},
+         .semantic_layers = {layer_id_t{2}}},
+        {.id = object_id_t{103}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+auto solo_selection_state(const document_history_t& history) -> editor_interaction_state_t {
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    setup.state->solo_semantic_layer = layer_id_t{1};
+    return std::move(*setup.state);
+}
+}
+
+TEST_CASE("solo area selection filters candidates before replace add and toggle",
+          "[unit][core][interaction][selection][solo]") {
+    auto history = document_history_t::from(solo_selection_song());
+    auto state = solo_selection_state(history);
+    const auto mode = GENERATE(editor_area_selection_mode_t::replace,
+        editor_area_selection_mode_t::add, editor_area_selection_mode_t::toggle);
+    // Add/toggle keep prior selection from another layer; solo constrains new hits.
+    state.selected_notes = {object_id_t{102}};
+    if (mode == editor_area_selection_mode_t::toggle)
+        state.selected_notes.push_back(object_id_t{101});
+    REQUIRE(dispatch_editor_action(history, state, begin_editor_area_selection_action_t{
+        110.0, 40.0, 100.0, 200.0, mode, true}));
+    const auto committed = dispatch_editor_action(history, state,
+        update_editor_area_selection_action_t{.x_pixels = 290.0, .y_pixels = 150.0,
+            .pointer_captured = true, .operation = proposal_operation_t::apply});
+    REQUIRE(committed);
+    const auto expected = mode == editor_area_selection_mode_t::replace
+        ? std::vector<object_id_t>{object_id_t{101}}
+        : mode == editor_area_selection_mode_t::add
+            ? std::vector<object_id_t>{object_id_t{102}, object_id_t{101}}
+            : std::vector<object_id_t>{object_id_t{102}};
+    CHECK(state.selected_notes == expected);
+}
+
+TEST_CASE("solo hit testing excludes unlayered heads and other-layer hold heads tails and bodies",
+          "[unit][core][interaction][selection][solo]") {
+    auto history = document_history_t::from(solo_selection_song());
+    auto state = solo_selection_state(history);
+    auto view = std::get<editor_interaction_view_model_t>(inspect_editor_interaction(history, state));
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<editor_hit_test_index_t>(build_editor_hit_test_index(chart, 1));
+    const auto [row, expected] = GENERATE(std::pair{240U, object_id_t{103}},
+        std::pair{480U, object_id_t{102}}, std::pair{600U, object_id_t{102}},
+        std::pair{720U, object_id_t{102}});
+    const auto y = editor_position_y_pixels(chart, view, {measure_id_t{1}, row});
+    REQUIRE(y);
+    const editor_hit_test_request_t request{.x_pixels = 250.0, .y_pixels = *y,
+        .field_left_pixels = 100.0, .field_width_pixels = 200.0, .note_hit_radius_pixels = 0.0};
+    const auto hidden = hit_test_editor(chart, index, view, request);
+    REQUIRE(hidden);
+    CHECK_FALSE(hidden->note);
+    view.solo_semantic_layer.reset();
+    const auto normal = hit_test_editor(chart, index, view, request);
+    REQUIRE(normal);
+    CHECK(normal->note == expected);
+}
+
+TEST_CASE("solo row selection keeps timing objects",
+          "[unit][core][interaction][selection][solo]") {
+    auto song = solo_selection_song();
+    song.charts.front().bpms.push_back({.id = object_id_t{104},
+        .position = {measure_id_t{1}, 240}, .beats_per_minute = {120, 1}});
+    auto history = document_history_t::from(std::move(song));
+    auto state = solo_selection_state(history);
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<editor_hit_test_index_t>(build_editor_hit_test_index(chart, 1));
+    const auto objects = editor_objects_in_row_range(chart, index, 0, 959,
+        {.notes = true, .timing = true}, state.solo_semantic_layer);
+    REQUIRE(std::holds_alternative<std::vector<editor_selection_object_t>>(objects));
+    CHECK(std::get<std::vector<editor_selection_object_t>>(objects) ==
+        std::vector<editor_selection_object_t>{{editor_selection_object_kind_t::note, object_id_t{101}},
+            {editor_selection_object_kind_t::bpm_event, object_id_t{104}}});
+}
+
+TEST_CASE("solo Space range excludes its ending row and nonmatching notes",
+          "[unit][core][interaction][selection][solo]") {
+    auto history = document_history_t::from(solo_selection_song());
+    auto state = solo_selection_state(history);
+    const auto end = GENERATE(240U, 720U);
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    REQUIRE(dispatch_editor_action(history, state,
+        jump_edit_cursor_action_t{{measure_id_t{1}, end}, history.document.revision}));
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    const auto expected = end == 240U ? std::vector<object_id_t>{}
+        : std::vector<object_id_t>{object_id_t{101}};
+    CHECK(state.selected_notes == expected);
+}
+
+TEST_CASE("solo scoped selection and inversion operate on matching notes",
+          "[unit][core][interaction][selection][solo]") {
+    auto history = document_history_t::from(solo_selection_song());
+    auto state = solo_selection_state(history);
+    REQUIRE(select_editor_scope(history, state, {}, false));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    REQUIRE(select_editor_scope(history, state, {}, true));
+    CHECK(state.selected_notes.empty());
+}
+
+TEST_CASE("solo selection after cursor and disabling solo use their expected note sets",
+          "[unit][core][interaction][selection][solo]") {
+    auto history = document_history_t::from(solo_selection_song());
+    auto state = solo_selection_state(history);
+    REQUIRE(select_editor_scope(history, state, {}, false, local_position_t{measure_id_t{1}, 480}));
+    CHECK(state.selected_notes.empty());
+    state.solo_semantic_layer.reset();
+    REQUIRE(select_editor_scope(history, state, {}, false));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}, object_id_t{102}, object_id_t{103}});
+}
+
 TEST_CASE("Space range selection excludes its ending row across measures and drag directions",
           "[unit][core][interaction][selection][space]") {
     auto song = make_song();

@@ -3,8 +3,8 @@
 ## Navigation and modifiability refactors (owner, 2026-10-29)
 
 Integration branch: `refactor/navigation-modifiability`, based on `d154284`.
-T-777/T-778 (light core contracts and storage support), T-780 (Compose workflow ownership)
-and T-781 (chart collection traversal) remain under verification in isolated worktrees.
+T-780 (Compose workflow ownership) and T-781 (chart collection traversal) remain under
+verification in isolated worktrees.
 Heavy builds and gates run sequentially because concurrent cold builds exhausted memory.
 
 T-779 is implemented and locally verified in [PR #77](https://github.com/zardoru/wormedit/pull/77),
@@ -14,6 +14,15 @@ narrow test-target build closures. Native GATE passes 5,585/5,585; headless 3,57
 event-only 4,407/4,407; isolated Compose smoke inspected. Combined integration verification
 remains pending. See [the card](../../docs/chart-editor-plan/tasks/build-target-reuse.md)
 and its audit for configuration, measurements and limits; no wall-time improvement is claimed.
+
+T-777/T-778 are implemented and locally verified in
+[PR #78](https://github.com/zardoru/wormedit/pull/78), source `bba0306`, staged in the
+integration branch. The Lua-disabled native GATE passes 5,466/5,466, including 19 changed-TU
+complexity checks; two extra header consumers and 89 focused storage/staging cases pass.
+Light contracts and explicit storage support preserve the existing publication boundary.
+Include reductions are limited to specific consumers; the audit records unchanged and
+increased dependencies as well. Combined Lua-enabled verification, including scripting and
+Lua tests, remains pending. See [the cards](../../docs/chart-editor-plan/tasks/core-edit-contracts.md).
 
 ## Release 1.0.0-rc2 (owner, 2026-10-28)
 

@@ -347,6 +347,7 @@ every edit gets it.
 | A gesture | `src/core/interaction_gesture_runner.h` (`editor_gesture`, `begin_gesture`/`revise_gesture`/`apply_gesture`/`cancel_gesture`, implementing begin/update/commit/cancel) and the gesture's own file |
 | A proposal | `proposal_t<`, `apply_proposal` in `include/wormedit/core/proposal.h`, and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
+| Shared edit values | `include/wormedit/core/document_command_types.h` owns stamps, results and effects; `position_types.h` owns measure-local positions and spans. Include these contracts when document/history/execution definitions are unnecessary. |
 | A committing note edit’s editor effects | `editor_edit_effect_t`, `prepare_editor_edit`, `run_editor_edit` and `commit_editor_edit` in `src/core/interaction_edit_commit.h`: stage a detached working document, commit once, then apply selection/cursor/lane, update surviving capture stamps and build the result. Internal delete/tap reuse shares action context preparation and staging instead of dispatching on scratch histories. Domain commands that already own a transaction use the same finisher. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
 | Area selection | `cache_area_object_geometry` in `src/sys/compose/views/compose_view.cpp` projects rectangles when a scene snapshot exists. `editor_objects_in_row_range` in `src/core/interaction_selection.cpp` is the row-range fallback; `is_scope_accepted` and `is_editor_selection_scope_accepted` filter both by scope. |
@@ -623,6 +624,14 @@ callbacks receive `song_document_t&`. Return `attempt_t<Effect>` with domain val
 mutation and effect. A missing value or error rejects the transaction, including all previous
 stages. An unchanged effect leaves earlier successful stages available for the outer commit.
 Callbacks must preserve the document/chart storage borrowed by enclosing callbacks.
+
+Typed `chart_edit_operation` declares `storage_support`: object edits with a native collection
+adapter, or an intentional `legacy_only` refusal. Composite edits pass a `chart_edit_mutation_t`
+scope to `stage`: existing objects, layer settings, combined settings/objects or geometry.
+The transaction selects the existing authoritative prepared adapter and retains its exact
+owner catalog through `read_projection`. Combined settings/object callbacks may run twice and
+must be deterministic; content publication uses only the explicitly named object identities.
+Domains still supply validation, mutation and effect, with one lazy copy and outer publication.
 
 `document_edit_effect_t` carries a command's changed flag and Undo label;
 `finish_execution` applies the command's explicit no-op policy and commits once. Editor edits

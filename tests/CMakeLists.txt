@@ -821,6 +821,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/compose_sv_graph.cpp
         ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/compose_clipboard_workflow.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
         ../src/sys/compose/views/compose_export_cut_view.cpp
@@ -931,6 +932,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_action_outcome.cpp
         ../src/sys/compose/actions/compose_audition_requests.cpp
         ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/compose_clipboard_workflow.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
         ../src/sys/compose/views/compose_export_cut_view.cpp

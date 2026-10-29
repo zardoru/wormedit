@@ -943,3 +943,18 @@ TEST_CASE("workspace adapters preserve strict warning rejection for successful e
     REQUIRE(view.ok());
     wormedit::test::check_workspace_rejection(view);
 }
+
+TEST_CASE("Workspace focus resolves chart-local sample control declarations",
+          "[unit][core][workspace]") {
+    auto song = workspace_song();
+    auto& chart = song.charts.front();
+    chart.volumes.push_back({.id = object_id_t{100}, .position = {chart.measures.front().id, 0}});
+    chart.sample_sets.push_back({.id = object_id_t{101}, .position = {chart.measures.front().id, 0}});
+    auto bound = workspace_controller_t::from(song);
+    wormedit::test::require_workspace_result(bound);
+    for (const auto id : {object_id_t{100}, object_id_t{101}}) {
+        const auto result = apply_workspace_action(*bound.value, song,
+            workspace_set_focus_action_t{workspace_tab_t::metadata, "events", id});
+        wormedit::test::require_workspace_result(result);
+    }
+}

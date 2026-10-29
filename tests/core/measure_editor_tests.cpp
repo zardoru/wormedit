@@ -1,3 +1,4 @@
+#include "../../src/core/chart_position_storage.h"
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
@@ -981,4 +982,26 @@ TEST_CASE("audio extent rejects a multi-measure ID reservation before appending"
     REQUIRE(before.has_value());
     CHECK_FALSE(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
     CHECK(write_native_project(song).value == before);
+}
+
+TEST_CASE("Chart-local positions survive timing exclusion and recipes alone allow chart end",
+          "[measure-editor][chart-positions]") {
+    chart_document_t chart;
+    chart.volumes.push_back({.id = object_id_t{1}, .position = {measure_id_t{10}, 1}});
+    chart.sample_sets.push_back({.id = object_id_t{2}, .position = {measure_id_t{10}, 2}});
+    chart.bpms.push_back({.id = object_id_t{3}, .position = {measure_id_t{10}, 3}});
+    chart.measures.push_back({.id = measure_id_t{10}, .notes = {{.id = object_id_t{4},
+        .position = {measure_id_t{10}, 4}, .end = local_position_t{measure_id_t{10}, 5}}}});
+    chart.sv_recipes.push_back({.id = recipe_id_t{6},
+        .range = {{measure_id_t{10}, 6}, {measure_id_t{10}, 7}}});
+    std::vector<std::uint64_t> rows;
+    for_each_free_position(chart, [&](const local_position_t& position, position_role_t) {
+        rows.push_back(position.row);
+    }, [](timing_category_t) { return false; });
+    CHECK(rows == std::vector<std::uint64_t>{5, 1, 2});
+    std::vector<std::uint64_t> exclusive;
+    for_each_chart_position(chart, [&](local_position_t& position, measure_chart_end_policy_t policy) {
+        if (policy == measure_chart_end_policy_t::allow) exclusive.push_back(position.row);
+    });
+    CHECK(exclusive == std::vector<std::uint64_t>{7});
 }

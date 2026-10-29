@@ -412,3 +412,20 @@ TEST_CASE("Invalid bar-line moves reject without changing history",
     CHECK(history.undo.empty());
     CHECK(history.document.revision == 4);
 }
+
+TEST_CASE("Range shift sample controls follow the explicit timing inclusion policy",
+          "[unit][core][time-shift]") {
+    const auto include_timing = GENERATE(false, true);
+    auto song = shift_song();
+    song.charts.front().volumes.push_back({.id = object_id_t{40}, .position = {first_measure, 480}});
+    song.charts.front().sample_sets.push_back({.id = object_id_t{41}, .position = {first_measure, 600}});
+    auto history = document_history_t::from(song);
+    const auto result = apply_shift_from_cursor(history, {.chart = chart_id_t{2},
+        .cursor = {first_measure, 400}, .rows = 60, .include_timing = include_timing});
+    REQUIRE(result);
+    const auto expected_delta = include_timing ? 60 : 0;
+    CHECK(chart_of(history).volumes.front().position.row == 480 + expected_delta);
+    CHECK(chart_of(history).sample_sets.front().position.row == 600 + expected_delta);
+    REQUIRE(undo_document_command(history));
+    CHECK(chart_of(history).volumes.front().position.row == 480);
+}

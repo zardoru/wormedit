@@ -1,4 +1,5 @@
 #include "text_util.h"
+#include "chart_collections.h"
 #include "checked_math.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
@@ -250,11 +251,12 @@ auto has_object_id(const song_document_t& document, object_id_t id) -> bool {
         const auto in = [id](const auto& values) {
             return std::ranges::any_of(values, [id](const auto& value) { return value.id == id; });
         };
-        if (in(chart.lane_layouts) || in(chart.bgm_source_lanes) || in(chart.bpms) ||
-            in(chart.pauses) || in(chart.warps) || in(chart.scrolls) || in(chart.speeds) ||
-            in(chart.volumes) || in(chart.sample_sets) ||
-            in(chart.kiai) || in(chart.timing_anchors) || in(chart.bookmarks) ||
-            in(chart.sections) || in(chart.bga_events) || in(chart.sound_channels)) {
+        bool found = false;
+        visit_chart_collections(chart, [&](const auto& values, auto) {
+            found = in(values);
+            return !found;
+        });
+        if (found) {
             return true;
         }
         for (const auto& measure : chart.measures) {

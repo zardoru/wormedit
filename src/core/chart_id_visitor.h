@@ -1,5 +1,6 @@
 #pragma once
 #include <wormedit/core/document.h>
+#include "chart_collections.h"
 
 namespace wormedit::chart_id_detail {
 template <class Position, class Visit> void visit_position(Position& position, Visit& visit) {
@@ -66,15 +67,10 @@ template <class Events, class Visit> void visit_point_events(Events& events, Vis
 }
 
 template <class Chart, class Visit> void visit_timing(Chart& chart, Visit& visit) {
-    visit_point_events(chart.bpms, visit);
-    visit_point_events(chart.pauses, visit);
-    visit_point_events(chart.scrolls, visit);
-    visit_point_events(chart.volumes, visit);
-    visit_point_events(chart.sample_sets, visit);
-    visit_point_events(chart.speeds, visit);
-    visit_point_events(chart.kiai, visit);
-    visit_point_events(chart.timing_anchors, visit);
-    visit_point_events(chart.bga_events, visit);
+    visit_chart_point_collections(chart, [&](auto& events, auto) {
+        visit_point_events(events, visit);
+        return true;
+    });
     for (auto& event : chart.warps) {
         visit(event.id);
         visit_span(event.span, visit);

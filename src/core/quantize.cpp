@@ -1,3 +1,4 @@
+#include "chart_collections.h"
 #include "lane_occupancy.h"
 #include "chart_position_storage.h"
 #include <array>
@@ -399,15 +400,10 @@ auto transform_chart_positions(chart_document_t& chart, const quantize_request_t
     for (auto& measure : chart.measures) {
         transform_measure_positions(measure, request, transform);
     }
-    transform_positioned(chart.bpms);
-    transform_positioned(chart.pauses);
-    transform_positioned(chart.scrolls);
-    transform_positioned(chart.volumes);
-    transform_positioned(chart.sample_sets);
-    transform_positioned(chart.speeds);
-    transform_positioned(chart.kiai);
-    transform_positioned(chart.timing_anchors);
-    transform_positioned(chart.bga_events);
+    visit_chart_point_collections(chart, [&](auto& events, auto) {
+        transform_positioned(events);
+        return true;
+    });
     for (auto& warp : chart.warps) {
         transform(warp.span.begin, warp.id, position_role_t::span_begin);
         transform(warp.span.end, warp.id, position_role_t::span_end);

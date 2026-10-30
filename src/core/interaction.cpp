@@ -103,31 +103,6 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
 
 namespace interaction_detail {
 
-auto bms_branch_source_orders(const chart_document_t& chart)
-    -> std::unordered_set<std::size_t> {
-    std::unordered_set<std::size_t> orders;
-    if (!chart.bms_control_tree)
-        return orders;
-    const auto visit = [&](const auto& self, const bms_control_node_t& node,
-                           bool inside_branch) -> void {
-        if (inside_branch)
-            orders.insert(node.source_order);
-        const auto boundary = node.kind == bms_control_kind_t::random ||
-                              node.kind == bms_control_kind_t::switch_block ||
-                              node.kind == bms_control_kind_t::if_group ||
-                              node.kind == bms_control_kind_t::if_branch ||
-                              node.kind == bms_control_kind_t::else_if_branch ||
-                              node.kind == bms_control_kind_t::else_branch ||
-                              node.kind == bms_control_kind_t::case_branch ||
-                              node.kind == bms_control_kind_t::default_branch;
-        for (const auto& child : node.children)
-            self(self, child, inside_branch || boundary);
-    };
-    visit(visit, *chart.bms_control_tree, false);
-    return orders;
-}
-
-
 // Keyboard deletion may remove a sounded note, but never use it as a merge target.
 // Preserve source-linked/labelled objects and hidden or locked memberships on this fast path.
 
@@ -731,39 +706,48 @@ auto recover_editor_interaction(const document_history_t& history,
                                            "chart has no editable lane for a recovered cursor"));
         return result;
     }
-    result = editor_interaction_state_t::from(history, previous.chart, lane, *cursor,
-                                     previous.supported_snap_denominators,
-                                     previous.active_snap_denominator,
-                                     previous.viewport_height_pixels);
-    if (!result)
+    auto snap = filter_snap_denominators(chart->divisions_per_standard_measure,
+                                        previous.supported_snap_denominators,
+                                        previous.active_snap_denominator);
+    if (!snap) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_resolution, "cannot configure editor snaps"));
         return result;
-    if (std::isfinite(previous.pixels_per_standard_measure) &&
-        previous.pixels_per_standard_measure >= minimum_pixels_per_standard_measure &&
-        previous.pixels_per_standard_measure <= maximum_pixels_per_standard_measure) {
-        set_cursor_scale(*result.state, previous.pixels_per_standard_measure);
     }
-    result.state->cut_axis = previous.cut_axis;
+    // Carry presentation as a unit; only chart-bound position, captures and selection
+    // are reset. New presentation preferences then survive recovery by default.
+    result.state = previous;
+    auto& recovered = *result.state;
+    recovered.active_lane = lane;
+    restore_cursor_pose(recovered, {.cursor = *cursor, .scroll_direction = previous.scroll_direction});
+    recovered.clear();
+    recovered.clear_authoring_selection();
+    recovered.supported_snap_denominators = std::move(snap.supported_denominators);
+    recovered.active_snap_denominator = snap.active_denominator;
+    recovered.active_snap_was_fallback = snap.active_was_fallback;
+    if (!std::isfinite(recovered.pixels_per_standard_measure) ||
+        recovered.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
+        recovered.pixels_per_standard_measure > maximum_pixels_per_standard_measure) {
+        set_cursor_scale(recovered, default_pixels_per_standard_measure);
+    }
     const auto maximum_scroll = maximum_viewport_scroll(
-        *chart, index, result.state->pixels_per_standard_measure,
-        result.state->viewport_height_pixels, result.state->viewport_end_margin_fraction, result.state->cut_axis.get());
+        *chart, index, recovered.pixels_per_standard_measure,
+        recovered.viewport_height_pixels, recovered.viewport_end_margin_fraction, recovered.cut_axis.get());
     if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
-        set_viewport_scroll_pixels(*result.state, std::clamp(previous.viewport_scroll_pixels,
-                       minimum_viewport_scroll(result.state->viewport_height_pixels), *maximum_scroll));
+        set_viewport_scroll_pixels(recovered, std::clamp(previous.viewport_scroll_pixels,
+                       minimum_viewport_scroll(recovered.viewport_height_pixels), *maximum_scroll));
     }
     if (previous.fixed_cursor_screen_y_pixels &&
         std::isfinite(*previous.fixed_cursor_screen_y_pixels) &&
         *previous.fixed_cursor_screen_y_pixels >= 0.0 &&
-        *previous.fixed_cursor_screen_y_pixels <= result.state->viewport_height_pixels) {
-        set_cursor_screen_anchor(*result.state, previous.fixed_cursor_screen_y_pixels, previous.scroll_direction);
+        *previous.fixed_cursor_screen_y_pixels <= recovered.viewport_height_pixels) {
+        set_cursor_screen_anchor(recovered, previous.fixed_cursor_screen_y_pixels, previous.scroll_direction);
     }
-    if (is_note_kind_allowed(*chart, previous.armed_note_kind))
-        result.state->armed_note_kind = previous.armed_note_kind;
-    result.state->armed_hitsample = previous.armed_hitsample;
-    result.state->hitsound_palette_visible = previous.hitsound_palette_visible;
-    result.state->active_snap_space = previous.active_snap_space;
-    const auto view = make_view(history, *result.state);
-    if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
-        result.view = *recovered;
+    if (!is_note_kind_allowed(*chart, recovered.armed_note_kind))
+        recovered.armed_note_kind = note_kind_t::tap;
+    const auto view = make_view(history, recovered);
+    if (const auto* model = std::get_if<editor_interaction_view_model_t>(&view)) {
+        result.view = *model;
     } else {
         result.state.reset();
         result.view.reset();
@@ -786,530 +770,6 @@ auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t>
         edit_snap_grid(context.scope.chart, context.state), exact_end);
 }
 
-
-auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
-    -> std::variant<editor_delete_ids_t, diagnostic_list_t> {
-    editor_delete_ids_t ids;
-    for (const auto object : objects) {
-        auto* family = ids.family(object.kind);
-        if (family == nullptr) {
-            return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
-                                           "Delete does not support this selected object type",
-                                           object.id)};
-        }
-        if (!object.id || !family->insert(object.id.value).second) {
-            return diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
-                                           "Delete selection contains a duplicate or empty identity",
-                                           object.id)};
-        }
-    }
-    return ids;
-}
-
-auto collect_delete_ids(const editor_interaction_state_t& state)
-    -> std::variant<editor_delete_ids_t, diagnostic_list_t> {
-    return collect_delete_object_ids(editor_selection_targets(state));
-}
-
-auto validate_delete_note_ids(const chart_document_t& chart,
-                              const std::unordered_set<std::uint64_t>& ids)
-    -> std::optional<diagnostic_t> {
-    const auto available = chart_note_ids(chart);
-    for (const auto id : ids) {
-        if (!available.contains(id))
-            return error(diagnostic_code_t::invalid_id, "selected note no longer exists",
-                         object_id_t{id});
-    }
-    return std::nullopt;
-}
-
-auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delete_ids_t& ids)
-    -> std::variant<std::optional<object_id_t>, diagnostic_list_t> {
-    std::optional<object_id_t> linked_bmson_event;
-    std::size_t found_bgm{};
-    const auto branch_source_orders = ids.bgm_events.empty()
-                                          ? std::unordered_set<std::size_t>{}
-                                          : bms_branch_source_orders(chart);
-    for (const auto& measure : chart.measures) {
-        for (const auto& event : measure.bgm_events) {
-            if (!ids.bgm_events.contains(event.id.value))
-                continue;
-            ++found_bgm;
-            if (event.sound_channel_event) {
-                if (ids.total() != 1) {
-                    return diagnostic_list_t{error(
-                        diagnostic_code_t::unsupported_feature,
-                        "delete linked BMSON markers one at a time", event.id)};
-                }
-                linked_bmson_event = event.id;
-            } else if (event.provenance.family == format_family_t::bms &&
-                       !event.provenance.source_spelling.empty() &&
-                       branch_source_orders.contains(event.provenance.source_order)) {
-                return diagnostic_list_t{error(
-                    diagnostic_code_t::unsupported_feature,
-                    "branch-owned BMS BGM events need a source-aware delete", event.id)};
-            }
-        }
-    }
-    if (found_bgm != ids.bgm_events.size()) {
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-                                       "selected BGM event no longer exists")};
-    }
-    return linked_bmson_event;
-}
-
-// Delete removes playable stem points from the keys without cutting them out of the audio stem.
-// Stage this conversion alongside ordinary deletion, so a later guard cannot leave a partial edit.
-auto stage_delete_stem_points(document_command_transaction_t& transaction,
-                              const chart_document_t& chart,
-                              const editor_interaction_state_t& state,
-                              const editor_delete_ids_t& ids)
-    -> std::variant<std::size_t, diagnostic_list_t> {
-    if (chart.source_family != format_family_t::bmson)
-        return std::size_t{0};
-    std::vector<object_id_t> stems;
-    for (const auto& measure : chart.measures)
-        for (const auto& note : measure.notes) {
-            const auto selected =
-                ids.total() != 0 ? ids.notes.contains(note.id.value)
-                                 : note.position == state.cursor && note.lane == state.active_lane;
-            if (selected && note.sound_channel_event)
-                stems.push_back(note.id);
-        }
-    if (stems.empty())
-        return std::size_t{0};
-    auto moved = stage_move_notes_to_bgm(transaction, state.chart, stems, std::nullopt);
-    if (!moved.value || !moved.ok())
-        return std::move(moved.diagnostics);
-    return stems.size();
-}
-
-// Deleted bar lines merge their measures after the other objects are gone, so every remaining
-// object keeps its row.
-auto stage_delete_bar_lines(chart_document_t& chart, const editor_delete_ids_t& ids)
-    -> std::variant<std::size_t, diagnostic_list_t> {
-    if (ids.bar_lines.empty()) return std::size_t{0};
-    std::vector<measure_id_t> measures;
-    measures.reserve(ids.bar_lines.size());
-    for (const auto id : ids.bar_lines) measures.push_back(measure_id_t{id});
-    if (auto diagnostics = remove_bar_lines(chart, measures); !diagnostics.empty()) return diagnostics;
-    return measures.size();
-}
-
-auto erase_editor_selection_objects(chart_document_t& chart,
-                                    const editor_interaction_state_t& state,
-                                    const editor_delete_ids_t& ids) -> std::size_t {
-    std::size_t removed{};
-    const auto selected = ids.total() != 0;
-    removed += std::erase_if(chart.bookmarks, [&](const auto& bookmark) {
-        return ids.bookmarks.contains(bookmark.id.value);
-    });
-    removed += std::erase_if(chart.sections, [&](const auto& section) {
-        return ids.sections.contains(section.id.value);
-    });
-    removed += std::erase_if(chart.bga_events, [&](const auto& event) {
-        return ids.bga_events.contains(event.id.value);
-    });
-    for (auto& measure : chart.measures) {
-        if (selected) {
-            removed += std::erase_if(measure.notes, [&](const auto& note) {
-                return ids.notes.contains(note.id.value);
-            });
-            removed += std::erase_if(measure.bgm_events, [&](const auto& event) {
-                return ids.bgm_events.contains(event.id.value);
-            });
-        } else {
-            removed += std::erase_if(measure.notes, [&](const auto& note) {
-                return note.position == state.cursor && note.lane == state.active_lane;
-            });
-        }
-    }
-    return removed;
-}
-
-auto stage_scoped_editor_delete(editor_edit_context_t& context,
-    document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
-    auto collected = collect_delete_ids(context.state);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected)) return {.diagnostics = *diagnostics};
-    auto ids = std::get<editor_delete_ids_t>(std::move(collected));
-    if (!ids.bar_lines.empty()) return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-        "Scoped deletion cannot remove shared measure geometry.")}};
-    if (!ids.total()) {
-        for (const auto& measure : context.scope.chart.measures)
-            for (const auto& note : measure.notes)
-                if (note.position == context.state.cursor && note.lane == context.state.active_lane)
-                    ids.notes.insert(note.id.value);
-    }
-    std::vector<object_id_t> objects;
-    const auto append = [&](const auto& family) {
-        for (const auto id : family) objects.push_back(object_id_t{id});
-    };
-    append(ids.notes); append(ids.bgm_events); append(ids.bookmarks); append(ids.sections); append(ids.bga_events);
-    auto staged = transaction.stage_bms_native_objects(context.state.chart, objects, bms_existing_edit_kind_t::erase,
-        [&](chart_document_t& chart) -> attempt_t<document_edit_effect_t> {
-            const auto removed = erase_editor_selection_objects(chart, context.state, ids);
-            if (removed != ids.total()) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                "Scoped deletion did not resolve every selected object.")}};
-            return {.value = document_edit_effect_t{.changed = removed != 0, .command_label = "Delete chart objects"}};
-        });
-    if (!staged.value || !staged.ok()) return {.diagnostics = std::move(staged.diagnostics)};
-    return {.value = editor_edit_effect_t{.label = "Delete chart objects",
-        .has_document_changes = staged.value->changed, .selection = clear_editor_selection_t{}}};
-}
-
-auto stage_editor_delete(editor_edit_context_t& context,
-                         document_command_transaction_t& transaction)
-    -> attempt_t<editor_edit_effect_t> {
-    if (transaction.has_bms_program(context.state.chart)) return stage_scoped_editor_delete(context, transaction);
-    return transaction.stage(
-        context.state.chart, "delete refers to an unknown chart",
-        [&](chart_document_t& chart, song_document_t&) -> attempt_t<editor_edit_effect_t> {
-            auto collected = collect_delete_ids(context.state);
-            if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
-                return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
-            auto ids = std::get<editor_delete_ids_t>(std::move(collected));
-            if (const auto invalid = validate_delete_note_ids(chart, ids.notes))
-                return attempt_t<editor_edit_effect_t>{.diagnostics = {*invalid}};
-            auto inspected = inspect_delete_bgm_events(chart, ids);
-            if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected))
-                return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
-            const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
-            if (linked_event) {
-                auto staged =
-                    stage_delete_bmson_bgm_marker(transaction, context.state.chart, *linked_event);
-                if (!staged.value || !staged.ok())
-                    return {.diagnostics = std::move(staged.diagnostics)};
-                return {.value =
-                            editor_edit_effect_t{.label = std::move(staged.value->command_label),
-                                                 .selection = clear_editor_selection_t{}}};
-            }
-
-            auto staged = stage_delete_stem_points(transaction, chart, context.state, ids);
-            if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
-                return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
-            auto removed = std::get<std::size_t>(staged);
-            const auto selected = ids.total() != 0;
-            removed += erase_editor_selection_objects(chart, context.state, ids);
-            auto merged = stage_delete_bar_lines(chart, ids);
-            if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&merged))
-                return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
-            removed += std::get<std::size_t>(merged);
-            if (removed == 0)
-                return {.value = editor_edit_effect_t{.has_document_changes = false}};
-            if (selected && removed != ids.total()) {
-                return attempt_t<editor_edit_effect_t>{
-                    .diagnostics = {error(diagnostic_code_t::invalid_id,
-                                          "selected deletion did not resolve every object")}};
-            }
-            return {.value = editor_edit_effect_t{
-                        .label = selected ? "Delete selected chart objects" : "Delete note",
-                        .selection = clear_editor_selection_t{}}};
-        });
-}
-
-auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t {
-    return run_editor_edit(context, [&](document_command_transaction_t& transaction) {
-        return stage_editor_delete(context, transaction);
-    });
-}
-
-auto collect_assignment_candidates(const chart_scope_t& scope,
-                                   const editor_interaction_state_t& state)
-    -> std::variant<std::vector<assignment_candidate_t>, diagnostic_list_t> {
-    if (state.selected_notes.empty()) {
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-                                       "lane assignment requires one or more selected notes")};
-    }
-    std::unordered_set<std::uint64_t> selected_ids;
-    selected_ids.reserve(state.selected_notes.size());
-    for (const auto id : state.selected_notes) {
-        if (!id || !selected_ids.insert(id.value).second) {
-            return diagnostic_list_t{error(
-                diagnostic_code_t::duplicate_id,
-                "selected lane assignment contains an invalid or duplicate ID", id)};
-        }
-    }
-    std::vector<assignment_candidate_t> candidates;
-    candidates.reserve(selected_ids.size());
-    for (const auto& measure : scope.chart.measures) {
-        for (const auto& note : measure.notes) {
-            if (!selected_ids.contains(note.id.value))
-                continue;
-            const auto begin = scope.measures.row_of(note.position);
-            const auto end = note.end ? scope.measures.row_of(*note.end) : begin;
-            if (!begin || !end) {
-                return diagnostic_list_t{error(
-                    diagnostic_code_t::row_out_of_range,
-                    "selected lane assignment lies outside chart geometry", note.id)};
-            }
-            candidates.push_back({&note, *begin, *end});
-        }
-    }
-    if (candidates.size() != selected_ids.size()) {
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-                                       "selected lane assignment refers to an unavailable note")};
-    }
-    std::ranges::sort(candidates, [](const auto& left, const auto& right) {
-        return std::tie(left.begin, left.note->lane.value, left.note->id.value) <
-               std::tie(right.begin, right.note->lane.value, right.note->id.value);
-    });
-    return candidates;
-}
-
-auto build_assignment_intervals(const chart_scope_t& scope,
-                                std::span<const assignment_candidate_t> candidates,
-                                lane_id_t target_lane)
-    -> std::variant<std::vector<assignment_interval_t>, diagnostic_list_t> {
-    std::unordered_set<std::uint64_t> assigned_ids;
-    assigned_ids.reserve(candidates.size());
-    for (const auto& candidate : candidates) {
-        assigned_ids.insert(candidate.note->id.value);
-        if (find_active_lane(scope.chart, scope.measures, candidate.note->position, target_lane) ==
-                nullptr ||
-            (candidate.note->end &&
-             find_active_lane(scope.chart, scope.measures, *candidate.note->end, target_lane) ==
-                 nullptr)) {
-            return diagnostic_list_t{error(diagnostic_code_t::unknown_lane,
-                                           "target lane is unavailable at a selected note endpoint",
-                                           candidate.note->id)};
-        }
-    }
-    auto chart_note_count = std::size_t{};
-    for (const auto& measure : scope.chart.measures) {
-        if (measure.notes.size() > std::numeric_limits<std::size_t>::max() - chart_note_count) {
-            return diagnostic_list_t{error(
-                diagnostic_code_t::invalid_resolution,
-                "chart note count overflows lane-assignment capacity")};
-        }
-        chart_note_count += measure.notes.size();
-    }
-    if (candidates.size() > std::numeric_limits<std::size_t>::max() - chart_note_count) {
-        return diagnostic_list_t{error(
-            diagnostic_code_t::invalid_resolution,
-            "lane-assignment interval count exceeds capacity")};
-    }
-    std::vector<assignment_interval_t> intervals;
-    intervals.reserve(chart_note_count + candidates.size());
-    for (const auto& candidate : candidates)
-        intervals.push_back({candidate.begin, candidate.end, candidate.note->id, true});
-    for (const auto& measure : scope.chart.measures) {
-        for (const auto& note : measure.notes) {
-            if (note.lane != target_lane || assigned_ids.contains(note.id.value))
-                continue;
-            const auto begin = scope.measures.row_of(note.position);
-            const auto end = note.end ? scope.measures.row_of(*note.end) : begin;
-            if (!begin || !end) {
-                return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
-                                               "target-lane note lies outside chart geometry",
-                                               note.id)};
-            }
-            intervals.push_back({*begin, *end, note.id, false});
-        }
-    }
-    std::ranges::sort(intervals, [](const auto& left, const auto& right) {
-        return std::tie(left.begin, left.end, left.moving, left.note.value) <
-               std::tie(right.begin, right.end, right.moving, right.note.value);
-    });
-    return intervals;
-}
-
-auto validate_assignment_intervals(std::span<const assignment_interval_t> intervals)
-    -> std::optional<diagnostic_t> {
-    std::optional<assignment_interval_t> longest_moving;
-    std::optional<assignment_interval_t> longest_existing;
-    for (const auto& interval : intervals) {
-        const auto& opposite = interval.moving ? longest_existing : longest_moving;
-        if (opposite && interval.begin <= opposite->end) {
-            return error(diagnostic_code_t::collision,
-                         "lane assignment overlaps another target-lane note",
-                         interval.moving ? interval.note : opposite->note);
-        }
-        if (interval.moving && longest_moving && interval.begin <= longest_moving->end) {
-            return error(diagnostic_code_t::collision,
-                         "selected notes overlap when assigned to one lane", interval.note);
-        }
-        auto& longest = interval.moving ? longest_moving : longest_existing;
-        if (!longest || longest->end < interval.end)
-            longest = interval;
-    }
-    return std::nullopt;
-}
-
-auto apply_note_lane_assignment(chart_document_t& chart, const song_document_t& source,
-                                std::span<const assignment_candidate_t> candidates, lane_id_t lane,
-                                std::string label) -> attempt_t<document_edit_effect_t> {
-    note_move_plan_t plan;
-    plan.moved.reserve(candidates.size());
-    for (const auto& candidate : candidates) {
-        auto* note = chart.find_note(candidate.note->id);
-        if (!note)
-            return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                          "lane assignment target disappeared")}};
-        plan.moved.push_back({.id = note->id,
-                              .lane = lane,
-                              .position = note->position,
-                              .end_position = note->end});
-        note->lane = lane;
-    }
-    if (const auto failure =
-            sync_linked_sound_events(chart, plan, source))
-        return {.diagnostics = {*failure}};
-    return {.value =
-                document_edit_effect_t{.changed = true, .command_label = std::move(label)}};
-}
-
-auto stage_note_lane_assignment(document_command_transaction_t& transaction, chart_id_t chart_id,
-                                std::span<const assignment_candidate_t> candidates, lane_id_t lane,
-                                std::string label) -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(chart_id, "lane assignment chart is unavailable",
-        [&](chart_document_t& chart, song_document_t&) {
-            return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane, label);
-        });
-}
-
-auto assign_selected_notes_to_lane(editor_edit_context_t& context,
-                                   const assign_selected_objects_to_lane_action_t& action)
-    -> editor_interaction_result_t {
-    auto collected = collect_assignment_candidates(context.scope, context.state);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
-    auto candidates = std::get<std::vector<assignment_candidate_t>>(std::move(collected));
-    if (action.successive)
-        candidates.resize(1);
-    auto built_intervals = build_assignment_intervals(context.scope, candidates, action.lane);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_intervals))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
-    const auto& intervals = std::get<std::vector<assignment_interval_t>>(built_intervals);
-    if (const auto invalid = validate_assignment_intervals(intervals))
-        return editor_interaction_result_t{.diagnostics = {*invalid}};
-
-    std::optional<editor_object_audition_request_t> audition;
-    if (action.successive) {
-        audition = editor_object_audition_request_t{
-            .document_revision = context.history.document.revision,
-            .chart = context.state.chart,
-            .object = {editor_selection_object_kind_t::note, candidates.front().note->id}};
-    }
-    const auto changed = std::ranges::any_of(
-        candidates, [&](const auto& candidate) { return candidate.note->lane != action.lane; });
-    const auto label =
-        action.successive ? "Assign next selected note to lane" : "Assign selected notes to lane";
-    return run_editor_edit(
-        context,
-        [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
-            if (changed) {
-                auto staged = stage_note_lane_assignment(transaction, context.state.chart,
-                                                         candidates, action.lane, label);
-                if (!staged.value || !staged.ok())
-                    return {.diagnostics = std::move(staged.diagnostics)};
-            }
-            return {.value = editor_edit_effect_t{.label = label,
-                                                  .has_document_changes = changed,
-                                                  .lane = action.lane,
-                                                  .audition = audition}};
-        },
-        [&](editor_interaction_state_t& selected) {
-            if (action.successive) {
-                const auto assigned = audition->object.id;
-                std::erase(selected.selected_notes, assigned);
-                std::erase_if(selected.selected_objects, [&](const auto& object) {
-                    return object.kind == editor_selection_object_kind_t::note &&
-                           object.id == assigned;
-                });
-            }
-        });
-}
-
-auto lane_move_candidate_less(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool {
-    return std::tie(left.measure, left.row, left.kind, left.lane.value, left.id.value) <
-           std::tie(right.measure, right.row, right.kind, right.lane.value, right.id.value);
-}
-
-auto first_selected_lane_object(const chart_document_t& chart,
-                                std::span<const object_id_t> notes,
-                                std::span<const object_id_t> bgm_events)
-    -> std::optional<lane_move_candidate_t> {
-    std::unordered_set<std::uint64_t> note_ids, event_ids;
-    for (const auto id : notes) note_ids.insert(id.value);
-    for (const auto id : bgm_events) event_ids.insert(id.value);
-    std::optional<lane_move_candidate_t> first;
-    const auto consider = [&](lane_move_candidate_t candidate) {
-        if (!first || lane_move_candidate_less(candidate, *first)) first = candidate;
-    };
-    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
-        const auto& measure = chart.measures[index];
-        for (const auto& note : measure.notes)
-            if (note_ids.contains(note.id.value))
-                consider({index, note.position.row, editor_selection_object_kind_t::note,
-                          note.id, note.lane});
-        for (const auto& event : measure.bgm_events)
-            if (event_ids.contains(event.id.value))
-                consider({index, event.position.row,
-                          editor_selection_object_kind_t::bgm_event, event.id,
-                          lane_id_t{event.source_lane.value}});
-    }
-    return first;
-}
-
-auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
-    -> std::pair<std::vector<object_id_t>, std::vector<object_id_t>> {
-    auto targets = editor_quantize_selection(state);
-    return {std::move(targets.notes), std::move(targets.bgm_events)};
-}
-
-auto select_assigned_lane_objects(editor_interaction_state_t& selected,
-                                  std::span<const object_id_t> notes,
-                                  std::span<const object_id_t> events, bool successive) -> void {
-    std::unordered_set<std::uint64_t> assigned_ids;
-    for (const auto id : notes) assigned_ids.insert(id.value);
-    for (const auto id : events) assigned_ids.insert(id.value);
-    const auto assigned = [&](object_id_t id) { return assigned_ids.contains(id.value); };
-    if (successive) {
-        std::erase_if(selected.selected_notes, assigned);
-        std::erase_if(selected.selected_objects, [&](const auto& object) {
-            return (object.kind == editor_selection_object_kind_t::note ||
-                    object.kind == editor_selection_object_kind_t::bgm_event) && assigned(object.id);
-        });
-    } else {
-        std::erase_if(selected.selected_objects, [&](const auto& object) {
-            return object.kind == editor_selection_object_kind_t::bgm_event && assigned(object.id);
-        });
-        for (const auto id : events) {
-            selected.selected_notes.push_back(id);
-            selected.selected_objects.push_back({editor_selection_object_kind_t::note, id});
-        }
-    }
-}
-
-auto assign_selected_objects_to_lane(editor_edit_context_t& context,
-                                     const assign_selected_objects_to_lane_action_t& action)
-    -> editor_interaction_result_t {
-    auto [notes, events] = selected_lane_assignment_ids(context.state);
-    const auto first = action.successive
-                           ? first_selected_lane_object(context.scope.chart, notes, events)
-                           : std::nullopt;
-    if (action.successive && first) {
-        notes = first->kind == editor_selection_object_kind_t::note ? std::vector{first->id}
-                                                                    : std::vector<object_id_t>{};
-        events = first->kind == editor_selection_object_kind_t::bgm_event
-                     ? std::vector{first->id}
-                     : std::vector<object_id_t>{};
-    }
-    std::optional<editor_object_audition_request_t> audition;
-    if (action.successive && first)
-        audition = editor_object_audition_request_t{
-            .chart = context.state.chart,
-            .object = {editor_selection_object_kind_t::note, first->id}};
-    return commit_editor_edit(
-        context, {.lane = action.lane, .audition = audition},
-        [&] {
-            return move_selected_objects_to_lane(context.history, context.state, notes, events,
-                                                 action.lane);
-        },
-        [&](editor_interaction_state_t& selected) {
-            select_assigned_lane_objects(selected, notes, events, action.successive);
-        });
-}
 
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
@@ -2438,36 +1898,6 @@ auto editor_shift_selection(const editor_interaction_state_t& state, std::int64_
 } // namespace wormedit
 
 namespace wormedit {
-
-auto stage_assign_note_lanes(document_command_transaction_t& transaction,
-                             const editor_interaction_state_t& state, lane_id_t lane)
-    -> attempt_t<document_edit_effect_t> {
-    return transaction.stage(state.chart, "lane assignment chart is unavailable",
-        {.storage = chart_edit_storage_support_t::objects, .objects = state.selected_notes},
-        [&](chart_document_t& chart, const song_document_t&, std::vector<object_id_t>&)
-            -> attempt_t<document_edit_effect_t> {
-            auto index = measure_index_t::from(chart);
-            if (!index)
-                return {.diagnostics = index.error()};
-            const chart_scope_t scope{.chart = chart, .measures = *index};
-            auto collected = collect_assignment_candidates(scope, state);
-            if (const auto* failure = std::get_if<diagnostic_list_t>(&collected))
-                return {.diagnostics = *failure};
-            const auto& candidates = std::get<std::vector<assignment_candidate_t>>(collected);
-            auto intervals = build_assignment_intervals(scope, candidates, lane);
-            if (const auto* failure = std::get_if<diagnostic_list_t>(&intervals))
-                return {.diagnostics = *failure};
-            if (const auto failure = validate_assignment_intervals(
-                    std::get<std::vector<assignment_interval_t>>(intervals)))
-                return {.diagnostics = {*failure}};
-            if (std::ranges::all_of(candidates, [lane](const auto& candidate) {
-                    return candidate.note->lane == lane;
-                }))
-                return {.value = document_edit_effect_t{}};
-            return apply_note_lane_assignment(chart, transaction.source_document(), candidates, lane,
-                                              "Assign selected notes to lane");
-        });
-}
 
 auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,
                            editor_interaction_state_t& state) -> bool {

@@ -256,7 +256,7 @@ TEST_CASE("metadata import completion rejects its captured project and revision"
     auto action = fixture.inspect_action();
     action.metadata_import_copy_project = true;
     (void)fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
-        fixture.project, fixture.scheduler, false, false);
+        fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
     if (replace_project) fixture.history.document.id = song_id_t{2};
     else {
@@ -279,7 +279,7 @@ TEST_CASE("metadata import-copy rejects stale start before inspecting audio",
     action.metadata_import_copy_project = true;
     ++action.compose_input_document_revision;
     const auto message = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
-        fixture.project, fixture.scheduler, false, false);
+        fixture.project, fixture.scheduler, false);
     test::check_stale_action_message(message, "Metadata import-copy");
     check_resource_notification(!fixture.assets.import_pending());
     check_resource_notification(fixture.history.undo.empty());
@@ -294,7 +294,7 @@ TEST_CASE("metadata import decode failure posts once and never links invalid aud
     action.metadata_import_copy_project = true;
     const auto revision = fixture.history.document.revision;
     const auto started = fixture.assets.start_import_copy(action, fixture.history, fixture.workspace,
-        fixture.project, fixture.scheduler, false, false);
+        fixture.project, fixture.scheduler, false);
     require_resource_notification(fixture.assets.import_pending());
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 1);

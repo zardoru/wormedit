@@ -24,6 +24,15 @@ struct notification_history_runtime_t;
 // Clear chart-specific state while retaining application services and user settings.
 void reset_application_project_edit_state(application_command_state_t& state);
 
+// Recompute cached enablement/check marks from current application state. Every
+// rejected registry update is returned with its command ID for the input boundary.
+[[nodiscard]] auto refresh_application_command_states(
+    command_registry_t& registry, const document_history_t& history,
+    const workspace_controller_t& workspace,
+    const std::optional<editor_interaction_state_t>& compose_state,
+    application_command_state_t& application_state, const project_identity_t& project)
+    -> diagnostic_list_t;
+
 // The command-kind owner defines which application commands require editable
 // Compose notes. Registry state and refusal feedback share this policy.
 [[nodiscard]] auto application_command_disabled_by_timing_focus(

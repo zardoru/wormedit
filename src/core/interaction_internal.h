@@ -66,8 +66,6 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
 
 namespace interaction_detail {
-auto bms_branch_source_orders(const chart_document_t& chart) -> std::unordered_set<std::size_t>;
-
 struct hold_row_plan_t {
     std::uint64_t head_row{};
     std::uint64_t tail_row{};
@@ -939,54 +937,6 @@ auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t>
     -> std::variant<duration_resize_plan_t, diagnostic_list_t>;
 
 
-struct editor_delete_ids_t {
-    std::unordered_set<std::uint64_t> notes;
-    std::unordered_set<std::uint64_t> bgm_events;
-    // Chart-level objects that are not on a measure; IDs are unique within each
-    // family.
-    std::unordered_set<std::uint64_t> bookmarks;
-    std::unordered_set<std::uint64_t> sections;
-    std::unordered_set<std::uint64_t> bga_events;
-    // Measures whose starting bar line is removed by merging them into the measure before.
-    std::unordered_set<std::uint64_t> bar_lines;
-
-    [[nodiscard]] auto total() const -> std::size_t {
-        return notes.size() + bgm_events.size() + bookmarks.size() + sections.size() +
-               bga_events.size() + bar_lines.size();
-    }
-    [[nodiscard]] auto family(editor_selection_object_kind_t kind)
-        -> std::unordered_set<std::uint64_t>* {
-        switch (kind) {
-        case editor_selection_object_kind_t::note:
-            return &notes;
-        case editor_selection_object_kind_t::bgm_event:
-            return &bgm_events;
-        case editor_selection_object_kind_t::bookmark:
-            return &bookmarks;
-        case editor_selection_object_kind_t::section:
-            return &sections;
-        case editor_selection_object_kind_t::bga_event:
-            return &bga_events;
-        case editor_selection_object_kind_t::bar_line:
-            return &bar_lines;
-        default:
-            return nullptr;
-        }
-    }
-};
-auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
-    -> std::variant<editor_delete_ids_t, diagnostic_list_t>;
-auto collect_delete_ids(const editor_interaction_state_t& state)
-    -> std::variant<editor_delete_ids_t, diagnostic_list_t>;
-auto validate_delete_note_ids(const chart_document_t& chart,
-                              const std::unordered_set<std::uint64_t>& ids)
-    -> std::optional<diagnostic_t>;
-auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delete_ids_t& ids)
-    -> std::variant<std::optional<object_id_t>, diagnostic_list_t>;
-
-auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_context_t& context,
-                              const editor_delete_ids_t& ids)
-    -> std::variant<std::size_t, diagnostic_list_t>;
 struct editor_edit_effect_t;
 struct prepared_editor_edit_t;
 auto stage_scoped_hold(document_command_transaction_t& transaction, chart_id_t chart,
@@ -998,46 +948,10 @@ auto stage_editor_tap_placement(document_history_t& history, editor_interaction_
                                 const place_tap_action_t& action) -> attempt_t<prepared_editor_edit_t>;
 auto stage_editor_tap(editor_edit_context_t& context, document_command_transaction_t& transaction,
                        const place_tap_action_t& action) -> attempt_t<editor_edit_effect_t>;
+auto stage_editor_delete(editor_edit_context_t& context,
+                         document_command_transaction_t& transaction)
+    -> attempt_t<editor_edit_effect_t>;
 auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t;
-struct assignment_candidate_t {
-    const note_t* note{};
-    std::uint64_t begin{};
-    std::uint64_t end{};
-};
-struct assignment_interval_t {
-    std::uint64_t begin{};
-    std::uint64_t end{};
-    object_id_t note;
-    bool moving{};
-};
-auto collect_assignment_candidates(const editor_edit_context_t& context)
-    -> std::variant<std::vector<assignment_candidate_t>, diagnostic_list_t>;
-auto build_assignment_intervals(const editor_edit_context_t& context,
-                                std::span<const assignment_candidate_t> candidates,
-                                lane_id_t target_lane)
-    -> std::variant<std::vector<assignment_interval_t>, diagnostic_list_t>;
-auto validate_assignment_intervals(std::span<const assignment_interval_t> intervals)
-    -> std::optional<diagnostic_t>;
-auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t chart_id,
-                                         std::span<const assignment_candidate_t> candidates,
-                                         lane_id_t lane, std::string label)
-    -> document_command_result_t;
-auto assign_selected_notes_to_lane(editor_edit_context_t& context,
-                                   const assign_selected_objects_to_lane_action_t& action)
-    -> editor_interaction_result_t;
-struct lane_move_candidate_t {
-    std::size_t measure{};
-    std::uint64_t row{};
-    editor_selection_object_kind_t kind{};
-    object_id_t id;
-    lane_id_t lane;
-};
-auto lane_move_candidate_less(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool;
-auto first_selected_lane_object(const chart_document_t& chart, std::span<const object_id_t> notes,
-                                std::span<const object_id_t> bgm_events)
-    -> std::optional<lane_move_candidate_t>;
-auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
-    -> std::pair<std::vector<object_id_t>, std::vector<object_id_t>>;
 auto assign_selected_objects_to_lane(editor_edit_context_t& context,
                                      const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t;

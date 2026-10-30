@@ -239,6 +239,74 @@ struct AreaFixture {
 } // namespace
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Application command refresh updates only registered IDs",
+          "[unit][sys][commands][command-refresh]") {
+    const auto mode = GENERATE(0, 1, 2);
+    AreaFixture fixture;
+    const wormedit::workspace_controller_t workspace{
+        .active_tab = mode == 0 ? wormedit::workspace_tab_t::setup : wormedit::workspace_tab_t::compose,
+        .selected_chart = fixture.state.chart};
+    std::optional<wormedit::editor_interaction_state_t> compose = fixture.state;
+    application_command_state_t application;
+    application.project.compose_view.compose_timing_focus = mode == 2;
+    const project_identity_t project{.session_loaded = true, .asset_base = "/project"};
+    auto registry = wormedit::command_registry_t::from(
+        [](const wormedit::command_invocation_context_t&) { return wormedit::dispatch_outcome_t{}; });
+    const auto diagnostics = refresh_application_command_states(
+        registry, fixture.history, workspace, compose, application, project);
+    for (const auto& diagnostic : diagnostics) UNSCOPED_INFO(diagnostic.message);
+    CHECK(diagnostics.empty());
+    CHECK(wormedit::find_command(registry, {"edit.copy"})->definition.enabled == (mode != 0));
+    CHECK(wormedit::find_command(registry, {"edit.tool_draw"})->definition.enabled == (mode == 1));
+}
+
+TEST_CASE("Application command refresh reports missing IDs from every update group",
+          "[unit][sys][commands][command-refresh]") {
+    const std::string missing = GENERATE("document.open", "edit.copy", "edit.tool_draw",
+        "edit.note_kind_tap", "hitsound.toggle_palette", "selection.select_same_sound_chart",
+        "edit.apply_quantize", "view.open_layers", "navigation.next_marker", "transport.rate_faster",
+        "workspace.open_compose", "timing.insert_bpm", "semantic_layer.select_slot_1",
+        "semantic_layer.apply", "audio.paint_hitsound", "audio.toggle_click_audition");
+    auto registry = wormedit::command_registry_t::from(
+        [](const wormedit::command_invocation_context_t&) { return wormedit::dispatch_outcome_t{}; });
+    REQUIRE(std::erase_if(registry.commands, [&](const wormedit::command_t& command) {
+        return command.definition.id.value == missing;
+    }) == 1);
+    wormedit::document_history_t history;
+    wormedit::workspace_controller_t workspace;
+    std::optional<wormedit::editor_interaction_state_t> compose;
+    application_command_state_t application;
+    const project_identity_t project;
+    const auto diagnostics = refresh_application_command_states(
+        registry, history, workspace, compose, application, project);
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().code == wormedit::diagnostic_code_t::invalid_id);
+    CHECK(diagnostics.front().message.find(missing) != std::string::npos);
+}
+
+TEST_CASE("Application command refresh replaces stale enablement and checked state",
+          "[unit][sys][commands][command-refresh]") {
+    AreaFixture fixture;
+    wormedit::workspace_controller_t workspace{
+        .active_tab = wormedit::workspace_tab_t::compose, .selected_chart = fixture.state.chart};
+    std::optional<wormedit::editor_interaction_state_t> compose = fixture.state;
+    application_command_state_t application;
+    const project_identity_t project;
+    auto registry = wormedit::command_registry_t::from(
+        [](const wormedit::command_invocation_context_t&) { return wormedit::dispatch_outcome_t{}; });
+    REQUIRE(refresh_application_command_states(
+        registry, fixture.history, workspace, compose, application, project).empty());
+    CHECK(wormedit::find_command(registry, {"edit.tool_draw"})->definition.enabled);
+    CHECK(wormedit::find_command(registry, {"workspace.open_compose"})->definition.checked == true);
+    application.project.compose_view.compose_timing_focus = true;
+    REQUIRE(refresh_application_command_states(
+        registry, fixture.history, workspace, compose, application, project).empty());
+    CHECK_FALSE(wormedit::find_command(registry, {"edit.tool_draw"})->definition.enabled);
+    CHECK(wormedit::find_command(registry, {"workspace.open_compose"})->definition.checked == false);
+}
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 namespace {
 auto sound_fixture_path(std::string_view filename) -> std::string {
     return (std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" /

@@ -46,8 +46,7 @@ public:
                          const wormedit::document_history_t& history,
                          const wormedit::workspace_controller_t& workspace,
                          const std::filesystem::path& asset_base,
-                         wormedit::task_scheduler_t& scheduler, bool resource_copy_busy,
-                         bool export_busy) -> std::string;
+                         wormedit::task_scheduler_t& scheduler, bool file_jobs_busy) -> std::string;
 
   auto poll(wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
             const std::filesystem::path& asset_base) -> std::optional<std::string>;

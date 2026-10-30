@@ -485,7 +485,7 @@ auto metadata_asset_t::start_import_copy(
     const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& scheduler,
-    bool resource_copy_busy, bool export_busy) -> std::string {
+    bool file_jobs_busy) -> std::string {
     using namespace wormedit;
     const auto source = action.metadata_import_copy_export ? notification_source_t::export_
                                                            : notification_source_t::import_;
@@ -498,8 +498,7 @@ auto metadata_asset_t::start_import_copy(
     (void)workspace;
     (void)asset_base;
     (void)scheduler;
-    (void)resource_copy_busy;
-    (void)export_busy;
+    (void)file_jobs_busy;
     return finish("Audio import is unavailable in this build.", notification_severity_t::warning);
 #else
     auto& pending_import = impl_->pending_import;
@@ -518,7 +517,7 @@ auto metadata_asset_t::start_import_copy(
     if (export_copy == action.metadata_import_copy_project)
         return finish("Choose exactly one project or export import-copy destination.",
                       notification_severity_t::warning);
-    if (resource_copy_busy || pending_import || export_busy)
+    if (file_jobs_busy || pending_import)
         return finish("Wait for the current resource copy, import, or export to finish.",
                       notification_severity_t::info);
     const auto reserved = next_resource_asset_id(history.document);

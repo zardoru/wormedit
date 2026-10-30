@@ -32,7 +32,7 @@ namespace wormedit::sys {
 // copy/import start and completion outcomes are owned by the configured runtime.
 auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
-                              bool resource_copy_busy, bool export_busy,
+                              bool file_jobs_busy,
                               bool post_notifications = true) -> std::optional<std::string>;
 
 } // namespace wormedit::sys

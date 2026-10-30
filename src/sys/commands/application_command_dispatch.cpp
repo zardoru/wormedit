@@ -1,5 +1,10 @@
 #include "sys/compose/views/compose_interaction_view.h"
 #include "sys/commands/application_command_dispatch.h"
+#include "sys/compose/compose_clipboard_selection.h"
+#include "sys/project/project_open.h"
+#include "sys/preferences/lane_keys_runtime.h"
+#include <wormedit/audio/playback_rate.h>
+#include <wormedit/core/hitsound_editor.h>
 #include "sys/app/application_edit_inputs.h"
 #include "sys/compose/actions/compose_actions.h"
 #include "sys/compose/actions/compose_area_actions.h"
@@ -73,6 +78,250 @@ void apply_timing_focus_command_policy(command_registry_t& registry,
 
 namespace {
 
+// A synchronous refresh shares registry writes and retains every rejected ID.
+struct command_state_updates_t {
+    wormedit::command_registry_t& registry;
+    wormedit::diagnostic_list_t diagnostics;
+
+    void set(wormedit::command_id_t id, bool enabled,
+             std::optional<bool> checked = std::nullopt) {
+        auto updated = wormedit::update_command_state(registry, id, enabled, checked);
+        for (auto& diagnostic : updated.diagnostics) {
+            diagnostic.message = "Command '" + id.value + "': " + diagnostic.message;
+            diagnostics.push_back(std::move(diagnostic));
+        }
+    }
+};
+
+void refresh_transport_rate_commands(command_state_updates_t& updates,
+                                     const application_command_state_t& state) {
+    updates.set({"transport.toggle_metronome"}, state.metronome_settings().available,
+                state.metronome_settings().enabled);
+    const bool available = static_cast<bool>(state.services.transport_set_playback_rate);
+    updates.set({"transport.rate_slower"}, available && state.preferences.transport_rate_index > 0);
+    updates.set({"transport.rate_faster"}, available && state.preferences.transport_rate_index <
+                wormedit::audio::playback_rate_catalog.size() - 1);
+}
+
+auto layer_tool_target_editable(const wormedit::chart_document_t* chart,
+    std::optional<wormedit::layer_id_t> target) -> bool {
+    if (!chart || !target) return false;
+    const auto layer = std::ranges::find(chart->semantic_layers, *target,
+                                        &wormedit::semantic_layer_t::id);
+    return layer != chart->semantic_layers.end() && layer->visible && !layer->locked;
+}
+
+void refresh_note_kind_commands(command_state_updates_t& updates,
+    const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    bool compose_ready, bool pending, const application_command_state_t& application) {
+    using namespace wormedit;
+    const auto paint_active = application.project.compose_gesture.note_paint_mode_active;
+    const auto layer_active = application.project.compose_gesture.semantic_layer_paint_mode_active;
+    const auto hitsounds_ready = compose_ready && !pending &&
+        compose_state->has_hitsound_palette(chart->source_family);
+    for (const auto& entry : hitsound_commands())
+        updates.set(command_id_t{std::string{entry.id}}, hitsounds_ready, std::nullopt);
+    updates.set(command_id_t{"hitsound.toggle_palette"},
+        compose_ready && !pending && chart->source_family != format_family_t::osu_mania &&
+            chart->source_family != format_family_t::quaver,
+        compose_ready && compose_state->has_hitsound_palette(chart->source_family));
+    const auto tools_ready = compose_ready;
+    const auto layer_ready = tools_ready &&
+        layer_tool_target_editable(chart, application.project.semantic_layer.semantic_layer_target);
+    updates.set(command_id_t{"edit.tool_select"}, compose_ready,
+        compose_ready && !paint_active && !layer_active &&
+            !application.project.compose_gesture.resource_paint_mode_active);
+    updates.set(command_id_t{"edit.tool_draw"}, tools_ready, tools_ready && paint_active);
+    updates.set(command_id_t{"edit.tool_layer"}, layer_ready, layer_ready && layer_active);
+    constexpr std::pair<std::string_view, note_kind_t> note_kinds[]{
+        {"tap", note_kind_t::tap}, {"hold", note_kind_t::hold}, {"mine", note_kind_t::mine},
+        {"invisible", note_kind_t::invisible}, {"lift", note_kind_t::lift},
+        {"fake", note_kind_t::fake}, {"roll", note_kind_t::roll}};
+    for (const auto& [name, kind] : note_kinds)
+        updates.set(command_id_t{"edit.note_kind_" + std::string(name)},
+            compose_ready && is_note_kind_allowed(*chart, kind) && !pending,
+            compose_ready && paint_active && compose_state->armed_note_kind == kind);
+}
+
+auto play_stop_available(const wormedit::chart_document_t* chart,
+    const application_command_state_t& state) -> bool {
+    return chart && state.services.transport_preview_playing && state.services.transport_play_pause &&
+           state.services.transport_stop;
+}
+
+void refresh_transport_commands(command_state_updates_t& updates,
+    const wormedit::chart_document_t* chart, const application_command_state_t& state) {
+    updates.set({"transport.play_stop"}, play_stop_available(chart, state));
+    updates.set({"transport.play_pause"},
+        chart != nullptr && static_cast<bool>(state.services.transport_play_pause));
+    updates.set({"transport.play_from_start"},
+        chart != nullptr && static_cast<bool>(state.services.transport_play_from_start));
+    refresh_transport_rate_commands(updates, state);
+    updates.set({"transport.stop"},
+        state.services.transport_active && state.services.transport_active());
+}
+
+auto paste_target_available(bool compose_ready, bool pending,
+                            const application_command_state_t& state) -> bool {
+    return compose_ready && !pending &&
+           (state.project.clipboard.chart_clipboard.has_value() ||
+            state.system_clipboard_has_bms_editor_text);
+}
+
+void refresh_semantic_membership_commands(command_state_updates_t& updates,
+    bool compose_ready, bool target_valid, const application_command_state_t& app,
+    const std::optional<wormedit::editor_interaction_state_t>& state) {
+    using namespace wormedit;
+    const auto any_target = target_valid || app.project.semantic_layer.semantic_layer_target_none;
+    const auto can_apply = compose_ready && any_target && !state->selected_notes.empty();
+    updates.set(command_id_t{"semantic_layer.clear_target"}, compose_ready && any_target, !any_target);
+    updates.set(command_id_t{"semantic_layer.apply"}, can_apply, std::nullopt);
+    updates.set(command_id_t{"semantic_layer.remove"}, can_apply && target_valid, std::nullopt);
+    updates.set(command_id_t{"semantic_layer.toggle"}, can_apply && target_valid, std::nullopt);
+}
+
+auto bgm_move_enabled(const wormedit::chart_document_t* chart,
+                       const std::optional<wormedit::editor_interaction_state_t>& state,
+                       bool ready, bool pending, const application_command_state_t& application) -> bool {
+    return ready && !pending && chart && state &&
+        wormedit::sys::compose_move_to_bgm_available(*chart, *state, application);
+}
+
+void refresh_same_sound_command(command_state_updates_t& updates,
+    const wormedit::document_history_t& history, const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& state, bool ready,
+    const application_command_state_t& application) {
+    const bool enabled = ready && wormedit::sys::compose_sound_selection_available(history.document, *chart, *state, application);
+    updates.set({"selection.select_same_sound_chart"}, enabled, std::nullopt);
+}
+
+void refresh_quantize_commands(command_state_updates_t& updates, bool ready, bool pending,
+    const std::optional<wormedit::editor_interaction_state_t>& state,
+    const wormedit::document_history_t& history, const application_command_state_t& application) {
+    const bool enabled = ready && !pending && !application.project.clipboard.paste_session;
+    const bool checked = enabled && application.project.quantize.quantize_editor &&
+        application.project.quantize.quantize_editor->stamp.is_identity_current(history.document, state->chart) && application.project.quantize.quantize_editor->preview_enabled;
+    updates.set({"edit.toggle_quantize_preview"}, enabled, checked);
+    const bool selected = enabled && (!state->selected_notes.empty() || !state->selected_objects.empty());
+    updates.set({"edit.apply_quantize"}, selected, std::nullopt);
+}
+
+void refresh_compose_dock_commands(command_state_updates_t& updates, bool compose_ready,
+                                    bool pending, const application_command_state_t& application) {
+    const bool enabled = compose_ready && !pending && !application.project.clipboard.paste_session;
+    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds"})
+        updates.set({id}, enabled, std::nullopt);
+}
+
+auto sound_picker_command_available(bool compose_ready, bool pending) -> bool {
+    return compose_ready && !pending;
+}
+
+auto project_export_available(const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& compose,
+    const application_command_state_t& application) -> bool {
+    return chart && !application.project.clipboard.paste_session &&
+        (!compose || !compose->is_pending());
+}
+
+void refresh_resource_paint_command(command_state_updates_t& updates,
+    const wormedit::document_history_t& history,
+    const std::optional<wormedit::editor_interaction_state_t>& state,
+    const application_command_state_t& application, bool compose_ready) {
+    updates.set({"audio.paint_hitsound"},
+        compose_ready && application.project.compose_gesture.can_paint(history.document, *state),
+        application.project.compose_gesture.resource_paint_mode_active);
+}
+
+auto refresh_semantic_layer_target(const wormedit::chart_document_t* chart,
+    application_command_state_t& application_state) -> bool {
+    using namespace wormedit;
+    bool target_valid{};
+    if (chart && application_state.project.semantic_layer.semantic_layer_target) {
+        const auto target_layer =
+            std::ranges::find(chart->semantic_layers, *application_state.project.semantic_layer.semantic_layer_target,
+                              &semantic_layer_t::id);
+        target_valid = target_layer != chart->semantic_layers.end();
+        if (!target_valid) {
+            application_state.project.semantic_layer.semantic_layer_target.reset();
+            application_state.project.semantic_layer.semantic_layer_target_none = false;
+            application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+            application_state.project.semantic_layer.semantic_layer_solo_active = false;
+        } else if (target_layer->locked || !target_layer->visible) {
+            application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+        }
+    }
+    return target_valid;
+}
+
+void refresh_workspace_commands(command_state_updates_t& updates,
+    const wormedit::workspace_controller_t& workspace, bool compose_ready,
+    const application_command_state_t& application_state) {
+    using namespace wormedit;
+    constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tabs{{
+        {"workspace.open_setup", workspace_tab_t::setup},
+        {"workspace.open_metadata", workspace_tab_t::metadata},
+        {"workspace.open_timing", workspace_tab_t::compose},
+        {"workspace.open_compose", workspace_tab_t::compose},
+        {"workspace.open_storyboard", workspace_tab_t::storyboard},
+        {"workspace.open_audio_slices", workspace_tab_t::audio_slices},
+        {"workspace.open_compare_validate", workspace_tab_t::compare_validate},
+    }};
+    for (const auto& [id, tab] : tabs) {
+        const bool timing_alias = id == "workspace.open_timing";
+        updates.set({std::string{id}}, tab != workspace_tab_t::storyboard,
+            workspace.active_tab == tab &&
+                timing_alias == application_state.project.compose_view.compose_timing_focus);
+    }
+    updates.set({"timing.toggle_lock"},
+        workspace.active_tab == workspace_tab_t::compose &&
+            application_state.project.compose_view.compose_timing_focus,
+        application_state.project.timing_recipe.timing_locked);
+    updates.set({"timing.insert_bpm"}, compose_ready && !application_state.project.timing_recipe.timing_locked);
+    updates.set({"timing.insert_sv"}, compose_ready && !application_state.project.timing_recipe.timing_locked);
+    updates.set({"timing.open_settings"}, true);
+}
+
+void refresh_semantic_layer_slots(command_state_updates_t& updates,
+    const wormedit::chart_document_t* chart, bool compose_ready,
+    const application_command_state_t& application_state) {
+    using namespace wormedit;
+    const auto palette = compose_ready
+                             ? semantic_layer_palette_window_t::from(
+                                   *chart, application_state.project.semantic_layer.semantic_layer_target,
+                                   application_state.project.semantic_layer.semantic_layer_palette_chart == chart->id
+                                       ? application_state.project.semantic_layer.semantic_layer_palette_page
+                                       : 0,
+                                   false, wormedit::ui::semantic_layer_shortcut_limit)
+                             : std::nullopt;
+    for (std::size_t index = 0; index < wormedit::ui::semantic_layer_shortcut_limit; ++index) {
+        const auto* layer = palette && index < palette->layer_indices.size()
+                                ? &chart->semantic_layers[palette->layer_indices[index]]
+                                : nullptr;
+        const bool available = layer != nullptr;
+        const bool checked = available && application_state.project.semantic_layer.semantic_layer_target &&
+                             layer->id == *application_state.project.semantic_layer.semantic_layer_target;
+        updates.set({"semantic_layer.select_slot_" + std::to_string(index + 1)}, available, checked);
+    }
+}
+
+void refresh_document_commands(command_state_updates_t& updates,
+    const wormedit::document_history_t& history, const wormedit::chart_document_t* chart,
+    const wormedit::sys::project_identity_t& project) {
+    using namespace wormedit;
+    updates.set({"document.new_project"}, true);
+    updates.set({"document.open"}, true);
+    updates.set({"document.open_project_folder"}, project.has_project_folder());
+    updates.set({"document.save_as"}, !history.document.read_charts().empty());
+    updates.set({"document.close"}, !history.document.read_charts().empty());
+    updates.set({"app.quit"}, true);
+    updates.set({"workspace.lane_keys"}, wormedit::sys::lane_keys_runtime_t::can_open(chart));
+    updates.set({"document.new_chart"}, chart != nullptr);
+    updates.set({"history.undo"}, history.can_undo());
+    updates.set({"history.redo"}, history.can_redo());
+}
+
 auto timing_focus_command_refusal(application_command_t command,
                                   const application_command_state_t& state)
     -> std::optional<std::string_view> {
@@ -105,6 +354,67 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
 }
 
 } // namespace
+
+auto refresh_application_command_states(
+    wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    application_command_state_t& application_state,
+    const wormedit::sys::project_identity_t& project) -> wormedit::diagnostic_list_t {
+    using namespace wormedit;
+    command_state_updates_t updates{.registry = registry};
+    const auto* chart = selected_chart(history, workspace);
+    const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
+                               compose_state && compose_state->chart == chart->id;
+    const bool pending = compose_ready && compose_state->is_pending();
+    const bool target_valid = refresh_semantic_layer_target(chart, application_state);
+    refresh_document_commands(updates, history, chart, project);
+    updates.set({"edit.delete"}, compose_ready);
+    const bool can_move_bgm = bgm_move_enabled(chart, compose_state, compose_ready, pending, application_state);
+    updates.set({"edit.move_to_bgm"}, can_move_bgm);
+    updates.set({"edit.move_next_to_bgm"}, can_move_bgm);
+    const bool clipboard_selection = compose_ready &&
+        can_copy_compose_selection(*compose_state, application_state);
+    updates.set({"edit.copy"}, clipboard_selection);
+    updates.set({"edit.cut"}, clipboard_selection);
+    updates.set({"edit.paste"}, paste_target_available(compose_ready, pending, application_state));
+    refresh_note_kind_commands(updates, chart, compose_state, compose_ready, pending,
+                                application_state);
+
+    updates.set({"selection.clear"}, compose_ready);
+    refresh_same_sound_command(updates, history, chart, compose_state, compose_ready, application_state);
+    updates.set({"selection.select_all"}, compose_ready);
+    updates.set({"selection.select_all_objects"}, compose_ready);
+    updates.set({"selection.select_all_after_cursor"}, compose_ready);
+    updates.set({"selection.select_all_objects_after_cursor"}, compose_ready);
+    updates.set({"selection.invert"}, compose_ready);
+    const bool marker_navigation_available =
+        compose_ready && wormedit::has_marker_navigation_targets(*chart);
+    updates.set({"navigation.previous_marker"}, marker_navigation_available);
+    updates.set({"navigation.next_marker"}, marker_navigation_available);
+    updates.set({"navigation.go_to_sound"}, sound_picker_command_available(compose_ready, pending));
+    refresh_compose_dock_commands(updates, compose_ready, pending, application_state);
+    updates.set({"document.export_output_group"}, project_export_available(chart, compose_state, application_state));
+    refresh_quantize_commands(updates, compose_ready, pending, compose_state, history, application_state);
+    updates.set({"navigation.previous_bookmark"}, compose_ready);
+    updates.set({"navigation.next_bookmark"}, compose_ready);
+    updates.set({"markers.add_bookmark"}, compose_ready);
+    updates.set({"navigation.previous_snap"}, compose_ready);
+    updates.set({"navigation.next_snap"}, compose_ready);
+    refresh_transport_commands(updates, chart, application_state);
+
+    refresh_workspace_commands(updates, workspace, compose_ready, application_state);
+
+    refresh_semantic_layer_slots(updates, chart, compose_ready, application_state);
+    refresh_semantic_membership_commands(updates, compose_ready, target_valid,
+                                          application_state, compose_state);
+    refresh_resource_paint_command(updates, history, compose_state, application_state, compose_ready);
+    updates.set({"audio.toggle_click_audition"}, true, application_state.preferences.editor_preferences.audition_on_click);
+    updates.set({"audio.toggle_playback_audition"}, true, application_state.preferences.editor_preferences.audition_on_playback);
+    wormedit::sys::apply_timing_focus_command_policy(
+        registry, !application_state.project.compose_view.compose_timing_focus);
+    return std::move(updates.diagnostics);
+}
 
 auto unavailable_application_command_message(const command_registry_t& registry,
     const std::optional<command_id_t>& id, const application_command_state_t& state) -> std::string {

@@ -413,7 +413,7 @@ auto dispatch_timing_link(const ui::timing_link_action_t& action, const metadata
 }
 auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
-                              bool resource_copy_busy, bool export_busy, bool post_notifications)
+                              bool file_jobs_busy, bool post_notifications)
     -> std::optional<std::string> {
     auto& history = environment.document.history;
     auto& workspace = environment.document.workspace;
@@ -434,8 +434,7 @@ auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
     }
     if (action.metadata_import_copy_project || action.metadata_import_copy_export) {
         auto status = metadata_asset_runtime.start_import_copy(
-            action, history, workspace, asset_base, resource_copy_scheduler, resource_copy_busy,
-            export_busy);
+            action, history, workspace, asset_base, resource_copy_scheduler, file_jobs_busy);
         if (metadata_asset_runtime.import_pending())
             metadata_drop.clear_music();
         return status;

@@ -113,6 +113,8 @@ add_library(wormedit_core
     src/core/grid.cpp
     src/core/resource_paint_gesture.cpp
     src/core/interaction.cpp
+    src/core/interaction_assignment.cpp
+    src/core/interaction_delete.cpp
     src/core/note_placement.cpp
     src/core/note_move.cpp
     src/core/interaction_gesture_lifecycle.cpp

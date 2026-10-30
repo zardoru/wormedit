@@ -427,6 +427,7 @@ TEST_CASE("undoing a virtual BMS edit recovers the cursor without moving the vie
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
+    song.charts.front().semantic_layers = {{.id = layer_id_t{3}, .name = "Phrase"}};
     auto history = document_history_t::from(std::move(song));
     auto state = make_state(history);
     const auto scrolled =
@@ -435,13 +436,127 @@ TEST_CASE("undoing a virtual BMS edit recovers the cursor without moving the vie
     const auto saved_scroll = state.viewport_scroll_pixels;
     REQUIRE(dispatch_editor_action(
         history, state, place_virtual_bms_tap_action_t{959'040, lane_id_t{1}}));
+    state.bga_lane_visible = false;
+    state.bga_revealed_lane_mask = 0b1010;
+    state.armed_note_layers = GENERATE(std::vector<layer_id_t>{}, std::vector{layer_id_t{3}});
+    state.solo_semantic_layer = layer_id_t{3};
+    state.snap_enabled = false;
+    state.y_lock = true;
+    state.bar_line_time = bar_line_time_t::propagate;
+    state.scratch_on_right = {true, false};
+    state.active_snap_space = quantization_space_t::authored_measure;
     REQUIRE(undo_document_command(history));
+    expect_cursor_gesture(std::holds_alternative<diagnostic_list_t>(inspect_editor_interaction(history, state)));
     const auto recovered = recover_editor_interaction(history, state);
     REQUIRE(recovered);
     CHECK(recovered.state->cursor.measure == measure_id_t{1});
     CHECK(recovered.view->viewport_scroll_pixels == saved_scroll);
+    expect_cursor_gesture(!recovered.state->bga_lane_visible);
+    expect_cursor_gesture(!recovered.view->bga_lane_visible);
+    expect_cursor_gesture(recovered.state->bga_revealed_lane_mask == state.bga_revealed_lane_mask);
+    expect_cursor_gesture(recovered.view->bga_revealed_lane_mask == state.bga_revealed_lane_mask);
+    expect_cursor_gesture(recovered.state->armed_note_layers == state.armed_note_layers);
+    expect_cursor_gesture(recovered.state->solo_semantic_layer == state.solo_semantic_layer);
+    expect_cursor_gesture(recovered.view->solo_semantic_layer == state.solo_semantic_layer);
+    expect_cursor_gesture(!recovered.state->snap_enabled);
+    expect_cursor_gesture(!recovered.view->snap_enabled);
+    expect_cursor_gesture(recovered.state->y_lock);
+    expect_cursor_gesture(recovered.view->y_lock);
+    expect_cursor_gesture(recovered.state->bar_line_time == state.bar_line_time);
+    expect_cursor_gesture(recovered.state->scratch_on_right == state.scratch_on_right);
+    expect_cursor_gesture(recovered.view->scratch_on_right == state.scratch_on_right);
+    expect_cursor_gesture(recovered.state->active_snap_space == state.active_snap_space);
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("interaction recovery clears stale chart state and reconfigures snaps",
+          "[unit][core][interaction][interaction-recovery]") {
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    expect_cursor_gesture(static_cast<bool>(dispatch_editor_action(
+        history, state, begin_hold_action_t{{measure_id_t{1}, 720}})));
+    expect_cursor_gesture(state.is_pending());
+    restore_cursor_pose(state, {.cursor = {measure_id_t{99}, 42},
+                               .virtual_bms_cursor_row = 1'000'000'000,
+                               .cursor_subrow = .5});
+    state.active_lane = lane_id_t{99};
+    state.supported_snap_denominators = {7, 8, 6, 8, 0};
+    state.active_snap_denominator = 7;
+    state.selected_notes = {object_id_t{999}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{999}}};
+    state.retained_selection_range = position_span_t{{measure_id_t{99}, 0}, {measure_id_t{99}, 42}};
+    state.retained_canvas_selection_range = canvas_row_span_t{0, 1'000'000'000};
+    state.selected_canvas_measure = 1'000'000;
+    state.selection_checked_revision = history.document.revision;
+
+    const auto recovered = recover_editor_interaction(history, state);
+    expect_cursor_gesture(static_cast<bool>(recovered));
+    expect_cursor_gesture(recovered.state->cursor == local_position_t{measure_id_t{1}, 0});
+    expect_cursor_gesture(recovered.state->active_lane == lane_id_t{1});
+    expect_cursor_gesture(!recovered.state->virtual_bms_cursor_row);
+    expect_cursor_gesture(recovered.state->cursor_subrow == 0.0);
+    expect_cursor_gesture(!recovered.state->is_pending());
+    expect_cursor_gesture(recovered.state->selected_notes.empty());
+    expect_cursor_gesture(recovered.state->selected_objects.empty());
+    expect_cursor_gesture(!recovered.state->retained_selection_range);
+    expect_cursor_gesture(!recovered.state->retained_canvas_selection_range);
+    expect_cursor_gesture(!recovered.state->selected_canvas_measure);
+    expect_cursor_gesture(!recovered.state->selection_checked_revision);
+    expect_cursor_gesture(recovered.state->supported_snap_denominators == std::vector<std::uint64_t>{8, 6});
+    expect_cursor_gesture(recovered.state->active_snap_denominator == 8);
+    expect_cursor_gesture(recovered.state->active_snap_was_fallback);
+    expect_cursor_gesture(state.is_pending());
+    expect_cursor_gesture(history.undo.empty());
+}
+
+TEST_CASE("interaction recovery validates carried viewport and note kind",
+          "[unit][core][interaction][interaction-recovery]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    place_cursor_on_picked_row(state, {measure_id_t{99}, 0});
+    state.viewport_height_pixels = 100.0;
+
+    SECTION("valid values survive including scale and anchor boundaries") {
+        const auto scale = GENERATE(minimum_pixels_per_standard_measure,
+                                    maximum_pixels_per_standard_measure);
+        const auto anchor = GENERATE(0.0, 100.0);
+        set_cursor_scale(state, scale);
+        set_viewport_scroll_pixels(state, 123.0);
+        set_cursor_screen_anchor(state, anchor, editor_field_scroll_direction_t::down);
+        state.armed_note_kind = note_kind_t::invisible;
+        const auto recovered = recover_editor_interaction(history, state);
+        expect_cursor_gesture(static_cast<bool>(recovered));
+        expect_cursor_gesture(recovered.state->pixels_per_standard_measure == scale);
+        expect_cursor_gesture(recovered.state->viewport_scroll_pixels == 123.0);
+        expect_cursor_gesture(recovered.state->fixed_cursor_screen_y_pixels == anchor);
+        expect_cursor_gesture(recovered.state->scroll_direction == editor_field_scroll_direction_t::down);
+        expect_cursor_gesture(recovered.state->armed_note_kind == note_kind_t::invisible);
+    }
+    SECTION("invalid values fall back to safe defaults") {
+        set_cursor_scale(state, GENERATE(std::numeric_limits<double>::quiet_NaN(),
+            minimum_pixels_per_standard_measure - 1.0, maximum_pixels_per_standard_measure + 1.0));
+        set_viewport_scroll_pixels(state, std::numeric_limits<double>::infinity());
+        set_cursor_screen_anchor(state, GENERATE(-1.0, 101.0,
+            std::numeric_limits<double>::quiet_NaN()), editor_field_scroll_direction_t::down);
+        state.armed_note_kind = note_kind_t::roll;
+        const auto recovered = recover_editor_interaction(history, state);
+        expect_cursor_gesture(static_cast<bool>(recovered));
+        expect_cursor_gesture(recovered.state->pixels_per_standard_measure == default_pixels_per_standard_measure);
+        expect_cursor_gesture(recovered.state->viewport_scroll_pixels == 0.0);
+        expect_cursor_gesture(!recovered.state->fixed_cursor_screen_y_pixels);
+        expect_cursor_gesture(recovered.state->armed_note_kind == note_kind_t::tap);
+    }
+    SECTION("finite scroll is clamped to the canvas extent") {
+        const auto [scroll, expected] = GENERATE(std::pair{-100'000.0, -20.0},
+                                                std::pair{1'000'000.0, 191'980.0});
+        set_viewport_scroll_pixels(state, scroll);
+        const auto recovered = recover_editor_interaction(history, state);
+        expect_cursor_gesture(static_cast<bool>(recovered));
+        expect_cursor_gesture(recovered.state->viewport_scroll_pixels == expected);
+    }
 }
 
 TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",

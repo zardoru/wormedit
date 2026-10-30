@@ -1164,7 +1164,7 @@ TEST_CASE("Compose color views choose tile and arrow base fills", "[compose][col
         expected = membership == 1 ? nk_rgba(31, 87, 143, 201) :
             wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
     } else if (view == View::snap || glyph == 2) {
-        const auto snap = wormedit::ui::arrow_snap_color(16);
+        const auto snap = wormedit::ui::theme::compose_snap_color(16);
         expected = nk_rgb(snap.r, snap.g, snap.b);
     } else {
         expected = wormedit::ui::theme::compose_key_color(3).note;
@@ -1193,7 +1193,7 @@ TEST_CASE("Compose hold fills use head snap and neutral hidden membership", "[co
     expect_inline(normal.b == key.b);
     expect_inline(normal.a == key.a);
     const auto snap = compose_note_base_fill(View::snap, hold);
-    const auto expected_snap = wormedit::ui::arrow_snap_color(8);
+    const auto expected_snap = wormedit::ui::theme::compose_snap_color(8);
     expect_inline(snap.r == expected_snap.r);
     expect_inline(snap.g == expected_snap.g);
     expect_inline(snap.b == expected_snap.b);
@@ -1250,7 +1250,7 @@ TEST_CASE("Compose color views default to Normal and unknown snaps use other gre
     wormedit::ui::compose_note_view_t note{};
     note.snap_class = 255;
     const auto actual = compose_note_base_fill(View::snap, note);
-    const auto other = wormedit::ui::arrow_snap_color(0);
+    const auto other = wormedit::ui::theme::compose_snap_color(0);
     CHECK(actual.r == other.r);
     CHECK(actual.g == other.g);
     CHECK(actual.b == other.b);

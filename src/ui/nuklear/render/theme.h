@@ -94,6 +94,9 @@ struct interface_theme_t {
 auto ui(UiColor color) -> nk_color;
 auto compose(ComposeColor color) -> nk_color;
 auto compose_note_accent(size_t index) -> nk_color;
+// Exact note subdivisions and colored grid lines share the active field palette.
+// Unknown subdivisions use the theme's "other" entry.
+auto compose_snap_color(std::uint8_t snap_class) -> nk_color;
 // Colors for one wormedit::lane_key_color_t value. Values outside the table use generic.
 struct key_color_t {
     bool has_color{};

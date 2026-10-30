@@ -69,10 +69,6 @@ auto compose_kind_fill(const wormedit::ui::compose_note_view_t& note, nk_color c
     if (note.kind == wormedit::note_kind_t::invisible) color.a = static_cast<nk_byte>(static_cast<unsigned>(color.a) * 3 / 5);
     return color;
 }
-auto compose_snap_fill(std::uint8_t snap_class) -> nk_color {
-    const auto color = wormedit::ui::arrow_snap_color(snap_class);
-    return nk_rgb(color.r, color.g, color.b);
-}
 auto next_ordered_resource(std::span<const std::uint64_t> ids,
                            std::uint64_t placed_resource_id) -> std::uint64_t {
     const auto current = std::ranges::find(ids, placed_resource_id);
@@ -98,7 +94,8 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
     if (color_view == worm_ui_nuklear_compose_color_view_t::layer)
         return compose_kind_fill(note, compose_layer_fill(note));
     if (color_view == worm_ui_nuklear_compose_color_view_t::snap ||
-        (note.glyph >= wormedit::lane_glyph_t::arrow_left && note.glyph <= wormedit::lane_glyph_t::arrow_right)) return compose_kind_fill(note, compose_snap_fill(note.snap_class));
+        (note.glyph >= wormedit::lane_glyph_t::arrow_left && note.glyph <= wormedit::lane_glyph_t::arrow_right))
+        return compose_kind_fill(note, wormedit::ui::theme::compose_snap_color(note.snap_class));
     const auto colors=wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id);
     return compose_kind_fill(note, note.kind == wormedit::note_kind_t::hold || note.kind == wormedit::note_kind_t::roll ? colors.long_note.value_or(colors.note) : colors.note);
 }
@@ -108,7 +105,7 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
     if (color_view == worm_ui_nuklear_compose_color_view_t::layer)
         return compose_layer_fill(hold);
     if (color_view == worm_ui_nuklear_compose_color_view_t::snap)
-        return compose_snap_fill(hold.snap_class);
+        return wormedit::ui::theme::compose_snap_color(hold.snap_class);
     return wormedit::ui::theme::compose_key_color(hold.key_color, hold.lane_id).hold_body;
 }
 

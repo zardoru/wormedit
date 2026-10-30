@@ -156,6 +156,7 @@ add_executable(wormedit_core_tests
     core/chart_import_tests.cpp
     core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
+    core/measure_geometry_property_tests.cpp
     core/measure_tests.cpp
     core/result_tests.cpp
     core/sound_slice_rules_tests.cpp

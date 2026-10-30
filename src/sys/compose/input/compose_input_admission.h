@@ -115,9 +115,14 @@ using admitted_compose_selector_t = std::variant<admitted_note_paint_t,
 using compose_selector_admission_t = wormedit::result_t<
     std::optional<admitted_compose_selector_t>, std::string_view>;
 
+inline constexpr std::string_view unsupported_compose_selector_message =
+    "Unsupported Compose input.";
+inline constexpr std::string_view stale_export_cut_handle_message = "The export cut handle is stale.";
+
 template <typename Admitted>
-auto as_compose_selector(std::optional<Admitted> admitted) -> compose_selector_admission_t {
-    if (!admitted) return std::unexpected{"Unsupported Compose paint, span, or recipe selector."};
+auto as_compose_selector(std::optional<Admitted> admitted,
+    std::string_view message = unsupported_compose_selector_message) -> compose_selector_admission_t {
+    if (!admitted) return std::unexpected{message};
     return std::optional<admitted_compose_selector_t>{admitted_compose_selector_t{*admitted}};
 }
 
@@ -134,7 +139,7 @@ inline auto admit_compose_input_selector(const wormedit::ui::compose_input_actio
             return as_compose_selector(admitted_bga_draw_t::from(raw_paint));
         }
         if (input.resource_role && *input.resource_role != resource_role_t::sample)
-            return std::unexpected{"Unsupported Compose paint, span, or recipe selector."};
+            return std::unexpected{unsupported_compose_selector_message};
         return as_compose_selector(admitted_note_paint_t::from(raw_paint));
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
@@ -147,13 +152,16 @@ inline auto admit_compose_input_selector(const wormedit::ui::compose_input_actio
     case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT:
     case WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT:
-        return as_compose_selector(admitted_span_handle_t::from(input.span_edge));
+        return as_compose_selector(admitted_span_handle_t::from(input.span_edge),
+            input.kind == WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT
+                ? stale_export_cut_handle_message : unsupported_compose_selector_message);
     case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
         return as_compose_selector(admitted_recipe_range_handle_t::from(input.span_edge));
     case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
-        return as_compose_selector(admitted_recipe_command_t::from(input.span_edge));
+        return as_compose_selector(admitted_recipe_command_t::from(input.span_edge),
+                                    "Unknown SV recipe command.");
     case WORM_UI_COMPOSE_INPUT_DRAW_SOURCE:
-        return as_compose_selector(admitted_draw_source_t::from(input));
+        return as_compose_selector(admitted_draw_source_t::from(input), "Unsupported Draw source.");
     default:
         return std::optional<admitted_compose_selector_t>{};
     }

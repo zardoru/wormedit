@@ -15,7 +15,7 @@ auto moved_cut(const export_cut_t& cut, span_handle_t edge, std::int64_t pointer
         begin = checked_math::checked_add(*begin, pointer - anchor);
         end = checked_math::checked_add(*end, pointer - anchor);
         break;
-    default: return std::unexpected("The export cut handle is stale.");
+    default: return std::unexpected(std::string{stale_export_cut_handle_message});
     }
     if (!begin || !end || *begin < 0 || *end <= *begin)
         return std::unexpected("Keep the export cut start nonnegative and before its end.");

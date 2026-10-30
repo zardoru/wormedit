@@ -6684,7 +6684,8 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     const auto revision = song.revision;
     expect_compose_test(invoke().value);
     expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
-    // Same-sound dispatch reads the session target even when no projection follows it.
+    // Chart-wide selection ignores visibility; visible input reads the current
+    // session target even when no projection follows it.
     auto& policy = application.project.semantic_layer;
     song.charts[0].semantic_layers = {{.id = layer_id_t{101}, .name = "First"},
                                      {.id = layer_id_t{102}, .name = "Second"}};
@@ -6696,6 +6697,11 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
         fixture.interaction->selected_objects.clear();
         policy.semantic_layer_target = layer_id_t{target};
         expect_compose_test(invoke().value);
+        CHECK(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
+        const auto status = dispatch_chip_input(fixture,
+            {.kind = WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE,
+             .object_id = notes[0].id, .selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE});
+        expect_compose_test(!status.empty());
         CHECK(fixture.interaction->selected_notes == std::vector{notes[target - 101].id});
     }
     policy.semantic_layer_solo_active = false;
@@ -7504,7 +7510,7 @@ TEST_CASE("Solo toggle and target actions affect the next selection in the same 
         action.compose_input_project_id = f.history.document.id;
         action.compose_input_chart_id = f.interaction->chart;
         action.compose_input_document_revision = f.history.document.revision;
-        action.compose_semantic_layer_id = layer_id_t{102};
+        action.compose_semantic_layer_id = layer_id_t{index == 0 ? 101u : 102u};
         const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
             f.interaction->viewport_height_pixels, false);
         expect_compose_test(!status.empty());

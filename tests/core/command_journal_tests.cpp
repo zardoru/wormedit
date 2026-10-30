@@ -999,6 +999,8 @@ void run_overflow_edits(document_history_t& history, task_scheduler_t& scheduler
     bool applied = true;
     for (unsigned i = 0; i < 10; ++i) applied &= change_title(history, std::to_string(i)).applied;
     release.count_down();
+    // The callback borrows both latches; finish it before this helper returns.
+    REQUIRE(submitted->wait());
     REQUIRE(applied);
 }
 auto checkpoint_overflow(native_project_autosave_loop_t& loop, const document_history_t& history,

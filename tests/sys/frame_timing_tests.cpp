@@ -296,7 +296,7 @@ TEST_CASE("BGA family rejects absent or mismatched admitted payloads without con
     notification_sink_t sink = notification_sink_t::muted();
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    ui::workspace_action_t action;
+    ui::workspace_action_t action{};
     const compose_input_inputs_t environment{
         .document = {.history = fixture.history, .workspace = *fixture.binding.value,
             .notifications = sink},

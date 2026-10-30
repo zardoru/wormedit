@@ -36,3 +36,11 @@ The exact Ubuntu container probe passes for that Clang/library pair; Ubuntu 24.0
 Clang 19 and 20 with GNU 14 fail the real `bind_back` probe. The already-owned
 workflow, compiler-requirement module, building guide and audit record this selection
 and expose compiler output directly on configure failure.
+
+T-786 exact supporting extension approved before edits after the `3e28191` CI run:
+`tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp` gives the exported-directory
+range a named lifetime for GNU 14; `tests/core/command_journal_tests.cpp` waits for the
+blocking graph to finish before its captured stack latches are destroyed. These address
+the observed GCC build failure and a concrete lifetime defect found while tracing the
+Clang timeout. Existing timeouts and assertions are preserved; production journal policy
+remains outside this test-support extension.

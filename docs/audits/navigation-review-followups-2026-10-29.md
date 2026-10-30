@@ -63,10 +63,31 @@ Clang also probes its separate designated-initializer warning. Unsupported pairs
 with the compiler's failed-probe output directly in the diagnostic. Existing warning flags, warnings-as-errors, and the matching
 23.1.3 complexity baseline are unchanged.
 
+The corrected-pair run at `3e28191` builds Clang successfully and passes macOS.
+Its remaining failures expose two test-support defects: GNU 14 returns `dangling`
+from the temporary filesystem range in the BMS export walkthrough, and the journal
+overflow helper destroys stack latches before its capturing worker necessarily returns.
+The walkthrough now owns the range in a local variable; the overflow helper releases
+and waits for its graph before returning. The latter is a concrete lifetime defect found
+while tracing the Clang timeout; remote confirmation of that timeout fix remains pending.
+The actual walkthrough translation unit passes GNU 14 syntax checking with the root
+compile arguments in the isolated existing image, `/tmp/wormedit-ci-gcc14-walkthrough-check.log`.
+The overflow case passes 100 consecutive native runs with `--repeat until-fail:100`
+and a five-second diagnostic bound, `/tmp/wormedit-review-journal-stress.log`.
+CI's existing 120-second timeout and all original assertions remain unchanged.
+
 ## Verification in progress
 
 - Initial matching-toolchain complexity: four changed production units pass,
   `/tmp/wormedit-review-followups-complexity-initial.log`.
+- Before the two CI test-support fixes, native Lua ON GATE passes 5,603/5,603,
+  whitespace and five changed-unit complexity checks against `4eb80bc`:
+  `/tmp/wormedit-review-final-gate.log`, details `/tmp/wormedit-gate.zkquKu`.
+  Four additional consuming units pass `/tmp/wormedit-review-final-header-complexity.log`.
+  The new admission test initially scored 49; named stroke setup and the existing fatal
+  `expect_compose_test` helper retain every assertion and satisfy the limit. Focused
+  GCC and Clang runs retain 931 assertions/59 cases. Both CI supporting files separately
+  pass matching complexity, `/tmp/wormedit-review-ci-tests-complexity.log`.
 - Real GCC and Clang compiler-policy fixture projects pass C++23 requirements,
   omitted designated members and complete positional members. Clang rejects incomplete
   positional members; GCC retains its existing allowance. An intentionally unavailable

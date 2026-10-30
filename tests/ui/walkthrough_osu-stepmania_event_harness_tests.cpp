@@ -674,7 +674,8 @@ TEST_CASE("Tutorial BMS flattening is saved from Setup and publishes osu mania t
     export_tutorial_from_compose(flow, directory.path);
     const auto output = directory.path / "exports/osu";
     expect(std::filesystem::is_directory(output));
-    const auto file = std::ranges::find_if(std::filesystem::directory_iterator{output}, [](const auto& entry) {
+    auto exported_files = std::filesystem::directory_iterator{output};
+    const auto file = std::ranges::find_if(exported_files, [](const auto& entry) {
         return entry.path().extension() == ".osu";
     });
     expect(file != std::filesystem::directory_iterator{});

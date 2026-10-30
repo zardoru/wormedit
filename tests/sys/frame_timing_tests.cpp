@@ -271,22 +271,28 @@ struct compose_test_fixture_t {
     }
 };
 
+void prepare_bga_admission_stroke(compose_test_fixture_t& fixture) {
+    fixture.project();
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
+    auto geometry = measure_index_t::from(*fixture.history.read_chart(chart_id_t{1}));
+    expect_compose_test(geometry.has_value());
+    pending = application_command_state_t::bga_draw_stroke_proposal_t::from(
+        chart_stamp_t::from(fixture.history, chart_id_t{1}),
+        application_command_state_t::bga_draw_stroke_t{
+            .resource = resource_id_t{42}, .geometry = std::move(*geometry)});
+}
+
 TEST_CASE("BGA family rejects absent or mismatched admitted payloads without consuming its stroke",
           "[sys][compose][admission][draw]") {
     using namespace compose_input_detail;
     const auto wrong_type = GENERATE(false, true);
     const auto kind = GENERATE(WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
         WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE);
+    CAPTURE(wrong_type, kind);
     compose_test_fixture_t fixture;
-    fixture.project();
-    fixture.application.project.compose_gesture.note_paint_mode_active = true;
-    auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
-    auto geometry = measure_index_t::from(*fixture.history.read_chart(chart_id_t{1}));
-    REQUIRE(geometry);
-    pending = application_command_state_t::bga_draw_stroke_proposal_t::from(
-        chart_stamp_t::from(fixture.history, chart_id_t{1}),
-        application_command_state_t::bga_draw_stroke_t{
-            .resource = resource_id_t{42}, .geometry = std::move(*geometry)});
+    prepare_bga_admission_stroke(fixture);
+    const auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
     notification_sink_t sink = notification_sink_t::muted();
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -300,22 +306,22 @@ TEST_CASE("BGA family rejects absent or mismatched admitted payloads without con
         .state = *fixture.interaction, .input_chart = fixture.history.read_chart(chart_id_t{1})};
     if (wrong_type) context.admitted_selector = admitted_note_paint_t{};
     const auto before = write_native_project(fixture.history.document);
-    REQUIRE(before.value);
+    expect_compose_test(before.value.has_value());
     editor_interaction_result_t result;
     std::string_view accepted;
     const auto routed = dispatch_bga_draw_input(
         {.kind = kind, .resource_role = resource_role_t::bga, .paint_intent = 1},
         context, result, accepted);
-    REQUIRE(routed);
-    CHECK(routed->is_stopping_batch());
-    CHECK(routed->outcome.message == "Unsupported Compose input.");
-    CHECK(routed->outcome.source == notification_source_t::input);
-    REQUIRE(pending);
-    CHECK(pending->payload.resource == resource_id_t{42});
-    CHECK(write_native_project(fixture.history.document).value == before.value);
-    CHECK(fixture.history.undo.empty());
-    CHECK_FALSE(result.document_changed);
-    CHECK(accepted.empty());
+    expect_compose_test(routed.has_value());
+    expect_compose_test(routed->is_stopping_batch());
+    expect_compose_test(routed->outcome.message == "Unsupported Compose input.");
+    expect_compose_test(routed->outcome.source == notification_source_t::input);
+    expect_compose_test(pending.has_value());
+    expect_compose_test(pending->payload.resource == resource_id_t{42});
+    expect_compose_test(write_native_project(fixture.history.document).value == before.value);
+    expect_compose_test(fixture.history.undo.empty());
+    expect_compose_test(!result.document_changed);
+    expect_compose_test(accepted.empty());
 }
 
 void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,

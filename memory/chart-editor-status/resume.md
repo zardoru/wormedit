@@ -9,19 +9,15 @@ four additional consumers pass matching 23.1.3, twelve distinct units total. GCC
 Clang focused workflows each pass 931 assertions/59 cases; prepared workflows pass
 1,355/69; event harness 721/721; isolated Compose smoke is inspected. No allowance changed.
 
-T-786 remains partial pending corrected remote CI. Exact Ubuntu probes validate GCC 14
-on Ubuntu 24.04 and Clang 21/GNU 15 on official Ubuntu 26.04, preserving the warning
-policy. The first 19/GNU 14 pin failed its actual API probe. The corrected `3e28191` run
-passes macOS and builds Clang, then exposes two test-support defects: GNU 14's temporary
-filesystem range returns `dangling`, and the journal overflow worker can outlive its
-captured stack latches. `e313cc0` gives the range an owner and joins that graph; the actual
-walkthrough TU compiles under GNU 14 and the overflow case passes 100 consecutive native
-runs. CI's 120-second timeout is preserved. The `71f96be` Clang and macOS jobs pass;
-GCC now builds and exposes four failures in a shared clipboard row oracle. That helper
-borrows entries from a temporary expected, relying on a range-for lifetime extension
-GCC 14 lacks. The named-owner fix passes a GCC 14 sanitizer reproducer, all four native
-clipboard cases and matching complexity. Its complete native gate now passes; remote GCC confirmation is pending.
-Keep PR81 draft until current checks finish.
+T-786 is done. Exact Ubuntu probes validate GCC 14 on Ubuntu 24.04 and Clang 21/GNU 15
+on Ubuntu 26.04, preserving the warning policy. CI-exposed test-support fixes give the
+walkthrough directory range and clipboard index explicit owners, and wait for the journal
+worker before its captured stack latches expire. The overflow case passes 100 consecutive
+native runs; the clipboard fix passes a GCC 14 sanitizer reproducer. CI's timeout and all
+assertions are preserved. Remote [run 41001583485](https://github.com/zardoru/wormedit/actions/runs/41001583485)
+at `e4616f7` passes Linux GCC, Linux Clang and macOS. Windows is skipped by the existing
+workflow condition. No failed job is waived. PR81 remains a draft for owner review;
+no GitHub approval or merge is claimed.
 See the [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md)
 for source pins, failures, logs, review scope and remaining design concerns.
 

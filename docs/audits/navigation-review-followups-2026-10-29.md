@@ -69,7 +69,7 @@ from the temporary filesystem range in the BMS export walkthrough, and the journ
 overflow helper destroys stack latches before its capturing worker necessarily returns.
 The walkthrough now owns the range in a local variable; the overflow helper releases
 and waits for its graph before returning. The latter is a concrete lifetime defect found
-while tracing the Clang timeout; remote confirmation of that timeout fix remains pending.
+while tracing the Clang timeout; the subsequent `71f96be` Clang job confirms that fix.
 The actual walkthrough translation unit passes GNU 14 syntax checking with the root
 compile arguments in the isolated existing image, `/tmp/wormedit-ci-gcc14-walkthrough-check.log`.
 The overflow case passes 100 consecutive native runs with `--repeat until-fail:100`
@@ -88,9 +88,9 @@ before the fix and passes with the named owner:
 `/tmp/wormedit-range-owner-probe/result.log`, `temporary.log`, and `named.log`.
 The four actual clipboard tests pass natively, `/tmp/wormedit-review-clipboard-lifetime-tests.log`,
 and the changed unit passes matching complexity, `/tmp/wormedit-review-bar-lines-complexity.log`.
-The named-owner fix passes the full native gate below; remote GCC confirmation remains pending.
+The named-owner fix passes the full native gate below and the `e4616f7` remote GCC job.
 
-## Local acceptance and remaining CI verification
+## Local and remote acceptance
 
 C++ source: `f70c747942dfa51d09c38cd7fdcd2e75ac548c75`, compared with `4eb80bc`.
 The final native configuration retains Debug/GCC 16, app, Lua, audio/image/video and
@@ -138,8 +138,9 @@ FFmpeg enabled. No feature, timeout, warning or complexity allowance was relaxed
   Reproducers live in `/tmp/wormedit-ci-toolchain-08d`; containers install binary
   packages without changing the host toolchain and do not build the full project.
 
-Remote CI remains a separate acceptance step. `71f96be` passes the complete Clang
-and macOS jobs, confirming the preceding test-support fixes. Its GCC build succeeds,
-then four assertions expose the shared temporary-owner oracle described above.
-`f70c747` fixes that oracle; the new GCC run must confirm it. T-785 is locally complete;
-T-786 remains partial pending current checks. The PR remains a draft and has no claimed approval.
+Remote [run 41001583485](https://github.com/zardoru/wormedit/actions/runs/41001583485)
+at `e4616f73caf19633c0fce75bc90593bfe39f9b10` passes the complete Linux GCC,
+Linux Clang and macOS jobs, confirming the selected toolchains and all three
+test-support fixes. Windows is skipped by the existing workflow condition; no
+Windows build is claimed. T-785 and T-786 are complete. No failed job is waived.
+The PR remains a draft for owner review, with no GitHub approval claimed.

@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/metadata/metadata_audio_section.h"
 #include "ui/nuklear/chrome/tooltip.h"
@@ -377,7 +378,7 @@ static void open_metadata_file_dialog() {
         return;
     }
     state.external_music_error.fill('\0');
-    SDL_ShowOpenFileDialog(metadata_file_dialog_callback, token, SDL_GetKeyboardFocus(),
+    wormedit::platform::show_open_file_dialog(metadata_file_dialog_callback, token, SDL_GetKeyboardFocus(),
                            nullptr, 0, nullptr, false);
 }
 

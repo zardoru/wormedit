@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "common/window_presentation.h"
 #include "common/local_file_location.h"
 #include "sys/compose/generator_runtime.h"
@@ -2319,6 +2320,9 @@ struct application_t::implementation_t {
                               wormedit::document_stamp_t stamp) {
         using namespace wormedit;
         report.publish_paths(session.history, session.project_identity.asset_base);
+#ifdef __EMSCRIPTEN__
+        platform::download_browser_project(report.destination.string().c_str());
+#endif
         for (auto* frame : {&views.workspace_frame, &views.compare_first_frame, &views.compare_second_frame})
             frame->metadata_projection_cache.invalidate_asset_paths();
         session.history.saved_revision = stamp.revision;
@@ -3630,6 +3634,11 @@ struct application_t::implementation_t {
     }
 
     auto open_project_folder() -> dispatch_outcome_t {
+#ifdef __EMSCRIPTEN__
+        return reject_application_command(platform.notification_sink,
+            "This browser workspace has no host folder. Use Download workspace to keep its files.",
+            notification_severity_t::warning, notification_source_t::document);
+#else
         const auto& project = session.project_identity;
         if (!project.has_project_folder())
             return reject_application_command(platform.notification_sink,
@@ -3645,6 +3654,7 @@ struct application_t::implementation_t {
                 std::string{"Could not open project folder: "} + SDL_GetError(),
                 notification_severity_t::error, notification_source_t::document);
         return dispatch_outcome_t{.value = true};
+#endif
     }
 
     auto dispatch_file_command(application_command_kind_t command)
@@ -4000,6 +4010,9 @@ struct application_t::implementation_t {
     }
 
     void start_display_watchdog() {
+#ifndef __EMSCRIPTEN__
+        // Background browser tabs suspend animation frames by design, so native
+        // compositor-stall detection is not meaningful for this platform.
         auto log = platform.recovery_directory
             ? platform.recovery_directory->parent_path() / "display-stalls.log"
             : std::filesystem::path{};
@@ -4010,6 +4023,7 @@ struct application_t::implementation_t {
         if (requested && actual && std::string_view{requested} == "wayland,x11" && std::string_view{actual} == "x11")
             platform.notification_sink.post(notification_severity_t::warning, notification_source_t::system,
                 "Native Wayland initialization failed; using X11.");
+#endif
     }
 
     void shutdown() noexcept {

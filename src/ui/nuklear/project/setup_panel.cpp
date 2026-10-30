@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include <wormedit/core/diagnostic.h>
 #include <wormedit/core/metadata_rating.h>
 #include "ui/nuklear/chrome/text_fit.h"
@@ -162,7 +163,7 @@ void open_output_destination_picker() {
     project_state.group_picker_error.clear();
     const auto file = project_state.group_family == 0 || project_state.group_family == 2;
     if (!file) {
-        SDL_ShowOpenFolderDialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(),
+        wormedit::platform::show_open_folder_dialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(),
                                  project_state.project_directory.c_str(), false);
         return;
     }
@@ -176,7 +177,7 @@ void open_output_destination_picker() {
     const auto suggested = (std::filesystem::path{project_state.project_directory} /
                             (project_state.group_family == 0 ? "song.wormedit" : "song.ssc"))
                                .string();
-    SDL_ShowSaveFileDialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(), filter, 1,
+    wormedit::platform::show_save_file_dialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(), filter, 1,
                            suggested.c_str());
 }
 

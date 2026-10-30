@@ -415,3 +415,130 @@ For disconnected builds, provide checkouts at the revisions in
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_PENLIGHT`, and
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_LFS`, plus `WORMEDIT_LUA_SOURCE_DIR` as above.
 Cross-builds may select a native C compiler with `WORMEDIT_HOST_C_COMPILER`.
+
+## Experimental browser editor (post-1.0, T-557)
+
+The `wasm` preset builds the **main application**: its SDL/Nuklear frontend,
+workspace, commands, transactions, Undo/Redo, import/export services, audio/image
+adapters and Lua runtime. It uses SDL's `opengles2` renderer over WebGL on an
+OffscreenCanvas. Native builds still require their existing SDL GPU backend.
+This is a post-1.0 draft, separate from the 1.0 release; no public deployment or
+browser release packaging is supplied.
+
+Activate Emscripten with C++23 libc++ support (verified: Emscripten 6.0.5 / Clang
+21.1.8), then use CMake 3.25+ and Ninja:
+
+```sh
+# With emsdk: source /path/to/emsdk/emsdk_env.sh
+cmake --preset wasm
+cmake --build --preset wasm
+python3 scripts/serve-wasm.py build/wasm --port 8000
+```
+
+Open loopback port 8000 on the same machine. The server supplies COOP
+`same-origin` and COEP `require-corp`; use HTTP through that server, not `file://`.
+The browser needs WebAssembly threads/SharedArrayBuffer, cross-origin isolation,
+WebGL and OffscreenCanvas with canvas transfer. Unsupported startup capabilities
+are reported in the page. Chromium 151.0.7922.173 was exercised here; Firefox,
+Safari, mobile browsers and memory/performance limits on other machines need
+separate verification.
+
+Output includes `index.html`, `wormedit.js`, `wormedit.wasm`, `wormedit.data`,
+`editor-files.js`, `fflate.js` and `fflate-LICENSE.txt`. Keep these together.
+The `.data` file contains the bundled fonts, themes, icons and default hitsounds;
+there is no dependency on host-installed fonts or a desktop display.
+
+### Browser files and saves
+
+Use the editor's real **File → Open chart or project** command (or its landing
+button). Its browser file panel accepts a native JSON file, a project ZIP, or a
+chart with its companion media. Select multiple files together to keep references
+resolvable. **Upload a folder instead** preserves the chosen folder's relative
+paths. When a selection contains several charts/projects, choose the entry to
+open; all selected companions remain available. Files enter an isolated virtual
+folder, then the normal asynchronous native importer validates them. Rejected
+imports leave the active document unchanged.
+
+**File → Save project / Save project as** runs the normal project save and asset
+copy. After successful publication, it requests a ZIP download containing the
+native project and its folder, including copied media. Reopen that ZIP through
+File → Open to resume editing. A download request is not confirmation that the
+browser wrote a file: check its download UI. The native status explicitly says
+that the project is stored in the temporary browser workspace.
+
+**Download workspace files** collects staged uploads and outputs, including
+format exports. It does **not** serialize unsaved in-memory edits: use File →
+Save project for those first. The workspace is volatile; reload or closing the
+tab discards it. A before-unload confirmation is requested after interaction or
+upload, but no IndexedDB persistence, host-directory grant or crash-recovery
+promise is made. The browser's own policies govern that confirmation.
+
+Uploads are bounded to 64 MiB per file, 256 MiB per session and 4096 entries per
+selection/archive. ZIP names cannot escape their upload folder; duplicate paths
+and oversized entries are rejected. ZIP downloads have a 256 MiB / 4096-file
+budget. Very large native projects can exceed browser/heap limits before these
+bounds. Download/save before starting a fresh session rather than treating this
+lane as a large-library certification.
+
+fflate 0.8.2 is a SHA-256-pinned, MIT-licensed browser transport dependency. It
+packages bytes; it does not replace the native project/chart parsers. For offline
+configuration, provide its extracted npm package with
+`FETCHCONTENT_SOURCE_DIR_WORMEDIT_FFLATE`, alongside the existing dependency source
+overrides documented above.
+
+### Platform behavior and limits
+
+| Area | Browser lane |
+| --- | --- |
+| Editor/input | The main frontend, commands and document transactions run unchanged. Real keyboard/mouse canvas interactions are tested. Some browser-reserved shortcuts, external clipboard access and IME workflows need browser-specific qualification; use the editor menus when the browser reserves a chord. |
+| Main loop/rendering | The application runs on an Emscripten pthread; its frame callback yields to the browser. The canvas transfers to that worker. Browser animation cadence replaces native pacing waits; the native compositor watchdog is disabled because background-tab suspension is expected. Native SDL/GPU presentation remains unchanged. |
+| Audio | The existing MP3/Ogg/WAV decoder and SDL WebAudio output are built. Start playback from a real user click/key gesture. Browser tests observe a running AudioContext and actual output PCM; this is not a physical-device listening test. MP3 encoding requires disabled FFmpeg; choose WAV for rendered cuts. The pinned SDL backend uses ScriptProcessorNode, which Chromium marks deprecated; AudioWorklet migration and device-specific behavior remain later work. |
+| Images | The bounded stb image decoder and SDL texture path are built. Video decoding/FFmpeg are disabled. Authored references can be retained without claiming that their video plays. |
+| BMS text | Only the target libc's built-in iconv is admitted; no host iconv library is linked. UTF-8 and that implementation's supported legacy mappings are available. Full vendor-codepage parity requires its own fixture/browser coverage. |
+| Lua | The pinned sandbox/runtime is built. Scripts use selected/uploaded virtual files, not arbitrary host files. This does not certify every generator/recipe workflow or its timing budget in the browser. |
+| Files/threads | Normal import, save, asset-copy and worker services use volatile MEMFS. Blocking application waits occur off the browser's event thread. MEMFS lacks hard links and native directory exchange, so shared browser-only helpers perform no-replace moves and directory exchange in synchronous filesystem-thread callbacks. This retains publication exclusivity within the tab; fsync is not host durability. |
+| External tools | OS process launch, revealing a host folder and a bundled offline manual are unavailable. Open project folder explains the workspace download alternative. External preview programs cannot be offered as browser processes. |
+| Deployment | Local development only. Later hosting needs HTTPS, the same isolation headers, correct Wasm MIME, same-origin worker/assets, consistent cache versions and a reviewed offline/storage policy. |
+
+The toolchain wrapper resolves an activated emsdk or installed `emcc` and includes
+Emscripten's own CMake toolchain. Use a fresh build directory when changing SDKs.
+Configuration probes `expected`, `bind_back`, `stop_token` and `jthread`; Debian
+Emscripten 3.1.69 is too old. Wasm exception handling stays enabled for bounded
+native parser/worker failures. The editor uses a preloaded 16-worker pool, 128 MiB
+initial shared memory and a 1 GiB maximum; these are implementation bounds, not a
+promise that all native projects fit. Emscripten 6.0.5 warns about shared libraries
+with CMake 4.2.3; this lane uses static dependencies.
+
+### Browser verification and the codec smoke
+
+Use an existing Chromium binary and install Playwright separately:
+
+```sh
+npm install --prefix build/wasm-browser-tools playwright@1.56.1
+cmake --build build/wasm --target wormedit-wasm-storage --parallel 4
+NODE_PATH="$PWD/build/wasm-browser-tools/node_modules" \
+  CHROMIUM=/usr/bin/chromium node tests/wasm/editor.cjs build/wasm
+```
+
+The test starts an isolated headless browser/profile and ephemeral loopback server.
+It drives the actual canvas and validates downloaded native JSON and media bytes,
+not a simulated editor. The T-557 card records the exact final cases/results and
+remaining native/tooling checks. Screenshots and logs are retained in the cloud
+workspace; no desktop browser windows are opened.
+
+The earlier, smaller `wasm-smoke` preset remains a separate codec regression lane:
+
+```sh
+cmake --preset wasm-smoke
+cmake --build --preset wasm-smoke
+NODE_PATH="$PWD/build/wasm-browser-tools/node_modules" \
+  node tests/wasm/smoke.cjs build/wasm-smoke
+```
+
+It has no SDL/media/Lua frontend. It validates a bundled BMSON/native round trip,
+actual JSON download/re-upload, Unicode, malformed input, size admission, reload
+volatility and missing-isolation rejection. Its memory cap remains 256 MiB.
+
+References: [SDL Emscripten platform guide](https://wiki.libsdl.org/SDL3/README-emscripten),
+[Emscripten filesystem semantics](https://emscripten.org/docs/porting/files/file_systems_overview.html),
+[Emscripten pthread requirements](https://emscripten.org/docs/porting/pthreads.html).

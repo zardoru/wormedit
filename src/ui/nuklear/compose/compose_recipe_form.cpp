@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/nuklear/compose/compose_recipe_form.h"
 
 #include "ui/nuklear/chrome/chrome.h"
@@ -594,7 +595,7 @@ void open_module_picker(const wormedit::ui::compose_view_t& view) {
     module_picker_origin = {view.project_id.value, view.chart_id.value, view.document_revision,
                             view.recipe_form.recipe_id.value};
     static constexpr SDL_DialogFileFilter filter{"Lua modules", "lua"};
-    SDL_ShowOpenFileDialog(module_picked, reinterpret_cast<void*>(static_cast<std::uintptr_t>(*generation)),
+    wormedit::platform::show_open_file_dialog(module_picked, reinterpret_cast<void*>(static_cast<std::uintptr_t>(*generation)),
         SDL_GetKeyboardFocus(), &filter, 1, nullptr, false);
 }
 

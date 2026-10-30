@@ -753,7 +753,7 @@ auto find_linked_sound_source(const chart_document_t& chart, object_id_t source_
     return linked_sound_source_t{&*channel, &*source};
 }
 
-auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::uint64_t order,
+auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::size_t order,
                             std::string_view channel_name, std::uint64_t revision)
     -> std::variant<object_id_t, document_command_result_t> {
     const auto owned = std::ranges::find(chart.bgm_source_lanes, std::optional{channel},
@@ -777,7 +777,7 @@ auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::u
 auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measure,
                                 const semantic_event_refs_t& refs,
                                 object_id_t semantic_id, object_id_t source_id,
-                                std::optional<lane_id_t> lane, std::uint64_t channel_order,
+                                std::optional<lane_id_t> lane, std::size_t channel_order,
                                 std::string_view channel_name, std::uint64_t revision)
     -> std::optional<document_command_result_t> {
     const auto position = refs.note ? refs.note->position : refs.bgm->position;

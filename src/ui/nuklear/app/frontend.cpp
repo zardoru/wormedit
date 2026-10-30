@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/frontend/workspace.h"
 #include "ui/nuklear/compose/compose_input_queries.h"
@@ -368,10 +369,10 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
         {"wormedit project", "wormedit"},
     };
     if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE || kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE)
-        SDL_ShowOpenFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_open_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                open_filters, SDL_arraysize(open_filters), nullptr, false);
     else
-        SDL_ShowSaveFileDialog(project_file_dialog_callback, token.release(), g_window,
+        wormedit::platform::show_save_file_dialog(project_file_dialog_callback, token.release(), g_window,
                                save_filters, SDL_arraysize(save_filters), "Untitled.wormedit");
 }
 

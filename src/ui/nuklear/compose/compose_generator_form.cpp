@@ -1,3 +1,4 @@
+#include "common/file_dialog.h"
 #include "ui/nuklear/compose/compose_generator_form.h"
 #include "ui/nuklear/compose/compose_panel_internal.h"
 #include "ui/nuklear/chrome/chrome.h"
@@ -77,7 +78,7 @@ void picker(const ComposeInspectorContext& inspector) {
             editor.picker_project = view.project_id; editor.picker_chart = view.chart_id;
             editor.picker_revision = view.document_revision; editor.picker_recipe = editor.selected;
             static constexpr SDL_DialogFileFilter filter{"Lua generator", "lua"};
-            SDL_ShowOpenFileDialog(picked, reinterpret_cast<void*>(static_cast<std::uintptr_t>(*generation)),
+            wormedit::platform::show_open_file_dialog(picked, reinterpret_cast<void*>(static_cast<std::uintptr_t>(*generation)),
                 SDL_GetKeyboardFocus(), &filter, 1, nullptr, false);
         }
     }

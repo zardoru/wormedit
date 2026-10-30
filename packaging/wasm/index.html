@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wormedit — browser codec smoke</title>
+<style>
+body { font: 18px/1.5 system-ui,sans-serif; max-width: 48rem; margin: 4rem auto; padding: 0 1.5rem; color: #182634; background: #f4f7fa; }
+button,input { font: inherit; margin: .5rem 0; }
+button { padding: .5rem 1rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; padding: 1rem; }
+</style>
+<h1>Wormedit browser codec smoke</h1>
+<p>Experimental post-1.0 build. Validates and round-trips native project JSON using
+the real C++ codec. The bundled BMSON sample includes notes and sound references.</p>
+<p>This page has no editor, media playback, asset uploads or persistent storage.
+Reloading discards the current document. Download requests a browser download;
+it does not save or overwrite a project on your disk. Referenced media is not included.</p>
+<label>Open native project JSON (maximum 64 MiB)<br>
+<input id="open" type="file" accept=".wormedit,.json" disabled></label><br>
+<button id="download" disabled>Download native project JSON</button>
+<p id="status" role="status" data-state="loading">Loading WebAssembly…</p>
+<pre id="summary"></pre>
+<script src="wormedit-wasm-smoke.js"></script>
+<script>
+'use strict';
+const openInput = document.getElementById('open');
+const downloadButton = document.getElementById('download');
+const status = document.getElementById('status');
+const summary = document.getElementById('summary');
+const maximumBytes = 64 * 1024 * 1024;
+let currentBytes = '';
+let codec;
+
+function report(message, state) {
+  status.textContent = message;
+  status.dataset.state = state;
+}
+
+function accept(bytes) {
+  if (!bytes) throw new Error('Native codec rejected the project. Current document unchanged.');
+  const project = JSON.parse(bytes);
+  summary.textContent = JSON.stringify(project, null, 2).slice(0, 4000);
+  currentBytes = bytes;
+}
+
+openInput.addEventListener('change', async () => {
+  const file = openInput.files[0];
+  if (!file) return;
+  openInput.disabled = downloadButton.disabled = true;
+  try {
+    if (file.size > maximumBytes) throw new Error('File exceeds 64 MiB. Current document unchanged.');
+    const bytes = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
+    accept(codec.normalizeNative(bytes));
+    report('Project validated in memory. Download to keep a copy.', 'ready');
+  } catch (error) {
+    report(error instanceof Error ? error.message : 'Project rejected. Current document unchanged.', 'rejected');
+  } finally {
+    openInput.value = '';
+    openInput.disabled = false;
+    downloadButton.disabled = !currentBytes;
+  }
+});
+
+downloadButton.addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([currentBytes], {type: 'application/json'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'browser-smoke.wormedit';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  report('Download requested. Confirm completion in your browser.', 'download-requested');
+});
+
+(async () => {
+  try {
+    if (typeof WebAssembly !== 'object') throw new Error('WebAssembly is unavailable.');
+    if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function')
+      throw new Error('Cross-origin isolation is required. Serve with COOP/COEP headers.');
+    codec = await createWormeditSmoke();
+    const sample = codec.sampleNative();
+    if (!sample || codec.normalizeNative(sample) !== sample)
+      throw new Error('Native codec startup round-trip failed.');
+    accept(sample);
+    openInput.disabled = downloadButton.disabled = false;
+    report('WebAssembly ready. Sample round-trip passed.', 'ready');
+  } catch (error) {
+    report('Startup failed: ' + (error instanceof Error ? error.message : String(error)), 'failed');
+  }
+})();
+</script>
+</html>

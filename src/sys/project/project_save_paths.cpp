@@ -242,7 +242,12 @@ void project_save_report_t::publish_paths(document_history_t& history,
 auto project_save_report_t::status_message() const -> std::string {
     if (!storage.value)
         return storage.diagnostics.empty() ? "Could not save the project." : storage.diagnostics.front().message;
+#ifdef __EMSCRIPTEN__
+    auto message = "Project stored in the temporary browser workspace at " + destination.string() +
+                   ". Confirm the ZIP download in your browser to keep a copy.";
+#else
     auto message = "Project saved to " + destination.string() + ".";
+#endif
     if (!copied_files.empty()) {
         message += " Copied:";
         for (const auto& path : copied_files) message += " " + path.generic_string();

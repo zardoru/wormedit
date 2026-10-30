@@ -129,6 +129,48 @@
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-stdlib=libc++"
       }
+    },
+    {
+      "name": "wasm-smoke",
+      "displayName": "Post-1.0 experimental browser codec smoke",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wasm-smoke",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/wasm.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "OFF",
+        "WORMEDIT_BUILD_WASM_SMOKE": "ON",
+        "WORMEDIT_BUILD_APP": "OFF",
+        "WORMEDIT_BUILD_EVENT_HARNESS": "OFF",
+        "WORMEDIT_ENABLE_LUA": "OFF",
+        "WORMEDIT_ENABLE_AUDIO_DECODER": "OFF",
+        "WORMEDIT_ENABLE_IMAGE_DECODER": "OFF",
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "OFF",
+        "WORMEDIT_ENABLE_FFMPEG": "OFF",
+        "CMAKE_DISABLE_FIND_PACKAGE_Iconv": "ON"
+      }
+    },
+    {
+      "name": "wasm",
+      "displayName": "Post-1.0 browser editor (SDL/WebGL)",
+      "inherits": "wasm-smoke",
+      "binaryDir": "${sourceDir}/build/wasm",
+      "cacheVariables": {
+        "WORMEDIT_BUILD_WASM_SMOKE": "OFF",
+        "WORMEDIT_BUILD_APP": "ON",
+        "WORMEDIT_ENABLE_LUA": "ON",
+        "WORMEDIT_ENABLE_AUDIO_DECODER": "ON",
+        "WORMEDIT_ENABLE_IMAGE_DECODER": "ON",
+        "WORMEDIT_INSTALL_MANUAL": "OFF",
+        "BUILD_SHARED_LIBS": "OFF",
+        "SDL_SHARED": "OFF",
+        "SDL_STATIC": "ON",
+        "SDL_TEST_LIBRARY": "OFF",
+        "SDL_TESTS": "OFF",
+        "SDL_PTHREADS": "ON",
+        "CMAKE_DISABLE_FIND_PACKAGE_Iconv": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -170,6 +212,22 @@
     {
       "name": "linux-clang-libcxx",
       "configurePreset": "linux-clang-libcxx",
+      "jobs": 4
+    },
+    {
+      "name": "wasm-smoke",
+      "configurePreset": "wasm-smoke",
+      "targets": [
+        "wormedit-wasm-smoke"
+      ],
+      "jobs": 4
+    },
+    {
+      "name": "wasm",
+      "configurePreset": "wasm",
+      "targets": [
+        "wormedit"
+      ],
       "jobs": 4
     }
   ],

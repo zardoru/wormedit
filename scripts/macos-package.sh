@@ -2,8 +2,8 @@
 # Native unsigned owner-verification build; no Developer ID or notarization.
 # Prerequisites: current Xcode Command Line Tools (xcode-select --install), Homebrew,
 # brew install cmake ninja pkgconf asciidoctor python ffmpeg
-# CMake >= 4.2 is needed by libotoworm. SDL3/Lua/Ogg/Vorbis are built from pinned
-# sources, zlib/iconv come from the macOS SDK. No system SDL3/Lua/libiconv package.
+# SDL3/Lua/Ogg/Vorbis are built from pinned sources; iconv comes from the macOS
+# SDK. No system SDL3/Lua/libiconv package is needed.
 # Usage: scripts/macos-package.sh [output-dir] [extra CMake arguments...]
 set -euo pipefail
 cd "$(dirname "$0")/.."

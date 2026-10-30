@@ -395,34 +395,6 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     include(cmake/sdl/bounded-presentation.cmake)
     wormedit_enable_bounded_sdl_presentation("${sdl3_SOURCE_DIR}")
 
-    set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libotoworm" CACHE PATH
-        "libotoworm source directory (the third_party submodule by default)")
-    if(NOT EXISTS "${WORMEDIT_OTOWORM_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR "libotoworm not found at ${WORMEDIT_OTOWORM_SOURCE_DIR}; "
-            "run: git submodule update --init")
-    endif()
-    if(WIN32)
-        include(cmake/dependencies/zlib.cmake)
-    endif()
-    if(NOT TARGET otoworm::otoworm)
-        add_subdirectory("${WORMEDIT_OTOWORM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
-    endif()
-
-    # libotoworm is a separate project that builds as C++20; keep its own sources
-    # there while wormedit uses C++23 (D14). Its C++23 fixes are kept for upstream.
-    set_target_properties(otoworm PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-
-    # libotoworm's conversion bridge selects iconv through its legacy LINUX
-    # preprocessor symbol.  Define it at the dependency boundary on Linux so
-    # its already-required Iconv target and its headers agree.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_compile_definitions(otoworm PRIVATE LINUX)
-    endif()
-    # libotoworm tests the legacy WIN32 symbol, which only MSVC defines on its own.
-    if(WIN32 AND NOT MSVC)
-        target_compile_definitions(otoworm PRIVATE WIN32 MINGW)
-    endif()
-
     configure_file("${CMAKE_BINARY_DIR}/config.h"
         "${CMAKE_BINARY_DIR}/generated/wormedit/config.h" COPYONLY)
 
@@ -714,7 +686,6 @@ if(WORMEDIT_BUILD_APP)
             wormedit::core
             wormedit::ui_frontend
             SDL3::SDL3
-            otoworm::otoworm
             nlohmann_json::nlohmann_json
     )
 

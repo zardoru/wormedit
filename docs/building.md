@@ -84,7 +84,6 @@ The full application cross-build will receive a separate preset after SDL3 GPU, 
 On an x86_64 Linux host with Docker (no host linuxdeploy/appimagetool required):
 
 ```sh
-git submodule update --init
 scripts/linux-appimage.sh [output-dir]     # default: build/dist; at most 3 jobs
 ```
 
@@ -157,8 +156,8 @@ As with Linux cross-builds, enable the full application only after its Windows-t
 ## Cross-compiling the Windows application from Linux
 
 The `windows-cross` preset builds the real SDL3 GPU application (`wormedit.exe`, Release, GUI subsystem) with
-MinGW-w64. The SDL3 source is reused from `build/_deps` when present, zlib is built from source for the
-Windows target (`cmake/dependencies/zlib.cmake`). This development preset disables FFmpeg;
+MinGW-w64. The SDL3 source is reused from `build/_deps` when present.
+This development preset disables FFmpeg;
 the release preset below uses the pinned Windows SDK. Pass `-DWORMEDIT_WINDOWS_CONSOLE=ON`
 to keep a console attached for debugging.
 
@@ -209,7 +208,7 @@ manual, license notices and a launch note. Its filename uses `WORMEDIT_VERSION_F
 Only the `Wormedit` and `Manual` install components are selected: dependency SDK
 headers, static libraries and absolute install paths stay out of the release.
 The shared notice installer supplies the complete `third-party/` tree, including
-the embedded SDL/miniaudio/libotoworm dependencies and static MinGW/GCC runtimes.
+the embedded SDL/miniaudio dependencies and static MinGW/GCC runtimes.
 FFmpeg's corresponding source archive, license and build configuration are included under
 `third-party/ffmpeg`; keep these when redistributing.
 Installation resolves DLL imports recursively and fails for missing third-party
@@ -284,19 +283,18 @@ the installer before continuing), install [Homebrew](https://brew.sh/), then:
 
 ```sh
 brew install cmake ninja pkgconf asciidoctor python ffmpeg
-git submodule update --init --recursive
 scripts/macos-package.sh
 # Optional output directory and version override (empty suffix for a final release):
 # scripts/macos-package.sh build/dist -DWORMEDIT_VERSION_SUFFIX=-rc2
 ```
 
-CMake must be at least 4.2 (libotoworm's requirement). The script probes the
+CMake must be at least 3.25. The script probes the
 selected Apple compiler/SDK for C++23 `std::expected`; update Xcode/CLT if it fails.
 It uses `xcrun` for C, C++ and Objective-C++, and needs network access for pinned
 FetchContent dependencies on the first build. SDL3 is compiled from this project's
 pinned source with Metal support, not Homebrew SDL. Lua 5.4.8 and Ogg/Vorbis are
 pinned source builds; miniaudio/stb are pinned dependencies. Lua/LuaRocks, SDL3,
-and libiconv Homebrew packages are unnecessary: zlib and iconv resolve from the
+and libiconv Homebrew packages are unnecessary: iconv resolves from the
 macOS SDK. FFmpeg is discovered using pkg-config with `brew --prefix ffmpeg` and
 `brew --prefix` (both `/opt/homebrew` and `/usr/local` work).
 
@@ -340,7 +338,7 @@ then delete `build/macos-release-<arch>/macos-icon` and rebuild to refresh it.
 
 Third-party notices come from the shared `cmake/third-party-notices.cmake`, installed into
 `Wormedit.app/Contents/Resources/third-party` under the `Wormedit` component; the package
-script refuses to archive without them. zlib is the operating system's `/usr/lib/libz.dylib`, which is not bundled, so it needs no notice. The script sets `WORMEDIT_FFMPEG_LOCAL_ONLY=ON`: Homebrew FFmpeg has no redistribution notices, so the bundle carries `third-party/ffmpeg/FFmpeg-LOCAL-ONLY.txt` instead. Pass `-DWORMEDIT_FFMPEG_LOCAL_ONLY=OFF -DWORMEDIT_FFMPEG_NOTICES_DIR=<dir>` for a redistributable build. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
+script refuses to archive without them. Any system zlib dependency uses `/usr/lib/libz.dylib`, which is not bundled, so it needs no notice. The script sets `WORMEDIT_FFMPEG_LOCAL_ONLY=ON`: Homebrew FFmpeg has no redistribution notices, so the bundle carries `third-party/ffmpeg/FFmpeg-LOCAL-ONLY.txt` instead. Pass `-DWORMEDIT_FFMPEG_LOCAL_ONLY=OFF -DWORMEDIT_FFMPEG_NOTICES_DIR=<dir>` for a redistributable build. Homebrew's [FFmpeg formula](https://formulae.brew.sh/formula/ffmpeg) enables
 GPL components. This command produces a local owner-verification build, not an
 LGPL-only release artifact. Public redistribution needs the matching notices,
 source/compliance materials for its actual recursive dependency set, or a

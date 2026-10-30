@@ -881,7 +881,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         WORMEDIT_TEST_ICON_WIDGETS=1
         WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
-        wormedit::core wormedit::ui_frontend SDL3::SDL3 otoworm::otoworm
+        wormedit::core wormedit::ui_frontend SDL3::SDL3
         nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE

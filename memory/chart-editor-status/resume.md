@@ -1,18 +1,24 @@
 # Status: resume checklist
 
-## Independent review follow-ups (owner, 2026-10-29)
+## Independent review follow-ups (owner, 2026-10-30)
 
-[T-785–T-786](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) are active
-on the same PR81 after `4eb80bc`: checked admitted-payload access, direct native object-only
-staging, explicit Linux CI compiler/library selection and early capability diagnostics.
-The requested Opus source review found no blocker but did not run verification; existing
-red Linux checks also fail on main and are being repaired, not waived. Four initial changed-TU
-complexity checks and GCC/Clang compiler-policy probes pass. Clang 23.1.4 application and
-frame-timing targets build; focused workflows pass 931 assertions/59 cases. The first CI
-Clang 19/GNU 14 pair failed the actual probe; exact containers now verify Clang 21/GNU 15
-on official Ubuntu 26.04 and GCC 14 on Ubuntu 24.04, including the warning policy.
-Final GCC GATE/workflows/header checks and remote CI remain pending. See the
-[follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md).
+[T-785](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) is locally done:
+checked admitted-payload reads and direct native object-only staging. C++ source `e313cc0`
+passes Lua ON GATE 5,603/5,603, whitespace and seven changed-unit complexity checks;
+four additional consumers pass matching 23.1.3, eleven distinct units total. GCC and
+Clang focused workflows each pass 931 assertions/59 cases; prepared workflows pass
+1,355/69; event harness 721/721; isolated Compose smoke is inspected. No allowance changed.
+
+T-786 remains partial pending corrected remote CI. Exact Ubuntu probes validate GCC 14
+on Ubuntu 24.04 and Clang 21/GNU 15 on official Ubuntu 26.04, preserving the warning
+policy. The first 19/GNU 14 pin failed its actual API probe. The corrected `3e28191` run
+passes macOS and builds Clang, then exposes two test-support defects: GNU 14's temporary
+filesystem range returns `dangling`, and the journal overflow worker can outlive its
+captured stack latches. `e313cc0` gives the range an owner and joins that graph; the actual
+walkthrough TU compiles under GNU 14 and the overflow case passes 100 consecutive native
+runs. CI's 120-second timeout is preserved. Keep PR81 draft until current checks finish.
+See the [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md)
+for source pins, failures, logs, review scope and remaining design concerns.
 
 ## Navigation and modifiability round two (owner, 2026-10-29)
 

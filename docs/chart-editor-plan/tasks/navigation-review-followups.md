@@ -2,7 +2,8 @@
 
 ## T-785 Reject missing admitted selectors and avoid unrelated prepared reads
 
-- **Status:** partial (2026-10-29; implementation and verification pending)
+- **Status:** done (2026-10-30; final local Lua ON GATE and explicit consuming checks pass)
+- **Completion:** All admitted-payload readers return existing failure values for absent/wrong alternatives. Object-only prepared edits use the native adapter directly; combined catalog lifetime and replay remain explicit. Code `e313cc0` passes 5,603/5,603 native tests, seven changed-unit plus four additional consuming complexity checks, 931 focused assertions/59 cases on GCC and Clang, 1,355 prepared assertions/69 cases, 721 event tests and inspected isolated Compose smoke. See the audit for source pins, logs and remaining limitations.
 - **Outcome:** Missing or mismatched admitted payloads return existing input feedback; object-only prepared edits do not require a separate catalog projection.
 - **Read first:** `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `docs/audits/compose-input-contracts-2026-10-29.md`, `src/core/command.cpp`.
 - **Files owned:** `src/sys/compose/input/compose_input_internal.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/input/compose_timing_input.cpp`, `src/sys/compose/input/compose_export_cut_input.cpp`, `src/core/command.cpp`, `include/wormedit/core/chart_edit_storage_support.h`, `tests/sys/frame_timing_tests.cpp`, `tests/core/bms_program_edit_tests.cpp`, `docs/chart-editor-plan/tasks/navigation-review-followups.md`, `docs/audits/navigation-review-followups-2026-10-29.md`.
@@ -14,10 +15,11 @@
 
 ## T-786 Use capable CI compilers and diagnose unsupported local toolchains
 
-- **Status:** partial (2026-10-29; implementation and verification pending)
+- **Status:** partial (2026-10-30; local verification complete; corrected remote CI pending)
+- **Local verification:** Selected Ubuntu/compiler/library pairs pass actual API execution and initializer-policy fixtures. The GNU 14 walkthrough translation unit compiles; the journal overflow case passes 100 consecutive native runs. Final local GATE passes 5,603/5,603 and all matching complexity checks. The `3e28191` remote run's two test-support failures are corrected in `e313cc0`; remote confirmation is still required.
 - **Outcome:** Linux CI explicitly selects compilers and standard libraries supporting existing C++23 features and the designated-initializer warning policy; configure diagnoses missing capabilities before dependency builds.
 - **Read first:** `docs/chart-editor-plan/decisions/code-style.md`, `.github/workflows/ci.yml`, `cmake/warnings.cmake`, `CMakePresets.json`, `docs/building.md`.
-- **Files owned:** `.github/workflows/ci.yml`, `CMakeLists.txt`, `cmake/check_compiler_requirements.cmake`, `docs/building.md`, `docs/chart-editor-plan/tasks/navigation-review-followups.md`, `docs/audits/navigation-review-followups-2026-10-29.md`.
+- **Files owned:** `.github/workflows/ci.yml`, `CMakeLists.txt`, `cmake/check_compiler_requirements.cmake`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, `tests/core/command_journal_tests.cpp`, `docs/building.md`, `docs/chart-editor-plan/tasks/navigation-review-followups.md`, `docs/audits/navigation-review-followups-2026-10-29.md`.
 - **Steps:** 1. Verify supported Ubuntu compiler packages and the Clang warning split. 2. Pin Linux GCC/Clang and install their required C++ library. 3. Probe actual C++23 and warning capabilities during configure. 4. Verify GCC and Clang configuration/builds, preserve diagnostics, and report actual CI outcomes.
 - **Invariants:** Warnings remain errors; omitted designated members remain allowed while Clang rejects omitted positional members. The complexity toolchain and baseline are unchanged.
 - **Reject/failure behavior:** Unsupported compiler/library combinations fail configure with an actionable diagnostic; no silent downgrade or warning suppression is added.

@@ -76,43 +76,55 @@ The overflow case passes 100 consecutive native runs with `--repeat until-fail:1
 and a five-second diagnostic bound, `/tmp/wormedit-review-journal-stress.log`.
 CI's existing 120-second timeout and all original assertions remain unchanged.
 
-## Verification in progress
+## Local acceptance and remaining CI verification
 
-- Initial matching-toolchain complexity: four changed production units pass,
-  `/tmp/wormedit-review-followups-complexity-initial.log`.
-- Before the two CI test-support fixes, native Lua ON GATE passes 5,603/5,603,
-  whitespace and five changed-unit complexity checks against `4eb80bc`:
-  `/tmp/wormedit-review-final-gate.log`, details `/tmp/wormedit-gate.zkquKu`.
-  Four additional consuming units pass `/tmp/wormedit-review-final-header-complexity.log`.
-  The new admission test initially scored 49; named stroke setup and the existing fatal
-  `expect_compose_test` helper retain every assertion and satisfy the limit. Focused
-  GCC and Clang runs retain 931 assertions/59 cases. Both CI supporting files separately
-  pass matching complexity, `/tmp/wormedit-review-ci-tests-complexity.log`.
-- Real GCC and Clang compiler-policy fixture projects pass C++23 requirements,
-  omitted designated members and complete positional members. Clang rejects incomplete
-  positional members; GCC retains its existing allowance. An intentionally unavailable
-  standard-library fixture fails the requirement probe before the dependency boundary.
-  Driver: `/tmp/wormedit-review-compiler-probes.py`; report/logs:
-  `/tmp/wormedit-compiler-probes.edsbawfg` (updated diagnostic implementation).
-- Exact selected Ubuntu pairs pass the feature probe and actual warning-policy fixtures:
+C++ source: `e313cc0beb50a15d5fd40b94e525201dbd1cc6ca`, compared with `4eb80bc`.
+The final native configuration retains Debug/GCC 16, app, Lua, audio/image/video and
+FFmpeg enabled. No feature, timeout, warning or complexity allowance was relaxed.
+
+- Final GATE passes build, **5,603/5,603 tests**, whitespace and **seven changed-unit
+  complexity checks**, `/tmp/wormedit-review-ci-accepted-gate.log`; details
+  `/tmp/wormedit-gate.5i1FO8`. Matching Clang/clang-tidy/libclang is 23.1.3.
+- **Four additional unchanged consuming units pass**, for eleven distinct units in
+  this follow-up: `src/core/interaction.cpp`, `src/core/semantic_layer_editor.cpp`,
+  `src/sys/compose/input/compose_resource_input.cpp`, and
+  `src/sys/compose/input/compose_waveform_fit_input.cpp`.
+  `/tmp/wormedit-review-final-header-complexity.log` records their checks. The subsequent
+  CI fixes change tests only, so these header-consumer results remain applicable.
+- GCC and Clang focused policy/admission/workflow runs each pass **931 assertions in
+  59 cases**. Logs: `/tmp/wormedit-review-ci-fixed-gcc-workflows.log` and
+  `/tmp/wormedit-review-clang-complete-workflows.log`. Prepared edit workflows pass
+  **1,355 assertions in 69 cases**, `/tmp/wormedit-review-prepared-workflows.log`.
+- The event harness passes **721/721**, `/tmp/wormedit-review-ci-fixed-events.log`.
+  The journal overflow case passes **100 consecutive runs** with
+  `ctest --repeat until-fail:100 --timeout 5`; this is a stricter diagnostic bound,
+  with the workflow's 120-second timeout preserved. Log:
+  `/tmp/wormedit-review-journal-stress.log`.
+- Clang 23.1.4 application and frame-timing targets build. The initial default-target
+  build was intentionally interrupted to finish these relevant targets; a later fixture
+  construction error was corrected with the existing measure-index/proposal factories.
+  Logs: `/tmp/wormedit-review-clang-final-build.log` and
+  `/tmp/wormedit-review-clang-complete-build.log`. No complete Clang all-target build is claimed.
+- The new admission test initially scored 49. Named stroke setup and the existing fatal
+  `expect_compose_test` helper retain every assertion and satisfy the limit; the focused
+  assertion/case totals remain identical. No baseline entry or suppression was added.
+- Isolated Xvfb Compose smoke passes and its normal empty seven-key Compose view was
+  inspected: `/tmp/wormedit-review-compose.png`, log
+  `/tmp/wormedit-review-compose-smoke.log`. Generated tracked walkthrough content is
+  restored after runtime consumers finish and excluded from commits.
+- Real local GCC/Clang compiler-policy fixtures and unsupported-library failure pass:
+  `/tmp/wormedit-review-compiler-probes-final.log`, details
+  `/tmp/wormedit-compiler-probes.edsbawfg`. Exact selected Ubuntu pairs pass API
+  compile/link/execution and actual warning-policy fixtures:
   `/tmp/wormedit-ci-supported-policy-probes.log`,
   `/tmp/wormedit-ci-clangpp-21-policy.log`, `/tmp/wormedit-ci-gpp-14-policy.log`.
-  Reproducer: `/tmp/wormedit-ci-toolchain-08d/run-supported-probes.py` with
-  task-owned `wormedit-ci-toolchain-probe` Ubuntu container images.
   Clang rejects incomplete positional members; GCC retains its existing allowance.
-  `/tmp/wormedit-ci-clangpp-19-probe.log` and `/tmp/wormedit-ci-clangpp-20-probe.log`
-  retain the rejected combinations and direct compiler errors. Containers install binary
-  packages without changing the host toolchain; they do not build the full project.
-- Workflow YAML parses; Linux pins and Clang library-selection flags are explicit.
-- Clang 23.1.4 preset application and frame-timing targets build successfully:
-  `/tmp/wormedit-review-clang-targets-verified.log`. Focused workflows pass 931 assertions
-  in 59 cases, `/tmp/wormedit-review-clang-workflows.log`.
-  The new direct-family fixture initially attempted to default-construct a measure index;
-  it now uses the existing measure-index and proposal factories. No assertions or allowances
-  were removed to fix that compile error.
-- Final native GCC/Lua GATE, event harness, additional consuming-header complexity,
-  final documentation and remote CI remain pending. No pass is claimed for those yet.
-  The initial default-target Clang build was intentionally interrupted without a
-  compiler failure to finish these relevant targets first; its log is
-  `/tmp/wormedit-review-clang-build.log`. Targeted completion is recorded separately
-  in the verified log above; no complete Clang all-target build is claimed.
+  The rejected 19/20 combinations and direct compiler errors remain in
+  `/tmp/wormedit-ci-clangpp-19-probe.log` and `/tmp/wormedit-ci-clangpp-20-probe.log`.
+  Reproducers live in `/tmp/wormedit-ci-toolchain-08d`; containers install binary
+  packages without changing the host toolchain and do not build the full project.
+
+Remote CI remains a separate acceptance step. `3e28191` passes macOS and the full
+Clang build, but its GCC walkthrough compile and Clang journal-timeout failures require
+confirmation after the `e313cc0` test-support fixes. T-785 is locally complete; T-786
+remains partial pending those jobs. The PR remains a draft and has no claimed approval.

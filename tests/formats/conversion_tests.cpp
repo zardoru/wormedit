@@ -4,6 +4,7 @@
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/quaver.h>
 #include <wormedit/formats/stepmania.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/rational.h>
@@ -1103,4 +1104,33 @@ TEST_CASE("Conversion preview groups cut omissions without blocking export", "[f
     REQUIRE(converted.ok());
     REQUIRE(converted.value.outputs.size() == 1);
     CHECK(converted.diagnostics.size() == 1);
+}
+
+namespace {
+void check_quaver_conversion(const wormedit::conversion_result_t& result, std::string_view title) {
+    std::string messages;
+    for (const auto& diagnostic : result.diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    REQUIRE(result);
+    REQUIRE(result.outputs.size() == 1);
+    CHECK(result.outputs.front().suggested_filename.ends_with(".qua"));
+    const auto reimport = wormedit::parse_quaver_bytes(std::as_bytes(std::span(result.outputs.front().bytes)));
+    REQUIRE(reimport.value);
+    CHECK(reimport.value->metadata.title == title);
+}
+}
+
+TEST_CASE("experimental Quaver conversion emits one validated file per difficulty", "[quaver][conversion]") {
+    const auto path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "quaver" / "four-key-denormalized.qua";
+    const auto parsed = wormedit::parse_quaver_bytes(read_binary(path));
+    REQUIRE(parsed.value);
+    auto request = wormedit::conversion_request_t{.target = wormedit::format_family_t::quaver,
+        .target_profile = "qua-v1-experimental", .chart = parsed.value->charts.front().id,
+        .loss_policy = wormedit::loss_policy_t::warn};
+    const auto result = wormedit::convert_document(*parsed.value, request);
+    check_quaver_conversion(result, parsed.value->metadata.title);
+    request.target_profile = "unknown";
+    const auto rejected = wormedit::convert_document(*parsed.value, request);
+    CHECK_FALSE(rejected);
+    CHECK(rejected.outputs.empty());
 }

@@ -86,6 +86,7 @@ auto target_family(std::string_view name) -> format_family_t {
         {"stepmania", format_family_t::stepmania},
         {"osu_mania", format_family_t::osu_mania},
         {"bmson", format_family_t::bmson},
+        {"quaver", format_family_t::quaver},
     };
     return lookup(table, name, "target");
 }

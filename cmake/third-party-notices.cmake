@@ -19,6 +19,7 @@ install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E tar cJf
     \"${wormedit_sdl_notice_archive}\" include src LICENSE.txt
     WORKING_DIRECTORY \"${sdl3_SOURCE_DIR}\" COMMAND_ERROR_IS_FATAL ANY)")
 wormedit_install_notices(SDL3 "${wormedit_sdl_notice_archive}")
+wormedit_install_notices(yaml-cpp "${yaml_cpp_SOURCE_DIR}/LICENSE")
 wormedit_install_notices(nuklear "${nuklear_SOURCE_DIR}/LICENSE")
 if(WORMEDIT_NLOHMANN_JSON_SOURCE_DIR)
     set(wormedit_json_notice_source "${WORMEDIT_NLOHMANN_JSON_SOURCE_DIR}")

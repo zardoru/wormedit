@@ -45,6 +45,7 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 include(cmake/dependencies/nlohmann_json.cmake)
+include(cmake/dependencies/yaml_cpp.cmake)
 include(cmake/warnings.cmake)
 
 option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)
@@ -206,13 +207,16 @@ add_library(wormedit_core
     src/formats/native_project_delta.cpp
     src/formats/native_project_migrations.cpp
     src/formats/native_project_storage.cpp
+    src/formats/quaver.cpp
+    src/formats/quaver_yaml.cpp
+    src/formats/quaver_writer.cpp
     src/formats/osu_mania.cpp
     src/formats/stepmania.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(wormedit_core PUBLIC cxx_std_23)
-target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json yaml-cpp::yaml-cpp)
 find_package(Threads REQUIRED)
 target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 

@@ -75,3 +75,32 @@ Paired `bms/export-{beatoraja,lr2}-{lnmode,scroll,preview,timing,encoding}.bms` 
 | `bms/export-lr2-preview.bms` | PREVIEW names the modern preview asset; classic has none. |
 | `bms/export-lr2-timing.bms` | Both profiles retain extended BPM 180 and STOP 96. |
 | `bms/export-lr2-encoding.bms` | The same Japanese title uses UTF-8 BOM for beatoraja and CP932 for LR2. |
+
+## Quaver corpus (T-173)
+
+These original, hand-authored UTF-8 YAML files follow the pinned
+[Quaver reference](../../docs/references/quaver-qua-format.md); no Quaver.API test
+file was copied. Every file uses CRLF, including its final newline. Resource
+names are intentional placeholders, not bundled audio. Default-valued fields
+are omitted except for deliberately invalid sample indices. Times below are in
+milliseconds. The inventory tests check presence, documentation and byte
+preservation only. The experimental T-174/T-175 adapter now exercises semantic
+acceptance/rejection, CRLF round trips and native persistence in
+`tests/formats/quaver_tests.cpp`; this does not establish Quaver.API conformance.
+
+| Fixture | Expected semantic result / purpose | Current implementation/reference note |
+| --- | --- | --- |
+| `quaver/four-key-denormalized.qua` | Accept Keys4; five taps at 500/1000/1500/2000/2500 on lanes 1/2/3/4/1. Preserve all metadata including IDs 173/17 and preview 1500. BPM 120 at 0 in 4/4, then 180 at 2000 in 3/4 with hidden bar line. SV 0.5 at 1000.5; independent SSF 2 at 2500.5. HitSound values restore to Normal (1), Whistle (2), Finish (4), Clap (8), then all flags (15). | Omitted BPMDoesNotAffectScrollVelocity means denormalized: relative to base BPM 120, SV × BPM / 120 is 0.5 at 1000.5 and 0.75 at 2000; the separate SSF doubles it at 2500.5. Omitted Signature, Type, TimingGroup and EndTime mean 4/4, Normal, `$Default` and tap. |
+| `quaver/seven-key-scratch-normalized.qua` | Accept Keys7 plus scratch (eight lanes); holds on lane 1 [500,1500], lane 7 [1000,2500], lane 8 [1500,3000]. Preserve LegacyLNRendering and HasScratchKey. BPM 120 → 180 at 2000; normalized initial SV 1.5 → 0.75 at 1000. | BPM change must not scale normalized SV. Omitted empty `$Global` is restored by the reader. |
+| `quaver/samples-layers-mines.qua` | Accept version 1; layer 0 Default (white), layer 1 Accents (hidden, 64/128/255). Tap at 500/lane 1 belongs to layer 1 with samples 1 at volume 100 and 2 at volume 60; mine at 1500/lane 2 belongs to default layer. Samples are accent.wav and backing.wav (second unaffected by rate). Sound effects at 250.5/sample 2/volume 100 and 750.5/sample 1/volume 40. Bookmarks at 500 (default yellow) and 1500 (255/0/64). | Sample references are 1-based. Omitted volume restores to 100. Mine requires version 1; names, colors and bookmark text survive. |
+| `quaver/scroll-groups-unsorted.qua` | Accept and stable-sort timing points to 0/120 then 2000/180, and notes to 500/lane 1, 500/lane 2, 1500/lane 3 without reversing equal-time notes. Lane 1 uses `$Default`; lanes 2 and 3 use accent. Default initial normalized SV is 1. `$Global` has SV 0.5 at 1250.5 and SSF 2 at 1000.5. Accent initial SV is 1.25, with SV 1.5 at 750.5 then 0.75 at 1500.5, SSF 0.5 at 1250.5, hidden true and color 128/64/255. | Preserve both `!ScrollGroup` mappings and per-note IDs; global modifiers apply to all groups. UnknownFixtureField is ignored. Group data has no equivalent editor model yet. |
+| `quaver/negative-no-hit-objects.qua` | Reject: missing HitObjects; otherwise valid Keys4 and BPM 120. | Pair with four-key positive; at least one object is required. |
+| `quaver/negative-no-timing-points.qua` | Reject: missing TimingPoints; otherwise valid Keys4 and tap at 500/lane 1. | Pair with four-key positive; at least one timing point is required. |
+| `quaver/negative-keysound-sample-zero.qua` | Reject: tap's keysound Sample 0 with a one-entry sample table. | Pair with samples positive; 0 is not a valid sample index. |
+| `quaver/negative-keysound-sample-range.qua` | Reject: tap's keysound Sample 2 with a one-entry sample table. | Maximum valid index here is 1. |
+| `quaver/negative-sound-effect-sample-zero.qua` | Reject: sound effect at 250 references Sample 0 with a one-entry sample table. | Same sample bounds apply independently to sound effects. |
+| `quaver/negative-sound-effect-sample-range.qua` | Reject: sound effect at 250 references Sample 2 with a one-entry sample table. | Maximum valid index here is 1. |
+| `quaver/negative-hold-equal.qua` | Reject: lane 1 hold starts and ends at 500. | Pair with scratch holds; nonzero EndTime must be strictly greater than StartTime. |
+| `quaver/negative-hold-before.qua` | Reject: lane 1 hold starts at 500 and ends at 499. | EndTime 0 denotes a tap, so 499 isolates a reversed hold instead. |
+| `quaver/negative-version.qua` | Reject: QuaVersion 2, with otherwise valid Keys4, BPM 120 and one tap. | Pinned reference accepts versions up to 1. |
+| `quaver/negative-mode.qua` | Reject: undefined Mode Keys11, with otherwise valid BPM 120 and one tap. | Pinned reference defines Keys1 through Keys10 only. |

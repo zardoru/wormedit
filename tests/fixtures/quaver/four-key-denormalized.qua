@@ -1,0 +1,42 @@
+AudioFile: fixture.ogg
+SongPreviewTime: 1500
+BackgroundFile: background.jpg
+BannerFile: banner.png
+MapId: 173
+MapSetId: 17
+Mode: Keys4
+Title: Quaver fixture quartet
+Artist: Wormedit fixtures
+Source: Synthetic
+Tags: fixture timing
+Creator: Wormedit
+DifficultyName: Four keys
+Description: Original format coverage
+Genre: Test
+TimingPoints:
+- Bpm: 120
+- StartTime: 2000
+  Bpm: 180
+  Signature: Triple
+  Hidden: true
+SliderVelocities:
+- StartTime: 1000.5
+  Multiplier: 0.5
+ScrollSpeedFactors:
+- StartTime: 2500.5
+  Multiplier: 2
+HitObjects:
+- StartTime: 500
+  Lane: 1
+- StartTime: 1000
+  Lane: 2
+  HitSound: Whistle
+- StartTime: 1500
+  Lane: 3
+  HitSound: Finish
+- StartTime: 2000
+  Lane: 4
+  HitSound: Clap
+- StartTime: 2500
+  Lane: 1
+  HitSound: Normal, Whistle, Finish, Clap

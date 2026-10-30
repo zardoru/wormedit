@@ -48,6 +48,7 @@ constexpr target_query_policy_t bpm_target_policy{
 
 
 struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::objects;
     static constexpr std::string_view invalid_limits_message = "BPM event cap must be positive";
     static constexpr std::string_view unknown_chart_message = "BPM edit refers to an unknown chart";
     static auto has_valid_limits(const bpm_edit_limits_t& limits) -> bool {

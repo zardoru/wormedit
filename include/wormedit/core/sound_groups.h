@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/command.h>
+#include <wormedit/core/document_command_types.h>
 
 #include <cstdint>
 #include <string>

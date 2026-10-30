@@ -1,0 +1,50 @@
+# Compose input policy and admission
+
+Round two of the owner-requested navigation/modifiability work, continuing PR81 from
+`23e113b`. The two tasks share Compose input ownership and execute in order in one lane.
+Root owns central docs, guard changes and the combined build; this lane creates no PR.
+
+## T-782 Make semantic-layer selection policy independent of projection order
+
+- **Status:** done (2026-10-29; root Lua ON GATE 5,602/5,602 and focused workflows pass)
+- **Completion:** Effective session query, projection-only reads, selection-boundary installation, same-sound query and projection-independent regressions verified. The unchanged policy body is out of line: matched implementation-touch plan 4 compiler actions versus session-header touch 181. See `docs/audits/compose-input-contracts-2026-10-29.md`.
+- **Verification evidence:** Combined GATE `/tmp/wormedit-round2-gate-verified.log` passes build, 5,602 tests, whitespace and 10 changed-TU complexity checks; eight additional consumers pass. Focused 847 assertions/58 cases, event harness 721/721 and isolated Compose smoke pass.
+- **Outcome:** One semantic-layer session query supplies effective solo selection policy; selection dispatch installs it and projection only reads it. The same action sequence selects the same objects with or without an intervening projection.
+- **Read first:** `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `src/sys/app/application_command_state.h`, `src/sys/compose/input/compose_input.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/ceremony_ratchet.txt`, `src/sys/app/application_command_state.cpp`, `src/sys/app/application_command_state.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/input/compose_input_internal.h`, `src/sys/compose/views/compose_view.cpp`, `src/sys/compose/actions/compose_actions.cpp`, `src/sys/compose/actions/compose_action_outcome.cpp`, `src/sys/commands/application_command_dispatch.cpp`, `src/sys/compose/compose_semantic_layer_commands.h`, `src/sys/compose/compose_sound_selection.h`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `docs/chart-editor-plan/tasks/compose-input-contracts.md`, `docs/audits/compose-input-contracts-2026-10-29.md`.
+- **Steps:** 1. Find every solo policy read/write and every selection dispatch boundary; freeze a recent solo/target change benchmark. 2. Put the effective policy query on its existing semantic-layer session owner and remove projection's repair of retained interaction state. Install policy at the actual selection entry boundary, including non-pointer actions. 3. Extend existing workflow tests for projection-independent solo/target changes, disabling solo and changing chart/target. 4. Record exact synchronization/edit/search sites before/after and verify.
+- **Invariants:** Core selection stays frontend-independent; visibility, lock/target rules, explicit selection commands, gesture capture and transaction publication retain their owners. Projection may refresh a detached view but must not repair retained selection policy.
+- **Reject/failure behavior:** Stale or invalid actions retain shared admission/rejection behavior; no document/history mutation is introduced by policy preparation.
+- **Verify:** GATE with matching Clang 23.1.3, `--jobs 2 --complexity-base 23e113b`; explicit changed-header consumers; focused solo workflow tests; documentation checks and whitespace. Root may supply combined execution evidence after integration; no lane may claim an unrun gate.
+- **Out of scope:** Boundary guard/BGA includes and CMake (root), persistence/session relocation, generic core selection rewrite, new public core policy framework, central index/architecture/status edits.
+
+## T-783 Admit typed Compose paint and recipe/span input families
+
+- **Status:** done (2026-10-29; root Lua ON GATE 5,602/5,602 and admission/valid workflows pass)
+- **Completion:** Bounded event admission and typed handlers for all selected paint/draw-source/span/recipe families; invalid-selector and legacy-toggle regressions verified. Raw selector interpretation is confined to one file instead of four; remaining raw families and the internal route/variant invariant are explicit in the audit.
+- **Verification evidence:** Combined GATE passes build, 5,602 tests, whitespace and 10 changed-TU complexity checks; eight additional consumers pass. Focused valid/invalid families pass 847 assertions/58 cases and the event harness passes 721/721. Existing family diagnostics are retained; no tests or allowances were waived.
+- **Outcome:** Paint and recipe/span handlers consume family-specific admitted payloads; unsupported raw selector values reject once before dispatch instead of falling through to another operation. Simultaneous frame events remain supported.
+- **Read first:** `src/ui/frontend/actions.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/input/compose_input_internal.h`, `src/ui/nuklear/compose/compose_object_input.cpp`, `tests/sys/compose_action_notification_tests.cpp`.
+- **Files owned:** `cmake/ceremony_ratchet.txt`, `src/sys/app/application_command_state.h`, `src/ui/frontend/actions.h`, `src/sys/compose/input/compose_input.cpp`, `src/sys/compose/input/compose_input_internal.h`, `src/sys/compose/input/compose_input_admission.h`, `src/sys/compose/input/compose_timing_input.cpp`, `src/sys/compose/input/compose_export_cut_input.cpp`, `src/ui/nuklear/compose/compose_input_panel.cpp`, `src/ui/nuklear/compose/compose_object_input.cpp`, `src/ui/nuklear/compose/compose_timing_input.cpp`, `src/ui/nuklear/compose/compose_recipe_form.cpp`, `src/ui/nuklear/compose/compose_recipe_menu.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/ui/export_cut_drag_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/bga_advance_workflow_tests.cpp`, `tests/ui/compose_bgm_layer_tests.cpp`, `docs/chart-editor-plan/tasks/compose-input-contracts.md`, `docs/audits/compose-input-contracts-2026-10-29.md`.
+- **Steps:** 1. Inventory family selector meanings, existing enum/helpers, producers and handlers; freeze an extension/search benchmark. 2. Define bounded family payloads/admission on the appropriate owner, reusing vocabulary. Keep raw transport admission separate from admitted handler invariants; do not add an optional typed mirror whose discriminator can disagree. 3. Migrate the selected complete families to typed dispatch, preserving legitimate legacy note-toggle and span-handle semantics. 4. Add boundary regressions for invalid raw values and valid recipe/paint/span paths in existing tests. 5. Review edit/search scope, run verification and document remaining raw families precisely.
+- **Invariants:** The workspace/frame accumulator supports simultaneous events. Shared stamp, cancellation, stale checks, outcome feedback and transaction publication are retained. No blanket conversion of every action family or new parser/framework is required.
+- **Reject/failure behavior:** Unsupported selectors produce the existing diagnostic/feedback failure shape without mutation, revision/history change or unintended gesture admission. Current-document and transaction validation remain authoritative.
+- **Verify:** GATE with matching Clang 23.1.3, `--jobs 2 --complexity-base 23e113b`; explicit header consumers, targeted admission/workflow tests, event harness, documentation and whitespace. Root may supply combined execution evidence; record actual tests/configuration.
+- **Out of scope:** T-784/root guard/BGA header paths, core storage protocols, persistence formats/schema, whole-frame variant conversion, new CMake source registration without coordinator approval, central docs/status edits.
+
+T-783 supporting scope approved by owner: `src/sys/compose/input/compose_input_admission.h` holds shared bounded family admission without new source registration.
+
+T-782 coordinator-approved extension: `src/sys/compose/compose_sound_selection.h` replaces the third independent solo derivation for same-sound selection with the session query, preserving range/cut-axis and layer filters.
+
+T-783 reuses the already T-782-owned `src/sys/app/application_command_state.h` only for the BGA proposal signature/staged-proposal tuple: it accepts admitted erase intent rather than reading the transport selector.
+
+Root integration extension (approved before edit): `cmake/ceremony_ratchet.txt` freezes
+the five legitimate selector reads in admission and the zero retained solo writes in
+projection. These are bounded lexical guards; they do not detect renamed/aliased copies.
+
+Root supporting extension (approved before edits): `src/sys/app/application_command_state.cpp`,
+`CMakeLists.txt` and `tests/CMakeLists.txt` move the solo query body out of the broad session
+header, registering it in app, event-harness, frame-timing and core same-sound test consumers. The query remains a
+member of its existing type. This adds one definition hop/four compilation variants but
+isolates future eligibility-only edits from session-header rebuild fanout. Root owns these
+registration paths; no other lane is active. Measure the matched rebuild plan before acceptance.

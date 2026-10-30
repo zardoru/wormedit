@@ -142,6 +142,7 @@ auto span_equal(const std::optional<position_span_t>& left,
 }
 
 struct marker_edit_context_t : chart_edit_context_t<marker_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::objects;
     static constexpr std::string_view invalid_limits_message =
         "marker and event caps must be positive";
     static auto has_valid_limits(const marker_edit_limits_t& limits) -> bool {

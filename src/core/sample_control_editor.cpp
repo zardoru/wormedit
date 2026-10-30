@@ -8,6 +8,7 @@ namespace wormedit {
 namespace {
 template<timing_lane_kind_t Lane>
 struct sample_control_edit_t : chart_edit_context_t<sample_control_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::legacy_only;
     static constexpr auto storage = sample_control_storage_t<sample_control_edit_value_t<Lane>>::member;
     static constexpr std::string_view invalid_limits_message = "Sample-control event cap must be positive.";
     static constexpr std::string_view unknown_chart_message = "Sample-control edit refers to an unknown chart.";

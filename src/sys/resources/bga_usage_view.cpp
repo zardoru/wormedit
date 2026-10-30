@@ -1,5 +1,6 @@
 #include "sys/resources/bga_usage_view.h"
 #include "sys/resources/resource_usage_collector.h"
+#include <wormedit/core/document.h>
 #include <wormedit/core/interaction_types.h>
 #include <algorithm>
 #include <tuple>

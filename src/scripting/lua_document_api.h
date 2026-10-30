@@ -6,6 +6,10 @@
 #include <optional>
 #include <utility>
 
+namespace wormedit {
+struct song_document_t;
+}
+
 namespace wormedit::scripting {
 struct lua_document_limits_t {
     std::size_t maximum_nodes{65536};

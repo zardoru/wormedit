@@ -218,3 +218,16 @@ TEST_CASE("label search is case-insensitive, ordered by chart position, and read
     CHECK(song.charts.front().measures.front().notes.size() == before.charts.front().measures.front().notes.size());
     CHECK(song.charts.front().measures.front().notes[0].label == before.charts.front().measures.front().notes[0].label);
 }
+
+TEST_CASE("Labels reject note identities duplicated by chart-local sample controls",
+          "[unit][core][note-label-editor]") {
+    auto song = label_song();
+    song.charts.front().volumes.push_back({.id = object_id_t{10}, .position = {measure_id_t{3}, 0}});
+    auto history = document_history_t::from(song);
+    const auto result = apply_note_label_edit(history,
+        {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .label = "new"});
+    CHECK_FALSE(result);
+    CHECK(has_code(result, diagnostic_code_t::duplicate_id));
+    CHECK(history.document.charts.front().measures.front().notes.front().label == "old");
+    CHECK(history.undo.empty());
+}

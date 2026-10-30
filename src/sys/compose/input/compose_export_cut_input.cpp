@@ -4,18 +4,18 @@
 
 namespace wormedit::sys::compose_input_detail {
 namespace {
-auto moved_cut(const export_cut_t& cut, std::uint8_t edge, std::int64_t pointer, std::int64_t anchor)
+auto moved_cut(const export_cut_t& cut, span_handle_t edge, std::int64_t pointer, std::int64_t anchor)
     -> result_t<export_cut_edit_value_t, std::string> {
     auto begin = std::optional{cut.begin_milliseconds};
     auto end = std::optional{cut.end_milliseconds};
     switch (edge) {
-    case WORM_UI_SPAN_HANDLE_BEGIN: begin = pointer; break;
-    case WORM_UI_SPAN_HANDLE_END: end = pointer; break;
-    case WORM_UI_SPAN_HANDLE_BODY:
+    case span_handle_t::begin: begin = pointer; break;
+    case span_handle_t::end: end = pointer; break;
+    case span_handle_t::body:
         begin = checked_math::checked_add(*begin, pointer - anchor);
         end = checked_math::checked_add(*end, pointer - anchor);
         break;
-    default: return std::unexpected("The export cut handle is stale.");
+    default: return std::unexpected(std::string{stale_export_cut_handle_message});
     }
     if (!begin || !end || *begin < 0 || *end <= *begin)
         return std::unexpected("Keep the export cut start nonnegative and before its end.");
@@ -42,7 +42,9 @@ auto edit_compose_export_cut_span(const wormedit::ui::compose_input_action_t& in
     const auto pointer = pointer_row ? export_cut_interval_t::milliseconds_at(timing, *pointer_row) : std::nullopt;
     const auto anchor = anchor_row ? export_cut_interval_t::milliseconds_at(timing, *anchor_row) : std::nullopt;
     if (!pointer || !anchor) return "The export cut destination is outside the source-song timeline.";
-    auto value = moved_cut(*cut, input.span_edge, *pointer, *anchor);
+    const auto* admitted = context.admitted<admitted_span_handle_t>();
+    if (!admitted) return std::string{unsupported_compose_selector_message};
+    auto value = moved_cut(*cut, admitted->handle, *pointer, *anchor);
     if (!value) return std::move(value.error());
     const auto applied = apply_export_cut_edit(history, update_edit_t<export_cut_edit_value_t>{
         .id = cut->id, .value = std::move(*value)});

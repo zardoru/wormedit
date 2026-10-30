@@ -61,6 +61,20 @@ duplicate_command_outcome | 0 | src,include | (document_command_outcome_t|comman
 # T-643: typed declaration ceilings share id_ceiling_t; format-local and lane IDs remain distinct.
 local_declared_id_maximum | 8 | src | std::max\([^,]+, ([A-Za-z_][A-Za-z0-9_]*[.])+id[.]value( *[+] *1)?\)
 
+# T-781 integration: structural collection membership belongs to chart_collections.h.
+# These retired call shapes covered flat declarations, diagnostic positions and resolution
+# point transforms. Nested/optional policies, domain validation, codec and presentation lists
+# retain their distinct owners. This lexical barrier does not detect aliases or renamed copies.
+flat_chart_declaration_list | 0 | src/core | record_range\(chart[.]
+chart_diagnostic_location_list | 0 | src/core | collect_diagnostic_locations\(locations, chart[.]
+chart_point_transform_list | 0 | src/core | transform_positioned\(chart[.]
+
+# T-782/T-783: solo policy belongs to the session query, not projection repair.
+# The five remaining raw selector reads belong to compose_input_admission.h. These
+# lexical rows prevent new copies of the retired forms, not aliases or moved reads.
+projection_solo_policy_repair | 0 | src/sys/compose/views | retained_state->solo_semantic_layer[ ]*=
+compose_wire_selector_reads | 5 | src/sys | input[.](paint_intent|span_edge)
+
 # T-651: closed note ranges belong to lane_occupancy.h.
 local_note_occupancy_interval | 0 | src,include | ^struct [a-z_]*(note|paste|collision)_interval_t[ ]*[{]
 

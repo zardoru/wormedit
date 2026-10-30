@@ -271,6 +271,59 @@ struct compose_test_fixture_t {
     }
 };
 
+void prepare_bga_admission_stroke(compose_test_fixture_t& fixture) {
+    fixture.project();
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
+    auto geometry = measure_index_t::from(*fixture.history.read_chart(chart_id_t{1}));
+    expect_compose_test(geometry.has_value());
+    pending = application_command_state_t::bga_draw_stroke_proposal_t::from(
+        chart_stamp_t::from(fixture.history, chart_id_t{1}),
+        application_command_state_t::bga_draw_stroke_t{
+            .resource = resource_id_t{42}, .geometry = std::move(*geometry)});
+}
+
+TEST_CASE("BGA family rejects absent or mismatched admitted payloads without consuming its stroke",
+          "[sys][compose][admission][draw]") {
+    using namespace compose_input_detail;
+    const auto wrong_type = GENERATE(false, true);
+    const auto kind = GENERATE(WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE);
+    CAPTURE(wrong_type, kind);
+    compose_test_fixture_t fixture;
+    prepare_bga_admission_stroke(fixture);
+    const auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
+    notification_sink_t sink = notification_sink_t::muted();
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    ui::workspace_action_t action{};
+    const compose_input_inputs_t environment{
+        .document = {.history = fixture.history, .workspace = *fixture.binding.value,
+            .notifications = sink},
+        .commands = fixture.application,
+        .controls = {.cache = fixture.cache, .viewport = viewport, .navigation = navigation}};
+    compose_input_context_t context{.environment = environment, .ui_action = action,
+        .state = *fixture.interaction, .input_chart = fixture.history.read_chart(chart_id_t{1})};
+    if (wrong_type) context.admitted_selector = admitted_note_paint_t{};
+    const auto before = write_native_project(fixture.history.document);
+    expect_compose_test(before.value.has_value());
+    editor_interaction_result_t result;
+    std::string_view accepted;
+    const auto routed = dispatch_bga_draw_input(
+        {.kind = kind, .resource_role = resource_role_t::bga, .paint_intent = 1},
+        context, result, accepted);
+    expect_compose_test(routed.has_value());
+    expect_compose_test(routed->is_stopping_batch());
+    expect_compose_test(routed->outcome.message == "Unsupported Compose input.");
+    expect_compose_test(routed->outcome.source == notification_source_t::input);
+    expect_compose_test(pending.has_value());
+    expect_compose_test(pending->payload.resource == resource_id_t{42});
+    expect_compose_test(write_native_project(fixture.history.document).value == before.value);
+    expect_compose_test(fixture.history.undo.empty());
+    expect_compose_test(!result.document_changed);
+    expect_compose_test(accepted.empty());
+}
+
 void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     quantization_tie_t tie, quantization_hold_t holds, std::uint64_t divisions = 4,
     quantization_space_t space = quantization_space_t::standard_measure,
@@ -1959,7 +2012,7 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     fixture.application.project.semantic_layer.semantic_layer_target=layer_id_t{101};
     fixture.application.project.semantic_layer.semantic_layer_solo_active=true;
     const auto first=fixture.project();
-    CHECK(fixture.interaction->solo_semantic_layer == layer_id_t{101});
+    CHECK_FALSE(fixture.interaction->solo_semantic_layer); // Projection must not repair retained policy.
     REQUIRE(fixture.cache.frame.interaction_view);
     CHECK(fixture.cache.frame.interaction_view->solo_semantic_layer == layer_id_t{101});
     const auto first_note=fixture.first_note();
@@ -2312,7 +2365,7 @@ TEST_CASE("Paste preview owns geometry across frames and publishes one undoable 
     fixture.flattened = {};
     fixture.project();
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghosts[0].bounds.top == first.top));
-    expect_compose_test(static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.apply(fixture.history,
                                  *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
     expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.chart_clipboard.has_value()));
@@ -2335,16 +2388,16 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     fixture.project();
     expect_compose_test(!static_cast<bool>(fixture.flattened.view.compose.paste_valid));
     expect_compose_test(static_cast<bool>(fixture.flattened.view.compose.paste_ghosts.size() == 1));
-    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.apply(fixture.history,
                                      *fixture.interaction, status)));
     expect_compose_test(!static_cast<bool>(status.empty()));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
     fixture.interaction->cursor.row = 240;
-    expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.revise(fixture.history,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
     expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.value.has_value()));
     ++fixture.history.document.revision;
-    expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
+    expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.apply(fixture.history,
                                      *fixture.interaction, status)));
     wormedit::test::check_stale_action_message(status, "Paste preview");
     expect_compose_test(!static_cast<bool>(fixture.application.project.clipboard.paste_session));
@@ -6684,6 +6737,28 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     const auto revision = song.revision;
     expect_compose_test(invoke().value);
     expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
+    // Chart-wide selection ignores visibility; visible input reads the current
+    // session target even when no projection follows it.
+    auto& policy = application.project.semantic_layer;
+    song.charts[0].semantic_layers = {{.id = layer_id_t{101}, .name = "First"},
+                                     {.id = layer_id_t{102}, .name = "Second"}};
+    notes[0].semantic_layers = {layer_id_t{101}};
+    notes[1].semantic_layers = {layer_id_t{102}};
+    policy.semantic_layer_solo_active = true;
+    for (const auto target : {101u, 102u}) {
+        fixture.interaction->selected_notes.clear();
+        fixture.interaction->selected_objects.clear();
+        policy.semantic_layer_target = layer_id_t{target};
+        expect_compose_test(invoke().value);
+        CHECK(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
+        const auto status = dispatch_chip_input(fixture,
+            {.kind = WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE,
+             .object_id = notes[0].id, .selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE});
+        expect_compose_test(!status.empty());
+        CHECK(fixture.interaction->selected_notes == std::vector{notes[target - 101].id});
+    }
+    policy.semantic_layer_solo_active = false;
+    expect_compose_test(invoke().value);
     application.project.sound_selection.sound_selection_hover.reset();
     expect_compose_test(invoke().value); // Selection takes precedence over the dock.
     expect_compose_test(fixture.interaction->selected_notes.size() == 2);
@@ -7467,6 +7542,83 @@ TEST_CASE("Registered selection scopes preserve mixed objects and expose Select 
             return object.kind == editor_selection_object_kind_t::bgm_event && object.id == object_id_t{9003};
         }));
     }
+}
+
+TEST_CASE("Solo toggle and target actions affect the next selection in the same frame",
+          "[frame-timing][selection-consolidation][semantic-layer]") {
+    compose_test_fixture_t f{static_style_song()};
+    f.project();
+    f.application.project.semantic_layer.semantic_layer_target = layer_id_t{101};
+    auto sink = notification_sink_t::muted();
+    const compose_action_inputs_t environment{
+        {f.history, *f.binding.value, sink}, {f.application, f.interaction}, std::nullopt};
+    const std::array actions{
+        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO,
+        WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO};
+    const std::array expected{std::size_t{4}, std::size_t{4}, std::size_t{8}};
+    for (std::size_t index = 0; index < actions.size(); ++index) {
+        wormedit::ui::workspace_action_t action{};
+        action.compose_action = actions[index];
+        action.compose_input_project_id = f.history.document.id;
+        action.compose_input_chart_id = f.interaction->chart;
+        action.compose_input_document_revision = f.history.document.revision;
+        action.compose_semantic_layer_id = layer_id_t{index == 0 ? 101u : 102u};
+        const auto status = dispatch_compose_view_action(action, environment, *f.interaction,
+            f.interaction->viewport_height_pixels, false);
+        expect_compose_test(!status.empty());
+        expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        expect_compose_test(f.interaction->selected_notes.size() == expected[index]);
+        expect_compose_test(f.interaction->solo_semantic_layer == (index == 2 ? std::nullopt
+            : std::optional{layer_id_t{index == 0 ? 101u : 102u}}));
+    }
+    expect_compose_test(f.history.document.revision == 1);
+    expect_compose_test(f.history.undo.empty());
+}
+
+TEST_CASE("Solo selection commands use current target without requiring projection",
+          "[frame-timing][selection-consolidation][semantic-layer]") {
+    const auto project_between = GENERATE(false, true);
+    compose_test_fixture_t f{static_style_song()};
+    f.project();
+    auto& policy = f.application.project.semantic_layer;
+    policy.semantic_layer_solo_active = true;
+    const auto revision = f.history.document.revision;
+    for (const auto target : {101u, 102u, 999u}) {
+        policy.semantic_layer_target = layer_id_t{target};
+        if (project_between) f.project();
+        expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+        const auto& selected = f.interaction->selected_notes;
+        expect_compose_test(selected.size() == (target == 999 ? 8 : 4));
+        if (target != 999) {
+            const auto& notes = f.history.document.charts.front().measures.front().notes;
+            for (const auto id : selected) {
+                const auto note = std::ranges::find(notes, id, &note_t::id);
+                expect_compose_test(note != notes.end());
+                expect_compose_test(note->semantic_layers == std::vector{layer_id_t{target}});
+            }
+        }
+    }
+    policy.semantic_layer_target = layer_id_t{101};
+    policy.semantic_layer_solo_active = false;
+    if (project_between) f.project();
+    expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    expect_compose_test(f.interaction->selected_notes.size() == 8);
+    // Switch to a chart without the old target, with no projection to clear it.
+    auto next = f.history.document.charts.front();
+    next.id = chart_id_t{2};
+    next.semantic_layers.clear();
+    for (auto& note : next.measures.front().notes) note.semantic_layers.clear();
+    f.history.document.charts.push_back(std::move(next));
+    f.binding.value->selected_chart = chart_id_t{2};
+    f.interaction->chart = chart_id_t{2};
+    policy.semantic_layer_solo_active = true;
+    if (project_between) f.project();
+    expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
+    expect_compose_test(f.interaction->selected_notes.size() == 8);
+    expect_compose_test(!f.interaction->solo_semantic_layer);
+    expect_compose_test(f.history.document.revision == revision);
+    expect_compose_test(f.history.undo.empty());
 }
 
 TEST_CASE("Registered note selection respects active editable lanes",

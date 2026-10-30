@@ -274,6 +274,25 @@ Keyboard navigation in that batch uses the same stamp, so a chord release or sna
 the note's commit in one frame. Pointer/viewport inputs still require the original geometry stamp.
 External changes and failed rebinding stop continuation.
 
+The semantic-layer session's `effective_solo_layer` in
+`src/sys/app/application_command_state.h` supplies the current chart's selection policy.
+Its implementation lives in `src/sys/app/application_command_state.cpp`, so changing
+eligibility alone does not recompile every session-header consumer.
+Pointer batches, Compose view actions and registered scoped-selection commands install it
+before selection; same-sound queries read it directly. Projection reads the effective policy
+into detached views and scene requests without repairing retained interaction state.
+Application command-state refresh retains invalid-target and brush cleanup.
+
+`src/sys/compose/input/compose_input_admission.h` admits paint, Draw-source, span-handle
+and recipe-command selectors once at each input event boundary. Unsupported wire values
+return ordinary feedback before handler dispatch. Admitted family payloads live in the
+event-scoped input context; routes must pair each event with its corresponding payload
+alternative. Updates/releases retain captured gesture intent where that gesture owns it.
+Payload queries are checked: a missing or mismatched alternative returns existing
+unsupported-input feedback before mutation rather than throwing from the context.
+The frontend action bag remains transport and can carry simultaneous frame events; stamp,
+gesture and transaction validation stay with their existing runners.
+
 Lane-key deletion publishes immediately while retaining the pressed key's original row as a
 hold anchor. Moving away previews a new hold through the same gesture; release commits it.
 Release at the anchor or cancellation leaves the deletion in place. The shared gesture runner
@@ -347,13 +366,19 @@ every edit gets it.
 | A gesture | `src/core/interaction_gesture_runner.h` (`editor_gesture`, `begin_gesture`/`revise_gesture`/`apply_gesture`/`cancel_gesture`, implementing begin/update/commit/cancel) and the gesture's own file |
 | A proposal | `proposal_t<`, `apply_proposal` in `include/wormedit/core/proposal.h`, and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
+| Shared edit values | `include/wormedit/core/document_command_types.h` owns stamps, results and effects; `position_types.h` owns measure-local positions and spans. Include these contracts when document/history/execution definitions are unnecessary. |
+| Structural chart collections | `src/core/chart_collections.h` owns flat object-ID collection membership and structural position roles. Allocation, identity traversal, labels, focus, diagnostics, redivision, quantize and shifts derive applicable traversal from it. References, nested objects, optional positions, endpoint rules, timing-link categories, validation and codec fields retain their domain owners. |
 | A committing note edit’s editor effects | `editor_edit_effect_t`, `prepare_editor_edit`, `run_editor_edit` and `commit_editor_edit` in `src/core/interaction_edit_commit.h`: stage a detached working document, commit once, then apply selection/cursor/lane, update surviving capture stamps and build the result. Internal delete/tap reuse shares action context preparation and staging instead of dispatching on scratch histories. Domain commands that already own a transaction use the same finisher. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
 | Area selection | `cache_area_object_geometry` in `src/sys/compose/views/compose_view.cpp` projects rectangles when a scene snapshot exists. `editor_objects_in_row_range` in `src/core/interaction_selection.cpp` is the row-range fallback; `is_scope_accepted` and `is_editor_selection_scope_accepted` filter both by scope. |
-| Paste | `edit.paste` enters through `begin_compose_paste`; `application_command_state_t::paste_session_t` in `src/sys/compose/views/compose_view.h` retains the preview. `chart_paste_proposal_t` in `include/wormedit/core/chart_clipboard.h` proposes, revises and applies; `paste_geometry` in `src/sys/compose/views/compose_view.cpp` derives ghosts from its report. |
+| Compose selection policy | `effective_solo_layer` on the semantic-layer session in `src/sys/app/application_command_state.h`, implemented in `src/sys/app/application_command_state.cpp`; registered, view-action and pointer dispatch install it before selection. Projection only reads it; same-sound selection uses it in `src/sys/compose/compose_sound_selection.h`. |
+| Compose selector admission | `admit_compose_input_selector` and bounded family payloads in `src/sys/compose/input/compose_input_admission.h`; `dispatch_compose_input_event` in `src/sys/compose/input/compose_input.cpp` admits each event before routing. |
+| Paste | `edit.paste` enters through `begin_compose_paste`; `compose_clipboard_workflow_t` in `src/sys/compose/compose_clipboard_workflow.h` and `src/sys/compose/compose_clipboard_workflow.cpp` owns admission, revision, application and the retained `compose_paste_session_t`. Input and projection call the owner's `revise`/`apply` directly. `chart_paste_proposal_t` in `include/wormedit/core/chart_clipboard.h` owns the core proposal; `build_compose_paste_geometry` and ghost projection remain in `src/sys/compose/views/compose_view.cpp`. |
+| Retained application workflows | `src/sys/app/application_command_state.h` declares application services and project-lifetime workflow groups. Clipboard and quantize use their dedicated state owners; scene caches remain in `compose_view.h`. Quantize settings, presets and typed selection application share `src/sys/compose/actions/compose_quantize.cpp` and its route module. |
 | The measure lane | The measure rail made editable: `compose_bar_line_bounds` in `src/ui/compose_timing_geometry.h` is the one handle rectangle for drawing, picking and area selection, derived from grid lines that carry `measure_id`. Placing a bar line is `split_measure_action_t`; deleting merges through `remove_bar_lines`; pasting splits through `add_bar_lines`. |
 | A row move | `stage_shift_selection` in `include/wormedit/core/time_shift.h` is the one executor for moving objects and bar lines by chart rows (step moves, shift from cursor, bar-line moves with or without time propagation). The drag gesture keeps its own lane and collision planning and runs its row component through it inside its commit; bar-line geometry itself is `move_bar_lines` in `measure_editor.h`. |
 | Frontend frame data | `ui::workspace_view_t` in `src/ui/frontend/workspace.h` owns C++ presentation data, including `compose_view_t`. The application retains main/Compare `sys::frontend_workspace_view_t` projection owners and calls `refill` in `src/sys/app/application_frame_view.cpp`; their live query caches and geometry scratch stay in sys. Views retain list/text capacity, with no frontend arena, pointer rebinding or C ABI codec. |
+| Frontend dependency seam | `cmake/check_ui_boundary.cmake` covers private/public core, audio and format headers and implementations, and frontend contracts. Frontend direct imports admit a reviewed list of shared value headers; model/history/state services and resolved private first-party paths are rejected. Guard regression cases live in `cmake/check_ui_boundary_tests.cmake`. Macro/alias and arbitrary transitive dependency proofs remain outside this source guard. |
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).
@@ -362,7 +387,7 @@ Rules for writing each piece: [code style](chart-editor-plan/decisions/code-styl
 
 | Feature | Public entry and capability | Workflow/session owner | Core operation | Completion and regression home |
 |---|---|---|---|---|
-| Paste | `edit.paste`; `paste_target_available` and `refresh_application_command_states` in `src/sys/app/application.cpp` | `application_command_state_t::paste_session_t`; `begin_compose_paste`, `revise_compose_paste`, `apply_compose_paste` in `src/sys/compose/views/compose_view.cpp` | `chart_paste_proposal_t` and `paste_chart_clipboard` in `include/wormedit/core/chart_clipboard.h` | `document_command_result_t`; `tests/core/chart_clipboard_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp` |
+| Paste | `edit.paste`; `paste_target_available` and `refresh_application_command_states` in `src/sys/app/application.cpp` | `application.project.clipboard` is a `compose_clipboard_workflow_t`; `begin`/`revise`/`apply` and `compose_paste_session_t` in `src/sys/compose/compose_clipboard_workflow.h` and `src/sys/compose/compose_clipboard_workflow.cpp`. `begin_compose_paste` in command dispatch additionally reads the clipboard service and clears paint modes after admission. | `chart_paste_proposal_t` and `paste_chart_clipboard` in `include/wormedit/core/chart_clipboard.h` | `document_command_result_t`; `tests/core/chart_clipboard_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp` |
 | Quantize | `edit.apply_quantize` and `WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE`; `refresh_quantize_commands` and `can_apply_compose_quantize` | `compose_quantize_editor_for` and `toggle_compose_quantize_preview` in `src/sys/compose/actions/compose_quantize.cpp`; retained state remains in `application_command_state_t::project.quantize` | Typed `apply_compose_quantize_selection` in `src/sys/compose/actions/compose_quantize.cpp`; `quantization_plan_t::from` and `apply_quantize_command` own the core operation | `quantize_command_result_t` mapped once to `compose_action_outcome_t` by the typed workflow; `tests/core/quantize_tests.cpp`, `tests/sys/compose_quantize_preview_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp` |
 | Note ↔ BGM | `edit.move_to_bgm`, `edit.move_next_to_bgm`, and `WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE`; `compose_move_to_bgm_available` | Current editor selection; BGM drop dispatch in `dispatch_note_to_bgm_input` and `move_selected_bgm_to_lane` | `stage_move_notes_to_bgm` and `stage_move_bgm_events_to_lane` in `include/wormedit/core/note_to_bgm.h` | `selected_note_to_bgm_result_t` or `editor_interaction_result_t`; `tests/core/note_to_bgm_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/compose_notification_tests.cpp` |
 | Measure editing | `measures.split_at_cursor` and the measure-lane Compose actions; `compose_measure_edit_rejection` | `application_command_state_t::project.compose_view` owns lane visibility/policy; `measure_resize_t` in `src/ui/nuklear/compose/compose_state.h` owns resize capture | `measure_edit_action_t`, `apply_measure_edit`, `add_bar_lines`, `remove_bar_lines`, `move_bar_lines` in `include/wormedit/core/measure_editor.h` | `document_command_result_t`; `tests/core/measure_editor_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/compose_measure_resize_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` |
@@ -624,6 +649,17 @@ mutation and effect. A missing value or error rejects the transaction, including
 stages. An unchanged effect leaves earlier successful stages available for the outer commit.
 Callbacks must preserve the document/chart storage borrowed by enclosing callbacks.
 
+Typed `chart_edit_operation` declares `storage_support`: object edits with a native collection
+adapter, or an intentional `legacy_only` refusal. Composite edits pass a `chart_edit_mutation_t`
+scope to `stage`: existing-object updates or combined layer-settings/object edits.
+Object-only callbacks borrow the transaction's current document; the native object adapter
+owns target resolution without an additional catalog read. Combined callbacks retain the exact
+owner catalog through `read_projection`. Combined settings/object callbacks may run twice and
+must be deterministic; content publication uses only the explicitly named object identities.
+Domains still supply validation, mutation and effect, with one lazy copy and outer publication.
+Other domains continue using their named settings or geometry adapters; this composite API does
+not add unused mutation modes.
+
 `document_edit_effect_t` carries a command's changed flag and Undo label;
 `finish_execution` applies the command's explicit no-op policy and commits once. Editor edits
 retain `editor_edit_effect_t`; their existing finisher publishes selection/cursor effects only
@@ -739,7 +775,8 @@ The single schema22-to-23 migration initializes both this definition pool and em
 generated-chart bindings; both codecs also accept their absent optional additions
 on documents already tagged schema23.
 
-The current native document schema is 27. Schema27 adds typed volume and sample-set control
+The current native document schema is 28. Schema28 adds per-output-group audio encoding
+settings; migration defaults missing settings to Vorbis with quality 0.4. Schema27 adds typed volume and sample-set control
 lanes, migrating legacy osu! timing-line sample fields when the lanes are absent. Schema26 permits ordered opaque Text
 inside Chart content for flat imports. The 25-to-26 migration preserves existing
 authored nodes and identities; fresh flat imports no longer split at Text.
@@ -748,6 +785,6 @@ BMS flattening option; the additive 24-to-25 migration defaults missing choices 
 Schema24 adds optional per-difficulty bookmark
 list order independently of timeline positions and scoped BMS content. The 23-to-24
 migration leaves data unchanged: absent orders keep the default timeline order,
-and orders from the earlier unbumped schema23 build are retained. Writers use schema26;
+and orders from the earlier unbumped schema23 build are retained. Writers use the current schema;
 readers refuse newer schemas before publishing a document. Recovery snapshots and
 command journals use the same native codec and schema limit.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/document_command_types.h>
+#include <wormedit/core/chart_edit_storage_support.h>
 #include <wormedit/core/quantize.h>
 #include <wormedit/core/bms_native_content.h>
 #include <wormedit/core/result.h>
@@ -28,12 +30,6 @@ struct lane_input_profile_t;
 struct bms_program_content_edit_batch_t;
 struct bms_program_edit_target_t;
 struct document_history_t;
-// Session selection and captured requests use the same stable semantic key.
-struct bms_program_target_key_t {
-    chart_id_t difficulty;
-    branch_id_t chart;
-    auto operator==(const bms_program_target_key_t&) const -> bool = default;
-};
 template<class Value> struct chart_edit_native_collection_t {};
 
 
@@ -167,44 +163,6 @@ template <typename Settings> struct positioned_edit_value_t {
     }
 };
 
-// Older revision-only captures keep that contract when adopting a shared stamp.
-enum class document_identity_policy_t { project_and_revision, revision_only };
-
-struct document_stamp_t {
-    song_id_t project;
-    std::uint64_t revision{};
-    std::optional<bms_program_target_key_t> bms_target;
-
-    [[nodiscard]] static auto from(const document_history_t& history) noexcept -> document_stamp_t;
-
-    // Revision-only captures have no project identity; callers use the clock query.
-    [[nodiscard]] static auto from(std::uint64_t revision) noexcept -> document_stamp_t;
-    [[nodiscard]] static auto from(const song_document_t& document) noexcept -> document_stamp_t;
-    [[nodiscard]] auto is_revision_current(std::uint64_t current_revision) const noexcept -> bool;
-    [[nodiscard]] auto is_current(const song_document_t& document,
-        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
-    auto operator==(const document_stamp_t&) const -> bool = default;
-};
-
-struct chart_stamp_t {
-    document_stamp_t document;
-    chart_id_t chart;
-
-    [[nodiscard]] static auto from(const song_document_t& document, chart_id_t chart) noexcept
-        -> chart_stamp_t;
-    [[nodiscard]] static auto from(const document_history_t& history, chart_id_t chart) noexcept
-        -> chart_stamp_t;
-    [[nodiscard]] auto is_identity_current(const song_document_t& document,
-                                            chart_id_t selected) const noexcept -> bool;
-    [[nodiscard]] auto is_current(chart_id_t current_chart,
-                                  std::uint64_t current_revision) const noexcept -> bool;
-    [[nodiscard]] auto is_current(const song_document_t& current, chart_id_t selected,
-        document_identity_policy_t policy = document_identity_policy_t::project_and_revision) const noexcept -> bool;
-    auto operator==(const chart_stamp_t&) const -> bool = default;
-};
-
-[[nodiscard]] auto stale_action_message(std::string_view label) -> std::string;
-
 struct document_command_record_t {
     std::string label;
     song_document_t before;
@@ -279,38 +237,9 @@ struct document_history_t {
         -> const std::shared_ptr<const chart_indices_t>&;
 };
 
-struct document_command_result_t {
-    bool applied{};
-    std::uint64_t revision{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return applied;
-    }
-};
-
-void reject(document_command_result_t& result, diagnostic_code_t code, std::string message,
-            std::optional<object_id_t> object = std::nullopt);
-
 // Folds the newest `count` undo records into one so a multi-command gesture undoes in a single
 // step. Does nothing for fewer than two records or when older ones were already trimmed away.
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label);
-
-template <class Payload> struct command_result_with_t {
-    document_command_result_t command;
-    Payload payload{};
-
-    [[nodiscard]] static auto from(document_command_result_t command, Payload payload)
-        -> command_result_with_t {
-        return {.command = std::move(command), .payload = std::move(payload)};
-    }
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        if constexpr (requires { payload.is_success(); })
-            return static_cast<bool>(command) && payload.is_success();
-        return static_cast<bool>(command);
-    }
-};
 
 struct quantize_command_payload_t {
     std::vector<redivision_move_t> resolution_moves;
@@ -330,25 +259,6 @@ using redivision_command_result_t = command_result_with_t<redivision_command_pay
 
 [[nodiscard]] auto is_document_dirty(const document_history_t& history) noexcept -> bool;
 void mark_document_saved(document_history_t& history) noexcept;
-
-struct document_command_options_t {
-    // Metadata-only commands may preserve existing retained-source flags.
-    // This never enables passthrough for a document that was already edited.
-    bool preserve_retained_source_flags{false};
-    auto operator==(const document_command_options_t&) const -> bool = default;
-};
-
-// Domain operations share execution state; chart identity, limits and completion belong
-// to the transaction. The operation itself supplies validation, mutation and effect.
-// A staged document edit describes publication; it never publishes by itself.
-enum class command_noop_policy_t { reject, accept_without_diagnostics };
-
-struct document_edit_effect_t {
-    bool changed{};
-    std::string command_label;
-    document_command_options_t options{};
-    auto operator==(const document_edit_effect_t&) const -> bool = default;
-};
 
 template <class Limits> struct chart_edit_context_t {
     document_command_result_t& result;
@@ -388,7 +298,9 @@ inline constexpr bool handles_every_chart_edit_v<Operation, std::variant<Edits..
 
 // The contract for transaction.stage<Operation>/execute<Operation>(action, limits). The
 // transaction owns limit rejection, chart lookup, cap checks and completion; the operation
-// owns its domain validation, mutation and effect. Optional hooks, checked when declared:
+// owns its domain validation, mutation and effect. Required storage_support declares
+// objects (with a native collection mapping) or deliberate legacy_only refusal.
+// Optional hooks, checked when declared:
 //   static constexpr bool requires_unique_chart  reject charts whose ID appears twice
 //   bool prepare(chart_document_t&)                 domain setup after the cap checks
 //   bool postvalidate(chart_document_t&, song_document_t&)  after a changed edit
@@ -396,10 +308,13 @@ template <class Operation, class Action, class Limits>
 concept chart_edit_operation =
     std::derived_from<Operation, chart_edit_context_t<Limits>> &&
     requires(const Limits& limits) {
+        { Operation::storage_support } -> std::convertible_to<chart_edit_storage_support_t>;
         { Operation::has_valid_limits(limits) } -> std::convertible_to<bool>;
         { Operation::invalid_limits_message } -> std::convertible_to<std::string_view>;
         { Operation::unknown_chart_message } -> std::convertible_to<std::string_view>;
     } &&
+    (Operation::storage_support == chart_edit_storage_support_t::legacy_only ||
+     Operation::storage_support == chart_edit_storage_support_t::objects) &&
     handles_every_chart_edit_v<Operation, Action> &&
     (!requires { Operation::requires_unique_chart; } ||
      std::same_as<std::remove_cv_t<decltype(Operation::requires_unique_chart)>, bool>) &&
@@ -460,6 +375,13 @@ class document_command_transaction_t {
     auto chart(chart_id_t id) -> chart_document_t*;
     // Prepared scoped content uses its semantic owner, never a mutable projection.
     [[nodiscard]] auto stage(const bms_program_content_edit_batch_t& edit)
+        -> attempt_t<document_edit_effect_t>;
+    // Runs the declared mutation against legacy storage or the named prepared adapter.
+    // The callback can run twice for settings+objects and must be deterministic.
+    [[nodiscard]] auto stage(chart_id_t chart, std::string_view unknown_chart_message,
+        chart_edit_mutation_t mutation,
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&,
+            const song_document_t&, std::vector<object_id_t>&)>& edit)
         -> attempt_t<document_edit_effect_t>;
     [[nodiscard]] auto has_bms_program(chart_id_t difficulty) const -> bool;
     [[nodiscard]] auto bms_target(chart_id_t difficulty, std::optional<object_id_t> existing = {}) const
@@ -561,6 +483,11 @@ class document_command_transaction_t {
     }
 
   private:
+    [[nodiscard]] auto stage_prepared_mutation(chart_id_t chart, chart_edit_mutation_t& mutation,
+        const std::function<attempt_t<document_edit_effect_t>(chart_document_t&,
+            const song_document_t&, std::vector<object_id_t>&)>& edit)
+        -> attempt_t<document_edit_effect_t>;
+
     // The std::visit visitor behind stage<Operation>: one call per edit alternative, through
     // the same chart-resolution/staging boundary as composite edits.
     template <class Operation, class Limits> struct edit_execution_t {
@@ -627,7 +554,8 @@ class document_command_transaction_t {
 
         template <class Edit>
         auto operator()(const Edit& edit) const -> attempt_t<document_edit_effect_t> {
-            if constexpr (requires { chart_edit_native_collection_t<typename Edit::value_type>::member; }) {
+            if constexpr (Operation::storage_support == chart_edit_storage_support_t::objects &&
+                requires { chart_edit_native_collection_t<typename Edit::value_type>::member; }) {
                 if (transaction.has_bms_program(edit.chart)) return stage_native(edit);
             }
             constexpr bool unique = [] {

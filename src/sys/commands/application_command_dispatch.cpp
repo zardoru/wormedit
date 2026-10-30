@@ -571,6 +571,7 @@ auto selection_commands(command_context_t& context) -> command_result_t {
             "Selection command requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
+    state->solo_semantic_layer = context.environment.editor.commands.project.semantic_layer.effective_solo_layer(*chart);
     const auto& selection = scoped_selection_command_t::from(kind);
     return compose_action_outcome_t::from(
         select_editor_scope(context.environment.document.history, *state, selection.scope,
@@ -1387,3 +1388,18 @@ auto application_command_preserves_editor_gesture(
 }
 
 } // namespace wormedit::sys
+
+namespace wormedit::sys {
+auto begin_compose_paste(application_command_state_t& application,
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
+    std::string& status) -> bool {
+    const auto& read = application.services.system_clipboard_text;
+    auto external = history.read_chart(state.chart) && !state.is_pending() && read
+        ? std::optional{read()} : std::nullopt;
+    if (!application.project.clipboard.begin(history, state, std::move(external), status)) return false;
+    application.project.compose_gesture.note_paint_mode_active = false;
+    application.project.compose_gesture.resource_paint_mode_active = false;
+    application.project.compose_gesture.semantic_layer_paint_mode_active = false;
+    return true;
+}
+}

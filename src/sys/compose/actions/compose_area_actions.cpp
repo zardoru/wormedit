@@ -1,3 +1,4 @@
+#include "sys/app/application_command_state.h"
 #include <wormedit/core/timing.h>
 #include "sys/compose/actions/compose_area_actions.h"
 #include "core/timing_arithmetic.h"

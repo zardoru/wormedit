@@ -22,6 +22,57 @@ auto document_command_transaction_t::next_recipe_id(std::size_t count) const -> 
     return ceiling.next();
 }
 
+auto document_command_transaction_t::stage(chart_id_t id, std::string_view unknown_chart_message,
+    chart_edit_mutation_t mutation,
+    const std::function<attempt_t<document_edit_effect_t>(chart_document_t&,
+        const song_document_t&, std::vector<object_id_t>&)>& edit)
+    -> attempt_t<document_edit_effect_t> {
+    if (!has_bms_program(id) || mutation.storage == chart_edit_storage_support_t::legacy_only)
+        return stage(id, unknown_chart_message, [&](chart_document_t& chart, song_document_t& document) {
+            return edit(chart, document, mutation.objects);
+        });
+    return stage([&](song_document_t&) { return stage_prepared_mutation(id, mutation, edit); });
+}
+
+auto document_command_transaction_t::stage_prepared_mutation(chart_id_t id,
+    chart_edit_mutation_t& mutation,
+    const std::function<attempt_t<document_edit_effect_t>(chart_document_t&,
+        const song_document_t&, std::vector<object_id_t>&)>& edit)
+    -> attempt_t<document_edit_effect_t> {
+    if (mutation.storage == chart_edit_storage_support_t::objects) {
+        if (mutation.objects.empty()) return {.value = document_edit_effect_t{}};
+        const auto objects = mutation.objects;
+        return stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update,
+            [&](chart_document_t& chart) {
+                return edit(chart, current_document(), mutation.objects);
+            });
+    }
+    if (mutation.storage != chart_edit_storage_support_t::layer_settings_and_objects)
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Prepared chart edit has an unsupported mutation scope.")}};
+    const auto target = bms_target(id);
+    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
+    // Keep the exact owner's catalog alive across immutable replacements by nested stages.
+    const auto* owner = current_document().find_bms_program(id);
+    const auto projection = owner->read_projection(owner->evaluation(),
+        target->authoring ? std::optional{target->chart} : std::nullopt);
+    if (!projection->value) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+        "Prepared chart edit has no source catalog.")}};
+    const auto apply = [&](chart_document_t& chart) {
+        return edit(chart, projection->value->song(), mutation.objects);
+    };
+    auto settings = stage_bms_layer_settings(id, apply);
+    if (!settings.value || !settings.ok() || mutation.objects.empty()) return settings;
+    const auto objects = mutation.objects;
+    auto content = stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update,
+        [&](chart_document_t& chart) {
+            std::vector<object_id_t> replayed_objects;
+            return edit(chart, projection->value->song(), replayed_objects);
+        });
+    if (content.value) content.value->changed = content.value->changed || settings.value->changed;
+    return content;
+}
+
 auto document_stamp_t::from(const document_history_t& history) noexcept -> document_stamp_t {
     return {.project = history.document.id, .revision = history.document.revision,
         .bms_target = history.bms_edit_target};

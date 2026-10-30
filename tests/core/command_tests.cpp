@@ -29,6 +29,7 @@ struct contract_limits_t {
 };
 
 struct contract_operation_t : chart_edit_context_t<contract_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::legacy_only;
     static constexpr std::string_view invalid_limits_message = "cap must be positive";
     static constexpr std::string_view unknown_chart_message = "unknown chart";
     static auto has_valid_limits(const contract_limits_t& limits) -> bool {

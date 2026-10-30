@@ -1,6 +1,7 @@
 #pragma once
 #include "sys/app/application_edit_inputs.h"
 #include "sys/compose/input/compose_input.h"
+#include "sys/compose/input/compose_input_admission.h"
 #include "sys/compose/input/compose_minimap_navigation.h"
 #include "sys/compose/input/compose_navigation.h"
 #include "sys/compose/input/compose_navigation_input.h"
@@ -580,6 +581,12 @@ struct compose_input_context_t {
     double bgm_pane_left_pixels{};
     double field_left_pixels{};
     double field_width_pixels{};
+    std::optional<admitted_compose_selector_t> admitted_selector;
+
+    template <typename Admitted>
+    [[nodiscard]] auto admitted() const -> const Admitted* {
+        return admitted_selector ? std::get_if<Admitted>(&*admitted_selector) : nullptr;
+    }
 
     auto is_input_current(const wormedit::chart_stamp_t& stamp) const -> bool {
         return stamp.is_current(environment.document.history.document, state.chart) &&
@@ -856,6 +863,11 @@ auto dispatch_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& in
 inline auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& input,
     compose_input_context_t& input_context, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> compose_input_family_result_t {
+    const auto* paint = input_context.admitted<admitted_note_paint_t>();
+    if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN && !paint)
+        return compose_input_family_result_t::stop_with_feedback(
+            std::string{unsupported_compose_selector_message},
+            wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
     const auto& environment = input_context.environment;
     auto& state = input_context.state;
     const auto& cache = environment.controls.cache;
@@ -912,7 +924,7 @@ inline auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action
                 .position = target->position,
                 .pointer_captured = captured,
                 .sound = note_paint_sound(input),
-                .intent = static_cast<note_paint_intent_t>(input.paint_intent),
+                .intent = paint->intent,
                 .source_geometry =
                     compose_stem_geometry(history, state, cache, note_paint_sound(input)),
                 .canvas_row = target->canvas_row});
@@ -960,7 +972,8 @@ struct semantic_layer_paint_target_t {
 auto apply_semantic_layer_paint_target(const wormedit::ui::compose_input_action_t& input,
                                        compose_gesture_context_t& context,
                                        const semantic_layer_paint_target_t& target,
-                                       const wormedit::semantic_layer_t* layer)
+                                       const wormedit::semantic_layer_t* layer,
+                                       wormedit::semantic_layer_paint_mode_t mode)
     -> compose_input_family_result_t;
 
 auto handle_empty_semantic_layer_paint_target(const wormedit::ui::compose_input_action_t& input,
@@ -992,7 +1005,8 @@ auto dispatch_resource_paint_gesture(const wormedit::ui::compose_input_action_t&
 template <typename HitTargetAt, typename BgmEventAt>
 auto dispatch_semantic_layer_paint_gesture(const wormedit::ui::compose_input_action_t& input,
                                            compose_gesture_context_t& context,
-                                           HitTargetAt&& hit_target_at, BgmEventAt&& bgm_event_at)
+                                           HitTargetAt&& hit_target_at, BgmEventAt&& bgm_event_at,
+                                           wormedit::semantic_layer_paint_mode_t mode)
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& history = context.environment.document.history;
@@ -1021,7 +1035,7 @@ auto dispatch_semantic_layer_paint_gesture(const wormedit::ui::compose_input_act
     const semantic_layer_paint_target_t paint_target{
         target && target->note ? target->note : std::nullopt, bgm_event};
     if (paint_target.note || paint_target.bgm_event)
-        return apply_semantic_layer_paint_target(input, context, paint_target, layer);
+        return apply_semantic_layer_paint_target(input, context, paint_target, layer, mode);
     return handle_empty_semantic_layer_paint_target(input, context);
 }
 
@@ -1149,7 +1163,8 @@ auto dispatch_compose_gesture_input(const wormedit::ui::compose_input_action_t& 
                                     wormedit::editor_interaction_result_t& result,
                                     std::string_view& accepted, HitTargetAt&& hit_target_at,
                                     BgmEventAt&& bgm_event_at,
-                                    PositionAtComposeY&& position_at_compose_y)
+                                    PositionAtComposeY&& position_at_compose_y,
+                                    wormedit::semantic_layer_paint_mode_t paint_mode)
     -> compose_input_family_result_t {
     const auto& cache = environment.controls.cache;
 
@@ -1167,7 +1182,8 @@ auto dispatch_compose_gesture_input(const wormedit::ui::compose_input_action_t& 
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
-        return dispatch_semantic_layer_paint_gesture(input, context, hit_target_at, bgm_event_at);
+        return dispatch_semantic_layer_paint_gesture(input, context, hit_target_at, bgm_event_at,
+                                                     paint_mode);
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:
@@ -1342,7 +1358,7 @@ auto move_compose_timing_selection(const wormedit::ui::compose_input_action_t& i
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string>;
 
-auto kiai_manipulated_rows(const wormedit::kiai_span_t* span, std::uint8_t edge,
+auto kiai_manipulated_rows(const wormedit::kiai_span_t* span, admitted_kiai_handle_t edge,
                            std::uint64_t anchor_row, std::uint64_t pointer_row,
                            std::uint64_t total_rows)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>>;
@@ -1375,7 +1391,7 @@ auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> std::optional<std::string>;
 
-auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
+auto run_compose_recipe_command(std::uint64_t id, wormedit::ui::compose_recipe_command_t command,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
                                 std::string_view& accepted) -> std::optional<std::string>;
@@ -1591,7 +1607,7 @@ auto bga_draw_row(const wormedit::ui::compose_input_action_t& input, const compo
     -> std::optional<uint64_t>;
 
 auto begin_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
-                    const wormedit::chart_document_t& chart) -> bool;
+                    const wormedit::chart_document_t& chart, bool erase) -> bool;
 
 auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
                            const application_command_state_t::bga_draw_stroke_proposal_t& stroke,

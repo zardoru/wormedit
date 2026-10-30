@@ -1,4 +1,5 @@
 #include "id_ceiling.h"
+#include "chart_collections.h"
 #include "../core/text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/semantic_layer_editor.h>
@@ -152,14 +153,9 @@ auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_o
         return true;
     };
 
-    const auto within_limit = record_range(chart.bgm_source_lanes) &&
-                              record_range(chart.lane_layouts) && record_range(chart.bpms) &&
-                              record_range(chart.pauses) && record_range(chart.warps) &&
-                              record_range(chart.scrolls) && record_range(chart.speeds) &&
-                              record_range(chart.volumes) && record_range(chart.sample_sets) &&
-                              record_range(chart.kiai) && record_range(chart.timing_anchors) &&
-                              record_range(chart.bookmarks) && record_range(chart.sections) &&
-                              record_range(chart.bga_events) && record_range(chart.sound_channels);
+    const auto within_limit = visit_chart_collections(chart, [&](const auto& values, auto) {
+        return record_range(values);
+    });
     if (!within_limit) {
         return std::nullopt;
     }
@@ -1094,41 +1090,16 @@ auto edit_sound_layer_membership(const song_document_t& document, chart_document
         .command_label = action.member ? "Add layer to sounds" : "Remove layer from sounds"}};
 }
 
-auto stage_scoped_sound_layer_membership(document_command_transaction_t& transaction,
-    const sound_layer_membership_action_t& action) -> attempt_t<document_edit_effect_t> {
-    const auto target = transaction.bms_target(action.chart);
-    if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
-    const auto* owner = transaction.current_document().find_bms_program(action.chart);
-    const auto projection = owner->build_projection(target->authoring ? std::optional{target->chart} : std::nullopt);
-    if (!projection.value) return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-        "Scoped sound layers have no source catalog.")}};
-    std::vector<object_id_t> objects;
-    auto settings = transaction.stage_bms_layer_settings(action.chart,
-        [&](chart_document_t& chart) {
-            return edit_sound_layer_membership(projection.value->song(), chart, action, objects);
-        });
-    if (!settings.value || !settings.ok() || objects.empty()) return settings;
-    // Settings and authored memberships share one snapshot and one Undo publication.
-    auto content = transaction.stage_bms_native_objects(action.chart, objects, bms_existing_edit_kind_t::update,
-        [&](chart_document_t& chart) {
-            std::vector<object_id_t> changed_objects;
-            return edit_sound_layer_membership(projection.value->song(), chart, action, changed_objects);
-        });
-    if (content.value) content.value->changed = content.value->changed || settings.value->changed;
-    return content;
-}
 } // namespace
 
 auto apply_sound_layer_membership(document_history_t& history,
                                   const sound_layer_membership_action_t& action)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
-    if (transaction.has_bms_program(action.chart))
-        return transaction.finish_execution(stage_scoped_sound_layer_membership(transaction, action));
     return transaction.finish_execution(transaction.stage(action.chart,
         "sound layer membership refers to an unknown chart",
-        [&](chart_document_t& chart, song_document_t& document) {
-            std::vector<object_id_t> objects;
+        {.storage = chart_edit_storage_support_t::layer_settings_and_objects},
+        [&](chart_document_t& chart, const song_document_t& document, std::vector<object_id_t>& objects) {
             return edit_sound_layer_membership(document, chart, action, objects);
         }));
 }

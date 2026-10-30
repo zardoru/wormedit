@@ -932,6 +932,31 @@ TEST_CASE("Draw BGA production stroke commits interpolated targets once and undo
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().bga_events.size() == 1);
 }
+TEST_CASE("Invalid paint selector rejects before touching a captured BGA stroke",
+          "[bga][draw][compose-input][admission]") {
+    bga_input_fixture_t fixture;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    require_action(fixture.application.project.compose_gesture.bga_draw_stroke.has_value());
+    const auto revision = fixture.history.document.revision;
+
+    auto invalid_release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
+    invalid_release.compose_inputs[0].paint_intent = 255;
+    const auto status = fixture.dispatch_input(invalid_release);
+    check_action(!status.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.application.project.compose_gesture.bga_draw_stroke.has_value());
+
+    auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720, true);
+    (void)fixture.dispatch_input(release);
+    require_action(fixture.history.undo.size() == 1);
+    check_action(fixture.history.document.charts.front().bga_events.size() == 4);
+}
 TEST_CASE("Draw BGA deleted source and Timing focus reject without undo",
           "[bga][draw][compose-input]") {
     bga_input_fixture_t fixture;
@@ -1029,6 +1054,72 @@ TEST_CASE("Explicit erase reaches the production note dispatcher and undo restor
     check_action(fixture.history.document.charts.front().measures.front().notes.empty());
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().measures.front().notes.front().id == object_id_t{91});
+}
+
+TEST_CASE("Compose selector admission rejects invalid paint and span values before dispatch",
+          "[compose-input][admission]") {
+    bga_input_fixture_t fixture;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    const auto revision = fixture.history.document.revision;
+    const auto original_bga = fixture.history.document.charts.front().bga_events;
+    const auto original_notes = fixture.history.document.charts.front().measures.front().notes;
+    const auto rejected = [&](wormedit::ui::workspace_action_t& action) {
+        (void)fixture.entries();
+        fixture.center.dismiss_all();
+        const auto status = fixture.dispatch_input(action);
+        const auto entries = fixture.entries();
+        return !status.empty() && entries.size() == 1 &&
+               entries.front().severity == notification_severity_t::warning;
+    };
+
+    auto invalid_note = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 255);
+    check_action(rejected(invalid_note));
+    check_action(!fixture.state.gesture<wormedit::pending_note_paint_gesture_t>());
+
+    auto invalid_semantic = fixture.input(WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN, 0);
+    invalid_semantic.compose_inputs[0].paint_intent = 0;
+    check_action(rejected(invalid_semantic));
+    check_action(!fixture.state.is_pending());
+
+    auto invalid_draw = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    invalid_draw.compose_inputs[0].paint_intent = 255;
+    check_action(rejected(invalid_draw));
+    check_action(!fixture.application.project.compose_gesture.bga_draw_stroke);
+
+    auto invalid_source = fixture.input(WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, 0);
+    invalid_source.compose_inputs[0].resource_role = wormedit::resource_role_t::bgm;
+    check_action(rejected(invalid_source));
+    check_action(fixture.application.project.compose_gesture.draw_source_kind == 0);
+
+    for (const auto kind : {WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
+                            WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
+                            WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT,
+                            WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT,
+                            WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT,
+                            WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND}) {
+        auto invalid = fixture.input(kind, 0);
+        invalid.compose_inputs[0].span_edge = 255;
+        check_action(rejected(invalid));
+    }
+
+    check_action(fixture.history.document.charts.front().bga_events == original_bga);
+    check_action(fixture.history.document.charts.front().measures.front().notes == original_notes);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(!fixture.state.is_pending());
+}
+
+TEST_CASE("Legacy note-paint selector zero still starts a toggle stroke",
+          "[compose-input][admission][draw]") {
+    bga_input_fixture_t fixture;
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto begin = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 0);
+    const auto status = fixture.dispatch_input(begin);
+    check_action(!status.empty());
+    const auto* pending = fixture.state.gesture<wormedit::pending_note_paint_gesture_t>();
+    require_action(pending != nullptr);
+    check_action(pending->intent == note_paint_intent_t::toggle);
+    check_action(fixture.history.undo.empty());
 }
 
 namespace {

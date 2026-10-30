@@ -1,3 +1,4 @@
+#include <wormedit/core/document.h>
 #include <wormedit/core/snap.h>
 
 #include <catch2/catch_test_macros.hpp>

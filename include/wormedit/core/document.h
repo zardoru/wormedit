@@ -1,5 +1,6 @@
 #pragma once
 #include <wormedit/core/metadata_inheritance_types.h>
+#include <wormedit/core/position_types.h>
 #include <wormedit/core/timing_links_types.h>
 #include <wormedit/core/project_settings.h>
 
@@ -67,24 +68,6 @@ struct encoding_provenance_t {
     std::shared_ptr<const std::vector<std::byte>> original_bytes;
     bool unchanged_since_import{false};
 };
-
-struct local_position_t {
-    measure_id_t measure;
-    std::uint64_t row{};
-
-    auto operator==(const local_position_t&) const -> bool = default;
-};
-
-struct position_span_t {
-    local_position_t begin;
-    local_position_t end;
-
-    auto operator==(const position_span_t&) const -> bool = default;
-};
-
-
-
-
 
 struct midi_destination_t {
     std::uint8_t channel{};

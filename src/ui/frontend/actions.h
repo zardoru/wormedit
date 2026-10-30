@@ -355,8 +355,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET,
     // Toolbar toggle: show or hide the whole bar row to win vertical space.
     WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE,
-    // Speed span edge drag: span_edge 0 moves the event to y_pixels, 1 sets its transition length
-    // from the event's row to y_pixels; object_id is the Speed event.
+    // Speed span drag; admission resolves span_edge before moving the Speed event identified by object_id.
     WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
     WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL,
@@ -369,7 +368,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT,
     /* Measure lane in Draw mode: add a bar line at the snapped row under y_pixels. */
     WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE,
-    /* A song-preview edge or body drag (open question 26), with span_edge and span_anchor_y_pixels. */
+    /* A song-preview edge or body drag (open question 26), with an admitted span handle. */
     WORM_UI_COMPOSE_INPUT_PREVIEW_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_EXPORT_CUT_SPAN_EDIT,
 } WormUiComposeInputKind;
@@ -408,25 +407,24 @@ struct compose_input_action_t {
     bool beat_fit_onset_snap_held;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
-    /* RECIPE_COMMAND: span_edge is 0 toggle enabled, 1 materialize, 2 delete; object_id is the recipe.
-       KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT: span_edge is a WormUiSpanHandle; the body
-       moves by the pointer travel from span_anchor_y_pixels to y_pixels.
-       object_id is the area's head event (0 when creating). */
+    /* Raw Compose transport selector. Admission maps RECIPE_COMMAND to compose_recipe_command_t;
+       span edits to their bounded handle type before the handler runs. object_id names the recipe
+       or span head; Kiai create uses zero. */
     uint8_t span_edge;
     double span_anchor_y_pixels;
     /* NOTE_PAINT_BEGIN: sample resource written into every note of the stroke; 0 paints silent notes. */
     wormedit::resource_id_t resource_id;
     visual_event_kind_t bga_lane_kind;
     bool bga_lane_kind_valid;
-    uint8_t paint_intent; /* NOTE_PAINT: 0 legacy toggle, 1 draw, 2 erase;
-                            SEMANTIC_LAYER_PAINT_BEGIN: 1 add, 2 remove. */
+    /* Raw Compose transport selector. Admission preserves note-paint 0 as the legacy toggle,
+       while semantic paint accepts only 1 add and 2 remove. */
+    uint8_t paint_intent;
     auto operator==(const compose_input_action_t&) const -> bool = default;
 };
 } // namespace wormedit::ui
 
-/* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in
-   ui::compose_input_action_t::span_edge by KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT.
-   CREATE only applies to Kiai: a new area from the press row to the pointer row. */
+/* Legacy wire values for span selectors. The sys input boundary maps these to family-specific
+   handles before dispatch. CREATE only applies to Kiai. */
 typedef enum WormUiSpanHandle {
     WORM_UI_SPAN_HANDLE_BEGIN = 0,
     WORM_UI_SPAN_HANDLE_END = 1,

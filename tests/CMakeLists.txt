@@ -65,6 +65,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose/generator_runtime.cpp
     ../src/sys/compose/actions/compose_quantize_preview.cpp
     ../src/sys/app/application_defaults.cpp
+    ../src/sys/app/application_command_state.cpp
     ../src/sys/project/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
     ../src/sys/project/project_open.cpp
@@ -528,25 +529,13 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/measure_resize_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ui/nuklear_meter_state_tests.cpp
-        ../src/ui/nuklear/audio/audio_state.cpp
-        ../src/ui/nuklear/render/arrow_glyph.cpp
-        ../src/ui/nuklear/compose/compose_bookmark_label.cpp
-        ../src/ui/nuklear/render/theme.cpp
-        ../src/ui/nuklear/compose/compose_state.cpp
-        ../src/ui/nuklear/metadata/metadata_state.cpp
-        ../src/ui/nuklear/project/setup_state.cpp
-        ../src/ui/nuklear/resources/sound_import_state.cpp
-        ../src/ui/nuklear/resources/keysound_list_state.cpp
-        ../src/ui/nuklear/compose/measure_resize.cpp
-        ../src/ui/nuklear/timing/timing_state.cpp
-        ../src/ui/nuklear/audio/meter_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_frontend_state_tests
         PRIVATE
             wormedit::core
-            wormedit::ui_frontend
+            wormedit::ui_frontend wormedit_ui_nuklear_state wormedit_ui_arrow_glyph
             nlohmann_json::nlohmann_json
             SDL3::SDL3
             Catch2::Catch2WithMain
@@ -560,37 +549,32 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_nuklear_popup_combo_tests
         ui/nuklear_popup_combo_tests.cpp
         ../src/ui/nuklear/chrome/components.cpp
-        ../src/ui/nuklear/render/theme.cpp
-        ../src/ui/nuklear/render/arrow_glyph.cpp
-        ../src/ui/nuklear/chrome/tooltip.cpp)
+    )
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
-        wormedit::core wormedit::ui_frontend nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
+        wormedit::core wormedit::ui_frontend wormedit_ui_nuklear_tooltip wormedit_ui_arrow_glyph nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_popup_combo_tests
         TEST_PREFIX "frontend-state."
         PROPERTIES LABELS unit LABELS frontend LABELS architecture
         DISCOVERY_MODE PRE_TEST)
 
+    # Allocation interposition belongs to the Debug application, never these tests.
+    add_library(wormedit_renderer_test_timing STATIC ../src/sys/app/frame_timing.cpp)
+    target_include_directories(wormedit_renderer_test_timing PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_link_libraries(wormedit_renderer_test_timing PRIVATE
+        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+
     add_executable(wormedit_nuklear_sdl_backend_tests
         ui/nuklear_sdl_backend_tests.cpp
         ui/sdl_region_frame_tests.cpp
         ui/lucide_icons_tests.cpp
-        ../src/ui/nuklear/app/sdl_backend.cpp
-        ../src/ui/nuklear/render/sdl_command_mesh.cpp
-        ../src/ui/nuklear/render/sdl_region_cache.cpp
-        ../src/ui/nuklear/render/sdl_region_frame.cpp
-        ../src/ui/nuklear/render/lucide_icons.cpp
-        ../src/ui/field/field_renderer.cpp
-        ../src/ui/field/field_tile_cache.cpp
-        ../src/common/static_interval_index.cpp
-        ../src/ui/field/field_glyphs.cpp
-        ../src/sys/app/frame_timing.cpp
     )
     target_include_directories(wormedit_nuklear_sdl_backend_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_nuklear_sdl_backend_tests PRIVATE
-        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::ui_frontend wormedit_ui_sdl_backend wormedit_renderer_test_timing SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_sdl_backend_tests
         TEST_PREFIX "nuklear-sdl-backend."
         PROPERTIES LABELS unit LABELS frontend LABELS rendering
@@ -600,21 +584,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_field_renderer_tests
         ui/field_renderer_tests.cpp
         ui/field_tile_cache_tests.cpp
-        ../src/ui/nuklear/render/arrow_glyph.cpp
-        ../src/ui/field/field_renderer.cpp
-        ../src/ui/field/field_tile_cache.cpp
-        ../src/common/static_interval_index.cpp
-        ../src/ui/field/field_glyphs.cpp
-        ../src/ui/nuklear/app/sdl_backend.cpp
-        ../src/ui/nuklear/render/sdl_command_mesh.cpp
-        ../src/ui/nuklear/render/sdl_region_cache.cpp
-        ../src/ui/nuklear/render/sdl_region_frame.cpp
-        ../src/ui/nuklear/render/lucide_icons.cpp
-        ../src/sys/app/frame_timing.cpp)
+    )
     target_include_directories(wormedit_field_renderer_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_field_renderer_tests PRIVATE
-        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::ui_frontend wormedit_ui_sdl_backend wormedit_ui_arrow_glyph wormedit_renderer_test_timing SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_field_renderer_tests
         TEST_PREFIX "field-renderer."
         PROPERTIES LABELS unit LABELS frontend LABELS rendering
@@ -623,16 +597,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_sdl_region_cache_tests
         ui/sdl_region_cache_tests.cpp
-        ../src/ui/nuklear/render/sdl_region_cache.cpp
-        ../src/ui/nuklear/render/sdl_command_mesh.cpp
-        ../src/ui/field/field_renderer.cpp
-        ../src/ui/field/field_tile_cache.cpp
-        ../src/ui/field/field_glyphs.cpp
-        ../src/common/static_interval_index.cpp)
+    )
     target_include_directories(wormedit_sdl_region_cache_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_sdl_region_cache_tests PRIVATE
-        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::ui_frontend wormedit_ui_region_cache SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_sdl_region_cache_tests
         TEST_PREFIX "sdl-region-cache."
         PROPERTIES LABELS unit LABELS frontend LABELS rendering
@@ -641,11 +610,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_sdl_command_mesh_tests
         ui/sdl_command_mesh_tests.cpp
-        ../src/ui/nuklear/render/sdl_command_mesh.cpp)
+    )
     target_include_directories(wormedit_sdl_command_mesh_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_sdl_command_mesh_tests PRIVATE
-        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::ui_frontend wormedit_ui_command_mesh SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_sdl_command_mesh_tests
         TEST_PREFIX "sdl-command-mesh."
         PROPERTIES LABELS unit LABELS frontend LABELS rendering
@@ -653,9 +622,6 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
-        ../src/ui/nuklear/render/image_quad.cpp
-        ../src/ui/nuklear/audio/player_preview.cpp
-        ../src/ui/nuklear/audio/player_preview_texture.cpp
     )
     target_include_directories(wormedit_player_preview_texture_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
@@ -663,7 +629,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_link_libraries(wormedit_player_preview_texture_tests
         PRIVATE
             wormedit::core
-            wormedit::ui_frontend
+            wormedit::ui_frontend wormedit_ui_player_preview
             SDL3::SDL3
             Catch2::Catch2WithMain
     )
@@ -725,6 +691,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/walkthrough_bms_event_harness_tests.cpp
         ../src/sys/resources/sound_import_staging.cpp
         ../src/sys/app/application_defaults.cpp
+        ../src/sys/app/application_command_state.cpp
         ../src/sys/app/application_timing_stage.cpp
         ../src/sys/timing/timing_edit_runtime.cpp
         ui/widget_lookup_event_harness_tests.cpp
@@ -820,7 +787,6 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_generator_actions.cpp
         ../src/sys/compose/generator_runtime.cpp
         ../src/sys/compose/views/generator_view.cpp
-        ../src/ui/nuklear/compose/compose_generator_form.cpp
         ../src/sys/compose/recipe_evaluation_runtime.cpp
         ../src/sys/compose/actions/compose_transform_actions.cpp
         ../src/sys/compose/actions/compose_bga_actions.cpp
@@ -857,6 +823,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/compose_sv_graph.cpp
         ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/compose_clipboard_workflow.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
         ../src/sys/compose/views/compose_export_cut_view.cpp
@@ -871,8 +838,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/project/workspace_view.cpp
         ../src/sys/bms_program_runtime.cpp
         ../src/sys/timing/timing_view.cpp
-        ${WORMEDIT_UI_FRONTEND_SOURCES}
-        "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
+        ${WORMEDIT_UI_FRONTEND_VARIANT_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/sys/app/frame_timing.cpp")
     target_include_directories(wormedit_frontend_event_harness_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
@@ -881,7 +847,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         WORMEDIT_TEST_ICON_WIDGETS=1
         WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
-        wormedit::core wormedit::ui_frontend SDL3::SDL3 otoworm::otoworm
+        wormedit::core wormedit::ui_frontend wormedit_ui_frontend_common SDL3::SDL3 otoworm::otoworm
         nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
@@ -954,17 +920,14 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/app/application_timing_stage.cpp
         ../src/sys/compose/views/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
+        ../src/sys/app/application_command_state.cpp
         sys/presentation_latency_tests.cpp
         sys/transport_status_tests.cpp
         sys/compose_notification_tests.cpp
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp
         sys/notification_history_runtime_tests.cpp
-        ../src/ui/nuklear/chrome/notification_toasts.cpp
-        ../src/ui/nuklear/chrome/tooltip.cpp
-        ../src/ui/nuklear/chrome/notification_panel.cpp
         ../src/sys/notifications/notification_history_runtime.cpp
-        ../src/ui/nuklear/render/theme.cpp
         ../src/sys/app/frame_timing.cpp
         ../src/sys/compose/actions/compose_area_actions.cpp
         ../src/sys/compose/actions/compose_quantize.cpp
@@ -972,6 +935,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/actions/compose_action_outcome.cpp
         ../src/sys/compose/actions/compose_audition_requests.cpp
         ../src/sys/compose/views/compose_view.cpp
+        ../src/sys/compose/compose_clipboard_workflow.cpp
         ../src/sys/compose/views/compose_scene_view.cpp
         ../src/sys/compose/views/compose_marker_view.cpp
         ../src/sys/compose/views/compose_export_cut_view.cpp
@@ -984,8 +948,6 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose/views/compose_recipe_areas.cpp
         ../src/sys/compose/compose_speed_spans.cpp
         ../src/sys/compose/actions/compose_quantize_preview.cpp
-        ../src/common/static_interval_index.cpp
-        ../src/ui/nuklear/render/arrow_glyph.cpp
         ../src/sys/compose/views/compose_resource_presenter.cpp
         ../src/sys/timing/timing_view.cpp
         ../src/sys/compose/views/recipe_form.cpp
@@ -1008,7 +970,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_include_directories(wormedit_frame_timing_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_link_libraries(wormedit_frame_timing_tests PRIVATE
-        wormedit::ui_frontend
+        wormedit::ui_frontend wormedit_ui_notifications wormedit_ui_arrow_glyph wormedit_ui_interval_index
         nlohmann_json::nlohmann_json
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)

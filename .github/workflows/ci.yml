@@ -23,13 +23,16 @@ jobs:
         include:
           - name: linux-gcc
             os: ubuntu-24.04
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
+            linux_packages: g++-14
             preset: headless-events
           - name: linux-clang
-            os: ubuntu-24.04
-            cc: clang
-            cxx: clang++
+            os: ubuntu-26.04
+            cc: clang-21
+            cxx: clang++-21
+            linux_packages: clang-21 g++-15
+            cxx_flags: --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15
             preset: headless
           - name: macos
             os: macos-latest
@@ -51,7 +54,7 @@ jobs:
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ${{ matrix.linux_packages }}
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
@@ -61,6 +64,7 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          CXXFLAGS: ${{ matrix.cxx_flags }}
         run: >-
           cmake --preset ${{ matrix.preset }}
 

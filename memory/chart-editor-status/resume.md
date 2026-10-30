@@ -1,5 +1,87 @@
 # Status: resume checklist
 
+## Independent review follow-ups (owner, 2026-10-30)
+
+[T-785](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) is locally done:
+checked admitted-payload reads and direct native object-only staging. C++ source `f70c747`
+passes Lua ON GATE 5,603/5,603, whitespace and eight changed-unit complexity checks;
+four additional consumers pass matching 23.1.3, twelve distinct units total. GCC and
+Clang focused workflows each pass 931 assertions/59 cases; prepared workflows pass
+1,355/69; event harness 721/721; isolated Compose smoke is inspected. No allowance changed.
+
+T-786 is done. Exact Ubuntu probes validate GCC 14 on Ubuntu 24.04 and Clang 21/GNU 15
+on Ubuntu 26.04, preserving the warning policy. CI-exposed test-support fixes give the
+walkthrough directory range and clipboard index explicit owners, and wait for the journal
+worker before its captured stack latches expire. The overflow case passes 100 consecutive
+native runs; the clipboard fix passes a GCC 14 sanitizer reproducer. CI's timeout and all
+assertions are preserved. Remote [run 41001583485](https://github.com/zardoru/wormedit/actions/runs/41001583485)
+at `e4616f7` passes Linux GCC, Linux Clang and macOS. Windows is skipped by the existing
+workflow condition. No failed job is waived. PR81 remains a draft for owner review;
+no GitHub approval or merge is claimed.
+See the [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md)
+for source pins, failures, logs, review scope and remaining design concerns.
+
+## Navigation and modifiability round two (owner, 2026-10-29)
+
+Completed on [PR #81](https://github.com/zardoru/wormedit/pull/81), baseline `23e113b`.
+[T-782–T-783](../../docs/chart-editor-plan/tasks/compose-input-contracts.md) give solo policy
+one session query and admit typed paint/span/recipe families at the event boundary.
+[T-784](../../docs/chart-editor-plan/tasks/frontend-boundary-guard.md) covers private headers
+and frontend direct vocabulary imports; BGA values no longer import the model.
+Combined Lua ON GATE passes 5,602/5,602, whitespace and 10 changed-TU complexity checks;
+eight additional consuming units pass. Focused workflows: 847 assertions/58 cases;
+event harness: 721/721; isolated Compose smoke inspected. Matched Make edit plans:
+session header 181 compiler actions versus policy implementation 4. The four new variants
+are a cold-build cost; exact production duplicates remain zero. Matched document dependencies
+drop 972→884 objects/656→580 sources. See the integration audit and lane reports for protocols,
+negative controls and remaining persistence/replay ownership concerns. No round-two card remains active.
+
+## Navigation and modifiability refactors (owner, 2026-10-29)
+
+Integration branch: `refactor/navigation-modifiability`, based on `d154284`.
+All four lane implementations are integrated in [PR #81](https://github.com/zardoru/wormedit/pull/81).
+Combined Lua-enabled GATE passes build, 5,596/5,596 tests, whitespace and 45 changed-TU
+complexity checks against `d154284`. The
+[integration audit](../../docs/audits/navigation-modifiability-2026-10-29.md) records acceptance,
+negative results and the remaining coupling/state/layering priorities.
+Additional matching-toolchain header consumers pass 44/44; pinned PR58 fast/extended property
+exercise passes 193,484 assertions in two cases; isolated Compose smoke passes and is inspected.
+Heavy builds and gates run sequentially because concurrent cold builds exhausted memory.
+
+T-779 is implemented and locally verified in [PR #77](https://github.com/zardoru/wormedit/pull/77),
+source `6f3952c`, staged in the integration branch. The same native configuration needs 139
+fewer compiler actions, has no exact duplicate production compilations, and preserves five
+narrow test-target build closures. Native GATE passes 5,585/5,585; headless 3,572/3,572;
+event-only 4,407/4,407; isolated Compose smoke inspected. Combined integration GATE also passes.
+See [the card](../../docs/chart-editor-plan/tasks/build-target-reuse.md)
+and its audit for configuration, measurements and limits; no wall-time improvement is claimed.
+
+T-777/T-778 are implemented and locally verified in
+[PR #78](https://github.com/zardoru/wormedit/pull/78), source `bba0306`, staged in the
+integration branch. The Lua-disabled native GATE passes 5,466/5,466, including 19 changed-TU
+complexity checks; two extra header consumers and 89 focused storage/staging cases pass.
+Light contracts and explicit storage support preserve the existing publication boundary.
+Include reductions are limited to specific consumers; the audit records unchanged and
+increased dependencies as well. Combined Lua-enabled verification includes scripting and
+all 109 Lua tests; direct Lua declarations/fixture includes were corrected at integration.
+See [the cards](../../docs/chart-editor-plan/tasks/core-edit-contracts.md).
+
+T-780 is implemented and locally verified in [PR #79](https://github.com/zardoru/wormedit/pull/79),
+source `f6a87b7`, staged with all three commits in the integration branch. Lua-disabled GATE
+passes 5,465/5,465; preset staging removes three direct working-document accesses and the
+obsolete allowance. The audit records narrower scene-header dependencies, a larger isolated
+settings-edit compile scope and a neutral navigation pilot. Integration also removes two pure
+paste forwarders so callers reach the workflow directly; this cleanup passes the combined
+Lua-enabled gate. See [the card](../../docs/chart-editor-plan/tasks/compose-workflow-ownership.md).
+
+T-781 is implemented and locally verified in [PR #80](https://github.com/zardoru/wormedit/pull/80),
+source `daa63bd`, staged in the integration branch. Lua-enabled GATE passes 5,591/5,591 and
+55 explicit header-consuming complexity checks pass. D's seven-consumer migration and its
+negative navigation/rebuild evidence are recorded in the audit. Root integration additionally
+migrates the retained diagnostic-location, redivision and semantic-layer declaration lists,
+with sample-control regressions and zero-growth ratchets. Those additions pass the combined
+gate. See [the card](../../docs/chart-editor-plan/tasks/chart-collection-traversal.md).
+
 ## Release 1.0.0-rc2 (owner, 2026-10-28)
 
 `b29bda0` set the suffix to `-rc2` (reconfigure reused build directories: the suffix is cached).

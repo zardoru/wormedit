@@ -4,6 +4,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/sample_control_editor.h>
 #include <wormedit/core/pause_warp_editor.h>
 #include <wormedit/core/scroll_speed_editor.h>
 #include <wormedit/core/marker_editor.h>
@@ -890,7 +891,13 @@ auto sound_test_resources(const document_history_t& history) -> std::vector<reso
 }
 
 TEST_CASE("Scoped sound layer batches update defaults and notes with one Undo", "[bms-program-edit][scoped-sound-layers]") {
-    auto history = history_from(sound_layer_source);
+    const auto conditional = GENERATE(false, true);
+    const auto source_text = conditional
+        ? std::string("#RANDOM 1\n#IF 1\n") + sound_layer_source + "#ENDIF\n#ENDRANDOM\n"
+        : std::string(sound_layer_source);
+    auto history = history_from(source_text);
+    if (conditional) history.bms_edit_target = {.difficulty = difficulty,
+        .chart = target(history, node_id<bms_if_scope_t>(history)).chart};
     const auto layer = add_sound_test_layer(history);
     const auto previous = add_sound_test_layer(history, "Existing");
     const auto resources = sound_test_resources(history);
@@ -1322,7 +1329,12 @@ void require_bms_lane_assignment(bool condition) { REQUIRE(condition); }
 TEST_CASE("Imported BMS lane keys move taps and both hold endpoints in one history step",
           "[bms-program-edit][bms-lane-assignment]") {
     const auto successive = GENERATE(false, true);
-    auto history = history_from("#BPM 120\n#WAV01 a.wav\n#00011:01000100\n#00151:01000100\n");
+    const auto conditional = GENERATE(false, true);
+    const std::string content_text = "#BPM 120\n#WAV01 a.wav\n#00011:01000100\n#00151:01000100\n";
+    auto history = history_from(conditional
+        ? "#RANDOM 1\n#IF 1\n" + content_text + "#ENDIF\n#ENDRANDOM\n" : content_text);
+    const auto selected = conditional ? target(history, node_id<bms_if_scope_t>(history)) : target(history);
+    if (conditional) history.bms_edit_target = {.difficulty = difficulty, .chart = selected.chart};
     auto state = scoped_state(history);
     const auto* chart = history.read_chart(difficulty);
     std::vector<note_t> notes;
@@ -1333,7 +1345,7 @@ TEST_CASE("Imported BMS lane keys move taps and both hold endpoints in one histo
     for (auto note = notes.rbegin(); note != notes.rend(); ++note) state.selected_notes.push_back(note->id);
     const auto lane = owner(history).prepared().lane_profile->layout.lanes.back().id;
     const auto before = history.document.prepared_bms_programs.front();
-    const auto original_items = content(history, target(history).chart);
+    const auto original_items = content(history, selected.chart);
     const auto result = dispatch_editor_action(history, state,
         assign_selected_objects_to_lane_action_t{.lane = lane, .successive = successive});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
@@ -1348,7 +1360,7 @@ TEST_CASE("Imported BMS lane keys move taps and both hold endpoints in one histo
         require_bms_lane_assignment(history.read_chart(difficulty)->find_note(expected.id));
         check_bms_lane_assignment(*history.read_chart(difficulty)->find_note(expected.id) == expected);
     }
-    const auto& items = content(history, target(history).chart);
+    const auto& items = content(history, selected.chart);
     require_bms_lane_assignment(items.size() == original_items.size());
     for (std::size_t i = 0; i < items.size(); ++i) {
         check_bms_lane_assignment(items[i].id == original_items[i].id);
@@ -1446,4 +1458,33 @@ TEST_CASE("Imported BMS same-lane assignment leaves semantic history untouched",
     check_bms_lane_assignment(history.document.prepared_bms_programs.front() == before);
     check_bms_lane_assignment(history.document.revision == revision);
     check_bms_lane_assignment(history.undo.empty());
+}
+
+namespace {
+void check_prepared_history_unchanged(const document_history_t& history,
+    const std::shared_ptr<const bms_program_document_t>& before, std::uint64_t revision) {
+    CHECK(history.document.revision == revision);
+    CHECK(history.document.prepared_bms_programs.front() == before);
+    CHECK(history.undo.empty());
+    CHECK(history.document.charts.empty());
+}
+} // namespace
+
+TEST_CASE("Prepared sample controls intentionally refuse unsupported storage atomically",
+          "[bms-program-edit][storage-contract]") {
+    const auto conditional = GENERATE(false, true);
+    auto history = history_from(conditional
+        ? "#WAV01 a.wav\n#BPM 120\n#RANDOM 1\n#IF 1\n#00011:01\n#ENDIF\n#ENDRANDOM\n"
+        : "#WAV01 a.wav\n#BPM 120\n#00011:01\n");
+    const auto before = history.document.prepared_bms_programs.front();
+    const auto revision = history.document.revision;
+    const auto position = local_position_t{history.read_chart(difficulty)->measures.front().id, 0};
+    document_command_transaction_t transaction(history);
+    const auto result = apply_sample_control_edit<timing_lane_kind_t::volume>(transaction,
+        insert_edit_t<sample_control_edit_value_t<timing_lane_kind_t::volume>>{
+            .chart = difficulty, .value = {.position = position, .settings = {.value = 50}}});
+    CHECK_FALSE(result.applied);
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    check_prepared_history_unchanged(history, before, revision);
 }

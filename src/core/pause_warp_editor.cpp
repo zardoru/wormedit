@@ -100,6 +100,7 @@ auto matching_pause_projection(chart_document_t& chart, const pause_event_t& eve
 }
 
 struct pause_warp_edit_context_t : chart_edit_context_t<pause_warp_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::objects;
     static constexpr std::string_view invalid_limits_message =
         "pause and warp event caps must be positive";
     static auto has_valid_limits(const pause_warp_edit_limits_t& limits) -> bool {

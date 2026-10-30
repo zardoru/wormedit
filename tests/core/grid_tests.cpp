@@ -1,3 +1,4 @@
+#include <wormedit/core/document.h>
 #include <wormedit/core/grid.h>
 
 #include <catch2/catch_test_macros.hpp>

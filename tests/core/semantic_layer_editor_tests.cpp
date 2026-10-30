@@ -516,6 +516,25 @@ TEST_CASE("clearing semantic layers validates charts notes and selection caps",
     check_clear_memberships(history.document.charts.front(), {layer_id_t{7}}, {});
 }
 
+TEST_CASE("sample controls count toward the semantic layer object cap",
+          "[unit][core][semantic-layer-editor][sample-controls][negative]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.volumes.push_back({.id = object_id_t{50},
+        .position = {measure_id_t{3}, 120}, .value = 50});
+    chart.sample_sets.push_back({.id = object_id_t{51},
+        .position = {measure_id_t{3}, 240}, .value = 2});
+    auto history = document_history_t::from(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = apply_semantic_layer_edit(history,
+        clear_semantic_layer_membership_action_t{.chart = chart_id_t{2}, .notes = {object_id_t{20}}},
+        {.maximum_chart_objects = 5});
+    CHECK_FALSE(result.applied);
+    CHECK(has_code(result, diagnostic_code_t::invalid_resolution));
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("locked layers block membership and deletion until unlocked",
           "[unit][core][semantic-layer-editor][locked]") {
     auto song = semantic_layer_song();

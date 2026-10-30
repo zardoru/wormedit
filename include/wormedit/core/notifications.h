@@ -2,7 +2,8 @@
 
 #include <wormedit/core/vocabulary.h>
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/position_types.h>
+#include <wormedit/core/diagnostic.h>
 
 #include <chrono>
 #include <cstddef>

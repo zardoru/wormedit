@@ -1,3 +1,4 @@
+#include "chart_collections.h"
 #include <wormedit/core/time_shift.h>
 #include "lane_occupancy.h"
 
@@ -323,15 +324,11 @@ auto shift_timing_after_cursor(shift_context_t& context, std::uint64_t cursor_ro
     auto& chart = context.chart;
     auto& moved = context.result.payload.moved_objects;
     const auto position = [](auto& e) -> local_position_t& { return e.position; };
-    return shift_timing_family(context, chart.bpms, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.pauses, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.scrolls, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.volumes, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.sample_sets, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.speeds, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.kiai, position, cursor_row, moved) &&
-           shift_timing_family(context, chart.timing_anchors, position, cursor_row, moved) &&
-           shift_warps_after_cursor(context, cursor_row);
+    return visit_chart_point_collections(chart, [&](auto& events, auto role) {
+        if constexpr (role != chart_collection_position_t::visual_point)
+            return shift_timing_family(context, events, position, cursor_row, moved);
+        else return true;
+    }) && shift_warps_after_cursor(context, cursor_row);
 }
 
 auto shift_markers_after_cursor(shift_context_t& context, std::uint64_t cursor_row,

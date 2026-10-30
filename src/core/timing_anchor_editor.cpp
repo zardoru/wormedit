@@ -30,6 +30,7 @@ struct anchor_edit_result_t {
 };
 
 struct anchor_operation_visitor_t : chart_edit_context_t<timing_anchor_edit_limits_t> {
+    static constexpr auto storage_support = chart_edit_storage_support_t::objects;
     static constexpr std::string_view invalid_limits_message = "timing anchor cap must be positive";
     static constexpr std::string_view unknown_chart_message =
         "timing anchor edit refers to an unknown chart";

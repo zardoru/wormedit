@@ -2,6 +2,31 @@
 
 The headless core and its tests build without a window or GPU; the application is an SDL3 GPU program with a Nuklear frontend. Both use the same CMake project and presets.
 
+## Compiler requirements
+
+Wormedit requires a C++23 compiler and standard library providing `std::expected`
+and `std::bind_back`. Configure probes the pair before fetching dependencies.
+Linux CI selects GCC 14 on Ubuntu 24.04 and Clang 21 with libstdc++ 15 on Ubuntu
+26.04 explicitly. Install `g++-14` for the former, or `clang-21 g++-15` for the latter.
+Select them with `CC=gcc-14 CXX=g++-14` or `CC=clang-21 CXX=clang++-21` when
+configuring a fresh build. The Clang job also selects GCC 15's library installation
+with `--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15`.
+
+Clang 19 with Ubuntu's libstdc++ 14 does not expose `std::bind_back`; Clang 20
+with that library fails when invoking it. Both are rejected by the actual probe.
+Configure includes the failed compiler output directly in its diagnostic.
+
+GCC 14 also lacks the C++23 range-for temporary lifetime extension
+([implemented in GCC 15](https://gcc.gnu.org/projects/cxx-status.html#cxx23)).
+Keep a newly returned expected/optional owner in a local variable before iterating
+over one of its members; this avoids borrowing from a result that has already expired.
+
+Clang must also support its separate designated-initializer warning, introduced
+in [Clang 19](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html).
+This preserves the project policy: omitted designated members use their defaults,
+while omitted positional members remain errors. GCC's warning policy and the
+separately pinned complexity toolchain remain unchanged.
+
 ## Release versions
 
 The numeric CMake `PROJECT_VERSION` is `1.0.0`. `WORMEDIT_VERSION_SUFFIX` defaults
@@ -415,3 +440,27 @@ For disconnected builds, provide checkouts at the revisions in
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_PENLIGHT`, and
 `FETCHCONTENT_SOURCE_DIR_WORMEDIT_LFS`, plus `WORMEDIT_LUA_SOURCE_DIR` as above.
 Cross-builds may select a native C compiler with `WORMEDIT_HOST_C_COMPILER`.
+
+## Compiled frontend reuse
+
+`wormedit_ui_frontend_common` and its lower-level static libraries compile frontend
+implementations once for the application and frontend tests. Add panel implementations to
+`WORMEDIT_UI_FRONTEND_COMMON_SOURCES`; link the compiled target from consumers
+instead of expanding that source list again. Narrow tests link the lower-level
+mesh, renderer, state or other support target directly, keeping their required
+build closure bounded. `wormedit::ui_frontend` remains the
+header/configuration seam.
+
+Keep consumer-specific implementations on their executables: `components.cpp`
+records event-harness icon widgets, `frontend.cpp` has platform menu branches,
+and application `frame_timing.cpp` owns the Debug allocation hook. Decoder,
+audio-output and scripting variants stay on their existing targets. A platform
+port's compiler/link usage requirements must also reach the compiled frontend
+targets; executable-only options do not propagate backwards into libraries.
+
+Measure exact redundant Linux compile commands with
+`python3 cmake/measure_compile_reuse.py build/compile_commands.json` (or pass
+`--root /path/to/checkout` for another checkout's database). Only `-o` and its
+output are normalized; feature definitions and include order remain significant.
+See [the T-779 measurements](audits/build-target-reuse-2026-10-29.md) for the
+baseline, bounded source-edit fanout and verification limits.

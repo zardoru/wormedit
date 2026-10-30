@@ -20,7 +20,6 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/lane_profile_switch.h>
-#include <wormedit/formats/bms_clipboard.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -216,29 +215,6 @@ auto resolve_compose_virtual_row(const wormedit::chart_document_t& chart,
 }
 
 namespace compose_projection_detail {
-auto paste_anchor(application_command_state_t::paste_session_t& session,
-                  wormedit::local_position_t cursor) -> wormedit::local_position_t {
-    if (session.pointer_cursor && *session.pointer_cursor == cursor) return session.anchor;
-    session.pointer_cursor.reset();
-    return cursor;
-}
-
-// Pasted playable heads obey the same Warp rule as placed ones; fakes, mines and tails may land.
-void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
-                                const wormedit::measure_index_t& index,
-                                wormedit::chart_paste_outcome_t& proposal) {
-    for (const auto& object : proposal.value->payload.report.objects) {
-        const auto* note = std::get_if<wormedit::note_t>(&object);
-        const auto row = note ? index.row_of(note->position) : std::nullopt;
-        if (!row || !wormedit::is_head_blocked_by_warp(chart, index, *row, note->kind)) continue;
-        proposal.diagnostics.push_back(wormedit::chart_paste_diagnostic_t::from(
-            "Playable note heads cannot sit inside a warp.", proposal.value->stamp,
-            std::move(proposal.value->payload.report)));
-        proposal.value.reset();
-        return;
-    }
-}
-
 auto paste_geometry(const wormedit::chart_document_t& source,
                     const wormedit::chart_paste_report_t& report) -> wormedit::chart_document_t {
     wormedit::chart_document_t chart;
@@ -272,147 +248,15 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     }
     return chart;
 }
-void build_compose_paste_preview(application_command_state_t::paste_session_t& session,
-    const wormedit::document_history_t& history, const wormedit::chart_document_t& source,
-    wormedit::local_position_t anchor) {
-    const auto& document = history.document;
-    session.anchor = anchor;
-    session.anchor_available = true;
-    session.proposal = wormedit::chart_paste_proposal_t::propose(document, source.id,
-        session.clipboard, anchor, document.revision);
-    if (session.proposal.value && !source.warps.empty()) {
-        const auto* indices = history.indices(source.id);
-        if (indices && indices->measures)
-            block_paste_heads_in_warps(source, *indices->measures, session.proposal);
-    }
+} // namespace compose_projection_detail
+void build_compose_paste_geometry(compose_paste_session_t& session,
+    const wormedit::chart_document_t& source, std::uint64_t revision) {
     const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
     const wormedit::chart_paste_report_t empty;
     session.geometry = paste_geometry(source, preview.report ? *preview.report : empty);
-    const auto indexed = wormedit::editor_field_scene_index_t::from(session.geometry, document.revision);
+    const auto indexed = wormedit::editor_field_scene_index_t::from(session.geometry, revision);
     session.index = indexed ? std::optional{*indexed} : std::nullopt;
 }
-} // namespace compose_projection_detail
-
-auto revise_compose_paste(application_command_state_t& application_state,
-    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
-    wormedit::local_position_t anchor, std::string* failure) -> bool {
-    const auto& document = history.document;
-    auto& session = application_state.project.clipboard.paste_session;
-    if (!session) {
-        if (failure) *failure = "The paste preview is stale.";
-        return false;
-    }
-    const auto preview = wormedit::chart_paste_preview_view_t::from(session->proposal);
-    if (!preview.stamp || !preview.stamp->is_current(document, chart,
-            wormedit::document_identity_policy_t::revision_only)) {
-        if (failure) *failure = wormedit::stale_action_message("Paste preview");
-        session.reset();
-        return false;
-    }
-    if (session->anchor == anchor && session->index) return true;
-    const auto source = history.read_chart(chart);
-    if (source == nullptr) {
-        if (failure) *failure = "The paste preview is stale.";
-        session.reset();
-        return false;
-    }
-    build_compose_paste_preview(*session, history, *source, anchor);
-    return true;
-}
-
-namespace {
-// BMSE or iBMSC text copied after wormedit's own last Copy, if the system clipboard holds any.
-auto external_bms_clipboard_text(const application_command_state_t& application_state)
-    -> std::optional<std::string> {
-    const auto& read = application_state.services.system_clipboard_text;
-    if (!read) return std::nullopt;
-    auto text = read();
-    if (!wormedit::is_bms_editor_clipboard_text(text)) return std::nullopt;
-    const auto& clipboard = application_state.project.clipboard;
-    if (clipboard.chart_clipboard && text == clipboard.system_text_at_copy) return std::nullopt;
-    return text;
-}
-
-// Decodes other editors' text against the lane layout at the cursor.
-auto decode_external_clipboard(std::string_view text, const wormedit::song_document_t& document,
-    const wormedit::chart_document_t& chart, wormedit::local_position_t cursor)
-    -> wormedit::chart_clipboard_outcome_t {
-    const auto* segment = wormedit::active_lane_layout_segment(chart, cursor);
-    if (!segment && chart.lane_layouts.empty())
-        return std::unexpected(std::string{"Choose a lane profile before pasting BMS editor data."});
-    const auto& layout = segment ? segment->layout : chart.lane_layouts.front().layout;
-    return wormedit::parse_bms_chart_clipboard(text, document, chart, layout);
-}
-} // namespace
-
-auto begin_compose_paste(application_command_state_t& application_state,
-    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
-    std::string& status) -> bool {
-    const auto& document = history.document;
-    const auto* source = history.read_chart(state.chart);
-    if (!source) {
-        application_state.project.clipboard.paste_session.reset();
-        status = "The paste chart is unavailable.";
-        return false;
-    }
-    const auto external = state.is_pending() ? std::nullopt
-                                             : external_bms_clipboard_text(application_state);
-    if ((!external && !application_state.project.clipboard.chart_clipboard) || state.is_pending()) {
-        status = "Paste requires a copied selection and no pending gesture.";
-        return false;
-    }
-    application_command_state_t::paste_session_t session;
-    if (external) {
-        auto decoded = decode_external_clipboard(*external, document, *source, state.cursor);
-        if (!decoded) {
-            status = "BMS editor clipboard was not pasted: " + decoded.error();
-            return false;
-        }
-        session.clipboard = std::move(*decoded);
-    } else {
-        session.clipboard = *application_state.project.clipboard.chart_clipboard;
-    }
-    application_state.project.compose_gesture.note_paint_mode_active = false;
-    application_state.project.compose_gesture.resource_paint_mode_active = false;
-    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-    build_compose_paste_preview(session, history, *source, state.cursor);
-    application_state.project.clipboard.paste_session = std::move(session);
-    status = external ? "Pasting BMS editor data: click or Enter to commit; Escape to cancel."
-                      : "Paste preview: click or Enter to commit; Escape to cancel.";
-    return true;
-}
-
-auto apply_compose_paste(application_command_state_t& application_state,
-    wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
-    std::string& status, wormedit::notification_severity_t* severity) -> bool {
-    if (severity) *severity = wormedit::notification_severity_t::warning;
-    const auto anchor = application_state.project.clipboard.paste_session
-        ? paste_anchor(*application_state.project.clipboard.paste_session, state.cursor) : state.cursor;
-    if (!revise_compose_paste(application_state, history, state.chart, anchor, &status))
-        return false;
-    auto& session = *application_state.project.clipboard.paste_session;
-    if (!session.anchor_available) { status = session.anchor_error; return false; }
-    if (!session.proposal.value) {
-        const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
-        status = preview.diagnostic ? preview.diagnostic->message : "";
-        return false;
-    }
-    const auto applied = wormedit::paste_chart_clipboard(history, state.chart, session.clipboard,
-                                                       session.anchor);
-    if (!applied.applied) {
-        status = applied.diagnostics.empty() ? "Paste failed." : applied.diagnostics.front().message;
-        if (severity && !applied.diagnostics.empty()) {
-            *severity = wormedit::to_notification_severity(
-                applied.diagnostics.front().severity, wormedit::notification_severity_t::warning);
-        }
-        return false;
-    }
-    application_state.project.clipboard.paste_session.reset();
-    status = "Selection pasted.";
-    if (severity) *severity = wormedit::notification_severity_t::success;
-    return true;
-}
-
 auto compose_surface_height(int window_height, const wormedit::ui::workspace_view_t& view) -> double {
     const auto recovery_height = view.recovery_panel_visible ? view.recovery_panel_height() : 0.0f;
     const auto content_height =
@@ -1174,15 +1018,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         application_state.project.semantic_layer.required_semantic_layer_filters.clear();
         application_state.project.semantic_layer.excluded_semantic_layer_filters.clear();
     }
-    if (application_state.project.semantic_layer.semantic_layer_target &&
-        std::ranges::find(chart.semantic_layers, *application_state.project.semantic_layer.semantic_layer_target,
-                          &wormedit::semantic_layer_t::id) == chart.semantic_layers.end()) {
-        application_state.project.semantic_layer.semantic_layer_target.reset();
-        application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-        application_state.project.semantic_layer.semantic_layer_solo_active = false;
-    }
     view.semantic_layer_paint_mode_active = application_state.project.compose_gesture.semantic_layer_paint_mode_active;
-    view.semantic_layer_solo_active = application_state.project.semantic_layer.semantic_layer_solo_active;
+    view.semantic_layer_solo_active = application_state.project.semantic_layer.effective_solo_layer(chart).has_value();
     view.project_id.value = history.document.id.value;
     view.chart_id.value = chart.id.value;
     view.document_revision = history.document.revision;
@@ -1372,9 +1209,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     auto& application_state = input.frame.application_state;
     auto& view = input.frame.view();
     auto& interaction_view = input.scope.interaction_view;
-    retained_state->solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
-        ? application_state.project.semantic_layer.semantic_layer_target : std::nullopt;
-    interaction_view.solo_semantic_layer = retained_state->solo_semantic_layer;
+    interaction_view.solo_semantic_layer = application_state.project.semantic_layer.effective_solo_layer(chart);
     const auto downscroll = input.scope.downscroll;
     build_compose_markers_view(input);
     if (application_state.project.transport.preview_playhead_absolute_row) {
@@ -2085,9 +1920,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         .bga_pane_left_pixels = horizontal_layout.bga_pane_left_pixels,
         .bga_pane_width_pixels = bga_pane_width,
         .include_virtual_bms_tail = wormedit::has_chart_virtual_tail(chart),
-        .solo_semantic_layer = application_state.project.semantic_layer.semantic_layer_solo_active
-                                   ? application_state.project.semantic_layer.semantic_layer_target
-                                   : std::nullopt,
+        .solo_semantic_layer = application_state.project.semantic_layer.effective_solo_layer(chart),
         .required_semantic_layers = application_state.project.semantic_layer.required_semantic_layer_filters,
         .excluded_semantic_layers = application_state.project.semantic_layer.excluded_semantic_layer_filters,
         .maximum_grid_lines = compose_scene_grid_work_limit,
@@ -2305,8 +2138,8 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         return;
     const auto anchor =
         paste_anchor(*application.project.clipboard.paste_session, input.frame.retained_state->cursor);
-    if (!revise_compose_paste(application, input.frame.history,
-                              input.scope.chart_scope.chart.id, anchor))
+    if (!application.project.clipboard.revise(
+            input.frame.history, input.scope.chart_scope.chart.id, anchor))
         return;
     auto& session = *application.project.clipboard.paste_session;
     auto& view = input.frame.view();

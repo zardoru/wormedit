@@ -1,5 +1,6 @@
 #pragma once
-#include <wormedit/core/document.h>
+#include <wormedit/core/position_types.h>
+#include <wormedit/core/vocabulary.h>
 #include <string>
 #include <vector>
 

@@ -133,3 +133,84 @@ and `compose_action_notification_tests.cpp`; root's full build covers additional
 and frontend-action-header consumers. Re-run documentation CTest checks after integration.
 No root build output/source or tracked fixture was changed. All lane compiler processes
 completed before handoff. Root owns final card acceptance and PR81 updates.
+
+## Independent integration review
+
+A fresh Sol-high source review of `23e113b..5e9ec8e` found no correctness or material
+maintainability blockers. It traced selection entry surfaces, same-frame routes, current
+producer selector values, captured paint intent, Kiai creation, all six recipe commands,
+and the frontend guard. Existing application target refresh still performs invalid-target
+and brush cleanup; projection no longer has that extra obligation. No tests or compiler
+checks were claimed by the reviewer.
+
+The admitted payload accessor deliberately relies on the internal event/variant pairing;
+the review found no reachable empty optional, wrong alternative or reentrancy mismatch.
+That invariant remains a cost for future route changes, rather than a claim that the
+whole transport now makes every illegal state unrepresentable. Root added default value
+equality and count ratchets for selector reads and projection repair. The lexical ratchets
+do not detect aliases or a moved read that preserves the total count.
+
+Combined root runtime verification is still pending at this checkpoint.
+
+Root subsequently moved the unchanged query body into
+`src/sys/app/application_command_state.cpp`, keeping its declaration on the session type.
+The inline checkpoint above would make eligibility edits touch the broad session header.
+The out-of-line owner adds one definition hop and four compile variants (app, frame timing,
+event harness, and core same-sound tests). A matched Make dry-run after the full build will
+compare header versus implementation edit scope; no elapsed-time gain is inferred. The
+combined compile database has 1,082 first-party entries/757 unique sources and zero exact
+duplicate production compilations. This is four more actions than the round-two baseline.
+
+The first complete native runtime run found four failures. Two were diagnostic drift:
+recipe and export-cut admission now retain their existing family messages (Draw-source
+feedback is retained too). Two were new fixture mistakes: the first solo toggle captured
+layer 102 while expecting layer 101, and chart-wide same-sound selection was incorrectly
+expected to apply visible-only filters. Root corrected the captured row and retained the
+chart-wide assertion, then added the real visible-input route to the same-sound sequence.
+No production chart-selection semantics or assertions were weakened to make this pass.
+The corrected focused family run passes 847 assertions in 58 cases; matching complexity
+passes all three affected units. Final GATE is being rerun; the failed run is not acceptance
+evidence. Logs: `/tmp/wormedit-round2-focused-workflows.log` and
+`/tmp/wormedit-round2-corrections-complexity.log`.
+
+## Final combined acceptance
+
+The unchanged policy body now has one out-of-line owner. After a successful full build,
+root confirmed an idle Make plan with zero compiler actions, then independently changed
+only the timestamp of the session header and implementation, restoring each timestamp in
+a `finally` block. The same final graph plans 181 unique first-party compiler output objects
+for the header touch and four for the implementation touch. This compares edit locations
+on one graph, not two historical timed builds. The header plan includes the four newly
+registered owner objects. Their cold-build cost and extra definition hop are retained costs.
+Raw plans: `/tmp/wormedit-round2-{idle,session-header,policy-implementation}-plan.log`;
+helper/result: `/tmp/wormedit-round2-measure-edits.py` and
+`/tmp/wormedit-round2-rebuild-measurements.json`. Source contents are unchanged by the plans.
+
+Final full configuration remains native Debug/GCC, app, Lua and all media/FFmpeg enabled.
+Matching Clang/clang-tidy/libclang 23.1.3 runs the complexity check. Actual final output:
+
+```text
+gate: 2 job(s), set explicitly; logs in /tmp/wormedit-gate.LyyJ9B
+  pass  build
+  pass  ctest
+  pass  whitespace
+  pass  complexity
+  100% tests passed out of 5602
+gate: passed
+```
+
+Summary: `/tmp/wormedit-round2-gate-verified.log`; 10/10 changed-TU complexity checks.
+Eight additional unchanged consuming units pass (`/tmp/wormedit-round2-header-complexity.log`),
+so 18 distinct units cover this round's changes/headers. No baseline or limit changed.
+The final focused filter `[semantic-layer],[select-same-sound],[admission],[draw],[paint],
+[kiai-spans],[song-preview],[speed-spans],[speeds],[recipe-areas],[cut-drag]` passes
+847 assertions in 58 cases (`/tmp/wormedit-round2-focused-workflows-final.log`).
+The event harness passes 721/721 (`/tmp/wormedit-round2-events.log`). The visible same-sound
+path now executes through pointer/input dispatch; its behavior was not merely source-traced.
+
+Isolated Compose smoke passes and `/tmp/wormedit-round2-compose.png` was opened and inspected:
+field, toolbar, quantize and Sounds dock render normally. It is a startup/render check;
+the test families cover interaction. No window opened on the user's desktop. Generated
+walkthrough output was restored after all consumers finished. Final docs/whitespace are
+checked after acceptance report updates. The original failed run is retained in
+`/tmp/wormedit-round2-gate-complete.log`; none of its failures is waived.

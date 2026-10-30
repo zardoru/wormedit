@@ -61,3 +61,43 @@ Explicit matching Clang/clang-tidy/libclang 23.1.3 complexity passes all four co
 consumers (`/tmp/wormedit-round2-boundary-complexity.log`, details
 `/tmp/wormedit-complexity.592s3ljd`). Final combined GATE and matched post-build dependency
 counts are pending. No allowance, complexity baseline or runtime schema changes.
+
+## Combined acceptance and dependency result
+
+The initial combined build exposed the sys BGA adapter's retired transitive import.
+`bga_usage_view.h` now declares its document argument and its `.cpp` directly includes the
+model it queries. The frontend contract stays light; no model allowance was introduced.
+
+Final combined Lua ON GATE passes build, 5,602/5,602 tests, whitespace and 10 changed-TU
+complexity checks (`/tmp/wormedit-round2-gate-verified.log`, `/tmp/wormedit-gate.LyyJ9B`).
+Eight explicit additional consumers pass with matching 23.1.3, including three frontend
+controls, application/same-sound consumers and the two unchanged internal input consumers.
+Summary: `/tmp/wormedit-round2-header-complexity.log`; list:
+`/tmp/wormedit-round2-header-consumers.txt`. Focused workflows pass 847 assertions/58 cases;
+the event harness passes 721/721; an isolated Compose smoke is opened and inspected.
+
+Re-reading the same 1,076 pre-existing object dependency files after the successful build:
+
+| Header | Before objects/sources | After objects/sources |
+| --- | ---: | ---: |
+| document.h | 972 / 656 | 884 / 580 |
+| frontend/bga_usage.h | 460 / 284 | 460 / 284 |
+| frontend/actions.h | 452 / 281 | 452 / 281 |
+
+This is a matched object set, not the entire configured database. The two originally
+unbuilt entries belong to the excluded BMS edit benchmark; the four new policy-owner
+objects are excluded from both sides. No earlier object disappeared from the comparison.
+The unchanged BGA/action-header reach shows that the gain is removing their dependency
+on the heavy model, rather than shrinking the transport's own reach. New policy objects
+also depend on the model, so the matched 88-object reduction must not be reported as an
+unadjusted whole-build net reduction.
+
+The final same-command compiler controls are 58→51 for components, 120→120 for the input
+panel, 76→76 for the recipe form, and 223→224 for input dispatch. The extra input header
+is the admission owner; it is a negative include-count result. All compiler-control paths
+have no parent-directory aliases. The earlier table isolates BGA cleanup before admission;
+final source/commands/dependencies are in `/tmp/wormedit-round2-include-probes-final.json`.
+
+Measurements and reproduction helper: `/tmp/wormedit-round2-rebuild-measurements.json`,
+`/tmp/wormedit-round2-measure-edits.py`; all simulated source timestamps are restored.
+No wall-time or general navigation-speed improvement is claimed.

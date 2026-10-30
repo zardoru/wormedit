@@ -2,13 +2,18 @@
 
 ## Navigation and modifiability round two (owner, 2026-10-29)
 
-Continue on [PR #81](https://github.com/zardoru/wormedit/pull/81), baseline `23e113b`.
-[T-782–T-783](../../docs/chart-editor-plan/tasks/compose-input-contracts.md) execute in one
-lane because solo policy and input admission share Compose dispatch. Root owns
-[T-784](../../docs/chart-editor-plan/tasks/frontend-boundary-guard.md), central integration
-and combined verification. No additional PR or concurrent cold build is needed.
-Guard and rejection regressions pass; shared frontend target builds with the lighter BGA
-value includes. Policy/admission implementation and combined GATE remain pending.
+Completed on [PR #81](https://github.com/zardoru/wormedit/pull/81), baseline `23e113b`.
+[T-782–T-783](../../docs/chart-editor-plan/tasks/compose-input-contracts.md) give solo policy
+one session query and admit typed paint/span/recipe families at the event boundary.
+[T-784](../../docs/chart-editor-plan/tasks/frontend-boundary-guard.md) covers private headers
+and frontend direct vocabulary imports; BGA values no longer import the model.
+Combined Lua ON GATE passes 5,602/5,602, whitespace and 10 changed-TU complexity checks;
+eight additional consuming units pass. Focused workflows: 847 assertions/58 cases;
+event harness: 721/721; isolated Compose smoke inspected. Matched Make edit plans:
+session header 181 compiler actions versus policy implementation 4. The four new variants
+are a cold-build cost; exact production duplicates remain zero. Matched document dependencies
+drop 972→884 objects/656→580 sources. See the integration audit and lane reports for protocols,
+negative controls and remaining persistence/replay ownership concerns. No round-two card remains active.
 
 ## Navigation and modifiability refactors (owner, 2026-10-29)
 

@@ -8,6 +8,11 @@ The implemented batch consolidates [PR77](https://github.com/zardoru/wormedit/pu
 integration also includes main's waveform-detail fix `a18cf45`. Pending feature PRs were
 examined as change-scope examples, without merging their implementations.
 
+Round one is accepted at `23e113b`. Round two continues the same PR and resolves the solo
+policy, selected input-family admission and boundary-guard findings below. Its current
+acceptance and measured tradeoffs are recorded at the end of this report; the supplemental
+findings retain their original review context.
+
 ## Implemented owners and observed results
 
 The lane reports retain their own fixed configurations, source revisions and measurement
@@ -180,3 +185,53 @@ No complexity baseline, test limit or allowance was increased. The generated tra
 walkthrough fixture was restored after all runtime consumers finished and excluded from the
 change. Final documentation passes 6/6 (`/tmp/wormedit-integration-docs-final.log`), including
 chart-editor state, architecture names and ceremony ratchets; staged whitespace passes.
+
+## Round two: policy, admission and dependency boundaries
+
+T-782/T-783 and T-784 are complete in the same PR. Solo eligibility has one session query,
+implemented out of line; selection entry surfaces install it and projection reads it without
+repairing retained state. Existing application refresh retains invalid-target/brush cleanup.
+Paint, Draw-source, span and recipe selectors have one admission owner; unsupported values
+reject before handlers, with existing family diagnostics preserved. The frame accumulator
+remains transport. Its event-scoped typed variant still relies on an internal route pairing,
+explicitly reviewed and covered by actual selected workflows.
+
+The guard includes private headers and a reviewed frontend vocabulary import list. BGA usage
+contracts reuse round one's light values; the sys adapter declares/includes its own model
+dependency. The guard remains a direct source check with documented alias/macro/transitive
+limitations. See the [input contracts audit](compose-input-contracts-2026-10-29.md) and
+[boundary audit](frontend-boundary-guard-2026-10-29.md) for full protocols and source scope.
+
+Measured results:
+
+- Raw paint/span selector interpretations: four source files → one admission file. Selected
+  handlers have zero wire-selector reads; five legitimate reads remain in admission.
+- Solo eligibility: four derivations → one query body. There are three dispatch installation
+  surfaces instead of two retained writes; projection's retained repair is removed.
+- Matched idle Make graph: a session-header touch plans 181 compiler output objects; a policy
+  implementation touch plans four. This is a timestamp-only edit-location simulation, not a
+  historical wall-time comparison. The definition adds one hop and four cold compiler actions.
+- Matched 1,076 existing objects: model-header dependencies 972/656 objects/sources → 884/580.
+  Four new policy objects are outside both sides. BGA/action headers' own reach is unchanged.
+- Current native database: 1,082 entries/757 unique sources, 720 production entries and zero
+  exact duplicate production actions. Round one's fixed-configuration denominator is unchanged.
+- Negative controls: input-panel/recipe-form includes remain 120/76; input dispatch grows
+  223→224 files. Components shrink 58→51 and lose the model dependency. No general navigation
+  speed or elapsed build-time improvement is claimed.
+
+Final combined Debug/GCC Lua ON GATE passes build, 5,602/5,602 tests, whitespace and 10
+changed-TU complexity checks against `23e113b` (`/tmp/wormedit-gate.LyyJ9B`). Eight additional
+consumers pass pinned 23.1.3 complexity. Focused selected workflows pass 847 assertions/58 cases;
+event harness 721/721; isolated Compose smoke is inspected. A fresh Sol-high source review
+found no blockers; runtime caught two fixture assumptions and two diagnostic regressions,
+which were corrected without weakened assertions or allowances before this final green gate.
+
+Remaining priorities are durability/session service ownership and the combined storage callback's
+explicit replay requirement. The code does not yet express replayability in its callback type;
+the current caller remains deterministic. No generic persistence or edit-plan framework was
+introduced in either round. Broader god-file, directory and full action-variant changes require
+their own measured scope rather than a claim that this batch closes every design smell.
+
+Final round-two documentation checks pass 6/6 (`/tmp/wormedit-round2-docs-final.log`),
+including state, architecture names and count ratchets. Staged whitespace is checked before
+commit; generated walkthrough content is restored and excluded.

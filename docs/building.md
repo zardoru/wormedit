@@ -2,6 +2,23 @@
 
 The headless core and its tests build without a window or GPU; the application is an SDL3 GPU program with a Nuklear frontend. Both use the same CMake project and presets.
 
+## Compiler requirements
+
+Wormedit requires a C++23 compiler and standard library providing `std::expected`
+and `std::bind_back`. Configure probes the pair before fetching dependencies.
+Linux CI selects GCC 14 or Clang 19 with libstdc++ 14 explicitly; on Ubuntu 24.04
+install `g++-14` for either job and `clang-19` for the Clang job. Select them with
+`CC=gcc-14 CXX=g++-14` or `CC=clang-19 CXX=clang++-19` when configuring a fresh build.
+The Linux Clang job also selects GCC 14's library installation with
+`--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14`, avoiding whichever newer
+GCC installation happens to be present on the runner.
+
+Clang must also support its separate designated-initializer warning, introduced
+in [Clang 19](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html).
+This preserves the project policy: omitted designated members use their defaults,
+while omitted positional members remain errors. GCC's warning policy and the
+separately pinned complexity toolchain remain unchanged.
+
 ## Release versions
 
 The numeric CMake `PROJECT_VERSION` is `1.0.0`. `WORMEDIT_VERSION_SUFFIX` defaults

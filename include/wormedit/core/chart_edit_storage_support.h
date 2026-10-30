@@ -14,6 +14,9 @@ enum class chart_edit_storage_support_t {
 
 struct chart_edit_mutation_t {
     chart_edit_storage_support_t storage{chart_edit_storage_support_t::legacy_only};
+    // Object-only callbacks read the transaction's current document; the native
+    // object adapter owns target resolution. Combined callbacks borrow the exact
+    // prepared owner's resolved catalog across both staging passes.
     // Existing identities only. Combined layer/object edits must be deterministic:
     // the first invocation discovers identities while staging settings; the second
     // replays the same edit to publish only those objects. Each invocation may

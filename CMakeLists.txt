@@ -39,6 +39,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(cmake/check_compiler_requirements.cmake)
+
 include(CTest)
 include(FetchContent)
 

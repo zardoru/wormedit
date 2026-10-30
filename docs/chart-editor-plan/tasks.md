@@ -143,6 +143,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Typed chart collection traversals (T-781)](tasks/chart-collection-traversal.md)
 - [Compose selection policy and typed input admission (T-782–T-783)](tasks/compose-input-contracts.md)
 - [Frontend dependency boundary coverage (T-784)](tasks/frontend-boundary-guard.md)
+- [Navigation review and CI compiler follow-ups (T-785–T-786)](tasks/navigation-review-followups.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
 every number above T-784. T-777–T-784 are allocated to the owner-requested navigation and

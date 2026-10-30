@@ -130,8 +130,9 @@ auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, c
     // Admitted handles map 0/1 to the edges, 2 to the body, and 3 to Kiai creation.
     const kiai_span_t* span = nullptr;
     std::vector<kiai_span_t> spans;
-    const auto handle = context.admitted<admitted_kiai_handle_t>();
-    if (handle.handle != kiai_handle_value_t::create) {
+    const auto* handle = context.admitted<admitted_kiai_handle_t>();
+    if (!handle) return std::string{unsupported_compose_selector_message};
+    if (handle->handle != kiai_handle_value_t::create) {
         spans = kiai_spans_of(*chart, *index);
         const auto found =
             std::ranges::find(spans, input.object_id, &kiai_span_t::head);
@@ -141,7 +142,7 @@ auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, c
         edit.head = found->head;
     }
     edit.rows = anchor
-                    ? kiai_manipulated_rows(span, handle, *anchor, *row, index->total_rows)
+                    ? kiai_manipulated_rows(span, *handle, *anchor, *row, index->total_rows)
                     : std::nullopt;
     if (!edit.rows) {
         result.accepted = true;
@@ -212,7 +213,9 @@ auto edit_compose_preview_span(const wormedit::ui::compose_input_action_t& input
     const auto anchor = timing_pointer_row(context, *chart, *view, *indices->measures, input.span_anchor_y_pixels);
     const auto original = preview_span_rows(timing, *preview);
     if (!row || !anchor || !original) return "The preview edit has no valid destination row.";
-    const auto handle = context.admitted<admitted_span_handle_t>().handle;
+    const auto* admitted = context.admitted<admitted_span_handle_t>();
+    if (!admitted) return std::string{unsupported_compose_selector_message};
+    const auto handle = admitted->handle;
     const auto moved = moved_preview_rows(*preview, *original, handle, *anchor, *row, timing.total_rows);
     const auto edited = moved && *moved != *original
         ? preview_from_rows(timing, *moved, preview->length_milliseconds || handle == span_handle_t::end)
@@ -285,7 +288,9 @@ auto edit_compose_speed_span(const wormedit::ui::compose_input_action_t& input,
     const auto original = span_rows_t{
         *begin_row, std::max<std::uint64_t>(
                         *begin_row, static_cast<std::uint64_t>(std::llround(span->end_row)))};
-    const auto handle = context.admitted<admitted_span_handle_t>().handle;
+    const auto* admitted = context.admitted<admitted_span_handle_t>();
+    if (!admitted) return std::string{unsupported_compose_selector_message};
+    const auto handle = admitted->handle;
     const auto moved =
         manipulate_span(original, handle, *anchor, *row, index->total_rows, {.allow_empty = true});
     if (!moved || *moved == original) {
@@ -341,7 +346,9 @@ auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input
         *chart, *view, std::clamp(input.y_pixels, 0.0, view->viewport_height_pixels - 0.001));
     if (!press || !release)
         return "SV recipe edit has no valid destination.";
-    const auto handle = context.admitted<admitted_recipe_range_handle_t>().handle;
+    const auto* admitted = context.admitted<admitted_recipe_range_handle_t>();
+    if (!admitted) return std::string{unsupported_compose_selector_message};
+    const auto handle = admitted->handle;
     auto drag = sv_recipe_range_drag_t::propose(
         context.environment.document.history, chart->id, recipe_id_t{input.object_id.value}, handle, *press,
         edit_snap_grid(*chart, context.state),

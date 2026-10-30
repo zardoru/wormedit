@@ -271,6 +271,53 @@ struct compose_test_fixture_t {
     }
 };
 
+TEST_CASE("BGA family rejects absent or mismatched admitted payloads without consuming its stroke",
+          "[sys][compose][admission][draw]") {
+    using namespace compose_input_detail;
+    const auto wrong_type = GENERATE(false, true);
+    const auto kind = GENERATE(WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE);
+    compose_test_fixture_t fixture;
+    fixture.project();
+    fixture.application.project.compose_gesture.note_paint_mode_active = true;
+    auto& pending = fixture.application.project.compose_gesture.bga_draw_stroke;
+    auto geometry = measure_index_t::from(*fixture.history.read_chart(chart_id_t{1}));
+    REQUIRE(geometry);
+    pending = application_command_state_t::bga_draw_stroke_proposal_t::from(
+        chart_stamp_t::from(fixture.history, chart_id_t{1}),
+        application_command_state_t::bga_draw_stroke_t{
+            .resource = resource_id_t{42}, .geometry = std::move(*geometry)});
+    notification_sink_t sink = notification_sink_t::muted();
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    ui::workspace_action_t action;
+    const compose_input_inputs_t environment{
+        .document = {.history = fixture.history, .workspace = *fixture.binding.value,
+            .notifications = sink},
+        .commands = fixture.application,
+        .controls = {.cache = fixture.cache, .viewport = viewport, .navigation = navigation}};
+    compose_input_context_t context{.environment = environment, .ui_action = action,
+        .state = *fixture.interaction, .input_chart = fixture.history.read_chart(chart_id_t{1})};
+    if (wrong_type) context.admitted_selector = admitted_note_paint_t{};
+    const auto before = write_native_project(fixture.history.document);
+    REQUIRE(before.value);
+    editor_interaction_result_t result;
+    std::string_view accepted;
+    const auto routed = dispatch_bga_draw_input(
+        {.kind = kind, .resource_role = resource_role_t::bga, .paint_intent = 1},
+        context, result, accepted);
+    REQUIRE(routed);
+    CHECK(routed->is_stopping_batch());
+    CHECK(routed->outcome.message == "Unsupported Compose input.");
+    CHECK(routed->outcome.source == notification_source_t::input);
+    REQUIRE(pending);
+    CHECK(pending->payload.resource == resource_id_t{42});
+    CHECK(write_native_project(fixture.history.document).value == before.value);
+    CHECK(fixture.history.undo.empty());
+    CHECK_FALSE(result.document_changed);
+    CHECK(accepted.empty());
+}
+
 void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     quantization_tie_t tie, quantization_hold_t holds, std::uint64_t divisions = 4,
     quantization_space_t space = quantization_space_t::standard_measure,

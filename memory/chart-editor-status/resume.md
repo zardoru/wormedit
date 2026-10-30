@@ -1,5 +1,16 @@
 # Status: resume checklist
 
+## Independent review follow-ups (owner, 2026-10-29)
+
+[T-785–T-786](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) are active
+on the same PR81 after `4eb80bc`: checked admitted-payload access, direct native object-only
+staging, explicit Linux CI compiler/library selection and early capability diagnostics.
+The requested Opus source review found no blocker but did not run verification; existing
+red Linux checks also fail on main and are being repaired, not waived. Four initial changed-TU
+complexity checks and GCC/Clang compiler-policy probes pass. Full Clang build, final GCC
+GATE/workflows/header checks and remote CI remain pending. See the
+[follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md).
+
 ## Navigation and modifiability round two (owner, 2026-10-29)
 
 Completed on [PR #81](https://github.com/zardoru/wormedit/pull/81), baseline `23e113b`.

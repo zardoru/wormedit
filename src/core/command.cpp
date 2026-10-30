@@ -39,11 +39,18 @@ auto document_command_transaction_t::stage_prepared_mutation(chart_id_t id,
     const std::function<attempt_t<document_edit_effect_t>(chart_document_t&,
         const song_document_t&, std::vector<object_id_t>&)>& edit)
     -> attempt_t<document_edit_effect_t> {
-    if (mutation.storage == chart_edit_storage_support_t::objects && mutation.objects.empty())
-        return {.value = document_edit_effect_t{}};
-    const auto existing = mutation.storage == chart_edit_storage_support_t::objects
-        ? std::optional{mutation.objects.front()} : std::nullopt;
-    const auto target = bms_target(id, existing);
+    if (mutation.storage == chart_edit_storage_support_t::objects) {
+        if (mutation.objects.empty()) return {.value = document_edit_effect_t{}};
+        const auto objects = mutation.objects;
+        return stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update,
+            [&](chart_document_t& chart) {
+                return edit(chart, current_document(), mutation.objects);
+            });
+    }
+    if (mutation.storage != chart_edit_storage_support_t::layer_settings_and_objects)
+        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+            "Prepared chart edit has an unsupported mutation scope.")}};
+    const auto target = bms_target(id);
     if (!target) return {.diagnostics = {error(diagnostic_code_t::invalid_id, target.error().message)}};
     // Keep the exact owner's catalog alive across immutable replacements by nested stages.
     const auto* owner = current_document().find_bms_program(id);
@@ -54,13 +61,6 @@ auto document_command_transaction_t::stage_prepared_mutation(chart_id_t id,
     const auto apply = [&](chart_document_t& chart) {
         return edit(chart, projection->value->song(), mutation.objects);
     };
-    if (mutation.storage == chart_edit_storage_support_t::objects) {
-        const auto objects = mutation.objects;
-        return stage_bms_native_objects(id, objects, bms_existing_edit_kind_t::update, apply);
-    }
-    if (mutation.storage != chart_edit_storage_support_t::layer_settings_and_objects)
-        return {.diagnostics = {error(diagnostic_code_t::unsupported_feature,
-            "Prepared chart edit has an unsupported mutation scope.")}};
     auto settings = stage_bms_layer_settings(id, apply);
     if (!settings.value || !settings.ok() || mutation.objects.empty()) return settings;
     const auto objects = mutation.objects;

@@ -42,8 +42,9 @@ auto edit_compose_export_cut_span(const wormedit::ui::compose_input_action_t& in
     const auto pointer = pointer_row ? export_cut_interval_t::milliseconds_at(timing, *pointer_row) : std::nullopt;
     const auto anchor = anchor_row ? export_cut_interval_t::milliseconds_at(timing, *anchor_row) : std::nullopt;
     if (!pointer || !anchor) return "The export cut destination is outside the source-song timeline.";
-    auto value = moved_cut(*cut, context.admitted<admitted_span_handle_t>().handle,
-                           *pointer, *anchor);
+    const auto* admitted = context.admitted<admitted_span_handle_t>();
+    if (!admitted) return std::string{unsupported_compose_selector_message};
+    auto value = moved_cut(*cut, admitted->handle, *pointer, *anchor);
     if (!value) return std::move(value.error());
     const auto applied = apply_export_cut_edit(history, update_edit_t<export_cut_edit_value_t>{
         .id = cut->id, .value = std::move(*value)});

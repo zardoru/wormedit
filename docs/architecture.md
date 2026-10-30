@@ -288,6 +288,8 @@ and recipe-command selectors once at each input event boundary. Unsupported wire
 return ordinary feedback before handler dispatch. Admitted family payloads live in the
 event-scoped input context; routes must pair each event with its corresponding payload
 alternative. Updates/releases retain captured gesture intent where that gesture owns it.
+Payload queries are checked: a missing or mismatched alternative returns existing
+unsupported-input feedback before mutation rather than throwing from the context.
 The frontend action bag remains transport and can carry simultaneous frame events; stamp,
 gesture and transaction validation stay with their existing runners.
 
@@ -650,7 +652,8 @@ Callbacks must preserve the document/chart storage borrowed by enclosing callbac
 Typed `chart_edit_operation` declares `storage_support`: object edits with a native collection
 adapter, or an intentional `legacy_only` refusal. Composite edits pass a `chart_edit_mutation_t`
 scope to `stage`: existing-object updates or combined layer-settings/object edits.
-The transaction selects the existing authoritative prepared adapter and retains its exact
+Object-only callbacks borrow the transaction's current document; the native object adapter
+owns target resolution without an additional catalog read. Combined callbacks retain the exact
 owner catalog through `read_projection`. Combined settings/object callbacks may run twice and
 must be deterministic; content publication uses only the explicitly named object identities.
 Domains still supply validation, mutation and effect, with one lazy copy and outer publication.

@@ -1,5 +1,9 @@
 # Navigation and modifiability integration — 2026-10-29
 
+The [independent review follow-up audit](navigation-review-followups-2026-10-29.md)
+tracks post-`4eb80bc` source safeguards and CI compiler fixes. Its current verification
+state supersedes any readiness interpretation of the earlier local results below.
+
 The implemented batch consolidates [PR77](https://github.com/zardoru/wormedit/pull/77),
 [PR78](https://github.com/zardoru/wormedit/pull/78),
 [PR79](https://github.com/zardoru/wormedit/pull/79) and

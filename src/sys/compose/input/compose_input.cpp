@@ -1551,12 +1551,15 @@ auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t&
         if (const auto error = edit_compose_recipe_range(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
-    case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
+    case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND: {
+        const auto* command = context.admitted<admitted_recipe_command_t>();
+        if (!command)
+            return compose_input_rejection(std::string{unsupported_compose_selector_message}, result);
         if (const auto error = run_compose_recipe_command(
-                input.object_id.value, context.admitted<admitted_recipe_command_t>().command, context,
-                                                          result, accepted))
+                input.object_id.value, command->command, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
+    }
     default:
         return std::nullopt;
     }
@@ -1882,11 +1885,15 @@ auto dispatch_compose_input_families(const wormedit::ui::compose_input_action_t&
         }
         return std::nullopt;
     };
+    auto paint_mode = wormedit::semantic_layer_paint_mode_t::add;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
+        const auto* paint = context.admitted<admitted_semantic_layer_paint_t>();
+        if (!paint)
+            return compose_input_rejection(std::string{unsupported_compose_selector_message}, result);
+        paint_mode = paint->mode;
+    }
     auto gesture = dispatch_compose_gesture_input(input, context.environment, context.state, result,
-        accepted, hit_target, bgm_event_at, position,
-        input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN
-            ? context.admitted<admitted_semantic_layer_paint_t>().mode
-            : wormedit::semantic_layer_paint_mode_t::add);
+        accepted, hit_target, bgm_event_at, position, paint_mode);
     if (gesture.is_handled())
         return gesture;
     const auto selection_mode = [&context](WormUiComposeSelectionMode mode) {
@@ -1964,11 +1971,11 @@ auto bga_draw_row(const wormedit::ui::compose_input_action_t& input, const compo
 }
 
 auto begin_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
-    const wormedit::chart_document_t& chart) -> bool {
+    const wormedit::chart_document_t& chart, bool erase) -> bool {
     auto& pending = context.environment.commands.project.compose_gesture.bga_draw_stroke;
     pending.reset();
     auto proposed = application_command_state_t::bga_draw_stroke_t::propose(
-        input, context, chart, context.admitted<admitted_bga_draw_t>().erase);
+        input, context, chart, erase);
     pending = std::move(proposed.value);
     return pending.has_value();
 }
@@ -2037,12 +2044,15 @@ auto dispatch_bga_draw_input(const wormedit::ui::compose_input_action_t& input,
     const auto bgm = input.resource_role == wormedit::resource_role_t::bgm;
     if (!stroke_input || (input.resource_role != wormedit::resource_role_t::bga && !bgm))
         return std::nullopt;
+    const auto* paint = context.admitted<admitted_bga_draw_t>();
+    if (!paint)
+        return compose_input_rejection(std::string{unsupported_compose_selector_message}, result);
     const auto* chart = context.chart();
     const auto beginning = input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
     if (!chart || !context.environment.commands.project.compose_gesture.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(
             compose_mode_of(context.environment.commands)) ||
-        (beginning && !begin_bga_draw(input, context, *chart))) {
+        (beginning && !begin_bga_draw(input, context, *chart, paint->erase))) {
         pending.reset();
         return bga_draw_stop(bgm ? "BGM Draw source, chart or tool is unavailable."
                                           : "BGA Draw source, chart or tool is unavailable.");
@@ -2107,10 +2117,12 @@ auto dispatch_compose_input_event(const wormedit::ui::compose_input_action_t& in
     if (auto draw = dispatch_bga_draw_input(input, context, result, accepted))
         return std::move(*draw);
     if (input.kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE) {
-        const auto& source = context.admitted<admitted_draw_source_t>();
+        const auto* source = context.admitted<admitted_draw_source_t>();
+        if (!source)
+            return compose_input_rejection(std::string{unsupported_compose_selector_message}, result);
         context.environment.commands.project.compose_gesture.draw_source_kind =
-            !source.role ? 0 : *source.role == wormedit::resource_role_t::sample ? 1 : 2;
-        context.environment.commands.project.compose_gesture.draw_source_id = source.resource.value;
+            !source->role ? 0 : *source->role == wormedit::resource_role_t::sample ? 1 : 2;
+        context.environment.commands.project.compose_gesture.draw_source_id = source->resource.value;
         result.accepted = true;
         accepted = "Draw source selected.";
         return compose_input_family_result_t::continue_with_result();

@@ -584,8 +584,8 @@ struct compose_input_context_t {
     std::optional<admitted_compose_selector_t> admitted_selector;
 
     template <typename Admitted>
-    [[nodiscard]] auto admitted() const -> const Admitted& {
-        return std::get<Admitted>(*admitted_selector);
+    [[nodiscard]] auto admitted() const -> const Admitted* {
+        return admitted_selector ? std::get_if<Admitted>(&*admitted_selector) : nullptr;
     }
 
     auto is_input_current(const wormedit::chart_stamp_t& stamp) const -> bool {
@@ -863,6 +863,11 @@ auto dispatch_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& in
 inline auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& input,
     compose_input_context_t& input_context, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> compose_input_family_result_t {
+    const auto* paint = input_context.admitted<admitted_note_paint_t>();
+    if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN && !paint)
+        return compose_input_family_result_t::stop_with_feedback(
+            std::string{unsupported_compose_selector_message},
+            wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
     const auto& environment = input_context.environment;
     auto& state = input_context.state;
     const auto& cache = environment.controls.cache;
@@ -919,7 +924,7 @@ inline auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action
                 .position = target->position,
                 .pointer_captured = captured,
                 .sound = note_paint_sound(input),
-                .intent = input_context.admitted<admitted_note_paint_t>().intent,
+                .intent = paint->intent,
                 .source_geometry =
                     compose_stem_geometry(history, state, cache, note_paint_sound(input)),
                 .canvas_row = target->canvas_row});
@@ -1602,7 +1607,7 @@ auto bga_draw_row(const wormedit::ui::compose_input_action_t& input, const compo
     -> std::optional<uint64_t>;
 
 auto begin_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
-                    const wormedit::chart_document_t& chart) -> bool;
+                    const wormedit::chart_document_t& chart, bool erase) -> bool;
 
 auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
                            const application_command_state_t::bga_draw_stroke_proposal_t& stroke,

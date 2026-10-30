@@ -6,12 +6,15 @@ The headless core and its tests build without a window or GPU; the application i
 
 Wormedit requires a C++23 compiler and standard library providing `std::expected`
 and `std::bind_back`. Configure probes the pair before fetching dependencies.
-Linux CI selects GCC 14 or Clang 19 with libstdc++ 14 explicitly; on Ubuntu 24.04
-install `g++-14` for either job and `clang-19` for the Clang job. Select them with
-`CC=gcc-14 CXX=g++-14` or `CC=clang-19 CXX=clang++-19` when configuring a fresh build.
-The Linux Clang job also selects GCC 14's library installation with
-`--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14`, avoiding whichever newer
-GCC installation happens to be present on the runner.
+Linux CI selects GCC 14 on Ubuntu 24.04 and Clang 21 with libstdc++ 15 on Ubuntu
+26.04 explicitly. Install `g++-14` for the former, or `clang-21 g++-15` for the latter.
+Select them with `CC=gcc-14 CXX=g++-14` or `CC=clang-21 CXX=clang++-21` when
+configuring a fresh build. The Clang job also selects GCC 15's library installation
+with `--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15`.
+
+Clang 19 with Ubuntu's libstdc++ 14 does not expose `std::bind_back`; Clang 20
+with that library fails when invoking it. Both are rejected by the actual probe.
+Configure includes the failed compiler output directly in its diagnostic.
 
 Clang must also support its separate designated-initializer warning, introduced
 in [Clang 19](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html).

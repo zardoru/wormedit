@@ -7,8 +7,11 @@ on the same PR81 after `4eb80bc`: checked admitted-payload access, direct native
 staging, explicit Linux CI compiler/library selection and early capability diagnostics.
 The requested Opus source review found no blocker but did not run verification; existing
 red Linux checks also fail on main and are being repaired, not waived. Four initial changed-TU
-complexity checks and GCC/Clang compiler-policy probes pass. Full Clang build, final GCC
-GATE/workflows/header checks and remote CI remain pending. See the
+complexity checks and GCC/Clang compiler-policy probes pass. Clang 23.1.4 application and
+frame-timing targets build; focused workflows pass 931 assertions/59 cases. The first CI
+Clang 19/GNU 14 pair failed the actual probe; exact containers now verify Clang 21/GNU 15
+on official Ubuntu 26.04 and GCC 14 on Ubuntu 24.04, including the warning policy.
+Final GCC GATE/workflows/header checks and remote CI remain pending. See the
 [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md).
 
 ## Navigation and modifiability round two (owner, 2026-10-29)

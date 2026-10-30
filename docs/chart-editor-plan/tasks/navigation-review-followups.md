@@ -29,3 +29,10 @@ Root owns supporting registration/index/status/architecture/audit updates in
 `memory/chart-editor-status/resume.md`, `docs/architecture.md`, and
 `docs/audits/navigation-modifiability-2026-10-29.md`. No implementation lane is active;
 these bounded supporting paths are approved before edits.
+
+T-786 coordinator scope decision before the CI matrix update: use the official
+Ubuntu 26.04 runner for Clang 21 with GNU 15, retaining the Ubuntu 24.04 GCC 14 job.
+The exact Ubuntu container probe passes for that Clang/library pair; Ubuntu 24.04
+Clang 19 and 20 with GNU 14 fail the real `bind_back` probe. The already-owned
+workflow, compiler-requirement module, building guide and audit record this selection
+and expose compiler output directly on configure failure.

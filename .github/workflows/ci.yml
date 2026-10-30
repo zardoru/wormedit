@@ -28,11 +28,11 @@ jobs:
             linux_packages: g++-14
             preset: headless-events
           - name: linux-clang
-            os: ubuntu-24.04
-            cc: clang-19
-            cxx: clang++-19
-            linux_packages: clang-19 g++-14
-            cxx_flags: --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14
+            os: ubuntu-26.04
+            cc: clang-21
+            cxx: clang++-21
+            linux_packages: clang-21 g++-15
+            cxx_flags: --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15
             preset: headless
           - name: macos
             os: macos-latest

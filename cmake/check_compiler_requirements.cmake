@@ -1,8 +1,9 @@
 # Diagnose the compiler/library pair before fetching or compiling dependencies.
-include(CheckCXXSourceCompiles)
 include(CheckCXXCompilerFlag)
 
-check_cxx_source_compiles([=[
+if(NOT WORMEDIT_HAS_REQUIRED_CXX23_LIBRARY)
+    try_compile(WORMEDIT_HAS_REQUIRED_CXX23_LIBRARY
+        SOURCE_FROM_CONTENT wormedit_cxx23.cpp [=[
     #include <expected>
     #include <functional>
     int main() {
@@ -10,12 +11,18 @@ check_cxx_source_compiles([=[
         auto add = std::bind_back([](int a, int b) { return a + b; }, 2);
         return add(*value) == 3 ? 0 : 1;
     }
-]=] WORMEDIT_HAS_REQUIRED_CXX23_LIBRARY)
+]=]
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+        OUTPUT_VARIABLE WORMEDIT_CXX23_PROBE_OUTPUT
+    )
+endif()
 if(NOT WORMEDIT_HAS_REQUIRED_CXX23_LIBRARY)
     message(FATAL_ERROR
         "Wormedit requires C++23 std::expected and std::bind_back. "
-        "Use a capable compiler AND standard library (Linux CI uses GCC 14, or "
-        "Clang 19 with libstdc++ 14). Check CMake's configure log for the failed probe."
+        "See docs/building.md for tested compiler/library pairs. "
+        "Compiler probe output:\n${WORMEDIT_CXX23_PROBE_OUTPUT}"
     )
 endif()
 

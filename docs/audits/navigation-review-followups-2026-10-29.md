@@ -42,16 +42,25 @@ Clang 18 lacked the separate designated-initializer warning and the required
 The workflow, warning policy and result owner were unchanged by the earlier refactor.
 This is baseline evidence, not a waiver or a passing check.
 
-Linux CI now explicitly selects GCC 14 or Clang 19 and installs GCC 14's library.
-The Clang job selects that installation instead of relying on the runner's newest GCC.
-Ubuntu publishes [GCC 14](https://packages.ubuntu.com/noble/amd64/g%2B%2B-14)
-and [Clang 19](https://packages.ubuntu.com/noble-updates/clang-19) for these runners.
-[Clang 19's release notes](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html)
-document the warning split and concepts support needed by libstdc++'s `expected`.
+The first pin in `08d014a` was insufficient: its Clang 19/GNU 14 capability check
+[failed before the project build](https://github.com/zardoru/wormedit/actions/runs/40986507526/job/123838680151).
+This is a failure of our selected pair, separate from the earlier main baseline.
+An exact Ubuntu 24.04 container reproduces missing `std::bind_back`: GNU 14 gates
+it on the explicit-this feature macro, absent from that Clang. Clang 20 with the
+same library exposes the function but fails its invocation through `forward_like`.
+Adding `<utility>` does not fix that observed combination. Neither pair is accepted.
+
+Linux CI now selects GCC 14 on Ubuntu 24.04 and Clang 21/GNU 15 on the official
+[Ubuntu 26.04 runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2604-Readme.md).
+Exact Ubuntu containers compile, link and execute the feature probe for both selected
+pairs. Clang's GNU 15 installation is explicit instead of relying on the newest installed GCC.
+The [GNU 14 feature definition](https://github.com/gcc-mirror/gcc/blob/releases/gcc-14.2.0/libstdc%2B%2B-v3/include/bits/version.def)
+and [Clang 19 warning split](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html)
+explain the separate library-feature and diagnostic requirements.
 
 Configure probes `std::expected` and `std::bind_back` before dependency fetching;
 Clang also probes its separate designated-initializer warning. Unsupported pairs fail
-with an actionable message. Existing warning flags, warnings-as-errors, and the matching
+with the compiler's failed-probe output directly in the diagnostic. Existing warning flags, warnings-as-errors, and the matching
 23.1.3 complexity baseline are unchanged.
 
 ## Verification in progress
@@ -63,12 +72,26 @@ with an actionable message. Existing warning flags, warnings-as-errors, and the 
   positional members; GCC retains its existing allowance. An intentionally unavailable
   standard-library fixture fails the requirement probe before the dependency boundary.
   Driver: `/tmp/wormedit-review-compiler-probes.py`; report/logs:
-  `/tmp/wormedit-compiler-probes.a71985ru`.
+  `/tmp/wormedit-compiler-probes.edsbawfg` (updated diagnostic implementation).
+- Exact selected Ubuntu pairs pass the feature probe and actual warning-policy fixtures:
+  `/tmp/wormedit-ci-supported-policy-probes.log`,
+  `/tmp/wormedit-ci-clangpp-21-policy.log`, `/tmp/wormedit-ci-gpp-14-policy.log`.
+  Reproducer: `/tmp/wormedit-ci-toolchain-08d/run-supported-probes.py` with
+  task-owned `wormedit-ci-toolchain-probe` Ubuntu container images.
+  Clang rejects incomplete positional members; GCC retains its existing allowance.
+  `/tmp/wormedit-ci-clangpp-19-probe.log` and `/tmp/wormedit-ci-clangpp-20-probe.log`
+  retain the rejected combinations and direct compiler errors. Containers install binary
+  packages without changing the host toolchain; they do not build the full project.
 - Workflow YAML parses; Linux pins and Clang library-selection flags are explicit.
-- Clang 23.1.4 preset application and frame-timing target build (including the new
-  direct-family regression), final native GATE, focused workflows, event harness,
-  final consuming-header complexity and remote CI remain pending. No pass is claimed yet.
+- Clang 23.1.4 preset application and frame-timing targets build successfully:
+  `/tmp/wormedit-review-clang-targets-verified.log`. Focused workflows pass 931 assertions
+  in 59 cases, `/tmp/wormedit-review-clang-workflows.log`.
+  The new direct-family fixture initially attempted to default-construct a measure index;
+  it now uses the existing measure-index and proposal factories. No assertions or allowances
+  were removed to fix that compile error.
+- Final native GCC/Lua GATE, event harness, additional consuming-header complexity,
+  final documentation and remote CI remain pending. No pass is claimed for those yet.
   The initial default-target Clang build was intentionally interrupted without a
   compiler failure to finish these relevant targets first; its log is
   `/tmp/wormedit-review-clang-build.log`. Targeted completion is recorded separately
-  in `/tmp/wormedit-review-clang-targets.log`; no complete Clang all-target build is claimed.
+  in the verified log above; no complete Clang all-target build is claimed.

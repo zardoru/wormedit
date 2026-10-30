@@ -644,8 +644,10 @@ auto bar_line_song() -> song_document_t {
 }
 
 auto bar_line_rows(const chart_document_t& chart) -> std::vector<std::uint64_t> {
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index);
     std::vector<std::uint64_t> rows;
-    for (const auto& entry : measure_index_t::from(chart)->entries) rows.push_back(entry.absolute_begin_row);
+    for (const auto& entry : index->entries) rows.push_back(entry.absolute_begin_row);
     return rows;
 }
 } // namespace

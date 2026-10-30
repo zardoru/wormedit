@@ -16,6 +16,11 @@ Clang 19 with Ubuntu's libstdc++ 14 does not expose `std::bind_back`; Clang 20
 with that library fails when invoking it. Both are rejected by the actual probe.
 Configure includes the failed compiler output directly in its diagnostic.
 
+GCC 14 also lacks the C++23 range-for temporary lifetime extension
+([implemented in GCC 15](https://gcc.gnu.org/projects/cxx-status.html#cxx23)).
+Keep a newly returned expected/optional owner in a local variable before iterating
+over one of its members; this avoids borrowing from a result that has already expired.
+
 Clang must also support its separate designated-initializer warning, introduced
 in [Clang 19](https://releases.llvm.org/19.1.0/tools/clang/docs/ReleaseNotes.html).
 This preserves the project policy: omitted designated members use their defaults,

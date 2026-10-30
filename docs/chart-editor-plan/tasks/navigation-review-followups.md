@@ -46,3 +46,10 @@ blocking graph to finish before its captured stack latches are destroyed. These 
 the observed GCC build failure and a concrete lifetime defect found while tracing the
 Clang timeout. Existing timeouts and assertions are preserved; production journal policy
 remains outside this test-support extension.
+
+T-786 exact supporting extension approved before edits after the `71f96be` GCC run:
+`tests/core/chart_clipboard_tests.cpp` retains the measure-index result in the shared
+bar-line row assertion helper. Its four failures all read through a temporary expected
+owner in a range-for; GCC 14 lacks the C++23 lifetime extension implemented in GCC 15.
+The fix makes the owner explicit and retains all row assertions. Clang and macOS pass
+that remote run, including the preceding journal-lifetime fix.

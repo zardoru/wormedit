@@ -16,7 +16,12 @@ passes macOS and builds Clang, then exposes two test-support defects: GNU 14's t
 filesystem range returns `dangling`, and the journal overflow worker can outlive its
 captured stack latches. `e313cc0` gives the range an owner and joins that graph; the actual
 walkthrough TU compiles under GNU 14 and the overflow case passes 100 consecutive native
-runs. CI's 120-second timeout is preserved. Keep PR81 draft until current checks finish.
+runs. CI's 120-second timeout is preserved. The `71f96be` Clang and macOS jobs pass;
+GCC now builds and exposes four failures in a shared clipboard row oracle. That helper
+borrows entries from a temporary expected, relying on a range-for lifetime extension
+GCC 14 lacks. The named-owner fix passes a GCC 14 sanitizer reproducer, all four native
+clipboard cases and matching complexity; its full gate and remote rerun are pending.
+Keep PR81 draft until current checks finish.
 See the [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md)
 for source pins, failures, logs, review scope and remaining design concerns.
 

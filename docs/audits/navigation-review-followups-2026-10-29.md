@@ -76,6 +76,20 @@ The overflow case passes 100 consecutive native runs with `--repeat until-fail:1
 and a five-second diagnostic bound, `/tmp/wormedit-review-journal-stress.log`.
 CI's existing 120-second timeout and all original assertions remain unchanged.
 
+The `71f96be` run passes Clang and macOS, confirming the preceding journal fix remotely.
+GCC builds successfully and reports four failed bar-line clipboard tests. Each failure
+is a row comparison produced by the shared `bar_line_rows` oracle. It borrows
+`measure_index_t::from(chart)->entries` directly in the range initializer.
+[GCC's support table](https://gcc.gnu.org/projects/cxx-status.html#cxx23) places the
+C++23 temporary-lifetime extension in GCC 15; GCC 14 destroys that expected owner too
+soon. The helper now retains the result and checks it before iterating. A matching
+expected/vector pattern under GCC 14 AddressSanitizer reports stack-use-after-scope
+before the fix and passes with the named owner:
+`/tmp/wormedit-range-owner-probe/result.log`, `temporary.log`, and `named.log`.
+The four actual clipboard tests pass natively, `/tmp/wormedit-review-clipboard-lifetime-tests.log`,
+and the changed unit passes matching complexity, `/tmp/wormedit-review-bar-lines-complexity.log`.
+The updated full gate and remote GCC confirmation remain pending at this checkpoint.
+
 ## Local acceptance and remaining CI verification
 
 C++ source: `e313cc0beb50a15d5fd40b94e525201dbd1cc6ca`, compared with `4eb80bc`.

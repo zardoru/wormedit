@@ -1,0 +1,37 @@
+Mode: Keys4
+BPMDoesNotAffectScrollVelocity: true
+InitialScrollVelocity: 1
+TimingPoints:
+- StartTime: 2000
+  Bpm: 180
+- Bpm: 120
+HitObjects:
+- StartTime: 1500
+  Lane: 3
+  TimingGroup: accent
+- StartTime: 500
+  Lane: 1
+- StartTime: 500
+  Lane: 2
+  TimingGroup: accent
+TimingGroups:
+  $Global: !ScrollGroup
+    ScrollVelocities:
+    - StartTime: 1250.5
+      Multiplier: 0.5
+    ScrollSpeedFactors:
+    - StartTime: 1000.5
+      Multiplier: 2
+  accent: !ScrollGroup
+    InitialScrollVelocity: 1.25
+    ScrollVelocities:
+    - StartTime: 1500.5
+      Multiplier: 0.75
+    - StartTime: 750.5
+      Multiplier: 1.5
+    ScrollSpeedFactors:
+    - StartTime: 1250.5
+      Multiplier: 0.5
+    ColorRgb: 128,64,255
+    Hidden: true
+UnknownFixtureField: ignored

@@ -88,18 +88,18 @@ before the fix and passes with the named owner:
 `/tmp/wormedit-range-owner-probe/result.log`, `temporary.log`, and `named.log`.
 The four actual clipboard tests pass natively, `/tmp/wormedit-review-clipboard-lifetime-tests.log`,
 and the changed unit passes matching complexity, `/tmp/wormedit-review-bar-lines-complexity.log`.
-The updated full gate and remote GCC confirmation remain pending at this checkpoint.
+The named-owner fix passes the full native gate below; remote GCC confirmation remains pending.
 
 ## Local acceptance and remaining CI verification
 
-C++ source: `e313cc0beb50a15d5fd40b94e525201dbd1cc6ca`, compared with `4eb80bc`.
+C++ source: `f70c747942dfa51d09c38cd7fdcd2e75ac548c75`, compared with `4eb80bc`.
 The final native configuration retains Debug/GCC 16, app, Lua, audio/image/video and
 FFmpeg enabled. No feature, timeout, warning or complexity allowance was relaxed.
 
-- Final GATE passes build, **5,603/5,603 tests**, whitespace and **seven changed-unit
-  complexity checks**, `/tmp/wormedit-review-ci-accepted-gate.log`; details
-  `/tmp/wormedit-gate.5i1FO8`. Matching Clang/clang-tidy/libclang is 23.1.3.
-- **Four additional unchanged consuming units pass**, for eleven distinct units in
+- Final GATE passes build, **5,603/5,603 tests**, whitespace and **eight changed-unit
+  complexity checks**, `/tmp/wormedit-review-clipboard-accepted-gate.log`; details
+  `/tmp/wormedit-gate.TyzmXs`. Matching Clang/clang-tidy/libclang is 23.1.3.
+- **Four additional unchanged consuming units pass**, for twelve distinct units in
   this follow-up: `src/core/interaction.cpp`, `src/core/semantic_layer_editor.cpp`,
   `src/sys/compose/input/compose_resource_input.cpp`, and
   `src/sys/compose/input/compose_waveform_fit_input.cpp`.
@@ -138,7 +138,8 @@ FFmpeg enabled. No feature, timeout, warning or complexity allowance was relaxed
   Reproducers live in `/tmp/wormedit-ci-toolchain-08d`; containers install binary
   packages without changing the host toolchain and do not build the full project.
 
-Remote CI remains a separate acceptance step. `3e28191` passes macOS and the full
-Clang build, but its GCC walkthrough compile and Clang journal-timeout failures require
-confirmation after the `e313cc0` test-support fixes. T-785 is locally complete; T-786
-remains partial pending those jobs. The PR remains a draft and has no claimed approval.
+Remote CI remains a separate acceptance step. `71f96be` passes the complete Clang
+and macOS jobs, confirming the preceding test-support fixes. Its GCC build succeeds,
+then four assertions expose the shared temporary-owner oracle described above.
+`f70c747` fixes that oracle; the new GCC run must confirm it. T-785 is locally complete;
+T-786 remains partial pending current checks. The PR remains a draft and has no claimed approval.

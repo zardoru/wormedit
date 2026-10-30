@@ -3,9 +3,9 @@
 ## Independent review follow-ups (owner, 2026-10-30)
 
 [T-785](../../docs/chart-editor-plan/tasks/navigation-review-followups.md) is locally done:
-checked admitted-payload reads and direct native object-only staging. C++ source `e313cc0`
-passes Lua ON GATE 5,603/5,603, whitespace and seven changed-unit complexity checks;
-four additional consumers pass matching 23.1.3, eleven distinct units total. GCC and
+checked admitted-payload reads and direct native object-only staging. C++ source `f70c747`
+passes Lua ON GATE 5,603/5,603, whitespace and eight changed-unit complexity checks;
+four additional consumers pass matching 23.1.3, twelve distinct units total. GCC and
 Clang focused workflows each pass 931 assertions/59 cases; prepared workflows pass
 1,355/69; event harness 721/721; isolated Compose smoke is inspected. No allowance changed.
 
@@ -20,7 +20,7 @@ runs. CI's 120-second timeout is preserved. The `71f96be` Clang and macOS jobs p
 GCC now builds and exposes four failures in a shared clipboard row oracle. That helper
 borrows entries from a temporary expected, relying on a range-for lifetime extension
 GCC 14 lacks. The named-owner fix passes a GCC 14 sanitizer reproducer, all four native
-clipboard cases and matching complexity; its full gate and remote rerun are pending.
+clipboard cases and matching complexity. Its complete native gate now passes; remote GCC confirmation is pending.
 Keep PR81 draft until current checks finish.
 See the [follow-up audit](../../docs/audits/navigation-review-followups-2026-10-29.md)
 for source pins, failures, logs, review scope and remaining design concerns.

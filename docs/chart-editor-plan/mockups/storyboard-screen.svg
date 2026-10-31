@@ -1,0 +1,310 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860">
+  <rect width="1280" height="860" fill="#12131a"/>
+  <rect x="0" y="0" width="1280" height="30" rx="0" fill="#1e1f28"/>
+  <text x="38.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Setup</text>
+  <text x="114.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Metadata</text>
+  <text x="194.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Timing</text>
+  <text x="270.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Compose</text>
+  <rect x="312" y="3" width="100" height="27" rx="4" fill="#12131a" stroke="#86b4ff" stroke-width="1"/>
+  <text x="362.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#f5f6fa">Storyboard</text>
+  <text x="474.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Audio/Slices</text>
+  <text x="610.0" y="20" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">Compare/Validate</text>
+  <rect x="0" y="30" width="1280" height="36" rx="0" fill="#12131a"/>
+  <rect x="8" y="36" width="200" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="16" y="52" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Main</text>
+  <rect x="120" y="40" width="40" height="16" rx="3" fill="#2d4a37"/>
+  <text x="140" y="52" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="middle" fill="#78d296">OSBX</text>
+  <text x="196" y="52" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">▾</text>
+  <rect x="214" y="36" width="60" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="244.0" y="52.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">+ New</text>
+  <rect x="280" y="36" width="24" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="292.0" y="53.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">✕</text>
+  <rect x="420" y="36" width="24" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="432.0" y="53.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⏮</text>
+  <rect x="448" y="36" width="24" height="24" rx="4" fill="#c9d35e"/>
+  <text x="460.0" y="53.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#12131a">▶</text>
+  <rect x="476" y="36" width="24" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="488.0" y="53.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⏭</text>
+  <rect x="504" y="36" width="24" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="516.0" y="53.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">↻</text>
+  <text x="540" y="53" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#f5f6fa">00:01.250</text>
+  <text x="624" y="53" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">bar 3 · beat 2</text>
+  <rect x="732" y="36" width="124" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="758.0" y="52.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">0.5×</text>
+  <rect x="786" y="38" width="32" height="20" rx="3" fill="#145ce3"/>
+  <text x="802.0" y="52.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">1×</text>
+  <line x1="820" y1="41" x2="820" y2="55" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="838.0" y="52.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">2×</text>
+  <text x="1004" y="53" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#717077">Scenario</text>
+  <rect x="1066" y="36" width="206" height="24" rx="4" fill="none" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="1169" y="52" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#717077">Pass · Fail · Custom (SB-13)</text>
+  <rect x="0" y="66" width="260" height="654" rx="0" fill="#1e1f28"/>
+  <rect x="8" y="74" width="244" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="10" y="76" width="118" height="22" rx="3" fill="#145ce3"/>
+  <text x="69.0" y="91.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Hierarchy</text>
+  <line x1="130" y1="79" x2="130" y2="95" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="191.0" y="91.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Assets</text>
+  <text x="12" y="126" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">BACKGROUND</text>
+  <rect x="226" y="112" width="20" height="20" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="236.0" y="127.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="26" y="151" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">▸ sky</text>
+  <text x="244" y="151" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <text x="26" y="175" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">▾ sun</text>
+  <text x="244" y="175" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <text x="40" y="199" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">  rays ×6</text>
+  <text x="244" y="199" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <text x="12" y="222" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">FAIL</text>
+  <rect x="226" y="208" width="20" height="20" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="236.0" y="223.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="26" y="247" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#717077">empty — shown when failing</text>
+  <text x="12" y="270" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">PASS</text>
+  <rect x="226" y="256" width="20" height="20" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="236.0" y="271.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="26" y="295" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#717077">empty — shown when passing</text>
+  <text x="12" y="318" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">FOREGROUND</text>
+  <rect x="226" y="304" width="20" height="20" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="236.0" y="319.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="26" y="343" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">▾ title_group</text>
+  <text x="244" y="343" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <rect x="4" y="352" width="252" height="22" rx="3" fill="#145ce3"/>
+  <text x="40" y="367" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ffffff">◆ worm</text>
+  <text x="244" y="367" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#ffffff">◉</text>
+  <text x="40" y="391" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">banner</text>
+  <text x="244" y="391" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <text x="104" y="391" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#f2be66">⚠ shear: no .osb</text>
+  <text x="26" y="415" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">hills</text>
+  <text x="244" y="415" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#717077">◉</text>
+  <line x1="8" y1="430" x2="252" y2="430" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="12" y="450" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">F2 rename · Del delete · Ctrl+D duplicate</text>
+  <text x="12" y="464" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">drag: reorder / reparent within a layer</text>
+  <rect x="260" y="66" width="680" height="474" rx="0" fill="#161921"/>
+  <defs><linearGradient id="sb-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b1e4f"/><stop offset="0.7" stop-color="#b8546b"/><stop offset="1" stop-color="#f2be66"/></linearGradient></defs>
+  <rect x="328" y="82" width="544.0" height="408.0" rx="0" fill="url(#sb-sky)"/>
+  <circle cx="753.0" cy="209.5" r="39.1" fill="#ffd98a"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(0 753.0 209.5)"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(30 753.0 209.5)"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(60 753.0 209.5)"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(90 753.0 209.5)"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(120 753.0 209.5)"/>
+  <rect x="749.5999999999999" y="141.5" width="6.8" height="20.4" rx="2.55" fill="#ffd98a" opacity="0.7" transform="rotate(150 753.0 209.5)"/>
+  <path d="M328 422.0 Q464.0 371.0 608.5 417.75 T872.0 405.0 L872.0 490.0 L328 490.0 Z" fill="#3f2a4f"/>
+  <g transform="translate(387.5 133.0) skewX(-18)">
+  <rect x="0" y="0" width="255.0" height="54.4" rx="5.1" fill="#12131a" stroke="#c9d35e" stroke-width="2"/>
+  <text x="127.5" y="35.699999999999996" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="25.5" font-weight="bold" text-anchor="middle" fill="#c9d35e">WORMEDIT</text>
+  </g>
+  <g transform="rotate(-8 583.0 337.0)">
+  <circle cx="487.8" cy="334.28" r="12.24" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="501.4" cy="350.6" r="13.328000000000001" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="515.0" cy="339.71999999999997" r="14.416" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="528.6" cy="356.04" r="15.504000000000001" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="542.2" cy="345.15999999999997" r="16.592" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="555.8" cy="361.48" r="17.68" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="569.4" cy="350.59999999999997" r="18.768" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="583.0" cy="345.16" r="25.840000000000003" fill="#e58fa4" stroke="#b85a72" stroke-width="1"/>
+  <circle cx="599.32" cy="356.04" r="4.760000000000001" fill="#f2a7b8"/>
+  <path d="M573.48 354.68 Q583.0 364.2 593.88 353.32" fill="none" stroke="#2a1a20" stroke-width="2.72"/>
+  <rect x="562.6" y="334.28" width="16.32" height="9.520000000000001" rx="2.72" fill="#101014"/>
+  <rect x="584.36" y="334.28" width="16.32" height="9.520000000000001" rx="2.72" fill="#101014"/>
+  <line x1="578.92" y1="337.0" x2="584.36" y2="337.0" stroke="#101014" stroke-width="2.72"/>
+  <line x1="566.68" y1="337.0" x2="572.12" y2="335.64" stroke="#ffffff" stroke-width="1.36"/>
+  </g>
+  <rect x="328" y="82" width="544.0" height="408.0" rx="0" fill="none" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="273.6" y="82" width="652.8" height="408.0" rx="0" fill="none" stroke="#717077" stroke-width="1" stroke-dasharray="2 4"/>
+  <g transform="rotate(-8 563.0 335.0)">
+  <rect x="492.0" y="302.0" width="142" height="66" rx="0" fill="none" stroke="#86b4ff" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <rect x="488.0" y="298.0" width="8" height="8" rx="0" fill="#ffffff" stroke="#145ce3" stroke-width="1"/>
+  <rect x="630.0" y="298.0" width="8" height="8" rx="0" fill="#ffffff" stroke="#145ce3" stroke-width="1"/>
+  <rect x="630.0" y="364.0" width="8" height="8" rx="0" fill="#ffffff" stroke="#145ce3" stroke-width="1"/>
+  <rect x="488.0" y="364.0" width="8" height="8" rx="0" fill="#ffffff" stroke="#145ce3" stroke-width="1"/>
+  <line x1="563.0" y1="302.0" x2="563.0" y2="280.0" stroke="#86b4ff" stroke-width="1.5"/>
+  <circle cx="563.0" cy="276.0" r="5" fill="#ffffff" stroke="#145ce3" stroke-width="1"/>
+  <line x1="563.0" y1="335.0" x2="597.0" y2="335.0" stroke="#df563b" stroke-width="2"/>
+  <path d="M603.0 335.0 l-8 -4 v8 Z" fill="#df563b"/>
+  <line x1="563.0" y1="335.0" x2="563.0" y2="369.0" stroke="#78d296" stroke-width="2"/>
+  <path d="M563.0 375.0 l-4 -8 h8 Z" fill="#78d296"/>
+  <circle cx="563.0" cy="335.0" r="4" fill="none" stroke="#ffffff" stroke-width="1"/>
+  </g>
+  <rect x="268" y="512" width="150" height="22" rx="4" fill="#000000" opacity="0.55"/>
+  <text x="276" y="527" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">fit · 85% · 4:3 ▾</text>
+  <rect x="820" y="512" width="112" height="22" rx="4" fill="#000000" opacity="0.55"/>
+  <text x="828" y="527" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">12 / 512 sprites</text>
+  <rect x="940" y="66" width="340" height="474" rx="0" fill="#1e1f28"/>
+  <text x="952" y="90" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="bold" text-anchor="start" fill="#f5f6fa">worm</text>
+  <text x="1010" y="90" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">sprite · Foreground</text>
+  <text x="952" y="121" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Image</text>
+  <rect x="1030" y="104" width="238" height="24" rx="4" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1038" y="120" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">worm.png ▾</text>
+  <text x="952" y="153" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Origin</text>
+  <rect x="1030" y="138" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1030" y="147" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1030" y="156" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1042" y="138" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1042" y="147" width="9" height="6" rx="1" fill="#145ce3" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1042" y="156" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1054" y="138" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1054" y="147" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1054" y="156" width="9" height="6" rx="1" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1074" y="153" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Centre</text>
+  <text x="952" y="185" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Blend</text>
+  <rect x="1030" y="168" width="152" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="1032" y="170" width="64" height="20" rx="3" fill="#145ce3"/>
+  <text x="1064.0" y="184.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Normal</text>
+  <line x1="1098" y1="173" x2="1098" y2="187" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1140.0" y="184.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Additive</text>
+  <text x="952" y="214" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">TRANSFORM STACK</text>
+  <text x="1268" y="214" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="end" fill="#717077">applies top → bottom</text>
+  <rect x="948" y="222" width="324" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="956" y="239" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#717077">≡</text>
+  <text x="972" y="239" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">1 translate</text>
+  <rect x="1090" y="226" width="120" height="18" rx="3" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1098" y="239" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f5f6fa">320, 300</text>
+  <path d="M1230 230 L1235 235 L1230 240 L1225 235 Z" fill="#c9d35e"/>
+  <text x="1258" y="239" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#717077">✕</text>
+  <rect x="948" y="252" width="324" height="26" rx="4" fill="#3a3c4b" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="956" y="269" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#717077">≡</text>
+  <text x="972" y="269" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">2 rotate</text>
+  <rect x="1090" y="256" width="120" height="18" rx="3" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1098" y="269" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f5f6fa">-8.0°</text>
+  <path d="M1230 260 L1235 265 L1230 270 L1225 265 Z" fill="#c9d35e"/>
+  <text x="1258" y="269" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#717077">✕</text>
+  <rect x="948" y="282" width="324" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="956" y="299" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#717077">≡</text>
+  <text x="972" y="299" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">3 skew</text>
+  <rect x="1090" y="286" width="120" height="18" rx="3" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1098" y="299" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">0°, 0°</text>
+  <text x="1230" y="299" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#717077">◇</text>
+  <text x="1258" y="299" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#717077">✕</text>
+  <rect x="948" y="312" width="120" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1008.0" y="328.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">+ Add op ▾</text>
+  <text x="952" y="362" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="bold" text-anchor="start" fill="#717077">TRACKS</text>
+  <text x="956" y="385" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">opacity</text>
+  <rect x="1090" y="371" width="120" height="18" rx="3" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1098" y="384" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">1.00</text>
+  <path d="M1230 375 L1235 380 L1230 385 L1225 380 Z" fill="#c9d35e"/>
+  <text x="956" y="411" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">color</text>
+  <rect x="1090" y="397" width="120" height="18" rx="3" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1098" y="410" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">#ffffff</text>
+  <text x="1230" y="410" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#717077">◇</text>
+  <text x="952" y="442" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">world @ t: [0.99 -0.14 0.14 0.99 | 320 300]</text>
+  <text x="952" y="456" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">◆ keyed: edits write a key at the playhead</text>
+  <rect x="260" y="540" width="1020" height="180" rx="0" fill="#12131a"/>
+  <line x1="260" y1="540" x2="1280" y2="540" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="260" y="540" width="1020" height="20" rx="0" fill="#1e1f28"/>
+  <line x1="400.0" y1="546" x2="400.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="403.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">0</text>
+  <line x1="400.0" y1="560" x2="400.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="454.5" y1="553" x2="454.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="509.0" y1="546" x2="509.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="512.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">500</text>
+  <line x1="509.0" y1="560" x2="509.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="563.5" y1="553" x2="563.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="618.0" y1="546" x2="618.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="621.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">1000</text>
+  <line x1="618.0" y1="560" x2="618.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="672.5" y1="553" x2="672.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="727.0" y1="546" x2="727.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="730.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">1500</text>
+  <line x1="727.0" y1="560" x2="727.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="781.5" y1="553" x2="781.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="836.0" y1="546" x2="836.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="839.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">2000</text>
+  <line x1="836.0" y1="560" x2="836.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="890.5" y1="553" x2="890.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="945.0" y1="546" x2="945.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="948.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">2500</text>
+  <line x1="945.0" y1="560" x2="945.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="999.5" y1="553" x2="999.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="1054.0" y1="546" x2="1054.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="1057.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">3000</text>
+  <line x1="1054.0" y1="560" x2="1054.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="1108.5" y1="553" x2="1108.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="1163.0" y1="546" x2="1163.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="1166.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">3500</text>
+  <line x1="1163.0" y1="560" x2="1163.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="1217.5" y1="553" x2="1217.5" y2="560" stroke="#717077" stroke-width="1"/>
+  <line x1="1272.0" y1="546" x2="1272.0" y2="560" stroke="#adb3c5" stroke-width="1"/>
+  <text x="1275.0" y="553" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="start" fill="#adb3c5">4000</text>
+  <line x1="1272.0" y1="560" x2="1272.0" y2="712" stroke="#3a4353" stroke-width="1" stroke-dasharray="2 3"/>
+  <rect x="260" y="566" width="1020" height="24" rx="0" fill="#12131a"/>
+  <text x="270" y="582" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">1 translate</text>
+  <line x1="400.0" y1="578" x2="618.0" y2="578" stroke="#2c2e3c" stroke-width="3"/>
+  <text x="509.0" y="575" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#adb3c5">linear</text>
+  <path d="M400.0 572 L406.0 578 L400.0 584 L394.0 578 Z" fill="#c9d35e"/>
+  <line x1="618.0" y1="578" x2="945.0" y2="578" stroke="#2c2e3c" stroke-width="3"/>
+  <text x="781.5" y="575" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#adb3c5">out_quad</text>
+  <path d="M618.0 572 L624.0 578 L618.0 584 L612.0 578 Z" fill="#c9d35e"/>
+  <path d="M945.0 572 L951.0 578 L945.0 584 L939.0 578 Z" fill="#c9d35e"/>
+  <rect x="260" y="594" width="1020" height="24" rx="0" fill="#1e1f28"/>
+  <text x="270" y="610" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">2 rotate</text>
+  <line x1="400.0" y1="606" x2="836.0" y2="606" stroke="#2c2e3c" stroke-width="3"/>
+  <text x="618.0" y="603" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#adb3c5">in_out_sine</text>
+  <path d="M400.0 600 L406.0 606 L400.0 612 L394.0 606 Z" fill="#c9d35e"/>
+  <line x1="836.0" y1="606" x2="1272.0" y2="606" stroke="#2c2e3c" stroke-width="3"/>
+  <text x="1054.0" y="603" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#adb3c5">step</text>
+  <path d="M836.0 600 L842.0 606 L836.0 612 L830.0 606 Z" fill="#f5f6fa" stroke="#86b4ff" stroke-width="1.5"/>
+  <path d="M1272.0 600 L1278.0 606 L1272.0 612 L1266.0 606 Z" fill="#c9d35e"/>
+  <rect x="260" y="622" width="1020" height="24" rx="0" fill="#12131a"/>
+  <text x="270" y="638" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">3 skew</text>
+  <text x="408" y="638" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">default only — K adds a key at the playhead</text>
+  <rect x="260" y="650" width="1020" height="24" rx="0" fill="#12131a"/>
+  <text x="270" y="666" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">opacity</text>
+  <line x1="400.0" y1="662" x2="454.5" y2="662" stroke="#2c2e3c" stroke-width="3"/>
+  <path d="M400.0 656 L406.0 662 L400.0 668 L394.0 662 Z" fill="#c9d35e"/>
+  <path d="M454.5 656 L460.5 662 L454.5 668 L448.5 662 Z" fill="#c9d35e"/>
+  <rect x="260" y="678" width="1020" height="24" rx="0" fill="#12131a"/>
+  <text x="270" y="694" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">color</text>
+  <text x="408" y="694" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">default only — K adds a key at the playhead</text>
+  <line x1="672.5" y1="540" x2="672.5" y2="712" stroke="#df563b" stroke-width="2"/>
+  <path d="M666.5 540 h12 l-6 8 Z" fill="#df563b"/>
+  <rect x="849.0" y="573" width="198" height="106" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="848.0" y="572" width="200" height="108" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="847.0" y="571" width="202" height="110" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="846.0" y="570" width="204" height="112" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="845.0" y="569" width="206" height="114" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="844.0" y="568" width="208" height="116" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="843.0" y="567" width="210" height="118" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="842.0" y="566" width="212" height="120" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="850.0" y="570" width="196" height="104" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="860.0" y="588" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">Easing after key @2000</text>
+  <rect x="860.0" y="598" width="40" height="40" rx="4" fill="#145ce3" stroke="#3a3c4b" stroke-width="1"/>
+  <path d="M0 18 h16 v-18 h12" transform="translate(866.0 609)" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="880.0" y="652" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ced2df">step</text>
+  <rect x="906.0" y="598" width="40" height="40" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <path d="M0 18 L28 0" transform="translate(912.0 609)" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="926.0" y="652" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ced2df">linear</text>
+  <rect x="952.0" y="598" width="40" height="40" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <path d="M0 18 C14 18 14 0 28 0" transform="translate(958.0 609)" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="972.0" y="652" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ced2df">in_out</text>
+  <rect x="998.0" y="598" width="40" height="40" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <path d="M0 18 C4 -4 20 22 28 0" transform="translate(1004.0 609)" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="1018.0" y="652" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ced2df">bezier…</text>
+  <text x="860.0" y="668" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">+ 34 OSB easings ▾</text>
+  <rect x="260" y="700" width="1020" height="20" rx="0" fill="#1e1f28"/>
+  <text x="270" y="714" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">Drag keys: snaps to the active grid (ms or beat) · ⇧ no snap · Esc cancels · one Undo per drag</text>
+  <rect x="0" y="720" width="1280" height="140" rx="0" fill="#0b0c11"/>
+  <circle cx="8" cy="36" r="9" fill="#df563b"/>
+  <text x="8" y="40" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">1</text>
+  <circle cx="8" cy="112" r="9" fill="#df563b"/>
+  <text x="8" y="116" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">2</text>
+  <circle cx="300" cy="90" r="9" fill="#df563b"/>
+  <text x="300" y="94" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">3</text>
+  <circle cx="440" cy="300" r="9" fill="#df563b"/>
+  <text x="440" y="304" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">4</text>
+  <circle cx="940" cy="230" r="9" fill="#df563b"/>
+  <text x="940" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">5</text>
+  <circle cx="266" cy="566" r="9" fill="#df563b"/>
+  <text x="266" y="570" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">6</text>
+  <circle cx="990" cy="44" r="9" fill="#df563b"/>
+  <text x="990" y="48" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">7</text>
+  <circle cx="400" cy="44" r="9" fill="#df563b"/>
+  <text x="400" y="48" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">8</text>
+  <text x="16" y="744" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">1  SB-2   picker + kind badge (OSBX / OSB read-only / generated); New and Delete use SB-1 commands</text>
+  <text x="16" y="758" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">2  SB-4   layers in draw order: Background, Fail, Pass, Foreground; same-layer reparent only</text>
+  <text x="16" y="772" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">3  SB-3   640×480 canvas, fit/zoom/pan, 16:9 safe outline; scene drawn by the shared OSBX evaluator</text>
+  <text x="16" y="786" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">   banner: shear has no .osb equivalent, so osu! export blocks on it (OSBX-7/8); video and StepMania keep it</text>
+  <text x="16" y="800" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">4  SB-7   gizmo edits one op (translate/rotate/scale), auto-keys when the op has keys; Esc restores</text>
+  <text x="16" y="814" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">5  SB-5   ordered transform stack: drag ≡ to reorder (ops don&#x27;t commute); ◆ keyed / ◇ default only</text>
+  <text x="16" y="828" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">6  SB-6   one row per op/track, shared playhead, beat lines from chart timing, easing popover</text>
+  <text x="16" y="842" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">7  SB-13  pass/fail + trigger scenario selector (dashed: after v1)</text>
+  <text x="16" y="856" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">8  SB-9   shared transport; editing while playing pauses playback</text>
+</svg>

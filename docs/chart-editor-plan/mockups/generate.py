@@ -808,7 +808,453 @@ def output_groups():
     svg.save("output-groups.svg")
 
 
+# Storyboard screen (SB-0…SB-13) ------------------------------------------------------------------
+
+WORM = "#e58fa4"
+WORM_DARK = "#b85a72"
+
+
+def diamond(svg, x, y, fill=ACCENT, size=6, stroke=None):
+    svg.path(f"M{x} {y - size} L{x + size} {y} L{x} {y + size} L{x - size} {y} Z", fill, stroke,
+             1.5 if stroke else 1)
+
+
+def worm(svg, x, y, scale=1.0, mood="cool"):
+    """The example scene's star. mood: cool (sunglasses), party (hat), sad (rain cloud)."""
+    s = scale
+    for index in range(7):  # Tail to neck along a wiggle.
+        bx = x - (70 - index * 10) * s
+        by = y + (8 if index % 2 else -2) * s + index * 2 * s
+        svg.circle(bx, by, (9 + index * 0.8) * s, WORM, WORM_DARK)
+    svg.circle(x, y + 6 * s, 19 * s, WORM, WORM_DARK)  # Head.
+    svg.circle(x + 12 * s, y + 14 * s, 3.5 * s, "#f2a7b8")  # Cheek.
+    if mood == "sad":
+        svg.circle(x - 6 * s, y + 2 * s, 2.5 * s, "#2a1a20")
+        svg.circle(x + 7 * s, y + 2 * s, 2.5 * s, "#2a1a20")
+        svg.path(f"M{x - 7 * s} {y + 16 * s} Q{x} {y + 10 * s} {x + 7 * s} {y + 16 * s}",
+                 stroke="#2a1a20", width=2 * s)
+        svg.path(f"M{x - 8 * s} {y + 6 * s} q{-2 * s} {6 * s} 0 {8 * s} q{2 * s} {-2 * s} 0 {-8 * s}",
+                 "#86b4ff")  # Tear.
+        cloud_x, cloud_y = x - 4 * s, y - 34 * s
+        for dx, r in [(-12, 9), (0, 12), (12, 9)]:
+            svg.circle(cloud_x + dx * s, cloud_y, r * s, "#6b7183")
+        for dx in (-10, -2, 6, 14):
+            svg.line(cloud_x + dx * s, cloud_y + 12 * s, cloud_x + (dx - 3) * s, cloud_y + 20 * s,
+                     "#86b4ff", 1.5 * s)
+        return
+    svg.path(f"M{x - 7 * s} {y + 13 * s} Q{x} {y + 20 * s} {x + 8 * s} {y + 12 * s}",
+             stroke="#2a1a20", width=2 * s)
+    if mood == "cool":
+        svg.rect(x - 15 * s, y - 2 * s, 12 * s, 7 * s, "#101014", radius=2 * s)
+        svg.rect(x + 1 * s, y - 2 * s, 12 * s, 7 * s, "#101014", radius=2 * s)
+        svg.line(x - 3 * s, y, x + 1 * s, y, "#101014", 2 * s)
+        svg.line(x - 12 * s, y, x - 8 * s, y - 1 * s, "#ffffff", 1 * s)  # Glint.
+    else:
+        svg.circle(x - 6 * s, y + 2 * s, 2.5 * s, "#2a1a20")
+        svg.circle(x + 7 * s, y + 2 * s, 2.5 * s, "#2a1a20")
+        svg.path(f"M{x - 10 * s} {y - 10 * s} L{x + 2 * s} {y - 40 * s} L{x + 12 * s} {y - 8 * s} Z",
+                 AMBER, "#8a6a2c", 1)
+        svg.circle(x + 2 * s, y - 41 * s, 4 * s, CORAL)
+        for index, (cx, cy) in enumerate([(-34, -30), (28, -36), (40, -12), (-44, -6), (16, -52)]):
+            color = [ACCENT, "#86b4ff", CORAL, AMBER, "#78d296"][index]
+            svg.rect(x + cx * s, y + cy * s, 5 * s, 3 * s, color)
+
+
+def storyboard_scene(svg, ox, oy, k):
+    """Example OSBX scene on a 640x480 canvas drawn at (ox, oy), scale k."""
+    svg.parts.append(
+        '<defs><linearGradient id="sb-sky" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#2b1e4f"/><stop offset="0.7" stop-color="#b8546b"/>'
+        '<stop offset="1" stop-color="#f2be66"/></linearGradient></defs>')
+    svg.rect(ox, oy, 640 * k, 480 * k, "url(#sb-sky)")
+    svg.circle(ox + 500 * k, oy + 150 * k, 46 * k, "#ffd98a")
+    for index in range(6):  # Sun rays: a keyed rotate on the "sun" group.
+        angle = index * 30
+        svg.parts.append(
+            f'<rect x="{ox + 496 * k}" y="{oy + 70 * k}" width="{8 * k}" height="{24 * k}" rx="{3 * k}" '
+            f'fill="#ffd98a" opacity="0.7" transform="rotate({angle} {ox + 500 * k} {oy + 150 * k})"/>')
+    svg.path(f"M{ox} {oy + 400 * k} Q{ox + 160 * k} {oy + 340 * k} {ox + 330 * k} {oy + 395 * k} "
+             f"T{ox + 640 * k} {oy + 380 * k} L{ox + 640 * k} {oy + 480 * k} L{ox} {oy + 480 * k} Z",
+             "#3f2a4f")
+    # The sheared banner: what standard OSB cannot express (OSBX-3 / OSBX-7).
+    bx, by = ox + 70 * k, oy + 60 * k
+    svg.parts.append(f'<g transform="translate({bx} {by}) skewX(-18)">')
+    svg.rect(0, 0, 300 * k, 64 * k, "#12131a", ACCENT, radius=6 * k, width=2)
+    svg.text(150 * k, 42 * k, "WORMEDIT", ACCENT, 30 * k, "middle", "bold")
+    svg.parts.append("</g>")
+    # The worm group, rotated by its keyed rotate op.
+    wx, wy = ox + 300 * k, oy + 300 * k
+    svg.parts.append(f'<g transform="rotate(-8 {wx} {wy})">')
+    worm(svg, wx, wy, 1.6 * k, "cool")
+    svg.parts.append("</g>")
+    return wx, wy
+
+
+def gizmo(svg, cx, cy, w, h, angle):
+    """Selection outline + translate/rotate/scale handles for SB-3/SB-7."""
+    svg.parts.append(f'<g transform="rotate({angle} {cx} {cy})">')
+    svg.rect(cx - w / 2, cy - h / 2, w, h, "none", BORDER_HI, width=1.5, dash="5 3")
+    for hx, hy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
+        svg.rect(cx + hx * w / 2 - 4, cy + hy * h / 2 - 4, 8, 8, "#ffffff", SELECTED)
+    svg.line(cx, cy - h / 2, cx, cy - h / 2 - 22, BORDER_HI, 1.5)
+    svg.circle(cx, cy - h / 2 - 26, 5, "#ffffff", SELECTED)
+    svg.line(cx, cy, cx + 34, cy, CORAL, 2)
+    svg.path(f"M{cx + 40} {cy} l-8 -4 v8 Z", CORAL)
+    svg.line(cx, cy, cx, cy + 34, "#78d296", 2)
+    svg.path(f"M{cx} {cy + 40} l-4 -8 h8 Z", "#78d296")
+    svg.circle(cx, cy, 4, "none", "#ffffff")
+    svg.parts.append("</g>")
+
+
+def storyboard_screen():
+    """The v1 Storyboard tab at 1280x720, with callouts to the SB cards below it."""
+    svg = Svg(1280, 860)
+    # Workspace tabs.
+    svg.rect(0, 0, 1280, 30, SURFACE)
+    tx = 8
+    for name in ["Setup", "Metadata", "Timing", "Compose", "Storyboard", "Audio/Slices",
+                 "Compare/Validate"]:
+        width = len(name) * 8 + 20
+        if name == "Storyboard":
+            svg.rect(tx, 3, width, 27, BG, BORDER_HI, radius=4)
+        svg.text(tx + width / 2, 20, name, BRIGHT if name == "Storyboard" else MUTED, 12, "middle")
+        tx += width + 4
+    # Storyboard toolbar: picker, new/delete, transport, scenario (later).
+    svg.rect(0, 30, 1280, 36, BG)
+    svg.rect(8, 36, 200, 24, HOVER, BORDER, radius=4)
+    svg.text(16, 52, "Main", TEXT, 12)
+    svg.rect(120, 40, 40, 16, "#2d4a37", radius=3)
+    svg.text(140, 52, "OSBX", "#78d296", 10, "middle", "bold")
+    svg.text(196, 52, "▾", MUTED, 12, "middle")
+    button(svg, 214, 36, 60, "+ New", h=24)
+    icon_button(svg, 280, 36, "✕", size=24)
+    tx = 420
+    for glyph, active in [("⏮", False), ("▶", True), ("⏭", False), ("↻", False)]:
+        icon_button(svg, tx, 36, glyph, active, 24)
+        tx += 28
+    svg.text(tx + 8, 53, "00:01.250", BRIGHT, 13)
+    svg.text(tx + 92, 53, "bar 3 · beat 2", MUTED, 11)
+    segmented(svg, tx + 200, 36, ["0.5×", "1×", "2×"], 1, h=24)
+    svg.text(1004, 53, "Scenario", FAINT, 11)
+    svg.rect(1066, 36, 206, 24, "none", BORDER, radius=4, dash="3 2")
+    svg.text(1169, 52, "Pass · Fail · Custom (SB-13)", FAINT, 11, "middle")
+
+    # Left dock: hierarchy / assets.
+    svg.rect(0, 66, 260, 654, SURFACE)
+    segmented(svg, 8, 74, ["Hierarchy", "Assets"], 0, seg_w=122)
+    rows = [
+        ("layer", "Background", 0), ("node", "▸ sky", 1), ("node", "▾ sun", 1),
+        ("node", "  rays ×6", 2),
+        ("layer", "Fail", 0), ("empty", "empty — shown when failing", 1),
+        ("layer", "Pass", 0), ("empty", "empty — shown when passing", 1),
+        ("layer", "Foreground", 0), ("node", "▾ title_group", 1), ("sel", "worm", 2),
+        ("warn", "banner", 2), ("node", "hills", 1),
+    ]
+    y = 112
+    for kind, label, depth in rows:
+        if kind == "layer":
+            svg.text(12, y + 14, label.upper(), FAINT, 10, weight="bold")
+            icon_button(svg, 226, y, "+", size=20)
+        elif kind == "sel":
+            svg.rect(4, y, 252, 22, SELECTED, radius=3)
+            svg.text(12 + depth * 14, y + 15, "◆ " + label, "#ffffff", 12)
+            svg.text(244, y + 15, "◉", "#ffffff", 11, "end")
+        elif kind == "empty":
+            svg.text(12 + depth * 14, y + 15, label, FAINT, 11)
+        else:
+            svg.text(12 + depth * 14, y + 15, label, TEXT, 12)
+            svg.text(244, y + 15, "◉", FAINT, 11, "end")
+            if kind == "warn":
+                svg.text(104, y + 15, "⚠ shear: no .osb", AMBER, 10)
+        y += 24
+    svg.line(8, y + 6, 252, y + 6, BORDER)
+    svg.text(12, y + 26, "F2 rename · Del delete · Ctrl+D duplicate", FAINT, 10)
+    svg.text(12, y + 40, "drag: reorder / reparent within a layer", FAINT, 10)
+
+    # Canvas: 640x480 at 0.85 inside the centre area.
+    svg.rect(260, 66, 680, 474, FIELD)
+    ox, oy, k = 328, 82, 0.85
+    wx, wy = storyboard_scene(svg, ox, oy, k)
+    svg.rect(ox, oy, 640 * k, 480 * k, "none", BORDER, width=1)
+    svg.rect(ox - 64 * k, oy, 768 * k, 480 * k, "none", FAINT, dash="2 4")  # 16:9 safe outline.
+    gizmo(svg, wx - 20, wy - 2, 142, 66, -8)
+    svg.rect(268, 512, 150, 22, "#000000", opacity=0.55, radius=4)
+    svg.text(276, 527, "fit · 85% · 4:3 ▾", TEXT, 11)
+    svg.rect(820, 512, 112, 22, "#000000", opacity=0.55, radius=4)
+    svg.text(828, 527, "12 / 512 sprites", TEXT, 11)
+
+    # Right dock: inspector.
+    ix = 940
+    svg.rect(ix, 66, 340, 474, SURFACE)
+    svg.text(ix + 12, 90, "worm", BRIGHT, 14, weight="bold")
+    svg.text(ix + 70, 90, "sprite · Foreground", MUTED, 11)
+    fields = [("Image", "worm.png ▾"), ("Origin", None), ("Blend", None)]
+    fy = 104
+    for label, value in fields:
+        svg.text(ix + 12, fy + 17, label, MUTED, 12)
+        if label == "Origin":
+            for gx in range(3):
+                for gy in range(3):
+                    on = gx == 1 and gy == 1
+                    svg.rect(ix + 90 + gx * 12, fy + 2 + gy * 9, 9, 6, SELECTED if on else HOVER,
+                             BORDER, radius=1)
+            svg.text(ix + 134, fy + 17, "Centre", TEXT, 12)
+        elif label == "Blend":
+            segmented(svg, ix + 90, fy, ["Normal", "Additive"], 0, h=24)
+        else:
+            svg.rect(ix + 90, fy, 238, 24, BG, BORDER, radius=4)
+            svg.text(ix + 98, fy + 16, value, TEXT, 12)
+        fy += 32
+    svg.text(ix + 12, fy + 14, "TRANSFORM STACK", FAINT, 10, weight="bold")
+    svg.text(ix + 328, fy + 14, "applies top → bottom", FAINT, 10, "end")
+    fy += 22
+    ops = [("1", "translate", "320, 300", True), ("2", "rotate", "-8.0°", True),
+           ("3", "skew", "0°, 0°", False)]
+    for number, name, value, keyed in ops:
+        svg.rect(ix + 8, fy, 324, 26, HOVER if number != "2" else ACTIVE, BORDER, radius=4)
+        svg.text(ix + 16, fy + 17, "≡", FAINT, 12)
+        svg.text(ix + 32, fy + 17, f"{number} {name}", TEXT, 12)
+        svg.rect(ix + 150, fy + 4, 120, 18, BG, BORDER, radius=3)
+        svg.text(ix + 158, fy + 17, value, BRIGHT if keyed else TEXT, 12)
+        if keyed:
+            diamond(svg, ix + 290, fy + 13, ACCENT, 5)
+        else:
+            svg.text(ix + 290, fy + 17, "◇", FAINT, 12, "middle")
+        svg.text(ix + 318, fy + 17, "✕", FAINT, 11, "middle")
+        fy += 30
+    button(svg, ix + 8, fy, 120, "+ Add op ▾", h=24)
+    fy += 36
+    svg.text(ix + 12, fy + 14, "TRACKS", FAINT, 10, weight="bold")
+    fy += 22
+    for name, value, keyed in [("opacity", "1.00", True), ("color", "#ffffff", False)]:
+        svg.text(ix + 16, fy + 15, name, TEXT, 12)
+        svg.rect(ix + 150, fy + 1, 120, 18, BG, BORDER, radius=3)
+        svg.text(ix + 158, fy + 14, value, TEXT, 12)
+        if keyed:
+            diamond(svg, ix + 290, fy + 10, ACCENT, 5)
+        else:
+            svg.text(ix + 290, fy + 14, "◇", FAINT, 12, "middle")
+        fy += 26
+    svg.text(ix + 12, fy + 20, "world @ t: [0.99 -0.14 0.14 0.99 | 320 300]", FAINT, 10)
+    svg.text(ix + 12, fy + 34, "◆ keyed: edits write a key at the playhead", FAINT, 10)
+
+    # Bottom: keyframe timeline across the canvas and inspector.
+    lx, rx, ty = 260, 1272, 540
+    svg.rect(lx, ty, 1020, 180, BG)
+    svg.line(lx, ty, 1280, ty, BORDER)
+    t0x, t1x = 400, rx
+    per_ms = (t1x - t0x) / 4000
+    svg.rect(lx, ty, 1020, 20, SURFACE)
+    for ms in range(0, 4001, 250):
+        x = t0x + ms * per_ms
+        major = ms % 500 == 0
+        svg.line(x, ty + (6 if major else 13), x, ty + 20, MUTED if major else FAINT)
+        if major:
+            svg.text(x + 3, ty + 13, f"{ms}", MUTED, 9)
+            svg.line(x, ty + 20, x, ty + 172, GRID, 1, "2 3")  # Beat lines at 120 BPM.
+    tracks = [
+        ("1 translate", [(0, "linear"), (1000, "out_quad"), (2500, None)], None),
+        ("2 rotate", [(0, "in_out_sine"), (2000, "step"), (4000, None)], 1),
+        ("3 skew", [], None),
+        ("opacity", [(0, "linear"), (250, None)], None),
+        ("color", [], None),
+    ]
+    rowy = ty + 26
+    for name, keys, selected in tracks:
+        svg.rect(lx, rowy, 1020, 24, SURFACE if name.startswith("2") else BG)
+        svg.text(lx + 10, rowy + 16, name, TEXT, 12)
+        if not keys:
+            svg.text(t0x + 8, rowy + 16, "default only — K adds a key at the playhead", FAINT, 10)
+        for index, (ms, easing) in enumerate(keys):
+            x = t0x + ms * per_ms
+            if index + 1 < len(keys):
+                nx = t0x + keys[index + 1][0] * per_ms
+                svg.line(x, rowy + 12, nx, rowy + 12, HOVER, 3)
+                if nx - x > 60:
+                    svg.text((x + nx) / 2, rowy + 9, easing, MUTED, 9, "middle")
+            diamond(svg, x, rowy + 12, BRIGHT if index == selected else ACCENT, 6,
+                    BORDER_HI if index == selected else None)
+        rowy += 28
+    play_x = t0x + 1250 * per_ms
+    svg.line(play_x, ty, play_x, ty + 172, CORAL, 2)
+    svg.path(f"M{play_x - 6} {ty} h12 l-6 8 Z", CORAL)
+    # Easing popover for the selected rotate key.
+    px, py = t0x + 2000 * per_ms + 14, ty + 30
+    panel(svg, px, py, 196, 104)
+    svg.text(px + 10, py + 18, "Easing after key @2000", MUTED, 10)
+    for index, (label, curve) in enumerate([("step", "M0 18 h16 v-18 h12"),
+                                            ("linear", "M0 18 L28 0"),
+                                            ("in_out", "M0 18 C14 18 14 0 28 0"),
+                                            ("bezier…", "M0 18 C4 -4 20 22 28 0")]):
+        cx = px + 10 + index * 46
+        svg.rect(cx, py + 28, 40, 40, SELECTED if index == 0 else HOVER, BORDER, radius=4)
+        svg.parts.append(f'<path d="{curve}" transform="translate({cx + 6} {py + 39})" fill="none" '
+                         f'stroke="#ffffff" stroke-width="1.5"/>')
+        svg.text(cx + 20, py + 82, label, TEXT, 9, "middle")
+    svg.text(px + 10, py + 98, "+ 34 OSB easings ▾", MUTED, 10)
+    svg.rect(lx, 700, 1020, 20, SURFACE)
+    svg.text(lx + 10, 714, "Drag keys: snaps to the active grid (ms or beat) · ⇧ no snap · Esc cancels · one Undo per drag",
+             FAINT, 10)
+    svg.rect(0, 720, 1280, 140, "#0b0c11")
+
+    for number, x, y in [(1, 8, 36), (2, 8, 112), (3, 300, 90), (4, 440, 300), (5, 940, 230),
+                         (6, 266, 566), (7, 990, 44), (8, 400, 44)]:
+        callout(svg, x, y, number)
+    notes = [
+        "1  SB-2   picker + kind badge (OSBX / OSB read-only / generated); New and Delete use SB-1 commands",
+        "2  SB-4   layers in draw order: Background, Fail, Pass, Foreground; same-layer reparent only",
+        "3  SB-3   640×480 canvas, fit/zoom/pan, 16:9 safe outline; scene drawn by the shared OSBX evaluator",
+        "   banner: shear has no .osb equivalent, so osu! export blocks on it (OSBX-7/8); video and StepMania keep it",
+        "4  SB-7   gizmo edits one op (translate/rotate/scale), auto-keys when the op has keys; Esc restores",
+        "5  SB-5   ordered transform stack: drag ≡ to reorder (ops don't commute); ◆ keyed / ◇ default only",
+        "6  SB-6   one row per op/track, shared playhead, beat lines from chart timing, easing popover",
+        "7  SB-13  pass/fail + trigger scenario selector (dashed: after v1)",
+        "8  SB-9   shared transport; editing while playing pauses playback",
+    ]
+    for index, line in enumerate(notes):
+        svg.note(16, 744 + index * 14, line)
+    svg.save("storyboard-screen.svg")
+
+
+def storyboard_states():
+    """Read-only, generated, key-drag and pass/fail states of the Storyboard tab."""
+    svg = Svg(1180, 820)
+
+    def card(x, y, w, h, title, cards):
+        svg.rect(x, y, w, h, SURFACE, BORDER, radius=6)
+        svg.text(x + 12, y + 22, title, BRIGHT, 13, weight="bold")
+        svg.text(x + w - 12, y + 22, cards, MUTED, 11, "end")
+
+    # A: imported OSB, read-only (SB-10).
+    card(16, 16, 560, 120, "Imported .osb storyboard", "SB-10")
+    svg.rect(28, 40, 536, 40, "#2c2a1e", AMBER, radius=4)
+    svg.text(40, 58, "Imported from song.osb: read-only", AMBER, 12, weight="bold")
+    svg.text(40, 73, "Convert makes an editable OSBX copy; the original stays.", MUTED, 10)
+    button(svg, 434, 46, 130, "Convert to OSBX", "primary", h=28)
+    svg.text(28, 104, "Loops unroll within a bound or refuse; animations refuse with line numbers.",
+             FAINT, 10)
+    svg.text(28, 120, "Inspector fields and timeline keys are visible but disabled.", FAINT, 10)
+
+    # B: generator-owned (SB-11).
+    card(600, 16, 564, 120, "Generated by Lua", "SB-11")
+    svg.rect(612, 40, 540, 40, "#1e2433", BORDER_HI, radius=4)
+    svg.text(624, 58, "Owned by project.lua → storyboard/main.osbx.lua", BORDER_HI, 12, weight="bold")
+    svg.text(624, 73, "Rerun the generator to change it, or detach to edit by hand.", MUTED, 10)
+    button(svg, 1024, 46, 120, "Detach…", h=28)
+    svg.text(612, 104, "Detach clears ownership in one Undo step; regenerating afterwards makes a new storyboard.",
+             FAINT, 10)
+    svg.text(612, 120, "Hand edits are refused with \"detach first\" while owned.", FAINT, 10)
+
+    # C: key drag with snap ghost and refused drop (SB-6).
+    card(16, 152, 1148, 120, "Dragging keys", "SB-6")
+    t0x, per_ms = 160, 0.24
+    for ms in range(0, 4001, 500):
+        x = t0x + ms * per_ms
+        svg.line(x, 182, x, 262, GRID, 1, "2 3")
+        svg.text(x + 3, 192, str(ms), FAINT, 9)
+    svg.text(28, 216, "2 rotate", TEXT, 12)
+    svg.line(t0x, 212, t0x + 4000 * per_ms, 212, HOVER, 3)
+    for ms in (0, 4000):
+        diamond(svg, t0x + ms * per_ms, 212, ACCENT)
+    diamond(svg, t0x + 1500 * per_ms, 212, "none", 6, FAINT)  # Start of drag (ghost).
+    diamond(svg, t0x + 2000 * per_ms, 212, BRIGHT, 6, BORDER_HI)  # Snapped to beat.
+    svg.path(f"M{t0x + 1500 * per_ms + 10} 212 H{t0x + 2000 * per_ms - 12}", stroke=BORDER_HI, width=1.5)
+    svg.text(t0x + 2000 * per_ms + 12, 206, "1500 → 2000 ms (beat 4)", BORDER_HI, 10)
+    svg.text(28, 250, "1 translate", TEXT, 12)
+    svg.line(t0x, 246, t0x + 2500 * per_ms, 246, HOVER, 3)
+    for ms in (0, 1000, 2500):
+        diamond(svg, t0x + ms * per_ms, 246, ACCENT)
+    diamond(svg, t0x + 1000 * per_ms, 246, "none", 8, CORAL)
+    svg.text(t0x + 1000 * per_ms + 14, 252, "✕ a key already sits at 1000 ms: drop refused", "#ff9e86", 10)
+    svg.text(t0x + 2500 * per_ms + 120, 232, "⇧ held: no snap · Esc: back to 1500", MUTED, 10)
+
+    # D: pass/fail scenario (SB-13), with the worm's two fates.
+    card(16, 288, 1148, 256, "Pass/fail (after v1): pick one; Custom timeline optional", "SB-13")
+    segmented(svg, 28, 320, ["Pass", "Fail", "Custom"], 2, h=24)
+    svg.text(28, 364, "Custom: drag the switch markers; the Fail and Pass layers follow.", MUTED, 11)
+    t0x, per_ms = 80, 0.13
+    svg.text(28, 392, "state", TEXT, 12)
+    svg.rect(t0x, 382, 1200 * per_ms, 14, "#2d4a37", radius=3)
+    svg.rect(t0x + 1200 * per_ms, 382, 1600 * per_ms, 14, "#4a2a26", radius=3)
+    svg.rect(t0x + 2800 * per_ms, 382, 1200 * per_ms, 14, "#2d4a37", radius=3)
+    for ms, label in [(1200, "fail"), (2800, "pass")]:
+        x = t0x + ms * per_ms
+        svg.line(x, 376, x, 402, BRIGHT, 2)
+        svg.path(f"M{x - 5} 376 h10 l-5 6 Z", BRIGHT)
+        svg.text(x + 4, 414, f"{label} @{ms}", MUTED, 10)
+    svg.text(28, 436, "Passing / Failing triggers fire at each switch.", FAINT, 10)
+    svg.text(28, 462, "The same scenario value drives the preview now", FAINT, 10)
+    svg.text(28, 476, "and offline video later (deterministic).", FAINT, 10)
+    svg.text(28, 502, "No worms were harmed: the Fail layer", FAINT, 10)
+    svg.text(28, 516, "only shows when you ask for it.", FAINT, 10)
+    # The worm's two fates.
+    for index, (title, mood, color) in enumerate([("t = 600 ms · Pass layer", "party", "#2d4a37"),
+                                                   ("t = 2000 ms · Fail layer", "sad", "#4a2a26")]):
+        fx = 640 + index * 260
+        svg.rect(fx, 318, 244, 214, color, BORDER, radius=6)
+        svg.text(fx + 10, 336, title, BRIGHT, 11)
+        worm(svg, fx + 150, 450, 1.25, mood)
+
+    # E: hybrid direct + scripting (OSBX-12 / SB-14).
+    card(16, 560, 560, 244, "Linked to Lua", "SB-14 · OSBX-12")
+    svg.rect(28, 594, 536, 26, ACTIVE, BORDER, radius=4)
+    svg.text(36, 611, "≡  2 rotate", TEXT, 12)
+    svg.rect(130, 598, 18, 18, "#2a2440", BORDER_HI, radius=3)
+    svg.text(139, 611, "ƒ", BORDER_HI, 12, "middle", "bold")
+    svg.text(156, 611, "wobble.lua:spin", BRIGHT, 12)
+    button(svg, 300, 596, 60, "Reload", h=22)
+    button(svg, 366, 596, 100, "Bake to keys", h=22)
+    button(svg, 472, 596, 84, "Unlink", "ghost", h=22)
+    svg.text(36, 638, "amp = 12   speed = 2   seed 7   range 1000–3000 ms", MUTED, 11)
+    svg.text(36, 654, "⚠ wobble.lua:14: attempt to index a nil value — showing the last good result",
+             "#ff9e86", 10)
+    t0x, per_ms = 120, 0.105
+    svg.text(36, 686, "2 rotate", TEXT, 12)
+    svg.parts.append(
+        '<defs><pattern id="sb-hatch" width="6" height="6" patternUnits="userSpaceOnUse" '
+        'patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#4a4470" '
+        'stroke-width="2"/></pattern></defs>')
+    svg.line(t0x, 682, t0x + 4000 * per_ms, 682, HOVER, 3)
+    svg.rect(t0x + 1000 * per_ms, 672, 2000 * per_ms, 20, "url(#sb-hatch)", BORDER_HI, radius=3)
+    import math
+    for index in range(21):
+        ms = 1000 + index * 100
+        svg.circle(t0x + ms * per_ms, 682 - 6 * math.sin(index * 0.9), 1.6, BORDER_HI)
+    for ms in (0, 4000):
+        diamond(svg, t0x + ms * per_ms, 682, ACCENT)
+    svg.text(t0x + 2000 * per_ms, 706, "scripted range: bake or unlink to edit", FAINT, 10, "middle")
+    svg.text(36, 738, "▾ confetti", TEXT, 12)
+    svg.rect(112, 725, 18, 18, "#2a2440", BORDER_HI, radius=3)
+    svg.text(121, 738, "ƒ", BORDER_HI, 12, "middle", "bold")
+    svg.text(138, 738, "party.lua:burst · 48 children, read-only", MUTED, 11)
+    button(svg, 440, 722, 116, "Detach children", h=22)
+    svg.text(36, 766, "Hand keys outside the range stay editable. Lua runs off the frame thread;", FAINT, 10)
+    svg.text(36, 780, "only the link (source, hash, entry, params, seed) is saved, never samples.", FAINT, 10)
+
+    # F: video export (VID-3), with the conditional layers as a single pick.
+    card(600, 560, 564, 244, "Export video", "VID-3")
+    rows = [("Range", ["Whole song", "Selection"], 0),
+            ("Size", ["640×480", "720p", "1080p", "4K"], 2),
+            ("FPS", ["30", "60"], 1),
+            ("Format", ["MP4 · H.264", "WebM · VP9"], 0),
+            ("Audio", ["None", "Song", "Song + samples"], 1),
+            ("Layers", ["Pass", "Fail", "Neither"], 0)]
+    for index, (label, options, active) in enumerate(rows):
+        ry = 588 + index * 28
+        svg.text(614, ry + 17, label, MUTED, 12)
+        segmented(svg, 690, ry, options, active, h=24)
+    svg.text(990, 605 + 5 * 28, "pass/fail: pick one", FAINT, 10)
+    svg.rect(614, 766, 330, 10, HOVER, radius=5)
+    svg.rect(614, 766, 330 * 0.42, 10, SELECTED, radius=5)
+    svg.text(614, 792, "Rendering frame 1512 / 3600 · 42% · about 25 s left", MUTED, 10)
+    button(svg, 958, 760, 84, "Cancel", h=24)
+    button(svg, 1050, 760, 100, "Export", "primary", h=24, disabled=True)
+    svg.save("storyboard-states.svg")
+
+
 if __name__ == "__main__":
+    storyboard_screen()
+    storyboard_states()
     unsaved_changes()
     tap_timing()
     chart_table()

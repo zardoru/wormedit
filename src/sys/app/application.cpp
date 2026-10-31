@@ -4,6 +4,7 @@
 #include "core/text_util.h"
 #include "sys/resources/catalog_view.h"
 #include "sys/app/application.h"
+#include "sys/app/application_editor_views.h"
 #include "sys/app/application_edit_inputs.h"
 #include "sys/preferences/external_player_runtime.h"
 #include "sys/audio/audio_offset_actions.h"
@@ -907,20 +908,8 @@ void validate_minimap_start_frame(application_command_state_t& application,
 
 
 
-enum class close_target_t { none, application, project, new_project, open_file };
-struct pending_close_t {
-    close_target_t target{close_target_t::none};
-    wormedit::song_id_t project;
-    std::uint64_t revision{};
-    bool save_requested{};
-    std::string project_path;
-    std::string layout_id;
-    wormedit::text_encoding_t encoding_id{};
-    std::string bms_lane_profile_id;
-    bool awaiting_encoding{};
-    // Shown in the confirmation only when a save started from it failed.
-    std::string save_failure;
-};
+using wormedit::sys::close_target_t;
+using wormedit::sys::pending_close_t;
 
 
 
@@ -1793,44 +1782,7 @@ struct application_t::implementation_t {
     // Shortcut text the command palette shows beside each command.
     wormedit::sys::command_shortcut_text_t command_menu_shortcuts{};
 
-    struct editor_views_t {
-        std::string close_feedback{};
-        workspace_edit_feedback_t workspace_edit_feedback{};
-        projection_notification_feedback_t projection_feedback{}, workspace_view_feedback{};
-        notification_history_runtime_t notification_history{};
-        wormedit::ui::notification_action_t pending_notification{};
-        sound_drop_transaction_t sound_drop_transaction{};
-        std::vector<sound_drop_batch_t> pending_resource_batches{};
-        bga_dock_runtime_t bga_dock_runtime{};
-        std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
-        std::optional<workspace_tab_t> audio_offset_drag_tab{};
-        timing_scene_cache_t timing_scene_cache{};
-        runtime::timing_edit_t timing_edit{};
-        compose_scene_cache_t compose_scene_cache{};
-        compare_scene_cache_t compare_scene_cache{};
-        frontend_workspace_view_t workspace_frame{};
-        frontend_workspace_view_t compare_first_frame{};
-        frontend_workspace_view_t compare_second_frame{};
-        player_preview_presenter_t player_preview_presenter{};
-        std::optional<editor_interaction_state_t> compose_interaction_state{};
-        viewport_input_controller_t compose_viewport_input{};
-        editor_navigation_input_controller_t compose_navigation_input{};
-        project_chart_runtime_t project_chart_runtime{};
-        chart_import_session_t chart_import{};
-        pending_close_t pending_close{};
-        inline_preview_cursor_t inline_preview_cursor{};
-        tap_timing_runtime_t tap_runtime{};
-        std::optional<tap_timing_assist_publication_t> published_assist{};
-        std::optional<std::uint64_t> last_tap_event_ns{};
-        std::uint64_t tap_epoch{}, tap_epoch_begin_ns{};
-        std::function<tap_timing_clock_t()> tap_clock;
-        timing_grid_state_t timing_grid{};
-        metadata_drop_state_t metadata_drop{};
-        // Starts true so the first frame reads the clipboard the application started with.
-        bool system_clipboard_changed{true};
-        std::uint64_t compose_viewport_last_ticks{};
-        project_portability_notice_t portability_notice{};
-    } views;
+    editor_views_t views{};
 
     tap_clock_context_t tap_clock_context{
         views.tap_epoch,
@@ -1885,29 +1837,29 @@ struct application_t::implementation_t {
     }
     auto command_inputs() -> command_dispatch_inputs_t {
         return {document_inputs(),
-                {commands, views.compose_interaction_state, views.timing_edit.stage}};
+                {commands, views.project.compose_interaction_state, views.project.timing_edit.stage}};
     }
     auto compose_actions() -> compose_action_inputs_t {
         return {document_inputs(),
-                {commands, views.compose_interaction_state},
+                {commands, views.project.compose_interaction_state},
                 compose_resource_inputs_t{
                     session.project_identity.asset_base,
                     {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
-                    {views.metadata_drop, jobs.metadata_asset_runtime}}};
+                    {views.project.metadata_drop, jobs.metadata_asset_runtime}}};
     }
     auto compose_inputs() -> compose_input_inputs_t {
         return {document_inputs(),
                 commands,
-                {views.compose_scene_cache, views.compose_viewport_input,
+                {views.project.compose_scene_cache, views.compose_viewport_input,
                  views.compose_navigation_input}};
     }
     auto metadata_inputs() -> metadata_action_inputs_t {
         return {document_inputs(),
-                {views.metadata_drop, jobs.metadata_asset_runtime, jobs.resource_copy_scheduler},
+                {views.project.metadata_drop, jobs.metadata_asset_runtime, jobs.resource_copy_scheduler},
                 session.project_identity.asset_base, views.project_chart_runtime.session_generation};
     }
     auto frontend_inputs() -> frontend_event_inputs_t {
-        return {document_inputs(), views.metadata_drop, session.project_identity,
+        return {document_inputs(), views.project.metadata_drop, session.project_identity,
                 views.system_clipboard_changed};
     }
 
@@ -1970,7 +1922,7 @@ struct application_t::implementation_t {
         else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
             const auto error = wormedit::sys::go_to_notification(platform.notifications, action.id,
                                                                  session.history, session.workspace,
-                                                                 views.compose_interaction_state);
+                                                                 views.project.compose_interaction_state);
             const auto message = error ? *error : "Moved to notification target.";
             platform.notification_sink.post(error ? wormedit::notification_severity_t::error
                                                   : wormedit::notification_severity_t::success,
@@ -2141,8 +2093,8 @@ struct application_t::implementation_t {
     void dispatch_audio_offset_lock_feedback(const wormedit::ui::workspace_action_t& action) {
         const auto was_locked = commands.project.timing_recipe.audio_offset_locked;
         const auto feedback = toggle_compose_audio_offset_lock(
-            action, session.history, session.workspace, commands, views.compose_scene_cache,
-            views.audio_offset_drag, views.audio_offset_drag_tab);
+            action, session.history, session.workspace, commands, views.project.compose_scene_cache,
+            views.project.audio_offset_drag, views.project.audio_offset_drag_tab);
         platform.notification_sink.post(was_locked !=
                                                 commands.project.timing_recipe.audio_offset_locked
                                             ? wormedit::notification_severity_t::success
@@ -2253,8 +2205,8 @@ struct application_t::implementation_t {
         const auto& action = context.action;
         auto& history = session.history;
         auto& workspace = session.workspace;
-        auto& drag = views.audio_offset_drag;
-        auto& drag_tab = views.audio_offset_drag_tab;
+        auto& drag = views.project.audio_offset_drag;
+        auto& drag_tab = views.project.audio_offset_drag_tab;
         const auto timing_locked = context.timing_locked;
         if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
             !drag->stamp.is_current(*workspace.selected_chart, action.audio_offset_drag_document_revision) ||
@@ -2330,7 +2282,7 @@ struct application_t::implementation_t {
         std::uint64_t measure{};
         if (action == external_player_action_t::play_here) {
             const auto source_measure =
-                external_source_measure(*chart, views.compose_interaction_state);
+                external_source_measure(*chart, views.project.compose_interaction_state);
             if (!source_measure)
                 return post_callback_feedback(
                     platform.notification_sink, wormedit::notification_severity_t::hint,
@@ -2365,7 +2317,7 @@ struct application_t::implementation_t {
 
     auto refresh_command_states() -> diagnostic_list_t {
         return refresh_application_command_states(command_registry, session.history,
-            session.workspace, views.compose_interaction_state, commands, session.project_identity);
+            session.workspace, views.project.compose_interaction_state, commands, session.project_identity);
     }
 
     auto invoke_current_command(const command_id_t& id, const command_focus_t& focus)
@@ -2422,7 +2374,7 @@ struct application_t::implementation_t {
                           application_primary_modifier());
             tap_event_ns.reset();
             if (!application_command_preserves_editor_gesture(dispatched.value.command,
-                    views.compose_interaction_state ? &*views.compose_interaction_state : nullptr))
+                    views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr))
                 preserves_editor_gesture = false;
             if (dispatched.value.status == command_dispatch_status_t::invoked) {
                 handled = true;
@@ -2450,16 +2402,7 @@ struct application_t::implementation_t {
                                              std::move(replacement));
         bind_project_journal();
         worm_ui_frontend_begin_project_session();
-        views.audio_offset_drag.reset();
-        views.audio_offset_drag_tab.reset();
-        views.compose_interaction_state.reset();
-        views.timing_edit = {};
-        views.timing_scene_cache = {};
-        views.compose_scene_cache = {};
-        views.timing_grid = {};
-        views.compose_viewport_input.escape();
-        views.compose_navigation_input.cancel();
-        views.metadata_drop = {};
+        views.begin_project_session();
         wormedit::sys::reset_application_project_edit_state(commands);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         post_audio_inventory_feedback(
@@ -2473,10 +2416,10 @@ struct application_t::implementation_t {
         const auto begun =
             audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
-        views.audio_offset_drag = begun.ok() ? begun.value : std::nullopt;
-        views.audio_offset_drag_tab =
-            views.audio_offset_drag ? std::optional{session.workspace.active_tab} : std::nullopt;
-        if (views.audio_offset_drag)
+        views.project.audio_offset_drag = begun.ok() ? begun.value : std::nullopt;
+        views.project.audio_offset_drag_tab =
+            views.project.audio_offset_drag ? std::optional{session.workspace.active_tab} : std::nullopt;
+        if (views.project.audio_offset_drag)
             return post_audio_offset_feedback(notification_severity_t::hint,
                                               "Dragging waveform offset; release to apply.");
         return post_audio_offset_diagnostic(begun.diagnostics,
@@ -2630,8 +2573,8 @@ struct application_t::implementation_t {
     auto clear_audio_offset_drag(std::string message,
                                  wormedit::notification_severity_t severity =
                                      wormedit::notification_severity_t::warning) -> std::string {
-        views.audio_offset_drag.reset();
-        views.audio_offset_drag_tab.reset();
+        views.project.audio_offset_drag.reset();
+        views.project.audio_offset_drag_tab.reset();
         return post_audio_offset_feedback(severity, std::move(message));
     }
 
@@ -2795,7 +2738,7 @@ struct application_t::implementation_t {
             // Clipboard menu actions use the same typed registry as shortcuts.
         } else if (dispatch_reviewed_sound_edit(
                        action, session.history, session.workspace, commands,
-                       views.compose_interaction_state, platform.notification_sink)) {
+                       views.project.compose_interaction_state, platform.notification_sink)) {
             // Properties and reviewed imports share a revision-checked sound edit boundary.
         } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
             dispatch_audio_offset_lock_feedback(action);
@@ -2807,15 +2750,15 @@ struct application_t::implementation_t {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_BGA_USAGE_ACTIVATE) {
             dispatch_bga_usage_jump(
-                action, session.history, session.workspace, views.compose_interaction_state,
+                action, session.history, session.workspace, views.project.compose_interaction_state,
                 platform.notification_sink);
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             static_cast<void>(dispatch_sound_usage_jump(
-                action, session.history, session.workspace, views.compose_interaction_state,
+                action, session.history, session.workspace, views.project.compose_interaction_state,
                 platform.notification_sink));
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
             static_cast<void>(dispatch_compare_diagnostic_jump(
-                action, session.history, session.workspace, views.compose_interaction_state,
+                action, session.history, session.workspace, views.project.compose_interaction_state,
                 platform.notification_sink));
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
                    action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
@@ -2903,21 +2846,21 @@ struct application_t::implementation_t {
             (request.kind == WORM_UI_CHART_IMPORT_NONE && !picked))
             return false;
         if (request.kind == WORM_UI_CHART_IMPORT_BEGIN)
-            sys::chart_import_begin(views.chart_import);
+            sys::chart_import_begin(views.project.chart_import);
         else if (request.kind == WORM_UI_CHART_IMPORT_CANCEL)
-            sys::chart_import_cancel(views.chart_import);
+            sys::chart_import_cancel(views.project.chart_import);
         else if (request.kind == WORM_UI_CHART_IMPORT_LOAD || picked) {
-            sys::chart_import_begin(views.chart_import);
-            sys::chart_import_load(views.chart_import,
+            sys::chart_import_begin(views.project.chart_import);
+            sys::chart_import_load(views.project.chart_import,
                                    std::filesystem::path{std::string{action.project_path}},
                                    session.history.document, session.project_identity.asset_base,
                                    &preferences.program_preferences.preferences.default_lane_keys);
         } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
-            sys::chart_import_toggle(views.chart_import, chart_id_t{request.chart_id},
+            sys::chart_import_toggle(views.project.chart_import, chart_id_t{request.chart_id},
                                      session.history.document, session.project_identity.asset_base);
         } else if (request.kind == WORM_UI_CHART_IMPORT_CONFIRM) {
-            const auto source_path = views.chart_import.path_text;
-            const auto imported = sys::chart_import_confirm(views.chart_import, session.history,
+            const auto source_path = views.project.chart_import.path_text;
+            const auto imported = sys::chart_import_confirm(views.project.chart_import, session.history,
                                                             request.document_revision,
                                                             session.project_identity.asset_base);
             if (imported.command.applied) {
@@ -2933,7 +2876,7 @@ struct application_t::implementation_t {
             } else {
                 platform.notification_sink.post(notification_severity_t::warning,
                                                 notification_source_t::document,
-                                                views.chart_import.error);
+                                                views.project.chart_import.error);
             }
         }
         return true;
@@ -2950,14 +2893,14 @@ struct application_t::implementation_t {
             return audio_runtime.preview_output.set_loop_region(std::nullopt);
         const auto* chart = selected_chart(session.history, session.workspace);
         if (session.workspace.active_tab != wormedit::workspace_tab_t::compose || !chart ||
-            chart->id != chart_id || !views.compose_interaction_state ||
-            views.compose_interaction_state->chart != chart_id ||
-            !views.compose_interaction_state->retained_selection_range)
+            chart->id != chart_id || !views.project.compose_interaction_state ||
+            views.project.compose_interaction_state->chart != chart_id ||
+            !views.project.compose_interaction_state->retained_selection_range)
             return false;
         if (audio_runtime.preview_state.compile_if_needed(*chart, session.history.document, audio_runtime.project_sources))
             return false;
         auto region = loop_region_for_selection(
-            session.history, *chart, *views.compose_interaction_state->retained_selection_range, begin_row, end_row);
+            session.history, *chart, *views.project.compose_interaction_state->retained_selection_range, begin_row, end_row);
         if (region) {
             region->begin_frame = audio_runtime.preview_state.collapsed_frame(region->begin_frame);
             region->end_frame = audio_runtime.preview_state.collapsed_frame(region->end_frame);
@@ -2995,10 +2938,10 @@ struct application_t::implementation_t {
             }
         }
         views.inline_preview_cursor.capture(
-            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+            views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr);
         views.inline_preview_cursor.capture_follow_anchor(
             session.history,
-            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+            views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr);
         return true;
     }
 #endif
@@ -3015,9 +2958,9 @@ struct application_t::implementation_t {
     }
 
     void finish_compose_navigation_travel() {
-        if (views.compose_interaction_state)
-            views.compose_scene_cache.navigation_travel.finish(
-                *views.compose_interaction_state, session.history.document.revision);
+        if (views.project.compose_interaction_state)
+            views.project.compose_scene_cache.navigation_travel.finish(
+                *views.project.compose_interaction_state, session.history.document.revision);
     }
 
     auto process_compose_frame_action(
@@ -3037,16 +2980,16 @@ struct application_t::implementation_t {
         if (!session.project_identity.session_loaded)
             return shortcut_handled;
         if (shortcut_handled && !preserves_editor_gesture) {
-            if (views.compose_interaction_state && views.compose_interaction_state->is_pending()) {
+            if (views.project.compose_interaction_state && views.project.compose_interaction_state->is_pending()) {
                 (void)wormedit::dispatch_editor_action(session.history,
-                                                      *views.compose_interaction_state,
+                                                      *views.project.compose_interaction_state,
                                                       wormedit::cancel_editor_gesture_action_t{});
             }
-            views.audio_offset_drag.reset();
-            views.audio_offset_drag_tab.reset();
-            views.compose_scene_cache.clear_beat_fit_capture();
+            views.project.audio_offset_drag.reset();
+            views.project.audio_offset_drag_tab.reset();
+            views.project.compose_scene_cache.clear_beat_fit_capture();
             finish_compose_navigation_travel();
-            views.compose_scene_cache.timing.offset_fit_drag.reset();
+            views.project.compose_scene_cache.timing.offset_fit_drag.reset();
         }
         dispatch_bgm_mix_frame_action(action, shortcut_handled);
         if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
@@ -3054,10 +2997,10 @@ struct application_t::implementation_t {
              action.compose_has_pointer_hover ||
              (session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
               action.compose_input_chart_id.value != 0)) &&
-            views.compose_interaction_state) {
+            views.project.compose_interaction_state) {
             auto audition_scope = commands.project.auditions.input_scope(audition_inputs());
             (void)dispatch_compose_input_action(action, compose_inputs(),
-                                                *views.compose_interaction_state,
+                                                *views.project.compose_interaction_state,
                                                 viewport_delta_seconds, true);
         }
         {
@@ -3067,14 +3010,14 @@ struct application_t::implementation_t {
         if (session.workspace.active_tab != wormedit::workspace_tab_t::compose) {
             commands.project.semantic_layer.note_layer_menu_row_count = 0;
             views.compose_viewport_input.escape();
-            views.compose_scene_cache.frame.viewport_autoscroll_active = false;
+            views.project.compose_scene_cache.frame.viewport_autoscroll_active = false;
             finish_compose_navigation_travel();
             views.compose_navigation_input.cancel();
         } else if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-                   views.compose_interaction_state) {
+                   views.project.compose_interaction_state) {
             (void)dispatch_compose_navigation_actions(
                 views.compose_navigation_input.advance(static_cast<std::uint64_t>(SDL_GetTicks())),
-                session.history, *views.compose_interaction_state, &commands,
+                session.history, *views.project.compose_interaction_state, &commands,
                 &platform.notification_sink);
         }
         return shortcut_handled;
@@ -3100,7 +3043,7 @@ struct application_t::implementation_t {
 
     auto nudge_audio_offset_drag(AudioOffsetDragContext& context) -> std::string {
         using namespace wormedit;
-        if (views.audio_offset_drag) {
+        if (views.project.audio_offset_drag) {
             return post_audio_offset_feedback(
                 notification_severity_t::warning,
                 "Finish or cancel the active audio offset drag before nudging.");
@@ -3154,11 +3097,11 @@ struct application_t::implementation_t {
             const auto chart = session.history.read_chart(action.timing_chart_id);
             const auto denominator =
                 chart == nullptr
-                    ? views.timing_grid.active_denominator
+                    ? views.project.timing_grid.active_denominator
                     : wormedit::effective_edit_snap_grid(
-                          *chart, {.denominator = views.timing_grid.active_denominator},
+                          *chart, {.denominator = views.project.timing_grid.active_denominator},
                           application_state.project.compose_view.edit_snap_enabled).denominator;
-            views.timing_edit.dispatch(
+            views.project.timing_edit.dispatch(
                 action, document_inputs(), application_state.project.timing_recipe.timing_locked,
                 denominator);
             return true;
@@ -3172,40 +3115,40 @@ struct application_t::implementation_t {
         if (session.workspace.selected_chart) {
             const auto chart = session.history.read_chart(*session.workspace.selected_chart);
             if (chart != nullptr) {
-                views.timing_grid = refresh_timing_grid(*chart, commands);
+                views.project.timing_grid = refresh_timing_grid(*chart, commands);
             }
         }
-        if (views.audio_offset_drag &&
-            (!views.audio_offset_drag_tab ||
-             session.workspace.active_tab != *views.audio_offset_drag_tab ||
+        if (views.project.audio_offset_drag &&
+            (!views.project.audio_offset_drag_tab ||
+             session.workspace.active_tab != *views.project.audio_offset_drag_tab ||
              !session.workspace.selected_chart ||
-             !views.audio_offset_drag->stamp.is_current(session.history.document,
+             !views.project.audio_offset_drag->stamp.is_current(session.history.document,
                  *session.workspace.selected_chart, document_identity_policy_t::revision_only) ||
              commands.audio_offset_edits_locked())) {
-            views.audio_offset_drag.reset();
-            views.audio_offset_drag_tab.reset();
+            views.project.audio_offset_drag.reset();
+            views.project.audio_offset_drag_tab.reset();
         }
-        if (views.compose_scene_cache.timing.beat_fit_drag &&
+        if (views.project.compose_scene_cache.timing.beat_fit_drag &&
             (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
              !session.workspace.selected_chart ||
-             !views.compose_scene_cache.timing.beat_fit_drag->stamp.is_current(
+             !views.project.compose_scene_cache.timing.beat_fit_drag->stamp.is_current(
                  session.history.document, *session.workspace.selected_chart,
                  document_identity_policy_t::revision_only) ||
              session.workspace.transport.audio_asset !=
-                 views.compose_scene_cache.timing.beat_fit_asset ||
+                 views.project.compose_scene_cache.timing.beat_fit_asset ||
              commands.project.timing_recipe.timing_locked)) {
-            views.compose_scene_cache.clear_beat_fit_capture();
+            views.project.compose_scene_cache.clear_beat_fit_capture();
         }
-        if (views.compose_scene_cache.timing.offset_fit_drag &&
+        if (views.project.compose_scene_cache.timing.offset_fit_drag &&
             (session.workspace.active_tab != wormedit::workspace_tab_t::compose ||
              !session.workspace.selected_chart ||
-             !views.compose_scene_cache.timing.offset_fit_drag->beat.stamp.is_current(
+             !views.project.compose_scene_cache.timing.offset_fit_drag->beat.stamp.is_current(
                  session.history.document, *session.workspace.selected_chart,
                  document_identity_policy_t::revision_only) ||
              session.workspace.transport.audio_asset !=
-                 views.compose_scene_cache.timing.offset_fit_drag->asset ||
+                 views.project.compose_scene_cache.timing.offset_fit_drag->asset ||
              commands.audio_offset_edits_locked())) {
-            views.compose_scene_cache.timing.offset_fit_drag.reset();
+            views.project.compose_scene_cache.timing.offset_fit_drag.reset();
         }
     }
 
@@ -3216,9 +3159,9 @@ struct application_t::implementation_t {
         // A close request ends transient gestures; cancellation returns a usable editor.
         views.compose_navigation_input.cancel();
         views.compose_viewport_input.escape();
-        if (views.compose_interaction_state)
+        if (views.project.compose_interaction_state)
             (void)wormedit::dispatch_editor_action(session.history,
-                                                   *views.compose_interaction_state,
+                                                   *views.project.compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
         pending = {.target = target,
                    .project = session.history.document.id,
@@ -3260,7 +3203,7 @@ struct application_t::implementation_t {
         auto& runtime = views.project_chart_runtime;
         auto& history = session.history;
         auto& workspace = session.workspace;
-        auto& interaction = views.compose_interaction_state;
+        auto& interaction = views.project.compose_interaction_state;
         auto& application = commands;
         auto& notifications = platform.notification_sink;
         auto& loaded = session.project_identity.session_loaded;
@@ -3423,7 +3366,7 @@ struct application_t::implementation_t {
         auto& program = preferences.program_preferences;
         auto& history = session.history;
         auto& workspace = session.workspace;
-        auto& compose_interaction_state = views.compose_interaction_state;
+        auto& compose_interaction_state = views.project.compose_interaction_state;
         auto& application_command_state = commands;
         auto& notifications = platform.notification_sink;
 
@@ -3453,15 +3396,15 @@ struct application_t::implementation_t {
                                                         compose_interaction_state,
                                                         application_command_state, notifications);
         if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
-            views.tap_runtime.toggle();
-            (void)views.tap_runtime.observe(views.tap_clock());
+            views.project.tap_runtime.toggle();
+            (void)views.project.tap_runtime.observe(views.tap_clock());
             return wormedit::dispatch_outcome_t{.value = true};
         }
         if (command->kind == wormedit::sys::application_command_kind_t::timing_tap) {
             const auto clock = views.tap_clock();
             const auto result =
-                views.tap_runtime.tap(tap_event_ns.value_or(clock.observed_ns), clock);
-            const auto state = views.tap_runtime.state();
+                views.project.tap_runtime.tap(tap_event_ns.value_or(clock.observed_ns), clock);
+            const auto state = views.project.tap_runtime.state();
             if (!state.status.empty()) {
                 const bool guidance = result == wormedit::sys::tap_timing_result_t::ignored ||
                                       result == wormedit::sys::tap_timing_result_t::not_playing;
@@ -3533,7 +3476,7 @@ struct application_t::implementation_t {
         display_preferences_update_t update = display_preferences_update_t::saved) -> std::string {
         (void)configure_field_skin(active_field_skin_layout(session.history.document,
                                                            session.workspace,
-                                                           views.compose_interaction_state),
+                                                           views.project.compose_interaction_state),
                                    preferences.options_runtime, display, commands);
         worm_ui_frontend_set_snap_colored_grid(display.snap_colored_grid);
         worm_ui_frontend_set_snap_grid_opacity(display.snap_grid_opacity_percent);
@@ -3793,7 +3736,7 @@ struct application_t::implementation_t {
 
     void publish_tap_assist() {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        publish_tap_assist_grid(views.tap_runtime, audio_runtime.preview_session,
+        publish_tap_assist_grid(views.project.tap_runtime, audio_runtime.preview_session,
                                 views.published_assist);
 #endif
     }
@@ -3801,8 +3744,8 @@ struct application_t::implementation_t {
     auto open_lane_keys() -> dispatch_outcome_t {
         preferences.shortcut_editor.capture.reset();
         const auto chart = session.workspace.selected_chart.value_or(chart_id_t{});
-        const auto cursor = views.compose_interaction_state
-            ? views.compose_interaction_state->cursor : local_position_t{};
+        const auto cursor = views.project.compose_interaction_state
+            ? views.project.compose_interaction_state->cursor : local_position_t{};
         if (preferences.lane_keys.open(session.history.document, chart, cursor,
                                        preferences.program_preferences.preferences))
             return {.value = true};
@@ -3863,9 +3806,9 @@ struct application_t::implementation_t {
         commands.invalidate_playing_seek_records();
         const auto compose_cursor =
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                    views.compose_interaction_state && session.workspace.selected_chart &&
-                    views.compose_interaction_state->chart == *session.workspace.selected_chart
-                ? &*views.compose_interaction_state
+                    views.project.compose_interaction_state && session.workspace.selected_chart &&
+                    views.project.compose_interaction_state->chart == *session.workspace.selected_chart
+                ? &*views.project.compose_interaction_state
                 : nullptr;
         if (!audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused &&
             compose_cursor && compose_cursor->virtual_bms_cursor_row)
@@ -3903,15 +3846,15 @@ struct application_t::implementation_t {
     auto on_transport_seek(std::uint64_t frame) -> compose_action_outcome_t {
         if (!audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused &&
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-            views.compose_interaction_state && session.workspace.selected_chart &&
-            views.compose_interaction_state->chart == *session.workspace.selected_chart) {
-            if (views.compose_interaction_state->is_pending())
+            views.project.compose_interaction_state && session.workspace.selected_chart &&
+            views.project.compose_interaction_state->chart == *session.workspace.selected_chart) {
+            if (views.project.compose_interaction_state->is_pending())
                 return compose_action_outcome_t::blocked(
                     "Finish or cancel the active Compose gesture before seeking.",
                     wormedit::notification_source_t::input);
             return wormedit::sys::seek_stopped_compose_transport(session.history,
-                                                                 *views.compose_interaction_state,
-                                                                 views.compose_scene_cache, audio_runtime.preview_state.source_frame(frame));
+                                                                 *views.project.compose_interaction_state,
+                                                                 views.project.compose_scene_cache, audio_runtime.preview_state.source_frame(frame));
         }
         const auto result = audio_runtime.preview_state.seek(
             frame, session.history.document, session.workspace, audio_runtime.audition_output,
@@ -3995,9 +3938,9 @@ struct application_t::implementation_t {
             !audio_runtime.preview_output.playing() && !audio_runtime.preview_state.paused;
         const auto* compose_cursor =
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                    views.compose_interaction_state && session.workspace.selected_chart &&
-                    views.compose_interaction_state->chart == *session.workspace.selected_chart
-                ? &*views.compose_interaction_state
+                    views.project.compose_interaction_state && session.workspace.selected_chart &&
+                    views.project.compose_interaction_state->chart == *session.workspace.selected_chart
+                ? &*views.project.compose_interaction_state
                 : nullptr;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
@@ -4037,7 +3980,7 @@ struct application_t::implementation_t {
                                          audio_runtime.preview_output);
         const bool restored = views.inline_preview_cursor.restore(
             session.history,
-            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
+            views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr);
         return post_callback_feedback(
             platform.notification_sink, wormedit::notification_severity_t::hint,
             wormedit::notification_source_t::audio,
@@ -4187,11 +4130,11 @@ struct application_t::implementation_t {
 
     void poll_recipe_evaluation() {
         auto& state = commands.project.timing_recipe;
-        if (!views.compose_interaction_state) {
+        if (!views.project.compose_interaction_state) {
             if (state.evaluation) state.evaluation->cancel();
             return;
         }
-        const auto* chart = session.history.read_chart(views.compose_interaction_state->chart);
+        const auto* chart = session.history.read_chart(views.project.compose_interaction_state->chart);
         if (!chart) {
             if (state.evaluation) state.evaluation->cancel();
             return;
@@ -4222,8 +4165,8 @@ struct application_t::implementation_t {
     void poll_generator_jobs() {
         auto& runtime = commands.project.generator.runtime;
         if (!runtime) return;
-        if (!views.compose_interaction_state) { runtime->cancel(); return; }
-        runtime->poll(session.history, views.compose_interaction_state->chart);
+        if (!views.project.compose_interaction_state) { runtime->cancel(); return; }
+        runtime->poll(session.history, views.project.compose_interaction_state->chart);
     }
 
     auto poll_frame_jobs() -> double {
@@ -4281,11 +4224,11 @@ struct application_t::implementation_t {
             platform.notification_sink, expected_presentation_ns);
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         audio_runtime.waveform_runtime.service(
-            session.history.document, session.workspace, views.compose_scene_cache,
-            views.compose_interaction_state ? &*views.compose_interaction_state : nullptr);
-        views.compose_scene_cache.timing.fit_waveform =
+            session.history.document, session.workspace, views.project.compose_scene_cache,
+            views.project.compose_interaction_state ? &*views.project.compose_interaction_state : nullptr);
+        views.project.compose_scene_cache.timing.fit_waveform =
             audio_runtime.waveform_runtime.waveform_analysis();
-        views.compose_scene_cache.timing.fit_waveform_asset =
+        views.project.compose_scene_cache.timing.fit_waveform_asset =
             audio_runtime.waveform_runtime.waveform_asset();
 #endif
     }
@@ -4294,7 +4237,7 @@ struct application_t::implementation_t {
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);
         return configure_field_skin(active_field_skin_layout(session.history.document,
                                                              session.workspace,
-                                                             views.compose_interaction_state),
+                                                             views.project.compose_interaction_state),
                                     preferences.options_runtime,
                                     preferences.options_runtime.visible
                                         ? preferences.options_runtime.draft.display
@@ -4309,23 +4252,23 @@ struct application_t::implementation_t {
             const auto previous_authoring_chart = commands.project.bms_program.content_chart();
             commands.project.bms_program.synchronize(session.history, session.workspace.selected_chart);
             if (previous_authoring_chart != commands.project.bms_program.content_chart()) {
-                if (views.compose_interaction_state) views.compose_interaction_state->clear_authoring_selection();
+                if (views.project.compose_interaction_state) views.project.compose_interaction_state->clear_authoring_selection();
                 session.history.selections = {};
             }
-            cancel_stale_compose_interaction(views.compose_interaction_state, session.history,
+            cancel_stale_compose_interaction(views.project.compose_interaction_state, session.history,
                                              session.workspace);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             if (session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                views.compose_interaction_state &&
+                views.project.compose_interaction_state &&
                 commands.project.transport.preview_playhead_absolute_row &&
                 (audio_runtime.preview_output.playing() || audio_runtime.preview_state.paused)) {
                 wormedit::sys::frame_phase_scope_t follow(
                     wormedit::sys::frame_phase_t::workspace_follow);
                 (void)wormedit::sys::follow_compose_playhead(
-                    session.history, *views.compose_interaction_state,
+                    session.history, *views.project.compose_interaction_state,
                     *commands.project.transport.preview_playhead_absolute_row,
                     audio_runtime.preview_output.playing(),
-                    retained_compose_geometry(views.compose_scene_cache),
+                    retained_compose_geometry(views.project.compose_scene_cache),
                     views.inline_preview_cursor.follow_anchor_fraction.value_or(
                         commands.preferences.editor_preferences.playhead_anchor_percent / 100.0));
             }
@@ -4339,20 +4282,20 @@ struct application_t::implementation_t {
                 views.project_chart_runtime.session_generation,
                 commands.project.bms_program.content_chart());
         }
-        views.timing_edit.cancel_if_stale(session.history, session.workspace, commands);
+        views.project.timing_edit.cancel_if_stale(session.history, session.workspace, commands);
     }
 
     void build_frame_notifications(wormedit::ui::notification_view_t& view, notification_time_t now) {
         build_application_notifications_view(
-            view, platform.notifications, now, views.compose_interaction_state,
+            view, platform.notifications, now, views.project.compose_interaction_state,
             views.notification_history, session.history.document,
             views.project_chart_runtime.session_generation);
     }
 
     auto prepare_bound_frame_view(const workspace_view_t& model) -> frontend_workspace_view_t& {
         prepare_bound_workspace_frame();
-        prepare_tap_proposal(views.tap_runtime, views.tap_clock, session.history.document,
-                             commands.audio_offset_edits_locked(), views.compose_scene_cache);
+        prepare_tap_proposal(views.project.tap_runtime, views.tap_clock, session.history.document,
+                             commands.audio_offset_edits_locked(), views.project.compose_scene_cache);
         wormedit::sys::compose_bga_move_preview_input_t bga_move_preview{};
         bga_move_preview.project_id = session.history.document.id.value;
         worm_ui_frontend_bga_move_preview(&bga_move_preview.chart_id,
@@ -4366,17 +4309,17 @@ struct application_t::implementation_t {
             .recovery_scan_configured = session.recovery_scan_configured,
             .project_session_generation = views.project_chart_runtime.session_generation,
             .asset_base = session.project_identity.asset_base,
-            .timing_grid = views.timing_grid,
-            .timing_scene_cache = views.timing_scene_cache,
-            .timing_edit = views.timing_edit,
-            .compose_scene_cache = views.compose_scene_cache,
+            .timing_grid = views.project.timing_grid,
+            .timing_scene_cache = views.project.timing_scene_cache,
+            .timing_edit = views.project.timing_edit,
+            .compose_scene_cache = views.project.compose_scene_cache,
             .player_preview_presenter = views.player_preview_presenter,
             .application_command_state = commands,
-            .compose_interaction_state = views.compose_interaction_state,
+            .compose_interaction_state = views.project.compose_interaction_state,
             .bga_move_preview = bga_move_preview,
-            .audio_offset_drag = views.audio_offset_drag,
-            .audio_offset_drag_tab = views.audio_offset_drag_tab,
-            .metadata_drop = views.metadata_drop,
+            .audio_offset_drag = views.project.audio_offset_drag,
+            .audio_offset_drag_tab = views.project.audio_offset_drag_tab,
+            .metadata_drop = views.project.metadata_drop,
             .metadata_asset_runtime = jobs.metadata_asset_runtime,
             .window = platform.lifetime.runtime.window,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
@@ -4415,7 +4358,7 @@ struct application_t::implementation_t {
         flattened.view.compose.export_confirmation_revision = export_confirmation.document_revision;
         flattened.view.compose.export_confirmation_message = export_confirmation.message;
         flattened.view.compose.export_confirmation_detail = export_confirmation.detail;
-        validate_minimap_start_frame(commands, session.history, views.compose_interaction_state);
+        validate_minimap_start_frame(commands, session.history, views.project.compose_interaction_state);
         flattened.view.minimap_click_moves_paused_playhead =
             commands.preferences.minimap_click_moves_paused_playhead;
         flattened.view.transport_rate_index =
@@ -4443,7 +4386,7 @@ struct application_t::implementation_t {
         flattened.view.compose.preview_mix_available =
             static_cast<bool>(commands.services.transport_set_preview_mix);
         flattened.view.metronome_count_in = commands.metronome_settings().count_in;
-        flattened.view.chart_import.refill(views.chart_import, session.history.document.revision);
+        flattened.view.chart_import.refill(views.project.chart_import, session.history.document.revision);
         flattened.view.close_confirmation = close_confirmation_view(
             views.pending_close, session.project_identity.native_project_loaded &&
                                      !session.project_identity.active_project_path.empty());
@@ -4453,7 +4396,7 @@ struct application_t::implementation_t {
             !session.project_identity.active_project_path.empty();
         if (flattened.view.setup.visible)
             flattened.view.setup.settings.refill(session.history.document, preferences.program_preferences.preferences);
-        build_tap_timing_view(views.tap_runtime, session.history.document, views.tap_clock,
+        build_tap_timing_view(views.project.tap_runtime, session.history.document, views.tap_clock,
                            command_registry, flattened.view);
         publish_tap_assist();
         wormedit::sys::build_recent_files_view(preferences.program_preferences, flattened.view);
@@ -4523,7 +4466,7 @@ struct application_t::implementation_t {
             1024ULL * 1024ULL);
 #endif
         const auto tap_applied =
-            dispatch_tap_panel_action(views.tap_runtime, action.tap_timing, session.history,
+            dispatch_tap_panel_action(views.project.tap_runtime, action.tap_timing, session.history,
                                       views.tap_clock(), commands.audio_offset_edits_locked());
         post_tap_apply_feedback(tap_applied, platform.notification_sink);
         wormedit::sys::apply_timing_settings_action(commands, action.timing_settings);
@@ -4594,7 +4537,7 @@ struct application_t::implementation_t {
         auto action = worm_ui_frontend_compose(&flattened.view);
         refresh_sound_selection_context(action, commands);
         dispatch_menu_command(action);
-        retain_compose_hover_timing(views.compose_scene_cache, flattened.view, action);
+        retain_compose_hover_timing(views.project.compose_scene_cache, flattened.view, action);
         retain_compose_bgm_window_capture(commands, flattened.view, action);
         views.pending_notification = action.notifications;
         wormedit::sys::frame_timing().restore(frame_nuklear_previous);

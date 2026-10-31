@@ -902,6 +902,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_frame_timing_tests
         ../src/sys/app/application_frame_view.cpp
+        ../src/sys/audio/tap_timing_runtime.cpp
         ../src/sys/compose/views/compose_waveform_overlays.cpp
         ../src/sys/project/workspace_frame_view.cpp
         ../src/sys/audio/player_preview_presenter.cpp

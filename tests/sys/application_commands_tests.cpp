@@ -4,6 +4,7 @@
 #include "../support/stale_action_assertions.h"
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "../sys/application_dispatch_fixture.h"
+#include "sys/app/application_editor_views.h"
 #endif
 #include "compose_area_dispatch_fixture.h"
 #include "sys/commands/application_command_dispatch.h"
@@ -3449,6 +3450,119 @@ TEST_CASE("Registered BGM move consumes chart order and rejects Timing focus", "
 #endif
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+namespace {
+auto project_view_reset_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    return {.id = song_id_t{1}, .revision = 2,
+        .charts = {{.id = chart_id_t{1}, .divisions_per_standard_measure = 960,
+            .measures = {{.id = measure_id_t{10}}, {.id = measure_id_t{11}}},
+            .lane_layouts = {{.id = object_id_t{20}, .position = {measure_id_t{10}, 0},
+                .layout = {.profile_id = "project-reset", .lanes = {{.id = lane_id_t{30}, .name = "Key"}}}}},
+            .bpms = {{.id = object_id_t{21}, .position = {measure_id_t{10}, 0},
+                .beats_per_minute = {120, 1}}}}}};
+}
+
+void prepare_project_view_taps(tap_timing_runtime_t& runtime) {
+    runtime.set_visible(true);
+    runtime.set_bpm_choice(wormedit::tap_bpm_choice_t::nearest_half);
+    for (std::uint64_t i = 0; i < 10; ++i) {
+        const auto event = 2'000'000'000 + i * 500'000'000;
+        const tap_timing_clock_t clock{.chart = 1, .revision = 2, .asset = 3, .epoch = 4,
+            .epoch_begin_ns = 1'000'000'000, .observed_ns = event,
+            .source_frame = 88'200 + i * 22'050, .playing = true};
+        require_transient_transport(runtime.tap(event, clock) == tap_timing_result_t::accepted);
+    }
+    runtime.prepare_apply(project_view_reset_song(), false);
+    require_transient_transport(runtime.state().estimate.has_value());
+    require_transient_transport(runtime.apply_proposal().has_value());
+    require_transient_transport(runtime.assist_publication().grid.has_value());
+}
+} // namespace
+
+TEST_CASE("Project replacement resets the whole Tap assistant", "[sys][ownership][project-view-reset]") {
+    editor_views_t views;
+    prepare_project_view_taps(views.project.tap_runtime);
+
+    views.begin_project_session();
+
+    const auto& tap = views.project.tap_runtime;
+    check_transient_transport(!tap.visible());
+    check_transient_transport(tap.bpm_choice() == wormedit::tap_bpm_choice_t::raw);
+    check_transient_transport(tap.state().tap_count == 0);
+    check_transient_transport(!tap.state().estimate);
+    check_transient_transport(!tap.state().playing);
+    check_transient_transport(!tap.apply_proposal());
+    check_transient_transport(!tap.assist_publication().active);
+    check_transient_transport(!tap.assist_publication().grid);
+    // Even reopening with the same chart/revision cannot expose the old proposal.
+    views.project.tap_runtime.set_visible(true);
+    views.project.tap_runtime.prepare_apply(project_view_reset_song(), false);
+    check_transient_transport(!tap.apply_proposal());
+}
+
+TEST_CASE("Project replacement closes and clears loaded chart import", "[sys][ownership][project-view-reset]") {
+    editor_views_t views;
+    auto& import = views.project.chart_import;
+    import.open = true;
+    import.path_text = "source.bms";
+    import.source = project_view_reset_song();
+    import.source_base = "source";
+    import.selected = {wormedit::chart_id_t{1}};
+    import.proposal = wormedit::plan_chart_import(project_view_reset_song(), *import.source,
+        {.source_base = import.source_base}, import.selected);
+    require_transient_transport(!import.proposal.difficulties.empty());
+    import.error = "Previous import error";
+    import.summary = "Previous import preview";
+    import.row_labels = {"Selected difficulty"};
+
+    views.begin_project_session();
+
+    check_transient_transport(!import.open);
+    check_transient_transport(import.path_text.empty());
+    check_transient_transport(!import.source);
+    check_transient_transport(import.source_base.empty());
+    check_transient_transport(import.selected.empty());
+    check_transient_transport(import.proposal.difficulties.empty());
+    check_transient_transport(import.error.empty());
+    check_transient_transport(import.summary.empty());
+    check_transient_transport(import.row_labels.empty());
+}
+
+TEST_CASE("Project replacement retains inline preview and cancels input captures",
+          "[sys][ownership][project-view-reset]") {
+    using namespace wormedit;
+    editor_views_t views;
+    editor_interaction_state_t interaction;
+    interaction.chart = chart_id_t{1};
+    interaction.cursor = {measure_id_t{10}, 120};
+    interaction.cursor_subrow = 0.25;
+    interaction.viewport_scroll_pixels = 80.0;
+    views.inline_preview_cursor.capture(&interaction);
+    views.inline_preview_cursor.follow_anchor_fraction = 0.3;
+    const auto pose = views.inline_preview_cursor.anchor->pose;
+    views.project.compose_interaction_state = interaction;
+    views.project.metadata_drop.music_path = "previous.wav";
+    views.project.timing_grid.active_denominator = 7;
+    views.compose_viewport_input.set_settings({.coarse_wheel_pixels_per_step = 123.0});
+    views.compose_viewport_input.middle_click(viewport_pane_t::chart, 10.0, 20.0);
+    views.compose_navigation_input.set_settings({.initial_repeat_delay_milliseconds = 234});
+    (void)views.compose_navigation_input.press(editor_navigation_action_t::cursor_forward, 0);
+
+    views.begin_project_session();
+
+    require_transient_transport(views.inline_preview_cursor.anchor.has_value());
+    check_transient_transport(views.inline_preview_cursor.anchor->chart == interaction.chart);
+    check_transient_transport(views.inline_preview_cursor.anchor->pose == pose);
+    check_transient_transport(views.inline_preview_cursor.follow_anchor_fraction == 0.3);
+    check_transient_transport(!views.project.compose_interaction_state);
+    check_transient_transport(views.project.metadata_drop.music_path.empty());
+    check_transient_transport(views.project.timing_grid.active_denominator == 0);
+    check_transient_transport(!views.compose_viewport_input.is_autoscroll_active());
+    check_transient_transport(!views.compose_navigation_input.is_active());
+    check_transient_transport(views.compose_viewport_input.settings().coarse_wheel_pixels_per_step == 123.0);
+    check_transient_transport(views.compose_navigation_input.settings().initial_repeat_delay_milliseconds == 234);
+}
+
 TEST_CASE("Project reset preserves display-derived scratch presentation", "[sys][ownership]") {
     application_command_state_t state;
     wormedit::display_preferences_t display;

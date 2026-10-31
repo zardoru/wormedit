@@ -9660,6 +9660,102 @@ TEST_CASE("Selected SV recipe controls appear before general inspector tools",
     CHECK(recipe->second < quantize->second);
 }
 
+TEST_CASE("Compose Copy ignores geometric areas and pastes only selected objects",
+          "[frontend-state][event-harness][clipboard][geometric-copy]") {
+    // Objects alone, retained area plus objects, latched area plus objects,
+    // latched area alone, an unfinished range plus objects, and retained area alone.
+    const auto selection = GENERATE(0, 1, 2, 3, 4, 5);
+    const auto shortcut = GENERATE(false, true);
+    const auto cancel_paste = GENERATE(false, true);
+    t422_fixture_t fixture{t422_song()};
+    fixture.application.project.clipboard.chart_clipboard = chart_clipboard_t{.source_song = song_id_t{999}};
+    auto& state = *fixture.interaction;
+    state.selected_notes = {object_id_t{101}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    if (selection != 0) {
+        state.retained_selection_range = position_span_t{{measure_id_t{1}, 0}, {measure_id_t{2}, 480}};
+        state.retained_canvas_selection_range = canvas_row_span_t{0, 1440};
+    }
+    if (selection == 2 || selection == 3) {
+        (void)fixture.dispatch(ctrl_space_frame(fixture.harness));
+        (void)fixture.dispatch(ctrl_space_frame(fixture.harness, false));
+        expect_t422(state.has_latched_range());
+    }
+    if (selection == 4)
+        expect_t422(dispatch_editor_action(fixture.history, state,
+            space_range_selection_action_t{}).accepted);
+    if (selection == 3 || selection == 5) {
+        state.selected_notes.clear();
+        state.selected_objects.clear();
+    }
+    fixture.project();
+    const bool available = selection < 3;
+    expect_t422(fixture.harness.view().compose.clipboard_copy_available == available);
+    const auto revision = fixture.history.document.revision;
+    const auto selected = state.selected_objects;
+    std::optional<timing_lane_pseudonote_outcome_t> stage;
+    const command_dispatch_inputs_t environment{
+        .document = {.history = fixture.history, .workspace = *fixture.binding.value,
+                     .notifications = fixture.sink},
+        .editor = {.commands = fixture.application, .retained = fixture.interaction,
+                   .timing_stage = stage}};
+    auto registry = command_registry_t::from([environment](const command_invocation_context_t& context) {
+        return invoke_application_command(*parse_application_command(context.command.value), environment);
+    });
+    (void)update_command_state(registry, {"edit.copy"},
+        fixture.harness.view().compose.clipboard_copy_available, std::nullopt);
+    const auto copy = key_event(SDL_EVENT_KEY_DOWN, SDLK_C, SDL_SCANCODE_C);
+    const auto frame = fixture.harness.frame(std::span{&copy, 1}, SDL_KMOD_CTRL);
+    const auto copied = shortcut ? route_harness_shortcut(frame.get(), registry)
+        : invoke_command(registry, {"edit.copy"}, {.workspace_active = true,
+            .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
+    expect_t422(copied.value.is_invoked() == available);
+    expect_t422(fixture.history.document.revision == revision);
+    expect_t422(fixture.history.undo.empty());
+    expect_t422(state.selected_objects == selected);
+    if (!available) {
+        expect_t422(fixture.application.project.clipboard.chart_clipboard.has_value());
+        expect_t422(fixture.application.project.clipboard.chart_clipboard->source_song == song_id_t{999});
+        return;
+    }
+    const auto& clipboard = fixture.application.project.clipboard.chart_clipboard;
+    expect_t422(clipboard.has_value());
+    expect_t422(clipboard->objects.size() == 1);
+    expect_t422(std::get<note_t>(clipboard->objects.front().payload).id == object_id_t{101});
+    expect_t422(clipboard->recipes.empty());
+    expect_t422(!state.is_pending());
+    const auto copy_up = key_event(SDL_EVENT_KEY_UP, SDLK_C, SDL_SCANCODE_C);
+    (void)fixture.harness.frame(std::span{&copy_up, 1});
+    state.cursor = {measure_id_t{2}, 480};
+    fixture.project();
+    expect_t422(fixture.harness.view().compose.clipboard_paste_available);
+    (void)update_command_state(registry, {"edit.paste"},
+        fixture.harness.view().compose.clipboard_paste_available, std::nullopt);
+    const auto paste = key_event(SDL_EVENT_KEY_DOWN, SDLK_V, SDL_SCANCODE_V);
+    expect_t422(route_harness_shortcut(fixture.harness.frame(std::span{&paste, 1}, SDL_KMOD_CTRL).get(), registry).value.is_invoked());
+    expect_t422(fixture.application.project.clipboard.paste_session.has_value());
+    fixture.project();
+    expect_t422(fixture.harness.view().compose.paste_ghosts.size() == 1);
+    const auto paste_up = key_event(SDL_EVENT_KEY_UP, SDLK_V, SDL_SCANCODE_V);
+    (void)fixture.harness.frame(std::span{&paste_up, 1});
+    const auto terminal = key_event(SDL_EVENT_KEY_DOWN,
+        cancel_paste ? SDLK_ESCAPE : SDLK_RETURN, cancel_paste ? SDL_SCANCODE_ESCAPE : SDL_SCANCODE_RETURN);
+    (void)fixture.dispatch(fixture.harness.frame(std::span{&terminal, 1}));
+    expect_t422(!fixture.application.project.clipboard.paste_session);
+    if (cancel_paste) {
+        expect_t422(fixture.history.undo.empty());
+        expect_t422(fixture.history.document.revision == revision);
+        return;
+    }
+    expect_t422(fixture.history.undo.size() == 1);
+    const auto& notes = fixture.history.document.charts.front().measures[1].notes;
+    expect_t422(notes.size() == 2);
+    expect_t422(notes.back().position == local_position_t{measure_id_t{2}, 480});
+    expect_t422(notes.back().id != object_id_t{101});
+    expect_t422(undo_document_command(fixture.history));
+    expect_t422(fixture.history.document.charts.front().measures[1].notes.size() == 1);
+}
+
 TEST_CASE("Recipe-only Copy and Paste shortcuts use shared availability and commit a linked placement",
           "[frontend-state][event-harness][recipe-areas][clipboard]") {
     t422_fixture_t fixture{recipe_management_song()};

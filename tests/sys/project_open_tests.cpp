@@ -1133,14 +1133,20 @@ TEST_CASE("Native startup refreshes availability before creating clean saved his
     auto startup = wormedit::prepare_native_project_startup({}, {.primary_path = path});
     require_open_audio(startup.loaded_primary);
     check_open_audio(!startup.document.resources[0].missing);
-    wormedit::sys::refresh_project_audio_availability(startup.document, directory.path);
-    check_open_audio(startup.document.resources[0].missing);
-    check_open_audio(!startup.document.resources[1].missing);
-    check_open_audio(startup.document.revision == imported.document->revision);
-    check_open_audio(startup.document.audio_assets[0].source_path == "absent.wav");
-    const auto history = wormedit::document_history_t::from(std::move(startup.document), 128, true);
+    const auto binding = wormedit::sys::project_session_binding_t::from(std::move(startup.document),
+        {.loaded = true, .native_project = true, .native_path = path,
+         .asset_base = directory.path, .primary_version = startup.primary_version});
+    require_open_audio(binding.value.has_value());
+    const auto& history = binding.value->history;
+    check_open_audio(history.document.resources[0].missing);
+    check_open_audio(!history.document.resources[1].missing);
+    check_open_audio(history.document.revision == std::max<std::uint64_t>(1, imported.document->revision));
+    check_open_audio(history.document.audio_assets[0].source_path == "absent.wav");
     check_open_audio(!wormedit::is_document_dirty(history));
     check_open_audio(history.undo.empty());
+    check_open_audio(binding.value->identity.has_native_path());
+    check_open_audio(binding.value->identity.scanned_primary_version == startup.primary_version);
+    check_open_audio(binding.value->workspace.selected_chart == history.document.read_charts().front()->id);
 }
 
 TEST_CASE("Audio availability requires a base for relative sources and accepts absolute sources",
@@ -1162,6 +1168,83 @@ TEST_CASE("Audio availability requires a base for relative sources and accepts a
 
 namespace {
 void check_project_boundary(bool value) { CHECK(value); }
+}
+
+TEST_CASE("Session binding keeps scanned revision zero distinct from initialized history",
+          "[sys][project-open][startup-session]") {
+    const auto opened = open_with_bms_profile(fixture("bmson", "zero-resolution-default.bmson"));
+    require_opened_project(opened);
+    auto document = *opened.document;
+    document.revision = 0;
+    const auto disk_version = wormedit::native_project_document_version_t{
+        .project_id = document.id, .revision = 0};
+    const auto binding = wormedit::sys::project_session_binding_t::from(std::move(document),
+        {.loaded = true, .native_project = true, .native_path = "zero.wormedit",
+         .primary_version = disk_version});
+    REQUIRE(binding.value);
+    check_project_boundary(binding.value->identity.scanned_primary_version == disk_version);
+    check_project_boundary(binding.value->history.document.revision == 1);
+    check_project_boundary(!wormedit::is_document_dirty(binding.value->history));
+}
+
+TEST_CASE("Session binding distinguishes native replacements imports and the landing session",
+          "[sys][project-open][ownership]") {
+    const auto opened = open_with_bms_profile(fixture("bmson", "zero-resolution-default.bmson"));
+    require_opened_project(opened);
+    wormedit::sys::project_session_options_t options{.loaded = true};
+    SECTION("native open derives its saved baseline") {
+        options.native_project = true;
+        options.native_path = "opened.wormedit";
+    }
+    SECTION("chart import has no native baseline") { options.asset_base = opened.asset_base; }
+    SECTION("landing session remains unloaded") { options.loaded = false; }
+    SECTION("unsaved native document has no saved baseline") {
+        options.native_project = true;
+        options.native_path = "unsaved.wormedit";
+        options.saved = false;
+    }
+    const auto binding = wormedit::sys::project_session_binding_t::from(*opened.document, options);
+    REQUIRE(binding.value);
+    const auto& identity = binding.value->identity;
+    check_project_boundary(identity.session_loaded == options.loaded);
+    check_project_boundary(identity.has_native_path() == options.native_project);
+    check_project_boundary(identity.asset_base == options.asset_base);
+    check_project_boundary(wormedit::is_document_dirty(binding.value->history) == !options.saved);
+    check_project_boundary(identity.scanned_primary_version.has_value() ==
+                           (options.saved && options.native_project));
+    if (identity.scanned_primary_version)
+        check_project_boundary(identity.scanned_primary_version->revision ==
+                               binding.value->history.document.revision);
+}
+
+TEST_CASE("Saving to a native path replaces identity paths and retains project-local state",
+          "[sys][project-open][project-save-paths]") {
+    wormedit::sys::project_identity_t identity{.session_loaded = true, .fresh_blank_project = true,
+        .pending_import = {.chart_project_path = "pending.osu"},
+        .asset_base = "import", .external_player_source_path = "import/chart.bms"};
+    const auto version = wormedit::native_project_document_version_t{
+        .project_id = wormedit::song_id_t{15}, .revision = 23};
+    identity.mark_saved_to_native("destination/project.wormedit", version);
+    check_project_boundary(identity.has_native_path());
+    check_project_boundary(identity.active_project_path == "destination/project.wormedit");
+    check_project_boundary(identity.asset_base == "destination");
+    check_project_boundary(identity.scanned_primary_version == version);
+    check_project_boundary(identity.external_player_source_path.empty());
+    check_project_boundary(identity.session_loaded && identity.fresh_blank_project);
+    check_project_boundary(identity.pending_import.chart_project_path == "pending.osu");
+    identity.mark_saved_to_native("second/project.wormedit", version);
+    check_project_boundary(identity.asset_base == "second");
+}
+
+TEST_CASE("Native path availability requires both native identity and a path", "[sys][project-open]") {
+    wormedit::sys::project_identity_t identity;
+    check_project_boundary(!identity.has_native_path());
+    identity.active_project_path = "imported.bms";
+    check_project_boundary(!identity.has_native_path());
+    identity.native_project_loaded = true;
+    check_project_boundary(identity.has_native_path());
+    identity.active_project_path.clear();
+    check_project_boundary(!identity.has_native_path());
 }
 
 TEST_CASE("Recovered session clears the external player source path", "[sys][ownership]") {

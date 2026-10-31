@@ -1947,7 +1947,7 @@ struct application_t::implementation_t {
         }
         if (!replace_project_session(
                 wormedit::sys::make_empty_session_document(wormedit::sys::create_session_project_id()),
-                false, true, false, {}, {}))
+                {.saved = true}))
             return false;
         pending = {};
         post_project_feedback(wormedit::notification_severity_t::info,
@@ -2011,13 +2011,9 @@ struct application_t::implementation_t {
         session.history.saved_revision = stamp.revision;
         const auto version =
             native_project_document_version_t{.project_id = stamp.project, .revision = stamp.revision};
-        session.project_identity.scanned_primary_version = version;
-        session.project_identity.active_project_path = report.destination;
+        session.project_identity.mark_saved_to_native(report.destination, version);
         remember_project_file(preferences.program_preferences, report.destination,
                               platform.notification_sink);
-        session.project_identity.native_project_loaded = true;
-        session.project_identity.asset_base = report.destination.parent_path();
-        session.project_identity.external_player_source_path.clear();
         bind_project_journal();
         session.autosave_loop.mark_explicit_save(version, session.history.document);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -2070,8 +2066,8 @@ struct application_t::implementation_t {
                                   "Could not create the selected audio chart layout.");
             return;
         }
-        if (!replace_project_session(std::move(*document), true, true, false, {},
-                                     audio.source_path.parent_path()))
+        if (!replace_project_session(std::move(*document),
+                {.loaded = true, .asset_base = audio.source_path.parent_path()}))
             return;
         for (const auto* chart : session.history.document.read_charts())
             remember_snap_denominator(commands, chart->id,
@@ -2448,43 +2444,28 @@ struct application_t::implementation_t {
             context.action, session.history.document, session.workspace, context.selected_sample_rate);
     }
 
-    auto replace_project_session(wormedit::song_document_t document, bool loaded, bool saved,
-                                 bool native_project, std::filesystem::path native_path,
-                                 std::filesystem::path asset_base) -> bool {
+    auto replace_project_session(wormedit::song_document_t document,
+                                 project_session_options_t options) -> bool {
         using namespace wormedit;
-        if (loaded && !native_project)
+        if (options.loaded && !options.native_project)
             preferences.program_preferences.preferences.default_lane_keys.apply_to(document);
-        wormedit::sys::refresh_project_audio_availability(document, asset_base);
-        auto replacement_history = document_history_t::from(std::move(document), 128, saved);
-        auto replacement_binding = workspace_controller_t::from(replacement_history);
-        if (!replacement_binding.value || !replacement_binding.diagnostics.empty()) {
+        auto replacement = project_session_binding_t::from(std::move(document), std::move(options));
+        if (!replacement.value) {
             post_project_feedback(notification_severity_t::error, notification_source_t::document,
                                   "The selected document could not be bound to a workspace.");
             return false;
         }
-        const auto saved_version =
-            saved && native_project
-                ? std::optional<native_project_document_version_t>{{.project_id =
-                                                                        replacement_history.document
-                                                                            .id,
-                                                                    .revision =
-                                                                        replacement_history.document
-                                                                            .revision}}
-                : std::nullopt;
+        auto& binding = *replacement.value;
         if (!session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
-                                                 saved_version, 0)) {
+                                                 binding.identity.scanned_primary_version, 0)) {
             post_project_feedback(
                 notification_severity_t::warning, notification_source_t::document,
                 "Wait for the current autosave to finish before changing projects.");
             return false;
         }
-        session.history = std::move(replacement_history);
-        session.workspace = std::move(*replacement_binding.value);
-        begin_project_session({.session_loaded = loaded,
-                               .native_project_loaded = native_project,
-                               .active_project_path = std::move(native_path),
-                               .asset_base = std::move(asset_base),
-                               .scanned_primary_version = saved_version});
+        session.history = std::move(binding.history);
+        session.workspace = std::move(binding.workspace);
+        begin_project_session(std::move(binding.identity));
         return true;
     }
 
@@ -2679,10 +2660,10 @@ struct application_t::implementation_t {
         auto document = std::move(*opened.document);
         if (!opened.native_project)
             document.id = wormedit::sys::create_session_project_id();
-        if (replace_project_session(std::move(document), true, true, opened.native_project,
-                                    opened.native_project ? opened.source_path
-                                                          : std::filesystem::path{},
-                                    opened.asset_base)) {
+        if (replace_project_session(std::move(document),
+                {.loaded = true, .native_project = opened.native_project,
+                 .native_path = opened.native_project ? opened.source_path : std::filesystem::path{},
+                 .asset_base = opened.asset_base})) {
             remember_project_file(preferences.program_preferences, opened.source_path,
                                   platform.notification_sink);
             session.project_identity.external_player_source_path =
@@ -2824,7 +2805,7 @@ struct application_t::implementation_t {
         if (action.kind == WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) {
             if (replace_project_session(
                     wormedit::sys::make_empty_session_document(wormedit::sys::create_session_project_id()),
-                    false, true, false, {}, {}))
+                    {.saved = true}))
                 post_project_feedback(wormedit::notification_severity_t::info,
                                       wormedit::notification_source_t::document,
                                       "No project loaded.");
@@ -3277,7 +3258,7 @@ struct application_t::implementation_t {
                                   "Could not create the selected chart layout.");
             return;
         }
-        if (replace_project_session(std::move(*document), true, true, false, {}, {})) {
+        if (replace_project_session(std::move(*document), {.loaded = true})) {
             for (const auto* chart : session.history.document.read_charts())
                 remember_snap_denominator(commands, chart->id,
                     session.history.document.settings.snap_for(commands.preferences.editor_preferences.default_snap).value);
@@ -3453,8 +3434,7 @@ struct application_t::implementation_t {
               wormedit::notification_source_t::document, diagnostic}},
             platform.notification_sink);
         const auto close = close_confirmation_view(
-            views.pending_close, session.project_identity.native_project_loaded &&
-                                     !session.project_identity.active_project_path.empty());
+            views.pending_close, session.project_identity.has_native_path());
         const auto action =
             worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
         views.pending_notification = action.notifications;
@@ -3584,17 +3564,19 @@ struct application_t::implementation_t {
         if (!initialize_application_runtime(platform.lifetime.runtime))
             return false;
         platform.frontend_notifications.emplace(platform.notification_sink);
-        session.project_identity.asset_base =
-            startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
-                                   : std::filesystem::path{};
-        refresh_project_audio_availability(startup.document, session.project_identity.asset_base);
-        session.history = document_history_t::from(std::move(startup.document), 128, true);
-        auto binding = workspace_controller_t::from(session.history);
-        if (!binding.value || !binding.diagnostics.empty()) {
+        auto binding = project_session_binding_t::from(std::move(startup.document),
+            {.loaded = startup.loaded_primary, .native_project = startup.loaded_primary,
+             .native_path = startup.loaded_primary ? requested_primary_path : std::filesystem::path{},
+             .asset_base = startup.loaded_primary
+                 ? std::filesystem::absolute(requested_primary_path).parent_path() : std::filesystem::path{},
+             .primary_version = startup.primary_version});
+        if (!binding.value) {
             std::fprintf(stderr, "Initial workspace binding failed\n");
             return false;
         }
-        session.workspace = std::move(*binding.value);
+        session.history = std::move(binding.value->history);
+        session.workspace = std::move(binding.value->workspace);
+        session.project_identity = std::move(binding.value->identity);
         const auto sequence = native_project_recovery_session_sequence(startup.recovery_scan,
                                                                        session.history.document.id);
         (void)session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
@@ -3603,10 +3585,6 @@ struct application_t::implementation_t {
                                           requested_primary_path, platform.recovery_directory);
         seed_notification_smoke(platform.notifications);
         seed_notification_history_smoke(platform.notifications, session.history.document);
-        session.project_identity.session_loaded = startup.loaded_primary;
-        session.project_identity.native_project_loaded = startup.loaded_primary;
-        session.project_identity.active_project_path =
-            startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
         bind_project_journal();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audio_runtime.resident_samples.set_listener(
@@ -3634,7 +3612,6 @@ struct application_t::implementation_t {
         session.recovery_scan_feedback.publish(session.recovery_controller.view(),
                                                platform.notification_sink);
         session.recovery_scan_configured = startup.recovery_scan_configured;
-        session.project_identity.scanned_primary_version = startup.primary_version;
         commands.bookmarks.chooser_backend = {.open = open_bookmark_chooser_backend};
         commands.services.open_sound_picker = worm_ui_frontend_open_sound_picker;
         commands.services.compose_dock_command = worm_ui_frontend_compose_dock_command;
@@ -4388,12 +4365,10 @@ struct application_t::implementation_t {
         flattened.view.metronome_count_in = commands.metronome_settings().count_in;
         flattened.view.chart_import.refill(views.project.chart_import, session.history.document.revision);
         flattened.view.close_confirmation = close_confirmation_view(
-            views.pending_close, session.project_identity.native_project_loaded &&
-                                     !session.project_identity.active_project_path.empty());
+            views.pending_close, session.project_identity.has_native_path());
         flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
         flattened.view.setup.refill(views.project_chart_runtime, session.history.document);
-        flattened.view.setup.project_has_native_path = session.project_identity.native_project_loaded &&
-            !session.project_identity.active_project_path.empty();
+        flattened.view.setup.project_has_native_path = session.project_identity.has_native_path();
         if (flattened.view.setup.visible)
             flattened.view.setup.settings.refill(session.history.document, preferences.program_preferences.preferences);
         build_tap_timing_view(views.project.tap_runtime, session.history.document, views.tap_clock,

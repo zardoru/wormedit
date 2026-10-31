@@ -506,6 +506,35 @@ auto validation_error(const diagnostic_list_t& diagnostics) -> std::string {
 
 } // namespace
 
+void project_identity_t::mark_saved_to_native(std::filesystem::path path,
+                                              native_project_document_version_t version) {
+    scanned_primary_version = version;
+    active_project_path = std::move(path);
+    native_project_loaded = true;
+    asset_base = active_project_path.parent_path();
+    external_player_source_path.clear();
+}
+
+auto project_session_binding_t::from(song_document_t document, project_session_options_t options)
+    -> attempt_t<project_session_binding_t> {
+    refresh_project_audio_availability(document, options.asset_base);
+    auto history = document_history_t::from(std::move(document), 128, options.saved);
+    auto binding = workspace_controller_t::from(history);
+    if (!binding.value || !binding.diagnostics.empty())
+        return {.diagnostics = std::move(binding.diagnostics)};
+    auto version = options.primary_version;
+    if (!version && options.saved && options.native_project)
+        version = native_project_document_version_t{.project_id = history.document.id,
+                                                     .revision = history.document.revision};
+    return {.value = project_session_binding_t{
+        .history = std::move(history), .workspace = std::move(*binding.value),
+        .identity = {.session_loaded = options.loaded,
+                     .native_project_loaded = options.native_project,
+                     .active_project_path = std::move(options.native_path),
+                     .asset_base = std::move(options.asset_base),
+                     .scanned_primary_version = version}}};
+}
+
 void begin_project_session(project_identity_t& current, project_chart_runtime_t& charts,
                            project_identity_t replacement) {
     const auto generation = charts.session_generation + 1;

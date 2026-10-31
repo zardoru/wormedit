@@ -4,6 +4,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/workspace.h>
 #include <wormedit/core/async_job.h>
 #include <wormedit/core/job_progress.h>
 #include "ui/frontend/file_jobs.h"
@@ -37,9 +38,40 @@ struct project_identity_t {
     std::optional<native_project_document_version_t> scanned_primary_version;
     std::filesystem::path external_player_source_path;
 
+    [[nodiscard]] auto has_native_path() const -> bool {
+        return native_project_loaded && !active_project_path.empty();
+    }
+
+    void mark_saved_to_native(std::filesystem::path path,
+                              native_project_document_version_t version);
+
     [[nodiscard]] auto has_project_folder() const -> bool {
         return session_loaded && !asset_base.empty();
     }
+};
+
+struct project_session_options_t {
+    bool loaded{};
+    bool saved{true};
+    bool native_project{};
+    std::filesystem::path native_path;
+    std::filesystem::path asset_base;
+    // Startup retains the scanned disk version, including revision zero, rather
+    // than the revision initialized by document_history_t.
+    std::optional<native_project_document_version_t> primary_version;
+
+    auto operator==(const project_session_options_t&) const -> bool = default;
+};
+
+// Prepares history, workspace and identity together before publishing a session.
+// Startup and replacement keep their own autosave/recovery and UI lifecycles.
+struct project_session_binding_t {
+    document_history_t history;
+    workspace_controller_t workspace;
+    project_identity_t identity;
+
+    [[nodiscard]] static auto from(song_document_t document, project_session_options_t options)
+        -> attempt_t<project_session_binding_t>;
 };
 
 // Generation changes before any project state, so captured work is stale first.

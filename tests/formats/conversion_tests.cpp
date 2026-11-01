@@ -6,6 +6,7 @@
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/sv_recipe.h>
 #include "../support/timing_links_fixture.h"
@@ -179,6 +180,8 @@ TEST_CASE("BMSON conversion exports deduplicated slice samples and preserves sil
           "[unit][format][conversion][osu]") {
     auto song = sliced_bmson_song();
     REQUIRE(song.has_value());
+    REQUIRE(wormedit::output_family_compatibility(song->charts.front(),
+        wormedit::format_family_t::osu_mania).compatible);
     const auto original_bmson = wormedit::write_bmson(*song);
     REQUIRE(original_bmson.value.has_value());
     const auto request = sliced_conversion_request(*song, song->charts.front().id);

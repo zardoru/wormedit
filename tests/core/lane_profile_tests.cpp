@@ -1082,3 +1082,15 @@ TEST_CASE("BMS output compatibility includes scratch columns supported by osu co
     chart.source_family = format_family_t::native_project;
     CHECK_FALSE(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
 }
+
+TEST_CASE("BMSON output compatibility includes scratch columns supported by osu conversion",
+          "[core][lane-profile][output-compatibility][bmson]") {
+    chart_document_t chart{.source_family = format_family_t::bmson,
+        .lane_layouts = {{.id = object_id_t{1}, .layout = make_bms_7k_profile().layout}}};
+    CHECK(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+    chart.lane_layouts.front().layout.lanes.front().role = lane_role_t::foot_pedal;
+    CHECK_FALSE(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+    chart.lane_layouts.front().layout = make_bms_7k_profile().layout;
+    chart.source_family = format_family_t::native_project;
+    CHECK_FALSE(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+}

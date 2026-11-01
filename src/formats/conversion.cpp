@@ -16,6 +16,7 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/quaver.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <algorithm>
@@ -668,16 +669,22 @@ auto make_bms_reimport_options(const conversion_request_t& request, const conver
     return options;
 }
 
+template<class Diagnostics>
+auto accept_reimport(conversion_context_t& context, const conversion_output_t& output,
+                     const attempt_t<song_document_t, Diagnostics>& parsed) -> bool {
+    if (parsed.value && parsed.ok()) return true;
+    append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
+                              loss_policy_t::warn);
+    return false;
+}
+
 auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
                        const stepmania_export_policy_outcome_t* stepmania_options,
                        const song_document_t& prepared) -> bool {
     switch (output.target) {
     case format_family_t::native_project: {
         const auto parsed = parse_native_project(output.bytes);
-        if (parsed.value && parsed.ok())
-            return true;
-        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
-                                  loss_policy_t::warn);
+        if (accept_reimport(context, output, parsed)) return true;
         break;
     }
     case format_family_t::bms: {
@@ -701,30 +708,25 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
             {.profile = write.profile,
              .source_timing_syntax = write.target_timing_syntax,
              .source_implementation_profile = write.target_implementation_profile});
-        if (parsed.value && parsed.ok())
-            return true;
-        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
-                                  loss_policy_t::warn);
+        if (accept_reimport(context, output, parsed)) return true;
         break;
     }
     case format_family_t::osu_mania: {
         const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
-        if (parsed.value && parsed.ok())
-            return true;
-        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
-                                  loss_policy_t::warn);
+        if (accept_reimport(context, output, parsed)) return true;
         break;
     }
     case format_family_t::bmson: {
         const auto parsed = parse_bmson_bytes(byte_span(output.bytes));
-        if (parsed.value && parsed.ok())
-            return true;
-        append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
-                                  loss_policy_t::warn);
+        if (accept_reimport(context, output, parsed)) return true;
+        break;
+    }
+    case format_family_t::quaver: {
+        const auto parsed = parse_quaver_bytes(byte_span(output.bytes));
+        if (accept_reimport(context, output, parsed)) return true;
         break;
     }
     case format_family_t::midi:
-    case format_family_t::quaver:
         break;
     }
     add_diagnostic(context.result, diagnostic_severity_t::error,
@@ -772,7 +774,8 @@ auto validate_request_policies(conversion_context_t& context, const song_documen
     if (!context.request.staged_assets.empty() && context.request.target != format_family_t::bms &&
         context.request.target != format_family_t::bmson &&
         context.request.target != format_family_t::osu_mania &&
-        context.request.target != format_family_t::stepmania) {
+        context.request.target != format_family_t::stepmania &&
+        context.request.target != format_family_t::quaver) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "This target does not yet serialize staged resource paths");
     }
@@ -781,8 +784,7 @@ auto validate_request_policies(conversion_context_t& context, const song_documen
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Staged asset mapping exceeds the document asset count");
     }
-    if (context.request.target == format_family_t::midi ||
-        context.request.target == format_family_t::quaver) {
+    if (context.request.target == format_family_t::midi) {
         return reject(conversion_diagnostic_code_t::unsupported_target,
                       "The selected conversion target has no paired writer yet");
     }
@@ -961,21 +963,29 @@ auto osu_profile(conversion_context_t& context) -> std::optional<osu_mania_file_
     return std::nullopt;
 }
 
+// One publication path for formats that emit one file per selected difficulty.
+template<class Writer>
+void write_chart_outputs(conversion_context_t& context, const song_document_t& prepared,
+                         const std::vector<chart_id_t>& charts, const std::string& extension,
+                         Writer&& writer) {
+    for (const auto chart_id : charts) {
+        if (!context.can_continue()) return;
+        const auto written = writer(chart_id);
+        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
+                                  chart_id, context.request.loss_policy);
+        append_conversion_output(context, prepared, chart_id, extension, written.value,
+                                 selected_chart(prepared, chart_id));
+    }
+}
+
 void write_osu_outputs(conversion_context_t& context, const song_document_t& prepared,
                        const std::vector<chart_id_t>& charts) {
     const auto profile = osu_profile(context);
-    if (!context.request.target_profile.empty() && !profile.has_value()) {
-        return;
-    }
-    for (const auto chart_id : charts) {
-        if (!context.can_continue()) return;
-        const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id,
+    if (!context.request.target_profile.empty() && !profile) return;
+    write_chart_outputs(context, prepared, charts, ".osu", [&](chart_id_t chart_id) {
+        return write_osu_mania(prepared, {.profile = profile, .chart = chart_id,
             .max_rows_per_measure = std::numeric_limits<std::size_t>::max()});
-        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
-                                  chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".osu", written.value,
-                                 selected_chart(prepared, chart_id));
-    }
+    });
 }
 
 void write_bmson_outputs(conversion_context_t& context, const song_document_t& prepared,
@@ -987,14 +997,23 @@ void write_bmson_outputs(conversion_context_t& context, const song_document_t& p
                        "Unknown BMSON target profile: " + context.request.target_profile);
         return;
     }
-    for (const auto chart_id : charts) {
-        if (!context.can_continue()) return;
-        const auto written = write_bmson(prepared, {.chart = chart_id});
-        append_target_diagnostics(context.result, written.diagnostics, context.request.target,
-                                  chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".bmson", written.value,
-                                 selected_chart(prepared, chart_id));
+    write_chart_outputs(context, prepared, charts, ".bmson", [&](chart_id_t chart_id) {
+        return write_bmson(prepared, {.chart = chart_id});
+    });
+}
+
+void write_quaver_outputs(conversion_context_t& context, const song_document_t& prepared,
+                          const std::vector<chart_id_t>& charts) {
+    if (!context.request.target_profile.empty() && context.request.target_profile != "qua-v1-experimental") {
+        add_diagnostic(context.result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::unknown_target_profile,
+                       conversion_stage_t::request, context.request.target, context.request.chart,
+                       "Unknown experimental Quaver target profile: " + context.request.target_profile);
+        return;
     }
+    write_chart_outputs(context, prepared, charts, ".qua", [&](chart_id_t chart_id) {
+        return write_quaver(prepared, {.chart = chart_id});
+    });
 }
 
 auto serialize_conversion(conversion_context_t& context, const song_document_t& prepared,
@@ -1015,8 +1034,10 @@ auto serialize_conversion(conversion_context_t& context, const song_document_t& 
     case format_family_t::bmson:
         write_bmson_outputs(context, prepared, charts);
         break;
-    case format_family_t::midi:
     case format_family_t::quaver:
+        write_quaver_outputs(context, prepared, charts);
+        break;
+    case format_family_t::midi:
         break;
     }
     return std::nullopt;

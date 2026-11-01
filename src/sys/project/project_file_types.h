@@ -15,7 +15,7 @@ inline auto supported_source_limit(std::string_view extension) -> std::size_t {
     if (extension == ".wormedit") return native_source_limit;
     if (extension == ".bms" || extension == ".bme" || extension == ".bml" ||
         extension == ".pms" || extension == ".bmson" || extension == ".sm" ||
-        extension == ".ssc" || extension == ".osu")
+        extension == ".ssc" || extension == ".osu" || extension == ".qua")
         return chart_source_limit;
     return 0;
 }

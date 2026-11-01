@@ -915,3 +915,21 @@ TEST_CASE("Linked timing export retains old files and live links when asset copy
     check_publication(parsed.value->charts.front().bpms.front().beats_per_minute == signed_rational_t{180, 1});
     check_publication(write_native_project(fixture.history.document).value == native);
 }
+
+TEST_CASE("Quaver discovers staged assets beside its exported chart", "[quaver][publication]") {
+    temporary_directory_t temporary;
+    std::ofstream(temporary.path / "tone.wav") << "audio";
+    wormedit::song_document_t song;
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{5}, .source_path = "tone.wav"});
+    song.resources.push_back({.id = wormedit::resource_id_t{6}, .name = "tone.wav", .asset = wormedit::asset_id_t{5}});
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::quaver,
+        .relative_output_path = "exports/song.qua"};
+    const auto copied = wormedit::create_export_asset_copy({.project_directory = temporary.path,
+        .source_path = "tone.wav", .relative_output_path = group.relative_output_path,
+        .destination_kind = group.destination_kind, .asset = wormedit::asset_id_t{5}});
+    REQUIRE(copied);
+    const auto discovered = wormedit::staged_asset_discovery_t::from(song, group, temporary.path);
+    REQUIRE(discovered);
+    REQUIRE(discovered->size() == 1);
+    CHECK(discovered->front().relative_path == "assets/tone.wav");
+}

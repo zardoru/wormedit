@@ -1,0 +1,37 @@
+QuaVersion: 1
+Mode: Keys4
+EditorLayers:
+- Name: Default
+  ColorRgb: 255,255,255
+- Name: Accents
+  Hidden: true
+  ColorRgb: 64,128,255
+Bookmarks:
+- StartTime: 500
+  Note: First accent
+- StartTime: 1500
+  Note: Mine section
+  ColorRgb: 255,0,64
+CustomAudioSamples:
+- Path: accent.wav
+- Path: backing.wav
+  UnaffectedByRate: true
+SoundEffects:
+- StartTime: 250.5
+  Sample: 2
+- StartTime: 750.5
+  Sample: 1
+  Volume: 40
+TimingPoints:
+- Bpm: 120
+HitObjects:
+- StartTime: 500
+  Lane: 1
+  KeySounds:
+  - Sample: 1
+  - Sample: 2
+    Volume: 60
+  EditorLayer: 1
+- StartTime: 1500
+  Lane: 2
+  Type: Mine

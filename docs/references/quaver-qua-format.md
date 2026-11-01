@@ -87,3 +87,42 @@ empty bookmarks/SSFs/`$Global`); CRLF newlines.
 - `HitSound` flags ↔ the typed osu!-style hitsound sample (see
   [`compose-ux.md`](../chart-editor-plan/tasks/compose-ux.md) T-215).
 - `KeySounds` + `CustomAudioSamples` ↔ note sound resources; `SoundEffects` ↔ BGM events.
+
+## Experimental post-1.0 adapter
+
+The paired reader/writer is intentionally outside the 1.0 supported-output catalog.
+Open a `.qua` using the experimental file filter or drag/drop it. The headless
+converter accepts `target: "quaver"`, `target_profile: "qua-v1-experimental"`,
+and emits one `.qua` per selected difficulty through normal transactional publication.
+This work builds on the original fixture corpus in PR #56; neither PR should merge
+into the 1.0 release without a separate release decision.
+
+The adapter uses pinned yaml-cpp 0.8.0 (MIT; owner authorized 2026-10-28).
+It accepts one UTF-8 YAML document, ignores unknown properties, rejects duplicate
+mapping keys and aliases, and checks source bytes, event count, node count, nesting
+and derived measures. Paths must be relative, use forward slashes, and remain
+inside the map folder. Unsupported versions, invalid samples/volumes, lane/layer
+references and hold bounds reject without publishing a partial document.
+
+Timing points rebuild signature-aware measures, with a 960,000-row standard
+measure and explicit audio-time origin. Partial measures use a bounded rational
+BPM adjustment when necessary; this produces a diagnostic. Notes retain source
+milliseconds in provenance. Denormalized SV creates explicit normalized editor
+scroll events at BPM changes; SSFs use the independent instantaneous speed track.
+Editor layers, bookmarks, mines, hitsound additions, sample resources and sound
+effects have native counterparts.
+
+Existing format metadata/provenance retain Quaver-only flags and IDs, hidden timing
+lines, bookmark colors, rate-independent samples, additional keysounds/volumes,
+and timing groups with per-note references. These are ordinary existing native
+fields, so no document schema change is needed. Timing groups produce an import
+warning because the editor cannot preview per-note scroll groups. Retention does
+not establish complete Quaver gameplay or audio-preview parity.
+
+Export updates editable data, preserves retained fields, computes the mine version,
+sorts timelines stably, omits defaults, emits CRLF and validates the result before
+publication. New notes and moved notes must fall on integer milliseconds. Roll,
+stop/delay, warp, BGA, Kiai, changing layouts, unresolved sample references, sample-set
+overrides, continuous SPEEDS transitions and other unsupported modeled data reject
+with a classified diagnostic instead of being silently discarded. Absolute audio
+paths must retain their imported identity or be staged as safe relative paths.

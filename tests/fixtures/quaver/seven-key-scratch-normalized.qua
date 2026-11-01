@@ -1,0 +1,22 @@
+Mode: Keys7
+LegacyLNRendering: true
+BPMDoesNotAffectScrollVelocity: true
+InitialScrollVelocity: 1.5
+HasScratchKey: true
+TimingPoints:
+- Bpm: 120
+- StartTime: 2000
+  Bpm: 180
+SliderVelocities:
+- StartTime: 1000
+  Multiplier: 0.75
+HitObjects:
+- StartTime: 500
+  Lane: 1
+  EndTime: 1500
+- StartTime: 1000
+  Lane: 7
+  EndTime: 2500
+- StartTime: 1500
+  Lane: 8
+  EndTime: 3000

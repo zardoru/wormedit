@@ -251,7 +251,8 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
     const std::filesystem::path& project_directory, std::stop_token stop) -> staged_asset_discovery_outcome_t {
     std::vector<conversion_request_t::staged_asset_t> mappings;
     if (group.family != format_family_t::bms && group.family != format_family_t::bmson &&
-        group.family != format_family_t::osu_mania && group.family != format_family_t::stepmania)
+        group.family != format_family_t::osu_mania && group.family != format_family_t::stepmania &&
+        group.family != format_family_t::quaver)
         return mappings;
     if (!project_directory.is_absolute() ||
         !export_asset_directory(group.relative_output_path, group.destination_kind))

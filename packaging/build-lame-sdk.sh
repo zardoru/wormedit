@@ -18,6 +18,11 @@ echo "$checksum  $work/source/$archive" | sha256sum --check
 if [[ ! -d "$work/source/lame-3.100" ]]; then
     tar -xf "$work/source/$archive" -C "$work/source"
 fi
+# LAME 3.100's export list includes its private lame_init_old and decoder
+# functions omitted by --disable-decoder. PE linking rejects these undefined
+# exports. Keep the encoder-only list consistent on every release platform.
+sed -i '/^lame_init_old$/d; /^hip_/d; /^lame_decode/d' \
+    "$work/source/lame-3.100/include/libmp3lame.sym"
 host_options=()
 if [[ -n $host ]]; then host_options=("--host=$host"); fi
 cd "$work/build"
@@ -29,3 +34,5 @@ make install
 notices="$destination/share/wormedit-ffmpeg/lame"
 mkdir -p "$notices"
 cp "$work/source/$archive" "$work/source/lame-3.100/COPYING" config.log "$notices/"
+# Include the modified export list alongside the original corresponding source.
+cp "$work/source/lame-3.100/include/libmp3lame.sym" "$notices/"
